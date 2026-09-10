@@ -1,0 +1,310 @@
+{
+  "checked_at": "2026-09-10T13:01:55.042493+00:00",
+  "dsh_version": "0.1.5-rc.1",
+  "model_source": "deterministic_local_fixture_not_official_DeepSeek",
+  "paid_calls": 0,
+  "model_calls": [
+    {
+      "child": false,
+      "tools": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": true,
+      "tools": [
+        "edit",
+        "exit_plan_mode",
+        "glob",
+        "grep",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "web_fetch",
+        "web_search"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": true,
+      "tools": [
+        "edit",
+        "exit_plan_mode",
+        "glob",
+        "grep",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "web_fetch",
+        "web_search"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": true,
+      "tools": [
+        "edit",
+        "exit_plan_mode",
+        "glob",
+        "grep",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "structured_output",
+        "todo_write",
+        "web_fetch",
+        "web_search"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": true,
+      "tools": [
+        "edit",
+        "exit_plan_mode",
+        "glob",
+        "grep",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "structured_output",
+        "todo_write",
+        "web_fetch",
+        "web_search"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": false,
+      "tools": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": false,
+      "tools": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow"
+      ],
+      "model": "deepseek-v4-pro"
+    },
+    {
+      "child": true,
+      "tools": [
+        "edit",
+        "exit_plan_mode",
+        "glob",
+        "grep",
+        "mcp__lanshare__echo",
+        "pwsh",
+        "read",
+        "read_image",
+        "skill",
+        "todo_write",
+        "web_fetch",
+        "web_search"
+      ],
+      "model": "deepseek-v4-pro"
+    }
+  ],
+  "admissions": [
+    {
+      "request_id": "249fa939-e795-4754-96fe-514818e61789",
+      "parent_session_id": "e4fe3d1e-e4f3-41d2-8743-1c436c82de37",
+      "child_session_id": "07aadef8-e786-481b-8d1a-fe8fdb9a6c17",
+      "depth": 1,
+      "id": "93c715aa-84c6-48c6-9069-f73bb19e1661",
+      "admitted": true,
+      "total_limit": 4
+    },
+    {
+      "request_id": "fbbc485c-82e1-4bbd-bff7-b4554dbd810d",
+      "parent_session_id": "e4fe3d1e-e4f3-41d2-8743-1c436c82de37",
+      "child_session_id": "705a1d63-43ec-4d6a-8085-45edcc2d9e62",
+      "depth": 1,
+      "id": "14ae8657-40bc-41b3-86ce-d0de9ce2a70f",
+      "admitted": true,
+      "total_limit": 4
+    },
+    {
+      "request_id": "ac18317b-53f7-4656-81ba-8d378900929d",
+      "parent_session_id": "e4fe3d1e-e4f3-41d2-8743-1c436c82de37",
+      "child_session_id": "5d52729a-92c1-48fb-a1d7-94468373b50a",
+      "depth": 1,
+      "id": "466f35ac-506b-4568-9ee5-e55680be84a4",
+      "admitted": true,
+      "total_limit": 4
+    }
+  ],
+  "finish_observations": [
+    {
+      "id": "93c715aa-84c6-48c6-9069-f73bb19e1661",
+      "runtime_reported_status": "completed",
+      "host_execution_verified": false
+    },
+    {
+      "id": "14ae8657-40bc-41b3-86ce-d0de9ce2a70f",
+      "runtime_reported_status": "completed",
+      "host_execution_verified": false
+    },
+    {
+      "id": "466f35ac-506b-4568-9ee5-e55680be84a4",
+      "runtime_reported_status": "aborted",
+      "host_execution_verified": false
+    }
+  ],
+  "mcp_calls": [
+    {
+      "method": "initialize",
+      "name": null
+    },
+    {
+      "method": "notifications/initialized",
+      "name": null
+    },
+    {
+      "method": "tools/list",
+      "name": null
+    },
+    {
+      "method": "initialize",
+      "name": null
+    },
+    {
+      "method": "notifications/initialized",
+      "name": null
+    },
+    {
+      "method": "tools/list",
+      "name": null
+    },
+    {
+      "method": "tools/call",
+      "name": "echo"
+    },
+    {
+      "method": "initialize",
+      "name": null
+    },
+    {
+      "method": "notifications/initialized",
+      "name": null
+    },
+    {
+      "method": "tools/list",
+      "name": null
+    },
+    {
+      "method": "tools/call",
+      "name": "echo"
+    },
+    {
+      "method": "initialize",
+      "name": null
+    },
+    {
+      "method": "notifications/initialized",
+      "name": null
+    },
+    {
+      "method": "tools/list",
+      "name": null
+    },
+    {
+      "method": "tools/call",
+      "name": "echo"
+    }
+  ],
+  "checks": {
+    "normal_prompt": {
+      "stopReason": "end_turn"
+    },
+    "cancel_prompt": {
+      "stopReason": "cancelled"
+    },
+    "remote_mcp_work_at_parent_cancel_return": 1,
+    "peak_runtime_admissions": 1,
+    "remaining_runtime_admissions": 0,
+    "mcp_cancel_notification": false,
+    "process_exit": 0
+  },
+  "full_activation_acceptance": false,
+  "remaining_gaps": [
+    "Same-container runtime observations cannot prove host-isolated child quiescence; official workflow VM is not a security boundary.",
+    "ACP cancellation drained the local child, but its in-flight synthetic MCP HTTP handler received no cancellation notification and remained active; platform operation/budget ledgers must independently settle it."
+  ],
+  "passed": true,
+  "plugin_sha256": {
+    "deployment/dsh/plugins/bounded-workflow/admission.mjs": "73b4e9da0234bcb95a9528638402c5dd2371e1e4cd44ff1ce07a8a07b5509ad4",
+    "deployment/dsh/plugins/bounded-workflow/index.mjs": "93ba1a85ee8fcf980b006d97abf76fc05b5898d474ea265ee685bc478b7624cf",
+    "deployment/dsh/plugins/bounded-workflow/ledger.mjs": "0a5e5967b5b67df160b126e10060d055da28ca98f087b9a4d9ba3ce63c8f1031",
+    "deployment/dsh/plugins/bounded-workflow/provider.mjs": "3567abc7c2559e1592ad5172053bcb9647524c90b83717be7acf0cf9a67cedf5",
+    "deployment/dsh/plugins/bounded-workflow/scope.mjs": "4541594c51bb67cece0a966ff145adeed5b498b2ee3d9fc1edfd38d9ef674c3c",
+    "deployment/dsh/plugins/bounded-workflow/structured.mjs": "898165d7289b3e3ff9720cee117f8bb3c2a07b9e6a834eb6651bc019c73a93f4"
+  }
+}

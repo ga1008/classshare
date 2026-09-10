@@ -8,10 +8,12 @@ const allowed = new Map([
   ['/api/agent-bridge/file', ['POST']], ['/api/agent-bridge/web', ['POST']],
   ['/api/agent-bridge/mcp', ['GET', 'POST', 'DELETE']],
   ['/api/agent-bridge/questions', ['POST']],
+  ['/api/agent-bridge/children/admit', ['POST']],
 ]);
 const questionPath = /^\/api\/agent-bridge\/questions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\/cancel)?$/;
 function permits(path, method) {
   if (allowed.get(path)?.includes(method)) return true;
+  if (/^\/api\/agent-bridge\/children\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/finish$/.test(path)) return method === 'POST';
   const match = questionPath.exec(path);
   return !!match && method === (match[1] ? 'POST' : 'GET');
 }

@@ -17,7 +17,7 @@ TABLES = ("agent_tasks", "agent_task_composers", "agent_runtime_api_keys")
 AUTHORITY_TABLES = (
     "agent_task_attempts", "agent_persistent_authorizations", "agent_task_delegations",
     "agent_action_executions", "agent_model_requests", "agent_request_buckets",
-    "agent_request_budget_leases", "agent_model_configuration_lock", "agent_task_questions", "agent_platform_requests",
+    "agent_request_budget_leases", "agent_model_configuration_lock", "agent_task_questions", "agent_platform_requests", "agent_task_children",
 )
 SAFE_FIELDS = {"id", "teacher_id", "actor_role", "actor_id", "provider", "enabled", "is_active", "updated_at"}
 SOURCE_FIELDS = {"source_session_hash", "source_session_key", "persistent_authorization_id"}

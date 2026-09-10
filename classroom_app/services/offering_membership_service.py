@@ -16,6 +16,7 @@ equals ``class_offerings.class_id`` (updated in the same transaction).
 from __future__ import annotations
 
 from typing import Any
+import sqlite3
 
 from ..db.schema_offering_class_links import (
     LINK_SOURCE_MANUAL,
@@ -344,13 +345,27 @@ def replace_offering_class_links(
     if len(normalized_ids) > MAX_LINKED_CLASS_COUNT:
         raise OfferingMembershipError(f"课堂最多绑定 {MAX_LINKED_CLASS_COUNT} 个班级")
 
+    if isinstance(conn, sqlite3.Connection) and not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     offering = conn.execute(
-        "SELECT * FROM class_offerings WHERE id = ? AND teacher_id = ?",
+        "SELECT * FROM class_offerings WHERE id = ? AND teacher_id = ?"
+        + ("" if isinstance(conn, sqlite3.Connection) else " FOR UPDATE"),
         (int(offering_id), int(teacher_id)),
     ).fetchone()
     if not offering:
         raise OfferingMembershipError("课堂不存在或无权操作")
     offering = dict(offering)
+    # Keep offering -> classes order, shared with merging and plan updates.
+    # This logical relation has no FK, so protect the referenced class rows.
+    from .teaching_lifecycle_service import lock_teaching_parent
+    for class_id in sorted(normalized_ids):
+        from fastapi import HTTPException
+        try:
+            lock_teaching_parent(conn, "class", class_id)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                raise OfferingMembershipError("所选班级不存在，请刷新后重试") from exc
+            raise
 
     resolved_primary = int(primary_class_id or 0)
     if resolved_primary and resolved_primary not in normalized_ids:

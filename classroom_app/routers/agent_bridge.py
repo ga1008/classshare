@@ -74,6 +74,39 @@ class BridgeQuestionPayload(BaseModel):
     timeout_seconds: int = Field(default=300, ge=30, le=600)
 
 
+class BridgeChildAdmissionPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    request_id: str = Field(min_length=36, max_length=36)
+    parent_session_id: str = Field(min_length=36, max_length=36)
+    child_session_id: str = Field(min_length=36, max_length=36)
+    depth: int = Field(strict=True, ge=1, le=1)
+
+
+class BridgeChildFinishPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    status: str = Field(pattern="^(completed|aborted|error)$")
+
+
+@router.post("/children/admit")
+def bridge_admit_child(payload: BridgeChildAdmissionPayload, authorization: Optional[str] = Header(default="")):
+    from ..services.agent_child_admission_service import admit_child
+    _require_task_id(authorization)
+    with get_db_connection() as conn:
+        result = admit_child(conn, authorization[7:].strip(), **payload.model_dump())
+        conn.commit()
+        return result
+
+
+@router.post("/children/{child_id}/finish")
+def bridge_finish_child(child_id: str, payload: BridgeChildFinishPayload, authorization: Optional[str] = Header(default="")):
+    from ..services.agent_child_admission_service import report_child_finish
+    _require_task_id(authorization)
+    with get_db_connection() as conn:
+        result = report_child_finish(conn, authorization[7:].strip(), child_id, status=payload.status)
+        conn.commit()
+        return result
+
+
 @router.post("/questions")
 def bridge_create_question(payload: BridgeQuestionPayload, authorization: Optional[str] = Header(default="")):
     from ..services.agent_question_service import create_question

@@ -123,7 +123,7 @@ class AgentSignatureRequestTests(SignatureRequestFixture):
             self.assertFalse(result['verified_business'])
 
 
-class AgentSignatureFlowTests(SignatureRequestFixture):
+class SignatureFlowFixture(SignatureRequestFixture):
     """Actual snapshot/permission/request SQL; only document rendering and mail delivery substituted.
 
     A valid synthetic Word artifact isolates these broker/workflow tests from
@@ -164,6 +164,8 @@ class AgentSignatureFlowTests(SignatureRequestFixture):
         body.update(changes)
         return self.dispatch(role,'http.signatures.flow.create',path_params={'function_point_key':self.point},body=body)
 
+
+class AgentSignatureFlowTests(SignatureFlowFixture):
     def test_normal_and_delegated_create_freeze_document_without_applying_or_using_signature(self):
         snapshot=sqlite3.connect(':memory:')
         with self.connection() as conn:conn.backup(snapshot)

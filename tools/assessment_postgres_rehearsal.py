@@ -215,6 +215,7 @@ def apply_assessment_migrations(conn) -> None:
         from classroom_app.db.schema_agent_request_budget import ensure_agent_request_budget_schema
         from classroom_app.db.schema_agent_interactions import ensure_agent_interactions_schema
         from classroom_app.db.schema_agent_platform_requests import ensure_agent_platform_requests_schema
+        from classroom_app.db.schema_agent_children import ensure_agent_children_schema
         adapter = LanSharePostgresConnection(conn)
         ensure_agent_task_extension_schema(adapter, force=True, engine="postgres")
         ensure_agent_authority_schema(adapter)
@@ -222,6 +223,7 @@ def apply_assessment_migrations(conn) -> None:
         ensure_agent_request_budget_schema(adapter)
         ensure_agent_interactions_schema(adapter)
         ensure_agent_platform_requests_schema(adapter)
+        ensure_agent_children_schema(adapter)
 
 
 def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrations, progress: Callable = print):

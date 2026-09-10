@@ -547,6 +547,12 @@ def refresh_teaching_class_mappings_from_roster(
         )
     )
     mappings = _mapping_groups(source_rows)
+    from .teaching_lifecycle_service import lock_teaching_parent
+    mapped_class_ids = set()
+    for mapping in mappings:
+        mapped_class_ids.update(int(value) for value in json.loads(mapping["admin_class_ids_json"]) if int(value) > 0)
+    for class_id in sorted(mapped_class_ids):
+        lock_teaching_parent(conn, "class", class_id)
     refreshed_at = synced_at or ""
 
     stale_clauses = ["teacher_id = ?"]

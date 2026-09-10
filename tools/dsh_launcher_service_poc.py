@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import stat
 import subprocess
@@ -17,8 +18,12 @@ def main():
     parser.add_argument('--image', required=True)
     args = parser.parse_args()
     root = args.root.resolve(strict=True)
-    if root != Path('/lanshare/.codex-temp/dsh-migration-20260910') or os.getuid() != 0:
+    lab_root = Path('/lanshare/.codex-temp/dsh-migration-20260910')
+    if (os.name != 'posix' or args.root.absolute() != root or os.getuid() != 0 or
+            not (root == lab_root or (root.parent == lab_root and re.fullmatch(r'runtime-c[1-9][0-9]*', root.name)))):
         parser.error('Requires the explicitly isolated Linux fixture root')
+    if (root / 'launcher-service-poc.json').exists():
+        parser.error('Refusing to replace existing probe evidence')
     ipc = root / 'service-poc-ipc'
     # Match the installer's finite profile permission normalization after an
     # archive made on Windows. The production launcher rejects writable roots.

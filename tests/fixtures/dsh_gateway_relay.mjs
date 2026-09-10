@@ -76,13 +76,22 @@ try {
     assert.equal((await request(route, '', {}, method)).status, 403);
   }
   assert.equal(observed.length, 4);
+  const child = '/api/agent-bridge/children/12345678-1234-4234-8234-123456789abc';
+  for (const route of ['/api/agent-bridge/children/admit', child + '/finish']) {
+    assert.equal((await request(route, '{}')).status, 200);
+    assert.equal((await request(route, '', {}, 'GET')).status, 403);
+  }
+  for (const route of [child, child + '/finish?token=x', '/api/agent-bridge/children/other/finish']) {
+    assert.equal((await request(route, '{}')).status, 403);
+  }
+  assert.equal(observed.length, 6);
   try {
     assert.equal((await request('/api/agent-bridge/mcp', 'x'.repeat(2 * 1024 * 1024 + 1))).status, 413);
   } catch (error) {
     // Node may reset an over-limit request still being uploaded.
     assert.equal(error.code, 'ECONNRESET');
   }
-  assert.equal(observed.length, 4);
+  assert.equal(observed.length, 6);
   await new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, path: '/api/agent-model/chat/completions', method: 'POST' }, (res) => {
       res.once('data', (data) => { assert.match(data.toString(), /data: first/); req.destroy(); resolve(); });

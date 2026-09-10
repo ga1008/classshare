@@ -197,7 +197,7 @@ async def api_offering_bootstrap_execute(
 
 
 @router.get("/class_offerings/merge/candidates", response_class=JSONResponse)
-async def api_offering_merge_candidates(user: dict = Depends(get_current_teacher)):
+def api_offering_merge_candidates(user: dict = Depends(get_current_teacher)):
     """检测当前教师的历史双开课堂（同课程+同学期多课堂且班级互斥）。"""
     with get_db_connection() as conn:
         candidates = find_merge_candidates(conn, int(user["id"]))
@@ -210,13 +210,31 @@ async def api_offering_merge_preview(
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_preview_offering_merge, data, user)
+
+
+def _merge_selection(data):
+    if not isinstance(data, dict):
+        raise HTTPException(400, "合班参数必须是对象。")
+    target, sources = data.get("target_offering_id"), data.get("source_offering_ids")
+    if (type(target) is not int or not 1 <= target <= 9223372036854775807
+            or not isinstance(sources, list) or not 1 <= len(sources) <= 11
+            or any(type(value) is not int or not 1 <= value <= 9223372036854775807 for value in sources)
+            or len(set(sources)) != len(sources) or target in sources):
+        raise HTTPException(400, "请选择有效的主课堂及 1 至 11 个不重复的源课堂。")
+    return target, sorted(sources)
+
+
+def _preview_offering_merge(data, user):
+    target, sources = _merge_selection(data)
     try:
         with get_db_connection() as conn:
             preview = build_merge_preview(
                 conn,
                 teacher_id=int(user["id"]),
-                target_offering_id=int(data.get("target_offering_id") or 0),
-                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+                target_offering_id=target,
+                source_offering_ids=sources,
             )
     except OfferingMergeError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -230,18 +248,32 @@ async def api_offering_merge_execute(
 ):
     """执行合并：单事务，失败整体回滚；快照与审计在同事务内落库。"""
     data = await _parse_json_request(request)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_execute_reviewed_offering_merge, data, user)
+
+
+def _execute_reviewed_offering_merge(data, user):
+    import re
+    target, sources = _merge_selection(data)
+    revision = data.get("expected_review_hash")
+    if (not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{64}", revision)
+            or data.get("acknowledged_irreversible") is not True):
+        raise HTTPException(400, "请重新预览合班并确认不可逆影响。")
+    if not isinstance(data.get("confirm_class_name"), str) or len(data["confirm_class_name"]) > 500:
+        raise HTTPException(400, "确认名称格式无效。")
     try:
         with get_db_connection() as conn:
             result = execute_offering_merge(
                 conn,
                 teacher_id=int(user["id"]),
-                target_offering_id=int(data.get("target_offering_id") or 0),
-                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+                target_offering_id=target,
+                source_offering_ids=sources,
                 confirm_class_name=str(data.get("confirm_class_name") or ""),
+                expected_review_hash=revision,
             )
             conn.commit()
     except OfferingMergeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(409, str(exc)) from exc
     return result
 
 @router.post("/class_offerings/preview", response_class=JSONResponse)

@@ -544,6 +544,8 @@ def create_pack_skeleton(
     """
     ensure_course_doc_pack_schema(conn)
     clean, warnings = validate.validate_manifest(manifest)
+    from ..teaching_lifecycle_service import lock_teaching_parent
+    lock_teaching_parent(conn, "course", int(course_id))
     if theme:
         clean["theme"] = theme
     course_name = str((clean.get("course") or {}).get("name") or "").strip()

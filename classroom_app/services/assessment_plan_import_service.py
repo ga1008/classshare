@@ -424,6 +424,10 @@ async def run_import_job(
                     "审核教师签名",
                 ),
             )
+            from .signature_workflow_lock_service import lock_signature_materials
+            from .signature_account_lock_service import lock_signature_rows
+            lock_signature_materials(conn, [('assessment_plan', str(plan_id))])
+            lock_signature_rows(conn, [identifier for identifier, _, _ in signature_bindings if identifier])
             for signature_id, function_point_key, role_label in signature_bindings:
                 if not signature_id:
                     continue

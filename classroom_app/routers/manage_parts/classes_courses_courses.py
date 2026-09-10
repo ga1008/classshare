@@ -1,5 +1,4 @@
 from .common import *
-from ...services.base_resource_modes_service import build_course_delete_blockers, raise_if_delete_blocked
 
 
 router = APIRouter()
@@ -287,63 +286,28 @@ async def api_create_course(
     return {"status": "success", "message": f"课程 '{name}' 创建成功。", "course_id": course_id}
 
 
+@router.get("/courses/{course_id}/delete-impact", response_class=JSONResponse)
+def api_course_delete_impact(course_id: int, user: dict = Depends(get_current_teacher)):
+    from ...services.teaching_lifecycle_service import build_teaching_delete_review
+    with get_db_connection() as conn:
+        review = build_teaching_delete_review(conn, kind="course", resource_id=course_id, user=user)
+    return {"status": "success", "review": review}
+
+
+def _delete_reviewed_course(course_id: int, data: dict, user: dict):
+    from ...services.teaching_lifecycle_service import delete_teaching_resource_from_web
+    with get_db_connection() as conn:
+        result = delete_teaching_resource_from_web(conn, kind="course", resource_id=course_id, user=user, payload=data)
+        conn.commit()
+    return {**result, "message": "课程删除成功。"}
+
+
 @router.delete("/courses/{course_id}", response_class=JSONResponse)
-async def api_delete_course(
-    course_id: int,
-    confirm_academic: int = 0,
-    user: dict = Depends(get_current_teacher),
-):
-    """删除一个课程 (及其所有文件和课堂关联)"""
-    try:
-        with get_db_connection() as conn:
-            course_row = _ensure_teacher_can_manage_course(
-                conn,
-                course_id=course_id,
-                teacher_id=user["id"],
-            )
-            raise_if_delete_blocked(
-                f"课程“{course_row['name']}”",
-                build_course_delete_blockers(conn, int(course_id)),
-            )
-            # 教务同步课程保护：有真实排课时要求显式二次确认——
-            # 同名课程往往由不同开课单位分别编码，看似"重复"实为两门课；
-            # 误删会丢课堂设置，且下次同步会重新建课。
-            if not int(confirm_academic or 0):
-                academic_stats = conn.execute(
-                    """
-                    SELECT COUNT(*) AS occurrence_count,
-                           COUNT(DISTINCT teaching_class_name) AS teaching_class_count
-                    FROM teacher_academic_course_session_occurrences
-                    WHERE course_id = ?
-                    """,
-                    (int(course_id),),
-                ).fetchone()
-                occurrence_count = int(academic_stats["occurrence_count"] or 0)
-                if occurrence_count:
-                    course_code = str(course_row["academic_course_code"] or "") if "academic_course_code" in course_row.keys() else ""
-                    raise HTTPException(
-                        409,
-                        f"课程“{course_row['name']}”{('（课程号 ' + course_code + '）') if course_code else ''}"
-                        f"关联 {int(academic_stats['teaching_class_count'] or 0)} 个教务教学班、"
-                        f"{occurrence_count} 次真实排课。若因“同名课程”想删除：请先核对课程号——"
-                        "同名课程可能由不同开课单位分别编码，并非重复；删除后下次教务同步仍会重新创建该课程，"
-                        "且已生成的课堂设置会丢失。确认仍要删除吗？",
-                    )
-
-            conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
-
-            # TODO: 还应按引用计数清理未被其他课程复用的哈希文件。
-
-            conn.commit()
-
-    except HTTPException:
-        raise
-    except sqlite3.IntegrityError as e:
-        raise HTTPException(400, f"删除失败: {e}")
-    except Exception as e:
-        raise HTTPException(500, f"服务器错误: {e}")
-
-    return {"status": "success", "message": "课程删除成功。"}
+async def api_delete_course(course_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    """删除核对快照仍有效且没有业务引用的课程；不删除共享材料。"""
+    from starlette.concurrency import run_in_threadpool
+    data = await _parse_json_request(request)
+    return await run_in_threadpool(_delete_reviewed_course, course_id, data, user)
 
 
 @router.post("/courses/{course_id}/files/upload", response_class=JSONResponse)

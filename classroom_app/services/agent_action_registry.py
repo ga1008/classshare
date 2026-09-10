@@ -269,6 +269,18 @@ def validate_action_params(
                 continue
             if text or spec.get("allow_empty"):
                 clean[field_name] = text
+        elif field_type == "int_list":
+            # Batch intent must never be silently truncated or coerced (True
+            # is an int subclass). Domains can request deterministic ordering.
+            minimum_items = int(spec.get("min_items", 1))
+            maximum_items = int(spec.get("max_items", 100))
+            if (not isinstance(raw, list) or not minimum_items <= len(raw) <= maximum_items
+                    or any(type(item) is not int or item < int(spec.get("minimum", 1))
+                           or item > int(spec.get("maximum", 9223372036854775807)) for item in raw)
+                    or len(set(raw)) != len(raw)):
+                errors.append(f"字段 {field_name} 必须是 {minimum_items} 至 {maximum_items} 个不重复的有效整数")
+                continue
+            clean[field_name] = sorted(raw) if spec.get("canonical_sorted") else list(raw)
         elif field_type == "str_list":
             if not isinstance(raw, list):
                 raw = [raw]

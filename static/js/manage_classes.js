@@ -261,28 +261,21 @@ function exportClassRoster(classItem) {
 
 async function handleDelete(button) {
     const classId = Number(button.dataset.classId || 0);
-    const className = String(button.dataset.className || '').trim() || '当前班级';
     if (!classId) {
         return;
     }
 
-    const confirmed = window.confirm(
-        `确定删除班级“${className}”吗？\n这会同时删除该班级下的学生和与课堂的关联记录。`
-    );
-    if (!confirmed) {
-        return;
-    }
-
+    if (button.disabled) return;
+    button.disabled = true;
     try {
-        const result = await apiFetch(`/api/manage/classes/${classId}`, {
-            method: 'DELETE',
-            silent: true,
-        });
+        const { openTeachingDeleteConfirmation } = await import('./teaching_lifecycle_review.js');
+        const result = await openTeachingDeleteConfirmation({ kind: 'class', resourceId: classId });
+        if (!result) return;
         showMessage(result.message || '班级已删除', 'success');
         window.location.reload();
     } catch (error) {
         showMessage(error.message || '删除班级失败', 'error');
-    }
+    } finally { button.disabled = false; }
 }
 
 function studentSearchText(student) {

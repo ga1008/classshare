@@ -1,0 +1,134 @@
+{
+  "kind": "frozen_dsh_runtime_c3_inputs",
+  "image_tag": "lanshare-dsh:0.1.5-rc.1-lanshare-20260910-c3",
+  "paid_model_requests": 0,
+  "files": {
+    "deployment/dsh/artifact-requirements.txt": {
+      "sha256": "7a6b7b4d94c4b32cbfaf0d1d5982739c9622899a3afecd5bac15e4c0948d9d13",
+      "size": 203,
+      "kind": "runtime"
+    },
+    "deployment/dsh/Dockerfile": {
+      "sha256": "1abe14e357d9b59df4432922a0fa4333485b9b6a552f576f7d811741d82b24f6",
+      "size": 2279,
+      "kind": "runtime"
+    },
+    "deployment/dsh/entrypoint.py": {
+      "sha256": "de40b1f97d9945fbdb05a30023bdbad7246bfff9adbd8e20c90c8c856b44a5ff",
+      "size": 5095,
+      "kind": "runtime"
+    },
+    "deployment/dsh/gateway-relay.mjs": {
+      "sha256": "277e787c88612b6c89e5580b5655650459c52649b4cea625d07d99804e27cb62",
+      "size": 4149,
+      "kind": "runtime"
+    },
+    "deployment/dsh/package-lock.json": {
+      "sha256": "169f8fdc6a1b76d5ce0036d725a51be5400e28893f8c70c255759af71e952c19",
+      "size": 346407,
+      "kind": "runtime"
+    },
+    "deployment/dsh/package.json": {
+      "sha256": "060474b13ec9457114342b3006f34dba4909c27719a80b39fbce6d8e21c29645",
+      "size": 65,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/admission.mjs": {
+      "sha256": "73b4e9da0234bcb95a9528638402c5dd2371e1e4cd44ff1ce07a8a07b5509ad4",
+      "size": 1854,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/index.mjs": {
+      "sha256": "93ba1a85ee8fcf980b006d97abf76fc05b5898d474ea265ee685bc478b7624cf",
+      "size": 1484,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/ledger.mjs": {
+      "sha256": "0a5e5967b5b67df160b126e10060d055da28ca98f087b9a4d9ba3ce63c8f1031",
+      "size": 2212,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/provider.mjs": {
+      "sha256": "3567abc7c2559e1592ad5172053bcb9647524c90b83717be7acf0cf9a67cedf5",
+      "size": 7168,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/scope.mjs": {
+      "sha256": "4541594c51bb67cece0a966ff145adeed5b498b2ee3d9fc1edfd38d9ef674c3c",
+      "size": 1672,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/bounded-workflow/structured.mjs": {
+      "sha256": "898165d7289b3e3ff9720cee117f8bb3c2a07b9e6a834eb6651bc019c73a93f4",
+      "size": 1633,
+      "kind": "runtime"
+    },
+    "deployment/dsh/plugins/question-answerer/index.mjs": {
+      "sha256": "86015849aca49666cf0532bb967be00a0f0e152c6f40eff3016794b30df339dd",
+      "size": 4894,
+      "kind": "runtime"
+    },
+    "deployment/dsh/profile/cordis.patch.yml": {
+      "sha256": "0ab585f43c947183d80426748ba447ec631b4ed4d365f477a4cb049f0ed1c8ed",
+      "size": 3482,
+      "kind": "runtime"
+    },
+    "deployment/dsh/profile/package.json": {
+      "sha256": "7fbb7732b3cf39e3d67bbba60dadd37fa5c1f50c6873de92c53b9c31956f9ca5",
+      "size": 220,
+      "kind": "runtime"
+    },
+    "deployment/dsh/runner.mjs": {
+      "sha256": "c2bb2f84f36252abfc9fe56b1f778940bdbe5b1a91c9d76e2e3c9c6dd93dc4ff",
+      "size": 1557,
+      "kind": "runtime"
+    },
+    "deployment/dsh/skills/lanshare-artifacts/SKILL.md": {
+      "sha256": "7fb087de1e543bb7c6c4e329061e2e29a991c91f20169eeef104dfad0ce772cc",
+      "size": 1219,
+      "kind": "runtime"
+    },
+    "deployment/dsh/skills/lanshare-platform/SKILL.md": {
+      "sha256": "6b9ca6d8314e9d57225a9a9dc890fde9a45acfcc35266cd2b202ac99b49c30d9",
+      "size": 1273,
+      "kind": "runtime"
+    },
+    "tests/fixtures/dsh_artifact_generation.py": {
+      "sha256": "40fb715a5741e7ba5cbf9d9f5fbeaf5a56bed2b8cd83c0aa8efc504d71d61e1f",
+      "size": 1553,
+      "kind": "probe"
+    },
+    "tests/fixtures/dsh_gateway_relay.mjs": {
+      "sha256": "f1a972aa806b4fc401b8ac03f356039c69dde6b8d86bfc066734c2ef9d19cf73",
+      "size": 5402,
+      "kind": "probe"
+    },
+    "tests/test_agent_dsh_launcher.py": {
+      "sha256": "676c02f33ddcb871426aa43ec80397d02e605289af9b4ae3966e6352e5224c04",
+      "size": 13452,
+      "kind": "probe"
+    },
+    "tools/agent_dsh_launcher.py": {
+      "sha256": "0d12e7695661d7537fa939533b713f9258d2926e9c0dd9336a37a10d5f8e6e4f",
+      "size": 29163,
+      "kind": "probe"
+    },
+    "tools/dsh_launcher_service_poc.py": {
+      "sha256": "04305d9592b2648a5e139090113ad33db0f5a5dd008d1dc3dd38d027280ef366",
+      "size": 5040,
+      "kind": "probe"
+    },
+    "tools/dsh_linux_poc.py": {
+      "sha256": "9ec565d23a46c393728e70d11ed1374fc0de76c607648169770c1fee654d6f3c",
+      "size": 22194,
+      "kind": "probe"
+    },
+    "tools/dsh_linux_quota_poc.py": {
+      "sha256": "5fcfb0b70d4d93b3420d88aa3a2916ee25c5eef2a392d7b1c0a0c4bd637dfe95",
+      "size": 5393,
+      "kind": "probe"
+    }
+  },
+  "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+  "archive_sha256": "aea81d2084754024d61110fedce0320da9a31417da565e20249a777401d6a4fb"
+}

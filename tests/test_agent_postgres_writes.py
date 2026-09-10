@@ -35,6 +35,8 @@ class FakeConnection:
         normalized = " ".join(sql.split())
         if "FROM class_offerings WHERE" in normalized:
             return FakeCursor(FakeRow({"id": 20, "course_id": 10, "teacher_id": 3}))
+        if normalized.startswith("SELECT * FROM courses WHERE id = ? FOR UPDATE"):
+            return FakeCursor(FakeRow({"id": 10, "name": "Course", "created_by_teacher_id": 3}))
         if normalized.startswith("SELECT id, name, nickname"):
             return FakeCursor(
                 FakeRow(

@@ -136,7 +136,7 @@ class GradePublicationConfirmationHTTPTests(PlatformWriteFixture):
         definition = user_confirmation_action_catalog(actor_role="teacher")[0]
         self.assertFalse(definition["executable"])
         self.assertNotIn("confirmed", definition["fields"])
-        self.assertEqual([], user_confirmation_action_catalog(actor_role="student"))
+        self.assertNotIn('publish_classroom_grades', [item['action'] for item in user_confirmation_action_catalog(actor_role="student")])
         self.assertNotIn("publish_classroom_grades", writes.TRANSACTIONAL_ACTIONS)
         with self.assertRaises(HTTPException):
             writes.dispatch_write(self.conn, "model-token", "publish", "publish_classroom_grades", {**self.proposal["params"], "confirmed": True})

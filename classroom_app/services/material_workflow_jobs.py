@@ -30,11 +30,18 @@ def process_application_batch(batch_id):
             if any(snapshot[key] != doc[key] for key in ("material_revision", "content_fingerprint")):
                 raise signature_service.SignatureServiceError(409, "材料内容已变更，请重新申请。")
             with get_db_connection() as conn:
-                flow_ids = []
-                for config in plan["points"]:
-                    scope = {**doc, "function_point_key": config["key"]}
+                from .signature_workflow_lock_service import lock_signature_materials
+                from .signature_account_lock_service import lock_signature_rows
+                lock_signature_materials(conn, [(doc['material_type'], doc['material_id'])])
+                prepared = []
+                for config in plan['points']:
+                    scope = {**doc, 'function_point_key': config['key']}
                     current_ids = points._binding_ids(conn, scope)
-                    ids = list(dict.fromkeys((current_ids if config.get("mode", "append") == "append" else []) + config["signature_ids"]))
+                    ids = list(dict.fromkeys((current_ids if config.get('mode', 'append') == 'append' else []) + config['signature_ids']))
+                    prepared.append((config, ids))
+                lock_signature_rows(conn, [identifier for _, ids in prepared for identifier in ids])
+                flow_ids = []
+                for config, ids in prepared:
                     flow = points.create_point_flow(conn, user, function_point_key=config["key"],
                         material_type=doc["material_type"], material_id=doc["material_id"], signature_ids=ids,
                         note=plan["note"], snapshot=snapshot, auto_apply=plan["auto_apply"], application_batch_id=batch_id,

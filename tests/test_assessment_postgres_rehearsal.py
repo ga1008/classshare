@@ -197,6 +197,10 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         first, second = result["stages"]
         self.assertEqual(first["agent_authority_migration"], second["agent_authority_migration"])
         self.assertTrue(valid_report_proof(first["agent_authority_migration"]))
+        child_initial = first["agent_authority_migration"]["after"]["authority_tables"]["agent_task_children"]
+        self.assertEqual(0, child_initial["row_count"])
+        self.assertIsNotNone(self.conn.execute(
+            "SELECT to_regclass('public.idx_agent_children_attempt')").fetchone()[0])
         self.assertEqual(first["agent_authority_migration"]["allowed_differences"], first["old_field_differences"])
         self.assertNotIn("DO_NOT_REPORT", json.dumps(result))
         self.assertEqual([(10, 7, "teacher", 7), (11, 8, "teacher", 8)], self.conn.execute(
@@ -213,6 +217,31 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         with self.assertRaises(psycopg.errors.ForeignKeyViolation), self.conn.transaction():
             self.conn.execute("INSERT INTO agent_task_composers(teacher_id,actor_role,actor_id) VALUES(999,'teacher',999)")
         self.conn.rollback()  # Close the read transaction before the next rehearsal.
+
+        # A later startup must preserve admissions even when the runtime reported
+        # completion; these rows are monotone budget consumption, not refundable
+        # leases. Exercise the actual incremental DDL twice with real row bytes.
+        with self.conn.transaction():
+            self.conn.execute("""INSERT INTO agent_task_children
+                (id,task_id,attempt_id,fencing_token,delegation_id,actor_role,actor_id,
+                 request_id,parent_session_id,child_session_id,ordinal,depth,created_at,
+                 runtime_reported_at,runtime_reported_status)
+                VALUES ('child-1',10,'attempt-1',1,'delegation-1','teacher',7,
+                        'request-1','parent-1','session-1',1,1,100,120,'completed'),
+                       ('child-2',10,'attempt-2',2,'delegation-2','teacher',7,
+                        'request-2','parent-2','session-2',2,1,130,NULL,NULL)""")
+            child_rows = self.conn.execute("SELECT * FROM agent_task_children ORDER BY id").fetchall()
+        rerun = rehearse(self.conn, backup=self.backup, progress=lambda _: None)
+        self.assertEqual("ok", rerun["status"])
+        self.assertEqual([], rerun["idempotency_differences"])
+        for stage in rerun["stages"]:
+            authority = stage["agent_authority_migration"]
+            self.assertTrue(valid_report_proof(authority))
+            self.assertEqual(2, authority["before"]["authority_tables"]["agent_task_children"]["row_count"])
+            self.assertEqual(authority["before"]["authority_tables"]["agent_task_children"],
+                             authority["after"]["authority_tables"]["agent_task_children"])
+        self.assertEqual(child_rows, self.conn.execute("SELECT * FROM agent_task_children ORDER BY id").fetchall())
+        self.conn.rollback()
 
         def corrupt(conn):
             apply_assessment_migrations(conn)

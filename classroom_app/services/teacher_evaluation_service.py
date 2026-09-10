@@ -469,6 +469,9 @@ def create_evaluation(
     inherited_from: str | None = None,
 ) -> str:
     ensure_teacher_evaluation_schema(conn)
+    if course_id or class_offering_id:
+        from .teaching_lifecycle_service import lock_teaching_context
+        lock_teaching_context(conn, course_id=course_id, class_offering_id=class_offering_id)
     evaluation_id = _new_id()
     org = teacher_scope(conn, int(teacher["id"]))
     normalized = normalize_evaluation_payload(fields or {}, items or [], analysis)
@@ -688,6 +691,9 @@ def update_attributes(
     class_offering_id: int | None = None,
 ) -> None:
     ensure_teacher_evaluation_schema(conn)
+    from .teaching_lifecycle_service import lock_document_teaching_relink
+    lock_document_teaching_relink(conn, table="teacher_evaluations", document_id=evaluation_id,
+        course_id=course_id, class_offering_id=class_offering_id)
     set_fields: list[str] = []
     params: list[Any] = []
     if title is not None:

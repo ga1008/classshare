@@ -637,6 +637,9 @@ def create_lesson_plan(
     inherited_from: str | None = None,
 ) -> str:
     ensure_lesson_plan_schema(conn)
+    if course_id or class_offering_id:
+        from .teaching_lifecycle_service import lock_teaching_context
+        lock_teaching_context(conn, course_id=course_id, class_offering_id=class_offering_id)
     plan_id = _new_id()
     org = teacher_scope(conn, int(teacher["id"]))
     payload = normalize_lesson_plan_payload({"cover": cover, "sessions": sessions})
@@ -781,6 +784,9 @@ def update_attributes(
     class_offering_id: int | None = None,
 ) -> None:
     ensure_lesson_plan_schema(conn)
+    from .teaching_lifecycle_service import lock_document_teaching_relink
+    lock_document_teaching_relink(conn, table="lesson_plans", document_id=plan_id,
+        course_id=course_id, class_offering_id=class_offering_id)
     fields: list[str] = []
     params: list[Any] = []
     if title is not None:

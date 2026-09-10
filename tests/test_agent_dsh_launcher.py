@@ -227,3 +227,17 @@ class LauncherGatewayTests(unittest.TestCase):
                 connection.shutdown(socket.SHUT_WR)
                 self.assertIn(status, connection.recv(1024).split(b'\r\n')[0])
         self.assertEqual(self.requests, [])
+
+    def test_children_only_allow_exact_admit_and_finish_post_paths(self):
+        child = '/api/agent-bridge/children/12345678-1234-4234-8234-123456789abc'
+        for method, path, status in (
+            ('POST', '/api/agent-bridge/children/admit', 200), ('POST', child + '/finish', 200),
+            ('GET', '/api/agent-bridge/children/admit', 404), ('GET', child + '/finish', 404),
+            ('POST', child + '/finish?task=other', 404), ('POST', child, 404),
+            ('POST', '/api/agent-bridge/children/other/finish', 404),
+        ):
+            connection = http.client.HTTPConnection('127.0.0.1', self.gateway.server_port, timeout=3)
+            connection.request(method, path, '{}' if method == 'POST' else '')
+            self.assertEqual(status, connection.getresponse().status)
+            connection.close()
+        self.assertEqual(2, len(self.requests))

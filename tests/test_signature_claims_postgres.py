@@ -79,7 +79,7 @@ class SignatureClaimsPostgresTests(SignatureDecisionsPostgresTests):
         self.assertEqual('teacher',self.conn.execute('SELECT identity_category FROM teachers WHERE id=7').fetchone()[0])
         self.assertEqual('',self.conn.execute('SELECT identity_category FROM students WHERE id=7').fetchone()[0])
 
-    def test_new_claim_reloads_new_owner_after_waiting_for_transfer(self):
+    def test_new_claim_conflicts_after_transfer_then_fresh_attempt_uses_new_owner(self):
         workflow.review_access_request(self.conn,{'role':'teacher','id':8},10,action='approve')
         def create():
             with self.connection() as conn:
@@ -94,7 +94,11 @@ class SignatureClaimsPostgresTests(SignatureDecisionsPostgresTests):
                 self.conn.commit()
             finally:
                 self.conn.rollback()
-            created=future.result(timeout=5)
+            with self.assertRaises(SignatureServiceError) as raised:
+                future.result(timeout=5)
+            self.assertEqual(409, raised.exception.status_code)
+        # A new transaction gathers the new holder set in the proper order.
+        created=create()
         request_id=created['request']['id']
         self.assertEqual([7],[row[0] for row in self.conn.execute('SELECT reviewer_id FROM signature_access_request_reviewers WHERE request_id=?',(request_id,)).fetchall()])
 

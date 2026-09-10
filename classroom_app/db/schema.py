@@ -197,12 +197,14 @@ def init_database():
                 from .schema_agent_model import ensure_agent_model_schema
                 from .schema_agent_request_budget import ensure_agent_request_budget_schema
                 from .schema_agent_interactions import ensure_agent_interactions_schema
+                from .schema_agent_children import ensure_agent_children_schema
                 from .schema_agent_platform_requests import ensure_agent_platform_requests_schema
 
                 ensure_agent_authority_schema(agent_ext_conn)
                 ensure_agent_model_schema(agent_ext_conn)
                 ensure_agent_request_budget_schema(agent_ext_conn)
                 ensure_agent_interactions_schema(agent_ext_conn)
+                ensure_agent_children_schema(agent_ext_conn)
                 ensure_agent_platform_requests_schema(agent_ext_conn)
                 agent_ext_conn.commit()
             finally:
@@ -337,12 +339,14 @@ def init_database():
             from .schema_agent_model import ensure_agent_model_schema
             from .schema_agent_request_budget import ensure_agent_request_budget_schema
             from .schema_agent_interactions import ensure_agent_interactions_schema
+            from .schema_agent_children import ensure_agent_children_schema
             from .schema_agent_platform_requests import ensure_agent_platform_requests_schema
 
             ensure_agent_authority_schema(conn)
             ensure_agent_model_schema(conn)
             ensure_agent_request_budget_schema(conn)
             ensure_agent_interactions_schema(conn)
+            ensure_agent_children_schema(conn)
             ensure_agent_platform_requests_schema(conn)
             ensure_lesson_plan_schema(conn)
             ensure_assessment_plan_schema(conn)

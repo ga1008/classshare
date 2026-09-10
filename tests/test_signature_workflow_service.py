@@ -17,6 +17,9 @@ class SignatureWorkflowServiceTests(unittest.TestCase):
             """
             CREATE TABLE teachers (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
             CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE assessment_plans (id TEXT PRIMARY KEY, teacher_id INTEGER, title TEXT, signature_revision TEXT);
+            CREATE TABLE material_ai_import_records (id INTEGER PRIMARY KEY, teacher_id INTEGER,
+                parse_status TEXT, signature_revision TEXT, source_file_hash TEXT, document_type_label TEXT, export_payload_json TEXT);
             INSERT INTO teachers VALUES (1, '申请教师', 'one@example.test');
             INSERT INTO teachers VALUES (2, '归属教师', 'two@example.test');
             INSERT INTO teachers VALUES (3, '签名教师', 'three@example.test');

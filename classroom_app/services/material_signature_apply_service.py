@@ -19,6 +19,8 @@ def enqueue_application(conn, flow_id: int) -> None:
 
 
 def validate_application(conn, flow_id: int) -> tuple[dict, dict, list[int]]:
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, flow_ids=[flow_id])
     row = conn.execute("SELECT * FROM signature_point_flows WHERE id = ?", (flow_id,)).fetchone()
     if not row:
         raise signature_service.SignatureServiceError(404, "申请流程不存在。")

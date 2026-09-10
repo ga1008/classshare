@@ -32,6 +32,16 @@ ADMIN_IDENTITIES = {("teacher", 9)}
 
 
 class SignatureIdentityClaimTests(unittest.TestCase):
+    def test_merge_export_guard_checks_nested_legacy_json_without_rewriting_it(self):
+        from classroom_app.services.signature_merge_export_guard_service import assert_no_live_export_references
+        payload='{"export_payload":{"fields":{"dean_signature_ids":["2"]}}}'
+        self.conn.execute('INSERT INTO material_ai_import_records(id,signature_revision,export_payload_json) VALUES(88,?,?)', ('',payload))
+        with self.assertRaises(signature_service.SignatureServiceError) as raised:
+            assert_no_live_export_references(self.conn, [2])
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertIn('88', raised.exception.message)
+        self.assertEqual(payload, self.conn.execute('SELECT export_payload_json FROM material_ai_import_records WHERE id=88').fetchone()[0])
+
     def setUp(self) -> None:
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
@@ -46,6 +56,10 @@ class SignatureIdentityClaimTests(unittest.TestCase):
             INSERT INTO teachers VALUES (2, '归属教师', 'two@example.test', 0, 1);
             INSERT INTO teachers VALUES (9, '平台管理员', 'admin@example.test', 1, 1);
             CREATE TABLE students (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE assessment_plans (id TEXT PRIMARY KEY, teacher_id INTEGER, title TEXT, signature_revision TEXT,
+                examiner_signature_id INTEGER, reviewer_signature_id INTEGER, examiner_signature_ids_json TEXT DEFAULT '[]', reviewer_signature_ids_json TEXT DEFAULT '[]');
+            CREATE TABLE material_ai_import_records (id INTEGER PRIMARY KEY, teacher_id INTEGER,
+                parse_status TEXT, signature_revision TEXT, source_file_hash TEXT, document_type_label TEXT, export_payload_json TEXT);
             INSERT INTO students VALUES (1, '学生甲');
 
             CREATE TABLE electronic_signatures (

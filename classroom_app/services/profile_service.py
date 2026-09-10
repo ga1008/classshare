@@ -708,6 +708,8 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
     role = str(user.get("role") or "").strip().lower()
     user_id = _safe_int(user.get("id"))
     data = _normalize_profile_payload(payload, role=role)
+    from .signature_account_lock_service import lock_identity_accounts
+    lock_identity_accounts(conn, [(role, user_id)])
     table_name = "teachers" if role == "teacher" else "students"
     description_value = data["description"]
     if role == "student":

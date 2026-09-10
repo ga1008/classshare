@@ -98,6 +98,14 @@ class IdentityAppointmentTests(unittest.TestCase):
         ).fetchone()
         return row["identity_category"] or ""
 
+    def test_explicitly_removing_all_appointments_clears_legacy_and_bound_identity(self) -> None:
+        ids.set_identity_appointments(self.conn, 'teacher', 1, [{'identity_category':'dean'}])
+        self.assertEqual('dean', self._account_identity())
+        self.assertEqual([], ids.set_identity_appointments(self.conn, 'teacher', 1, []))
+        self.assertEqual('', self._account_identity())
+        self.assertEqual('', self._signature_identity())
+        self.assertEqual([], ids.effective_identity_categories(self.conn, 'teacher', 1))
+
     def test_set_and_list_roundtrip_with_primary_recompute(self) -> None:
         items = ids.set_identity_appointments(
             self.conn,

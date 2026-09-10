@@ -998,7 +998,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("setAgentMode(true, { showRuntimeWarning: true })", workspace_js)
 
     def test_notification_preview_requires_explicit_recipients_without_sending(self):
-        from classroom_app.routers.agent_tasks import api_preview_agent_task_action
+        from classroom_app.routers.agent_tasks import _preview_agent_task_action
         conn = self._open_agent_task_conn()
         try:
             task_id = self._insert_agent_task_row(conn)
@@ -1007,12 +1007,9 @@ class AgentTaskImprovementTests(unittest.TestCase):
             }, "executed": None}]}
             conn.execute("UPDATE agent_tasks SET result_detail_json=? WHERE id=?", (json.dumps(detail, ensure_ascii=False), task_id))
             conn.commit()
-            class Request:
-                async def json(self):
-                    return {}
             with patch("classroom_app.routers.agent_tasks.get_db_connection", return_value=conn):
                 with self.assertRaises(HTTPException) as error:
-                    asyncio.run(api_preview_agent_task_action(task_id, 0, Request(), {"id": 7, "role": "teacher"}))
+                    _preview_agent_task_action(task_id=task_id, action_index=0, data={}, user={"id": 7, "role": "teacher"})
             self.assertEqual(400, error.exception.status_code)
             self.assertIn("recipient_identities", str(error.exception.detail))
             self.assertIsNone(json.loads(conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id=?", (task_id,)).fetchone()[0])["proposed_actions"][0]["executed"])

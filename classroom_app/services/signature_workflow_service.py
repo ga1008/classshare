@@ -381,6 +381,10 @@ def create_access_request(
     snapshot: dict[str, Any] | None = None,
     notify_reviewers: bool = True,
 ) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(material_type, material_id)])
+    lock_signature_rows(conn, [signature_id])
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以提出签名使用申请。")
@@ -1054,7 +1058,8 @@ def create_claim_request(
     requester's account and syncs identity attributes both ways.
     """
     from .signature_workflow_lock_service import lock_signature_workflows
-    lock_signature_workflows(conn, claim_signature_ids=[signature_id])
+    lock_signature_workflows(conn, claim_signature_ids=[signature_id],
+                             account_holders=[(user.get('role'), user.get('id'))])
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以申请认领签名。")
@@ -1249,7 +1254,8 @@ def _cancel_other_claim_requests(conn, signature_id, *, except_request_id=0):
 def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
     """Bind an unbound signature bearing the actor's own name to their account."""
     from .signature_workflow_lock_service import lock_signature_workflows
-    lock_signature_workflows(conn, claim_signature_ids=[signature_id])
+    lock_signature_workflows(conn, claim_signature_ids=[signature_id],
+                             account_holders=[(user.get('role'), user.get('id'))])
     actor = signature_service.build_signature_actor(conn, user)
     signature = _signature_row(conn, signature_id)
     if not signature_service.can_view_signature(actor, signature):
@@ -1644,6 +1650,10 @@ def authorize_and_consume_signature_use(
     ip: str = "",
     user_agent: str = "",
 ) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(context_type, context_id)], legacy_context=True)
+    lock_signature_rows(conn, [signature_id])
     actor = signature_service.build_signature_actor(conn, user)
     signature = _signature_row(conn, signature_id)
     point = _function_points(conn, [function_point_key])[0]

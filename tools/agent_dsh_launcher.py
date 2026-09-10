@@ -481,10 +481,13 @@ class GatewayHandler(http.server.BaseHTTPRequestHandler):
                    "/api/agent-bridge/file": {"POST"}, "/api/agent-bridge/web": {"POST"},
                    "/api/agent-bridge/mcp": {"GET", "POST", "DELETE"},
                    "/api/agent-bridge/questions": {"POST"},
+                   "/api/agent-bridge/children/admit": {"POST"},
                    "/api/agent-model/chat/completions": {"POST"}, "/api/agent-model/messages": {"POST"}}
         question = re.fullmatch(r"/api/agent-bridge/questions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/cancel)?", parsed.path)
         if question:
             allowed[parsed.path] = {"POST" if question[1] else "GET"}
+        if re.fullmatch(r"/api/agent-bridge/children/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/finish", parsed.path):
+            allowed[parsed.path] = {"POST"}
         if (parsed.scheme or parsed.netloc or parsed.path not in allowed or parsed.query or parsed.fragment
                 or self.command not in allowed.get(parsed.path, ())):
             self.send_error(404)

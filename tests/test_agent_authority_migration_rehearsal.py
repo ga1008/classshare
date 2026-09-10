@@ -190,6 +190,20 @@ class AgentAuthorityMigrationProofTests(unittest.TestCase):
         self.assertEqual("ok", proof.prove(observation, observation)["status"])
         self.assertEqual("failed", proof.prove(observation, self.after)["status"])
 
+    def test_child_admissions_are_empty_on_migration_and_monotone_across_reruns(self):
+        self.assertIn('agent_task_children', self.after['authority_tables'])
+        missing = copy.deepcopy(self.after)
+        missing['authority_tables'].pop('agent_task_children')
+        self.assertEqual('failed', proof.prove(self.before, missing)['status'])
+        admitted = copy.deepcopy(self.after)
+        admitted['authority_tables']['agent_task_children'].update(row_count=1, rows_sha256='d' * 64)
+        self.assertEqual('failed', proof.prove(self.before, admitted)['status'])
+        self.assertEqual('ok', proof.prove(admitted, admitted)['status'])
+        self.assertEqual('failed', proof.prove(admitted, self.after)['status'])
+        rewritten = copy.deepcopy(admitted)
+        rewritten['authority_tables']['agent_task_children']['rows_sha256'] = 'e' * 64
+        self.assertEqual('failed', proof.prove(admitted, rewritten)['status'])
+
     def test_report_validator_recalculates_rules_and_cannot_add_a_whitelist(self):
         original = proof.prove(self.before, self.after)
         for key, value in (("allowed_differences", ["table:agent_tasks"]), ("expected_changes", []), ("blockers", ["ignored"])):

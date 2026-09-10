@@ -346,6 +346,8 @@ def _normalize_post_visibility_settings(
         else:
             if class_id is None:
                 raise ValueError("请选择可见班级")
+        from .teaching_lifecycle_service import lock_teaching_parent
+        lock_teaching_parent(conn, "class", int(class_id))
         return VISIBILITY_CLASS, class_id, []
 
     if normalized_visibility == VISIBILITY_SELECTED:

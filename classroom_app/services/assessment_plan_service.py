@@ -448,6 +448,10 @@ def create_assessment_plan(
 ) -> str:
     ensure_assessment_plan_schema(conn)
     plan_id = _new_id()
+    if course_id or class_offering_id:
+        from .teaching_lifecycle_service import lock_teaching_context
+        lock_teaching_context(conn, course_id=course_id, class_offering_id=class_offering_id)
+    _lock_live_signatures(conn, [value for value in (examiner_signature_id, reviewer_signature_id) if value])
     org = teacher_scope(conn, int(teacher["id"]))
     normalized = normalize_plan_payload(fields or {}, items or [])
     resolved_notes = notes if isinstance(notes, list) and notes else normalized["notes"]
@@ -680,6 +684,9 @@ def update_attributes(
     class_offering_id: int | None = None,
 ) -> None:
     ensure_assessment_plan_schema(conn)
+    from .teaching_lifecycle_service import lock_document_teaching_relink
+    lock_document_teaching_relink(conn, table="assessment_plans", document_id=plan_id,
+        course_id=course_id, class_offering_id=class_offering_id)
     set_fields: list[str] = []
     params: list[Any] = []
     if title is not None:
@@ -738,10 +745,23 @@ def set_signatures(
     column = "examiner_signature_id" if role == "examiner" else "reviewer_signature_id"
     json_column = "examiner_signature_ids_json" if role == "examiner" else "reviewer_signature_ids_json"
     normalized = _signature_ids(signature_ids)
+    from .signature_workflow_lock_service import lock_signature_materials
+    lock_signature_materials(conn, [('assessment_plan', str(plan_id))])
+    _lock_live_signatures(conn, normalized)
     conn.execute(
         f"UPDATE assessment_plans SET {column} = ?, {json_column} = ?, updated_at = ? WHERE id = ?",
         (normalized[0] if normalized else None, _dump(normalized), _now(), str(plan_id)),
     )
+
+
+def _lock_live_signatures(conn, signature_ids):
+    if not signature_ids:
+        return
+    from .signature_account_lock_service import lock_signature_rows
+    from .signature_workflow_service import _signature_row
+    lock_signature_rows(conn, signature_ids)
+    for identifier in signature_ids:
+        _signature_row(conn, identifier)
 
 
 def rotate_signature_revision(conn: sqlite3.Connection, plan_id: str) -> str:

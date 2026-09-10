@@ -11,12 +11,14 @@ P4.0 采用**作业并存模式**：被并课堂的作业整体迁入主课堂�
 from __future__ import annotations
 
 import json
+import hashlib
+import sqlite3
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
-from ..db.schema_offering_merge import ensure_offering_merge_schema
 from .academic_service import china_now
 from .offering_membership_service import (
     offering_class_ids,
@@ -35,7 +37,10 @@ STRATEGY_SESSION_STRUCTURE = "session_structure"  # 课次结构：映射引用�
 STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
 STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
+STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
 STRATEGY_LINKS = "links"                      # 收尾统一处理
+MAX_SNAPSHOT_ROWS = 100000
+MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,6 @@ def _rules() -> dict[str, MergeRule]:
         "smart_attendance_student_advice": ("student_id", "fingerprint"),
         "emoji_usage_stats": ("user_id", "user_role", "emoji_type", "emoji_key"),
         "custom_emojis": ("owner_user_id", "owner_user_role", "file_hash"),
-        "poll_assignments": ("poll_id",),
         "course_material_assignments": ("material_id",),
         "smart_attendance_daily_tasks": ("teacher_id", "task_type", "task_date"),
     }
@@ -111,10 +115,44 @@ def _rules() -> dict[str, MergeRule]:
     rules["session_material_generation_tasks"] = MergeRule(
         STRATEGY_REPOINT, session_ref_column="session_id"
     )
+    for table in ("smart_classroom_checkin_sessions", "smart_classroom_checkin_students"):
+        rules[table] = MergeRule(STRATEGY_REPOINT, session_ref_column="session_id")
+    # These are operational scope columns, not merely historical labels. Moving
+    # them to the combined classroom could silently broaden the audience.
+    rules["blog_posts"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="visible_class_offering_id")
+    rules["polls"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="origin_class_offering_id")
+    rules["poll_assignments"] = MergeRule(STRATEGY_SCOPE_REVIEW)
     return rules
 
 
 MERGE_RULES: dict[str, MergeRule] = _rules()
+
+MERGE_TABLE_LABELS = {
+    "ai_chat_sessions": "AI课堂对话", "ai_psychology_profiles": "AI学习分析", "ai_usage_log": "AI用量历史",
+    "assessment_plans": "考核计划", "assignment_group_bindings": "作业分组", "assignment_classification_revisions": "作业分类历史",
+    "chat_logs": "课堂讨论", "chunked_uploads": "分块上传", "classroom_behavior_events": "课堂行为记录",
+    "classroom_behavior_profiles": "课堂学习画像", "classroom_live_activities": "现场互动", "classroom_live_help_signals": "课堂求助",
+    "classroom_live_questions": "课堂提问", "classroom_todos": "课堂待办", "course_files": "课程文件",
+    "cultivation_alerts": "学习提醒", "cultivation_score_events": "成长积分", "discussion_attachments": "讨论附件",
+    "group_assignment_member_results": "小组作业成员成绩", "group_invitations": "小组邀请", "group_schemes": "分组方案",
+    "learning_stage_exam_attempts": "学习阶段考试", "lesson_plans": "教案", "message_center_notifications": "消息通知",
+    "peer_reviews": "同伴评价", "private_message_ai_jobs": "私信AI回复任务", "private_message_attachments": "私信附件",
+    "private_message_audit_logs": "私信处理记录", "private_messages": "私信", "smart_classroom_checkin_sessions": "课堂考勤场次",
+    "smart_classroom_checkin_students": "学生考勤记录", "smart_classroom_schedule_items": "智慧课堂课表",
+    "student_growth_events": "学生成长记录", "student_learning_path_item_states": "学生学习路径",
+    "student_portfolio_items": "学生作品档案", "study_groups": "学习小组", "teacher_academic_course_exam_items": "教务考试安排",
+    "teacher_academic_exam_roster_items": "教务考试名册", "teacher_academic_exam_roster_students": "教务考试考生",
+    "teacher_evaluations": "教师评学文档", "learning_progress_snapshots": "学习进度", "learning_stage_status": "学习阶段状态",
+    "learning_certificates": "学习证书", "learning_material_progress": "材料学习记录", "cultivation_weekly_snapshots": "每周成长统计",
+    "cultivation_score_event_archives": "成长积分历史", "classroom_retake_students": "重修名单", "classroom_behavior_states": "课堂行为状态",
+    "smart_attendance_student_advice": "考勤建议", "emoji_usage_stats": "课堂表情统计", "custom_emojis": "课堂自定义表情",
+    "poll_assignments": "课堂投票分配", "course_material_assignments": "课堂材料分配", "smart_attendance_daily_tasks": "每日考勤任务",
+    "ai_class_configs": "课堂AI配置", "discussion_mood_snapshots": "讨论状态分析", "chat_log_migrations": "讨论迁移记录",
+    "academic_final_material_batches": "期末材料批次", "assignments": "作业（保留各份作业及其提交）",
+    "grade_publications": "成绩公布历史", "ai_review_reservations": "AI复核计费预约", "class_offering_sessions": "课堂课次",
+    "class_offering_class_links": "合班名单", "class_offering_learning_materials": "课次材料绑定",
+    "session_material_generation_tasks": "课时文档生成任务", "blog_posts": "课堂定向博客", "polls": "课堂发起投票",
+}
 
 # 自身/合并机制表——不参与迁移
 IGNORED_OFFERING_TABLES = {
@@ -141,7 +179,7 @@ def _offering_column_tables(conn: Any) -> dict[str, str]:
             """
             SELECT table_name, column_name FROM information_schema.columns
             WHERE table_schema = 'public'
-              AND column_name IN ('class_offering_id', 'offering_id')
+              AND column_name IN ('class_offering_id', 'offering_id', 'visible_class_offering_id', 'origin_class_offering_id')
             """
         ).fetchall()
         for row in rows:
@@ -155,7 +193,7 @@ def _offering_column_tables(conn: Any) -> dict[str, str]:
         ]
         for table in tables:
             for col in conn.execute(f"PRAGMA table_info({table})").fetchall():
-                if str(col["name"]) in ("class_offering_id", "offering_id"):
+                if str(col["name"]) in ("class_offering_id", "offering_id", "visible_class_offering_id", "origin_class_offering_id"):
                     found[table] = str(col["name"])
     return found
 
@@ -308,11 +346,20 @@ def _load_merge_offerings(
             raise OfferingMergeError("只能合并同一学期的课堂")
     class_seen: set[int] = set()
     for offering in [target, *sources]:
-        ids = set(offering_class_ids(conn, int(offering["id"])))
+        ids = set(_read_offering_class_ids(conn, offering))
         if ids & class_seen:
             raise OfferingMergeError("课堂之间存在重叠班级，不能视为双开合并")
         class_seen |= ids
     return target, sources
+
+
+def _read_offering_class_ids(conn: Any, offering: dict) -> list[int]:
+    """Preview cannot run the membership module's legacy lazy migration."""
+    rows = conn.execute(
+        "SELECT class_id FROM class_offering_class_links WHERE offering_id = ? ORDER BY is_primary DESC, id",
+        (int(offering["id"]),),
+    ).fetchall() if _table_exists(conn, "class_offering_class_links") else []
+    return [int(row["class_id"]) for row in rows] or [int(offering["class_id"])]
 
 
 def _table_exists(conn: Any, table: str) -> bool:
@@ -361,12 +408,10 @@ def build_merge_preview(
     conn: Any, *, teacher_id: int, target_offering_id: int, source_offering_ids: list[int]
 ) -> dict[str, Any]:
     """只读 dry-run：每表迁移行数、去重丢弃数、冲突阻断、课次对齐。"""
-    ensure_offering_merge_schema(conn)
     unregistered = find_unregistered_offering_tables(conn)
     if unregistered:
         raise OfferingMergeError(
-            "存在未登记进合并目录的课堂关联表，为防数据丢失已拒绝合并："
-            + "、".join(unregistered)
+            f"有 {len(unregistered)} 类课堂业务尚未登记合班处理规则，为防数据丢失已拒绝合并，请联系管理员核对。"
         )
     target, sources = _load_merge_offerings(
         conn,
@@ -375,6 +420,7 @@ def build_merge_preview(
         source_offering_ids=source_offering_ids,
     )
     source_ids = [int(s["id"]) for s in sources]
+    before_hash = _snapshot_hash(_snapshot_offerings(conn, [int(target["id"]), *source_ids]))
 
     tables: list[dict[str, Any]] = []
     blockers: list[str] = []
@@ -383,11 +429,18 @@ def build_merge_preview(
         if rule.strategy == STRATEGY_LINKS or not _table_exists(conn, table):
             continue
         source_rows = _count_rows(conn, table, rule.offering_column, source_ids)
+        label = MERGE_TABLE_LABELS.get(table, "课堂关联记录")
         entry: dict[str, Any] = {
             "table": table,
+            "label": label,
             "strategy": rule.strategy,
             "source_rows": source_rows,
         }
+        if source_rows and rule.strategy == STRATEGY_SCOPE_REVIEW:
+            blockers.append(
+                f"{label}：{source_rows} 条记录仍使用原课堂作为读者或参与者范围。"
+                "请先在对应业务核对并调整范围；合班不能替作者扩大可见范围。"
+            )
         if source_rows and rule.strategy == STRATEGY_REPOINT_GUARDED:
             conflicts = _conflict_count(
                 conn, table, rule.offering_column, rule.conflict_key,
@@ -396,8 +449,8 @@ def build_merge_preview(
             entry["conflicts"] = conflicts
             if conflicts:
                 blockers.append(
-                    f"{table}：{conflicts} 条记录在主课堂与被并课堂重复"
-                    f"（按 {'、'.join(rule.conflict_key)}），可能是转班学生的历史数据，请先人工处理"
+                    f"{label}：{conflicts} 条同一学生或业务条目的记录在主课堂与被并课堂重复，"
+                    "可能是转班学生的历史数据，请先人工处理"
                 )
         if source_rows and rule.strategy == STRATEGY_DEDUP_SKIP:
             duplicates = _conflict_count(
@@ -406,12 +459,12 @@ def build_merge_preview(
             )
             entry["dedup_dropped"] = duplicates
             if duplicates:
-                warnings.append(f"{table}：{duplicates} 条与主课堂重复的下发/关联将去重（快照保留）")
+                warnings.append(f"{label}：{duplicates} 条与主课堂重复的下发/关联将去重（快照保留）")
         if source_rows and rule.strategy == STRATEGY_KEEP_TARGET:
-            warnings.append(f"{table}：保留主课堂配置，被并课堂的 {source_rows} 条归档后删除")
+            warnings.append(f"{label}：保留主课堂配置，被并课堂的 {source_rows} 条归档后删除")
         if source_rows and rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
             warnings.append(
-                f"{table}：{source_rows} 条历史 AI 复核预约保留原计费课堂和每日额度，"
+                f"{label}：{source_rows} 条历史 AI 复核预约保留原计费课堂和每日额度，"
                 "仍可按预约编号完成或释放；合并后的新调用使用主课堂额度。"
             )
         if source_rows and rule.strategy == STRATEGY_GRADE_PUBLICATIONS:
@@ -424,12 +477,12 @@ def build_merge_preview(
             ).fetchone()["n"])
             if active_count > 1:
                 blockers.append(
-                    "grade_publications：参与合并的课堂有多份当前公布成绩。"
+                    "成绩公布：参与合并的课堂有多份当前公布成绩。"
                     "请在各课堂的成绩公布页核对并撤回不再保留的公布，剩余最多一份后重试；"
                     "合并不会替您撤回或重新公布成绩。"
                 )
             warnings.append(
-                f"grade_publications：{source_rows} 份公布历史将保留原记录、学生分数、来源和状态，"
+                f"成绩公布：{source_rows} 份公布历史将保留原记录、学生分数、来源和状态，"
                 "版本号按原顺序续接主课堂；原课堂和版本号保存在合并快照。"
             )
         tables.append(entry)
@@ -453,6 +506,31 @@ def build_merge_preview(
         warnings.append(
             f"被并课堂有 {unmatched_sessions} 个课次在主课堂无同序号课次，其材料/记录将挂到主课堂最近课次"
         )
+    if not target_orders:
+        for table, rule in MERGE_RULES.items():
+            if not rule.session_ref_column or not _table_exists(conn, table):
+                continue
+            placeholders = ",".join("?" for _ in source_ids)
+            row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM {table} WHERE {rule.offering_column} IN ({placeholders}) "
+                f"AND {rule.session_ref_column} IS NOT NULL AND {rule.session_ref_column} > 0",
+                tuple(source_ids),
+            ).fetchone()
+            if int(row["n"]):
+                blockers.append(f"{MERGE_TABLE_LABELS.get(table, '课堂记录')}：主课堂没有课次，无法保留源课堂的 {int(row['n'])} 条课次关联。请先安排主课堂课次。")
+    if _table_exists(conn, "session_material_generation_tasks"):
+        participant_ids = [int(target["id"]), *source_ids]
+        placeholders = ",".join("?" for _ in participant_ids)
+        running = conn.execute(
+            f"SELECT COUNT(*) AS n FROM session_material_generation_tasks WHERE class_offering_id IN ({placeholders}) AND status = 'running'",
+            tuple(participant_ids),
+        ).fetchone()
+        if int(running["n"]):
+            blockers.append("参与合班的课堂仍有正在生成的课时文档，请等待生成完成后重新预览；本操作不会取消生成任务。")
+
+    after_hash = _snapshot_hash(_snapshot_offerings(conn, [int(target["id"]), *source_ids]))
+    if before_hash != after_hash:
+        raise OfferingMergeError("预检期间课堂数据已变化，请重新预览后确认")
 
     return {
         "target": {
@@ -468,6 +546,7 @@ def build_merge_preview(
         "blockers": blockers,
         "warnings": warnings,
         "can_execute": not blockers,
+        "review_hash": after_hash,
     }
 
 
@@ -476,37 +555,67 @@ def build_merge_preview(
 # ---------------------------------------------------------------------------
 
 def _snapshot_offerings(conn: Any, offering_ids: list[int]) -> dict[str, Any]:
-    payload: dict[str, Any] = {"offerings": [], "tables": {}}
+    payload: dict[str, Any] = {"offerings": [], "tables": {}, "contexts": {}}
     placeholders = ",".join("?" for _ in offering_ids)
-    payload["offerings"] = [
-        dict(row)
-        for row in conn.execute(
-            f"SELECT * FROM class_offerings WHERE id IN ({placeholders})",
-            tuple(offering_ids),
-        ).fetchall()
-    ]
+    total_rows = 0
+    total_bytes = 0
+
+    def rows(sql, params=()):
+        nonlocal total_rows, total_bytes
+        result = []
+        cursor = conn.execute(sql, params)
+        while True:
+            batch = cursor.fetchmany(200)
+            if not batch:
+                break
+            for item in batch:
+                value = dict(item)
+                total_rows += 1
+                total_bytes += len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+                if total_rows > MAX_SNAPSHOT_ROWS or total_bytes > MAX_SNAPSHOT_BYTES:
+                    raise OfferingMergeError("课堂关联数据超过单次合班快照上限，请分组整理后重试；本次未执行迁移。")
+                result.append(value)
+        return result
+
+    payload["offerings"] = rows(f"SELECT * FROM class_offerings WHERE id IN ({placeholders})", tuple(offering_ids))
     for table, rule in MERGE_RULES.items():
         if not _table_exists(conn, table):
             continue
-        rows = conn.execute(
-            f"SELECT * FROM {table} WHERE {rule.offering_column} IN ({placeholders})",
-            tuple(offering_ids),
-        ).fetchall()
-        if rows:
-            payload["tables"][table] = [dict(row) for row in rows]
+        items = rows(f"SELECT * FROM {table} WHERE {rule.offering_column} IN ({placeholders})", tuple(offering_ids))
+        if items:
+            payload["tables"][table] = items
     if payload["tables"].get("grade_publications") and _table_exists(conn, "grade_publication_students"):
         publication_ids = [int(row["id"]) for row in payload["tables"]["grade_publications"]]
         params = ",".join("?" for _ in publication_ids)
-        payload["tables"]["grade_publication_students"] = [dict(row) for row in conn.execute(
+        payload["tables"]["grade_publication_students"] = rows(
             f"SELECT * FROM grade_publication_students WHERE publication_id IN ({params})",
             tuple(publication_ids),
-        ).fetchall()]
+        )
     if _table_exists(conn, "ai_review_daily_counters"):
-        payload["tables"]["ai_review_daily_counters"] = [dict(row) for row in conn.execute(
+        payload["tables"]["ai_review_daily_counters"] = rows(
             f"SELECT * FROM ai_review_daily_counters WHERE scope_type = 'offering' AND scope_id IN ({placeholders})",
             tuple(str(offering_id) for offering_id in offering_ids),
-        ).fetchall()]
+        )
+    course_ids = sorted({int(item["course_id"]) for item in payload["offerings"]})
+    class_ids = sorted({class_id for item in payload["offerings"] for class_id in _read_offering_class_ids(conn, item)})
+    for name, ids in (("courses", course_ids), ("classes", class_ids)):
+        if ids:
+            params = ",".join("?" for _ in ids)
+            payload["contexts"][name] = rows(f"SELECT * FROM {name} WHERE id IN ({params})", tuple(ids))
+    if class_ids and _table_exists(conn, "students"):
+        params = ",".join("?" for _ in class_ids)
+        payload["contexts"]["student_memberships"] = rows(
+            f"SELECT id,class_id FROM students WHERE class_id IN ({params})", tuple(class_ids))
     return payload
+
+
+def _snapshot_hash(snapshot: dict[str, Any]) -> str:
+    """Bind values and row identities, never just the displayed table counts."""
+    canonical = {}
+    for name, rows in {"class_offerings": snapshot["offerings"], **snapshot["tables"], **snapshot.get("contexts", {})}.items():
+        canonical[name] = sorted(json.dumps(row, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")) for row in rows)
+    policy = {name: vars(rule) for name, rule in sorted(MERGE_RULES.items())}
+    return hashlib.sha256(json.dumps({"rows": canonical, "policy": policy}, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def _session_id_map(conn: Any, target_id: int, source_ids: list[int]) -> dict[int, int]:
@@ -539,6 +648,7 @@ def execute_offering_merge(
     target_offering_id: int,
     source_offering_ids: list[int],
     confirm_class_name: str = "",
+    expected_review_hash: str = "",
 ) -> dict[str, Any]:
     """单事务执行合并；任何失败整体回滚（调用方负责 rollback/commit）。"""
     started = time.monotonic()
@@ -561,11 +671,13 @@ def execute_offering_merge(
         raise OfferingMergeError(f"确认文本不匹配：请输入主课堂班级名「{expected_confirm}」")
 
     source_ids = [int(s["id"]) for s in sources]
-    merge_token = f"merge-{int(target['id'])}-{_now_iso().replace(':', '').replace('-', '')}"
-    begin_immediate_transaction(conn)
+    merge_token = f"merge-{int(target['id'])}-{uuid.uuid4().hex}"
+    if not isinstance(conn, sqlite3.Connection) or not conn.in_transaction:
+        begin_immediate_transaction(conn)
     # Publication writers lock this same offering row before assigning versions.
     # Acquire every participant in stable order, then re-check the live preview.
     if get_configured_db_engine() == "postgres":
+        conn.execute("SELECT id FROM courses WHERE id = ? FOR UPDATE", (int(target["course_id"]),)).fetchone()
         for offering_id in sorted([int(target["id"]), *source_ids]):
             conn.execute("SELECT id FROM class_offerings WHERE id = ? FOR UPDATE", (offering_id,)).fetchone()
         participant_ids = [int(target["id"]), *source_ids]
@@ -574,12 +686,27 @@ def execute_offering_merge(
             f"SELECT id FROM assignments WHERE class_offering_id IN ({params}) ORDER BY id FOR UPDATE",
             tuple(participant_ids),
         ).fetchall()
+        # A running publisher holds a job before its session; creators hold a
+        # session before inserting a job. Never wait in the reverse order.
+        try:
+            class_ids = sorted({class_id for item in [target, *sources] for class_id in _read_offering_class_ids(conn, item)})
+            for class_id in class_ids:
+                conn.execute("SELECT id FROM classes WHERE id = ? FOR UPDATE NOWAIT", (class_id,)).fetchone()
+            if _table_exists(conn, "session_material_generation_tasks"):
+                conn.execute(f"SELECT id FROM session_material_generation_tasks WHERE class_offering_id IN ({params}) ORDER BY id FOR UPDATE NOWAIT", tuple(participant_ids)).fetchall()
+            conn.execute(f"SELECT id FROM class_offering_sessions WHERE class_offering_id IN ({params}) ORDER BY id FOR UPDATE NOWAIT", tuple(participant_ids)).fetchall()
+        except Exception as exc:
+            if str(getattr(exc, "sqlstate", "")) == "55P03":
+                raise OfferingMergeError("课次或生成任务正在更新，请稍后重新预览合班") from exc
+            raise
     preview = build_merge_preview(
         conn, teacher_id=teacher_id, target_offering_id=target_offering_id,
         source_offering_ids=source_ids,
     )
     if not preview["can_execute"]:
         raise OfferingMergeError("课堂数据已变化，预检存在阻断项：" + "；".join(preview["blockers"]))
+    if expected_review_hash and expected_review_hash != preview["review_hash"]:
+        raise OfferingMergeError("课堂数据已变化，本次确认已失效，请重新预览合班")
     target, sources = _load_merge_offerings(
         conn, teacher_id=teacher_id, target_offering_id=target_offering_id,
         source_offering_ids=source_ids,

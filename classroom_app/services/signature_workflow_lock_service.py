@@ -7,7 +7,7 @@ decision row. Locks are per material/flow/request; unrelated documents proceed.
 from .signature_service import SignatureServiceError
 
 
-def lock_signature_materials(conn, references):
+def lock_signature_materials(conn, references, *, legacy_context=False):
     """Lock fixed, known material tables before binding or invalidation writes."""
     materials = set()
     for material_type, identifier in references:
@@ -16,17 +16,21 @@ def lock_signature_materials(conn, references):
             try:
                 key = str(int(identifier)) if material_type == 'academic_final_material' else str(identifier)
             except (TypeError, ValueError) as exc:
+                if legacy_context:
+                    # Historical generic usage events can have descriptive
+                    # context ids. They are not references to material rows.
+                    continue
                 raise SignatureServiceError(409, '签章材料编号无效，请核对申请记录。') from exc
             materials.add((table, key))
     for table, identifier in sorted(materials):
         conn.execute(f'UPDATE {table} SET id=id WHERE id=?', (identifier,))
 
 
-_REQUEST_COLUMNS = 'id,flow_id,snapshot_id,signature_id,request_kind,material_type,material_id'
+_REQUEST_COLUMNS = 'id,flow_id,snapshot_id,signature_id,request_kind,requester_role,requester_id,material_type,material_id'
 _FLOW_COLUMNS = 'id,snapshot_id,material_type,material_id'
 
 
-def lock_signature_workflows(conn, *, request_ids=(), flow_ids=(), claim_signature_ids=()):
+def lock_signature_workflows(conn, *, request_ids=(), flow_ids=(), claim_signature_ids=(), account_holders=()):
     requested = sorted(set(int(value) for value in request_ids if int(value) > 0))
     flows = set(int(value) for value in flow_ids if int(value) > 0)
     requests = {}
@@ -57,11 +61,24 @@ def lock_signature_workflows(conn, *, request_ids=(), flow_ids=(), claim_signatu
         rows = conn.execute(f'SELECT material_type,material_id FROM signature_material_snapshots WHERE id IN ({marks})', tuple(snapshots)).fetchall()
         for row in rows:
             materials.add((row['material_type'],row['material_id']))
-    lock_signature_materials(conn, materials)
     claims = {int(value) for value in claim_signature_ids if int(value)>0}
     claims.update(int(row['signature_id']) for row in requests.values() if row['request_kind']=='claim')
-    for identifier in sorted(claims):
-        conn.execute('UPDATE electronic_signatures SET id=id WHERE id=?', (identifier,))
+    from .signature_account_lock_service import prepare_signature_accounts, lock_signature_rows, assert_signature_bindings
+    holders = [*account_holders, *((row['requester_role'], row['requester_id'])
+                for row in requests.values() if row['request_kind']=='claim')]
+    before_bindings = prepare_signature_accounts(conn, claims, additional_holders=holders) if claims else {}
+    item_rows = []
+    if flows:
+        marks = ','.join('?' for _ in flows)
+        item_rows = [dict(row) for row in conn.execute(
+            f'SELECT id,flow_id,signature_id,request_id FROM signature_point_flow_items WHERE flow_id IN ({marks}) ORDER BY id',
+            tuple(sorted(flows)),
+        ).fetchall()]
+    signatures = claims | {int(row['signature_id']) for row in requests.values()}
+    signatures.update(int(row['signature_id']) for row in item_rows)
+    lock_signature_materials(conn, materials)
+    lock_signature_rows(conn, signatures)
+    assert_signature_bindings(conn, before_bindings)
     if claims:
         marks = ','.join('?' for _ in claims)
         # A claim transfer cancels its competitors. Lock them only after their
@@ -85,3 +102,11 @@ def lock_signature_workflows(conn, *, request_ids=(), flow_ids=(), claim_signatu
         after = conn.execute(f'SELECT {_REQUEST_COLUMNS} FROM signature_access_requests WHERE id=?', (identifier,)).fetchone()
         if after is None or dict(after) != before:
             raise SignatureServiceError(409, '签章申请材料已变化，请重新读取后操作。')
+    if flows:
+        marks = ','.join('?' for _ in flows)
+        current_items = [dict(row) for row in conn.execute(
+            f'SELECT id,flow_id,signature_id,request_id FROM signature_point_flow_items WHERE flow_id IN ({marks}) ORDER BY id',
+            tuple(sorted(flows)),
+        ).fetchall()]
+        if current_items != item_rows:
+            raise SignatureServiceError(409, '签章流程的签名集合已变化，请重新读取后操作。')

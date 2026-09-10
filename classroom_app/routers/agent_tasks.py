@@ -504,6 +504,19 @@ async def api_preview_agent_task_action(
     user: dict = Depends(_current_agent_user),
 ):
     """Preview public proposal parameters and issue a short-lived confirmation."""
+    from starlette.concurrency import run_in_threadpool
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return await run_in_threadpool(_preview_agent_task_action, task_id=task_id,
+                                  action_index=action_index, data=data, user=user)
+
+
+def _preview_agent_task_action(*, task_id, action_index, data, user):
     from ..services.agent_action_registry import (
         AGENT_ACTION_DEFINITIONS,
         ensure_action_actor_role,
@@ -513,12 +526,6 @@ async def api_preview_agent_task_action(
     from ..services.agent_user_confirmation_actions import USER_CONFIRMATION_ACTION_DEFINITIONS, prepare_user_confirmation
 
     teacher_id = _teacher_id(user)
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
     edited_params = data.get("params") if isinstance(data.get("params"), dict) else {}
 
     with get_db_connection() as conn:

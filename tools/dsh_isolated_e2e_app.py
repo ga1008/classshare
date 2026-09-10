@@ -9,13 +9,17 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.dsh_e2e_cohort import names
 
 
 def guard():
     from urllib.parse import urlsplit
     url=urlsplit(os.environ.get('DATABASE_URL',''))
-    assert url.hostname=='lanshare-dsh-e2e-pg' and url.path=='/lanshare_dsh_e2e' and url.username=='e2e_app'
-    assert os.environ['MAIN_DATA_DIR']=='/e2e-data'
+    cohort=names(os.environ.get('DSH_E2E_COHORT'))
+    if url.hostname!=cohort['pg'] or url.path!='/'+cohort['database'] or url.username!='e2e_app':
+        raise RuntimeError('App helper must use its exact unprivileged cohort database')
+    if os.environ.get('MAIN_DATA_DIR')!='/e2e-data':
+        raise RuntimeError('App helper must use its isolated data mount')
 
 
 def seed():
@@ -46,6 +50,11 @@ def execute(kind):
     from classroom_app.database import get_db_connection
     from agent_task_worker import _run_once
     fixture=json.loads(Path('/e2e-private/fixture.json').read_text())[kind]
+    # One actor execution per cohort. A failed/uncertain run is preserved and
+    # must not silently create another billed task under the same evidence name.
+    marker=Path('/e2e-data')/('e2e-'+kind+'-started.json')
+    with marker.open('x',encoding='utf-8') as stream:
+        json.dump({'actor':kind,'cohort':os.environ['DSH_E2E_COHORT'],'started_at':time.time()},stream)
     instructions={
         'teacher':'这是隔离环境的端到端验收。请立即实际执行一次 create_blog_draft，标题严格为 DSH-E2E-Teacher-Draft，正文为“DSH 官方 Agent 隔离验收草稿”，不要发布。通过平台能力目录确认参数，并用 platform_read 读取我本人的课堂列表。把草稿业务回执和课堂读取结果写入 workspace 文件 e2e-teacher.md。不要仅提案；这是已授权的实际草稿创建请求。所有写操作仅限此草稿。',
         'student':'这是隔离环境的端到端验收。请实际通过平台能力目录和 platform_read 读取我本人的课堂列表 classroom.my_courses 以及我的消息统计 messages.summary。将真实返回的结果和当前学生身份写入 workspace 文件 e2e-student.md，简短汇报。不要写入任何平台业务数据，不要请求管理员数据。',
@@ -92,6 +101,7 @@ def report():
                     item['actual_business_rows']=[dict(row) for row in conn.execute("SELECT school_code,school_name,is_active FROM organization_schools WHERE school_code='dsh-e2e-created'").fetchall()]
                 else:
                     item['business_write_receipts']=conn.execute('SELECT count(*) FROM agent_action_executions WHERE task_id=?',(task_id,)).fetchone()[0]
+                    item['http_mutation_admissions']=conn.execute('SELECT count(*) FROM agent_platform_requests WHERE task_id=? AND mutates=1',(task_id,)).fetchone()[0]
                 item['source_session_bound']=bool(conn.execute('SELECT source_session_hash FROM agent_tasks WHERE id=?',(task_id,)).fetchone()[0])
             item['completion_kind']=detail.get('completion_kind')
             item['tool_receipt_summary']=[{'title':r.get('title'),'status':r.get('status'),'kind':r.get('kind')} for r in detail.get('tool_receipts',[])]
@@ -106,11 +116,11 @@ def report():
                 item['checks']['own_single_unpublished_draft']=len(item['actual_business_rows'])==1 and item['actual_business_rows'][0]['author_identity']=='teacher:900001' and item['actual_business_rows'][0]['status']=='draft'
             elif kind=='admin':
                 item['checks']['single_synthetic_school']=len(item['actual_business_rows'])==1 and item['actual_business_rows'][0]['school_name']=='DSH E2E Created School'
-            else: item['checks']['read_only_student']=item['business_write_receipts']==0
+            else: item['checks']['read_only_student']=item['business_write_receipts']==0 and item['http_mutation_admissions']==0
             result[kind]=item
     Path('/e2e-data/e2e-verification.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
     print(json.dumps(result,ensure_ascii=False))
-    if not all(all(item['checks'].values()) for item in result.values()):
+    if set(result)!={'teacher','student','admin'} or not all(all(item['checks'].values()) for item in result.values()):
         raise RuntimeError('Isolated verification failed; inspect evidence')
 
 
@@ -118,14 +128,16 @@ def boundaries():
     import httpx
     from classroom_app.database import get_db_connection
     fixture=json.loads(Path('/e2e-private/fixture.json').read_text())
+    teacher_id=int(json.loads(Path('/e2e-data/e2e-teacher-evidence.json').read_text())['task']['id'])
+    student_id=int(json.loads(Path('/e2e-data/e2e-student-evidence.json').read_text())['task']['id'])
     result={'checks':{}}
     with httpx.Client(base_url='http://127.0.0.1:8000',timeout=15) as client:
         user=fixture['student']
         assert client.post('/api/student/login/password',data={'identifier':user['identifier'],'password':user['password']}).status_code==200
-        own=client.get('/api/agent-tasks/2/artifacts/e2e-student.md')
-        other=client.get('/api/agent-tasks/1/artifacts/e2e-teacher.md')
-        summary=client.get('/api/agent-tasks/1').json()['task']
-        result['checks']['student_downloads_own_file']=own.status_code==200 and own.content==Path('/e2e-data/agent_tasks/tasks/2/e2e-student.md').read_bytes()
+        own=client.get(f'/api/agent-tasks/{student_id}/artifacts/e2e-student.md')
+        other=client.get(f'/api/agent-tasks/{teacher_id}/artifacts/e2e-teacher.md')
+        summary=client.get(f'/api/agent-tasks/{teacher_id}').json()['task']
+        result['checks']['student_downloads_own_file']=own.status_code==200 and own.content==(Path('/e2e-data/agent_tasks/tasks')/str(student_id)/'e2e-student.md').read_bytes()
         result['checks']['same_id_other_role_file_denied']=other.status_code==403
         result['checks']['same_id_other_role_private_detail_hidden']=summary['is_owner'] is False and not set(summary)&{'private_instruction','result_detail','events','context_snapshot'}
     with get_db_connection() as conn:

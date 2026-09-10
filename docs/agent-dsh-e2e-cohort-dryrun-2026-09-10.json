@@ -1,0 +1,46 @@
+{
+  "checked_at": "2026-09-10T13:17:43.553534+00:00",
+  "scope": "synthetic local parameter/dry-run validation only; no release pins are claimed",
+  "tests_passed": 7,
+  "server_access": false,
+  "docker_started": false,
+  "model_calls": 0,
+  "dry_run_plan": {
+    "name": "checkpoint-review",
+    "port": 18002,
+    "app_image": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "dsh_image": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "archive_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "manifest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "profile_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "expected_key_id": 99,
+    "root": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-checkpoint-review",
+    "inputs": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-inputs/checkpoint-review",
+    "pg": "lanshare-dsh-e2e-checkpoint-review-pg",
+    "app": "lanshare-dsh-e2e-checkpoint-review-app",
+    "copy": "lanshare-dsh-e2e-checkpoint-review-copy",
+    "network": "lanshare_dsh_e2e_checkpoint_review",
+    "database": "lanshare_dsh_e2e_checkpoint_review",
+    "bind": "127.0.0.1:18002:8000",
+    "production_database_writes": false,
+    "production_user_sessions": false,
+    "old_e2e_path_preserved": "/lanshare/.codex-temp/dsh-migration-20260910/e2e",
+    "paid_phases_require_explicit_flag": [
+      "teacher",
+      "student",
+      "admin"
+    ],
+    "phase": "prepare",
+    "dry_run": true,
+    "docker_commands_run": 0,
+    "production_reads": 0,
+    "model_requests": 0
+  },
+  "source_sha256": {
+    "tools/dsh_e2e_cohort.py": "5a6c5995c2c4928795cffe00c0fde37939dd03601776f8f646c4d70ff1daaef0",
+    "tools/dsh_isolated_e2e.py": "d7c84d37cf3b0750f0e97eee371747107af90e6114d497d0e3b450355f11bed1",
+    "tools/dsh_isolated_e2e_app.py": "614a3e7fea4f1b0e1e9e1a18ed32a6670d6ac1bac8ffcc46d93ee6fe15a473a0",
+    "tests/test_dsh_e2e_cohort.py": "1b0ff373f2692a76736b5178c4e1287ff241692a68acfd5002d4dfdb762fe698"
+  }
+}

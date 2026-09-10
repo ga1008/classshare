@@ -2173,7 +2173,7 @@ async function executeAgentAction(button) {
             body: JSON.stringify({ params }),
         });
         if (preview.execution_mode === 'user_confirmation') {
-            const { openAgentUserConfirmation } = await import('./agent_user_confirmation.js');
+            const { openAgentUserConfirmation } = await import('./agent_user_confirmation.js?v=20260910-signature-confirmation');
             await openAgentUserConfirmation({ taskId, actionIndex, preview, apiJson,
                 onComplete: async (data) => {
                     if (data.task) renderTaskDetail(data.task, { autoScroll: true });

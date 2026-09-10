@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "review_scope": "当前中间A/B/C审查快照：A授权读/事务写，B普通HTTP观察，C本人安全输入/业务确认、授权文本抽取与受限任务文件字节复制、异步领域核验。只计明确已接入参数/动作/来源；文件传输不是任意CRUD，不代表完整Web路由或生产全身份验收。后续源码变化仍须重核。",
+  "review_scope": "本地检查点0283be34之后的最终合并复核：A授权读/事务写，B普通HTTP观察，C本人安全输入与五项业务确认、文本/字节文件传输。每条仅覆盖列明参数/动作与当前原业务权限；4个新增C不等于整条Web路由、全部角色或生产DSH已验收。历史签章168轮保留当时SHA，后续源码另列实际增量/合并测试，跳过不计实测。",
   "adapters": [
     {
       "capability_key": "assign_exam_paper",
@@ -19,7 +19,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "真实试卷可用权限/课堂教师、完整评分标准、classification与通知/截止任务；同卷同课堂防重复。 其余Web行为与生产DSH验收不由此记录宣称完成。",
       "source_files": [
@@ -29,7 +30,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -61,7 +62,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -221,7 +222,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅当前教师有权审核的答卷、试卷及附件标识；分页最多50。学生和撤权主体拒绝；不是开放学生答案/题库或全部管理操作。",
       "source_files": [
@@ -231,7 +233,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -271,7 +273,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -301,7 +303,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
-        "tests/test_agent_material_actions.py"
+        "tests/test_agent_material_actions.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常材料编辑/课堂管理权限；属性expected_updated_at；首页或课时绑定列表expected_binding_version；原主列同步、并发冲突409、所有引用同事务。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -311,7 +314,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -1461,13 +1464,14 @@
       "verification": [
         "tests/test_agent_platform_broker.py",
         "tests/test_agent_platform_writes.py:CoreBrokerReadTests",
-        "静态AST核对method/path/handler唯一挂载；不是每条路由全部身份端到端验收。"
+        "静态AST核对method/path/handler唯一挂载；不是每条路由全部身份端到端验收。",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "仅registry审核参数。生产DSH逐身份端到端验收尚待完成；其余Web参数/操作仍needs_adapter。",
+      "limitations": "仅registry审核参数。生产DSH逐身份端到端验收尚待完成；其余Web参数/操作仍needs_adapter。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
-          "sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8"
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -1793,9 +1797,11 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "仅new/manual草稿；正常classification初始revision与schedule服务；发布/提交/批改仍needs_adapter。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
+      "limitations": "仅new/manual草稿；正常classification初始revision与schedule服务；发布/提交/批改仍needs_adapter。 此记录不宣称整个Web路由的参数和所有写法已覆盖。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/homework_parts/assignments.py",
@@ -1803,7 +1809,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -1823,7 +1829,7 @@
         },
         {
           "file": "classroom_app/services/assignment_creation_service.py",
-          "sha256": "16c009dd6a28e843356c9764f6b5b28a2cd6f6ba91324197f56b3dd5b08b7c33"
+          "sha256": "6f0244d61ee54fd8f51bf319e52b097f7a5d6c01b0ec6079fa0481f7df935803"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -1851,7 +1857,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "评论/回复复用normal可见性、限流、通知；@管家通过同事务outbox；评论修改/删除未覆盖。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -1861,7 +1868,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -1909,7 +1916,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "通过normal create_post创建草稿或新发布；编辑/删除/审核不是此动作；@管家是提交后的独立scheduler outbox。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -1919,7 +1927,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -1968,7 +1976,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "创建本人试卷草稿/新版本，真实标准答案与评分配置；不等于布置。 其余Web行为与生产DSH验收不由此记录宣称完成。",
       "source_files": [
@@ -1978,7 +1987,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -2010,7 +2019,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -2041,7 +2050,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2051,7 +2061,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2110,7 +2120,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2120,7 +2131,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2179,7 +2190,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2189,7 +2201,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2249,13 +2261,15 @@
       "receipt": "业务修改、操作回执、提案marker、目标会话及Agent授权撤销同事务；回执无口令及口令hash。",
       "verification": [
         "tests/test_agent_secure_confirmation_http.py:6项真实HTTP/SQL回归",
-        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾"
+        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾",
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "MCP只可准备公共提案，不能直接执行或读取密码。口令只保留当前输入框，关闭/成功清空；普通Web账户权限及新session确认限制全部保留。生产逐身份验收待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_tasks.py",
-          "sha256": "c4d67bdfef913ff39ccc71eb85e88598ed1c31d473e867a8419d13be93f88cd3"
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -2263,7 +2277,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2291,7 +2305,7 @@
         },
         {
           "file": "static/js/ai_workspace_widget.js",
-          "sha256": "f53ebda87efe6edf15489ab393f68bfe37ba5003b37f0537e20d8e92fd075ed8"
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
         },
         {
           "file": "tests/e2e/components/agent-questions.spec.ts",
@@ -2326,7 +2340,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2336,7 +2351,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2391,7 +2406,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2401,7 +2417,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2442,6 +2458,122 @@
       ]
     },
     {
+      "capability_key": "delete_empty_class",
+      "method": "DELETE",
+      "path": "/api/manage/classes/{class_id}",
+      "handler": "classroom_app.routers.manage_parts.classes_courses_classes.api_delete_class",
+      "domain": "teaching",
+      "roles": [
+        "teacher"
+      ],
+      "resource_boundary": "当前 teacher 身份复用 teacher_can_manage_class：班级创建教师或实时超管；学校/学院等管理身份不自动代替这条原业务管理规则，无学生入口。仅无学生、课堂、定向内容及其他阻断引用的班级，锁父资源后复核完整影响版本与权限。",
+      "receipt": "本人逐项核对影响和警告、填写说明并手工输入完整班级名；删除及原外键处置与 fresh-user 回执、提案标记同事务。已完成相同声明仅返回既有回执。",
+      "limitations": "仅空班级删除，不包含有学生、课堂等引用的强制删除，不包含课堂删除。保留/解除教务历史引用按正常 Web 审核规则；超限或未知引用阻断，不能代用户填写确认。预览或局部参数适配不代表整条路由覆盖，生产 DSH 未验收。 新增教学父资源/上下文锁的原生PostgreSQL竞争验收尚未完成，仍是上线前阻断。",
+      "kind": "user_confirmation",
+      "requires_super_admin": false,
+      "guarantee": "user_only_authenticated_confirmation",
+      "source_files": [
+        {
+          "file": "classroom_app/routers/agent_tasks.py",
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
+        },
+        {
+          "file": "classroom_app/routers/manage_parts/classes_courses_classes.py",
+          "sha256": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98"
+        },
+        {
+          "file": "classroom_app/services/account_credentials_service.py",
+          "sha256": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2"
+        },
+        {
+          "file": "classroom_app/services/agent_action_registry.py",
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
+        },
+        {
+          "file": "classroom_app/services/agent_actor_service.py",
+          "sha256": "5b1d7160738b21dd8a418dfb94758821fb9c7f3178dc2af5da4dd9834410eda3"
+        },
+        {
+          "file": "classroom_app/services/agent_business_confirmation_service.py",
+          "sha256": "6ff06ec22c2ea5474f155c43ee4f399b21b0b65290d745d12b65b7e3fd50f26e"
+        },
+        {
+          "file": "classroom_app/services/agent_operation_service.py",
+          "sha256": "8a683e4940642eca31cba49651631eb0285dd1aab466341105dd15d60d0e5346"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_actions.py",
+          "sha256": "51b8b609372d51c246eda6f69cac009bc10c60023ae00d6155f7999458601c2f"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_service.py",
+          "sha256": "77dcae20e104a4c5af97bb027e45672d617401d1e935c01cb488933385ba96b1"
+        },
+        {
+          "file": "classroom_app/services/agent_user_confirmation_actions.py",
+          "sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3"
+        },
+        {
+          "file": "classroom_app/services/resource_access_service.py",
+          "sha256": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
+        },
+        {
+          "file": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29"
+        },
+        {
+          "file": "docs/agent-teaching-destructive-lifecycle-audit-2026-09-10.md",
+          "sha256": "cf764df8ca0d4fb1b6bd12fa17baa340dedffa67b05afc7e4ef3d20c6e6d50cc"
+        },
+        {
+          "file": "docs/agent-teaching-lifecycle-verification-2026-09-10.json",
+          "sha256": "b0709b01186e307d4ce0b51ae060fab111e843e1c1fc13f5c7daa3f4e3d96b2a"
+        },
+        {
+          "file": "static/js/agent_user_confirmation.js",
+          "sha256": "26aa3809310edaa224c87c8fa2e9198537d28d385c556bddf4b988e04f322a43"
+        },
+        {
+          "file": "static/js/ai_workspace_widget.js",
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
+        },
+        {
+          "file": "static/js/teaching_lifecycle_review.js",
+          "sha256": "15690fca0b9bd2a97b8d7b4d85aa4c95dca83f6aa9b57b00d7a81551564ad281"
+        },
+        {
+          "file": "tests/e2e/components/agent-user-confirmation.spec.ts",
+          "sha256": "4cb92eca1d70ca60e86ac96c9852c573ac231dc624cac89de86301668dafea83"
+        },
+        {
+          "file": "tests/test_agent_action_int_list.py",
+          "sha256": "f3b8c8ffc7419c242d5cb6b4dd65f151554bba02596061274c5a68a2df3bd65f"
+        },
+        {
+          "file": "tests/test_agent_teaching_confirmation.py",
+          "sha256": "e3de69283157872c45ea9a633cff5e4d533e2a3690c4373b45f02a20722e13ad"
+        },
+        {
+          "file": "tests/test_offering_merge_confirmation.py",
+          "sha256": "79203a4d20f6c7671aebada029108a9a69e11311bf16a51a33fd05f4ffd0c3e5"
+        },
+        {
+          "file": "tests/test_teaching_lifecycle_http.py",
+          "sha256": "32cf6e961e61422691feda5ac92b94c9fb643c0fcd77c2a46114ef9c6be11a32"
+        }
+      ],
+      "verification": [
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "tests/test_agent_teaching_confirmation.py",
+        "tests/test_offering_merge_confirmation.py",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
+      ]
+    },
+    {
       "capability_key": "delete_organization_college",
       "kind": "write",
       "method": "DELETE",
@@ -2456,7 +2588,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2466,7 +2599,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2525,7 +2658,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2535,7 +2669,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2594,7 +2728,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -2604,7 +2739,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -2649,6 +2784,122 @@
       ]
     },
     {
+      "capability_key": "delete_unreferenced_course",
+      "method": "DELETE",
+      "path": "/api/manage/courses/{course_id}",
+      "handler": "classroom_app.routers.manage_parts.classes_courses_courses.api_delete_course",
+      "domain": "teaching",
+      "roles": [
+        "teacher"
+      ],
+      "resource_boundary": "当前 teacher 身份复用 teacher_can_manage_course：课程创建教师或实时超管；学校/学院等管理身份不自动代替这条原业务管理规则，无学生入口。锁课程后重核课堂、作业、文件、学习文档包和教学文档等引用及完整影响版本。",
+      "receipt": "本人逐项接受警告、填写说明并手工输入完整课程名；课程及原课次模板删除、历史外键处置、fresh-user 账本和提案标记同事务，失败整体回滚。",
+      "limitations": "仅未被业务引用的课程；不删除共享材料文件，不连带强制删除课堂或学习文档。教务历史解除关联须本人核对，后续教务同步可能重建课程；未知或超限引用阻断。模型无法提交本人确认，局部适配和本地回归不代表生产全路由验收。 新增教学父资源/上下文锁的原生PostgreSQL竞争验收尚未完成，仍是上线前阻断。",
+      "kind": "user_confirmation",
+      "requires_super_admin": false,
+      "guarantee": "user_only_authenticated_confirmation",
+      "source_files": [
+        {
+          "file": "classroom_app/routers/agent_tasks.py",
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
+        },
+        {
+          "file": "classroom_app/routers/manage_parts/classes_courses_courses.py",
+          "sha256": "789d4d5f96cb1bbb89c61c6ac70d7503fb16779d35bb531d5d50904e25d79ff2"
+        },
+        {
+          "file": "classroom_app/services/account_credentials_service.py",
+          "sha256": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2"
+        },
+        {
+          "file": "classroom_app/services/agent_action_registry.py",
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
+        },
+        {
+          "file": "classroom_app/services/agent_actor_service.py",
+          "sha256": "5b1d7160738b21dd8a418dfb94758821fb9c7f3178dc2af5da4dd9834410eda3"
+        },
+        {
+          "file": "classroom_app/services/agent_business_confirmation_service.py",
+          "sha256": "6ff06ec22c2ea5474f155c43ee4f399b21b0b65290d745d12b65b7e3fd50f26e"
+        },
+        {
+          "file": "classroom_app/services/agent_operation_service.py",
+          "sha256": "8a683e4940642eca31cba49651631eb0285dd1aab466341105dd15d60d0e5346"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_actions.py",
+          "sha256": "51b8b609372d51c246eda6f69cac009bc10c60023ae00d6155f7999458601c2f"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_service.py",
+          "sha256": "77dcae20e104a4c5af97bb027e45672d617401d1e935c01cb488933385ba96b1"
+        },
+        {
+          "file": "classroom_app/services/agent_user_confirmation_actions.py",
+          "sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3"
+        },
+        {
+          "file": "classroom_app/services/resource_access_service.py",
+          "sha256": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
+        },
+        {
+          "file": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29"
+        },
+        {
+          "file": "docs/agent-teaching-destructive-lifecycle-audit-2026-09-10.md",
+          "sha256": "cf764df8ca0d4fb1b6bd12fa17baa340dedffa67b05afc7e4ef3d20c6e6d50cc"
+        },
+        {
+          "file": "docs/agent-teaching-lifecycle-verification-2026-09-10.json",
+          "sha256": "b0709b01186e307d4ce0b51ae060fab111e843e1c1fc13f5c7daa3f4e3d96b2a"
+        },
+        {
+          "file": "static/js/agent_user_confirmation.js",
+          "sha256": "26aa3809310edaa224c87c8fa2e9198537d28d385c556bddf4b988e04f322a43"
+        },
+        {
+          "file": "static/js/ai_workspace_widget.js",
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
+        },
+        {
+          "file": "static/js/teaching_lifecycle_review.js",
+          "sha256": "15690fca0b9bd2a97b8d7b4d85aa4c95dca83f6aa9b57b00d7a81551564ad281"
+        },
+        {
+          "file": "tests/e2e/components/agent-user-confirmation.spec.ts",
+          "sha256": "4cb92eca1d70ca60e86ac96c9852c573ac231dc624cac89de86301668dafea83"
+        },
+        {
+          "file": "tests/test_agent_action_int_list.py",
+          "sha256": "f3b8c8ffc7419c242d5cb6b4dd65f151554bba02596061274c5a68a2df3bd65f"
+        },
+        {
+          "file": "tests/test_agent_teaching_confirmation.py",
+          "sha256": "e3de69283157872c45ea9a633cff5e4d533e2a3690c4373b45f02a20722e13ad"
+        },
+        {
+          "file": "tests/test_offering_merge_confirmation.py",
+          "sha256": "79203a4d20f6c7671aebada029108a9a69e11311bf16a51a33fd05f4ffd0c3e5"
+        },
+        {
+          "file": "tests/test_teaching_lifecycle_http.py",
+          "sha256": "32cf6e961e61422691feda5ac92b94c9fb643c0fcd77c2a46114ef9c6be11a32"
+        }
+      ],
+      "verification": [
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "tests/test_agent_teaching_confirmation.py",
+        "tests/test_offering_merge_confirmation.py",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
+      ]
+    },
+    {
       "capability_key": "exam.catalog",
       "kind": "read",
       "method": "GET",
@@ -2665,7 +2916,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅当前教师有权审核的答卷、试卷及附件标识；分页最多50。学生和撤权主体拒绝；不是开放学生答案/题库或全部管理操作。",
       "source_files": [
@@ -2675,7 +2927,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -2715,7 +2967,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -2748,7 +3000,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅当前教师有权审核的答卷、试卷及附件标识；分页最多50。学生和撤权主体拒绝；不是开放学生答案/题库或全部管理操作。",
       "source_files": [
@@ -2758,7 +3011,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -2798,7 +3051,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -2835,13 +3088,14 @@
         "tests/test_agent_scoped_file_types.py:10组真实普通下载HTTP/Bridge/MCP/SQL/文档抽取与读取后撤权回归",
         "tests/test_agent_file_snapshots.py",
         "tests/test_agent_continuation.py",
-        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收"
+        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "四类平台ID与任务相对路径五选一；这里只计该平台ID来源。仅有界文本或文档抽取，不将二进制base64送入模型，不代表文件已下载进runner；读取后来源/权限变化拒绝返回内容。Windows symlink/FIFO环境跳过由独立Linux原语证据补充，生产逐身份验收仍待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -2926,13 +3180,15 @@
         "tests/test_agent_scoped_file_types.py:10组真实普通下载HTTP/Bridge/MCP/SQL/文档抽取与读取后撤权回归",
         "tests/test_agent_file_snapshots.py",
         "tests/test_agent_continuation.py",
-        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收"
+        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "四类平台ID与任务相对路径五选一；这里只计该平台ID来源。仅有界文本或文档抽取，不将二进制base64送入模型，不代表文件已下载进runner；读取后来源/权限变化拒绝返回内容。Windows symlink/FIFO环境跳过由独立Linux原语证据补充，生产逐身份验收仍待完成。",
+      "limitations": "四类平台ID与任务相对路径五选一；这里只计该平台ID来源。仅有界文本或文档抽取，不将二进制base64送入模型，不代表文件已下载进runner；读取后来源/权限变化拒绝返回内容。Windows symlink/FIFO环境跳过由独立Linux原语证据补充，生产逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/routers/files.py",
@@ -2980,7 +3236,7 @@
         },
         {
           "file": "classroom_app/services/resource_access_service.py",
-          "sha256": "d78ed6b4289a4acdd26430593240e089bd19e3d5bfb732c9164c8933ec672674"
+          "sha256": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3"
         },
         {
           "file": "docs/agent-platform-read-safety-linux-poc-2026-09-10.json",
@@ -3025,13 +3281,14 @@
         "tests/test_agent_scoped_file_types.py:10组真实普通下载HTTP/Bridge/MCP/SQL/文档抽取与读取后撤权回归",
         "tests/test_agent_file_snapshots.py",
         "tests/test_agent_continuation.py",
-        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收"
+        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "四类平台ID与任务相对路径五选一；这里只计该平台ID来源。仅有界文本或文档抽取，不将二进制base64送入模型，不代表文件已下载进runner；读取后来源/权限变化拒绝返回内容。Windows symlink/FIFO环境跳过由独立Linux原语证据补充，生产逐身份验收仍待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -3116,13 +3373,14 @@
         "tests/test_agent_scoped_file_types.py:10组真实普通下载HTTP/Bridge/MCP/SQL/文档抽取与读取后撤权回归",
         "tests/test_agent_file_snapshots.py",
         "tests/test_agent_continuation.py",
-        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收"
+        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "四类平台ID与任务相对路径五选一；这里只计该平台ID来源。仅有界文本或文档抽取，不将二进制base64送入模型，不代表文件已下载进runner；读取后来源/权限变化拒绝返回内容。Windows symlink/FIFO环境跳过由独立Linux原语证据补充，生产逐身份验收仍待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -3207,13 +3465,14 @@
         "tests/test_agent_scoped_file_types.py:10组真实普通下载HTTP/Bridge/MCP/SQL/文档抽取与读取后撤权回归",
         "tests/test_agent_file_snapshots.py",
         "tests/test_agent_continuation.py",
-        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收"
+        "docs/agent-platform-read-safety-linux-poc-2026-09-10.json:当前源码Linux六项原语探针通过；不是完整认证HTTP验收",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "仅当前任务相对路径或同主体终态合法父链；原任务产物权限、稳定句柄快照与有界文本/文档抽取。不是主机路径访问，二进制交付另见platform_download。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3270,13 +3529,14 @@
       "verification": [
         "docs/agent-platform-download-poc-2026-09-10.md:真实HTTP/SQL与Linux复制原语",
         "docs/agent-platform-download-linux-poc-2026-09-10.json",
-        "tests/test_agent_download_authority_postgres.py"
+        "tests/test_agent_download_authority_postgres.py",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "五种来源恰选一，当前记录只计collaboration来源；原下载策略+两次活跃授权；拷贝原始字节到当前inputs，32MiB单项/64MiB及128项总额/2并发/no-overwrite。父路径仅同主体合法终态父链。不是任意平台文件CRUD；尚未完成真实DSH任务端到端验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3354,13 +3614,14 @@
       "verification": [
         "docs/agent-platform-download-poc-2026-09-10.md:真实HTTP/SQL与Linux复制原语",
         "docs/agent-platform-download-linux-poc-2026-09-10.json",
-        "tests/test_agent_download_authority_postgres.py"
+        "tests/test_agent_download_authority_postgres.py",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "五种来源恰选一，当前记录只计course来源；原下载策略+两次活跃授权；拷贝原始字节到当前inputs，32MiB单项/64MiB及128项总额/2并发/no-overwrite。父路径仅同主体合法终态父链。不是任意平台文件CRUD；尚未完成真实DSH任务端到端验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3438,13 +3699,14 @@
       "verification": [
         "docs/agent-platform-download-poc-2026-09-10.md:真实HTTP/SQL与Linux复制原语",
         "docs/agent-platform-download-linux-poc-2026-09-10.json",
-        "tests/test_agent_download_authority_postgres.py"
+        "tests/test_agent_download_authority_postgres.py",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "五种来源恰选一，当前记录只计material来源；原下载策略+两次活跃授权；拷贝原始字节到当前inputs，32MiB单项/64MiB及128项总额/2并发/no-overwrite。父路径仅同主体合法终态父链。不是任意平台文件CRUD；尚未完成真实DSH任务端到端验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3522,13 +3784,14 @@
       "verification": [
         "docs/agent-platform-download-poc-2026-09-10.md:真实HTTP/SQL与Linux复制原语",
         "docs/agent-platform-download-linux-poc-2026-09-10.json",
-        "tests/test_agent_download_authority_postgres.py"
+        "tests/test_agent_download_authority_postgres.py",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "五种来源恰选一，当前记录只计submission来源；原下载策略+两次活跃授权；拷贝原始字节到当前inputs，32MiB单项/64MiB及128项总额/2并发/no-overwrite。父路径仅同主体合法终态父链。不是任意平台文件CRUD；尚未完成真实DSH任务端到端验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3606,13 +3869,14 @@
       "verification": [
         "docs/agent-platform-download-poc-2026-09-10.md:真实HTTP/SQL与Linux复制原语",
         "docs/agent-platform-download-linux-poc-2026-09-10.json",
-        "tests/test_agent_download_authority_postgres.py"
+        "tests/test_agent_download_authority_postgres.py",
+        "本轮静态差异确认bridge仅新增有界children运输接口，既有文件调用路径未改；根Agent总回归相关文件模块通过，本轮9项MCP验证文件目录/schema。633总回归原有1个独立assignment夹具错误，修后其整模块6/6；不宣称633整次全过。"
       ],
       "limitations": "五种来源恰选一，当前记录只计task来源；原下载策略+两次活跃授权；拷贝原始字节到当前inputs，32MiB单项/64MiB及128项总额/2并发/no-overwrite。父路径仅同主体合法终态父链。不是任意平台文件CRUD；尚未完成真实DSH任务端到端验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_bridge.py",
-          "sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc"
+          "sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173"
         },
         {
           "file": "classroom_app/services/agent_bridge_service.py",
@@ -3688,7 +3952,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "C层异步作业：A receipt只证明生成job/scheduler提交；必须使用原job状态、成品hash/size和多材料真实课时绑定核验完成；不能将queued/running报成功。",
       "source_files": [
@@ -3698,7 +3963,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -3870,7 +4135,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -3880,7 +4146,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -4256,9 +4522,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "评论作者、帖子作者或正常平台管理员权限删除评论子树，保留子评论清理与计数；平台没有评论编辑路由。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "评论作者、帖子作者或正常平台管理员权限删除评论子树，保留子评论清理与计数；平台没有评论编辑路由。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4298,7 +4565,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4346,9 +4617,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "对当前可见评论切换本人点赞；同operation_id重放回执不再次切换。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "对当前可见评论切换本人点赞；同operation_id重放回执不再次切换。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4388,7 +4660,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4550,9 +4826,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "仅作者可删除自己的帖子，超级管理员不获得原Web没有的代删权限；expected_updated_at必填，过期409。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "仅作者可删除自己的帖子，超级管理员不获得原Web没有的代删权限；expected_updated_at必填，过期409。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4592,7 +4869,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4640,9 +4921,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常GET记录阅读活动，必须经过B写请求admission；只能读取当前身份可见帖子。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常GET记录阅读活动，必须经过B写请求admission；只能读取当前身份可见帖子。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4682,7 +4964,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4730,9 +5016,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "对当前可见帖子切换本人点赞；同operation_id重放回执不再次切换。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "对当前可见帖子切换本人点赞；同operation_id重放回执不再次切换。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4772,7 +5059,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4820,9 +5111,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "仅作者可改自己的帖子/草稿；expected_updated_at必填且409保留当前输入；可见性/媒体/标签/发布/AI提及队列复用正常服务。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "仅作者可改自己的帖子/草稿；expected_updated_at必填且409保留当前输入；可见性/媒体/标签/发布/AI提及队列复用正常服务。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4862,7 +5154,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4910,9 +5206,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "举报对象必须在当前身份可见范围（帖子/评论/机会信息），不能以存在性绕过私密内容权限。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "举报对象必须在当前身份可见范围（帖子/评论/机会信息），不能以存在性绕过私密内容权限。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -4952,7 +5249,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -4999,9 +5300,10 @@
       "verification": [
         "tests/test_agent_platform_request_blog.py",
         "tests/test_blog_community.py",
-        "tests/e2e/components/blog-composer-revision.spec.ts"
+        "tests/e2e/components/blog-composer-revision.spec.ts",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "仅当前超级管理员处理pending举报；响应精确匹配resolved/dismissed及正整数id，不放宽默认HTTP成功合同。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "仅当前超级管理员处理pending举报；响应精确匹配resolved/dismissed及正整数id，不放宽默认HTTP成功合同。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/blog.py",
@@ -5041,7 +5343,11 @@
         },
         {
           "file": "classroom_app/services/blog_service.py",
-          "sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa"
+          "sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "static/js/blog.js",
@@ -7656,9 +7962,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -7690,7 +7997,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -7725,9 +8032,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -7759,7 +8067,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -7794,9 +8102,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -7828,7 +8137,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -7863,9 +8172,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -7897,7 +8207,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -7988,9 +8298,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -8022,7 +8333,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8056,9 +8367,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -8090,7 +8402,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8124,9 +8436,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -8158,7 +8471,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8250,9 +8563,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -8284,7 +8598,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8319,9 +8633,10 @@
       "receipt": "HTTP状态/响应hash观察事实与不可自动重放的请求记录；正常handler可自行commit，不宣称账本与领域业务同事务。",
       "verification": [
         "tests/test_agent_platform_request_polls.py",
-        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin"
+        "tests/test_agent_platform_requests.py:真实HTTP/SQL、超时uncertain、当前授权与来源pin",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。",
+      "limitations": "正常课堂成员/投票owner权限；管理投票入口仅教师；完整PUT显式所有共同字段，保留投票状态与重复变更限制。 B仅HTTP观察，verified_business恒false；submitted/uncertain须按原请求恢复核对，不能盲重放。其余路由/参数与生产DSH验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/polls.py",
@@ -8353,7 +8668,7 @@
         },
         {
           "file": "classroom_app/services/poll_service.py",
-          "sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7"
+          "sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8766,7 +9081,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -8803,16 +9119,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8820,7 +9160,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -8849,7 +9189,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -8886,16 +9227,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8903,7 +9268,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -8932,7 +9297,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -8969,16 +9335,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -8986,7 +9376,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9015,7 +9405,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9052,16 +9443,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9069,7 +9484,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9098,7 +9513,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9135,16 +9551,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9152,7 +9592,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9181,7 +9621,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9218,16 +9659,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9235,7 +9700,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9264,7 +9729,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9301,16 +9767,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9318,7 +9808,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9347,7 +9837,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9384,16 +9875,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9401,7 +9916,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9430,7 +9945,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9467,16 +9983,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9484,7 +10024,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9513,7 +10053,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9550,16 +10091,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9567,7 +10132,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9596,7 +10161,8 @@
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
         "tests/test_agent_platform_request_signatures.py:11项真实HTTP/SQL（root本批报告）",
-        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放"
+        "tests/test_signature_decisions_postgres.py:共享正常决策锁另行native验证；非全部签章审批开放",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168/168含28原生PG，保留当时源码SHA；后改三文档上下文锁31项增量通过，最终签章C13及根Agent相关模块通过。历史168不冒称覆盖后续所有源码；生产DSH未验收。"
       ],
       "limitations": "签章可见目录/学校/教师/功能点/申请详情/使用记录，以及材料功能点状态、本人申请/取消/结束。可见不等于可签署；审批、消费、图片字节及实际材料签署均未登记。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
       "source_files": [
@@ -9633,16 +10199,40 @@
           "sha256": "31289ce5ca498259ac789f9b72b83a2296bf4abe5066e898bce65f531a6fb3be"
         },
         {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_identity_service.py",
+          "sha256": "7c4e0ac62a9e1fddf54f8d1a2262700a4a008df22dc73db63fc2f59781dc3c79"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_export_guard_service.py",
+          "sha256": "53fcd2c84b5f723017ceabde8c3c8721a72f398f17b6b7b59392ba4142605282"
+        },
+        {
+          "file": "classroom_app/services/signature_merge_lock_service.py",
+          "sha256": "f4c9defa4fcd7244b45c2c0aee5e7c2f0f4895b65734ad8dfd9f0b135baf3eda"
+        },
+        {
           "file": "classroom_app/services/signature_point_service.py",
-          "sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1"
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
         },
         {
           "file": "classroom_app/services/signature_service.py",
-          "sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e"
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
         },
         {
           "file": "classroom_app/services/signature_workflow_service.py",
-          "sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8"
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
         },
         {
           "file": "tests/test_agent_mcp_bridge.py",
@@ -9650,7 +10240,7 @@
         },
         {
           "file": "tests/test_agent_platform_request_signatures.py",
-          "sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+          "sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0"
         },
         {
           "file": "tests/test_agent_platform_requests.py",
@@ -9677,13 +10267,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_classes.py",
-          "sha256": "53ece584906756be939f55ccf6ee90608136b55893d0d1df4aaf1474a1eef973"
+          "sha256": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -9732,6 +10323,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -9786,13 +10381,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_courses.py",
-          "sha256": "5b1a5b6495a8049c9423a6a3c535f72d330d28d04a806c9c55e3a77d100d8bbf"
+          "sha256": "789d4d5f96cb1bbb89c61c6ac70d7503fb16779d35bb531d5d50904e25d79ff2"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -9841,6 +10437,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -9895,13 +10495,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_courses.py",
-          "sha256": "5b1a5b6495a8049c9423a6a3c535f72d330d28d04a806c9c55e3a77d100d8bbf"
+          "sha256": "789d4d5f96cb1bbb89c61c6ac70d7503fb16779d35bb531d5d50904e25d79ff2"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -9950,6 +10551,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10004,13 +10609,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
-          "sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8"
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10059,6 +10665,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10113,13 +10723,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
-          "sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8"
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10168,6 +10779,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10222,13 +10837,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
-          "sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8"
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10277,6 +10893,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10331,13 +10951,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
-          "sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8"
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10386,6 +11007,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10440,13 +11065,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_classes.py",
-          "sha256": "53ece584906756be939f55ccf6ee90608136b55893d0d1df4aaf1474a1eef973"
+          "sha256": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10495,6 +11121,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -10549,13 +11179,14 @@
       "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
       "receipt": "普通HTTP状态/响应hash观察回执；原handler可自行commit，不宣称领域写入与B请求账本同事务。",
       "verification": [
-        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照"
+        "docs/agent-teaching-lifecycle-poc-2026-09-10.json:90项相关Python、3项真实Pg锁/FK/保留、5项Chrome；教学17项真实normal HTTP/B/SQLite对照",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ],
-      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。",
+      "limitations": "新建课程/班级/学生/课堂、预览与版本化排课编辑；课程模板修改、删除、合班执行不在此批。已有历史课次停排保留，保护内容/材料不被复用；学籍变更撤销旧task/persistent/session，激活不复活。 B仅HTTP观察，verified_business恒false；submitted/uncertain须恢复核对，不能盲重放。生产DSH逐身份验收仍待完成。 本批新增教学父资源/上下文锁的原生PostgreSQL竞争验收仍是上线前阻断，不能把局部SQLite/HTTP回归当作已通过该门。",
       "source_files": [
         {
           "file": "classroom_app/routers/manage_parts/classes_courses_classes.py",
-          "sha256": "53ece584906756be939f55ccf6ee90608136b55893d0d1df4aaf1474a1eef973"
+          "sha256": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98"
         },
         {
           "file": "classroom_app/services/academic_roster_sync_service.py",
@@ -10604,6 +11235,10 @@
         {
           "file": "classroom_app/services/offering_plan_edit_service.py",
           "sha256": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8"
+        },
+        {
+          "file": "classroom_app/services/teaching_lifecycle_service.py",
+          "sha256": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b"
         },
         {
           "file": "docs/agent-teaching-lifecycle-poc-2026-09-10.json",
@@ -11138,7 +11773,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "有界授权读取与响应；不凭元数据宣称整个Web功能已覆盖。",
       "verification": [
-        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影"
+        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "Web账号管理页面使用的同领域服务之有界JSON投影；直接domain read，不是ASGI读取整页HTML。只返回白名单资料与revision；不读取密码/会话原文。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -11148,7 +11784,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -11204,7 +11840,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "有界授权读取与响应；不凭元数据宣称整个Web功能已覆盖。",
       "verification": [
-        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影"
+        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "Web账号管理页面使用的同领域服务之有界JSON投影；直接domain read，不是ASGI读取整页HTML。只返回白名单资料与revision；不读取密码/会话原文。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -11214,7 +11851,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -11270,7 +11907,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "有界授权读取与响应；不凭元数据宣称整个Web功能已覆盖。",
       "verification": [
-        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影"
+        "tests/test_agent_identity_management.py:实际MCP与3项domain read权限/无secret投影",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "Web账号管理页面使用的同领域服务之有界JSON投影；直接domain read，不是ASGI读取整页HTML。只返回白名单资料与revision；不读取密码/会话原文。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -11280,7 +11918,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -11337,7 +11975,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -11347,7 +11986,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -11404,7 +12043,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "当前原评分/迟交/小组结算服务，双revision、并发锁与账本；评分不等于公布最终成绩。 其余Web行为与生产DSH验收不由此记录宣称完成。",
       "source_files": [
@@ -11414,7 +12054,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -11446,7 +12086,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -11576,6 +12216,122 @@
           "file": "tests/test_agent_platform_writes.py",
           "sha256": "fc29f6c69bc243100ab97d66ff2b8ba51fbfed0f0e3af01ded830bd01e18ff41"
         }
+      ]
+    },
+    {
+      "capability_key": "merge_class_offerings",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/merge/execute",
+      "handler": "classroom_app.routers.manage_parts.classes_courses_offerings.api_offering_merge_execute",
+      "domain": "teaching",
+      "roles": [
+        "teacher"
+      ],
+      "resource_boundary": "仅当前教师自己所属的目标及1至11个源课堂，要求同教师、课程、学期且行政班集合互不重叠；超管身份不替代课堂归属条件，无学生入口。按普通合班服务锁课程、课堂及相关写入，完整快照变更使确认失效。",
+      "receipt": "本人核对迁移影响、逐项接受警告、填写说明并手工输入目标班级名；合班、课次映射、保留作业答卷/材料关系、原恢复档案、fresh-user账本及提案标记同事务。",
+      "limitations": "源课堂迁入后删除，作业仍并存；档案供人工恢复，没有一键撤销。运行中生成、未处理读者范围或无安全课次映射等冲突阻断，不扩大定向内容范围。模型不能执行或提交本人声明；只覆盖本次审核合班参数，生产DSH未验收。 新增教学父资源/上下文锁的原生PostgreSQL竞争验收尚未完成，仍是上线前阻断。",
+      "kind": "user_confirmation",
+      "requires_super_admin": false,
+      "guarantee": "user_only_authenticated_confirmation",
+      "source_files": [
+        {
+          "file": "classroom_app/routers/agent_tasks.py",
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
+        },
+        {
+          "file": "classroom_app/routers/manage_parts/classes_courses_offerings.py",
+          "sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c"
+        },
+        {
+          "file": "classroom_app/services/account_credentials_service.py",
+          "sha256": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2"
+        },
+        {
+          "file": "classroom_app/services/agent_action_registry.py",
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
+        },
+        {
+          "file": "classroom_app/services/agent_actor_service.py",
+          "sha256": "5b1d7160738b21dd8a418dfb94758821fb9c7f3178dc2af5da4dd9834410eda3"
+        },
+        {
+          "file": "classroom_app/services/agent_business_confirmation_service.py",
+          "sha256": "6ff06ec22c2ea5474f155c43ee4f399b21b0b65290d745d12b65b7e3fd50f26e"
+        },
+        {
+          "file": "classroom_app/services/agent_operation_service.py",
+          "sha256": "8a683e4940642eca31cba49651631eb0285dd1aab466341105dd15d60d0e5346"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_actions.py",
+          "sha256": "51b8b609372d51c246eda6f69cac009bc10c60023ae00d6155f7999458601c2f"
+        },
+        {
+          "file": "classroom_app/services/agent_teaching_confirmation_service.py",
+          "sha256": "77dcae20e104a4c5af97bb027e45672d617401d1e935c01cb488933385ba96b1"
+        },
+        {
+          "file": "classroom_app/services/agent_user_confirmation_actions.py",
+          "sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3"
+        },
+        {
+          "file": "classroom_app/services/offering_merge_service.py",
+          "sha256": "c5fe4b184dcd20a1c76184e7c0a0f2a3f35be6f06900f8f50b572e8138a8d73c"
+        },
+        {
+          "file": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29"
+        },
+        {
+          "file": "docs/agent-teaching-destructive-lifecycle-audit-2026-09-10.md",
+          "sha256": "cf764df8ca0d4fb1b6bd12fa17baa340dedffa67b05afc7e4ef3d20c6e6d50cc"
+        },
+        {
+          "file": "docs/agent-teaching-lifecycle-verification-2026-09-10.json",
+          "sha256": "b0709b01186e307d4ce0b51ae060fab111e843e1c1fc13f5c7daa3f4e3d96b2a"
+        },
+        {
+          "file": "static/js/agent_user_confirmation.js",
+          "sha256": "26aa3809310edaa224c87c8fa2e9198537d28d385c556bddf4b988e04f322a43"
+        },
+        {
+          "file": "static/js/ai_workspace_widget.js",
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
+        },
+        {
+          "file": "static/js/teaching_lifecycle_review.js",
+          "sha256": "15690fca0b9bd2a97b8d7b4d85aa4c95dca83f6aa9b57b00d7a81551564ad281"
+        },
+        {
+          "file": "tests/e2e/components/agent-user-confirmation.spec.ts",
+          "sha256": "4cb92eca1d70ca60e86ac96c9852c573ac231dc624cac89de86301668dafea83"
+        },
+        {
+          "file": "tests/test_agent_action_int_list.py",
+          "sha256": "f3b8c8ffc7419c242d5cb6b4dd65f151554bba02596061274c5a68a2df3bd65f"
+        },
+        {
+          "file": "tests/test_agent_teaching_confirmation.py",
+          "sha256": "e3de69283157872c45ea9a633cff5e4d533e2a3690c4373b45f02a20722e13ad"
+        },
+        {
+          "file": "tests/test_offering_merge_confirmation.py",
+          "sha256": "79203a4d20f6c7671aebada029108a9a69e11311bf16a51a33fd05f4ffd0c3e5"
+        },
+        {
+          "file": "tests/test_offering_merge_service.py",
+          "sha256": "b416fe39061fc18b4db6b8070b57925670f2237702636111f05fba820c142f27"
+        },
+        {
+          "file": "tests/test_teaching_lifecycle_http.py",
+          "sha256": "32cf6e961e61422691feda5ac92b94c9fb643c0fcd77c2a46114ef9c6be11a32"
+        }
+      ],
+      "verification": [
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "tests/test_agent_teaching_confirmation.py",
+        "tests/test_offering_merge_confirmation.py",
+        "docs/agent-teaching-lifecycle-verification-2026-09-10.json：最终普通业务/HTTP73/73、0跳过，含teaching B9 pins、合班6、普通Web7、C8及poll/file/upload；Chrome组件4/4，三文档31/31另列。新增父资源/上下文锁的独立原生PG竞争仍是上线前阻断。"
       ]
     },
     {
@@ -11946,7 +12702,8 @@
       "verification": [
         "tests/test_agent_assignment_actions.py",
         "tests/test_assessment_classification_routes.py",
-        "tests/test_permission_homework_routes.py"
+        "tests/test_permission_homework_routes.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "normal Web与A共用作业修改服务；expected_revision防覆盖，发布同通知/提醒事务，评分输入变化使在途批改失效并保留既有成绩。当前A只开放登记字段；学生上传提交保留原Web文件/版本/评分闭环，待B multipart/C接入。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -11956,7 +12713,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assignment_actions.py",
@@ -12012,7 +12769,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "通过normal create_post创建草稿或新发布；编辑/删除/审核不是此动作；@管家是提交后的独立scheduler outbox。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -12022,7 +12780,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12065,31 +12823,45 @@
         "teacher"
       ],
       "requires_super_admin": false,
-      "resource_boundary": "当前身份实时授权、原业务权限、只接受审核参数；目录可见不替代资源权限。",
-      "receipt": "当前用户核对声明、成绩快照与fresh-user操作回执同事务；重复提交复用回执。",
+      "resource_boundary": "当前课堂所属教师本人，管理员仍须满足原成绩公布领域权限；终态任务owner、实时actor与当前本人登录会话均复核。成绩来源、review及publication版本在课堂锁内重新校验。",
+      "receipt": "稳定facade分发到grade领域模块；终态任务→actor授权转换锁→源会话→课堂，真实成绩快照、本人声明、提案标记与fresh-user回执同事务。模型没有confirmed参数，服务端只在本人执行入口赋予确认。",
       "verification": [
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
-      "limitations": "MCP只生成human-only/executable=false提案；本人当前session查看最新来源成绩、逐项警告与说明，服务端绑定source/review/version后同事务公布。模型不能代用户确认；不包括签章审批。",
+      "limitations": "只公布已核对的课堂成绩版本；模型只能提案，不能代本人接受警告或填写声明，不能通过MCP写入。保留原source/review/version与学生成绩投影；其余考核操作和整条Web路由不由本条覆盖，生产DSH未验收。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_tasks.py",
-          "sha256": "c4d67bdfef913ff39ccc71eb85e88598ed1c31d473e867a8419d13be93f88cd3"
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
         },
         {
           "file": "classroom_app/routers/materials_parts/final_materials.py",
           "sha256": "9a9a8f840b390213ee5410ec87242fbfde7710027946f1c1086a2a29649a5a50"
         },
         {
+          "file": "classroom_app/services/account_credentials_service.py",
+          "sha256": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2"
+        },
+        {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
+        },
+        {
+          "file": "classroom_app/services/agent_actor_service.py",
+          "sha256": "5b1d7160738b21dd8a418dfb94758821fb9c7f3178dc2af5da4dd9834410eda3"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
           "sha256": "67240e7d512e4e07aa96fde670bb9f8500b53f7490bc397fb8ff6c147a2d2538"
+        },
+        {
+          "file": "classroom_app/services/agent_business_confirmation_service.py",
+          "sha256": "6ff06ec22c2ea5474f155c43ee4f399b21b0b65290d745d12b65b7e3fd50f26e"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12100,12 +12872,20 @@
           "sha256": "8fcf5dbc78adc9cf34cb7258084606949d114ba8b881abae29310644832a997e"
         },
         {
+          "file": "classroom_app/services/agent_grade_confirmation_service.py",
+          "sha256": "f5539dbc60af9db5fc853c1c57d0ef56ef8ba663e412efd5397fe19470c42567"
+        },
+        {
+          "file": "classroom_app/services/agent_operation_service.py",
+          "sha256": "8a683e4940642eca31cba49651631eb0285dd1aab466341105dd15d60d0e5346"
+        },
+        {
           "file": "classroom_app/services/agent_platform_write_service.py",
           "sha256": "bab1f897d09fe0b9ebe4003631e9d9eb9195df3f1192a73d9c17fa23cdafada7"
         },
         {
           "file": "classroom_app/services/agent_user_confirmation_actions.py",
-          "sha256": "1e2a25c81cc46c69d1e0b62787f05724d9291a116833e33eb1b33b6fe10150fe"
+          "sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3"
         },
         {
           "file": "classroom_app/services/exam_paper_management_service.py",
@@ -12120,12 +12900,24 @@
           "sha256": "3e8ad555db8e3d1d47b3500cbfd60491bb28a4789693a4954a4fcb96bb4802a7"
         },
         {
+          "file": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29"
+        },
+        {
+          "file": "static/js/agent_user_confirmation.js",
+          "sha256": "26aa3809310edaa224c87c8fa2e9198537d28d385c556bddf4b988e04f322a43"
+        },
+        {
           "file": "static/js/ai_workspace_widget.js",
-          "sha256": "f53ebda87efe6edf15489ab393f68bfe37ba5003b37f0537e20d8e92fd075ed8"
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
+        },
+        {
+          "file": "tests/e2e/components/agent-user-confirmation.spec.ts",
+          "sha256": "4cb92eca1d70ca60e86ac96c9852c573ac231dc624cac89de86301668dafea83"
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -12158,13 +12950,15 @@
       "receipt": "业务修改、操作回执、提案marker、目标会话及Agent授权撤销同事务；回执无口令及口令hash。",
       "verification": [
         "tests/test_agent_secure_confirmation_http.py:6项真实HTTP/SQL回归",
-        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾"
+        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾",
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "MCP只可准备公共提案，不能直接执行或读取密码。口令只保留当前输入框，关闭/成功清空；普通Web账户权限及新session确认限制全部保留。生产逐身份验收待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_tasks.py",
-          "sha256": "c4d67bdfef913ff39ccc71eb85e88598ed1c31d473e867a8419d13be93f88cd3"
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -12172,7 +12966,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12200,7 +12994,7 @@
         },
         {
           "file": "static/js/ai_workspace_widget.js",
-          "sha256": "f53ebda87efe6edf15489ab393f68bfe37ba5003b37f0537e20d8e92fd075ed8"
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
         },
         {
           "file": "tests/e2e/components/agent-questions.spec.ts",
@@ -12236,13 +13030,15 @@
       "receipt": "业务修改、操作回执、提案marker、目标会话及Agent授权撤销同事务；回执无口令及口令hash。",
       "verification": [
         "tests/test_agent_secure_confirmation_http.py:6项真实HTTP/SQL回归",
-        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾"
+        "tests/e2e/components/agent-questions.spec.ts:密码隔离/轮询保留/失败重试/取消清空/丢响应按回执收尾",
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "MCP只可准备公共提案，不能直接执行或读取密码。口令只保留当前输入框，关闭/成功清空；普通Web账户权限及新session确认限制全部保留。生产逐身份验收待完成。",
       "source_files": [
         {
           "file": "classroom_app/routers/agent_tasks.py",
-          "sha256": "c4d67bdfef913ff39ccc71eb85e88598ed1c31d473e867a8419d13be93f88cd3"
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
         },
         {
           "file": "classroom_app/services/account_credentials_service.py",
@@ -12250,7 +13046,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12278,7 +13074,7 @@
         },
         {
           "file": "static/js/ai_workspace_widget.js",
-          "sha256": "f53ebda87efe6edf15489ab393f68bfe37ba5003b37f0537e20d8e92fd075ed8"
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
         },
         {
           "file": "tests/e2e/components/agent-questions.spec.ts",
@@ -12299,6 +13095,129 @@
       ]
     },
     {
+      "capability_key": "review_signature_request",
+      "method": "POST",
+      "path": "/api/signatures/requests/{request_id:int}/approve",
+      "handler": "classroom_app.routers.signatures.api_approve_signature_access_request",
+      "domain": "signatures",
+      "roles": [
+        "teacher",
+        "student"
+      ],
+      "resource_boundary": "当前有权审批材料使用申请的教师或学生本人；超管仍是 teacher 身份并按原签章服务的代批权限与显式警告处理，普通管理员不自动获得超管代批权。仅有可核对冻结材料快照的 use 申请，实时权限、会话、申请及签章来源再次校验。",
+      "receipt": "当前用户选择批准或拒绝并填写说明，确认声明、原签章审批决定、提案执行标记与 fresh-user 账本同事务；相同操作和声明重放既有回执，改变决定或说明 409。回执按原业务当前申请状态说明结果：多人审批时本人提交拒绝意见可能仍待其他审批人，不能宣称申请已结束。",
+      "limitations": "模型只能提案，不能选择用户审批决定或直接执行。只审批 use 申请，不包括认领、身份转移、批量审批、直接使用签章或将签章应用到文档；旧无快照申请不纳入。本人决定不保证整个多审批人申请终结。主路由只标局部 approve 适配，reject 为同一能力的辅助映射，当前 inventory 不验证或计算 related_normal_routes 覆盖。完整 Web 路由和生产 DSH 验收未由本条证明。",
+      "related_normal_routes": [
+        {
+          "method": "POST",
+          "path": "/api/signatures/requests/{request_id:int}/reject",
+          "handler": "classroom_app.routers.signatures.api_reject_signature_access_request",
+          "relationship": "同一 review_signature_request 的本人拒绝分支；辅助说明，当前库存生成器不验证、不计覆盖。"
+        }
+      ],
+      "verification": [
+        "tests/test_agent_signature_confirmation.py",
+        "tests/test_agent_signature_confirmation_postgres.py",
+        "tests/e2e/components/agent-user-confirmation.spec.ts",
+        "docs/agent-human-business-confirmation-2026-09-10.md：中间快照当时12项签章proposal HTTP、5项原生PG授权/会话竞争及签章3项Chrome；全批C31/PG5/Chrome11，与本轮后续复核分开记录。",
+        "docs/agent-signature-decisions-poc-2026-09-10.json：初始共享签章168项通过，其中28项原生PG，保留当时源码SHA；后续修改由本轮增量/合并回归支持，不当C或生产验收。",
+        "最终C后端32/32（签章13、教学8、考核10、原通知预览1），原生PG授权/会话顺序5/5；公共组件Chrome26/26含此前C11。中间C31报告保留历史，新增多人拒绝仍pending回执已由实际SQL/HTTP验证；不把组件或局部回归当生产DSH验收。"
+      ],
+      "kind": "user_confirmation",
+      "requires_super_admin": false,
+      "guarantee": "user_only_authenticated_confirmation",
+      "source_files": [
+        {
+          "file": "classroom_app/routers/agent_tasks.py",
+          "sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921"
+        },
+        {
+          "file": "classroom_app/routers/signatures.py",
+          "sha256": "a318c0abb235878bb66e34069bef100ec5c1afc37c894ef9997a7ea23baa023b"
+        },
+        {
+          "file": "classroom_app/services/account_credentials_service.py",
+          "sha256": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2"
+        },
+        {
+          "file": "classroom_app/services/agent_action_registry.py",
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
+        },
+        {
+          "file": "classroom_app/services/agent_actor_service.py",
+          "sha256": "5b1d7160738b21dd8a418dfb94758821fb9c7f3178dc2af5da4dd9834410eda3"
+        },
+        {
+          "file": "classroom_app/services/agent_business_confirmation_service.py",
+          "sha256": "6ff06ec22c2ea5474f155c43ee4f399b21b0b65290d745d12b65b7e3fd50f26e"
+        },
+        {
+          "file": "classroom_app/services/agent_operation_service.py",
+          "sha256": "8a683e4940642eca31cba49651631eb0285dd1aab466341105dd15d60d0e5346"
+        },
+        {
+          "file": "classroom_app/services/agent_signature_confirmation_service.py",
+          "sha256": "85a6badb956df64c8fc7352b04fd3c2deee9998ce38c3b5030f712311b475b37"
+        },
+        {
+          "file": "classroom_app/services/agent_user_confirmation_actions.py",
+          "sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3"
+        },
+        {
+          "file": "classroom_app/services/material_signature_service.py",
+          "sha256": "967684229112bd45298523e155119200e823a9b68571961824e99e80bf40e702"
+        },
+        {
+          "file": "classroom_app/services/signature_account_lock_service.py",
+          "sha256": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7"
+        },
+        {
+          "file": "classroom_app/services/signature_point_service.py",
+          "sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b"
+        },
+        {
+          "file": "classroom_app/services/signature_service.py",
+          "sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_lock_service.py",
+          "sha256": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25"
+        },
+        {
+          "file": "classroom_app/services/signature_workflow_service.py",
+          "sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7"
+        },
+        {
+          "file": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29"
+        },
+        {
+          "file": "docs/agent-signature-decisions-poc-2026-09-10.json",
+          "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0"
+        },
+        {
+          "file": "static/js/agent_user_confirmation.js",
+          "sha256": "26aa3809310edaa224c87c8fa2e9198537d28d385c556bddf4b988e04f322a43"
+        },
+        {
+          "file": "static/js/ai_workspace_widget.js",
+          "sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3"
+        },
+        {
+          "file": "tests/e2e/components/agent-user-confirmation.spec.ts",
+          "sha256": "4cb92eca1d70ca60e86ac96c9852c573ac231dc624cac89de86301668dafea83"
+        },
+        {
+          "file": "tests/test_agent_signature_confirmation.py",
+          "sha256": "e59d8409cbbb371d1c1f2c7681b6453da6dbe2eaebdecaf5df9ec28b4fc5749f"
+        },
+        {
+          "file": "tests/test_agent_signature_confirmation_postgres.py",
+          "sha256": "9f7a1fa36343547e3f2e1e7f76e3b9830f18bda63f924afb4f3d44281a6517b4"
+        }
+      ]
+    },
+    {
       "capability_key": "revoke_teacher_super_admin",
       "kind": "write",
       "method": "POST",
@@ -12313,7 +13232,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -12323,7 +13243,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12378,7 +13298,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅Markdown草稿，复用不可变内容寻址blob和course_materials；hash/size核验，回滚孤立blob由完整性扫描盘点，不能直接删除共享blob。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -12388,7 +13309,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12495,7 +13416,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "明确可见联系人identity、正常contact/block/rate/notification策略；仅文本。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -12505,7 +13427,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12548,7 +13470,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "明确选择1到30个student identities；按正常私信服务逐人发送；不猜姓名、不代发系统通知。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -12558,7 +13481,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12659,7 +13582,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -12669,7 +13593,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -12963,7 +13887,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅当前教师有权审核的答卷、试卷及附件标识；分页最多50。学生和撤权主体拒绝；不是开放学生答案/题库或全部管理操作。",
       "source_files": [
@@ -12973,7 +13898,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -13013,7 +13938,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -13046,7 +13971,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅当前教师有权审核的答卷、试卷及附件标识；分页最多50。学生和撤权主体拒绝；不是开放学生答案/题库或全部管理操作。",
       "source_files": [
@@ -13056,7 +13982,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -13096,7 +14022,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -13242,7 +14168,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
-        "tests/test_agent_material_actions.py"
+        "tests/test_agent_material_actions.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常材料编辑/课堂管理权限；属性expected_updated_at；首页或课时绑定列表expected_binding_version；原主列同步、并发冲突409、所有引用同事务。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13252,7 +14179,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13308,7 +14235,8 @@
       "verification": [
         "tests/test_agent_assignment_actions.py",
         "tests/test_assessment_classification_routes.py",
-        "tests/test_permission_homework_routes.py"
+        "tests/test_permission_homework_routes.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "normal Web与A共用作业修改服务；expected_revision防覆盖，发布同通知/提醒事务，评分输入变化使在途批改失效并保留既有成绩。当前A只开放登记字段；学生上传提交保留原Web文件/版本/评分闭环，待B multipart/C接入。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13318,7 +14246,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assignment_actions.py",
@@ -13373,7 +14301,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅注册的属性字段；expected_updated_at冲突校验+行锁+normal资源编辑权限；非完整Web属性集。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -13383,7 +14312,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13426,7 +14355,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅注册的属性字段；expected_updated_at冲突校验+行锁+normal资源编辑权限；非完整Web属性集。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -13436,7 +14366,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13478,7 +14408,8 @@
       "resource_boundary": "当前本人登录来源与实时scope/fence校验，复用正常领域资源/动作权限；只接受登记的参数。",
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
-        "tests/test_agent_material_actions.py"
+        "tests/test_agent_material_actions.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常材料编辑/课堂管理权限；属性expected_updated_at；首页或课时绑定列表expected_binding_version；原主列同步、并发冲突409、所有引用同事务。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13488,7 +14419,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13543,7 +14474,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13553,7 +14485,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13612,7 +14544,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13622,7 +14555,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13681,7 +14614,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_organization_actions.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "学校/学院/系部目录CRUD按正常服务：新建合并启用、修改CAS、停用为保留引用的软停用。学院/系部改名同步全部membership与旧profile；受影响旧授权明确撤销，本人变更按一次事务proof完成后停止。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13691,7 +14625,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13750,7 +14684,8 @@
       "verification": [
         "tests/test_agent_platform_writes.py",
         "tests/test_agent_business_boundaries.py",
-        "生产DSH与全部Pg路径尚需最终验收。"
+        "生产DSH与全部Pg路径尚需最终验收。",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "仅注册的属性字段；expected_updated_at冲突校验+行锁+normal资源编辑权限；非完整Web属性集。 此记录不宣称整个Web路由的参数和所有写法已覆盖。",
       "source_files": [
@@ -13760,7 +14695,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13805,7 +14740,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "只允许未布置的试卷、expected_paper_revision；已布置试卷不得原地改题，需新版本，其余content route分支仍needs_adapter。 其余Web行为与生产DSH验收不由此记录宣称完成。",
       "source_files": [
@@ -13815,7 +14751,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -13847,7 +14783,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -13878,7 +14814,8 @@
       "receipt": "同一事务提交领域行与operation receipt；重放先核验身份/参数，不再次执行。",
       "verification": [
         "tests/test_agent_identity_management.py",
-        "tests/test_agent_identity_confirmation_http.py"
+        "tests/test_agent_identity_confirmation_http.py",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "正常超管账号/组织服务、expected_revision、末位超管保护；本人已审查权限变更使用原事务一次性proof后撤销旧授权/会话并停止，终态提案fresh user确认也同事务。密码/新账号另由secure_input三项安全确认接入，本动作不处理凭据。 未覆盖字段/文件/领域分支仍需适配；生产DSH全身份端到端验收待完成。",
       "source_files": [
@@ -13888,7 +14825,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_capability_catalog_service.py",
@@ -13945,7 +14882,8 @@
         "tests/test_agent_assessment_actions.py",
         "tests/test_agent_exam_actions.py",
         "tests/test_agent_assessment_mcp.py",
-        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收"
+        "permissions本批报告：77项SQLite/HTTP/原业务、22项真实Pg、9项浏览器；当前目录5读实际mounted MCP验收",
+        "本轮复核：注册表只新增严格int_list分支；C32实际后端、教学73（含整数列表和B pins）及本轮inventory/MCP专项另验。根633项总回归原有1个缺课程夹具错误，夹具修后test_agent_postgres_writes整模块6/6；不宣称该次633全量通过。"
       ],
       "limitations": "只撤回指定当前publication_id，保留历史；需用户明确撤回意图，不能用于冒充公布。 其余Web行为与生产DSH验收不由此记录宣称完成。",
       "source_files": [
@@ -13955,7 +14893,7 @@
         },
         {
           "file": "classroom_app/services/agent_action_registry.py",
-          "sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b"
+          "sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048"
         },
         {
           "file": "classroom_app/services/agent_assessment_actions.py",
@@ -13987,7 +14925,7 @@
         },
         {
           "file": "tests/test_agent_assessment_actions.py",
-          "sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c"
+          "sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5"
         },
         {
           "file": "tests/test_agent_assessment_mcp.py",
@@ -14003,5 +14941,364 @@
         }
       ]
     }
-  ]
+  ],
+  "review_round": {
+    "baseline_commit": "0283be34",
+    "source_revalidation": {
+      "classroom_app/services/agent_action_registry.py": {
+        "before_sha256": "e7f4953bcd5804b0eedfd7d2c34e566fd96112fb941c601cc66df1193f25735b",
+        "after_sha256": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048",
+        "review_group": "registry",
+        "capability_keys": [
+          "assign_exam_paper",
+          "assignment.review_submissions",
+          "bind_learning_material",
+          "create_assignment_draft",
+          "create_blog_comment",
+          "create_blog_draft",
+          "create_exam_paper",
+          "create_organization_college",
+          "create_organization_department",
+          "create_organization_school",
+          "create_teacher_account_secure",
+          "deactivate_teacher_account",
+          "deactivate_teacher_membership",
+          "delete_organization_college",
+          "delete_organization_department",
+          "delete_organization_school",
+          "exam.catalog",
+          "exam.review",
+          "generate_session_document",
+          "grant_teacher_super_admin",
+          "identity.memberships",
+          "identity.teacher",
+          "identity.teachers",
+          "manage_teacher_account",
+          "manual_grade_submission",
+          "publish_assignment",
+          "publish_blog_post",
+          "publish_classroom_grades",
+          "reset_teacher_password_secure",
+          "restore_teacher_account_secure",
+          "revoke_teacher_super_admin",
+          "save_material_draft",
+          "send_private_message",
+          "send_student_notification",
+          "set_teacher_primary_membership",
+          "submission.review",
+          "submission.review_files",
+          "unbind_learning_material",
+          "update_assignment_settings",
+          "update_class_attributes",
+          "update_course_attributes",
+          "update_material_attributes",
+          "update_organization_college",
+          "update_organization_department",
+          "update_organization_school",
+          "update_textbook_attributes",
+          "update_unassigned_exam_paper",
+          "upsert_teacher_membership",
+          "withdraw_grade_publication"
+        ]
+      },
+      "tests/test_agent_assessment_actions.py": {
+        "before_sha256": "08217e3134cc4183aa17651ae4efcad1d06a9483e50319f8b6de9dfd3b271a6c",
+        "after_sha256": "172f9ae7b166a08c5325e387ce29779119b089f22d8d775f3b36f64150642ef5",
+        "review_group": "registry",
+        "capability_keys": [
+          "assign_exam_paper",
+          "assignment.review_submissions",
+          "create_exam_paper",
+          "exam.catalog",
+          "exam.review",
+          "manual_grade_submission",
+          "publish_classroom_grades",
+          "submission.review",
+          "submission.review_files",
+          "update_unassigned_exam_paper",
+          "withdraw_grade_publication"
+        ]
+      },
+      "classroom_app/routers/manage_parts/classes_courses_offerings.py": {
+        "before_sha256": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8",
+        "after_sha256": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c",
+        "review_group": "teaching",
+        "capability_keys": [
+          "classroom.mine",
+          "http.teaching.offering.create",
+          "http.teaching.offering.plan.create",
+          "http.teaching.offering.plan.update",
+          "http.teaching.offering.preview"
+        ]
+      },
+      "classroom_app/services/assignment_creation_service.py": {
+        "before_sha256": "16c009dd6a28e843356c9764f6b5b28a2cd6f6ba91324197f56b3dd5b08b7c33",
+        "after_sha256": "6f0244d61ee54fd8f51bf319e52b097f7a5d6c01b0ec6079fa0481f7df935803",
+        "review_group": "teaching",
+        "capability_keys": [
+          "create_assignment_draft"
+        ]
+      },
+      "classroom_app/routers/agent_tasks.py": {
+        "before_sha256": "c4d67bdfef913ff39ccc71eb85e88598ed1c31d473e867a8419d13be93f88cd3",
+        "after_sha256": "763826971707515f3c9fa31305daed5e6888fc354fd2df95a0960cae2820b921",
+        "review_group": "confirmation",
+        "capability_keys": [
+          "create_teacher_account_secure",
+          "publish_classroom_grades",
+          "reset_teacher_password_secure",
+          "restore_teacher_account_secure"
+        ]
+      },
+      "static/js/ai_workspace_widget.js": {
+        "before_sha256": "f53ebda87efe6edf15489ab393f68bfe37ba5003b37f0537e20d8e92fd075ed8",
+        "after_sha256": "6e7eadff35ac145bd6cce5f5451d33889fc9b1228c6d6bb639caf43206b1b4a3",
+        "review_group": "confirmation",
+        "capability_keys": [
+          "create_teacher_account_secure",
+          "publish_classroom_grades",
+          "reset_teacher_password_secure",
+          "restore_teacher_account_secure"
+        ]
+      },
+      "classroom_app/routers/agent_bridge.py": {
+        "before_sha256": "187ec82192dc417bd50a6a8261aeadafcf40ed5e5cebe43653feae7250f72dbc",
+        "after_sha256": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173",
+        "review_group": "file_bridge",
+        "capability_keys": [
+          "file.collaboration",
+          "file.course",
+          "file.material",
+          "file.submission",
+          "file.task",
+          "file_download.collaboration",
+          "file_download.course",
+          "file_download.material",
+          "file_download.submission",
+          "file_download.task"
+        ]
+      },
+      "classroom_app/services/resource_access_service.py": {
+        "before_sha256": "d78ed6b4289a4acdd26430593240e089bd19e3d5bfb732c9164c8933ec672674",
+        "after_sha256": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3",
+        "review_group": "teaching",
+        "capability_keys": [
+          "file.course"
+        ]
+      },
+      "classroom_app/services/blog_service.py": {
+        "before_sha256": "b0b7f8032774d1f6ff2fe6e0227f62ed37251fd32a9cb3349591281ed92c55aa",
+        "after_sha256": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8",
+        "review_group": "teaching",
+        "capability_keys": [
+          "http.blog.comment.delete",
+          "http.blog.comment.like",
+          "http.blog.post.delete",
+          "http.blog.post.detail",
+          "http.blog.post.like",
+          "http.blog.post.update",
+          "http.blog.report.create",
+          "http.blog.report.resolve"
+        ]
+      },
+      "classroom_app/services/poll_service.py": {
+        "before_sha256": "c6d42ee65bfba48820941910f275a9fafab5d708ebb26f9c17bac7ea18af79d7",
+        "after_sha256": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53",
+        "review_group": "teaching",
+        "capability_keys": [
+          "http.polls.assignments",
+          "http.polls.candidates",
+          "http.polls.classroom.create",
+          "http.polls.delete",
+          "http.polls.manage.create",
+          "http.polls.manage.list",
+          "http.polls.manage.offerings",
+          "http.polls.status",
+          "http.polls.update"
+        ]
+      },
+      "classroom_app/services/signature_point_service.py": {
+        "before_sha256": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1",
+        "after_sha256": "bab9fe56972888029f33d51608c32f714a717a6132f6fa1b20e432cbb04f4a0b",
+        "review_group": "signatures",
+        "capability_keys": [
+          "http.signatures.flow.create",
+          "http.signatures.flow.end",
+          "http.signatures.function_points",
+          "http.signatures.list",
+          "http.signatures.point.state",
+          "http.signatures.request.cancel",
+          "http.signatures.request.detail",
+          "http.signatures.requests.list",
+          "http.signatures.schools",
+          "http.signatures.teachers",
+          "http.signatures.usage"
+        ]
+      },
+      "classroom_app/services/signature_service.py": {
+        "before_sha256": "8842230ffc9279086644ef5fcc8e9c79211e42347329944dbdbd447dd1c8d42e",
+        "after_sha256": "115206221275d298ffe0aa6dc7f8b2c96d7945481bdcbf867c7c1acba81ae007",
+        "review_group": "signatures",
+        "capability_keys": [
+          "http.signatures.flow.create",
+          "http.signatures.flow.end",
+          "http.signatures.function_points",
+          "http.signatures.list",
+          "http.signatures.point.state",
+          "http.signatures.request.cancel",
+          "http.signatures.request.detail",
+          "http.signatures.requests.list",
+          "http.signatures.schools",
+          "http.signatures.teachers",
+          "http.signatures.usage"
+        ]
+      },
+      "classroom_app/services/signature_workflow_service.py": {
+        "before_sha256": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8",
+        "after_sha256": "656881c8e954e7449bd8b8263186644d5c1b5efc4527efbb19d018197faa0aa7",
+        "review_group": "signatures",
+        "capability_keys": [
+          "http.signatures.flow.create",
+          "http.signatures.flow.end",
+          "http.signatures.function_points",
+          "http.signatures.list",
+          "http.signatures.point.state",
+          "http.signatures.request.cancel",
+          "http.signatures.request.detail",
+          "http.signatures.requests.list",
+          "http.signatures.schools",
+          "http.signatures.teachers",
+          "http.signatures.usage"
+        ]
+      },
+      "tests/test_agent_platform_request_signatures.py": {
+        "before_sha256": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97",
+        "after_sha256": "4f7f62e6f32c1ddc8b25222cc3880d06a8e60cbf5f7c07db9dbfda0b9ac57bb0",
+        "review_group": "signatures",
+        "capability_keys": [
+          "http.signatures.flow.create",
+          "http.signatures.flow.end",
+          "http.signatures.function_points",
+          "http.signatures.list",
+          "http.signatures.point.state",
+          "http.signatures.request.cancel",
+          "http.signatures.request.detail",
+          "http.signatures.requests.list",
+          "http.signatures.schools",
+          "http.signatures.teachers",
+          "http.signatures.usage"
+        ]
+      },
+      "classroom_app/routers/manage_parts/classes_courses_classes.py": {
+        "before_sha256": "53ece584906756be939f55ccf6ee90608136b55893d0d1df4aaf1474a1eef973",
+        "after_sha256": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98",
+        "review_group": "teaching",
+        "capability_keys": [
+          "http.teaching.class.create",
+          "http.teaching.student.create",
+          "http.teaching.student.status"
+        ]
+      },
+      "classroom_app/routers/manage_parts/classes_courses_courses.py": {
+        "before_sha256": "5b1a5b6495a8049c9423a6a3c535f72d330d28d04a806c9c55e3a77d100d8bbf",
+        "after_sha256": "789d4d5f96cb1bbb89c61c6ac70d7503fb16779d35bb531d5d50904e25d79ff2",
+        "review_group": "teaching",
+        "capability_keys": [
+          "http.teaching.course.create",
+          "http.teaching.course.plan.create"
+        ]
+      },
+      "classroom_app/services/agent_user_confirmation_actions.py": {
+        "before_sha256": "1e2a25c81cc46c69d1e0b62787f05724d9291a116833e33eb1b33b6fe10150fe",
+        "after_sha256": "9a879a2eb1e9e30027fdb5e2307f143daa1ce38255262dade423fefadd2ad7b3",
+        "review_group": "confirmation",
+        "capability_keys": [
+          "publish_classroom_grades"
+        ]
+      }
+    },
+    "verification": {
+      "root": {
+        "confirmation": {
+          "backend": 31,
+          "postgres": 5,
+          "chrome": 11,
+          "report": "docs/agent-human-business-confirmation-2026-09-10.md",
+          "sha256": "b04faf0667620607e7dd5bc6aa3615309b7ce5e0b8b34b394b2dd744ca0e7e29",
+          "latest_backend": {
+            "passed": 32,
+            "duration_seconds": 12.828,
+            "log": "c-confirmation-final-regression.log",
+            "signature_http": 13
+          },
+          "latest_postgres": {
+            "passed": 5,
+            "duration_seconds": 2.941
+          }
+        },
+        "browser": {
+          "command": "npx playwright test agent-questions.spec.ts blog-composer-revision.spec.ts agent-user-confirmation.spec.ts --config tests/e2e/components/playwright.config.ts",
+          "passed": 26,
+          "duration_seconds": 19.7,
+          "includes_previous_confirmation_chrome": 11,
+          "scope": "Real Jinja widget shell and component JS/CSS; controlled HTTP fixtures, not complete production/browser-service E2E."
+        }
+      },
+      "agent_combined": {
+        "command": "python -m unittest discover -s tests -t . -p 'test_agent*.py' -q",
+        "tests_run": 633,
+        "passed": 585,
+        "skipped": 47,
+        "errors": 1,
+        "duration_seconds": 102.683,
+        "status": "one_fixture_error_then_targeted_module_retested",
+        "error": "Old synthetic assignment fixture omitted its course; new shared context lock rejected missing course. Business code unchanged.",
+        "followup": {
+          "command": "python -m unittest tests.test_agent_postgres_writes -q",
+          "passed": 6,
+          "skipped": 0,
+          "duration_seconds": 0.005
+        },
+        "not_a_claim": "Original full run was not all-pass; corrected whole six-test module passed afterward, no second full run."
+      },
+      "teaching": {
+        "report": "docs/agent-teaching-lifecycle-verification-2026-09-10.json",
+        "passed": 73,
+        "skipped": 0,
+        "duration_seconds": 20.896,
+        "chrome": 4,
+        "postgres_competition": "not_verified_deployment_blocker"
+      },
+      "historical_signature": {
+        "report": "docs/agent-signature-decisions-poc-2026-09-10.json",
+        "sha256": "559755b81882fed6d7e2ebb819162eaa502f20c22d9a282d81571ca348bac2b0",
+        "tests": 168,
+        "native_postgres": 28,
+        "scope": "Historical exact-source run preserved; later edits require separate validation."
+      }
+    },
+    "assessment_source_recheck": {
+      "scope": "Synthetic SQLite assessment sources after course/offering parent locks; extends historical signature evidence without rewriting it. No production/DSH claim.",
+      "command": "python -m unittest tests.test_assessment_plan_service tests.test_final_material_assessment_plan tests.test_exam_material_reverse_service -q",
+      "tests_run": 31,
+      "passed": true,
+      "skipped": 0,
+      "duration_seconds": 1.969,
+      "source_hashes": {
+        "classroom_app/services/assessment_plan_service.py": "4b609f986fadb77e8ae10e403c0123cd23301fb34dae43d181a8fbba19b33f4d",
+        "classroom_app/services/assessment_plan_generation_service.py": "ff340ce344cb85d94534f3de330857e19b2cc1475edd0b66d01db2ee72180088",
+        "classroom_app/services/assessment_plan_import_service.py": "ad637dabd2e76654959458f9c7818233ef04ca3d3488f6c7a38bfb7bd0f1a3fd",
+        "classroom_app/services/exam_material_reverse_service.py": "e913b4ccafcb7168f6bc55fa309719f8ae8689abe3f2f726f6a32fda084e55e5",
+        "classroom_app/services/teaching_lifecycle_service.py": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b",
+        "classroom_app/services/signature_account_lock_service.py": "1a76b00a7bf332b770670229d21faffd9447a337fb8779c5f30c566b55f601b7",
+        "classroom_app/services/signature_workflow_lock_service.py": "17c45db029d9b2b6ae180136db7a5d46bbf922cabdadfc510038133bf3690a25",
+        "tests/test_assessment_plan_service.py": "26f4e007ce5ae8dcf47913f6a44ffe1949b3d47beb2ea388a7a15c6ab7b9645f",
+        "tests/test_final_material_assessment_plan.py": "0fecd0c81dad95952eaa7c5ff744f2db29afeffdf321c9cd4365a8f250430f3e",
+        "tests/test_exam_material_reverse_service.py": "3d28ac4fba99b644bb2f7cd37fa1bde2f5dd1ed679b76c03495c72a8ea0ee7ae"
+      },
+      "source_hashes_stable": true
+    },
+    "related_normal_routes_policy": "辅助解释同能力分支，当前inventory不验证或增加相关路由覆盖；review_signature_request只计一个能力。",
+    "historical_evidence_policy": "历史报告的source SHA和结果不重写，不把初始通过套到后续修改；当前source_files由本轮验证层支持。"
+  }
 }

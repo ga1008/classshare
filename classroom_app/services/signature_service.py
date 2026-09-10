@@ -1056,6 +1056,20 @@ def update_signature_metadata(
     if explicit_subject_id not in (None, "") and subject_id:
         clean_subject_name = _subject_name_by_id(conn, subject_role, int(subject_id)) or clean_subject_name
 
+    from .signature_account_lock_service import lock_signature_accounts
+    lock_signature_accounts(conn, [signature_id], additional_holders=[
+        (subject_role, subject_id), (actor_role, actor_id), (owner_role, owner_id)])
+    if dict(_get_signature_row(conn, signature_id)) != dict(row):
+        raise SignatureServiceError(409, '签名内容或归属已变化，请重新读取后操作。')
+    actor = build_signature_actor(conn, user)
+    if not can_edit_signature(actor, row):
+        raise SignatureServiceError(403, '当前账号已无权修改此签名。')
+    if bool(actor.get('is_super_admin')) != is_super_admin:
+        raise SignatureServiceError(403, '当前管理权限已变化，请重新读取后操作。')
+    _resolve_visibility_organization(conn, actor, requested_scope_level, org_scope)
+    if target_teacher:
+        _teacher_owner_row(conn, int(target_teacher['id']))
+
     conn.execute(
         """
         UPDATE electronic_signatures
@@ -1279,6 +1293,18 @@ async def create_signature_from_upload(
         normalized_identity = ""
         identity_verified = 0
 
+    from .signature_account_lock_service import lock_identity_accounts
+    lock_identity_accounts(conn, [(normalized_subject_role, normalized_subject_id), (actor_role, actor_id)])
+    actor = build_signature_actor(conn, user)
+    if not actor.get('is_super_admin') and (
+        normalized_kind == 'stamp' or (normalized_subject_role, normalized_subject_id) != (actor_role, actor_id)
+    ):
+        raise SignatureServiceError(403, '当前账号只能登记本人签名。')
+    _resolve_visibility_organization(conn, actor, normalized_scope, owner_scope)
+    identity_verified = int(bool(normalized_kind != 'stamp' and actor.get('is_super_admin')
+                                 and signature_identity_service.normalize_identity_category(identity_category)))
+    if not signature_identity_service.normalize_identity_category(identity_category) and normalized_subject_id:
+        normalized_identity = signature_identity_service.get_account_identity(conn, normalized_subject_role, normalized_subject_id)
     signature_id = execute_insert_returning_id(
         conn,
         """
@@ -1477,6 +1503,8 @@ def resolve_signature_file_path(row: sqlite3.Row | dict[str, Any]) -> Path | Non
 
 
 def delete_signature(conn: sqlite3.Connection, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_rows(conn, [signature_id])
     row, actor = get_signature_row_for_actor(conn, user, signature_id)
     if not can_delete_signature(actor, row):
         raise SignatureServiceError(403, "只有签名归属人或超管可以删除此签名。")
@@ -1538,6 +1566,12 @@ async def replace_signature_image(
         raise SignatureServiceError(400, str(exc)) from exc
     file_hash = hashlib.sha256(data).hexdigest()
     target_path = await _store_signature_bytes(file_hash, ext, data)
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_rows(conn, [signature_id])
+    actor = build_signature_actor(conn, user)
+    row = _get_signature_row(conn, signature_id)
+    if not (bool(actor.get('is_super_admin')) or _is_owner(actor, row) or _is_subject(actor, row)):
+        raise SignatureServiceError(403, '当前账号已无权更换此签名图片。')
     active_bindings = count_active_signature_bindings(conn, signature_id)
     conn.execute(
         """
@@ -1748,6 +1782,14 @@ def merge_duplicate_signatures(
     if len(normalized_ids) > 20:
         raise SignatureServiceError(400, "一次最多归并 20 个签名。")
 
+    from .signature_merge_lock_service import lock_signature_merge
+    lock_signature_merge(conn, [primary_id, *normalized_ids], duplicate_ids=normalized_ids)
+    actor = build_signature_actor(conn, user)
+    if not bool(actor.get('is_super_admin')):
+        raise SignatureServiceError(403, '只有超级管理员可以归并签名。')
+    primary = _get_signature_row(conn, primary_id)
+    primary_name = _clean_text(primary['subject_name'] or primary['name'], 80)
+
     from . import signature_workflow_service
 
     merged = 0
@@ -1864,6 +1906,8 @@ def unbind_signature(
     account linkage is removed. Pending requests keep their reviewer rows —
     approvals recorded before the unbind stay valid history.
     """
+    from .signature_account_lock_service import lock_signature_accounts
+    lock_signature_accounts(conn, [signature_id])
     actor = build_signature_actor(conn, user)
     row = _get_signature_row(conn, signature_id)
     if not can_unbind_signature(actor, row):
@@ -1980,6 +2024,10 @@ def record_signature_usage(
 ) -> dict[str, Any]:
     if _clean_text(action, 40) == "use":
         raise SignatureServiceError(400, "签名插入必须通过已登记功能点执行，不能记录无挂钩调用。")
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(context_type, context_id)], legacy_context=True)
+    lock_signature_rows(conn, [signature_id])
     # Callers gate the action themselves (e.g. the image route allows admin
     # downloads); this helper only records the audit trail.
     row, actor = get_signature_row_for_actor(conn, user, signature_id, require_use=False)

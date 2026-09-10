@@ -28,6 +28,12 @@ def create_assignment_record(conn, *, teacher_id: int, course_id: int, data: dic
         actual_course_id = int(offering["course_id"])
     elif not conn.execute("SELECT id FROM courses WHERE id=? AND created_by_teacher_id=?", (actual_course_id, int(teacher_id))).fetchone():
         raise HTTPException(404, "课程不存在或您无权操作")
+    from .teaching_lifecycle_service import lock_teaching_context
+    current = lock_teaching_context(conn, course_id=actual_course_id,
+        class_offering_id=int(class_offering_id) if class_offering_id else None)
+    owner = current.get("teacher_id") if class_offering_id else current.get("created_by_teacher_id")
+    if int(owner or 0) != int(teacher_id):
+        raise HTTPException(403, "教学资源归属已变化，请重新选择。")
     created_at = datetime.now().isoformat()
     new_id = execute_insert_returning_id(conn, """
         INSERT INTO assignments (

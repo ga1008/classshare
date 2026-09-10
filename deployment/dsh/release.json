@@ -1,8 +1,14 @@
 {
   "dsh_package_version": "0.1.5-rc.1",
-  "profile_sha256": "8c3853e5181e3ea9365ace7dcb70d2abfd56c09b2786c341efd73f199b288594",
-  "image": "sha256:15312d67bf62400d238ebd74034b29795064cca199ffbdf9a8ad1b2e6b2d8a47",
-  "tag": "lanshare-dsh:0.1.5-rc.1-lanshare-20260910",
-  "evidence_report": "docs/agent-dsh-linux-poc-2026-09-10.json",
-  "service_probe_report": "docs/agent-dsh-real-service-probe-2026-09-10.json"
+  "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+  "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+  "tag": "lanshare-dsh:0.1.5-rc.1-lanshare-20260910-c3",
+  "evidence_report": "docs/agent-dsh-linux-c3-poc-2026-09-10.json",
+  "service_probe_report": "docs/agent-dsh-real-service-probe-2026-09-10.json",
+  "runtime_validation_report": "docs/agent-dsh-c3-validation-2026-09-10.json",
+  "runtime_inputs_report": "docs/agent-dsh-runtime-c3-inputs-2026-09-10.json",
+  "host_launcher_probe_report": "docs/agent-dsh-launcher-c3-poc-2026-09-10.json",
+  "quota_probe_report": "docs/agent-dsh-quota-c3-poc-2026-09-10.json",
+  "service_probe_report_scope": "Historical direct upstream service smoke; not c3 full-platform E2E",
+  "full_platform_e2e_for_image": false
 }
