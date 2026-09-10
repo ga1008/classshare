@@ -161,7 +161,7 @@ class ModelGatewayTests(unittest.TestCase):
         self.assertEqual(4, row["input_tokens"])
 
     def test_search_preserves_native_tools_and_uses_separate_endpoint(self):
-        payload = self.payload(model="deepseek-v4-flash", tools=[{"type": "web_search_20250305", "name": "web_search"}])
+        payload = self.payload(model="deepseek-flash", tools=[{"type": "web_search_20250305", "name": "web_search"}])
         grant = service.reserve_model_request(self.conn, self.token, endpoint="messages", payload=payload)
         self.assertEqual("https://api.deepseek.com/anthropic/v1/messages", grant.url)
         self.assertEqual(payload["tools"], grant.payload["tools"])

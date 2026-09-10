@@ -133,7 +133,7 @@ def prepare():
            'SECRET_KEY':secret_key, 'LANSHARE_DATA_ROOT':'/e2e-data', 'MAIN_DATA_DIR':'/e2e-data',
            'AGENT_TASKS_ENABLED':'true', 'AGENT_DSH_ENABLED':'true', 'AGENT_DSH_LAUNCHER_SOCKET':'/e2e-control/launcher.sock',
            'AGENT_TASK_MAX_RUNTIME_SECONDS':'540', 'AGENT_TASK_GLOBAL_CONCURRENCY':'1',
-           'AGENT_MODEL_DEFAULT':'deepseek-v4-pro', 'AGENT_MODEL_SEARCH_MODEL':'deepseek-v4-flash',
+           'AGENT_MODEL_DEFAULT':'deepseek-v4-pro', 'AGENT_MODEL_SEARCH_MODEL':'deepseek-flash',
            'AI_ASSISTANT_URL':'http://127.0.0.1:9', 'AI_DURABLE_JOBS_ENABLED':'false', 'CAREER_JOBS_ENABLED':'false',
            'POSTGRES_POOL_MIN':'1', 'POSTGRES_POOL_MAX':'4', 'POSTGRES_POOL_CHECKOUT_TIMEOUT':'3', 'MAIN_WORKERS':'1'}
     write_private(ROOT/'app.env', ''.join(f'{key}={value}\n' for key,value in env.items()))

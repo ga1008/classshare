@@ -109,7 +109,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
             assert self.headers.get('Authorization') == 'Bearer ' + model_token
             assert self.headers.get('x-api-key') == model_token
             assert self.headers.get('anthropic-version') == '2023-06-01'
-            assert body['model'] == 'deepseek-v4-flash'
+            assert body['model'] == 'deepseek-flash'
             assert body['tools'] == [{'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': 3}]
             report['checks']['official_search_proxy_request'] = {
                 'path': self.path, 'model': body['model'], 'tools': body['tools'],
@@ -185,7 +185,7 @@ def main():
     task_id = 9000000000000000 + int(time.time())
     request = {'version': 1, 'action': 'run', 'task_id': task_id, 'attempt_id': str(uuid.uuid4()),
                'fencing_token': 1, 'actor_id': 'teacher:9000000000000001', 'model_token': model_token,
-               'tools_token': tools_token, 'model': 'deepseek-v4-pro', 'search_model': 'deepseek-v4-flash'}
+               'tools_token': tools_token, 'model': 'deepseek-v4-pro', 'search_model': 'deepseek-flash'}
     workspace = config.task_root / 'tasks' / str(task_id)
     workspace.mkdir(parents=True)
     instance = launcher.Launcher(config)

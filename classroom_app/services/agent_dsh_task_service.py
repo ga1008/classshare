@@ -404,7 +404,7 @@ async def run_dsh_task(task):
         evidence = await asyncio.to_thread(control, {"action": "probe"}, socket_path=AGENT_DSH_LAUNCHER_SOCKET)
         launch = {"action": "run", "task_id": task_id, "actor_id": actor.key, "attempt_id": attempt["id"],
                   "fencing_token": attempt["fencing_token"], "model": model,
-                  "search_model": os.getenv("AGENT_MODEL_SEARCH_MODEL", "deepseek-v4-flash"),
+                  "search_model": os.getenv("AGENT_MODEL_SEARCH_MODEL", "deepseek-flash"),
                   "model_token": tokens["model"], "tools_token": tokens["tools"]}
         child_env = {"PATH": os.defpath, "LANG": "C.UTF-8", "PYTHONUTF8": "1",
                      "LANSHARE_DSH_LAUNCHER_SOCKET": AGENT_DSH_LAUNCHER_SOCKET,

@@ -26,7 +26,7 @@ class DshDeploymentTests(unittest.TestCase):
         self.assertIn('AGENT_DSH_ENABLED=true\n', result)
         self.assertIn('AGENT_TASK_GLOBAL_CONCURRENCY=1\n', result)
         self.assertIn('AGENT_TASK_WORKER_CONCURRENCY=1\n', result)
-        self.assertIn('AGENT_MODEL_SEARCH_MODEL=deepseek-v4-flash\n', result)
+        self.assertIn('AGENT_MODEL_SEARCH_MODEL=deepseek-flash\n', result)
         self.assertEqual(installer.environment_text(result), result)
 
     def test_profile_drift_is_rejected_before_host_actions(self):

@@ -107,7 +107,7 @@ def environment_text(text):
                 'AGENT_MODEL_DEFAULT': model.strip(' \"\''),
                 'AGENT_TASK_GLOBAL_CONCURRENCY': '1', 'AGENT_TASK_WORKER_CONCURRENCY': '1'}
     defaults = {'AGENT_TASK_WORKER_ID': 'agent-worker-compose', 'AGENT_TASK_WORKER_POLL_SECONDS': '5',
-                'AGENT_TASK_MAX_RUNTIME_SECONDS': '1800', 'AGENT_MODEL_SEARCH_MODEL': 'deepseek-v4-flash',
+                'AGENT_TASK_MAX_RUNTIME_SECONDS': '1800', 'AGENT_MODEL_SEARCH_MODEL': 'deepseek-flash',
                 'AGENT_MODEL_SEARCH_BASE_URL': 'https://api.deepseek.com/anthropic/v1'}
     for key, value in defaults.items():
         required[key] = values.get(key, '').strip() or value

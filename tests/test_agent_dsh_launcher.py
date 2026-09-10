@@ -36,7 +36,7 @@ class LauncherBoundaryTests(unittest.TestCase):
         self.evidence = {"dsh_package_version": "0.1.5-rc.1", "profile_sha256": digest.hexdigest()}
         self.request = {"task_id": 7, "attempt_id": str(uuid.uuid4()), "fencing_token": 1, "actor_id": "teacher:7",
                         "model_token": "lsagt_" + "a" * 43, "tools_token": "lsagt_" + "b" * 43,
-                        "model": "deepseek-v4-pro", "search_model": "deepseek-v4-flash"}
+                        "model": "deepseek-v4-pro", "search_model": "deepseek-flash"}
 
     def tearDown(self):
         self.temp.cleanup()

@@ -112,7 +112,7 @@ def reserve_model_request(conn, token: str, *, endpoint: str, payload: Any) -> M
     if endpoint == "messages":
         # Search has its own protocol and explicit configured model. Never infer
         # a paid model from a client-supplied name.
-        model = os.getenv("AGENT_MODEL_SEARCH_MODEL", "deepseek-v4-flash").strip()
+        model = os.getenv("AGENT_MODEL_SEARCH_MODEL", "deepseek-flash").strip()
     body = validate_model_payload(payload, model=model, endpoint=endpoint)
     base_url = approved_model_base_url(item.get("base_url") or DEFAULT_BASE_URL)
     if endpoint == "messages":

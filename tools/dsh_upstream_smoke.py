@@ -32,7 +32,7 @@ def requests_for(model):
         ('chat_high', '/chat/completions', {'model': model, 'max_tokens': 256, 'stream': False,
           'thinking': {'type': 'enabled'}, 'reasoning_effort': 'high',
           'messages': [{'role': 'user', 'content': 'What is 1+1? Reply briefly.'}]}),
-        ('native_search', '/messages', {'model': 'deepseek-v4-flash', 'max_tokens': 512,
+        ('native_search', '/messages', {'model': 'deepseek-flash', 'max_tokens': 512,
           'messages': [{'role': 'user', 'content': [{'type': 'text', 'text': 'Perform a web search for the query: DeepSeek official API documentation'}]}],
           'tools': [{'type': 'web_search_20250305', 'name': 'web_search', 'max_uses': 1}]}),
     ]
