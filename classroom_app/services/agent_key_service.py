@@ -22,7 +22,7 @@ KEY_STATUS_UNAVAILABLE = "unavailable"
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = AGENT_MODEL_DEFAULT or "deepseek-v4-pro"
-TEST_MODEL = "deepseek-v4-flash"
+TEST_MODEL = "deepseek-flash"
 
 
 def _json_dumps(value: Any) -> str:

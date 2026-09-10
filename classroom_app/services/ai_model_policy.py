@@ -200,6 +200,14 @@ def provider_order_for_task(
 
 
 AI_EXECUTION_POLICY_VERSION = "business-routing-2026-09-v2"
+# DeepSeek only publishes the unversioned ids below; "deepseek-v4-flash" is a
+# legacy alias the API still resolves to deepseek-flash. Accept it so a stale
+# deployment env cannot fail text routing closed, but never emit it ourselves.
+DEEPSEEK_FLASH_MODEL = "deepseek-flash"
+DEEPSEEK_PRO_MODEL = "deepseek-v4-pro"
+LEGACY_DEEPSEEK_TEXT_ALIASES = frozenset({"deepseek-v4-flash"})
+DEEPSEEK_TEXT_MODELS = frozenset({DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL}) | LEGACY_DEEPSEEK_TEXT_ALIASES
+
 DOUBAO_PRO_MODEL = "doubao-seed-2-1-pro-260628"
 DOUBAO_LITE_MODEL = "doubao-seed-2-0-lite-260428"
 ASSESSMENT_KINDS = frozenset({"homework", "midterm", "final", "legacy_unknown"})
@@ -322,9 +330,9 @@ def resolve_execution_plan(
     if not visual:
         deep = task == AI_TASK_DEEP_TEXT
         profile = "text_deep" if deep else "text_fast"
-        default_model = "deepseek-v4-pro" if deep else "deepseek-v4-flash"
+        default_model = DEEPSEEK_PRO_MODEL if deep else DEEPSEEK_FLASH_MODEL
         model = env.get("DEEPSEEK_MODEL_DEEP_TEXT" if deep else "DEEPSEEK_MODEL_FAST_TEXT") or env.get("DEEPSEEK_MODEL_THINKING" if deep else "DEEPSEEK_MODEL_STANDARD") or default_model
-        if model not in {"deepseek-v4-pro", "deepseek-v4-flash"}:
+        if model not in DEEPSEEK_TEXT_MODELS:
             raise ValueError("Text model is outside the verified DeepSeek allowlist")
         effort = ("max" if operation in {"grading", "adjudication", "generation"} else "high") if deep else None
         plan = AIExecutionPlan(profile, "deepseek", model, "thinking" if deep else "standard", task, operation, "enabled" if deep else "disabled", effort, 16384 if deep else 4096)
