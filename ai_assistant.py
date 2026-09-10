@@ -53,6 +53,8 @@ from classroom_app.services.ai_model_policy import (
     AI_TASK_TYPES,
     AI_TASK_VISION_INTERACTIVE,
     AI_TASK_VISION_OCR,
+    DEEPSEEK_PRO_MODEL,
+    DEEPSEEK_TEXT_MODELS,
     MULTIMODAL_TASK_TYPES,
     TEXT_TASK_TYPES,
     capability_for_task_type as _policy_capability_for_task_type,
@@ -271,12 +273,12 @@ PLATFORMS_CONFIG = {
         "max_concurrency": DEEPSEEK_MAX_CONCURRENT_REQUESTS,
         "concurrency_limit_name": "DEEPSEEK_MAX_CONCURRENT_REQUESTS",
         "models": {
-            "standard": os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-v4-flash"),
+            "standard": os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-flash"),
             "thinking": os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
             "vision": None
         },
         "task_models": {
-            AI_TASK_FAST_TEXT: os.getenv("DEEPSEEK_MODEL_FAST_TEXT") or os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-v4-flash"),
+            AI_TASK_FAST_TEXT: os.getenv("DEEPSEEK_MODEL_FAST_TEXT") or os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-flash"),
             AI_TASK_DEEP_TEXT: os.getenv("DEEPSEEK_MODEL_DEEP_TEXT") or os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
             AI_TASK_LIGHT_MULTIMODAL: None,
             AI_TASK_DEEP_MULTIMODAL: None,
@@ -1190,7 +1192,7 @@ def _estimate_provider_cost_cny(
 ) -> dict[str, Any] | None:
     if not provider_usage:
         return None
-    if platform_name == "deepseek" and model_name in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+    if platform_name == "deepseek" and model_name in DEEPSEEK_TEXT_MODELS:
         if not all(key in provider_usage for key in ("prompt_tokens", "completion_tokens")):
             return None
         try:
@@ -1221,7 +1223,7 @@ def _estimate_provider_cost_cny(
                     price_basis = "peak_conservative_request_window" if peak else "off_peak_request_window"
             except (TypeError, ValueError, OverflowError):
                 pass
-        scale = (3.0 if model_name == "deepseek-v4-pro" else 1.0) * (1.0 if peak else 0.5)
+        scale = (3.0 if model_name == DEEPSEEK_PRO_MODEL else 1.0) * (1.0 if peak else 0.5)
         input_price, cached_price, output_price = 3.0 * scale, 0.1 * scale, 9.0 * scale
         return {"currency": "CNY", "estimated_cost": round(((prompt - cached) * input_price + cached * cached_price + completion * output_price) / 1_000_000, 8), "prompt_tokens": prompt, "completion_tokens": completion, "cached_input_tokens": cached if cache_known else None, "cache_usage_reported": cache_known, "assumed_cached_input_tokens": cached, "input_price_per_million": input_price, "cached_price_per_million": cached_price, "output_price_per_million": output_price, "price_tier": price_basis, "model": model_name, "price_version": "deepseek-2026-09-07"}
     if model_name and platform_name == "volcengine":
