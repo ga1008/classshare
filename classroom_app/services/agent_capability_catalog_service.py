@@ -19,6 +19,8 @@ def capability_catalog(app, *, actor_role, is_super_admin, keys=None, query=None
     from .agent_platform_write_service import platform_write_catalog
     from .agent_platform_request_registry import platform_request_catalog
     from .agent_secure_account_actions import secure_action_catalog
+    from .agent_user_confirmation_actions import user_confirmation_action_catalog
+    from .agent_file_capability_catalog import file_transport_catalog
 
     value = platform_read_catalog(app, actor_role=actor_role, is_super_admin=is_super_admin)
     if actor_role == "teacher" and is_super_admin:
@@ -35,7 +37,10 @@ def capability_catalog(app, *, actor_role, is_super_admin, keys=None, query=None
         item["label"] = AGENT_ACTION_DEFINITIONS[item["action"]]["label"]
     requests = platform_request_catalog(app, include_blocked=True)
     secure = secure_action_catalog(actor_role=actor_role, is_super_admin=is_super_admin)
-    groups = {"read": value["operations"], "write": writes["actions"], "request": requests, "secure_input": secure}
+    confirmations = user_confirmation_action_catalog(actor_role=actor_role, is_super_admin=is_super_admin)
+    groups = {"read": value["operations"], "write": writes["actions"], "request": requests,
+              "secure_input": secure, "user_confirmation": confirmations,
+              "file_transports": file_transport_catalog()}
     known = set()
     totals = {name: len(items) for name, items in groups.items()}
 
@@ -56,10 +61,12 @@ def capability_catalog(app, *, actor_role, is_super_admin, keys=None, query=None
 
     value["operations"] = select(groups["read"])
     writes["actions"] = select(groups["write"])
-    value.update(writes=writes, platform_requests=select(groups["request"]), user_input_actions=select(groups["secure_input"]),
+    value.update(writes=writes, platform_requests=select(groups["request"]),
+        file_transports=select(groups["file_transports"]),
+        user_input_actions=select(groups["secure_input"]) + select(groups["user_confirmation"]),
         catalog_mode="parameters" if keys is not None else "index", available_counts=totals,
         request_guarantee="普通平台请求保留接口观察回执；业务是否最终完成须按返回结果继续核对。",
-        next_step="索引仅提供名称。调用 platform_capabilities(keys=[所选名称]) 获取完整参数，再调用对应工具；query可按中英文名称检索索引。secure_input只能提出由用户安全填写的确认提案。")
+        next_step="索引仅提供名称。调用 platform_capabilities(keys=[所选名称]) 获取完整参数，再调用对应工具；query可按中英文名称检索索引。file_transports分为文本抽取和文件字节复制，按条目tool调用；secure_input/user_confirmation只能提出由用户安全填写或本人核对的确认提案。")
     if keys is not None:
         value["unavailable_keys"] = [key for key in keys if key not in known]
     return value

@@ -1,5 +1,6 @@
 from .common import *
 from ...services.base_resource_modes_service import build_class_delete_blockers, raise_if_delete_blocked
+from datetime import timedelta
 
 
 router = APIRouter()
@@ -633,10 +634,11 @@ async def api_create_class_student(
 
 
 @router.post("/students/{student_id}/status", response_class=JSONResponse)
-async def api_update_class_student_status(
+def api_update_class_student_status(
     student_id: int,
     enrollment_status: str = Form(...),
     enrollment_note: str = Form(default=""),
+    expected_updated_at: str | None = Form(default=None, max_length=100),
     user: dict = Depends(get_current_teacher),
 ):
     """切换学生学籍状态；休学学生保留数据但不再纳入课堂管理统计。"""
@@ -648,7 +650,21 @@ async def api_update_class_student_status(
     note = _clean_form_text(enrollment_note, limit=500)
 
     with get_db_connection() as conn:
+        from ...services.account_credentials_service import prepare_credentials_change, actor_authority_changed
+        _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        # In-flight writes and new grant issuance finish before this transition;
+        # never take task locks after updating the student's row.
+        prepare_credentials_change(conn, role="student", user_id=int(student_id))
         student_row = _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        previous_revision = str(_row_get(student_row, "enrollment_status_updated_at") or "")
+        if expected_updated_at is not None and expected_updated_at != (previous_revision or "legacy"):
+            raise HTTPException(409, "学生学籍状态已更新，请刷新名单后再操作。")
+        changed_at = local_iso(timespec="microseconds")
+        if previous_revision and changed_at <= previous_revision:
+            try:
+                changed_at = (datetime.fromisoformat(previous_revision) + timedelta(microseconds=1)).isoformat()
+            except ValueError:
+                raise HTTPException(409, "原学籍版本无法核对，请刷新名单后重试。") from None
         conn.execute(
             """
             UPDATE students
@@ -657,12 +673,12 @@ async def api_update_class_student_status(
                 enrollment_note = ?
             WHERE id = ?
             """,
-            (normalized_status, local_iso(), note, int(student_id)),
+            (normalized_status, changed_at, note, int(student_id)),
         )
+        if normalized_status != STUDENT_STATUS_ACTIVE or normalize_student_enrollment_status(_row_get(student_row, "enrollment_status")) != normalized_status:
+            actor_authority_changed(conn, role="student", user_id=int(student_id),
+                                    reason="student_enrollment_changed", invalidate_sessions=True)
         conn.commit()
-
-    if normalized_status != STUDENT_STATUS_ACTIVE:
-        invalidate_session_for_user(str(student_id), "student")
 
     student_name = str(student_row["name"] or "学生")
     return {
@@ -673,6 +689,7 @@ async def api_update_class_student_status(
             "enrollment_status": normalized_status,
             "enrollment_status_label": student_enrollment_status_label(normalized_status),
             "enrollment_note": note,
+            "enrollment_status_updated_at": changed_at,
         },
     }
 

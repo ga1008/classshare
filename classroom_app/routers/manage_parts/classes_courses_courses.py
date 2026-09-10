@@ -278,6 +278,8 @@ async def api_create_course(
             conn.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(400, "创建课程失败，可能名称已存在。")
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"创建课程错误: {str(e)}")  # 添加错误日志
         raise HTTPException(500, f"创建课程失败: {str(e)}")

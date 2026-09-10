@@ -22,7 +22,7 @@ class FixedClock(datetime):
         return cls(2026, 9, 10, 12, 0, 0, tzinfo=tz)
 
 
-class AgentMaterialContentRequestsTests(PlatformRequestFixture):
+class MaterialContentRequestFixture(PlatformRequestFixture):
     def setUp(self):
         super().setUp()
         directory = tempfile.TemporaryDirectory()
@@ -88,6 +88,7 @@ class AgentMaterialContentRequestsTests(PlatformRequestFixture):
         return self.restored_parity(actor, 'http.materials.content.save', path_params={'material_id': material_id},
             query_params={'max_response_bytes': 131072}, body=body)
 
+class AgentMaterialContentRequestsTests(MaterialContentRequestFixture):
     def test_plain_read_edit_noop_and_stale_revision_preserve_current_file(self):
         material_id = self.material()
         source = self.read(material_id)['result']['data']

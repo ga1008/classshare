@@ -1,7 +1,12 @@
 import logging
+import hashlib
+from starlette.concurrency import run_in_threadpool
 
 from .common import *
 from ...services.academic_service import build_textbook_prompt_context
+from ...services.offering_plan_edit_service import (
+    lock_plan_row, offering_edit_snapshot, offering_edit_impact, validate_offering_edit,
+)
 
 from ...services.offering_bootstrap_service import build_offering_bootstrap_candidates
 from ...services.offering_membership_service import (
@@ -245,6 +250,10 @@ async def api_preview_class_offering(
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    return await run_in_threadpool(_preview_class_offering, data, user)
+
+
+def _preview_class_offering(data, user):
 
     try:
         with get_db_connection() as conn:
@@ -255,6 +264,7 @@ async def api_preview_class_offering(
                 require_schedule=True,
                 allow_missing_lessons=True,
             )
+            existing = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
     except CoursePlanningError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -264,6 +274,8 @@ async def api_preview_class_offering(
     return {
         "status": "success",
         "preview": plan,
+        "plan_revision": _offering_plan_revision(payload, existing),
+        "edit_impact": offering_edit_impact(existing, payload),
         "class_name": str(payload["class_row"]["name"] or ""),
         "course_name": str(payload["course_row"]["name"] or ""),
         "semester_name": str(payload["semester_row"]["name"] or ""),
@@ -279,12 +291,32 @@ async def api_preview_class_offering(
     }
 
 
+def _offering_snapshot_for_payload(conn, payload, teacher_id):
+    if not payload["offering_id"]:
+        return None
+    owned = _ensure_teacher_owned_offering(conn, payload["offering_id"], teacher_id)
+    return offering_edit_snapshot(conn, owned)
+
+
+def _offering_plan_revision(payload, existing=None):
+    """Bind the displayed schedule and its selected source rows, without writes."""
+    snapshot = {key: dict(value) if hasattr(value, "keys") else value for key, value in payload.items()}
+    if existing is not None:
+        snapshot["existing"] = existing
+    return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":"), default=str).encode()).hexdigest()
+
+
 @router.post("/class_offerings/save", response_class=JSONResponse)
 async def api_save_class_offering(
     request: Request,
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    return await run_in_threadpool(_save_class_offering, data, user)
+
+
+def _save_class_offering(data, user):
 
     try:
         with get_db_connection() as conn:
@@ -295,6 +327,32 @@ async def api_save_class_offering(
                 require_schedule=True,
                 allow_missing_lessons=False,
             )
+            # Source course -> classroom -> session order is shared with lesson
+            # replacement. Recheck both resource policy and snapshot after waits.
+            before = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
+            course_ids = {int(payload["course_id"])}
+            if before:
+                course_ids.add(int(before["offering"]["course_id"]))
+            for course_id in sorted(course_ids):
+                lock_plan_row(conn, "courses", course_id)
+            if payload["offering_id"]:
+                lock_plan_row(conn, "class_offerings", payload["offering_id"])
+                owned = _ensure_teacher_owned_offering(conn, payload["offering_id"], user["id"])
+                if int(owned["course_id"]) not in course_ids:
+                    raise HTTPException(409, "课堂课程绑定已变更，请重新预览。")
+                for row in conn.execute("SELECT id FROM class_offering_sessions WHERE class_offering_id = ? ORDER BY id", (payload["offering_id"],)).fetchall():
+                    lock_plan_row(conn, "class_offering_sessions", row["id"])
+            payload = _prepare_offering_payload(
+                conn, teacher_id=int(user["id"]), data=data,
+                require_schedule=True, allow_missing_lessons=False,
+            )
+            existing = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
+            if (existing and not data.get("expected_plan_revision")) or (
+                data.get("expected_plan_revision") is not None
+                and data["expected_plan_revision"] != _offering_plan_revision(payload, existing)
+            ):
+                raise HTTPException(409, "排课预览或课程资料已更新，请重新预览并核对后保存。")
+            edit_impact = validate_offering_edit(existing, payload)
 
             if payload["offering_id"]:
                 _ensure_teacher_owned_offering(conn, payload["offering_id"], user["id"])
@@ -396,6 +454,8 @@ async def api_save_class_offering(
                 conn,
                 offering_id=offering_id,
                 sessions=payload["plan"]["sessions"],
+                preserve_removed=bool(existing),
+                removal_note="本次调整已停排，保留课次以维护既有课堂记录",
             )
             sync_classroom_learning_material_assignments(
                 conn,
@@ -414,6 +474,8 @@ async def api_save_class_offering(
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "保存失败，该班级课程在当前学期可能已存在。")
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(500, f"数据库错误: {exc}")
 
@@ -424,6 +486,7 @@ async def api_save_class_offering(
         ),
         "offering_id": offering_id,
         "preview": payload["plan"],
+        "edit_impact": edit_impact,
     }
 
 
@@ -486,6 +549,8 @@ async def api_create_class_offering(
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "创建失败，该班级课程在当前学期可能已存在。")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"数据库错误: {e}")
 

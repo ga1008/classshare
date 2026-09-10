@@ -684,17 +684,20 @@ def apply_reviewed_adapters(report: dict[str, Any], reviewed: Any, root: Path) -
             continue
         seen.add(key)
         required = ("kind", "method", "path", "handler", "roles", "resource_boundary", "receipt", "verification", "limitations", "source_files")
-        if any(not item.get(field) for field in required) or item["kind"] not in {"read", "write", "request", "secure_input", "file_read"} or not isinstance(item["source_files"], list):
+        if any(not item.get(field) for field in required) or item["kind"] not in {"read", "write", "request", "secure_input", "user_confirmation", "file_read", "file_download"} or not isinstance(item["source_files"], list):
             issues.append({"capability_key": key, "reason": "incomplete_explicit_review"})
             continue
         if item["kind"] == "request" and item.get("guarantee") != "observed_http_result_not_verified_business":
             issues.append({"capability_key": key, "reason": "request_requires_observation_guarantee"})
             continue
-        if item["kind"] == "secure_input" and item.get("guarantee") != "user_only_authenticated_confirmation":
-            issues.append({"capability_key": key, "reason": "secure_input_requires_user_only_confirmation"})
+        if item["kind"] in {"secure_input", "user_confirmation"} and item.get("guarantee") != "user_only_authenticated_confirmation":
+            issues.append({"capability_key": key, "reason": item["kind"] + "_requires_user_only_confirmation"})
             continue
         if item["kind"] == "file_read" and item.get("guarantee") != "authorized_file_snapshot":
             issues.append({"capability_key": key, "reason": "file_read_requires_authorized_snapshot"})
+            continue
+        if item["kind"] == "file_download" and item.get("guarantee") != "authorized_binary_task_input":
+            issues.append({"capability_key": key, "reason": "file_download_requires_authorized_task_input"})
             continue
         candidates = [row for row in report["operations"] if row["method"] == item["method"] and row["path"] == item["path"]]
         if len(candidates) != 1 or not candidates[0].get("mounted") or candidates[0]["handler"] != item["handler"]:
@@ -712,13 +715,13 @@ def apply_reviewed_adapters(report: dict[str, Any], reviewed: Any, root: Path) -
             issues.append({"capability_key": key, "reason": "review_source_changed_or_missing", "files": invalid})
             continue
         entry = {**item, "status": "locally_verified_adapter", "runtime_acceptance": "not_verified", "web_route_coverage": "parameter_or_action_subset",
-                 "business_completion": "observed_http_only" if item["kind"] == "request" else "authenticated_user_transaction_receipt" if item["kind"] == "secure_input" else "authorized_snapshot_not_binary_delivery" if item["kind"] == "file_read" else "requires_domain_job_verification" if item.get("async_domain_job") else "transaction_receipt" if item["kind"] == "write" else "authorized_read"}
+                 "business_completion": "observed_http_only" if item["kind"] == "request" else "authenticated_user_transaction_receipt" if item["kind"] in {"secure_input", "user_confirmation"} else "authorized_snapshot_not_binary_delivery" if item["kind"] == "file_read" else "authorized_workspace_copy_not_platform_mutation" if item["kind"] == "file_download" else "requires_domain_job_verification" if item.get("async_domain_job") else "transaction_receipt" if item["kind"] == "write" else "authorized_read"}
         accepted.append(entry)
         row = candidates[0]
         row.setdefault("reviewed_adapters", []).append(key)
         row["agent_execution_status"] = "reviewed_subset_needs_remaining_adapter"
         row.setdefault("agent_tools", [])
-        tool = "authenticated_user_confirmation" if item["kind"] == "secure_input" else "platform_file" if item["kind"] == "file_read" else "platform_" + item["kind"]
+        tool = "authenticated_user_confirmation" if item["kind"] in {"secure_input", "user_confirmation"} else "platform_file" if item["kind"] == "file_read" else "platform_download" if item["kind"] == "file_download" else "platform_" + item["kind"]
         if tool not in row["agent_tools"]:
             row["agent_tools"].append(tool)
         row["agent_tool"] = row["agent_tools"][0]
@@ -729,7 +732,10 @@ def apply_reviewed_adapters(report: dict[str, Any], reviewed: Any, root: Path) -
                               "locally_verified_write_adapters": sum(item["kind"] == "write" for item in accepted),
                               "locally_reviewed_request_adapters": sum(item["kind"] == "request" for item in accepted),
                               "locally_verified_secure_input_adapters": sum(item["kind"] == "secure_input" for item in accepted),
+                              "locally_verified_user_confirmation_adapters": sum(item["kind"] == "user_confirmation" for item in accepted),
                               "locally_verified_file_read_adapters": sum(item["kind"] == "file_read" for item in accepted),
+                              "locally_verified_file_download_adapters": sum(item["kind"] == "file_download" for item in accepted),
+                              "file_transport_tools": len({item["kind"] for item in accepted if item["kind"] in {"file_read", "file_download"}}),
                               "async_domain_job_adapters": sum(bool(item.get("async_domain_job")) for item in accepted),
                               "review_evidence_issues": len(issues), "fully_covered_web_routes": 0})
 
@@ -777,7 +783,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     summary = report["summary"]
     lines = [
         "# Agent 全量路由与能力审查台账", "",
-        "本文件由 `python tools/agent_capability_inventory.py` 生成；JSON 保存完整依赖、挂载链、服务候选和待补齐字段。",
+        "本文件由 `python tools/agent_capability_inventory.py" + (" --reviewed-json docs/agent-capability-reviewed.json" if "reviewed_adapters" in report else "") + "` 生成；JSON 保存完整依赖、挂载链、服务候选和待补齐字段。",
         "**路由分类不授予权限，路由数量不是业务能力数量。** 显式附加的本地适配证据只覆盖注明的参数或动作，不代表整条 Web 路由、生产运行或所有身份已验收。", "",
         f"AST 注册声明 {summary['ast_declarations']}；方法/挂载展开后 {summary['operation_rows']} 行；稳定操作键 {summary['unique_operation_keys']} 个。",
         f"未解析/条件注册 {summary['unresolved_or_conditional_rows']} 行；未挂载 {summary['unmounted_rows']} 行；重复操作键 {summary['duplicate_operation_keys']} 个；整条 Web 路由覆盖 / 生产验收 0。", "",
@@ -800,10 +806,11 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append("未发现 include_router 图错误。动态注册仍列在各行的待审查项中。")
     if "reviewed_adapters" in report:
         lines += ["", "## 已核对的本地适配范围", "",
-                  f"A 层读适配 {summary['locally_verified_read_adapters']}、事务写适配 {summary['locally_verified_write_adapters']}；B 层受控 HTTP 请求 {summary['locally_reviewed_request_adapters']}；C 层仅用户安全确认 {summary['locally_verified_secure_input_adapters']}、授权文件来源 {summary['locally_verified_file_read_adapters']}，异步领域作业能力 {summary['async_domain_job_adapters']} 项还需独立完成核验。证据待复核 {summary['review_evidence_issues']}。未列出的功能仍需适配，以下能力仍需真实 DSH / PostgreSQL / 生产身份验收。", "",
+                  f"A 层读适配 {summary['locally_verified_read_adapters']}、事务写适配 {summary['locally_verified_write_adapters']}；B 层受控 HTTP 请求 {summary['locally_reviewed_request_adapters']}；C 层仅用户安全输入 {summary['locally_verified_secure_input_adapters']}、本人业务确认 {summary['locally_verified_user_confirmation_adapters']}；授权文件来源 {summary['locally_verified_file_read_adapters']}（文本快照）、{summary['locally_verified_file_download_adapters']}（字节复制），共 {summary['file_transport_tools']} 种文件传输工具，不等于文件CRUD。异步领域作业能力 {summary['async_domain_job_adapters']} 项还需独立完成核验。证据待复核 {summary['review_evidence_issues']}。未列出的功能仍需适配，以下能力仍需真实 DSH / PostgreSQL / 生产身份验收。", "",
                   "A 写回执证明领域行与操作账本一同提交；B 回执仅证明正常 HTTP 调用观察到的状态与响应，超时/崩溃可能 uncertain，不能自动当成业务成功或盲目重放。C 异步领域作业须跟踪原 job、真实材料绑定与成品完整性，排队成功不等于生成完成。相同 Web 路由可同时有 A/B 局部入口，不重复宣称整条路由覆盖。", "",
                   "C 安全输入必须由当前用户在确认界面填写，密码不提供给模型、不进入提案/任务/回执；不能通过 MCP platform_write 执行，也不计入 A 事务写数量。", "",
-                  "C 文件来源仅提供按正常下载权限获取的有界文本或文档抽取与快照 SHA256，返回前复核身份和来源绑定；不代表二进制已交付到 runner，也不计入 A 读适配数量。Linux 原语探针与真实 HTTP 身份测试分别提供证据，不能互相替代。", "",
+                  "C 本人业务确认与密码输入分开登记：模型只能准备提案，当前用户核对平台生成的业务快照和警告，服务端才提交声明与业务回执；不能让模型代替用户确认。", "",
+                  "文件工具 platform_file 提供按正常下载权限取得的有界文本或文档抽取与 SHA256；platform_download 将授权原始字节复制到当前任务 inputs，返回相对路径/大小/SHA256。两者均复核身份与来源，不计入 A 读/写适配；不等于任意平台文件CRUD。Linux 原语、PostgreSQL 授权顺序与真实 HTTP 身份测试分别提供证据，不能互相替代或冒充真实 DSH 任务验收。", "",
                   "| 能力键 | 类型 / 身份 | 已覆盖范围与限制 | 本地验证 |", "|---|---|---|---|"]
         for item in report["reviewed_adapters"]:
             lines.append("| " + " | ".join(cell(value) for value in [item["capability_key"], item["kind"] + " / " + ", ".join(item["roles"]) + (" / administrator" if item.get("requires_super_admin") else ""), item["limitations"], ", ".join(item["verification"])]) + " |")

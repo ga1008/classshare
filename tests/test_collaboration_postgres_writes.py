@@ -73,7 +73,7 @@ class CollaborationPostgresWriteTests(unittest.TestCase):
     def test_add_group_file_uses_insert_returning_helper(self):
         conn = FakeConnection()
 
-        with patch.object(service, "_ensure_group_access", return_value=_group()), patch.object(
+        with patch.object(service, "_lock_group_memberships", return_value=_group()), patch.object(
             service,
             "_can_access_group_work",
             return_value=True,

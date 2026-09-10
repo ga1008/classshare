@@ -18,6 +18,7 @@ from .agent_material_actions import ACTION_DEFINITIONS as MATERIAL_ACTION_DEFINI
 from .agent_organization_actions import ACTION_DEFINITIONS as ORGANIZATION_ACTION_DEFINITIONS, execute_organization_action
 from .agent_identity_management_adapter import IDENTITY_TRANSACTIONAL_ACTIONS, dispatch_identity_write
 from .agent_assignment_actions import ACTION_DEFINITIONS as ASSIGNMENT_ACTION_DEFINITIONS, execute_assignment_action
+from .agent_assessment_actions import ACTION_DEFINITIONS as ASSESSMENT_ACTION_DEFINITIONS, execute_assessment_action
 
 
 TRANSACTIONAL_ACTIONS = {"create_assignment_draft", "save_material_draft", "create_blog_draft", "publish_blog_post", "create_blog_comment", "send_student_notification", "send_private_message",
@@ -26,6 +27,7 @@ TRANSACTIONAL_ACTIONS.update(MATERIAL_ACTION_DEFINITIONS)
 TRANSACTIONAL_ACTIONS.update(ORGANIZATION_ACTION_DEFINITIONS)
 TRANSACTIONAL_ACTIONS.update(IDENTITY_TRANSACTIONAL_ACTIONS)
 TRANSACTIONAL_ACTIONS.update(ASSIGNMENT_ACTION_DEFINITIONS)
+TRANSACTIONAL_ACTIONS.update(ASSESSMENT_ACTION_DEFINITIONS)
 
 
 def platform_write_catalog(*, actor_role: str, is_super_admin: bool = False) -> dict[str, Any]:
@@ -48,6 +50,8 @@ def execute_actor_action(conn, *, actor_role: str, actor_id: int, action: str, p
         raise HTTPException(400, "；".join(errors[:4]))
     user = actor.as_user()
     try:
+        if action in ASSESSMENT_ACTION_DEFINITIONS:
+            return execute_assessment_action(conn, actor=actor, action=action, params=clean)
         if action in ASSIGNMENT_ACTION_DEFINITIONS:
             return execute_assignment_action(conn, actor=actor, action=action, params=clean)
         if action in ORGANIZATION_ACTION_DEFINITIONS:

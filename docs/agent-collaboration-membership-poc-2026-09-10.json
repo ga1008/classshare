@@ -1,8 +1,8 @@
 {
-  "recorded_at": "2026-09-10T11:06:13.470130+00:00",
+  "recorded_at": "2026-09-10T12:16:48.585603+00:00",
   "scope": "synthetic native PostgreSQL shared collaboration service concurrency; no production/user data/model calls",
   "server_version": "PostgreSQL 16.14, compiled by Visual C++ build 1944, 64-bit",
-  "tests_run": 11,
+  "tests_run": 12,
   "passed": true,
   "skipped": 0,
   "failures": 0,
@@ -10,6 +10,7 @@
   "test_ids": [
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_classroom_access_is_rechecked_after_waiting",
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_different_classrooms_are_not_serialized",
+    "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_file_upload_waits_for_membership_removal_and_rechecks_access",
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_initial_assignment_and_lowered_bound_cannot_create_overfull_group",
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_random_joins_use_fresh_capacity_under_the_same_lock",
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_redistribution_and_member_removal_share_classroom_first_lock_order",
@@ -21,8 +22,8 @@
     "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_two_open_joins_compete_for_one_remaining_slot"
   ],
   "source_sha256": {
-    "classroom_app/services/collaboration_service.py": "b566dab0cf68686b8b730795e470277e16da765471978cc943fcf8a757f09dda",
-    "tests/test_collaboration_membership_postgres.py": "28080ce78254c64c78658caf750d562180eea0a549e75d2383222992ab4351af"
+    "classroom_app/services/collaboration_service.py": "04553c7ffb54c829c1cbc542ce3698d939b53bfe38d20c68b6e3ab95bb193c75",
+    "tests/test_collaboration_membership_postgres.py": "a802d3457b4d3dd8aac7a77db015d5d7db12fd7084d86b3f0146aa19f8cce6d1"
   },
   "evidence_method": "real competing PostgreSQL transactions gated before roster writes; pg_blocking_pids confirms same-class blocking; different-class transaction commits while first is held",
   "test_substitutions": [
@@ -30,7 +31,7 @@
     "invitation response snapshot only"
   ],
   "permission_and_membership_sql": "original unmocked service and normal classroom authorization",
-  "guarantee": "prevents competing roster mutations from exceeding capacity or assigning same student twice in same assignment/scheme; B receipts remain HTTP observations, not verified business outcomes",
+  "guarantee": "prevents competing roster mutations from exceeding capacity or assigning same student twice in same assignment/scheme; B receipts remain HTTP observations, not verified business outcomes; a file upload waiting for membership removal rechecks current access before binding a file",
   "limitations": [
     "not production load testing",
     "does not prove exactly-once arbitrary HTTP effects",

@@ -1,5 +1,4 @@
 from .common import *
-import uuid
 
 from ...services.assignment_lifecycle_service import ASSIGNMENT_STATUS_CLOSED
 from ...services.classroom_closeout_service import (
@@ -8,17 +7,38 @@ from ...services.classroom_closeout_service import (
     normalize_absence_score,
     refresh_learning_state,
 )
-from ...services.grading_revision_service import activate_submission_grade_revision
-from ...services.group_assignment_service import lock_group_grading_for_submission
-from ...services.submission_grade_guard_service import (
-    editable_manual_feedback,
-    ensure_manual_grade_revision,
-    lock_submission_for_manual_grade,
-    validate_manual_grade,
-)
+from ...services.submission_grading_service import grade_submission_record
 
 
 router = APIRouter()
+
+
+@router.get("/submissions/{submission_id}/review", response_class=JSONResponse)
+def get_submission_review(submission_id: int, user: dict = Depends(get_current_teacher)):
+    from ...services.submission_grading_service import get_teacher_submission_review
+
+    with get_db_connection() as conn:
+        return get_teacher_submission_review(conn, submission_id=submission_id, teacher_id=int(user["id"]))
+
+
+@router.get("/assignments/{assignment_id}/review-submissions", response_class=JSONResponse)
+def list_review_submissions(assignment_id: str, limit: int = 30, offset: int = 0,
+                            user: dict = Depends(get_current_teacher)):
+    from ...services.submission_grading_service import list_teacher_review_submissions
+
+    with get_db_connection() as conn:
+        return list_teacher_review_submissions(conn, assignment_id=assignment_id, teacher_id=int(user["id"]),
+                                               limit=limit, offset=offset)
+
+
+@router.get("/submissions/{submission_id}/review-files", response_class=JSONResponse)
+def list_submission_review_files(submission_id: int, limit: int = 50, offset: int = 0,
+                                user: dict = Depends(get_current_teacher)):
+    from ...services.submission_grading_service import list_teacher_submission_files
+
+    with get_db_connection() as conn:
+        return list_teacher_submission_files(conn, submission_id=submission_id, teacher_id=int(user["id"]),
+                                              limit=limit, offset=offset)
 
 
 async def _optional_json_body(request: Request) -> dict[str, Any]:
@@ -201,121 +221,9 @@ async def close_assignment_now(
 )
 async def grade_submission(submission_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
-    score = validate_manual_grade(data)
     with get_db_connection() as conn:
-        lock_group_grading_for_submission(conn, submission_id)
-        lock_submission_for_manual_grade(conn, submission_id)
-        submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
-        ensure_manual_grade_revision(submission, data)
-        if int(submission.get("resubmission_allowed") or 0):
-            raise HTTPException(400, "该提交已撤回并等待重交，不能批改旧版本")
-        assignment_for_late_policy = {
-            "id": submission.get("assignment_id"),
-            "due_at": submission.get("assignment_due_at"),
-            "late_submission_enabled": submission.get("assignment_late_submission_enabled"),
-            "late_submission_until": submission.get("assignment_late_submission_until"),
-            "late_penalty_strategy": submission.get("assignment_late_penalty_strategy"),
-            "late_penalty_interval_hours": submission.get("assignment_late_penalty_interval_hours"),
-            "late_penalty_points": submission.get("assignment_late_penalty_points"),
-            "late_penalty_min_score": submission.get("assignment_late_penalty_min_score"),
-            "late_score_cap": submission.get("assignment_late_score_cap"),
-        }
-        adjustment = apply_late_policy_to_score(
-            score,
-            submission=submission,
-            assignment=assignment_for_late_policy,
-        )
-        final_score = adjustment.get("final_score")
-        feedback_md = append_late_policy_feedback(editable_manual_feedback(data.get("feedback_md")), adjustment)
-        active_ai_job_id = submission.get("grading_job_id")
-        if active_ai_job_id:
-            conn.execute(
-                """
-                UPDATE ai_jobs
-                SET status = 'superseded', lease_token = '', lease_expires_at = NULL,
-                    locked_at = NULL, locked_by = '', updated_at = ?, finished_at = ?
-                WHERE id = ? AND status IN ('queued', 'retry_wait', 'running', 'result_ready')
-                """,
-                (datetime.now().isoformat(timespec="seconds"), datetime.now().isoformat(timespec="seconds"), int(active_ai_job_id)),
-            )
-        conn.execute(
-            """
-            UPDATE submissions
-            SET status = 'graded',
-                score = ?,
-                feedback_md = ?,
-                score_before_late_penalty = ?,
-                late_penalty_points = ?,
-                late_score_cap_applied = ?,
-                grading_started_at = NULL,
-                grading_attempt_fingerprint = NULL,
-                grading_revision_hash = NULL,
-                grading_job_id = NULL,
-                resubmission_allowed = 0,
-                resubmission_due_at = NULL,
-                returned_at = NULL,
-                returned_by_teacher_id = NULL,
-                returned_reason = NULL
-            WHERE id = ?
-            """,
-            (
-                final_score,
-                feedback_md,
-                adjustment.get("original_score") if adjustment.get("applied") else None,
-                adjustment.get("penalty_points") or 0,
-                1 if adjustment.get("score_cap_applied") else 0,
-                submission_id,
-            ),
-        )
-        activate_submission_grade_revision(
-            conn,
-            submission={**submission, "grading_job_id": None},
-            data={
-                "grading_revision_hash": f"manual:{submission_id}:{uuid.uuid4().hex}",
-                "source": "manual",
-                "actor_role": "teacher",
-                "actor_user_pk": int(user["id"]),
-                "quality_audit": {"manual_grade": True},
-            },
-            score=final_score,
-            feedback_md=feedback_md,
-        )
-        try:
-            create_student_grading_notification(
-                conn,
-                submission_id,
-                actor_role="teacher",
-                actor_user_pk=int(user["id"]),
-                actor_display_name=str(user.get("name") or ""),
-            )
-        except Exception as exc:
-            print(f"[MESSAGE_CENTER] manual grading notify failed: {exc}")
-        try:
-            handle_stage_exam_grading_complete(conn, submission_id)
-        except Exception as exc:
-            print(f"[LEARNING_PROGRESS] manual grading stage handling failed: {exc}")
-        try:
-            handle_assignment_stage_grading_complete(conn, submission_id)
-        except Exception as exc:
-            print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
-        # Group settlement is part of this grade: propagate failure and rollback.
-        from ...services.group_assignment_service import record_member_work_score
-
-        record_member_work_score(conn, submission_id)
-        if submission.get("class_offering_id") and submission.get("student_pk_id"):
-            try:
-                refresh_student_learning_state(
-                    conn,
-                    int(submission["class_offering_id"]),
-                    int(submission["student_pk_id"]),
-                    event_source_ref=f"grading:{submission_id}",
-                )
-            except Exception as exc:
-                print(f"[LEARNING_PROGRESS] manual grading snapshot refresh failed: {exc}")
-        # A downstream best-effort hook may have caught its own SQL exception.
-        # PostgreSQL rejects this probe on an aborted transaction; COMMIT alone
-        # would silently roll back and let the endpoint report false success.
-        conn.execute("SELECT 1")
+        grade_submission_record(conn, submission_id=submission_id, teacher_id=int(user["id"]),
+                                data=data, actor_display_name=str(user.get("name") or ""))
         conn.commit()
     return {"status": "success", "graded_submission_id": submission_id}
 

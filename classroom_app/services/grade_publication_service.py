@@ -190,9 +190,15 @@ def preview_grade_publication(conn, *, class_offering_id: int, teacher_id: int, 
         "source_lineage": _object(structured.get("source_lineage"))}
 
 
+def grade_publication_review_hash(preview: dict) -> str:
+    """Bind the reviewed roster, formulas, warnings and source as one snapshot."""
+    return _hash(preview)
+
+
 def publish_grade_snapshot(conn, *, class_offering_id: int, teacher_id: int, material_id: int,
                            expected_source_hash: str, expected_version: int, confirmed: bool,
-                           accepted_warning_codes: list[str] | None = None, confirmation_note: str = "") -> dict:
+                           accepted_warning_codes: list[str] | None = None, confirmation_note: str = "",
+                           expected_review_hash: str | None = None) -> dict:
     if confirmed is not True:
         raise HTTPException(400, "须由教师明确确认公布本次成绩。")
     _offering(conn, class_offering_id, teacher_id)
@@ -202,6 +208,8 @@ def publish_grade_snapshot(conn, *, class_offering_id: int, teacher_id: int, mat
     preview = preview_grade_publication(conn, class_offering_id=class_offering_id, teacher_id=teacher_id, material_id=material_id)
     if preview["source_hash"] != expected_source_hash or preview["expected_version"] != int(expected_version):
         raise HTTPException(409, "来源材料或已公布版本发生变化，请重新预览并确认。")
+    if expected_review_hash is not None and grade_publication_review_hash(preview) != expected_review_hash:
+        raise HTTPException(409, "核对的课堂名单、学期、分数或来源提示已变化，请重新读取快照并确认。")
     if preview["blocking_reasons"]:
         raise HTTPException(409, {"message": "公布前仍有必须处理的问题。", "blocking_reasons": preview["blocking_reasons"]})
     required = {item["code"] for item in preview["warnings"]}

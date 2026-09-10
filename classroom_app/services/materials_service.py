@@ -514,6 +514,9 @@ def _query_sibling(conn, teacher_id: int, parent_id: int | None, name: str):
 
 
 def make_unique_material_name(conn, teacher_id: int, parent_id: int | None, desired_name: str) -> str:
+    # Ordinary uploads, generated documents and Agent drafts share one naming
+    # namespace. Keep the lock until their caller commits the inserted node.
+    conn.execute('UPDATE teachers SET id=id WHERE id=?', (int(teacher_id),))
     candidate = desired_name.strip() or "untitled"
     if not _query_sibling(conn, teacher_id, parent_id, candidate):
         return candidate
@@ -602,7 +605,7 @@ def ensure_user_material_access(conn, material_id: int, user: dict, *, material_
         JOIN course_materials assigned ON assigned.id = a.material_id
         WHERE a.class_offering_id IN ({placeholders})
           AND assigned.root_id = ?
-          AND (? = assigned.material_path OR ? LIKE assigned.material_path || '/%')
+          AND (? = assigned.material_path OR SUBSTR(?, 1, LENGTH(assigned.material_path) + 1) = assigned.material_path || '/')
         ORDER BY LENGTH(assigned.material_path) DESC
         LIMIT 1
         """,

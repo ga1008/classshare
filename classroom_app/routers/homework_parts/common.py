@@ -338,38 +338,19 @@ def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
 
 
 
-EXAM_OPEN_SCOPES = {SCOPE_PRIVATE, SCOPE_DEPARTMENT, SCOPE_SCHOOL}
-EXAM_SCOPE_LABELS = {
-    SCOPE_PRIVATE: "私有",
-    SCOPE_DEPARTMENT: "本系部开放",
-    SCOPE_SCHOOL: "全校开放",
-}
-
-
 def _normalize_exam_open_scope(value: Any, default: str = SCOPE_DEPARTMENT) -> str:
-    scope = normalize_scope_level(value, default=default)
-    return scope if scope in EXAM_OPEN_SCOPES else default
+    from ...services.exam_paper_management_service import _normalize_exam_open_scope as shared
+    return shared(value, default=default)
 
 
 def _exam_scope_label(scope_level: Any) -> str:
-    return EXAM_SCOPE_LABELS.get(_normalize_exam_open_scope(scope_level, default=SCOPE_PRIVATE), "私有")
+    from ...services.exam_paper_management_service import _exam_scope_label as shared
+    return shared(scope_level)
 
 
 def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int, *, manage: bool = False) -> dict[str, Any]:
-    paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-    if not paper:
-        raise HTTPException(404, "试卷不存在")
-    paper_dict = dict(paper)
-    allowed = (
-        teacher_can_manage_exam_paper(conn, teacher_id, paper_dict)
-        if manage
-        else teacher_can_use_exam_paper(conn, teacher_id, paper_dict)
-    )
-    if not allowed:
-        raise HTTPException(403, "无权操作此试卷")
-    if is_personal_stage_exam_paper(conn, paper_id):
-        _hide_personal_stage_asset()
-    return paper_dict
+    from ...services.exam_paper_management_service import _get_exam_paper_for_teacher as shared
+    return shared(conn, paper_id, teacher_id, manage=manage)
 
 
 def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> dict[str, Any]:
@@ -423,42 +404,8 @@ def _expire_stale_ai_grading_for_assignment(conn, assignment_id: str) -> int:
 
 
 def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> dict[str, Any]:
-    submission = conn.execute(
-        """
-        SELECT s.*,
-               a.course_id,
-               a.class_offering_id,
-               a.allowed_file_types_json,
-               a.due_at AS assignment_due_at,
-               a.late_submission_enabled AS assignment_late_submission_enabled,
-               a.late_submission_until AS assignment_late_submission_until,
-               a.late_penalty_strategy AS assignment_late_penalty_strategy,
-               a.late_penalty_interval_hours AS assignment_late_penalty_interval_hours,
-               a.late_penalty_points AS assignment_late_penalty_points,
-               a.late_penalty_min_score AS assignment_late_penalty_min_score,
-               a.late_score_cap AS assignment_late_score_cap,
-               a.title AS assignment_title,
-               c.created_by_teacher_id,
-               o.teacher_id AS offering_teacher_id,
-               lsea.id AS personal_stage_attempt_id
-        FROM submissions s
-        JOIN assignments a ON a.id = s.assignment_id
-        JOIN courses c ON c.id = a.course_id
-        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
-        WHERE s.id = ?
-        LIMIT 1
-        """,
-        (submission_id,),
-    ).fetchone()
-    if not submission:
-        raise HTTPException(404, "提交记录不存在")
-    submission_dict = dict(submission)
-    if not _teacher_can_access_assignment(conn, submission_dict, int(teacher_id)):
-        raise HTTPException(403, "无权操作该提交")
-    if submission_dict.get("personal_stage_attempt_id") is not None:
-        _hide_personal_stage_asset()
-    return submission_dict
+    from ...services.submission_grading_service import load_teacher_submission
+    return load_teacher_submission(conn, submission_id, teacher_id)
 
 
 def _parse_int_set(raw_values: Any, field_name: str) -> set[int]:
@@ -1720,25 +1667,8 @@ def _sanitize_zip_path(name: str) -> str:
 
 
 def _auto_add_class_name_tag(conn, paper_row: sqlite3.Row, class_id: int) -> None:
-    """自动将课堂名称添加为试卷标签（去重）。"""
-    class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
-    if not class_row:
-        return
-    class_name = class_row["name"].strip()
-    if not class_name or len(class_name) > 10:
-        return
-
-    try:
-        existing_tags = json.loads(paper_row["tags_json"]) if paper_row["tags_json"] else []
-    except (json.JSONDecodeError, TypeError):
-        existing_tags = []
-
-    if class_name not in existing_tags:
-        existing_tags.append(class_name)
-        conn.execute(
-            "UPDATE exam_papers SET tags_json = ? WHERE id = ?",
-            (json.dumps(existing_tags, ensure_ascii=False), paper_row["id"]),
-        )
+    from ...services.exam_paper_management_service import _auto_add_class_name_tag as shared
+    return shared(conn, paper_row, class_id)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

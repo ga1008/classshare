@@ -2,7 +2,19 @@
 
 本文记录部署前的本地实现检查点验证，不代表新版本已经上线，也不替代冻结源码后的完整生产备份迁移预演和部署验收。当前业务能力仍分批扩展，不能据测试数量宣称全平台业务已经覆盖。
 
-## 根执行者集中检查
+## 第二批集成检查（基于本地提交 4958a4a5 继续实现）
+
+新增教学、材料、考核、文件导入和签章申请批次后，集中执行：
+
+- `python -m unittest discover -s tests -t . -p 'test_agent*.py' -q`：591 项，552 执行通过、39 条件跳过，91.536 秒，退出码 0。日志保存为 `.codex-temp/dsh-release/agent-regression-20260910-b2.log`。没有将条件跳过计作实测；各批次原生 PostgreSQL 的真实执行另有领域记录。
+- `npm.cmd run typecheck`、`npm.cmd run build`：通过。未更新 Browserslist 数据包，因为此次检查不需要改变依赖锁。
+- `npx.cmd playwright test agent-questions.spec.ts blog-composer-revision.spec.ts agent-user-confirmation.spec.ts --config tests/e2e/components/playwright.config.ts`：20/20，实际 Chrome，16.3 秒。覆盖原问答/安全输入/回执核对及新成绩确认、503、源内容或名单变化的409、丢失响应后查回执。独立组件夹具不启动业务服务；成绩确认桌面和手机截图已实际查看。
+- `npm.cmd test -- frontend/src/lib/agent-workspace-submission.test.ts`：10/10。
+- 当前文件导入的 Linux 精确源码探针 21/21、源会话/持续授权/取消与披露锁的原生 PostgreSQL 5/5；本次新建合成库验证后删除。详见 `agent-platform-download-poc-2026-09-10.md`。
+
+教学证据见 `agent-teaching-lifecycle-poc-2026-09-10.json`，材料见 `agent-material-management-poc-2026-09-10.json`，考核见 `agent-assessment-implementation-2026-09-10.md`，签章局部并发见 `agent-signature-decisions-poc-2026-09-10.json`。这些批次与集中测试有重叠，不简单相加为唯一测试总数。签章与账户身份同步的跨域锁改进尚待下一批实现；插件 child scope/限额还在独立核验。生产切换、最终冻结代码的完整备份迁移门禁、真实 DSH 新能力任务和 Git 远端收口尚未完成。
+
+## 第一批根执行者集中检查
 
 - `C:\Python314\python.exe -m unittest discover -s tests -t . -p 'test_agent*.py' -q`：493 项，462 项执行通过、31 项条件跳过，52.440 秒，退出码 0。必须保留 `-t .`，使测试包先设置隔离数据库。原生权限 24 项由下文独立 PostgreSQL 回归实际执行；Windows 的符号链接/FIFO限制由 Linux 原系统调用探针另行验证，不能将跳过项算成已执行。
 - `npm.cmd run typecheck`、`npm.cmd run build` 均通过；`npm.cmd test -- frontend/src/lib/agent-workspace-submission.test.ts`：10/10 通过。

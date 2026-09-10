@@ -1,0 +1,39 @@
+{
+  "kind": "exact_source_linux_download_publication_probe",
+  "checks": {
+    "binary_bytes_and_sha_match": true,
+    "new_input_has_no_write_mode_bits": true,
+    "repeat_deduplicates_same_bytes": true,
+    "existing_changed_input_not_overwritten": true,
+    "actual_runner_uid_cannot_read_before_authorization": true,
+    "actual_runner_uid_can_read_after_authorization": true,
+    "denied_replay_keeps_previously_disclosed_input": true,
+    "denied_authorization_removes_both_new_names": true,
+    "precreated_inputs_becomes_trusted_managed_directory": true,
+    "runner_cannot_swap_import_between_inode_check_and_cleanup": true,
+    "replacement_inode_is_neither_disclosed_nor_cleaned": true,
+    "source_symlink_rejected": true,
+    "inputs_symlink_rejected_without_outside_write": true,
+    "task_directory_symlink_rejected": true,
+    "destination_symlink_not_followed": true,
+    "destination_fifo_does_not_block": true,
+    "source_size_bound": true,
+    "entry_quota_preserves_existing_input": true,
+    "byte_quota_preserves_existing_input": true,
+    "renamed_output_directory_yields_no_false_receipt": true,
+    "source_swap_after_snapshot_keeps_original_bytes": true
+  },
+  "source_sha256": {
+    "agent_platform_multipart_service.py": "159b8fb28bf13edb10d98ee22b357ae40723163b42c9c8a5542f47922f77a836",
+    "agent_platform_download_service.py": "8ad67194532a88055a109f381e9b0909d4cfc2d2911fd53ccf3df87afe82c434"
+  },
+  "fixture_bounds": {
+    "single_file": 4096,
+    "inputs_bytes": 8192,
+    "inputs_entries": 4
+  },
+  "production_data_accessed": false,
+  "paid_model_calls": 0,
+  "full_authenticated_http_integration": false,
+  "passed": true
+}

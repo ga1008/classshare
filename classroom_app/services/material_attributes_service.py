@@ -95,16 +95,15 @@ def update_material_attributes(conn, *, material_id: int, teacher_id: int, paylo
         if scope not in {"private", "school", "college", "department", "public"}:
             raise HTTPException(400, "Invalid material scope")
     material = ensure_teacher_material_owner(conn, material_id, teacher_id)
-    if get_configured_db_engine() == "postgres":
-        # All ordinary Web and Agent attribute writes serialize by tree root.
-        conn.execute("SELECT id FROM course_materials WHERE id=? FOR UPDATE", (int(material["root_id"] or material_id),)).fetchone()
-        conn.execute("SELECT id FROM course_materials WHERE id=? FOR UPDATE", (material_id,)).fetchone()
-        material = ensure_teacher_material_owner(conn, material_id, teacher_id)
+    from .material_tree_service import lock_material_trees, ensure_plain_tree_operation, touch_material_nodes, ensure_subtree_owner
+    material = lock_material_trees(conn, teacher_id=teacher_id, material_ids=(material_id,))[material_id]
+    ensure_subtree_owner(conn, material)
     if expected_updated_at is not None and expected_updated_at != str(dict(material).get("updated_at") or "legacy"):
         raise HTTPException(409, "材料已被修改，请重新读取属性后再提交。")
     if scope is not None and material["parent_id"] is not None:
         raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
     if "name" in payload:
+        ensure_plain_tree_operation(conn, material, action='rename')
         rename_material_subtree(conn, material, str(payload.get("name") or ""))
         material = ensure_teacher_material_owner(conn, material_id, teacher_id)
     if scope is not None:
@@ -118,4 +117,5 @@ def update_material_attributes(conn, *, material_id: int, teacher_id: int, paylo
             (scope, int(material["teacher_id"]), owner["school_code"], owner["school_name"], owner["college"], owner["department"],
              scope, now, now, int(material["root_id"]), material["material_path"], subtree_pattern(str(material["material_path"]))),
         )
+    touch_material_nodes(conn, (material['root_id'], material['parent_id']), datetime.now().isoformat())
     return ensure_teacher_material_owner(conn, material_id, teacher_id)

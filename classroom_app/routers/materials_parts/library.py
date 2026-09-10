@@ -97,16 +97,9 @@ def _extract_zip_upload_entries(zip_name: str, payload: bytes) -> list[dict]:
 
 def _save_payload_bytes_globally(payload: bytes) -> dict:
     """按内容哈希落盘（与 save_file_globally 同一存储布局），返回 {hash, size}。"""
-    file_hash = hashlib.sha256(payload).hexdigest()
-    target_path = global_file_write_path(file_hash)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    if not target_path.exists():
-        existing = resolve_global_file_path(file_hash)
-        if existing and existing != target_path:
-            target_path.write_bytes(existing.read_bytes())
-        else:
-            target_path.write_bytes(payload)
-    return {"hash": file_hash, "size": target_path.stat().st_size}
+    import io
+    from ...services.file_service import store_file_object_globally
+    return store_file_object_globally(io.BytesIO(payload))
 
 
 def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]:
@@ -700,11 +693,21 @@ async def upload_materials(
 ):
     if not files:
         raise HTTPException(400, "请选择要上传的材料")
+    from ...services.material_tree_service import lock_material_trees, ensure_plain_tree_operation, touch_material_nodes
+    # Authorize before reading/decompressing uploads, then repeat under lock.
+    if parent_id is not None:
+        with get_db_connection() as conn:
+            destination = ensure_teacher_material_owner(conn, parent_id, user['id'])
+            if destination['node_type'] != 'folder':
+                raise HTTPException(400, '请选择有管理权的普通材料文件夹。')
+            ensure_plain_tree_operation(conn, destination, action='upload')
 
     try:
         manifest_items = json.loads(manifest) if manifest else []
     except json.JSONDecodeError:
         raise HTTPException(400, "上传清单格式错误")
+    if not isinstance(manifest_items, list) or any(not isinstance(item, dict) for item in manifest_items):
+        raise HTTPException(400, '上传清单必须是对象数组。')
 
     if manifest_items and len(manifest_items) != len(files):
         raise HTTPException(400, "上传文件与清单数量不匹配")
@@ -748,20 +751,26 @@ async def upload_materials(
         base_prefix = ""
         base_root_id = None
         inherited_scope = "private"
+        locked = lock_material_trees(conn, teacher_id=user['id'], material_ids=(parent_id,))
         if parent_id is not None:
-            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            base_parent = locked[parent_id]
             if base_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能上传到文件夹中")
+            ensure_plain_tree_operation(conn, base_parent, action='upload')
             base_prefix = str(base_parent["material_path"])
             base_root_id = int(base_parent["root_id"])
             inherited_scope = str(base_parent["scope_level"] or "private")
+
+        # An administrator may manage another teacher's folder. New nodes
+        # inherit that folder's owner; the operation actor remains the admin.
+        owner_user = {**user, 'id': int(base_parent['teacher_id']) if base_parent else int(user['id'])}
 
         top_level_name_map: dict[str, str] = {}
         for entry in prepared_entries:
             top_name = entry["relative_path"].split("/", 1)[0]
             if top_name in top_level_name_map:
                 continue
-            top_level_name_map[top_name] = make_unique_material_name(conn, user["id"], parent_id, top_name)
+            top_level_name_map[top_name] = make_unique_material_name(conn, owner_user['id'], parent_id, top_name)
 
         created_paths: dict[str, int] = {}
         created_roots: dict[str, int] = {}
@@ -769,7 +778,7 @@ async def upload_materials(
         uploaded_file_count = 0
         uploaded_folder_count = 0
         now = datetime.now().isoformat()
-        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        owner_scope = load_teacher_org_scope(conn, owner_user['id'])
 
         for entry in prepared_entries:
             file = entry["file"]
@@ -780,7 +789,8 @@ async def upload_materials(
             full_path = normalize_material_path(full_path)
             full_segments = full_path.split("/")
 
-            for depth in range(1, len(full_segments)):
+            base_depth = len(base_prefix.split('/')) if base_prefix else 0
+            for depth in range(base_depth + 1, len(full_segments)):
                 folder_path = "/".join(full_segments[:depth])
                 if folder_path in created_paths:
                     continue
@@ -801,7 +811,7 @@ async def upload_materials(
 
                 folder_id, actual_root_id = _insert_material_folder_row(
                     conn,
-                    user=user,
+                    user=owner_user,
                     name=folder_name,
                     material_path=folder_path,
                     parent_id=folder_parent_id,
@@ -813,7 +823,7 @@ async def upload_materials(
 
                 created_paths[folder_path] = folder_id
                 created_roots[folder_path] = actual_root_id
-                if depth == 1 and parent_path == base_prefix:
+                if depth == base_depth + 1 and parent_path == base_prefix:
                     top_level_created_ids.append(folder_id)
                     uploaded_folder_count += 1
 
@@ -843,7 +853,7 @@ async def upload_materials(
 
             file_id = _insert_material_file_row(
                 conn,
-                user=user,
+                user=owner_user,
                 name=full_segments[-1],
                 material_path=full_path,
                 parent_id=file_parent_id,
@@ -867,6 +877,7 @@ async def upload_materials(
         affected_root_ids.update(int(root_id) for root_id in created_roots.values() if root_id)
         for affected_root_id in sorted(affected_root_ids):
             refresh_root_git_metadata(conn, affected_root_id)
+        touch_material_nodes(conn, (base_root_id, parent_id), now)
 
         conn.commit()
 
@@ -1050,24 +1061,29 @@ async def delete_material(
 ):
     with get_db_connection() as conn:
         begin_immediate_transaction(conn)
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        from ...services.material_tree_service import lock_material_trees, archive_deleted_packs, touch_material_nodes
+        from ...services.material_attributes_service import subtree_pattern
+        material = lock_material_trees(conn, teacher_id=user['id'], material_ids=(material_id,))[material_id]
         if get_configured_db_engine() == "postgres":
             conn.execute(
                 """
                 SELECT id
                 FROM course_materials
                 WHERE root_id = ?
-                  AND (material_path = ? OR material_path LIKE ?)
+                  AND (material_path = ? OR material_path LIKE ? ESCAPE '!')
                 FOR UPDATE
                 """,
                 (
                     int(material["root_id"]),
                     material["material_path"],
-                    f"{material['material_path']}/%",
+                    subtree_pattern(material['material_path']),
                 ),
             ).fetchall()
 
-        impact = build_material_delete_impact(conn, material)
+        impact = build_material_delete_impact(conn, material, lock=True)
+        if impact_token and impact_token != impact['impact_token']:
+            raise HTTPException(409, detail={'code': 'material_delete_impact_changed',
+                'message': '材料或关联对象已变化，请重新查看并确认后再删除。', 'impact': impact})
         if impact["total_reference_count"] and not unlink_references:
             raise HTTPException(
                 409,
@@ -1106,14 +1122,9 @@ async def delete_material(
 
         subtree_rows = _collect_subtree_rows(conn, material)
         file_hashes = {row["file_hash"] for row in subtree_rows if row["node_type"] == "file" and row["file_hash"]}
-        # LessonDoc 学习文档包:包根被删时把 pack 登记置 archived(留审计,不删行)。
-        try:
-            from ...services.lessondoc.pack_service import archive_pack_for_material
-
-            archive_pack_for_material(conn, material_id)
-        except Exception:
-            pass
+        archived_pack_count = archive_deleted_packs(conn, material)
         conn.execute("DELETE FROM course_materials WHERE id = ?", (material_id,))
+        touch_material_nodes(conn, (material['parent_id'], material['root_id']), datetime.now().isoformat())
         conn.commit()
 
         removed_files = 0
@@ -1126,6 +1137,7 @@ async def delete_material(
         "status": "success",
         "message": f"《{material['name']}》已删除",
         "removed_file_count": removed_files,
+        "archived_pack_count": archived_pack_count,
         "unlinked_reference_count": int((unlinked_impact or {}).get("total_reference_count") or 0),
         "deleted_learning_progress_count": int((unlinked_impact or {}).get("destructive_reference_count") or 0),
     }

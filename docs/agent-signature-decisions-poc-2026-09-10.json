@@ -1,0 +1,129 @@
+{
+  "recorded_at": "2026-09-10T12:27:43.916230+00:00",
+  "scope": "Local synthetic signature decision and claim concurrency, normal permissions and migrated PostgreSQL schema; no production/model calls",
+  "server_version": "PostgreSQL 16.14, compiled by Visual C++ build 1944, 64-bit",
+  "tests_run": 66,
+  "passed": true,
+  "skipped": 0,
+  "failures": 0,
+  "errors": 0,
+  "duration_seconds": 14.401,
+  "command": "C:\\Python314\\python.exe -m unittest tests.test_signature_claims_postgres tests.test_signature_decisions_postgres tests.test_signature_workflow_service tests.test_signature_point_service tests.test_signature_identity_claim tests.test_material_signature_workflows tests.test_agent_platform_request_signatures -q",
+  "environment": {
+    "PYTHON_DOTENV_DISABLED": "1",
+    "ASSESSMENT_REHEARSAL_TEST_CLUSTER": "Explicit offline fixture directory validated by connect_offline",
+    "ASSESSMENT_REHEARSAL_TEST_PORT": "55439"
+  },
+  "test_ids_by_module": {
+    "tests.test_signature_claims_postgres": [
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_claim_waits_for_signature_before_locking_any_competing_request",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_competing_claim_approvals_cancel_loser_without_double_transfer",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_direct_claim_closes_old_pending_claims_and_preserves_actor_identity",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_new_claim_reloads_new_owner_after_waiting_for_transfer",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_reverse_claim_batch_locks_lowest_signature_before_other_requests",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_legacy_review_waits_for_material_before_child_locks_and_invalidation",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_binding_waits_for_material_before_acquiring_binding_advisory_lock",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_signature_association_changed_while_waiting_fails_closed",
+      "tests.test_signature_claims_postgres.SignatureClaimsPostgresTests.test_assessment_rotation_waits_for_plan_before_canceling_children"
+    ],
+    "tests.test_signature_decisions_postgres": [
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_approval_then_cancel_is_conflict_and_keeps_approved_children",
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_cancel_then_approval_is_conflict_and_cannot_grant_use",
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_end_flow_then_approval_is_conflict_without_deadlock",
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_applied_flow_cannot_be_overwritten_by_stale_end",
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_material_lock_precedes_flow_and_request_locks",
+      "tests.test_signature_decisions_postgres.SignatureDecisionsPostgresTests.test_reverse_batch_order_serializes_and_reports_already_finished_requests"
+    ],
+    "tests.test_signature_workflow_service": [
+      "tests.test_signature_workflow_service.SignatureWorkflowServiceTests.test_multi_point_any_reviewer_approval_and_one_time_consumption",
+      "tests.test_signature_workflow_service.SignatureWorkflowServiceTests.test_new_request_is_allowed_after_prior_request_is_approved",
+      "tests.test_signature_workflow_service.SignatureWorkflowServiceTests.test_one_rejection_keeps_request_open_for_other_reviewer",
+      "tests.test_signature_workflow_service.SignatureWorkflowServiceTests.test_signer_and_owner_have_direct_use_but_unregistered_point_is_rejected",
+      "tests.test_signature_workflow_service.SignatureWorkflowServiceTests.test_unbound_signer_with_bound_owner_reviews_via_owner_alone"
+    ],
+    "tests.test_signature_point_service": [
+      "tests.test_signature_point_service.SignaturePointServiceTests.test_active_flow_requests_are_loaded_in_one_batch",
+      "tests.test_signature_point_service.SignaturePointServiceTests.test_identity_filter_never_hides_own_or_fallback_teacher_signatures",
+      "tests.test_signature_point_service.SignaturePointServiceTests.test_ordered_multi_signature_flow_grants_unlimited_material_use",
+      "tests.test_signature_point_service.SignaturePointServiceTests.test_postgres_binding_replacement_takes_scope_lock_before_delete",
+      "tests.test_signature_point_service.SignaturePointServiceTests.test_rebuild_revision_invalidates_grants_and_end_returns_to_creation"
+    ],
+    "tests.test_signature_identity_claim": [
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_account_identity_propagates_to_bound_signatures",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_batch_review_isolates_failures",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_bound_signature_claim_signer_first_admin_fallback",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_claim_already_bound_signature_rejected",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_claim_request_approval_transfers_ownership_and_identity",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_claim_request_rejected_by_all_reviewers",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_direct_claim_syncs_identity_to_account",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_identity_department_scope_rules",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_identity_filter_group_expansion",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_merge_guards_names_and_conflicting_bindings",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_merge_repoints_references_and_soft_deletes",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_propagate_clears_verified_flag",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_propagate_identity_preserves_selected_visibility_department",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_required_identities_seeded_on_function_points",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_stale_request_reminder_and_escalation",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_stamp_signatures_bypass_requests_and_management_flows",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_startup_migration_marks_system_rows_as_stamps",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_sync_fills_signature_identity_from_account",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_unbind_by_signer_and_permission_guards",
+      "tests.test_signature_identity_claim.SignatureIdentityClaimTests.test_view_scope_requires_explicit_level_instead_of_missing_org_fields"
+    ],
+    "tests.test_material_signature_workflows": [
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_approval_rejects_document_modified_without_revision_rotation",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_approved_grant_cannot_authorize_a_replaced_image",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_content_edit_cancels_pending_requests_and_preserves_snapshot",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_content_identity_ignores_signature_order_and_standard_marks_but_keeps_scores",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_file_approval_includes_requests_outside_the_current_list_page",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_manual_signature_reorder_blocks_late_application",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_mixed_direct_and_requested_signatures_preserve_full_order",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_render_token_cannot_drop_review_access_checks",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_reviewer_list_filters_and_preview_do_not_expose_other_people_requests",
+      "tests.test_material_signature_workflows.MaterialSignatureWorkflowTests.test_wrong_concrete_document_type_is_rejected"
+    ],
+    "tests.test_agent_platform_request_signatures": [
+      "tests.test_agent_platform_request_signatures.AgentSignatureFlowTests.test_creation_requires_current_revision_owner_and_explicit_bounded_parameters",
+      "tests.test_agent_platform_request_signatures.AgentSignatureFlowTests.test_duplicate_and_replay_do_not_create_duplicate_requests_or_notifications",
+      "tests.test_agent_platform_request_signatures.AgentSignatureFlowTests.test_material_changed_while_rendering_is_rejected_before_pinning_or_requesting",
+      "tests.test_agent_platform_request_signatures.AgentSignatureFlowTests.test_material_state_then_request_cancel_and_flow_end_preserve_owner_checks",
+      "tests.test_agent_platform_request_signatures.AgentSignatureFlowTests.test_normal_and_delegated_create_freeze_document_without_applying_or_using_signature",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_only_reviewed_capabilities_are_registered_with_bounded_arguments",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_requests_list_and_int_converter_detail_preserve_requester_reviewer_admin_boundaries",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_school_teacher_and_function_point_options_use_actual_actor_scope",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_unknown_or_error_collection_shapes_remain_unverified",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_usage_trail_does_not_cross_same_numbered_signature_owner_roles",
+      "tests.test_agent_platform_request_signatures.AgentSignatureRequestTests.test_visibility_and_direct_use_remain_separate_with_normal_http_parity"
+    ]
+  },
+  "native_postgres_tests": 15,
+  "native_method": "Fresh database per suite, original service methods and ordinary role/scope checks; pg_blocking_pids and NOWAIT/advisory locks verify actual wait order. Only notification delivery is suppressed.",
+  "verified": [
+    "Claim review locks its signature before any competing claim request, including direct claim and claim creation.",
+    "Competing claim approvals cannot both transfer ownership; losing requests become canceled and a later approval returns 409.",
+    "Direct same-name claim cancels old pending claims and keeps teacher/student IDs distinct.",
+    "New claim creation waiting for a transfer reloads the current owner and reviewer.",
+    "Reverse batch order locks signatures consistently before requests.",
+    "Legacy requests with no snapshot acquire their known material lock before flow/request/reviewer writes.",
+    "Manual binding waits for the material before its binding advisory lock.",
+    "Assessment-plan revision rotation waits for the plan before canceling child decisions.",
+    "Request signature association changes while waiting are rejected after locks are acquired.",
+    "Ordinary approve/cancel/end races retain the winning state and cannot overwrite applied flows."
+  ],
+  "limitations": [
+    "This is not full signature-domain concurrency certification or production load testing.",
+    "Account identity propagation and signature edit/create/merge still require a shared cross-domain lock protocol; those operations were not made available to the Agent by this change.",
+    "Claim operations are not enabled in the Agent capability catalog despite these local normal-Web fixes.",
+    "The HTTP document-request tests replace document artifact rendering with synthetic artifacts; signature consumption/rendered production documents are outside this evidence.",
+    "The material binding proof uses an empty replacement to isolate real lock order; it does not claim a new signature-application feature."
+  ],
+  "source_sha256": {
+    "classroom_app/services/signature_workflow_lock_service.py": "1eb8561a104b18b84fd59e49ec7a717b98acfc5c748e4562f49d2b9341883f4a",
+    "classroom_app/services/signature_workflow_service.py": "e8cddfed1dbe4ed69c7418ad355b2f09d599ff015a7924634b74d9201b4a3ed8",
+    "classroom_app/services/signature_point_service.py": "0987c02a432d85cd7b29f877ebdb592d7b9ba9e9bdea28073c239755bb1bd3e1",
+    "classroom_app/services/material_signature_revision_service.py": "e61e7fd580caad30dd8e938c08d3c760996b450045f4290a8d9d02ef4969385d",
+    "tests/test_signature_claims_postgres.py": "8c005a8671227cb06b0ecca5c12e48966bb9fa10ba7b266802bb67fac41563f0",
+    "tests/test_signature_decisions_postgres.py": "ed90c9c80086125e0e6137c95660ee26ceacc9999d340120b85aafb2e344d846",
+    "tests/test_agent_platform_request_signatures.py": "ed0fed21496ab8a4fa99428c0ca988a9af22b1f079cc66f4c79284655c1eca97"
+  }
+}

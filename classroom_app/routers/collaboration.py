@@ -459,6 +459,11 @@ async def upload_study_group_file(
 ):
     if not file.filename:
         raise HTTPException(400, "请选择要上传的文件")
+    from ..services.collaboration_service import _ensure_group_access, _can_access_group_work
+    with get_db_connection() as conn:
+        group = _ensure_group_access(conn, group_id, user)
+        if not _can_access_group_work(conn, group, user):
+            raise HTTPException(403, '只有小组成员或教师可以上传组内文件')
     size = _measure_upload(file)
     if size <= 0:
         raise HTTPException(400, "不能上传空文件")

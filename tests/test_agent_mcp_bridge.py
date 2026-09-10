@@ -109,6 +109,26 @@ class McpBridgeTests(unittest.TestCase):
         # payloads shrink. No business capability is removed for this reduction.
         self.assertLess(len(json.dumps(index["writes"]["actions"])), len(json.dumps(expected)) * 0.5)
 
+    def test_file_transport_discovery_and_mcp_share_exact_schema_without_crud_claim(self):
+        for role in ('teacher','student'):
+            listed=self.call('tools/list',role=role).json()['result']['tools']
+            tools={item['name']:item for item in listed}
+            def catalog(arguments):
+                result=self.call('tools/call',{'name':'platform_capabilities','arguments':arguments},role=role).json()['result']
+                self.assertFalse(result['isError'])
+                return json.loads(result['content'][0]['text'])
+            index=catalog({})
+            self.assertEqual(2,index['available_counts']['file_transports'])
+            self.assertEqual({'platform_file','platform_download'},{item['key'] for item in index['file_transports']})
+            self.assertTrue(all('parameters' not in item for item in index['file_transports']))
+            details=catalog({'keys':['platform_file','platform_download']})
+            self.assertEqual([],details['unavailable_keys'])
+            for item in details['file_transports']:
+                self.assertEqual(tools[item['key']]['inputSchema'],item['parameters'])
+                self.assertIn('不是任意主机文件访问',item['limitations'])
+                self.assertEqual({'material_id','submission_file_id','collaboration_file_id','course_file_id','revision','path','parent_task_id'},set(item['parameters']['properties']))
+            self.assertEqual(['platform_download'],[item['key'] for item in catalog({'query':'字节'})['file_transports']])
+
     def test_catalog_filters_discovery_and_never_promotes_unknown_or_admin_keys(self):
         for arguments in ({"keys": ["create_teacher_account_secure"]}, {"keys": ["arbitrary_sql"]}):
             result = self.call("tools/call", {"name": "platform_capabilities", "arguments": arguments}, role="student").json()["result"]

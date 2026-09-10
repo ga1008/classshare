@@ -757,6 +757,54 @@ def _contact_value_for_update(existing: Any, incoming: str, *, existing_source: 
     return current
 
 
+def _prepare_roster_authority_transitions(conn, *, teacher_id, rosters, reconciliation=None):
+    """Prepare affected existing actors before course/class/student mutations.
+
+    Query only the incoming roster numbers and only the requesting teacher's
+    current students. A later unexpected authority transition fails closed in
+    _upsert_student instead of taking additional task locks mid-transaction.
+    """
+    from .account_credentials_service import prepare_actor_authority_changes
+    from .student_lifecycle_service import normalize_student_enrollment_status
+    from fastapi import HTTPException
+
+    teacher = conn.execute("SELECT id,COALESCE(is_active,1) AS is_active FROM teachers WHERE id=?", (int(teacher_id),)).fetchone()
+    if not teacher or not int(teacher["is_active"]):
+        raise HTTPException(403, "同步所属教师账号已停用或不存在。")
+    decisions = (reconciliation or {}).get("class_decisions") or {}
+    incoming = {}
+    for roster in rosters:
+        for student in roster.students:
+            if (decisions.get(student.class_name) or {}).get("action") != "skip":
+                incoming.setdefault(student.student_number, []).append(student)
+    numbers = sorted(incoming)
+    affected = set()
+    scope_cache = {}
+    for offset in range(0, len(numbers), 400):
+        chunk = numbers[offset:offset + 400]
+        placeholders = ','.join('?' for _ in chunk)
+        rows = conn.execute(f"""SELECT s.*,c.name AS current_class_name
+            FROM students s JOIN classes c ON c.id=s.class_id
+            WHERE c.created_by_teacher_id=? AND s.student_id_number IN ({placeholders})""", (int(teacher_id), *chunk)).fetchall()
+        for row in rows:
+            for student in incoming[str(row["student_id_number"])]:
+                status = _student_status_from_academic(student.school_status)
+                decision = decisions.get(student.class_name) or {}
+                possible_move = (decision.get("action") == "create"
+                    or (decision.get("target_id") and int(decision["target_id"]) != int(row["class_id"]))
+                    or _normalize_space(row["current_class_name"]) != _normalize_space(student.class_name))
+                scope_key = (student.college, normalize_department(student.college) or normalize_department(student.major))
+                if scope_key not in scope_cache:
+                    scope_cache[scope_key] = apply_teacher_scope_to_org(conn, teacher_id, college=scope_key[0], department=scope_key[1])
+                org_scope = scope_cache[scope_key]
+                scope_changes = any(not _normalize_space(row[key]) and _normalize_space(org_scope[key])
+                                    for key in ("school_code", "college", "department"))
+                if status != STUDENT_STATUS_ACTIVE or normalize_student_enrollment_status(row["enrollment_status"]) != status or possible_move or scope_changes:
+                    affected.add(int(row["id"]))
+                    break
+    return prepare_actor_authority_changes(conn, role="student", user_ids=affected)
+
+
 def _upsert_student(
     conn,
     *,
@@ -767,6 +815,7 @@ def _upsert_student(
     synced_at: str,
     stats: dict[str, int],
     warnings: list[str],
+    prepared_authority_ids: frozenset[int],
 ) -> int | None:
     existing = conn.execute(
         """
@@ -855,6 +904,15 @@ def _upsert_student(
         stats=stats,
     )
     moved = int(existing["class_id"]) != int(class_id)
+    from .student_lifecycle_service import normalize_student_enrollment_status
+    authority_changed = (academic_status != STUDENT_STATUS_ACTIVE
+        or normalize_student_enrollment_status(existing["enrollment_status"]) != academic_status
+        or moved
+        or any(not _normalize_space(existing[key]) and _normalize_space(org_scope[key])
+               for key in ("school_code", "college", "department")))
+    if authority_changed and int(existing["id"]) not in prepared_authority_ids:
+        from fastapi import HTTPException
+        raise HTTPException(409, "学生身份或学籍在同步准备后发生变化，请重新核对名单后同步。")
     if moved:
         stats["students_moved"] += 1
     else:
@@ -923,6 +981,10 @@ def _upsert_student(
             int(existing["id"]),
         ),
     )
+    if authority_changed:
+        from .account_credentials_service import actor_authority_changed
+        actor_authority_changed(conn, role="student", user_id=int(existing["id"]),
+                                reason="academic_roster_authority_changed", invalidate_sessions=True)
     return int(existing["id"])
 
 
@@ -1170,6 +1232,7 @@ def _persist_rosters(
     synced_at: str,
     reconciliation: dict[str, Any] | None = None,
     course_identity_map: dict[str, int] | None = None,
+    prepared_authority_ids: frozenset[int],
 ) -> dict[str, Any]:
     stats = {
         "classes_created": 0,
@@ -1291,6 +1354,7 @@ def _persist_rosters(
                     synced_at=synced_at,
                     stats=stats,
                     warnings=warnings,
+                    prepared_authority_ids=prepared_authority_ids,
                 )
                 student_cache[student.student_number] = student_id
                 if student_id:
@@ -1465,6 +1529,7 @@ async def _sync_current_teacher_rosters_without_reconciliation(
     synced_at = _now_iso()
     with get_db_connection() as conn:
         try:
+            prepared_authority_ids = _prepare_roster_authority_transitions(conn, teacher_id=teacher_id, rosters=rosters)
             course_result = _upsert_courses_and_schedule_items(
                 conn,
                 teacher_id=teacher_id,
@@ -1481,6 +1546,7 @@ async def _sync_current_teacher_rosters_without_reconciliation(
                 rosters=rosters,
                 source_summary=source_summary,
                 synced_at=synced_at,
+                prepared_authority_ids=prepared_authority_ids,
             )
             conn.commit()
         except Exception:

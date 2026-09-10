@@ -391,6 +391,31 @@ class AgentCapabilityInventoryTests(unittest.TestCase):
         self.assertEqual('authorized_snapshot_not_binary_delivery', report['reviewed_adapters'][0]['business_completion'])
         self.assertIn('授权文件来源 1', render_markdown(report))
 
+    def test_file_download_and_human_confirmation_are_distinct_from_read_write_crud(self):
+        self.simple_app("""
+            @router.get('/api/items')
+            def items(): pass
+        """)
+        evidence=self.reviewed()
+        template=evidence['adapters'][0]
+        download={**template,'capability_key':'file_download.material','kind':'file_download'}
+        confirmation={**template,'capability_key':'grades.publish','kind':'user_confirmation'}
+        evidence['adapters']=[download,confirmation]
+        self.assertEqual({'file_download_requires_authorized_task_input','user_confirmation_requires_user_only_confirmation'},
+                         {item['reason'] for item in self.inventory(reviewed=evidence)['review_issues']})
+        download['guarantee']='authorized_binary_task_input'
+        confirmation['guarantee']='user_only_authenticated_confirmation'
+        report=self.inventory(reviewed=evidence)
+        self.assertEqual(1,report['summary']['locally_verified_file_download_adapters'])
+        self.assertEqual(1,report['summary']['file_transport_tools'])
+        self.assertEqual(1,report['summary']['locally_verified_user_confirmation_adapters'])
+        self.assertEqual(0,report['summary']['locally_verified_secure_input_adapters'])
+        self.assertEqual(0,report['summary']['locally_verified_write_adapters'])
+        self.assertEqual(0,report['summary']['fully_covered_web_routes'])
+        self.assertEqual(['platform_download','authenticated_user_confirmation'],report['operations'][0]['agent_tools'])
+        self.assertEqual('authorized_workspace_copy_not_platform_mutation',report['reviewed_adapters'][0]['business_completion'])
+        self.assertIn('不等于文件CRUD',render_markdown(report))
+
 
 if __name__ == "__main__":
     unittest.main()

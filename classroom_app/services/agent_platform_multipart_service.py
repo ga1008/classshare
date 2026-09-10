@@ -108,11 +108,16 @@ def form_values(values):
 
 
 def encode_form_upload(conn, grant, operation, normalized, file_refs):
+    # Transport names/counts belong to the reviewed capability, never the model.
+    field_name = getattr(operation, 'file_field_name', 'files')
+    max_files = getattr(operation, 'max_files', MAX_FILES)
+    if field_name not in {'file', 'files'} or type(max_files) is not int or not 1 <= max_files <= MAX_FILES:
+        raise HTTPException(503, '附件传输配置无效。')
     if file_refs is None:
         file_refs = []
-    if (not isinstance(file_refs, list) or len(file_refs) > MAX_FILES
+    if (not isinstance(file_refs, list) or len(file_refs) > max_files
             or (file_refs and not operation.allows_files)):
-        raise HTTPException(400, "该能力不支持这些附件；每次最多提交16个文件。")
+        raise HTTPException(400, f"该能力每次最多接受 {max_files} 个附件。")
     values = form_values(normalized["body"])
     if not file_refs:
         return urlencode(values).encode(), "application/x-www-form-urlencoded", normalized
@@ -124,6 +129,8 @@ def encode_form_upload(conn, grant, operation, normalized, file_refs):
         relative = _relative_path(ref["path"])
         task = resolve_continuation_task(conn, grant, ref.get("parent_task_id"))
         name = str(_relative_path(ref.get("filename", relative.name)))
+        if Path(name).suffix.lower() in getattr(operation, 'forbidden_file_suffixes', ()):
+            raise HTTPException(400, '该上传能力暂不支持此文件类型，请使用平台对应导入功能。')
         if len(name) > 240 or name in names:
             raise HTTPException(400, "附件名称过长或重复。")
         names.add(name)
@@ -149,7 +156,7 @@ def encode_form_upload(conn, grant, operation, normalized, file_refs):
         parts.append(b"--" + marker + b'\r\nContent-Disposition: form-data; name="' + key.encode() + b'"\r\n\r\n' + value.encode() + b"\r\n")
     for name, data in files:
         content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        parts.append(b"--" + marker + b'\r\nContent-Disposition: form-data; name="files"; filename="' + name.encode() +
+        parts.append(b"--" + marker + b'\r\nContent-Disposition: form-data; name="' + field_name.encode() + b'"; filename="' + name.encode() +
                      b'"\r\nContent-Type: ' + content_type.encode() + b"\r\n\r\n" + data + b"\r\n")
     parts.append(b"--" + marker + b"--\r\n")
     return b"".join(parts), "multipart/form-data; boundary=" + boundary, {**normalized, "files": references}

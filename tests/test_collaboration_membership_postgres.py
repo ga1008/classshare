@@ -292,6 +292,17 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
         self.conn.rollback()
         self.assertEqual(3, self.conn.execute("SELECT max_members FROM study_groups WHERE id=1").fetchone()[0])
 
+    def test_file_upload_waits_for_membership_removal_and_rechecks_access(self):
+        self.group(cap=3,members=(7,8))
+        self.conn.execute('CREATE TABLE study_group_files(id BIGINT PRIMARY KEY)')
+        self.conn.commit()
+        first,second=self.race(lambda conn:service.remove_group_member(conn,1,self.teacher(),8),
+            lambda conn:service.add_group_file(conn,1,self.student(8),file_hash='a'*64,original_filename='fixture.txt',mime_type='text/plain',file_size=1),
+            gate_sql='UPDATE study_group_members')
+        self.assertEqual((200,403),(first[0],second[0]))
+        self.assertEqual({7},self.members())
+        self.assertEqual(0,self.conn.execute('SELECT COUNT(*) FROM study_group_files').fetchone()[0])
+
 
 if __name__ == "__main__":
     unittest.main()

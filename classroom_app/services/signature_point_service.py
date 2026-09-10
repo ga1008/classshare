@@ -455,6 +455,8 @@ def create_point_flow(
 
 
 def end_point_flow(conn: Any, user: dict[str, Any], flow_id: int) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, flow_ids=[flow_id])
     actor = signature_service.build_signature_actor(conn, user)
     flow = conn.execute("SELECT * FROM signature_point_flows WHERE id = ? LIMIT 1", (int(flow_id),)).fetchone()
     if not flow:
@@ -505,6 +507,8 @@ def bind_point_signatures(
     ip: str = "",
     user_agent: str = "",
 ) -> list[int]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    lock_signature_materials(conn, [(material_type, material_id)])
     actor, scope = _scope(
         conn,
         user,

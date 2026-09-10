@@ -48,7 +48,8 @@ def lock_submission_for_manual_grade(conn: Any, submission_id: int) -> None:
     submission row. Call before loading the permission-checked submission.
     """
     engine = get_configured_db_engine()
-    begin_immediate_transaction(conn, engine=engine)
+    if engine != "sqlite" or not bool(getattr(conn, "in_transaction", False)):
+        begin_immediate_transaction(conn, engine=engine)
     if engine == "postgres":
         conn.execute("SELECT id FROM submissions WHERE id = ? FOR UPDATE", (submission_id,)).fetchone()
 

@@ -2172,6 +2172,18 @@ async function executeAgentAction(button) {
             method: 'POST',
             body: JSON.stringify({ params }),
         });
+        if (preview.execution_mode === 'user_confirmation') {
+            const { openAgentUserConfirmation } = await import('./agent_user_confirmation.js');
+            await openAgentUserConfirmation({ taskId, actionIndex, preview, apiJson,
+                onComplete: async (data) => {
+                    if (data.task) renderTaskDetail(data.task, { autoScroll: true });
+                    await refreshTasks({ silent: true }).catch(() => {});
+                    notify(data.result?.label || '业务操作已完成。', 'success');
+                },
+                onClose: () => { if (button.isConnected) button.focus({ preventScroll: true }); },
+            });
+            return;
+        }
         if (preview.execution_mode === 'secure_input' || preview.secure_fields?.length) {
             await confirmSecureAgentAction({ button, taskId, actionIndex, params, preview });
             return;

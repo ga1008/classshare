@@ -1,0 +1,127 @@
+import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
+
+const source = fs.readFileSync('static/js/agent_user_confirmation.js', 'utf8');
+const modal = fs.readFileSync('static/js/process_material_modal.js', 'utf8');
+const styles = fs.readFileSync('static/css/grade_publication.css', 'utf8');
+const builtStyles = fs.readFileSync('static/css/tailwind-app.css', 'utf8');
+const ui = `export function escapeHtml(value){const n=document.createElement('span');n.textContent=String(value??'');return n.innerHTML.replaceAll('"','&quot;');}`;
+
+async function mount(page: Page, mode: 'normal' | 'retry' | 'conflict' | 'roster' | 'unknown' = 'normal') {
+  const posts: any[] = [];
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  let hash = 'a'.repeat(64);
+  let reviewHash = 'c'.repeat(64);
+  let executed = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const preview = () => ({ action: 'publish_classroom_grades', execution_mode: 'user_confirmation',
+    params: { class_offering_id: 40, material_id: 500, expected_source_hash: hash, expected_review_hash: reviewHash, expected_version: 0 }, confirmation_token: 'token-' + hash,
+    confirmation_review: { source_hash: hash, expected_version: 0, can_publish: true,
+      course_name: '数据库原理', semester_name: '2026—2027 第一学期', formula: { text: '平时 × 40% + 期末 × 60%' },
+      students: [{ student_number: 'S7', student_name: '<img src=x onerror=alert(1)>', ordinary_score: 0, final_exam_score: null, overall_score: 0 }],
+      warnings: [{ code: 'fixture_review', message: '请核对历史来源成绩。' }], blocking_reasons: [] } });
+  await page.route('http://agent-confirmation.test/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const modules: Record<string, string> = { '/agent_user_confirmation.js': source, '/process_material_modal.js': modal, '/ui.js': ui };
+    if (modules[path]) return route.fulfill({ contentType: 'text/javascript', body: modules[path] });
+    if (path.endsWith('/grade_publication.css')) return route.fulfill({ contentType: 'text/css', body: styles });
+    if (path.endsWith('/preview')) return route.fulfill({ json: preview() });
+    if (path.endsWith('/execute')) {
+      posts.push(route.request().postDataJSON());
+      if (mode === 'normal') await gate;
+      if (mode === 'retry' && posts.length === 1) return route.fulfill({ status: 503, json: { detail: '服务暂时繁忙' } });
+      if ((mode === 'conflict' || mode === 'roster') && posts.length === 1) { if (mode === 'conflict') hash = 'b'.repeat(64); reviewHash = 'd'.repeat(64); return route.fulfill({ status: 409, json: { detail: '来源成绩已变化' } }); }
+      executed = true;
+      if (mode === 'unknown') return route.abort('connectionreset');
+      return route.fulfill({ json: { task: { id: 10 }, result: { status: 'published', version: 1 } } });
+    }
+    if (path === '/api/agent-tasks/10') return route.fulfill({ json: { task: { id: 10, result_detail: { proposed_actions: [{ executed: executed ? { status: 'published', version: 1 } : null }] } } } });
+    return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${builtStyles}${styles}</style><button id="trigger">核对成绩</button><script type="module">import {openAgentUserConfirmation} from '/agent_user_confirmation.js'; window.completed=[];const apiJson=async(url,init)=>{const r=await fetch(url,init);const d=await r.json();if(!r.ok)throw new Error(d.detail);return d};document.querySelector('#trigger').onclick=()=>openAgentUserConfirmation({taskId:10,actionIndex:0,preview:${JSON.stringify(preview())},apiJson,onComplete:d=>window.completed.push(d),onClose:()=>document.querySelector('#trigger').focus()});</script></html>` });
+  });
+  await page.goto('http://agent-confirmation.test/');
+  await page.locator('#trigger').click();
+  await expect(page.locator('[data-agent-business-warning]')).toBeVisible();
+  return { posts, errors, release };
+}
+
+async function confirm(page: Page) {
+  await page.locator('[data-agent-business-warning]').check();
+  await page.locator('[data-agent-business-note]').fill('已核对原始成绩与学生名单');
+  await page.locator('[data-agent-business-reviewed]').check();
+}
+
+test('explicit human checks, zero versus missing, escaping and single submission remain correct on mobile', async ({ page }) => {
+  const h = await mount(page);
+  await expect(page.locator('tbody img')).toHaveCount(0);
+  await expect(page.locator('tbody td').nth(3)).toHaveText('缺分');
+  await expect(page.locator('tbody td').last()).toHaveText('0');
+  await expect(page.locator('[data-agent-business-warning]')).not.toBeChecked();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  await page.locator('[data-agent-business-reviewed]').check();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  await confirm(page);
+  await page.screenshot({ path: '.codex-temp/agent-grade-confirmation-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.locator('.lp-modal__body').evaluate(n => n.scrollWidth <= n.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: '.codex-temp/agent-grade-confirmation-mobile.png', fullPage: true });
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-agent-business-confirmation]')).toBeVisible();
+  expect(h.posts).toHaveLength(1);
+  expect(h.posts[0]).toEqual({ params: { class_offering_id: 40, material_id: 500, expected_source_hash: 'a'.repeat(64), expected_review_hash: 'c'.repeat(64), expected_version: 0 }, confirmation_token: 'token-' + 'a'.repeat(64), confirmation_inputs: { accepted_warning_codes: ['fixture_review'], confirmation_note: '已核对原始成绩与学生名单' } });
+  h.release();
+  await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
+  await expect(page.locator('#trigger')).toBeFocused();
+  expect(h.errors).toEqual([]);
+});
+
+test('503 retains input and allows explicit retry with the identical declaration', async ({ page }) => {
+  const h = await mount(page, 'retry');
+  await confirm(page);
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-message]')).toContainText('服务暂时繁忙');
+  await expect(page.locator('[data-agent-business-note]')).toHaveValue('已核对原始成绩与学生名单');
+  await expect(page.locator('[data-agent-business-reviewed]')).toBeChecked();
+  expect(h.posts).toHaveLength(1);
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
+  expect(h.posts[1]).toEqual(h.posts[0]);
+  expect(h.errors).toEqual([]);
+});
+
+for (const mode of ['conflict', 'roster'] as const) {
+test(`${mode} preserves notes but requires new checks and the latest server preview`, async ({ page }) => {
+  const h = await mount(page, mode);
+  await confirm(page);
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-message]')).toContainText('来源成绩已变化');
+  await page.locator('[data-agent-business-refresh]').click();
+  await expect(page.locator('[data-agent-business-message]')).toContainText('来源已更新');
+  await expect(page.locator('[data-agent-business-note]')).toHaveValue('已核对原始成绩与学生名单');
+  await expect(page.locator('[data-agent-business-warning]')).not.toBeChecked();
+  await expect(page.locator('[data-agent-business-reviewed]')).not.toBeChecked();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  expect(h.posts).toHaveLength(1);
+  await confirm(page);
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
+  expect(h.posts[1].params.expected_source_hash).toEqual((mode === 'conflict' ? 'b' : 'a').repeat(64));
+  expect(h.posts[1].params.expected_review_hash).toEqual('d'.repeat(64));
+  expect(h.posts[1].confirmation_token).toEqual('token-' + (mode === 'conflict' ? 'b' : 'a').repeat(64));
+  expect(h.errors).toEqual([]);
+});
+
+}
+
+test('lost response resolves the committed proposal receipt without repeating the publication', async ({ page }) => {
+  const h = await mount(page, 'unknown');
+  await confirm(page);
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
+  expect(h.posts).toHaveLength(1);
+  expect(await page.evaluate(() => (window as any).completed[0].result)).toEqual({ status: 'published', version: 1 });
+  expect(h.errors).toEqual([]);
+});

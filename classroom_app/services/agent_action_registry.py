@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 import time
 from typing import Any
@@ -40,7 +41,7 @@ PROPOSED_ACTIONS_PROMPT_EXAMPLE: dict[str, Any] = {
     },
 }
 
-# 字段 schema：type ∈ {int, str, text, str_list}；text 为长文本。
+# 字段 schema：int/number/bool/str/text/str_list/json_object；text 为长文本。
 AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
     "generate_session_document": {
         "label": "生成课时学习文档", "done_label": "已提交文档生成", "risk": "medium", "execution_mode": "execute",
@@ -175,12 +176,16 @@ from .agent_organization_actions import ACTION_DEFINITIONS as ORGANIZATION_ACTIO
 from .agent_identity_management_adapter import IDENTITY_ACTION_DEFINITIONS
 from .agent_assignment_actions import ACTION_DEFINITIONS as ASSIGNMENT_ACTION_DEFINITIONS
 from .agent_secure_account_actions import SECURE_ACTION_DEFINITIONS
+from .agent_assessment_actions import ACTION_DEFINITIONS as ASSESSMENT_ACTION_DEFINITIONS
+from .agent_user_confirmation_actions import USER_CONFIRMATION_ACTION_DEFINITIONS
 
 AGENT_ACTION_DEFINITIONS.update(MATERIAL_ACTION_DEFINITIONS)
 AGENT_ACTION_DEFINITIONS.update(ORGANIZATION_ACTION_DEFINITIONS)
 AGENT_ACTION_DEFINITIONS.update(IDENTITY_ACTION_DEFINITIONS)
 AGENT_ACTION_DEFINITIONS.update(ASSIGNMENT_ACTION_DEFINITIONS)
 AGENT_ACTION_DEFINITIONS.update(SECURE_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(ASSESSMENT_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(USER_CONFIRMATION_ACTION_DEFINITIONS)
 
 
 def ensure_action_actor_role(action: str, actor_role: str) -> None:
@@ -236,6 +241,22 @@ def validate_action_params(
                 errors.append(f"字段 {field_name} 必须在 {minimum} 至 {maximum} 之间")
                 continue
             clean[field_name] = parsed
+        elif field_type == "number":
+            try:
+                if isinstance(raw, bool):
+                    raise ValueError
+                number = float(raw)
+                if not math.isfinite(number) or not float(spec.get("minimum", -1e100)) <= number <= float(spec.get("maximum", 1e100)):
+                    raise ValueError
+            except (ValueError, TypeError, OverflowError):
+                errors.append(f"字段 {field_name} 必须是允许范围内的有限数值")
+                continue
+            clean[field_name] = number
+        elif field_type == "json_object":
+            try:
+                clean[field_name] = _bounded_json_object(raw, max_bytes=int(spec.get("max_bytes", 200000)))
+            except ValueError as exc:
+                errors.append(f"字段 {field_name}：{exc}")
         elif field_type == "bool":
             if type(raw) is not bool:
                 errors.append(f"字段 {field_name} 必须是布尔值")
@@ -259,6 +280,43 @@ def validate_action_params(
         else:  # pragma: no cover - registry misconfiguration guard
             errors.append(f"字段 {field_name} 的类型未支持")
     return clean, errors
+
+
+def _bounded_json_object(value: Any, *, max_bytes: int) -> dict[str, Any]:
+    """Bound structured domain input before canonicalization or persistence."""
+    if not isinstance(value, dict):
+        raise ValueError("必须是 JSON 对象")
+    pending = [(value, 0)]
+    seen = 0
+    while pending:
+        item, depth = pending.pop()
+        seen += 1
+        if seen > 10000 or depth > 12:
+            raise ValueError("内容层级或条目过多")
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise ValueError("对象字段名必须是文本")
+                pending.append((key, depth + 1))
+                pending.append((child, depth + 1))
+        elif isinstance(item, list):
+            pending.extend((child, depth + 1) for child in item)
+        elif isinstance(item, str):
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in item):
+                raise ValueError("文本编码无效")
+        elif item is None or isinstance(item, (bool, int)):
+            pass
+        elif isinstance(item, float) and math.isfinite(item):
+            pass
+        else:
+            raise ValueError("包含非 JSON 值或非有限数值")
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > max_bytes:
+            raise ValueError("内容过大")
+        return json.loads(encoded)
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError("JSON 内容无效") from exc
 
 
 def _secret_key_bytes() -> bytes:
@@ -488,6 +546,7 @@ def proposed_actions_prompt_block(*, actor_role: str = "teacher") -> str:
         "直接用 platform_write 完成并报告实际回执，不要再附重复执行提案。"
         "只有尚需用户确认的新操作才在最终输出末尾附以下 JSON（平台会渲染确认按钮）；"
         "user_input_actions 中的 secure_input 动作必须生成提案，由用户在平台安全表单填写密码；"
+        "user_confirmation 动作只能生成提案，由用户本人核对平台显示的业务快照后确认，不能代用户勾选或调用 platform_write 执行；"
         "不要用提问工具索取密码，不要将密码放入 params、消息、文件或工具参数。"
         "缺少必要参数先使用提问工具补齐，单纯可选建议不要生成动作提案。待确认提案不代表已写入平台：",
         "```json",

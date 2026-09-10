@@ -216,13 +216,16 @@ def _observation(response, operation=None):
     result['data'] = payload
     if response.status_code == 202:
         return 'submitted', {**result,'follow_up':'needs_job_tracker_not_completed'}
-    known_success = payload.get('status') in {'ok','success'} and payload.get('success') is not False
+    known_success = payload.get('status') in ('ok','success') and payload.get('success') is not False
     if operation is not None and operation.response_contract == 'assignment_draft':
         from .agent_platform_multipart_service import assignment_draft_response
         known_success = assignment_draft_response(payload)
     if operation is not None and operation.response_contract == 'blog_report_resolution':
-        known_success = (set(payload) == {'status', 'id'} and payload.get('status') in {'resolved', 'dismissed'}
+        known_success = (set(payload) == {'status', 'id'} and payload.get('status') in ('resolved', 'dismissed')
                          and type(payload.get('id')) is int and payload['id'] > 0)
+    if operation is not None and operation.response_contract == 'signature_collection':
+        from .agent_platform_request_signatures import collection_response
+        known_success = collection_response(payload, operation.key)
     if not known_success:
         return 'uncertain', {**result,'follow_up':'needs_response_adapter'}
     return 'observed_http_result', result

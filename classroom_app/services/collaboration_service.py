@@ -930,7 +930,7 @@ def add_group_file(
     file_size: int,
     description: str = "",
 ) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _can_access_group_work(conn, group, user):
         raise HTTPException(403, "只有小组成员或教师可以上传组内文件")
     description = _normalize_text(description, limit=500, field_name="文件说明")

@@ -1,0 +1,251 @@
+{
+  "recorded_at": "2026-09-10T12:16:48.585603+00:00",
+  "scope": "Synthetic local normal-Web and delegated HTTP/SQL material management; no production data, deployment or model calls",
+  "server_version": "PostgreSQL 16.14, compiled by Visual C++ build 1944, 64-bit",
+  "python": {
+    "tests_run": 108,
+    "passed": true,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "duration_seconds": 28.618,
+    "command": "C:\\Python314\\python.exe -m unittest tests.test_material_tree_postgres tests.test_collaboration_membership_postgres tests.test_agent_material_management tests.test_agent_file_upload_requests tests.test_material_node_ops tests.test_material_delete_service tests.test_agent_material_actions tests.test_agent_material_content_requests tests.test_agent_submission_requests tests.test_agent_platform_request_collaboration tests.test_collaboration_postgres_writes tests.test_course_file_precheck tests.test_permission_course_files tests.test_agent_scoped_file_types tests.test_material_library_inherited_filters -q",
+    "environment": {
+      "PYTHON_DOTENV_DISABLED": "1",
+      "ASSESSMENT_REHEARSAL_TEST_CLUSTER": "Explicit offline fixture directory validated by connect_offline",
+      "ASSESSMENT_REHEARSAL_TEST_PORT": "55439"
+    },
+    "test_ids_by_module": {
+      "tests.test_material_tree_postgres": [
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_delete_old_impact_rejects_same_count_reference_changed_while_waiting",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_parent_renamed_while_creator_waits_uses_fresh_parent_path",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_reciprocal_moves_cannot_create_cycle_or_mixed_root",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_registered_editor_pack_first_lock_cannot_deadlock_material_delete",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_rename_shares_create_lock_and_rechecks_sibling_collision",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_stale_concurrent_move_has_409_and_does_not_move_latest_location",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_two_creates_same_folder_name_wait_then_choose_distinct_names",
+        "tests.test_material_tree_postgres.MaterialTreePostgresTests.test_unrelated_owner_can_create_while_first_owner_transaction_is_held"
+      ],
+      "tests.test_collaboration_membership_postgres": [
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_classroom_access_is_rechecked_after_waiting",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_different_classrooms_are_not_serialized",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_file_upload_waits_for_membership_removal_and_rechecks_access",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_initial_assignment_and_lowered_bound_cannot_create_overfull_group",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_random_joins_use_fresh_capacity_under_the_same_lock",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_redistribution_and_member_removal_share_classroom_first_lock_order",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_same_invitation_is_reloaded_after_lock_and_only_processed_once",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_same_student_cannot_join_two_groups_for_the_same_assignment",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_scheme_assignment_competes_for_one_slot_without_overfill",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_teacher_add_and_student_join_obey_the_same_capacity_lock",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_two_invite_acceptances_cannot_overfill_and_loser_remains_pending",
+        "tests.test_collaboration_membership_postgres.CollaborationMembershipPostgresTests.test_two_open_joins_compete_for_one_remaining_slot"
+      ],
+      "tests.test_agent_material_management": [
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_admin_creates_in_managed_foreign_tree_with_inherited_ownership",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_create_nested_folder_markdown_and_unique_names_match_normal_web",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_delete_complete_snapshot_detects_same_count_replacement_and_content_change",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_delete_snapshot_includes_references_beyond_truncated_ui_samples",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_move_cas_scope_cycle_and_duplicate_operation_preserve_tree",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_plain_tree_guard_and_ancestor_delete_archives_registered_pack",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_root_material_upload_matches_actual_normal_multipart_response",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_task_upload_uses_correct_existing_base_without_duplicate_ancestor",
+        "tests.test_agent_material_management.AgentMaterialManagementTests.test_wildcard_directory_never_authorizes_or_unlinks_private_sibling"
+      ],
+      "tests.test_agent_file_upload_requests": [
+        "tests.test_agent_file_upload_requests.AgentFileUploadRequestsTests.test_course_broadcast_has_one_deadline_and_preserves_external_cancel",
+        "tests.test_agent_file_upload_requests.AgentFileUploadRequestsTests.test_course_upload_returns_exact_id_for_normal_download_and_scope_is_explicit",
+        "tests.test_agent_file_upload_requests.AgentFileUploadRequestsTests.test_field_name_and_single_file_count_are_server_owned_and_digest_checked",
+        "tests.test_agent_file_upload_requests.AgentFileUploadRequestsTests.test_group_upload_actual_private_snapshot_receipt_and_role_parity",
+        "tests.test_agent_file_upload_requests.AgentFileUploadRequestsTests.test_upload_failure_does_not_bind_a_db_row_and_same_operation_is_not_reexecuted"
+      ],
+      "tests.test_material_node_ops": [
+        "tests.test_material_node_ops.MaterialLearningBindingContextTests.test_bindings_empty_material",
+        "tests.test_material_node_ops.MaterialLearningBindingContextTests.test_bindings_merge_list_table_and_legacy_columns",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_create_markdown_file_appends_extension",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_create_root_folder_is_own_root_and_private",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_duplicate_name_gets_unique_suffix",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_get_material_subtree_sorts_tree_and_hides_git_internal_nodes",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_move_conflict_auto_renames",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_move_file_updates_path_root_and_scope",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_move_folder_moves_subtree",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_move_into_own_descendant_rejected",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_move_to_root_becomes_own_root",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_nested_folder_inherits_root_scope",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_normalize_node_name_rejects_path_chars",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_rewrite_strictness",
+        "tests.test_material_node_ops.MaterialNodeOpsTests.test_scope_level_normalization"
+      ],
+      "tests.test_material_delete_service": [
+        "tests.test_material_delete_service.MaterialDeleteServiceTests.test_delete_endpoint_rejects_unreviewed_reference_changes",
+        "tests.test_material_delete_service.MaterialDeleteServiceTests.test_delete_endpoint_requires_current_impact_token_and_closes_the_transaction",
+        "tests.test_material_delete_service.MaterialDeleteServiceTests.test_final_grade_transcript_source_reference_is_visible_and_detached_with_snapshot_preserved",
+        "tests.test_material_delete_service.MaterialDeleteServiceTests.test_impact_reverse_traces_real_bindings_without_double_counting_primary_mirrors",
+        "tests.test_material_delete_service.MaterialDeleteServiceTests.test_one_step_unlink_preserves_history_and_promotes_remaining_material"
+      ],
+      "tests.test_agent_material_actions": [
+        "tests.test_agent_material_actions.MaterialActionTests.test_attributes_enforce_ownership_revision_conflicts_and_superadmin_web_policy",
+        "tests.test_agent_material_actions.MaterialActionTests.test_binding_receipt_and_business_change_commit_once_and_rollback_together",
+        "tests.test_agent_material_actions.MaterialActionTests.test_home_binding_student_other_teacher_and_foreign_session",
+        "tests.test_agent_material_actions.MaterialActionTests.test_normal_web_uses_shared_service_and_rejects_invalid_scope_without_rename",
+        "tests.test_agent_material_actions.MaterialActionTests.test_rename_real_subtree_does_not_match_sql_wildcard_sibling",
+        "tests.test_agent_material_actions.MaterialActionTests.test_stale_list_conflict_and_unbind_preserves_other_binding_file_and_access"
+      ],
+      "tests.test_agent_material_content_requests": [
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_atomic_writer_rejects_an_existing_corrupt_blob_before_material_binding",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_declared_encodings_round_trip_and_unrepresentable_input_is_400",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_normal_teacher_owner_student_and_superadmin_rules_are_preserved",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_plain_read_edit_noop_and_stale_revision_preserve_current_file",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_registered_source_save_uses_native_receipt_projection_and_cas",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_response_budget_returns_413_and_does_not_commit_a_large_registered_save",
+        "tests.test_agent_material_content_requests.AgentMaterialContentRequestsTests.test_unknown_save_cannot_be_retried_by_changing_outer_and_inner_ids"
+      ],
+      "tests.test_agent_submission_requests": [
+        "tests.test_agent_submission_requests.AgentSubmissionRequestsTests.test_database_commit_failure_restores_submission_files_and_keeps_unknown_receipt",
+        "tests.test_agent_submission_requests.AgentSubmissionRequestsTests.test_draft_file_submit_and_withdraw_follow_original_student_workflow",
+        "tests.test_agent_submission_requests.AgentSubmissionRequestsTests.test_role_foreign_membership_and_stale_submission_version_are_enforced",
+        "tests.test_agent_submission_requests.AgentSubmissionRequestsTests.test_task_path_and_changed_file_are_rejected_before_durable_admission"
+      ],
+      "tests.test_agent_platform_request_collaboration": [
+        "tests.test_agent_platform_request_collaboration.AgentPlatformRequestCollaborationTests.test_group_create_join_manage_remove_add_leave_and_archive_normal_permissions",
+        "tests.test_agent_platform_request_collaboration.AgentPlatformRequestCollaborationTests.test_group_submission_requires_leader_complete_payload_and_group_scoped_file",
+        "tests.test_agent_platform_request_collaboration.AgentPlatformRequestCollaborationTests.test_peer_review_private_then_explicit_shared_only_to_reviewee",
+        "tests.test_agent_platform_request_collaboration.AgentPlatformRequestCollaborationTests.test_private_group_chat_read_send_recall_member_role_and_time_bounds",
+        "tests.test_agent_platform_request_collaboration.AgentPlatformRequestCollaborationTests.test_teacher_cannot_overfill_by_add_leader_or_initial_assignment_and_lower_bound"
+      ],
+      "tests.test_collaboration_postgres_writes": [
+        "tests.test_collaboration_postgres_writes.CollaborationPostgresWriteTests.test_add_group_file_uses_insert_returning_helper",
+        "tests.test_collaboration_postgres_writes.CollaborationPostgresWriteTests.test_create_group_uses_insert_returning_helper",
+        "tests.test_collaboration_postgres_writes.CollaborationPostgresWriteTests.test_submit_peer_review_uses_insert_returning_helper",
+        "tests.test_collaboration_postgres_writes.CollaborationPostgresWriteTests.test_upsert_group_submission_uses_insert_returning_helper"
+      ],
+      "tests.test_course_file_precheck": [
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_accessible_file_in_another_owned_course_is_not_automatically_republished",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_authorized_exact_existing_file_is_a_read_only_hit",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_destination_course_ownership_does_not_bypass_source_privacy",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_destination_permission_and_hash_validation",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_existing_public_access_semantics_are_preserved",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_legacy_client_runs_full_upload_after_negative_check",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_legacy_filename_size_check_never_leaks_or_copies_other_course",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_missing_blob_continues_upload",
+        "tests.test_course_file_precheck.CourseFilePrecheckTests.test_same_name_and_size_do_not_replace_content_identity"
+      ],
+      "tests.test_permission_course_files": [
+        "tests.test_permission_course_files.CourseFilePermissionTests.test_classroom_file_owner_can_update_even_when_course_creator_differs",
+        "tests.test_permission_course_files.CourseFilePermissionTests.test_owner_can_update_course_file_metadata",
+        "tests.test_permission_course_files.CourseFilePermissionTests.test_same_school_reader_cannot_update_course_file_metadata"
+      ],
+      "tests.test_agent_scoped_file_types": [
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_changed_hash_and_source_pointer_are_rejected_before_returning_content",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_collaboration_private_membership_and_teacher_classroom_match_normal_download",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_course_scope_role_collision_admin_and_download_size_policy_match_web",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_exactly_one_selector_strict_ids_and_no_arbitrary_platform_paths",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_mcp_public_tool_describes_all_selectors_and_dispatches_scoped_identity",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_membership_is_rechecked_after_extraction_and_no_content_escapes",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_real_document_extraction_uses_authorized_filename_and_actual_byte_revision",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_source_session_revoked_after_snapshot_refuses_disclosure_and_releases_budget",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_stored_path_outside_platform_roots_and_binary_context_transfer_are_rejected",
+        "tests.test_agent_scoped_file_types.AgentScopedFileTypesTests.test_submission_owner_teacher_foreign_and_personal_stage_match_normal_download"
+      ],
+      "tests.test_material_library_inherited_filters": [
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_bulk_decoration_uses_two_queries_for_many_git_files",
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_effective_scope_and_organization_filtering_do_not_modify_stored_access",
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_existing_visibility_gate_still_excludes_inaccessible_descendants",
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_git_descendants_inherit_course_and_class_without_duplicate_assignments",
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_nested_assignment_augments_ancestors_but_never_siblings_or_other_roots",
+        "tests.test_material_library_inherited_filters.MaterialLibraryInheritedFilterTests.test_unassigned_parent_does_not_gain_descendant_or_sibling_assignment"
+      ]
+    },
+    "stdout_note": "The deliberate submission commit-failure fixture logs Synthetic unavailable commit; test result is OK."
+  },
+  "frontend": {
+    "tests_run": 13,
+    "passed": true,
+    "skipped": 0,
+    "command": "node --test tests/frontend/materials_node_versions_browser.test.cjs tests/frontend/materials_repository_refresh.test.cjs",
+    "chromium_tests": 1,
+    "node_fixture_tests": 12,
+    "scope": "Real headless Chromium executes extracted production functions against synthetic DOM/API; not a full live-page or production acceptance test",
+    "verified": [
+      "Picker remains disabled until fresh source and target revisions arrive",
+      "Late picker responses cannot replace a newer selection",
+      "Move sends both versions and 409 requires a fresh selection",
+      "Delete cancellation emits no DELETE",
+      "No-reference deletion still sends the impact token",
+      "Registered package archival appears in confirmation; deleting internal sources is blocked"
+    ]
+  },
+  "added_capabilities": [
+    "http.materials.folders.list",
+    "http.materials.folder.create",
+    "http.materials.file.create",
+    "http.materials.move",
+    "http.materials.delete.impact",
+    "http.materials.delete",
+    "http.materials.upload",
+    "http.course.file.upload",
+    "http.collaboration.file.upload"
+  ],
+  "native_postgres": {
+    "material_tests": 8,
+    "collaboration_tests": 12,
+    "method": "Independent real transactions and pg_blocking_pids; material tests call original Web handlers directly while SQLite tests dispatch through actual ASGI routes",
+    "substitutions": [
+      "Material response decorations, Git metadata refresh and organization labels in native PG tests only",
+      "Collaboration notification delivery and response snapshot in native PG tests only"
+    ],
+    "verified": [
+      "Concurrent creation cannot allocate the same sibling name",
+      "Reciprocal moves cannot form a cycle",
+      "Stale source and target revisions are rejected after waiting",
+      "Creation waits for parent rename and uses the new path",
+      "Creation and rename use one owner namespace",
+      "Delete token changes when an existing reference changes with the same count",
+      "Registered editor and deletion use pack-before-material order",
+      "Different material owners and different classrooms remain concurrent",
+      "File binding rechecks membership after a competing removal"
+    ]
+  },
+  "http_sql_verified": [
+    "Original teacher/student/admin normal-route authorization retained",
+    "Admin-created children inherit the managed tree owner",
+    "Percent and underscore material paths do not grant or delete sibling subtrees",
+    "Unauthorized root and descendant metadata are filtered",
+    "Full reference snapshot includes rows beyond UI samples",
+    "Ancestor deletion archives registered packs and cascades only the selected subtree",
+    "Material uploads avoid duplicated parent ancestors",
+    "Server-owned multipart file field, count and SHA256 enforcement",
+    "Course upload returns the exact file ID for the normal permission-checked download",
+    "Single operation replay does not create a second binding",
+    "Course broadcasts have one bounded deadline and external cancellation propagates"
+  ],
+  "limitations": [
+    "Only these nine reviewed HTTP capabilities are added; this is not complete platform coverage.",
+    "B receipts remain observations of HTTP results and never assert verified business outcomes or exactly-once execution.",
+    "Immutable blob publication and DB binding are separate; failed bindings may retain orphan blobs to avoid deleting bytes used by a concurrent upload.",
+    "Agent material uploads reject ZIP names and remain bounded to 16 files and 32 MiB; normal Web ZIP extraction retains its existing limits and has not been redesigned here.",
+    "Ordinary structural edits inside registered LessonDoc packages are rejected; the existing dedicated document editor remains the supported path.",
+    "Cross-owner moves are rejected instead of producing mixed-owner trees; administrative creation into a managed foreign tree is supported with inherited ownership.",
+    "Delete confirmation hashes complete known reference rows and locks existing records; no claim is made that every unrelated legacy JSON-only reference writer follows the same protocol.",
+    "Native PostgreSQL tests use a fresh synthetic database, not a production-load test or a full production-schema release rehearsal."
+  ],
+  "source_sha256": {
+    "classroom_app/services/materials_service.py": "aa8c682f3287d107ced305b266aa9d397ba4a20dc8bf11cee57c5f54ef007e0d",
+    "classroom_app/services/material_tree_service.py": "971fd60ee375fe48a8b459c2a02c91bd505089d49422681ec84a53c82561632a",
+    "classroom_app/services/material_attributes_service.py": "2c1f3cc3a2234182ef59b09920b0c73928511571dd24f680da709a65849e12aa",
+    "classroom_app/services/material_delete_service.py": "597b97160986cb57ab203431d19646f91452e985ea9f6fac917b854c43a52a7d",
+    "classroom_app/routers/materials_parts/node_ops.py": "7761b4a66aefdc98103f27cc35ffa6533255ceb38ba47ee22a2b4b582a59d016",
+    "classroom_app/routers/materials_parts/library.py": "50b59a4f31e0c8a49dbbb04d393add9e7a34f4bef71714e384e294b4f14bfaff",
+    "classroom_app/services/agent_platform_request_material_management.py": "9c92ca53907f4d67f2971f698453f6e90ee2ef9013562e58222605904afc4e59",
+    "classroom_app/services/agent_platform_multipart_service.py": "159b8fb28bf13edb10d98ee22b357ae40723163b42c9c8a5542f47922f77a836",
+    "classroom_app/routers/files.py": "ae1c2cbfcb39793d4983633b6cc2a42efdae900146b0adfa9013cf8523bc3b26",
+    "classroom_app/routers/collaboration.py": "be09fa7fa9cae544087b2ed30bd5f51194bccc77ac0cf8030d6df430a94ca563",
+    "classroom_app/services/collaboration_service.py": "04553c7ffb54c829c1cbc542ce3698d939b53bfe38d20c68b6e3ab95bb193c75",
+    "static/js/materials_manage.js": "0516f539a14f087a123bedb2b7f585391334c8c305d135b05a8cc5aa7f71ef3c",
+    "tests/test_material_tree_postgres.py": "63a648b5bb0bbd990656b2feb8a5eedec25a4f38d7cf1c892a78ee7926d370d8",
+    "tests/test_agent_material_management.py": "a8ef565b8f164da77699436e9f4d58007cf6d5330be6967d8fa147cc36e689db",
+    "tests/test_agent_file_upload_requests.py": "cf706671752e12fe00604b2ae1539fe17e603bc341e5d30d911ce74a3a0377ab",
+    "tests/test_collaboration_membership_postgres.py": "a802d3457b4d3dd8aac7a77db015d5d7db12fd7084d86b3f0146aa19f8cce6d1",
+    "tests/frontend/materials_node_versions_browser.test.cjs": "a48c230aaa399096bdb6ab41b047f340074d089a86c0352927e40beaf5da958d",
+    "tests/frontend/materials_repository_refresh.test.cjs": "9c071c9acab6327865809988c0e12a448d7f1a34c61376484020b52af676d3a1"
+  }
+}

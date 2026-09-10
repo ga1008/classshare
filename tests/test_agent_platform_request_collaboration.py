@@ -14,7 +14,7 @@ class FixedClock(datetime):
         return value.replace(tzinfo=tz) if tz else value
 
 
-class AgentPlatformRequestCollaborationTests(LearningRequestFixture):
+class CollaborationRequestFixture(LearningRequestFixture):
     def setUp(self):
         super().setUp()
         self.patched('classroom_app.services.collaboration_service._now_iso', return_value='2026-09-10T12:00:00')
@@ -60,6 +60,7 @@ class AgentPlatformRequestCollaborationTests(LearningRequestFixture):
     def operation(self, actor, action, group_id, **kwargs):
         return self.restored_parity(actor, 'http.collaboration.' + action, path_params={'group_id': group_id}, **kwargs)
 
+class AgentPlatformRequestCollaborationTests(CollaborationRequestFixture):
     def test_group_create_join_manage_remove_add_leave_and_archive_normal_permissions(self):
         group_id = self.create(cap=2)
         for actor in ('peer', 'other'):

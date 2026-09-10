@@ -202,6 +202,15 @@ def bridge_file(payload: BridgeFilePayload, authorization: Optional[str] = Heade
     return {"status": "success", **result}
 
 
+@router.post("/download")
+def bridge_download(payload: BridgeFilePayload, authorization: Optional[str] = Header(default="")):
+    from ..services.agent_platform_download_service import download_scoped_file
+
+    _require_task_id(authorization)
+    with get_db_connection() as conn:
+        return download_scoped_file(conn, authorization[7:].strip(), **payload.model_dump())
+
+
 @router.post("/web")
 async def bridge_web(payload: BridgeWebPayload, authorization: Optional[str] = Header(default="")):
     task_id = _require_task_id(authorization, scope="web:fetch")
@@ -228,6 +237,7 @@ async def bridge_web(payload: BridgeWebPayload, authorization: Optional[str] = H
 
 
 def _mcp_tools(actor):
+    from ..services.agent_file_capability_catalog import file_transport_tools
     def tool(name, description, properties=None, required=None):
         return {"name": name, "description": description,
                 "inputSchema": {"type": "object", "properties": properties or {},
@@ -255,12 +265,7 @@ def _mcp_tools(actor):
         tool("platform_task_context", "读取本任务或同一账号续接的父任务结果、分页业务回执和产物；追问/重试前先核对已提交操作，避免重复执行。",
              {"task_id": {"type": "integer", "minimum": 1}, "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
               "limit": {"type": "integer", "minimum": 1, "maximum": 5}}),
-        tool("platform_file", "读取按原下载权限授权的材料、作业附件、小组文件、课程共享文件或当前任务文件（五选一），返回文本或文档抽取及SHA256。历史任务文件须显式parent_task_id；不返回二进制base64。",
-             {"material_id": {"type": "integer", "minimum": 1},
-              "submission_file_id": {"type": "integer", "minimum": 1},
-              "collaboration_file_id": {"type": "integer", "minimum": 1},
-              "course_file_id": {"type": "integer", "minimum": 1}, "revision": string, "path": string,
-              "parent_task_id": {"type": "integer", "minimum": 1}}),
+        *file_transport_tools(),
         tool("public_fetch", "获取公网网页内容，返回来源URL；不支持访问内网。",
              {"url": {"type": "string", "maxLength": 2000}, "mode": {"type": "string", "enum": ["text", "raw"]}}, ["url"]),
     ]
@@ -392,6 +397,8 @@ async def bridge_mcp(request: Request, authorization: Optional[str] = Header(def
                 value = await run_in_threadpool(bridge_query, BridgeQueryPayload(**arguments), authorization)
             elif name == "platform_file":
                 value = await run_in_threadpool(bridge_file, BridgeFilePayload(**arguments), authorization)
+            elif name == "platform_download":
+                value = await run_in_threadpool(bridge_download, BridgeFilePayload(**arguments), authorization)
             elif name == "public_fetch":
                 value = await bridge_web(BridgeWebPayload(**arguments), authorization)
             else:

@@ -508,7 +508,9 @@ async def api_preview_agent_task_action(
         AGENT_ACTION_DEFINITIONS,
         ensure_action_actor_role,
         issue_action_confirmation_token,
+        validate_action_params,
     )
+    from ..services.agent_user_confirmation_actions import USER_CONFIRMATION_ACTION_DEFINITIONS, prepare_user_confirmation
 
     teacher_id = _teacher_id(user)
     try:
@@ -541,6 +543,14 @@ async def api_preview_agent_task_action(
             if not actor.is_super_admin:
                 raise HTTPException(403, "当前账号没有该管理权限。")
         merged_params = {**(proposal.get("params") or {}), **edited_params}
+        confirmation_review = None
+        if action in USER_CONFIRMATION_ACTION_DEFINITIONS:
+            clean, errors = validate_action_params(action, merged_params, reject_unknown=True)
+            if errors:
+                raise HTTPException(400, "；".join(errors[:4]))
+            prepared = prepare_user_confirmation(conn, action=action, params=clean, user=user)
+            merged_params = prepared["params"]
+            confirmation_review = prepared["review"]
         confirmation = issue_action_confirmation_token(
             teacher_id=teacher_id,
             actor_role=user["role"],
@@ -558,6 +568,7 @@ async def api_preview_agent_task_action(
         "execution_mode": definition.get("execution_mode") or "execute",
         "fields": definition.get("fields") or {},
         "secure_fields": definition.get("secure_fields") or [],
+        "confirmation_review": confirmation_review,
         **confirmation,
     }
 
@@ -592,6 +603,7 @@ def _execute_agent_task_action(*, task_id, action_index, data, user):
     )
     from ..services.agent_platform_write_service import dispatch_user_write
     from ..services.agent_secure_account_actions import SECURE_ACTION_DEFINITIONS, dispatch_user_secure_action
+    from ..services.agent_user_confirmation_actions import USER_CONFIRMATION_ACTION_DEFINITIONS, dispatch_user_confirmation
 
     teacher_id = _teacher_id(user)
     edited_params = data.get("params") if isinstance(data.get("params"), dict) else {}
@@ -622,7 +634,15 @@ def _execute_agent_task_action(*, task_id, action_index, data, user):
         operation_id = f"proposal:{int(task_id)}:{int(action_index)}"
         session_id = _source_session_id(user)
         try:
-            if action in SECURE_ACTION_DEFINITIONS:
+            if action in USER_CONFIRMATION_ACTION_DEFINITIONS:
+                if data.get("secure_inputs"):
+                    raise HTTPException(400, "业务核对不接收密码或其他安全输入。")
+                outcome = dispatch_user_confirmation(
+                    conn, user=user, source_session_id=session_id, task_id=task_id,
+                    operation_id=operation_id, action=action, params=confirmed_params,
+                    confirmation_inputs=data.get("confirmation_inputs"),
+                )
+            elif action in SECURE_ACTION_DEFINITIONS:
                 outcome = dispatch_user_secure_action(
                     conn, user=user, source_session_id=session_id, task_id=task_id,
                     operation_id=operation_id, action=action, params=confirmed_params,
@@ -631,6 +651,8 @@ def _execute_agent_task_action(*, task_id, action_index, data, user):
             else:
                 if data.get("secure_inputs"):
                     raise HTTPException(400, "该动作不接收安全输入。")
+                if data.get("confirmation_inputs"):
+                    raise HTTPException(400, "该动作不接收额外业务核对字段。")
                 outcome = dispatch_user_write(
                     conn, user=user, source_session_id=session_id, task_id=task_id,
                     operation_id=operation_id, action=action, params=confirmed_params,

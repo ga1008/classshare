@@ -11,3 +11,9 @@
 .grade-publication__checks label, .grade-publication__confirm { display: flex; align-items: flex-start; gap: 9px; margin: 10px 0; }
 .grade-publication input[type=checkbox] { flex: 0 0 auto; margin-top: 5px; }
 .grade-publication__issues { padding: 12px; border: 1px solid #fca5a5; border-radius: 10px; }
+.agent-grade-confirmation .lp-modal__foot { flex-wrap: wrap; }
+.agent-grade-confirmation .lp-modal__foot .lp-btn { white-space: nowrap; }
+@media (max-width: 600px) {
+    .agent-grade-confirmation .lp-modal__foot .lp-btn { flex: 1 1 auto; }
+    .agent-grade-confirmation .lp-modal__foot [data-agent-business-publish] { flex-basis: 100%; }
+}

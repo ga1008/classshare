@@ -35,6 +35,9 @@ class RequestCapability:
     max_body_bytes: int = MAX_BODY_BYTES
     response_contract: str = 'status'
     server_operation_id_field: str | None = None
+    file_field_name: str = 'files'
+    max_files: int = 16
+    forbidden_file_suffixes: tuple[str, ...] = ()
 
 
 def _spec(kind, *, required=False, **kw):
@@ -84,6 +87,9 @@ from .agent_platform_request_polls import build_capabilities as _poll_capabiliti
 from .agent_platform_request_blog import build_capabilities as _blog_capabilities
 from .agent_platform_request_collaboration import build_capabilities as _collaboration_capabilities
 from .agent_platform_request_material_content import build_capabilities as _material_content_capabilities
+from .agent_platform_request_signatures import build_capabilities as _signature_capabilities
+from .agent_platform_request_teaching import build_capabilities as _teaching_capabilities
+from .agent_platform_request_material_management import build_capabilities as _material_management_capabilities
 
 CAPABILITIES += _learning_capabilities(RequestCapability, _spec, ID)
 CAPABILITIES += _submission_capabilities(RequestCapability, _spec, ID)
@@ -92,6 +98,9 @@ CAPABILITIES += _poll_capabilities(RequestCapability, _spec, ID)
 CAPABILITIES += _blog_capabilities(RequestCapability, _spec, ID)
 CAPABILITIES += _collaboration_capabilities(RequestCapability, _spec, ID)
 CAPABILITIES += _material_content_capabilities(RequestCapability, _spec, ID)
+CAPABILITIES += _signature_capabilities(RequestCapability, _spec, ID)
+CAPABILITIES += _teaching_capabilities(RequestCapability, _spec, ID)
+CAPABILITIES += _material_management_capabilities(RequestCapability, _spec, ID)
 
 
 def source_digest(endpoint):
@@ -145,7 +154,10 @@ def arguments(operation, *, path_params=None, query_params=None, body=None):
                 raise HTTPException(400, '平台请求参数类型或范围无效。')
             normalized[location][key] = sorted(set(value)) if kind == 'ids' else value
     path = operation.path
-    for key,value in normalized['path'].items(): path = path.replace('{' + key + '}',str(value))
+    for key,value in normalized['path'].items():
+        # FastAPI retains an explicit Starlette int converter in route.path.
+        # Substitute only the reviewed parameter's plain/int placeholder.
+        path = re.sub(r'\{' + re.escape(key) + r'(?::int)?\}', lambda _: str(value), path)
     if '{' in path: raise HTTPException(400, '平台请求路径参数不完整。')
     query = urlencode(sorted(normalized['query'].items())).encode('ascii')
     raw = json.dumps(normalized['body'],ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode() if normalized['body'] else b''
