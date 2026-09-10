@@ -323,7 +323,7 @@ def list_organization_tree(
 
 
 def _update_school_name_references(conn: sqlite3.Connection, *, school_code: str, school_name: str) -> None:
-    for table in ("teachers", "students", "classes", "courses", "academic_semesters", "electronic_signatures", "teacher_academic_system_credentials"):
+    for table in ("teachers", "teacher_organization_memberships", "students", "classes", "courses", "academic_semesters", "electronic_signatures", "teacher_academic_system_credentials"):
         if _table_exists(conn, table):
             conn.execute(
                 f"UPDATE {table} SET school_name = ? WHERE school_code = ?",
@@ -332,7 +332,7 @@ def _update_school_name_references(conn: sqlite3.Connection, *, school_code: str
 
 
 def _update_college_references(conn: sqlite3.Connection, *, school_code: str, old_name: str, new_name: str) -> None:
-    for table in ("teachers", "students", "classes", "courses", "electronic_signatures"):
+    for table in ("teachers", "teacher_organization_memberships", "students", "classes", "courses", "electronic_signatures"):
         if _table_exists(conn, table):
             conn.execute(
                 f"UPDATE {table} SET college = ? WHERE school_code = ? AND TRIM(COALESCE(college, '')) = ?",
@@ -356,7 +356,7 @@ def _update_department_references(
     old_name: str,
     new_name: str,
 ) -> None:
-    for table in ("teachers", "students", "classes", "courses", "electronic_signatures"):
+    for table in ("teachers", "teacher_organization_memberships", "students", "classes", "courses", "electronic_signatures"):
         if _table_exists(conn, table):
             conn.execute(
                 f"""
@@ -522,6 +522,9 @@ def update_college(
     is_active: bool = True,
     actor_teacher_id: int | None = None,
 ) -> dict[str, Any]:
+    from .teacher_account_service import lock_teacher_account_management
+
+    lock_teacher_account_management(conn)
     row = conn.execute("SELECT * FROM organization_colleges WHERE id = ? LIMIT 1", (int(college_id),)).fetchone()
     if not row:
         raise OrganizationManagementError("学院不存在。")
@@ -648,6 +651,9 @@ def update_department(
     is_active: bool = True,
     actor_teacher_id: int | None = None,
 ) -> dict[str, Any]:
+    from .teacher_account_service import lock_teacher_account_management
+
+    lock_teacher_account_management(conn)
     row = conn.execute("SELECT * FROM organization_departments WHERE id = ? LIMIT 1", (int(department_id),)).fetchone()
     if not row:
         raise OrganizationManagementError("系部不存在。")

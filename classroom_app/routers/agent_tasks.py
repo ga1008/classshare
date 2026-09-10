@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from ..config import AGENT_TASK_RUNTIME_URL, AGENT_TASKS_ENABLED
+from ..config import AGENT_DSH_ENABLED, AGENT_TASKS_ENABLED
 from ..database import get_db_connection
-from ..dependencies import get_current_teacher
+from ..dependencies import get_current_user
+from ..services.agent_actor_service import resolve_agent_actor
 from ..services.agent_task_service import (
     AGENT_TASK_ATTACHMENT_MAX_FILE_BYTES,
     AGENT_TASK_ATTACHMENT_MAX_FILES,
@@ -39,6 +41,24 @@ from ..services.agent_task_service import (
 router = APIRouter(prefix="/api/agent-tasks", tags=["agent-tasks"])
 
 
+def _current_agent_user(user: dict = Depends(get_current_user)) -> dict:
+    with get_db_connection() as conn:
+        actor = resolve_agent_actor(conn, user.get("role"), user.get("id"))
+    return {**user, **actor.as_user()}
+
+
+def _require_teacher_action(user: dict) -> None:
+    if user.get("role") != "teacher":
+        raise HTTPException(status_code=403, detail="此教学管理功能仅对教师开放。")
+
+
+def _source_session_id(user: dict) -> str:
+    session_id = str(user.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Agent 需要有效的登录会话，请重新登录。")
+    return session_id
+
+
 def _teacher_id(user: dict[str, Any]) -> int:
     try:
         return int(user["id"])
@@ -47,16 +67,16 @@ def _teacher_id(user: dict[str, Any]) -> int:
 
 
 @router.get("/bootstrap", response_class=JSONResponse)
-def bootstrap_agent_task_center(user: dict = Depends(get_current_teacher)):
+def bootstrap_agent_task_center(user: dict = Depends(_current_agent_user)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=30)
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, viewer_role=user["role"], limit=30)
     return {
         "status": "success",
         "enabled": bool(AGENT_TASKS_ENABLED),
-        "runtime_configured": bool(AGENT_TASK_RUNTIME_URL),
+        "runtime_configured": bool(AGENT_DSH_ENABLED),
         "task_types": task_type_options(),
-        "workflow_catalog": agent_workflow_catalog(),
+        "workflow_catalog": agent_workflow_catalog() if user["role"] == "teacher" else [],
         **queue,
     }
 
@@ -64,11 +84,11 @@ def bootstrap_agent_task_center(user: dict = Depends(get_current_teacher)):
 @router.get("", response_class=JSONResponse)
 def api_list_agent_tasks(
     limit: int = Query(default=30, ge=1, le=80),
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=limit)
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, viewer_role=user["role"], limit=limit)
     return {"status": "success", **queue}
 
 
@@ -78,6 +98,7 @@ _AGENT_ATTACHMENT_TEXT_EXTENSIONS = {
 }
 _AGENT_ATTACHMENT_DOC_EXTENSIONS = {".docx", ".doc", ".pdf", ".pptx", ".ppt", ".xlsx", ".xls"}
 _AGENT_ATTACHMENT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+_AGENT_ATTACHMENT_CAPACITY = threading.BoundedSemaphore(2)
 
 
 def _describe_agent_image_attachment(filename: str, contents: bytes) -> str:
@@ -100,8 +121,34 @@ def _describe_agent_image_attachment(filename: str, contents: bytes) -> str:
 
 async def _process_agent_attachment(file) -> dict[str, Any]:
     """Agent 附件处理：保留原始字节 + 尽力抽取文本（供 runtime 直接读取）。"""
-    contents = await file.read()
-    filename = str(getattr(file, "filename", "") or "attachment")
+    from starlette.concurrency import run_in_threadpool
+
+    if not _AGENT_ATTACHMENT_CAPACITY.acquire(blocking=False):
+        raise HTTPException(429, "附件处理繁忙，请稍后重新提交，附件内容会保留在当前表单。")
+    work = None
+    try:
+        contents = await file.read(AGENT_TASK_ATTACHMENT_MAX_FILE_BYTES + 1)
+        filename = str(getattr(file, "filename", "") or "attachment")
+        work = asyncio.create_task(run_in_threadpool(_process_agent_attachment_bytes, filename, contents))
+        return await asyncio.shield(work)
+    finally:
+        # Cancellation cannot terminate a native document parser. Keep its
+        # bounded slot until the real worker ends, while allowing the app's
+        # event loop to continue serving unrelated platform users.
+        if work is not None:
+            while not work.done():
+                try:
+                    await asyncio.shield(work)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not work.cancelled():
+                work.exception()
+        _AGENT_ATTACHMENT_CAPACITY.release()
+
+
+def _process_agent_attachment_bytes(filename: str, contents: bytes) -> dict[str, Any]:
     if len(contents) > AGENT_TASK_ATTACHMENT_MAX_FILE_BYTES:
         raise HTTPException(
             status_code=413,
@@ -182,16 +229,16 @@ async def _parse_create_request(request: Request) -> tuple[dict[str, Any], list[
 async def api_create_agent_task(
     request: Request,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     if not AGENT_TASKS_ENABLED:
         raise HTTPException(status_code=503, detail="任务中心暂未启用。")
     data, attachment_items = await _parse_create_request(request)
     # 来源/优先级等内部字段不接受客户端指定。
-    for reserved in ("origin", "parent_task_id", "priority", "title_override", "extra_context", "attachments"):
+    for reserved in ("origin", "parent_task_id", "priority", "title_override", "extra_context", "attachments", "actor_role", "actor_id", "source_session_id", "source_session_hash", "source_session_key", "runtime_provider"):
         data.pop(reserved, None)
     with get_db_connection() as conn:
-        task = create_agent_task(conn, user, data)
+        task = create_agent_task(conn, user, data, source_session_id=_source_session_id(user))
         if attachment_items:
             from ..services.agent_task_service import save_task_attachments
 
@@ -210,13 +257,13 @@ async def api_create_agent_task(
             )
         conn.commit()
         if attachment_items:
-            task = get_agent_task(conn, int(task["id"]), teacher_id=_teacher_id(user))
+            task = get_agent_task(conn, int(task["id"]), teacher_id=_teacher_id(user), actor_role=user["role"])
     background_tasks.add_task(generate_agent_task_title, int(task["id"]))
     return {"status": "success", "task": task}
 
 
 @router.post("/composer", response_class=JSONResponse)
-async def api_set_agent_task_composer(request: Request, user: dict = Depends(get_current_teacher)):
+async def api_set_agent_task_composer(request: Request, user: dict = Depends(_current_agent_user)):
     data = await request.json()
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="请求格式错误。")
@@ -231,9 +278,11 @@ async def api_set_agent_task_composer(request: Request, user: dict = Depends(get
 
 
 @router.get("/subscriptions", response_class=JSONResponse)
-def api_list_agent_subscriptions(user: dict = Depends(get_current_teacher)):
+def api_list_agent_subscriptions(user: dict = Depends(_current_agent_user)):
     from ..services.agent_subscription_service import list_agent_subscriptions
 
+    if user["role"] != "teacher":
+        return {"status": "success", "supported": False, "templates": [], "subscriptions": [], "recent_tasks": []}
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
         result = list_agent_subscriptions(conn, teacher_id=teacher_id)
@@ -241,7 +290,8 @@ def api_list_agent_subscriptions(user: dict = Depends(get_current_teacher)):
 
 
 @router.post("/subscriptions", response_class=JSONResponse)
-async def api_set_agent_subscription(request: Request, user: dict = Depends(get_current_teacher)):
+async def api_set_agent_subscription(request: Request, user: dict = Depends(_current_agent_user)):
+    _require_teacher_action(user)
     from ..services.agent_subscription_service import set_agent_subscription
 
     data = await request.json()
@@ -260,31 +310,60 @@ async def api_set_agent_subscription(request: Request, user: dict = Depends(get_
 
 
 @router.delete("/history", response_class=JSONResponse)
-def api_delete_agent_task_history(user: dict = Depends(get_current_teacher)):
+def api_delete_agent_task_history(user: dict = Depends(_current_agent_user)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        result = delete_agent_task_history(conn, teacher_id=teacher_id)
-        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=30)
+        result = delete_agent_task_history(conn, teacher_id=teacher_id, actor_role=user["role"])
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, viewer_role=user["role"], limit=30)
     return {"status": "success", **result, **queue}
 
 
 @router.get("/{task_id}", response_class=JSONResponse)
-def api_get_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
+def api_get_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
+        if task["is_owner"]:
+            from ..services.agent_question_service import list_user_questions
+            task["questions"] = list_user_questions(conn, user, task_id)
     return {"status": "success", "task": task}
+
+
+@router.post("/{task_id}/questions/{question_id}/answer", response_class=JSONResponse)
+async def api_answer_agent_question(task_id: int, question_id: str, request: Request, user: dict = Depends(_current_agent_user)):
+    from ..services.agent_question_service import answer_question
+    from starlette.concurrency import run_in_threadpool
+    _source_session_id(user)
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 20000:
+            raise HTTPException(413, "回答内容过长。")
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, "回答格式无效。") from None
+    if not isinstance(payload, dict) or set(payload) != {"answers"}:
+        raise HTTPException(400, "回答格式无效。")
+
+    def save():
+        with get_db_connection() as conn:
+            result = answer_question(conn, user, task_id, question_id, payload["answers"])
+            conn.commit()
+            return result
+
+    return {"status": "success", "question": await run_in_threadpool(save)}
 
 
 @router.get("/{task_id}/artifacts/{artifact_path:path}", response_class=FileResponse)
 def api_download_agent_task_artifact(
     task_id: int,
     artifact_path: str,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
     if not task.get("is_owner"):
         raise HTTPException(status_code=403, detail="只能下载自己 Agent 任务的中间产物。")
     try:
@@ -302,12 +381,12 @@ def api_download_agent_task_artifact(
 def api_list_agent_task_events(
     task_id: int,
     after: int = Query(default=0, ge=0),
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     """G1 增量过程事件（2 秒级短轮询通道，仅任务所有者）。"""
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        result = list_task_events_after(conn, task_id, teacher_id=teacher_id, after_event_id=after)
+        result = list_task_events_after(conn, task_id, teacher_id=teacher_id, actor_role=user["role"], after_event_id=after)
     return {"status": "success", **result}
 
 
@@ -316,14 +395,14 @@ async def api_stream_agent_task_events(
     task_id: int,
     request: Request,
     after: int = Query(default=0, ge=0),
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     """G1 SSE process stream; clients fall back to /events short polling."""
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
         # Validate task ownership before returning a streaming response so
         # unauthorized requests still get a normal JSON/HTTP error.
-        list_task_events_after(conn, task_id, teacher_id=teacher_id, after_event_id=after)
+        list_task_events_after(conn, task_id, teacher_id=teacher_id, actor_role=user["role"], after_event_id=after)
 
     async def event_generator():
         last_event_id = int(after or 0)
@@ -337,6 +416,7 @@ async def api_stream_agent_task_events(
                         conn,
                         task_id,
                         teacher_id=teacher_id,
+                        actor_role=user["role"],
                         after_event_id=last_event_id,
                     )
             except Exception as exc:  # noqa: BLE001 - stream errors must degrade cleanly.
@@ -371,7 +451,7 @@ async def api_stream_agent_task_events(
 async def api_follow_up_agent_task(
     task_id: int,
     request: Request,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     if not AGENT_TASKS_ENABLED:
         raise HTTPException(status_code=503, detail="任务中心暂未启用。")
@@ -379,12 +459,12 @@ async def api_follow_up_agent_task(
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="请求格式错误。")
     with get_db_connection() as conn:
-        current = get_agent_task(conn, task_id, teacher_id=_teacher_id(user))
+        current = get_agent_task(conn, task_id, teacher_id=_teacher_id(user), actor_role=user["role"])
         if current.get("is_active"):
             task = add_task_supplement(conn, user, task_id, str(data.get("instruction") or ""))
             supplemented = True
         else:
-            task = create_follow_up_task(conn, user, task_id, str(data.get("instruction") or ""))
+            task = create_follow_up_task(conn, user, task_id, str(data.get("instruction") or ""), source_session_id=_source_session_id(user))
             supplemented = False
         conn.commit()
     return {"status": "success", "task": task, "supplemented": supplemented}
@@ -394,7 +474,7 @@ async def api_follow_up_agent_task(
 async def api_retry_agent_task(
     task_id: int,
     request: Request,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
     if not AGENT_TASKS_ENABLED:
         raise HTTPException(status_code=503, detail="任务中心暂未启用。")
@@ -410,6 +490,7 @@ async def api_retry_agent_task(
             user,
             task_id,
             instruction_override=str(data.get("instruction") or ""),
+            source_session_id=_source_session_id(user),
         )
         conn.commit()
     return {"status": "success", "task": task}
@@ -420,11 +501,12 @@ async def api_preview_agent_task_action(
     task_id: int,
     action_index: int,
     request: Request,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
-    """G3：教师确认前的参数预览，并签发短时 confirmation token。"""
+    """Preview public proposal parameters and issue a short-lived confirmation."""
     from ..services.agent_action_registry import (
         AGENT_ACTION_DEFINITIONS,
+        ensure_action_actor_role,
         issue_action_confirmation_token,
     )
 
@@ -438,7 +520,7 @@ async def api_preview_agent_task_action(
     edited_params = data.get("params") if isinstance(data.get("params"), dict) else {}
 
     with get_db_connection() as conn:
-        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
         if not task.get("is_owner"):
             raise HTTPException(status_code=403, detail="只能预览自己任务的动作提案。")
         proposals = (task.get("result_detail") or {}).get("proposed_actions") or []
@@ -451,9 +533,17 @@ async def api_preview_agent_task_action(
         definition = AGENT_ACTION_DEFINITIONS.get(action)
         if not definition:
             raise HTTPException(status_code=400, detail="未知动作。")
+        ensure_action_actor_role(action, user["role"])
+        if definition.get("requires_super_admin"):
+            from ..services.agent_actor_service import resolve_agent_actor
+
+            actor = resolve_agent_actor(conn, user["role"], teacher_id)
+            if not actor.is_super_admin:
+                raise HTTPException(403, "当前账号没有该管理权限。")
         merged_params = {**(proposal.get("params") or {}), **edited_params}
         confirmation = issue_action_confirmation_token(
             teacher_id=teacher_id,
+            actor_role=user["role"],
             task_id=task_id,
             action_index=int(action_index),
             action=action,
@@ -467,6 +557,7 @@ async def api_preview_agent_task_action(
         "risk": definition.get("risk") or "",
         "execution_mode": definition.get("execution_mode") or "execute",
         "fields": definition.get("fields") or {},
+        "secure_fields": definition.get("secure_fields") or [],
         **confirmation,
     }
 
@@ -476,52 +567,80 @@ async def api_execute_agent_task_action(
     task_id: int,
     action_index: int,
     request: Request,
-    user: dict = Depends(get_current_teacher),
+    user: dict = Depends(_current_agent_user),
 ):
-    """G3：教师确认后，以教师身份执行白名单动作（全程审计）。"""
-    from ..services.agent_action_registry import (
-        AGENT_ACTION_DEFINITIONS,
-        execute_proposed_action,
-        verify_action_confirmation_token,
-    )
+    """Fresh session confirmation and business mutation share one receipt transaction."""
+    from starlette.concurrency import run_in_threadpool
 
-    teacher_id = _teacher_id(user)
     try:
         data = await request.json()
     except Exception:
         data = {}
     if not isinstance(data, dict):
         data = {}
+    # Domain locks, password hashing and synchronous SQL must not block the
+    # event loop serving streaming tasks and other users' platform requests.
+    return await run_in_threadpool(_execute_agent_task_action, task_id=task_id,
+                                  action_index=action_index, data=data, user=user)
+
+
+def _execute_agent_task_action(*, task_id, action_index, data, user):
+    from ..services.agent_action_registry import (
+        AGENT_ACTION_DEFINITIONS,
+        ensure_action_actor_role,
+        verify_action_confirmation_token,
+    )
+    from ..services.agent_platform_write_service import dispatch_user_write
+    from ..services.agent_secure_account_actions import SECURE_ACTION_DEFINITIONS, dispatch_user_secure_action
+
+    teacher_id = _teacher_id(user)
     edited_params = data.get("params") if isinstance(data.get("params"), dict) else {}
 
     with get_db_connection() as conn:
-        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
         if not task.get("is_owner"):
             raise HTTPException(status_code=403, detail="只能执行自己任务的动作提案。")
         proposals = (task.get("result_detail") or {}).get("proposed_actions") or []
         if not (0 <= int(action_index) < len(proposals)):
             raise HTTPException(status_code=404, detail="动作提案不存在。")
         proposal = proposals[int(action_index)]
-        if proposal.get("executed"):
-            raise HTTPException(status_code=409, detail="该动作已执行过。")
         action = str(proposal.get("action") or "")
         if action not in AGENT_ACTION_DEFINITIONS:
             raise HTTPException(status_code=400, detail="未知动作。")
-        # 教师只能编辑 schema 内字段；以提案参数为底，覆盖教师编辑值。
+        ensure_action_actor_role(action, user["role"])
+        # 用户只能编辑 schema 内字段；以提案参数为底，覆盖用户编辑值。
         merged_params = {**(proposal.get("params") or {}), **edited_params}
         confirmed_params = verify_action_confirmation_token(
             token=str(data.get("confirmation_token") or ""),
             teacher_id=teacher_id,
+            actor_role=user["role"],
             task_id=task_id,
             action_index=int(action_index),
             action=action,
             params=merged_params,
         )
+        operation_id = f"proposal:{int(task_id)}:{int(action_index)}"
+        session_id = _source_session_id(user)
         try:
-            result = execute_proposed_action(
-                conn, teacher_id=teacher_id, action=action, params=confirmed_params
-            )
+            if action in SECURE_ACTION_DEFINITIONS:
+                outcome = dispatch_user_secure_action(
+                    conn, user=user, source_session_id=session_id, task_id=task_id,
+                    operation_id=operation_id, action=action, params=confirmed_params,
+                    secure_inputs=data.get("secure_inputs"),
+                )
+            else:
+                if data.get("secure_inputs"):
+                    raise HTTPException(400, "该动作不接收安全输入。")
+                outcome = dispatch_user_write(
+                    conn, user=user, source_session_id=session_id, task_id=task_id,
+                    operation_id=operation_id, action=action, params=confirmed_params,
+                )
+            result = outcome["result"]
+            if outcome["replayed"]:
+                conn.commit()
+                return {"status": "success", "result": result, "task": get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"]), "replayed": True}
         except HTTPException as exc:
+            conn.rollback()
             append_task_event(
                 conn,
                 task_id,
@@ -532,9 +651,15 @@ async def api_execute_agent_task_action(
             )
             conn.commit()
             raise
+        except Exception:
+            conn.rollback()
+            raise
         executed = {
             "at": utcnow_iso(),
             "by_teacher_id": teacher_id,
+            "by_actor_role": user["role"],
+            "by_actor_id": teacher_id,
+            "operation_id": operation_id,
             "url": result.get("url") or "",
             "label": result.get("label") or "",
             "ref_id": result.get("ref_id"),
@@ -544,11 +669,13 @@ async def api_execute_agent_task_action(
             conn,
             task_id,
             "action_executed",
-            f"教师已确认执行动作「{proposal.get('label') or action}」：{result.get('label') or ''}",
+            f"用户已确认执行动作「{proposal.get('label') or action}」：{result.get('label') or ''}",
             {
                 "action": action,
                 "action_index": int(action_index),
                 "teacher_id": teacher_id,
+                "actor_role": user["role"],
+                "actor_id": teacher_id,
                 "result_url": result.get("url") or "",
                 "params_summary": {
                     key: (str(value)[:80] if isinstance(value, str) else value)
@@ -558,22 +685,70 @@ async def api_execute_agent_task_action(
             commit=False,
         )
         conn.commit()
-        task = get_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
     return {"status": "success", "result": result, "task": task}
 
 
 @router.delete("/{task_id}", response_class=JSONResponse)
-def api_delete_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
+def api_delete_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        result = delete_agent_task(conn, task_id, teacher_id=teacher_id)
-        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, limit=30)
+        result = delete_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
+        queue = list_agent_tasks(conn, viewer_teacher_id=teacher_id, viewer_role=user["role"], limit=30)
     return {"status": "success", **result, **queue}
 
 
 @router.post("/{task_id}/cancel", response_class=JSONResponse)
-def api_cancel_agent_task(task_id: int, user: dict = Depends(get_current_teacher)):
+def api_cancel_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
     teacher_id = _teacher_id(user)
     with get_db_connection() as conn:
-        task = cancel_agent_task(conn, task_id, teacher_id=teacher_id)
+        task = cancel_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
     return {"status": "success", "task": task}
+
+
+@router.get("/{task_id}/platform-requests", response_class=JSONResponse)
+def api_list_agent_platform_requests(task_id: int, limit: int = Query(default=20, ge=1, le=50),
+                                     offset: int = Query(default=0, ge=0, le=10000),
+                                     user: dict = Depends(_current_agent_user)):
+    from ..services.agent_platform_request_reconciliation import list_user_platform_requests
+    with get_db_connection() as conn:
+        result = list_user_platform_requests(conn, user=user, source_session_id=_source_session_id(user), task_id=task_id, limit=limit, offset=offset)
+    return {"status": "success", **result}
+
+
+@router.get("/{task_id}/platform-requests/{request_id}", response_class=JSONResponse)
+def api_get_agent_platform_request(task_id: int, request_id: str, user: dict = Depends(_current_agent_user)):
+    from ..services.agent_platform_request_reconciliation import get_user_platform_request
+    with get_db_connection() as conn:
+        result = get_user_platform_request(conn, user=user, source_session_id=_source_session_id(user), task_id=task_id, request_id=request_id)
+    return {"status": "success", "request": result}
+
+
+@router.post("/{task_id}/platform-requests/{request_id}/reconcile", response_class=JSONResponse)
+async def api_reconcile_agent_platform_request(task_id: int, request_id: str, request: Request,
+                                               user: dict = Depends(_current_agent_user)):
+    from starlette.concurrency import run_in_threadpool
+    from ..services.agent_platform_request_reconciliation import reconcile_user_platform_request
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 16384:
+            raise HTTPException(413, "人工核对请求内容过长。")
+        body.extend(chunk)
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        raise HTTPException(400, "人工核对请求必须是有效JSON。") from None
+    if not isinstance(payload, dict) or set(payload) != {"resolution", "note", "expected_revision"}:
+        raise HTTPException(400, "请提供完整的核对声明、依据和请求版本。")
+    def save_declaration():
+        with get_db_connection() as conn:
+            try:
+                result = reconcile_user_platform_request(conn, user=user, source_session_id=_source_session_id(user),
+                    task_id=task_id, request_id=request_id, **payload)
+                conn.commit()
+                return result
+            except Exception:
+                conn.rollback()
+                raise
+    result = await run_in_threadpool(save_declaration)
+    return {"status": "success", **result}

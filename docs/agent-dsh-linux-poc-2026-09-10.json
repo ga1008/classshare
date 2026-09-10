@@ -1,0 +1,840 @@
+{
+  "kind": "synthetic_fixture_not_official_DeepSeek",
+  "real_credentials_used": false,
+  "paid_model_requests": 0,
+  "model_requests": [
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-mcp",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "LINUX_MCP_OK:synthetic-only",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-write",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "<path>/workspace/poc-created.txt</path>\n<type>file</type>\n<content>\nCreated file\n</content>",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-shell",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "{\"uid\": 10001, \"cwd\": \"/workspace\", \"shell\": \"ok\"}\n[stderr]\nlandlock-run: partial enforcement (older Landlock ABI)\n",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-question",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "{\"answers\":[{\"id\":\"fixture_choice\",\"selected\":[],\"custom\":\"Actual synthetic human answer\"}]}",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-question-cancel",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-slow",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    },
+    {
+      "path": "/api/agent-model/chat/completions",
+      "model": "deepseek-v4-pro",
+      "synthetic_scenario": "poc-slow-stop",
+      "tools": [
+        "ask_user_question",
+        "bash",
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__lanshare__echo",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "todo_write",
+        "update_goal",
+        "write"
+      ]
+    }
+  ],
+  "mcp_methods": [
+    "initialize",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call",
+    "initialize",
+    "notifications/initialized",
+    "tools/list"
+  ],
+  "events": [
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5685,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "linux-fixture-1",
+          "title": "mcp__lanshare__echo",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "text": "synthetic-only"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "linux-fixture-1",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "LINUX_MCP_OK:synthetic-only"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "ff709b1e-96df-44e9-a655-b8b7cf124a1c",
+          "content": {
+            "type": "text",
+            "text": "Synthetic fixture finished."
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5719,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5762,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "linux-fixture-3",
+          "title": "write",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "file_path": "/workspace/poc-created.txt",
+            "content": "Synthetic Linux ACP file.\n"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "linux-fixture-3",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "<path>/workspace/poc-created.txt</path>\n<type>file</type>\n<content>\nCreated file\n</content>"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "be03de16-964c-4dee-b0f7-6644cde33019",
+          "content": {
+            "type": "text",
+            "text": "Synthetic fixture finished."
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5812,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5876,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "linux-fixture-5",
+          "title": "bash",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "command": "python3 -c 'import os,json; print(json.dumps({\"uid\":os.getuid(),\"cwd\":os.getcwd(),\"shell\":\"ok\"}))'",
+            "description": "Check isolated Linux shell identity"
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "linux-fixture-5",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "{\"uid\": 10001, \"cwd\": \"/workspace\", \"shell\": \"ok\"}\n[stderr]\nlandlock-run: partial enforcement (older Landlock ABI)\n"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "fe59d0ef-88f1-45c0-b60f-24c91bb28958",
+          "content": {
+            "type": "text",
+            "text": "Synthetic fixture finished."
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5932,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 5991,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "linux-fixture-7",
+          "title": "ask_user_question",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "questions": [
+              {
+                "id": "fixture_choice",
+                "question": "poc-question",
+                "options": [
+                  {
+                    "label": "A"
+                  },
+                  {
+                    "label": "B"
+                  }
+                ],
+                "multi_select": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "linux-fixture-7",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "{\"answers\":[{\"id\":\"fixture_choice\",\"selected\":[],\"custom\":\"Actual synthetic human answer\"}]}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "a4b69429-2155-4176-a96b-a187a23f7d9e",
+          "content": {
+            "type": "text",
+            "text": "Synthetic fixture finished."
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 6041,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 6103,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "linux-fixture-9",
+          "title": "ask_user_question",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "questions": [
+              {
+                "id": "fixture_choice",
+                "question": "poc-question-cancel",
+                "options": [
+                  {
+                    "label": "A"
+                  },
+                  {
+                    "label": "B"
+                  }
+                ],
+                "multi_select": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": "ed81c733-9508-4830-984c-276981e5f18c",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "linux-fixture-9",
+          "status": "failed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Error: Question canceled or platform unavailable"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "checks": {
+    "launcher_ready": {
+      "status": "ready",
+      "dsh_package_version": "0.1.5-rc.1",
+      "profile_sha256": "8c3853e5181e3ea9365ace7dcb70d2abfd56c09b2786c341efd73f199b288594",
+      "image": "sha256:15312d67bf62400d238ebd74034b29795064cca199ffbdf9a8ad1b2e6b2d8a47",
+      "network": "none",
+      "max_concurrency": 1
+    },
+    "initialize": {
+      "protocolVersion": 1,
+      "agentInfo": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "agentCapabilities": {
+        "mcpCapabilities": {
+          "http": true
+        },
+        "promptCapabilities": {
+          "image": false,
+          "audio": false,
+          "embeddedContext": false
+        },
+        "sessionCapabilities": {
+          "close": {},
+          "list": {},
+          "resume": {}
+        }
+      },
+      "authMethods": []
+    },
+    "session_new": "ed81c733-9508-4830-984c-276981e5f18c",
+    "poc-mcp": {
+      "stopReason": "end_turn"
+    },
+    "poc-write": {
+      "stopReason": "end_turn"
+    },
+    "poc-shell": {
+      "stopReason": "end_turn"
+    },
+    "question_answer_in_original_tool_result": true,
+    "poc-question": {
+      "stopReason": "end_turn"
+    },
+    "file_exists": true,
+    "mcp_name_unique": true,
+    "native_question_tool_unique": true,
+    "question_prompt_cancel": {
+      "stopReason": "cancelled"
+    },
+    "question_canceled_at_platform": true,
+    "linux_boundaries": {
+      "uid": 10001,
+      "interfaces": [
+        "lo"
+      ],
+      "readonly_profile": true,
+      "network_blocked": true,
+      "network_errno": 101
+    },
+    "artifact_libraries": {
+      "docx": "generated_and_reopened",
+      "xlsx": "generated_and_reopened",
+      "pptx": "generated_and_reopened",
+      "pdf": "generated_header_checked_not_visual_QA",
+      "png": "generated_and_reopened"
+    },
+    "running_cancel": {
+      "stopReason": "cancelled"
+    },
+    "session_close": {},
+    "live_capacity_rejects_second_attempt": true,
+    "stop_during_model": {
+      "status": "stopped",
+      "name": "lanshare-dsh-9000001789033850-606f08ce-e403-4c85-b8a9-680f24a9465e"
+    },
+    "stop_confirmed": {
+      "status": "stopped",
+      "name": "lanshare-dsh-9000001789033850-606f08ce-e403-4c85-b8a9-680f24a9465e"
+    },
+    "container_absent": true
+  },
+  "evidence": {
+    "dsh_package_version": "0.1.5-rc.1",
+    "profile_sha256": "8c3853e5181e3ea9365ace7dcb70d2abfd56c09b2786c341efd73f199b288594",
+    "image": "sha256:15312d67bf62400d238ebd74034b29795064cca199ffbdf9a8ad1b2e6b2d8a47",
+    "network": "none",
+    "max_concurrency": 1
+  },
+  "container_limits": {
+    "NetworkMode": "none",
+    "ReadonlyRootfs": true,
+    "CapDrop": [
+      "ALL"
+    ],
+    "PidsLimit": 128,
+    "Memory": 1073741824,
+    "MemorySwap": 1073741824,
+    "NanoCpus": 1000000000,
+    "SecurityOpt": [
+      "no-new-privileges:true"
+    ]
+  },
+  "artifact_debian_packages": [
+    "python3-docx\t0.8.11+dfsg1-5",
+    "python3-openpyxl\t3.0.9-1",
+    "python3-pil:amd64\t9.4.0-1.1+deb12u1",
+    "python3-reportlab\t3.6.12-1+deb12u1",
+    "python3-xlsxwriter\t3.0.2-2"
+  ],
+  "final_container_state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-10T09:50:51.590605048Z",
+    "FinishedAt": "2026-09-10T09:50:58.506167836Z"
+  },
+  "container_logs": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"deepseek-harness-acp\",\"version\":\"0.0.1\"},\"agentCapabilities\":{\"mcpCapabilities\":{\"http\":true},\"promptCapabilities\":{\"image\":false,\"audio\":false,\"embeddedContext\":false},\"sessionCapabilities\":{\"close\":{},\"list\":{},\"resume\":{}}},\"authMethods\":[]}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"configOptions\":[{\"id\":\"model\",\"name\":\"Model\",\"category\":\"model\",\"type\":\"select\",\"currentValue\":\"[\\\"deepseek-official\\\",\\\"deepseek-v4-pro\\\"]\",\"options\":[{\"group\":\"deepseek-official\",\"name\":\"DeepSeek\",\"options\":[{\"value\":\"[\\\"deepseek-official\\\",\\\"deepseek-v4-pro\\\"]\",\"name\":\"deepseek-v4-pro\"}]}]},{\"id\":\"reasoning_effort\",\"name\":\"Reasoning effort\",\"category\":\"thought_level\",\"type\":\"select\",\"currentValue\":\"high\",\"options\":[{\"value\":\"off\",\"name\":\"Off\",\"description\":\"Use for simple tasks that do not need reasoning.\"},{\"value\":\"low\",\"name\":\"Low\",\"description\":\"Prefer for routine or latency-sensitive tasks.\"},{\"value\":\"high\",\"name\":\"High\",\"description\":\"The default balance for most tasks.\"},{\"value\":\"max\",\"name\":\"Max\",\"description\":\"Reserve for the hardest quality-first tasks.\"}]}]}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5685,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"linux-fixture-1\",\"title\":\"mcp__lanshare__echo\",\"kind\":\"other\",\"status\":\"in_progress\",\"rawInput\":{\"text\":\"synthetic-only\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"linux-fixture-1\",\"status\":\"completed\",\"content\":[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"LINUX_MCP_OK:synthetic-only\"}}]}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"messageId\":\"ff709b1e-96df-44e9-a655-b8b7cf124a1c\",\"content\":{\"type\":\"text\",\"text\":\"Synthetic fixture finished.\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5719,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5762,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"linux-fixture-3\",\"title\":\"write\",\"kind\":\"other\",\"status\":\"in_progress\",\"rawInput\":{\"file_path\":\"/workspace/poc-created.txt\",\"content\":\"Synthetic Linux ACP file.\\n\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"linux-fixture-3\",\"status\":\"completed\",\"content\":[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"<path>/workspace/poc-created.txt</path>\\n<type>file</type>\\n<content>\\nCreated file\\n</content>\"}}]}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"messageId\":\"be03de16-964c-4dee-b0f7-6644cde33019\",\"content\":{\"type\":\"text\",\"text\":\"Synthetic fixture finished.\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5812,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"stopReason\":\"end_turn\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5876,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"linux-fixture-5\",\"title\":\"bash\",\"kind\":\"other\",\"status\":\"in_progress\",\"rawInput\":{\"command\":\"python3 -c 'import os,json; print(json.dumps({\\\"uid\\\":os.getuid(),\\\"cwd\\\":os.getcwd(),\\\"shell\\\":\\\"ok\\\"}))'\",\"description\":\"Check isolated Linux shell identity\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"linux-fixture-5\",\"status\":\"completed\",\"content\":[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"{\\\"uid\\\": 10001, \\\"cwd\\\": \\\"/workspace\\\", \\\"shell\\\": \\\"ok\\\"}\\n[stderr]\\nlandlock-run: partial enforcement (older Landlock ABI)\\n\"}}]}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"messageId\":\"fe59d0ef-88f1-45c0-b60f-24c91bb28958\",\"content\":{\"type\":\"text\",\"text\":\"Synthetic fixture finished.\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5932,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"stopReason\":\"end_turn\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":5991,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"linux-fixture-7\",\"title\":\"ask_user_question\",\"kind\":\"other\",\"status\":\"in_progress\",\"rawInput\":{\"questions\":[{\"id\":\"fixture_choice\",\"question\":\"poc-question\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"multi_select\":false}]}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"linux-fixture-7\",\"status\":\"completed\",\"content\":[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"{\\\"answers\\\":[{\\\"id\\\":\\\"fixture_choice\\\",\\\"selected\\\":[],\\\"custom\\\":\\\"Actual synthetic human answer\\\"}]}\"}}]}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"messageId\":\"a4b69429-2155-4176-a96b-a187a23f7d9e\",\"content\":{\"type\":\"text\",\"text\":\"Synthetic fixture finished.\"}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":6041,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"id\":6,\"result\":{\"stopReason\":\"end_turn\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"usage_update\",\"used\":6103,\"size\":1000000}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"linux-fixture-9\",\"title\":\"ask_user_question\",\"kind\":\"other\",\"status\":\"in_progress\",\"rawInput\":{\"questions\":[{\"id\":\"fixture_choice\",\"question\":\"poc-question-cancel\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"multi_select\":false}]}}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"ed81c733-9508-4830-984c-276981e5f18c\",\"update\":{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"linux-fixture-9\",\"status\":\"failed\",\"content\":[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"Error: Question canceled or platform unavailable\"}}]}}}\n{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"stopReason\":\"cancelled\"}}\n{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"stopReason\":\"cancelled\"}}\n{\"jsonrpc\":\"2.0\",\"id\":11,\"result\":{}}\n{\"jsonrpc\":\"2.0\",\"id\":12,\"result\":{\"sessionId\":\"6e938023-d9dd-4eed-959d-2e695ed95f44\",\"configOptions\":[{\"id\":\"model\",\"name\":\"Model\",\"category\":\"model\",\"type\":\"select\",\"currentValue\":\"[\\\"deepseek-official\\\",\\\"deepseek-v4-pro\\\"]\",\"options\":[{\"group\":\"deepseek-official\",\"name\":\"DeepSeek\",\"options\":[{\"value\":\"[\\\"deepseek-official\\\",\\\"deepseek-v4-pro\\\"]\",\"name\":\"deepseek-v4-pro\"}]}]},{\"id\":\"reasoning_effort\",\"name\":\"Reasoning effort\",\"category\":\"thought_level\",\"type\":\"select\",\"currentValue\":\"high\",\"options\":[{\"value\":\"off\",\"name\":\"Off\",\"description\":\"Use for simple tasks that do not need reasoning.\"},{\"value\":\"low\",\"name\":\"Low\",\"description\":\"Prefer for routine or latency-sensitive tasks.\"},{\"value\":\"high\",\"name\":\"High\",\"description\":\"The default balance for most tasks.\"},{\"value\":\"max\",\"name\":\"Max\",\"description\":\"Reserve for the hardest quality-first tasks.\"}]}]}}\n{\"jsonrpc\":\"2.0\",\"id\":13,\"result\":{\"stopReason\":\"cancelled\"}}\n"
+}

@@ -83,9 +83,10 @@ async def api_sync_session_smart_checkin(
 
 
 @router.get("/{class_offering_id}/smart-attendance/analytics", response_class=JSONResponse)
-async def api_get_classroom_smart_attendance_analytics(
+def api_get_classroom_smart_attendance_analytics(
     class_offering_id: int,
     user: dict = Depends(get_current_user),
+    allow_ai_advice: bool = True,
 ):
     with get_db_connection() as conn:
         ensure_classroom_access(conn, int(class_offering_id), user)
@@ -93,6 +94,7 @@ async def api_get_classroom_smart_attendance_analytics(
             conn,
             class_offering_id=int(class_offering_id),
             viewer_role=str(user.get("role") or ""),
+            allow_ai_advice=allow_ai_advice,
             student_id=int(user["id"]) if str(user.get("role") or "") == "student" else None,
         )
     if analytics.get("status") == "not_found":

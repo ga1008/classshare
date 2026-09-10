@@ -7,12 +7,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import json
+import time
 from typing import Any
 
 from fastapi import HTTPException
 
 DISPATCH_TASK_KIND = "agent_task_dispatch"
 SUBSCRIPTION_PRIORITY = -1  # 低于手动任务，互不阻塞
+SUBSCRIPTION_SCOPES = ["platform:read", "web:fetch", "model:chat", "model:search"]
+SUBSCRIPTION_AUTHORIZATION_SECONDS = 365 * 24 * 3600
 
 DAY_SECONDS = 24 * 3600
 WEEK_SECONDS = 7 * DAY_SECONDS
@@ -86,6 +90,8 @@ def _subscription_last_run_message(last_result: Any, last_error: Any = "") -> st
         return "订阅配置异常，已跳过本次运行"
     if result == "skipped: unknown template":
         return "订阅模板已不存在，已跳过本次运行"
+    if result == "skipped: authorization required":
+        return "订阅授权已失效，请重新启用以继续运行"
     if result.startswith("skipped:"):
         return f"已跳过本次运行：{result[8:].strip() or '无可处理内容'}"
     return result[:120]
@@ -190,14 +196,21 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
         ).fetchone()
         enabled = bool(row and str(row["status"] or "") in ("pending", "running"))
         hour = template["default_hour"]
+        authority = None
         if row:
-            import json
-
             try:
                 payload = json.loads(str(row["payload_json"] or "{}"))
                 hour = int(payload.get("hour") or hour)
+                from .agent_actor_service import resolve_agent_actor
+                from .agent_delegation_service import _assert_persistent
+                authority = _assert_persistent(conn, identifier=str(payload.get("authorization_id") or ""),
+                    actor=resolve_agent_actor(conn, "teacher", teacher_id), scopes=SUBSCRIPTION_SCOPES, now=int(time.time()))
+            except HTTPException:
+                authority = None
             except (TypeError, ValueError):
                 pass
+        needs_authorization = bool(not authority and row and (enabled or str(row["last_result"] or "") == "skipped: authorization required"))
+        enabled = enabled and bool(authority)
         subscriptions.append(
             {
                 "key": key,
@@ -205,6 +218,8 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
                 "description": template["description"],
                 "cadence": template["cadence"],
                 "enabled": enabled,
+                "authorization_expires_at": authority["expires_at"] if authority else None,
+                "authorization_required": needs_authorization,
                 "hour": hour,
                 "next_run_at": (row["run_at"] if enabled and row else "") or "",
                 "scheduler_status": str(row["status"] or "") if row else "",
@@ -221,6 +236,7 @@ def list_agent_subscriptions(conn, *, teacher_id: int) -> dict[str, Any]:
                         result=row["last_result"] if row else "",
                     )
                 ),
+                **({"attention_level": "authorization_required", "attention_message": "请重新启用订阅以授权定时读取；停用会同时停止已派发的任务。"} if needs_authorization else {}),
             }
         )
     try:
@@ -256,7 +272,31 @@ def set_agent_subscription(
     if not template:
         raise HTTPException(status_code=404, detail="未知的订阅模板。")
     teacher_id = int(user["id"])
-    from .scheduled_task_service import cancel_tasks_by_dedupe, schedule_task
+    from .scheduled_task_service import cancel_tasks_by_dedupe, schedule_task, ensure_scheduler_schema
+    from .agent_actor_service import resolve_agent_actor
+    from .agent_delegation_service import create_persistent_authorization, revoke_persistent_authorization
+
+    if user.get("role", "teacher") != "teacher":
+        raise HTTPException(403, "当前身份不支持教学订阅。")
+    ensure_scheduler_schema(conn)
+    from .teacher_account_service import lock_teacher_account_management
+
+    # Credential transitions lock account management before task rows. Match
+    # that order before taking the teacher row and canceling subscription tasks.
+    lock_teacher_account_management(conn)
+    # Serialize toggles and dispatches for this actor. It also protects the
+    # first subscription row when no dedupe key exists yet.
+    conn.execute("UPDATE teachers SET id=id WHERE id=?", (teacher_id,))
+    resolve_agent_actor(conn, "teacher", teacher_id)
+    existing = conn.execute("SELECT payload_json FROM scheduled_tasks WHERE dedupe_key=?", (_dedupe_key(template_key, teacher_id),)).fetchone()
+    prior = json.loads(existing["payload_json"] or "{}") if existing else {}
+    old_authority = prior.get("authorization_id")
+    if old_authority:
+        revoke_persistent_authorization(conn, authorization_id=old_authority, actor_role="teacher", actor_id=teacher_id, reason="subscription_changed")
+        from .agent_task_service import cancel_agent_task
+        children = conn.execute("SELECT id FROM agent_tasks WHERE persistent_authorization_id=? AND status IN ('queued','running')", (old_authority,)).fetchall()
+        for child in children:
+            cancel_agent_task(conn, int(child["id"]), teacher_id=teacher_id, commit=False)
 
     if not enabled:
         cancel_tasks_by_dedupe(conn, _dedupe_key(template_key, teacher_id))
@@ -264,11 +304,14 @@ def set_agent_subscription(
         return list_agent_subscriptions(conn, teacher_id=teacher_id)
 
     safe_hour = max(0, min(int(hour if hour is not None else template["default_hour"]), 23))
+    authority = create_persistent_authorization(conn, actor_role="teacher", actor_id=teacher_id,
+        source_session_id=str(user.get("session_id") or ""), scopes=SUBSCRIPTION_SCOPES,
+        intent_reference=_dedupe_key(template_key, teacher_id), ttl_seconds=SUBSCRIPTION_AUTHORIZATION_SECONDS)
     schedule_task(
         conn,
         task_kind=DISPATCH_TASK_KIND,
         run_at=_next_run_at(template, safe_hour),
-        payload={"teacher_id": teacher_id, "template_key": template_key, "hour": safe_hour},
+        payload={"teacher_id": teacher_id, "template_key": template_key, "hour": safe_hour, "authorization_id": authority["id"]},
         dedupe_key=_dedupe_key(template_key, teacher_id),
         recurrence_seconds=_recurrence_seconds(template),
         owner_role="teacher",
@@ -286,8 +329,8 @@ def _weekly_report_instruction(teacher_name: str) -> str:
     last_sunday = last_monday + timedelta(days=6)
     return (
         f"生成上周（{last_monday} 至 {last_sunday}）的教学周报。要求：\n"
-        "1. 用平台桥接 /query 接口逐项统计：我名下各课堂上周作业的布置数、提交率、60 分以下低分人数与名单（仅统计上周截止或上周有提交的作业）。\n"
-        "2. 数字必须全部来自 SQL 查询结果，不允许估算或编造；查询不到就写「无数据」。\n"
+        "1. 用平台 MCP 能力目录中的读取与命名统计查询逐项统计：我名下各课堂上周作业的布置数、提交率、60 分以下低分人数与名单（仅统计上周截止或上周有提交的作业）。\n"
+        "2. 数字必须全部来自平台工具结果，不允许估算或编造；查询不到就写「无数据」。\n"
         "3. 输出结构：本周概览（3 句话内）→ 各课堂明细表 → 需要关注的学生（连续未交/低分）→ 本周建议。\n"
         "4. 末尾列出使用过的查询和数据时间范围，便于核对。"
     )
@@ -364,6 +407,21 @@ def handle_agent_task_dispatch(task_row: dict[str, Any]) -> str:
         return "skipped: invalid payload"
 
     with get_db_connection() as conn:
+        conn.execute("UPDATE teachers SET id=id WHERE id=?", (teacher_id,))
+        current = conn.execute("SELECT * FROM scheduled_tasks WHERE id=?", (int(task_row.get("id") or 0),)).fetchone()
+        if not current or current["status"] != "running" or current["payload_json"] != task_row.get("payload_json"):
+            return "skipped: subscription changed"
+        from .agent_actor_service import resolve_agent_actor
+        from .agent_delegation_service import _assert_persistent
+        try:
+            authority = _assert_persistent(conn, identifier=str(payload.get("authorization_id") or ""),
+                actor=resolve_agent_actor(conn, "teacher", teacher_id), scopes=SUBSCRIPTION_SCOPES, now=int(time.time()))
+            if authority["intent_reference"] != _dedupe_key(template_key, teacher_id):
+                raise HTTPException(403, "订阅授权不匹配。")
+        except HTTPException:
+            conn.execute("UPDATE scheduled_tasks SET status='cancelled', last_result='skipped: authorization required' WHERE id=?", (current["id"],))
+            conn.commit()
+            return "skipped: authorization required"
         teacher = conn.execute(
             "SELECT id, name, nickname FROM teachers WHERE id = ? AND COALESCE(is_active, 1) = 1 LIMIT 1",
             (teacher_id,),
@@ -419,7 +477,7 @@ def handle_agent_task_dispatch(task_row: dict[str, Any]) -> str:
 
         task = create_agent_task(
             conn,
-            {"id": teacher_id, "name": teacher_name},
+            {"id": teacher_id, "role": "teacher", "name": teacher_name},
             {
                 "task_type": task_type,
                 "instruction": instruction,
@@ -429,6 +487,7 @@ def handle_agent_task_dispatch(task_row: dict[str, Any]) -> str:
                 "title_override": template["label"],
                 "extra_context": {"subscription": {"template": template_key}},
             },
+            persistent_authorization_id=authority["id"],
         )
         conn.commit()
         return f"queued agent task {task['id']}"

@@ -218,6 +218,46 @@ def _ensure_group_access(conn, group_id: int, user: dict[str, Any]) -> dict[str,
     return group
 
 
+def _lock_classroom_memberships(conn, class_offering_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    """Serialize roster changes in one classroom until the caller commits.
+
+    Every membership/leader/scheme mutation takes this lock before changing
+    groups or members, including operations that move several groups at once.
+    The portable no-op UPDATE is a row lock on PostgreSQL and a write lock on
+    SQLite. Read-only snapshots never take it. Recheck access after waiting;
+    neither the permission read nor a group loaded before the lock is fresh.
+    """
+    ensure_classroom_access(conn, class_offering_id, user)
+    conn.execute("UPDATE class_offerings SET id = id WHERE id = ?", (int(class_offering_id),))
+    return ensure_classroom_access(conn, class_offering_id, user)
+
+
+def _lock_group_memberships(conn, group_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    group = _ensure_group_access(conn, group_id, user)
+    class_offering_id = int(group["class_offering_id"])
+    _lock_classroom_memberships(conn, class_offering_id, user)
+    group = _ensure_group_access(conn, group_id, user)
+    if int(group["class_offering_id"]) != class_offering_id:
+        raise HTTPException(409, "小组所属课堂已变化，请刷新后重试")
+    return group
+
+
+def _ensure_group_capacity(conn, group: dict[str, Any], student_ids: Iterable[int], *, max_members: Optional[int] = None) -> None:
+    """Called under the classroom lock, before adding members or lowering cap."""
+    active_ids = {int(row["student_id"]) for row in conn.execute(
+        "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active'",
+        (int(group["id"]),),
+    ).fetchall()}
+    additions = {int(item) for item in student_ids} - active_ids
+    # Existing overfull legacy groups may still be edited or have members
+    # removed. New additions and an explicitly lowered bound cannot overfill.
+    if not additions and max_members is None:
+        return
+    limit = max_members if max_members is not None else int(group.get("max_members") or DEFAULT_GROUP_MAX_MEMBERS)
+    if len(active_ids | additions) > limit:
+        raise HTTPException(400, "小组人数已满或人数上限低于现有成员数")
+
+
 def _member_row(conn, group_id: int, student_id: int):
     return conn.execute(
         """
@@ -464,7 +504,7 @@ def _notify_teacher(
 
 
 def create_group(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    offering = ensure_classroom_access(conn, class_offering_id, user)
+    offering = _lock_classroom_memberships(conn, class_offering_id, user)
     name = _normalize_text(payload.get("name"), limit=60, field_name="小组名称", required=True)
     description = _normalize_text(payload.get("description"), limit=1200, field_name="小组说明")
     assignment = _load_assignment(conn, class_offering_id, payload.get("assignment_id"))
@@ -491,6 +531,8 @@ def create_group(conn, class_offering_id: int, user: dict[str, Any], payload: di
     else:
         raise HTTPException(403, "无权创建小组")
 
+    if len(member_ids) > max_members:
+        raise HTTPException(400, "初始成员人数超过小组人数上限")
     for student_id in member_ids:
         conflict = _student_conflict_group(
             conn,
@@ -560,7 +602,7 @@ def create_group(conn, class_offering_id: int, user: dict[str, Any], payload: di
 
 
 def update_group(conn, group_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     can_manage = _can_manage_group(conn, group, user)
     if not can_manage:
         raise HTTPException(403, "只有教师或组长可以调整小组信息")
@@ -575,13 +617,32 @@ def update_group(conn, group_id: int, user: dict[str, Any], payload: dict[str, A
 
     if _is_teacher(user):
         join_policy = _normalize_join_policy(payload.get("join_policy", join_policy), default=join_policy)
-        max_members = _normalize_max_members(payload.get("max_members", max_members))
+        if "max_members" in payload:
+            max_members = _normalize_max_members(payload.get("max_members"))
         requested_status = str(payload.get("status", status) or status).strip().lower()
         if requested_status not in {GROUP_STATUS_ACTIVE, GROUP_STATUS_ARCHIVED}:
             raise HTTPException(400, "小组状态不合法")
         status = requested_status
         assignment = _load_assignment(conn, int(group["class_offering_id"]), payload.get("assignment_id", assignment_id))
         assignment_id = str(assignment["id"]) if assignment else None
+        requested_leader = _safe_int(payload.get("leader_student_id")) if "leader_student_id" in payload else leader_student_id
+        _ensure_group_capacity(conn, group, [requested_leader] if requested_leader is not None else [],
+                               max_members=max_members if "max_members" in payload else None)
+        check_conflicts = (assignment_id != _normalize_assignment_id(group.get("assignment_id"))
+            or (status == GROUP_STATUS_ACTIVE and group.get("status") != GROUP_STATUS_ACTIVE)
+            or (requested_leader is not None and not _is_active_member(conn, group_id, requested_leader)))
+        if status == GROUP_STATUS_ACTIVE and check_conflicts:
+            active_ids = {int(row["student_id"]) for row in conn.execute(
+                "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active'", (int(group_id),),
+            ).fetchall()}
+            if requested_leader is not None:
+                active_ids.add(requested_leader)
+            if _safe_int(group.get("scheme_id")) is None and group.get("join_policy") != STUDENT_GROUP_JOIN_POLICY:
+                for member_id in sorted(active_ids):
+                    conflict = _student_conflict_group(conn, class_offering_id=int(group["class_offering_id"]),
+                        student_id=member_id, assignment_id=assignment_id, exclude_group_id=int(group_id))
+                    if conflict:
+                        raise HTTPException(400, f"学生已在同一任务的小组中：{conflict['name']}")
         if "leader_student_id" in payload:
             leader_student_id = _safe_int(payload.get("leader_student_id"))
             if leader_student_id is not None:
@@ -628,7 +689,7 @@ def update_group(conn, group_id: int, user: dict[str, Any], payload: dict[str, A
 
 
 def join_group(conn, group_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以加入小组")
     if group.get("status") != GROUP_STATUS_ACTIVE:
@@ -694,7 +755,7 @@ def join_group(conn, group_id: int, user: dict[str, Any]) -> dict[str, Any]:
 
 
 def leave_group(conn, group_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以退出小组")
     student_id = _user_pk(user)
@@ -752,12 +813,13 @@ def leave_group(conn, group_id: int, user: dict[str, Any]) -> dict[str, Any]:
 
 
 def add_group_member(conn, group_id: int, user: dict[str, Any], student_id: int) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以分配小组成员")
     student_ids = _ensure_students_in_class(conn, int(group["class_offering_id"]), [int(student_id)])
     if not student_ids:
         raise HTTPException(400, "学生不存在")
+    _ensure_group_capacity(conn, group, [int(student_id)])
     conflict = _student_conflict_group(
         conn,
         class_offering_id=int(group["class_offering_id"]),
@@ -798,7 +860,7 @@ def add_group_member(conn, group_id: int, user: dict[str, Any], student_id: int)
 
 
 def remove_group_member(conn, group_id: int, user: dict[str, Any], student_id: int) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     scheme_id = _safe_int(group.get("scheme_id"))
     if _is_teacher(user):
         # Teacher may remove anyone from any group in their classroom.
@@ -1642,6 +1704,16 @@ def _ensure_scheme_access(conn, scheme_id: int, user: dict[str, Any]) -> dict[st
     return scheme
 
 
+def _lock_scheme_memberships(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    class_offering_id = int(scheme["class_offering_id"])
+    _lock_classroom_memberships(conn, class_offering_id, user)
+    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    if int(scheme["class_offering_id"]) != class_offering_id:
+        raise HTTPException(409, "分组方案所属课堂已变化，请刷新后重试")
+    return scheme
+
+
 def _scheme_group_rows(conn, scheme_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -1672,7 +1744,7 @@ def _student_scheme_group(conn, scheme_id: int, student_id: int) -> Optional[dic
 
 
 def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    offering = ensure_classroom_access(conn, class_offering_id, user)
+    offering = _lock_classroom_memberships(conn, class_offering_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以创建分组方案")
     name = _normalize_text(payload.get("name"), limit=60, field_name="方案名称") or "随机分组"
@@ -1722,7 +1794,7 @@ def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payl
 
 
 def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    scheme = _lock_scheme_memberships(conn, scheme_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以参与随机分组")
     if str(scheme.get("status")) != SCHEME_STATUS_ACTIVE:
@@ -1784,7 +1856,7 @@ def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
 
 def teacher_assign_to_scheme_group(conn, group_id: int, user: dict[str, Any], student_id: int) -> dict[str, Any]:
     """Manually place a student into a scheme group (teacher big-screen drag-drop)."""
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以手动分配小组")
     scheme_id = _safe_int(group.get("scheme_id"))
@@ -1820,7 +1892,7 @@ def teacher_assign_to_scheme_group(conn, group_id: int, user: dict[str, Any], st
 
 
 def set_group_goal_progress(conn, group_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _can_manage_group(conn, group, user):
         raise HTTPException(403, "只有组长或教师可以设置小组目标与进度")
     scheme_id = _safe_int(group.get("scheme_id"))
@@ -1846,7 +1918,7 @@ def set_group_goal_progress(conn, group_id: int, user: dict[str, Any], payload: 
 
 
 def nominate_group_leader(conn, group_id: int, user: dict[str, Any], candidate_student_id: int) -> dict[str, Any]:
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有组员可以举荐组长")
     nominator_id = _user_pk(user)
@@ -2151,7 +2223,7 @@ def redistribute_scheme_groups(conn, scheme_id: int, user: dict[str, Any]) -> di
     fewest groups that keep each group within the configured bounds; leftover
     empty groups are deleted and leaders are cleared (re-run 一键配置组长 after).
     """
-    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    scheme = _lock_scheme_memberships(conn, scheme_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以重新分配少人组")
     if _scheme_is_expired(scheme.get("expires_at")) or str(scheme.get("status")) != SCHEME_STATUS_ACTIVE:
@@ -2243,7 +2315,7 @@ def redistribute_scheme_groups(conn, scheme_id: int, user: dict[str, Any]) -> di
 
 
 def close_group_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    scheme = _lock_scheme_memberships(conn, scheme_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以结束分组方案")
     now = _now_iso()
@@ -2256,7 +2328,7 @@ def close_group_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
 
 def assign_scheme_leader(conn, group_id: int, user: dict[str, Any], candidate_student_id: int) -> dict[str, Any]:
     """Teacher directly designates a leader for a leaderless scheme group."""
-    group = _ensure_group_access(conn, group_id, user)
+    group = _lock_group_memberships(conn, group_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以指定组长")
     scheme_id = _safe_int(group.get("scheme_id"))
@@ -2307,7 +2379,7 @@ def _pick_auto_leader(conn, class_offering_id: int, member_ids: list[int]) -> Op
 
 
 def auto_assign_scheme_leaders(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
-    scheme = _ensure_scheme_access(conn, scheme_id, user)
+    scheme = _lock_scheme_memberships(conn, scheme_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以一键配置组长")
     if _scheme_is_expired(scheme.get("expires_at")):
@@ -2634,7 +2706,7 @@ def _load_student_group(conn, group_id: int) -> dict[str, Any]:
 
 
 def create_student_group(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_classroom_access(conn, class_offering_id, user)
+    _lock_classroom_memberships(conn, class_offering_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以自由发起分组")
     student_id = _user_pk(user)
@@ -2665,6 +2737,7 @@ def create_student_group(conn, class_offering_id: int, user: dict[str, Any], pay
 
 
 def invite_to_group(conn, group_id: int, user: dict[str, Any], invitee_ids: Any) -> dict[str, Any]:
+    _lock_group_memberships(conn, group_id, user)
     group = _load_student_group(conn, group_id)
     ensure_classroom_access(conn, int(group["class_offering_id"]), user)
     if not _is_student(user) or int(group.get("leader_student_id") or 0) != _user_pk(user):
@@ -2721,6 +2794,14 @@ def respond_invitation(conn, invitation_id: int, user: dict[str, Any], *, accept
     ensure_classroom_access(conn, int(inv["class_offering_id"]), user)
     if not _is_student(user) or int(inv["invitee_student_id"]) != _user_pk(user):
         raise HTTPException(403, "只能处理发给自己的邀请")
+    class_offering_id = int(inv["class_offering_id"])
+    _lock_classroom_memberships(conn, class_offering_id, user)
+    row = conn.execute("SELECT * FROM group_invitations WHERE id = ? LIMIT 1", (int(invitation_id),)).fetchone()
+    if row is None:
+        raise HTTPException(404, "邀请不存在")
+    inv = dict(row)
+    if int(inv["class_offering_id"]) != class_offering_id or int(inv["invitee_student_id"]) != _user_pk(user):
+        raise HTTPException(409, "邀请已变化，请刷新后重试")
     if str(inv["status"]) != INVITE_STATUS_PENDING:
         raise HTTPException(400, "该邀请已处理")
     group = _load_group(conn, int(inv["group_id"]))

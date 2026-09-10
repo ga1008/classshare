@@ -4,17 +4,11 @@ import hashlib
 import json
 import time
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
+from fastapi import HTTPException
 
-from ..config import (
-    AGENT_TASK_DEEPSEEK_HOME,
-    AGENT_TASK_RUNTIME_CONFIG_PATH,
-    AGENT_TASK_RUNTIME_MODEL,
-    AGENT_TASK_RUNTIME_TOKEN,
-    AGENT_TASK_RUNTIME_URL,
-)
+from ..config import AGENT_MODEL_DEFAULT
 from ..db.connection import execute_insert_returning_id
 from ..time_utils import local_iso
 from .email_notification_service import decrypt_secret, encrypt_secret
@@ -27,7 +21,7 @@ KEY_STATUS_UNAVAILABLE = "unavailable"
 
 DEFAULT_PROVIDER = "deepseek"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = AGENT_TASK_RUNTIME_MODEL or "deepseek-v4-pro"
+DEFAULT_MODEL = AGENT_MODEL_DEFAULT or "deepseek-v4-pro"
 TEST_MODEL = "deepseek-v4-flash"
 
 
@@ -57,12 +51,15 @@ def _safe_text(value: Any, *, limit: int = 200) -> str:
 
 
 def _normalize_url(value: Any, *, default: str = DEFAULT_BASE_URL) -> str:
+    from .agent_model_gateway_service import approved_model_base_url
+
     candidate = str(value or default).strip().rstrip("/")
-    parsed = urlparse(candidate)
-    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
-        raise ValueError("API Base URL 格式不正确。")
-    if parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost"}:
-        raise ValueError("DeepSeek API Base URL 必须使用 HTTPS。")
+    try:
+        approved_model_base_url(candidate)
+    except HTTPException as exc:
+        raise ValueError("API Base URL 未通过服务器允许列表。") from exc
+    if candidate.endswith("/anthropic/v1"):
+        raise ValueError("Agent 主模型请使用 OpenAI 兼容地址；搜索接口由服务器单独配置。")
     return candidate
 
 
@@ -78,7 +75,7 @@ def _normalize_model(value: Any, *, default: str = DEFAULT_MODEL) -> str:
 def _normalize_provider(value: Any) -> str:
     provider = str(value or DEFAULT_PROVIDER).strip().lower()
     if provider not in {"deepseek"}:
-        raise ValueError("当前 Agent 运行时仅支持 DeepSeek Provider。")
+        raise ValueError("当前 Agent 模型网关仅支持 DeepSeek Provider。")
     return provider
 
 
@@ -89,12 +86,8 @@ def _fingerprint(api_key: str) -> str:
 def _suffix(api_key: str) -> str:
     normalized = api_key.strip()
     if len(normalized) <= 8:
-        return normalized
+        return ""
     return normalized[-8:]
-
-
-def _toml_string(value: str) -> str:
-    return json.dumps(str(value or ""), ensure_ascii=False)
 
 
 def serialize_agent_api_key(row: Any) -> dict[str, Any]:
@@ -125,6 +118,7 @@ def list_agent_api_keys(conn) -> list[dict[str, Any]]:
         """
         SELECT *
         FROM agent_runtime_api_keys
+        WHERE deleted_at IS NULL
         ORDER BY is_active DESC, updated_at DESC, id DESC
         """
     ).fetchall()
@@ -133,7 +127,7 @@ def list_agent_api_keys(conn) -> list[dict[str, Any]]:
 
 def load_agent_api_key_secret(conn, key_id: int) -> tuple[dict[str, Any], str]:
     row = conn.execute(
-        "SELECT * FROM agent_runtime_api_keys WHERE id = ? LIMIT 1",
+        "SELECT * FROM agent_runtime_api_keys WHERE id = ? AND deleted_at IS NULL LIMIT 1",
         (int(key_id),),
     ).fetchone()
     if not row:
@@ -150,7 +144,7 @@ def get_active_agent_api_key(conn) -> tuple[dict[str, Any], str] | None:
         """
         SELECT *
         FROM agent_runtime_api_keys
-        WHERE provider = ? AND enabled = 1 AND is_active = 1
+        WHERE provider = ? AND enabled = 1 AND is_active = 1 AND deleted_at IS NULL
         ORDER BY updated_at DESC, id DESC
         LIMIT 1
         """,
@@ -194,12 +188,12 @@ async def test_agent_api_key_value(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=8.0), follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=8.0), follow_redirects=False) as client:
             response = await client.post(f"{normalized_base_url}/chat/completions", headers=headers, json=payload)
     except httpx.HTTPError as exc:
         return {
             "status": KEY_STATUS_UNAVAILABLE,
-            "message": f"DeepSeek API 暂时不可达：{exc}",
+            "message": f"DeepSeek API 暂时不可达（{type(exc).__name__}）。",
             "response_ms": int((time.perf_counter() - started_at) * 1000),
             "usage": {},
         }
@@ -224,7 +218,7 @@ async def test_agent_api_key_value(
         error_message = error_payload.get("message") or error_payload.get("type")
     else:
         error_message = error_payload
-    message = _safe_text(error_message or response.text or f"HTTP {response.status_code}", limit=260)
+    message = _safe_text(str(error_message or f"HTTP {response.status_code}").replace(normalized_key, "[redacted]"), limit=260)
     return {
         "status": KEY_STATUS_FAILED,
         "message": f"DeepSeek API Key 测试失败：{message}",
@@ -248,15 +242,13 @@ def _record_key_test(
         SET last_test_status = ?,
             last_test_message = ?,
             last_test_usage_json = ?,
-            last_test_at = ?,
-            updated_at = ?
+            last_test_at = ?
         WHERE id = ?
         """,
         (
             result.get("status") or KEY_STATUS_UNCHECKED,
             _safe_text(result.get("message"), limit=500),
             usage_json,
-            now,
             now,
             int(key_id),
         ),
@@ -280,307 +272,217 @@ def _record_key_test(
     )
 
 
-def _write_runtime_config(item: dict[str, Any], secret: str) -> dict[str, Any]:
-    AGENT_TASK_DEEPSEEK_HOME.mkdir(parents=True, exist_ok=True)
-    base_url = item.get("base_url") or DEFAULT_BASE_URL
-    model = item.get("model") or DEFAULT_MODEL
-    content = "\n".join(
-        [
-            "# Managed by LanShare Agent Key Center.",
-            "# Restart the DeepSeek-TUI runtime container after changing the active key.",
-            'provider = "deepseek"',
-            f"api_key = {_toml_string(secret)}",
-            f"base_url = {_toml_string(base_url)}",
-            f"default_text_model = {_toml_string(model)}",
-            f"reasoning_effort = {_toml_string('max')}",
-            "show_thinking = true",
-            f'cost_currency = "usd"',
-            "allow_shell = false",
-            "",
-            "[providers.deepseek]",
-            f"api_key = {_toml_string(secret)}",
-            f"base_url = {_toml_string(base_url)}",
-            f"model = {_toml_string(model)}",
-            "",
-        ]
-    )
-    AGENT_TASK_RUNTIME_CONFIG_PATH.write_text(content, encoding="utf-8")
+def _lock_model_configuration(conn) -> None:
+    """Use the same transaction mutex for every selected-key mutation."""
+    cursor = conn.execute("UPDATE agent_model_configuration_lock SET revision = revision WHERE id = 1")
+    if cursor.rowcount != 1:
+        raise RuntimeError("Agent model configuration schema is not installed")
+
+
+def _configuration_changed(conn) -> None:
+    conn.execute("UPDATE agent_model_configuration_lock SET revision = revision + 1 WHERE id = 1")
+
+
+def get_agent_model_configuration(conn) -> dict[str, Any]:
+    """A read-only view: selecting a key is not proof of a serving runtime."""
+    from .agent_model_gateway_service import configuration_generation
+
+    row = conn.execute("""
+        SELECT id, key_fingerprint, base_url, model, updated_at
+        FROM agent_runtime_api_keys
+        WHERE provider = ? AND enabled = 1 AND is_active = 1 AND deleted_at IS NULL
+        LIMIT 1
+    """, (DEFAULT_PROVIDER,)).fetchone()
+    item = _row_to_dict(row)
+    desired = configuration_generation(item) if item else None
+    last = _row_to_dict(conn.execute("""
+        SELECT config_generation, status, created_at, completed_at
+        FROM agent_model_requests ORDER BY created_at DESC, id DESC LIMIT 1
+    """).fetchone())
+    observed = _row_to_dict(conn.execute("""
+        SELECT config_generation, completed_at FROM agent_model_requests
+        WHERE config_generation = ? AND status = 'completed'
+        ORDER BY completed_at DESC, id DESC LIMIT 1
+    """, (desired or "",)).fetchone())
+    status = "missing_active_key" if not item else "observed" if observed else "pending_observation"
+    message = {
+        "missing_active_key": "尚未启用 Agent API Key。",
+        "pending_observation": "已选择模型配置，等待该版本的实际请求成功回执。",
+        "observed": "已观测到当前配置的模型请求成功回执。",
+    }[status]
+    if item:
+        message += " 新请求读取当前 Key；切换前已启动的请求可能仍使用旧版本。"
     return {
-        "path": str(AGENT_TASK_RUNTIME_CONFIG_PATH),
-        "exists": AGENT_TASK_RUNTIME_CONFIG_PATH.exists(),
-        "updated_at": local_iso(),
+        "status": status, "message": message, "configured": bool(item),
+        "gateway_url": "/api/agent-model", "desired_generation": desired,
+        "last_request_generation": last.get("config_generation"),
+        "last_request_status": last.get("status"), "last_request_at": last.get("created_at"),
+        "last_verified_generation": observed.get("config_generation"),
+        "last_verified_at": observed.get("completed_at"),
+        "key_id": item.get("id"), "model": item.get("model"), "base_url": item.get("base_url"),
     }
 
 
-def sync_active_agent_runtime_config(conn) -> dict[str, Any]:
-    active = get_active_agent_api_key(conn)
-    if not active:
-        return {
-            "status": "missing_active_key",
-            "message": "尚未启用 Agent API Key。",
-            "config_path": str(AGENT_TASK_RUNTIME_CONFIG_PATH),
-            "exists": AGENT_TASK_RUNTIME_CONFIG_PATH.exists(),
-        }
-    item, secret = active
-    try:
-        write_result = _write_runtime_config(item, secret)
-    except OSError as exc:
-        return {
-            "status": "failed",
-            "message": f"运行时配置写入失败：{exc}",
-            "config_path": str(AGENT_TASK_RUNTIME_CONFIG_PATH),
-        }
-    return {
-        "status": "synced",
-        "message": "运行时配置已写入，重启 deepseek-runtime 后生效。",
-        "config_path": write_result["path"],
-        "updated_at": write_result["updated_at"],
-    }
-
-
-async def create_agent_api_key(conn, payload: dict[str, Any], *, teacher_id: int) -> dict[str, Any]:
+def prepare_agent_api_key(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize before a network probe. The returned secret stays server-side."""
     api_key = str(payload.get("api_key") or "").strip()
     if not api_key:
         raise ValueError("请填写 DeepSeek API Key。")
-    label = _safe_text(payload.get("key_label") or payload.get("label") or "DeepSeek Agent Key", limit=80)
-    provider = _normalize_provider(payload.get("provider"))
-    base_url = _normalize_url(payload.get("base_url"))
-    model = _normalize_model(payload.get("model"))
-    test_model = _normalize_model(payload.get("test_model"), default=TEST_MODEL)
-    make_active = bool(payload.get("make_active", True))
-    test_on_save = bool(payload.get("test_on_save", True))
+    if len(api_key) > 4096:
+        raise ValueError("API Key 过长。")
+    return {
+        "api_key": api_key,
+        "key_label": _safe_text(payload.get("key_label") or payload.get("label") or "DeepSeek Agent Key", limit=80),
+        "provider": _normalize_provider(payload.get("provider")),
+        "base_url": _normalize_url(payload.get("base_url")),
+        "model": _normalize_model(payload.get("model")),
+        "make_active": bool(payload.get("make_active", True)),
+        "test_on_save": bool(payload.get("test_on_save", True)),
+    }
 
-    test_result: dict[str, Any] | None = None
-    if test_on_save:
-        test_result = await test_agent_api_key_value(api_key=api_key, base_url=base_url, model=test_model)
-        if test_result.get("status") != KEY_STATUS_VALID:
-            return {
-                "saved": False,
-                "message": test_result.get("message") or "DeepSeek API Key 测试失败，未保存。",
-                "test_result": test_result,
-                "keys": list_agent_api_keys(conn),
-                "runtime_config": sync_active_agent_runtime_config(conn),
-            }
 
-    now = local_iso()
-    fingerprint = _fingerprint(api_key)
-    try:
-        key_id = execute_insert_returning_id(
-            conn,
-            """
-            INSERT INTO agent_runtime_api_keys (
-                provider, key_label, key_fingerprint, key_encrypted, key_suffix,
-                base_url, model, enabled, is_active, created_by_teacher_id,
-                last_test_status, last_test_message, last_test_usage_json, last_test_at,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                provider,
-                label,
-                fingerprint,
-                encrypt_secret(api_key),
-                _suffix(api_key),
-                base_url,
-                model,
-                int(teacher_id),
-                test_result.get("status") if test_result else KEY_STATUS_UNCHECKED,
-                _safe_text(test_result.get("message"), limit=500) if test_result else "",
-                _json_dumps(test_result.get("usage") if test_result else {}),
-                now if test_result else None,
-                now,
-                now,
-            ),
-        )
-    except Exception as exc:
-        if "UNIQUE" in str(exc).upper():
-            raise ValueError("这个 API Key 已经保存过。") from exc
-        raise
+def _key_change_result(conn, *, key_id: int | None = None, **extra) -> dict[str, Any]:
+    result = {**extra, "keys": list_agent_api_keys(conn), "runtime_config": get_agent_model_configuration(conn)}
+    if key_id is not None:
+        result["key"] = serialize_agent_api_key(conn.execute(
+            "SELECT * FROM agent_runtime_api_keys WHERE id = ? AND deleted_at IS NULL", (key_id,)
+        ).fetchone())
+    return result
 
+
+def create_agent_api_key(conn, payload: dict[str, Any], *, teacher_id: int,
+                         test_result: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Persist an already-probed key in a short caller-owned transaction.
+
+    The router probes the requested model with no DB connection open. Activation
+    always needs a successful probe, even when 'test on save' was unchecked.
+    """
+    prepared = prepare_agent_api_key(payload)
+    requires_probe = prepared["test_on_save"] or prepared["make_active"]
+    if requires_probe and (not test_result or test_result.get("status") != KEY_STATUS_VALID):
+        return _key_change_result(conn, saved=False,
+            message=(test_result or {}).get("message") or "启用前须成功测试当前模型，尚未保存。",
+            test_result=test_result)
+    _lock_model_configuration(conn)
+    fingerprint = _fingerprint(prepared["api_key"])
+    if conn.execute("SELECT id FROM agent_runtime_api_keys WHERE key_fingerprint = ?", (fingerprint,)).fetchone():
+        raise ValueError("这个 API Key 已经保存过。")
+    now = local_iso(timespec="microseconds")
+    key_id = execute_insert_returning_id(conn, """
+        INSERT INTO agent_runtime_api_keys (
+            provider, key_label, key_fingerprint, key_encrypted, key_suffix,
+            base_url, model, enabled, is_active, created_by_teacher_id,
+            last_test_status, last_test_message, last_test_usage_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, 'unchecked', '', '{}', ?, ?)
+    """, (prepared["provider"], prepared["key_label"], fingerprint, encrypt_secret(prepared["api_key"]),
+          _suffix(prepared["api_key"]), prepared["base_url"], prepared["model"], int(teacher_id), now, now))
     if test_result:
-        conn.execute(
-            """
-            INSERT INTO agent_runtime_key_checks (
-                key_id, status, message, response_ms, usage_json, checked_by_teacher_id, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                key_id,
-                test_result.get("status") or KEY_STATUS_UNCHECKED,
-                _safe_text(test_result.get("message"), limit=500),
-                int(test_result.get("response_ms") or 0),
-                _json_dumps(test_result.get("usage") or {}),
-                int(teacher_id),
-                now,
-            ),
-        )
-    if make_active:
+        _record_key_test(conn, key_id=key_id, result=test_result, checked_by_teacher_id=int(teacher_id))
+    if prepared["make_active"]:
         set_active_agent_api_key(conn, key_id)
-    runtime_config = sync_active_agent_runtime_config(conn) if make_active else sync_active_agent_runtime_config(conn)
-    return {
-        "saved": True,
-        "message": "Agent API Key 已保存。" if not make_active else "Agent API Key 已保存并设为启用。",
-        "key": serialize_agent_api_key(
-            conn.execute("SELECT * FROM agent_runtime_api_keys WHERE id = ?", (key_id,)).fetchone()
-        ),
-        "test_result": test_result,
-        "keys": list_agent_api_keys(conn),
-        "runtime_config": runtime_config,
-    }
+    return _key_change_result(conn, key_id=key_id, saved=True, test_result=test_result,
+        message="Agent API Key 已保存并启用，新请求将使用该配置。" if prepared["make_active"] else "Agent API Key 已保存。")
 
 
-async def test_saved_agent_api_key(conn, key_id: int, *, teacher_id: int) -> dict[str, Any]:
-    item, secret = load_agent_api_key_secret(conn, key_id)
-    result = await test_agent_api_key_value(
-        api_key=secret,
-        base_url=item.get("base_url") or DEFAULT_BASE_URL,
-        model=TEST_MODEL,
-    )
-    _record_key_test(conn, key_id=int(key_id), result=result, checked_by_teacher_id=int(teacher_id))
-    return {
-        "message": result.get("message") or "测试完成。",
-        "test_result": result,
-        "key": serialize_agent_api_key(
-            conn.execute("SELECT * FROM agent_runtime_api_keys WHERE id = ?", (int(key_id),)).fetchone()
-        ),
-        "keys": list_agent_api_keys(conn),
-        "runtime_config": sync_active_agent_runtime_config(conn),
-    }
+def record_saved_agent_key_test(conn, key_id: int, *, teacher_id: int,
+                                expected_configuration: str, result: dict[str, Any],
+                                activate: bool = False) -> dict[str, Any]:
+    """Do not apply a delayed probe to a changed/deleted key or revoked admin."""
+    from .agent_model_gateway_service import configuration_generation
+
+    _lock_model_configuration(conn)
+    item, _ = load_agent_api_key_secret(conn, key_id)
+    if configuration_generation(item) != expected_configuration:
+        raise HTTPException(409, "测试期间 Key 配置已变更，请刷新后重试。")
+    _record_key_test(conn, key_id=key_id, result=result, checked_by_teacher_id=teacher_id)
+    activated = activate and result.get("status") == KEY_STATUS_VALID
+    if activated:
+        set_active_agent_api_key(conn, key_id)
+    return _key_change_result(conn, key_id=key_id, activated=activated, test_result=result,
+        message="Agent API Key 已启用，新请求将使用该配置。" if activated else result.get("message") or "测试完成。")
 
 
 def set_active_agent_api_key(conn, key_id: int) -> dict[str, Any]:
-    item, secret = load_agent_api_key_secret(conn, key_id)
-    now = local_iso()
-    conn.execute("UPDATE agent_runtime_api_keys SET is_active = 0, updated_at = ?", (now,))
-    conn.execute(
-        """
-        UPDATE agent_runtime_api_keys
-        SET is_active = 1, enabled = 1, updated_at = ?
-        WHERE id = ?
-        """,
-        (now, int(key_id)),
-    )
-    runtime_config = _write_runtime_config({**item, "is_active": 1, "enabled": 1}, secret)
-    row = conn.execute("SELECT * FROM agent_runtime_api_keys WHERE id = ?", (int(key_id),)).fetchone()
-    return {
-        "message": "Agent API Key 已启用，重启 deepseek-runtime 后运行时会使用该 key。",
-        "key": serialize_agent_api_key(row),
-        "keys": list_agent_api_keys(conn),
-        "runtime_config": {
-            "status": "synced",
-            "message": "运行时配置已写入，重启 deepseek-runtime 后生效。",
-            "config_path": runtime_config["path"],
-            "updated_at": runtime_config["updated_at"],
-        },
-    }
+    _lock_model_configuration(conn)
+    item, _ = load_agent_api_key_secret(conn, key_id)
+    _normalize_url(item.get("base_url"))
+    if item.get("last_test_status") != KEY_STATUS_VALID:
+        raise ValueError("请先成功测试这个 Key 的当前模型。")
+    if not (item.get("enabled") and item.get("is_active")):
+        now = local_iso(timespec="microseconds")
+        conn.execute("UPDATE agent_runtime_api_keys SET is_active = 0 WHERE provider = ? AND is_active = 1", (item["provider"],))
+        conn.execute("UPDATE agent_runtime_api_keys SET is_active = 1, enabled = 1, updated_at = ? WHERE id = ?", (now, int(key_id)))
+        _configuration_changed(conn)
+    return _key_change_result(conn, key_id=key_id, message="Agent API Key 已启用，新请求将使用该配置。")
 
 
 def delete_agent_api_key(conn, key_id: int) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM agent_runtime_api_keys WHERE id = ? LIMIT 1", (int(key_id),)).fetchone()
+    _lock_model_configuration(conn)
+    row = conn.execute("SELECT id, is_active, key_fingerprint FROM agent_runtime_api_keys WHERE id = ? AND deleted_at IS NULL", (int(key_id),)).fetchone()
     if not row:
         raise ValueError("Agent API Key 不存在。")
-    was_active = bool(row["is_active"])
-    conn.execute("DELETE FROM agent_runtime_api_keys WHERE id = ?", (int(key_id),))
-    if was_active and AGENT_TASK_RUNTIME_CONFIG_PATH.exists():
-        try:
-            AGENT_TASK_RUNTIME_CONFIG_PATH.unlink()
-        except OSError:
-            pass
-    runtime_config = sync_active_agent_runtime_config(conn)
-    return {
-        "message": "Agent API Key 已删除。",
-        "keys": list_agent_api_keys(conn),
-        "runtime_config": runtime_config,
-    }
+    now = local_iso(timespec="microseconds")
+    # Remove credential material; retain row/check/request references. A tombstone
+    # fingerprint permits saving the same credential again with a fresh key id.
+    conn.execute("""
+        UPDATE agent_runtime_api_keys SET enabled = 0, is_active = 0, key_encrypted = '',
+            key_fingerprint = ?, deleted_at = ?, updated_at = ? WHERE id = ?
+    """, (f"deleted:{int(key_id)}:{row['key_fingerprint']}", now, now, int(key_id)))
+    if row["is_active"]:
+        _configuration_changed(conn)
+    return _key_change_result(conn, message="Agent API Key 已删除，历史检查和请求记录已保留。")
+
+
+_USAGE_COLUMNS = """
+    COUNT(*) AS turns,
+    COUNT(DISTINCT task_id) AS tasks,
+    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_requests,
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_requests,
+    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_requests,
+    SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_requests,
+    COUNT(input_tokens) AS input_reported_requests,
+    COUNT(output_tokens) AS output_reported_requests,
+    CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(input_tokens) THEN SUM(input_tokens) ELSE NULL END AS input_tokens,
+    CASE WHEN COUNT(*) > 0 AND COUNT(*) = COUNT(output_tokens) THEN SUM(output_tokens) ELSE NULL END AS output_tokens,
+    SUM(input_tokens) AS reported_input_tokens,
+    SUM(output_tokens) AS reported_output_tokens
+"""
+
+
+def _usage_result(row) -> dict[str, Any]:
+    item = _row_to_dict(row)
+    for name in ("turns", "tasks", "completed_requests", "failed_requests", "running_requests", "canceled_requests",
+                 "input_reported_requests", "output_reported_requests"):
+        item[name] = int(item.get(name) or 0)
+    for name in ("input_tokens", "output_tokens", "reported_input_tokens", "reported_output_tokens"):
+        item[name] = int(item[name]) if item.get(name) is not None else None
+    # No invented price table or zero for counters the upstream did not report.
+    item.update(cost_usd=None, cached_tokens=None, reasoning_tokens=None)
+    return item
+
+
+def get_agent_model_usage(conn) -> dict[str, Any]:
+    totals = _usage_result(conn.execute(f"SELECT {_USAGE_COLUMNS} FROM agent_model_requests").fetchone())
+    groups = {}
+    for name, expression, limit in (("day", "SUBSTR(created_at, 1, 10)", 60), ("model", "model", 100)):
+        rows = conn.execute(f"SELECT {expression} AS key, {_USAGE_COLUMNS} FROM agent_model_requests GROUP BY {expression} ORDER BY key DESC LIMIT {limit}").fetchall()
+        groups[name] = {"totals": totals, "buckets": [_usage_result(row) for row in reversed(rows)], "bucket_limit": limit}
+    return {"status": "success", "message": "已读取模型网关请求账本；未报告的用量显示为未知。",
+            "source": "agent_model_requests", "groups": groups, "fetched_at": local_iso()}
 
 
 def build_agent_key_dashboard(conn) -> dict[str, Any]:
-    latest_usage = conn.execute(
-        """
-        SELECT *
-        FROM agent_runtime_usage_snapshots
-        ORDER BY id DESC
-        LIMIT 1
-        """
-    ).fetchone()
+    configuration = get_agent_model_configuration(conn)
+    usage = get_agent_model_usage(conn)
     return {
-        "keys": list_agent_api_keys(conn),
-        "runtime_config": sync_active_agent_runtime_config(conn),
-        "runtime": {
-            "url": AGENT_TASK_RUNTIME_URL,
-            "configured": bool(AGENT_TASK_RUNTIME_URL),
-            "usage_snapshot": _json_loads(latest_usage["usage_json"], {}) if latest_usage else {},
-            "usage_fetched_at": latest_usage["created_at"] if latest_usage else "",
-        },
-        "defaults": {
-            "provider": DEFAULT_PROVIDER,
-            "base_url": DEFAULT_BASE_URL,
-            "model": DEFAULT_MODEL,
-            "test_model": TEST_MODEL,
-        },
+        "keys": list_agent_api_keys(conn), "runtime_config": configuration,
+        "runtime": {"url": configuration["gateway_url"], "configured": configuration["configured"],
+                    "usage_snapshot": usage, "usage_fetched_at": usage["fetched_at"]},
+        "defaults": {"provider": DEFAULT_PROVIDER, "base_url": DEFAULT_BASE_URL,
+                     "model": DEFAULT_MODEL, "test_model": DEFAULT_MODEL},
     }
 
 
 async def fetch_agent_runtime_usage(conn, *, teacher_id: int | None = None) -> dict[str, Any]:
-    if not AGENT_TASK_RUNTIME_URL:
-        return {
-            "status": "not_configured",
-            "message": "未配置 AGENT_TASK_RUNTIME_URL，无法读取 DeepSeek-TUI 运行用量。",
-            "runtime_url": "",
-            "groups": {},
-        }
-
-    headers = {"Authorization": f"Bearer {AGENT_TASK_RUNTIME_TOKEN}"} if AGENT_TASK_RUNTIME_TOKEN else {}
-    groups: dict[str, Any] = {}
-    started_at = time.perf_counter()
-    try:
-        async with httpx.AsyncClient(
-            base_url=AGENT_TASK_RUNTIME_URL,
-            headers=headers,
-            timeout=httpx.Timeout(12.0, connect=5.0),
-            follow_redirects=True,
-        ) as client:
-            for group_by in ("day", "model", "provider", "thread"):
-                response = await client.get("/v1/usage", params={"group_by": group_by})
-                response.raise_for_status()
-                data = response.json()
-                groups[group_by] = data if isinstance(data, dict) else {}
-    except httpx.HTTPError as exc:
-        return {
-            "status": KEY_STATUS_UNAVAILABLE,
-            "message": f"DeepSeek-TUI 运行时用量暂时不可读：{exc}",
-            "runtime_url": AGENT_TASK_RUNTIME_URL,
-            "groups": groups,
-        }
-    except ValueError as exc:
-        return {
-            "status": KEY_STATUS_UNAVAILABLE,
-            "message": f"DeepSeek-TUI 用量响应格式不正确：{exc}",
-            "runtime_url": AGENT_TASK_RUNTIME_URL,
-            "groups": groups,
-        }
-
-    snapshot = {
-        "status": "success",
-        "message": "DeepSeek-TUI 运行时用量已刷新。",
-        "runtime_url": AGENT_TASK_RUNTIME_URL,
-        "response_ms": int((time.perf_counter() - started_at) * 1000),
-        "groups": groups,
-        "fetched_at": local_iso(),
-    }
-    conn.execute(
-        """
-        INSERT INTO agent_runtime_usage_snapshots (source, runtime_url, usage_json, fetched_by_teacher_id, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            "deepseek-tui",
-            AGENT_TASK_RUNTIME_URL,
-            _json_dumps(snapshot),
-            teacher_id,
-            snapshot["fetched_at"],
-        ),
-    )
-    return snapshot
+    """Compatibility for the existing refresh API; read-only with no network I/O."""
+    return get_agent_model_usage(conn)

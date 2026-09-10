@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -13,6 +14,7 @@ from ..services.runtime_metrics_service import record_websocket_sent
 
 
 router = APIRouter(prefix="/api/polls")
+POLL_BROADCAST_TIMEOUT_SECONDS = 5
 
 
 async def _json_payload(request: Request) -> dict[str, Any]:
@@ -31,20 +33,28 @@ async def _broadcast_poll_changed(class_offering_ids: list[int], *, reason: str,
         return
     from ..services.chat_handler import manager
 
-    for class_offering_id in {int(cid) for cid in class_offering_ids}:
-        payload = {
-            "type": "classroom_poll_changed",
-            "class_offering_id": int(class_offering_id),
-            "reason": reason,
-        }
-        if poll_id is not None:
-            payload["poll_id"] = int(poll_id)
-        try:
-            await manager.broadcast(int(class_offering_id), json.dumps(payload, ensure_ascii=False))
-            record_websocket_sent(int(class_offering_id), max(1, len(manager.rooms.get(int(class_offering_id), {}))))
-        except Exception:
-            # Broadcasting is best-effort; polling fallback keeps clients fresh.
-            pass
+    try:
+        # Domain writes have already committed. A client that stops consuming
+        # its socket must not keep the HTTP request (or Agent budget) alive.
+        # Bound the whole fan-out, not each classroom separately.
+        async with asyncio.timeout(POLL_BROADCAST_TIMEOUT_SECONDS):
+            for class_offering_id in {int(cid) for cid in class_offering_ids}:
+                payload = {
+                    "type": "classroom_poll_changed",
+                    "class_offering_id": int(class_offering_id),
+                    "reason": reason,
+                }
+                if poll_id is not None:
+                    payload["poll_id"] = int(poll_id)
+                try:
+                    await manager.broadcast(int(class_offering_id), json.dumps(payload, ensure_ascii=False))
+                    record_websocket_sent(int(class_offering_id), max(1, len(manager.rooms.get(int(class_offering_id), {}))))
+                except Exception:
+                    # Other classrooms can still receive their notification.
+                    pass
+    except TimeoutError:
+        # Broadcasting is best-effort; polling fallback keeps clients fresh.
+        pass
 
 
 def _poll_class_ids(conn, poll_id: int) -> list[int]:

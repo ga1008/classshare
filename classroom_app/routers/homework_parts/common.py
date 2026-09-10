@@ -1,3 +1,7 @@
+from ...services.assignment_management_service import (
+    _truthy_request_flag, _wants_assignment_email_notification, _get_allowed_file_types,
+    _get_learning_stage_key, _teacher_can_access_assignment, _hide_personal_stage_asset,
+)
 import uuid
 import json
 import io
@@ -145,24 +149,8 @@ _ai_grading_submit_semaphore = asyncio.Semaphore(10)
 PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE = "学生个人试炼属于学生资产，不在教师作业与考试中展示；请查看班级修行统计。"
 
 
-def _truthy_request_flag(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "checked"}
 
 
-def _wants_assignment_email_notification(data: dict[str, Any]) -> bool:
-    for key in (
-        "send_email_notification",
-        "send_email_notifications",
-        "notify_students_by_email",
-        "email_notification_enabled",
-    ):
-        if key in data:
-            return _truthy_request_flag(data.get(key))
-    return False
 
 
 def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
@@ -181,14 +169,6 @@ def _build_submission_file_path(submission_dir: Path, relative_path: str) -> Pat
     return submission_dir.joinpath(*PurePosixPath(relative_path).parts)
 
 
-def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
-    if "allowed_file_types" in data:
-        return normalize_allowed_file_types(data.get("allowed_file_types"))
-    if "allowed_file_types_json" in data:
-        return decode_allowed_file_types_json(data.get("allowed_file_types_json"))
-    if assignment_row is not None:
-        return decode_allowed_file_types_json(assignment_row["allowed_file_types_json"])
-    return []
 
 
 def _question_id_from_submission_relative_path(relative_path: str) -> str | None:
@@ -327,15 +307,6 @@ def _dropped_files_response_fields(dropped_files: list[dict[str, Any]], *, actio
     }
 
 
-def _get_learning_stage_key(data: dict, *, class_offering_id: Any = None) -> str | None:
-    raw_stage_key = data.get("learning_stage_key", data.get("stage_key"))
-    try:
-        stage_key = normalize_assignment_stage_key(raw_stage_key)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if stage_key and not class_offering_id:
-        raise HTTPException(400, "仅课堂内作业或考试可以设定为阶段试炼")
-    return stage_key
 
 
 def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
@@ -363,12 +334,8 @@ def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
     raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
 
 
-def _teacher_can_access_assignment(conn, assignment: dict[str, Any], teacher_id: int) -> bool:
-    return teacher_can_manage_assignment(conn, int(teacher_id), assignment)
 
 
-def _hide_personal_stage_asset() -> None:
-    raise HTTPException(404, PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE)
 
 
 EXAM_OPEN_SCOPES = {SCOPE_PRIVATE, SCOPE_DEPARTMENT, SCOPE_SCHOOL}

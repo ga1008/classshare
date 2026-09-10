@@ -1,6 +1,8 @@
 from .common import *
 from ...services.background_task_ledger_service import build_background_task_ledger_snapshot
 from ...services.ai_durable_job_service import cancel_ai_job_by_id, requeue_ai_job
+from ...services import agent_key_service as agent_keys
+from ...services.agent_model_gateway_service import configuration_generation
 from ...services.ai_usage_budget_service import (
     AIUsageBudgetError,
     build_ai_usage_dashboard,
@@ -352,11 +354,18 @@ async def api_create_agent_key(request: Request, user: dict = Depends(get_curren
     payload = await _parse_json_request(request)
     with get_db_connection() as conn:
         _require_current_super_admin(conn, user)
-        try:
-            result = await create_agent_api_key(conn, payload, teacher_id=int(user["id"]))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        conn.commit()
+    try:
+        prepared = agent_keys.prepare_agent_api_key(payload)
+        test_result = None
+        if prepared["test_on_save"] or prepared["make_active"]:
+            test_result = await agent_keys.test_agent_api_key_value(
+                api_key=prepared["api_key"], base_url=prepared["base_url"], model=prepared["model"])
+        with get_db_connection() as conn:
+            _require_current_super_admin(conn, user)
+            result = create_agent_api_key(conn, prepared, teacher_id=int(user["id"]), test_result=test_result)
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     status_value = "success" if result.get("saved") else "warning"
     return {
@@ -366,15 +375,22 @@ async def api_create_agent_key(request: Request, user: dict = Depends(get_curren
     }
 
 
-@router.post("/system/agent-keys/{key_id}/test", response_class=JSONResponse)
-async def api_test_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
-    with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
-        try:
-            result = await test_saved_agent_api_key(conn, key_id, teacher_id=int(user["id"]))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        conn.commit()
+async def _test_agent_key_configuration(key_id: int, user: dict, *, activate: bool = False):
+    try:
+        with get_db_connection() as conn:
+            _require_current_super_admin(conn, user)
+            item, secret = agent_keys.load_agent_api_key_secret(conn, key_id)
+            expected = configuration_generation(item)
+        probe = await agent_keys.test_agent_api_key_value(
+            api_key=secret, base_url=item["base_url"], model=item["model"])
+        with get_db_connection() as conn:
+            _require_current_super_admin(conn, user)
+            result = agent_keys.record_saved_agent_key_test(
+                conn, key_id, teacher_id=int(user["id"]), expected_configuration=expected,
+                result=probe, activate=activate)
+            conn.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     test_status = (result.get("test_result") or {}).get("status")
     return {
@@ -384,16 +400,14 @@ async def api_test_agent_key(key_id: int, user: dict = Depends(get_current_teach
     }
 
 
+@router.post("/system/agent-keys/{key_id}/test", response_class=JSONResponse)
+async def api_test_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
+    return await _test_agent_key_configuration(key_id, user)
+
+
 @router.post("/system/agent-keys/{key_id}/activate", response_class=JSONResponse)
 async def api_activate_agent_key(key_id: int, user: dict = Depends(get_current_teacher)):
-    with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
-        try:
-            result = set_active_agent_api_key(conn, key_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        conn.commit()
-    return {"status": "success", **result}
+    return await _test_agent_key_configuration(key_id, user, activate=True)
 
 
 @router.delete("/system/agent-keys/{key_id}", response_class=JSONResponse)
@@ -431,8 +445,14 @@ async def api_create_teacher_account(
     user: dict = Depends(get_current_teacher),
 ):
     """新增教师账号，仅超管可用。"""
+    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
+    from ...services.teacher_account_service import lock_teacher_account_management, normalize_teacher_email
     with get_db_connection() as conn:
+        lock_teacher_account_management(conn)
         _require_current_super_admin(conn, user)
+        existing = conn.execute("SELECT id FROM teachers WHERE email=? LIMIT 1", (normalize_teacher_email(email),)).fetchone()
+        if existing:
+            prepare_credentials_change(conn, role="teacher", user_id=int(existing["id"]))
         try:
             teacher = create_teacher_account(
                 conn,
@@ -448,6 +468,8 @@ async def api_create_teacher_account(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if existing:
+            credentials_changed(conn, role="teacher", user_id=int(existing["id"]), invalidate_sessions=True)
         conn.commit()
     return {"status": "success", "message": "教师账号已创建。", "teacher": teacher}
 
@@ -576,15 +598,17 @@ async def api_reset_teacher_account_password(
     user: dict = Depends(get_current_teacher),
 ):
     """重置教师账号密码，仅超管可用。"""
+    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     with get_db_connection() as conn:
         _require_current_super_admin(conn, user)
+        prepare_credentials_change(conn, role="teacher", user_id=int(teacher_id))
         try:
             teacher = reset_teacher_password(conn, teacher_id=teacher_id, password=password)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        credentials_changed(conn, role="teacher", user_id=int(teacher_id), invalidate_sessions=True)
         conn.commit()
 
-    invalidate_session_for_user(str(teacher_id), "teacher")
     return {
         "status": "success",
         "message": f"已重置 {teacher['name']} 的密码，并清理其当前登录会话。",
@@ -704,6 +728,7 @@ async def api_approve_password_reset_request(
     user: dict = Depends(get_current_teacher),
 ):
     """教师通过学生找回密码申请。"""
+    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     with get_db_connection() as conn:
         request_row = conn.execute(
             """
@@ -729,15 +754,19 @@ async def api_approve_password_reset_request(
         if request_row["status"] != "pending":
             raise HTTPException(status_code=400, detail="该申请当前不能再执行通过操作。")
 
+        prepare_credentials_change(conn, role="student", user_id=int(request_row["student_id"]))
         reviewed_at = datetime.now().isoformat()
-        conn.execute(
+        changed = conn.execute(
             """
             UPDATE student_password_reset_requests
             SET status = 'approved', reviewed_at = ?, reviewed_by_teacher_id = ?, review_note = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'pending'
             """,
             (reviewed_at, user["id"], review_note.strip(), request_id),
         )
+        if changed.rowcount != 1:
+            raise HTTPException(status_code=409, detail="找回密码申请已被处理，请刷新后核对。")
+        credentials_changed(conn, role="student", user_id=int(request_row["student_id"]), invalidate_sessions=True)
         conn.execute(
             """
             UPDATE students
@@ -747,7 +776,6 @@ async def api_approve_password_reset_request(
             (request_row["student_id"],),
         )
         mark_password_reset_request_notification_read(conn, request_id, user["id"])
-        invalidate_session_for_user(str(request_row["student_id"]), "student", conn=conn)
         conn.commit()
 
     return {

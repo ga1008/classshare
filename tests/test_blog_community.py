@@ -25,8 +25,8 @@ class BlogCommunityTests(unittest.TestCase):
                 user_pk INTEGER NOT NULL, target_type TEXT NOT NULL, target_key TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_identity, target_type, target_key)
             );
-            CREATE TABLE blog_posts (id INTEGER PRIMARY KEY, title TEXT);
-            CREATE TABLE blog_comments (id INTEGER PRIMARY KEY, content_md TEXT);
+            CREATE TABLE blog_posts (id INTEGER PRIMARY KEY, title TEXT, author_identity TEXT DEFAULT 'teacher:1', status TEXT DEFAULT 'published', visibility TEXT DEFAULT 'public');
+            CREATE TABLE blog_comments (id INTEGER PRIMARY KEY, content_md TEXT, post_id INTEGER);
             CREATE TABLE blog_opportunities (id INTEGER PRIMARY KEY, post_id INTEGER);
             CREATE TABLE blog_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, target_id INTEGER NOT NULL,

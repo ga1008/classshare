@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from classroom_app.services import agent_key_service, agent_platform_actions, agent_task_service
+from classroom_app.services import agent_key_service, agent_platform_actions, agent_task_service, blog_service, assignment_creation_service
 
 
 class FakeRow(dict):
@@ -19,6 +19,9 @@ class FakeCursor:
     def fetchone(self):
         return self._row
 
+    def fetchall(self):
+        return [self._row] if self._row else []
+
 
 class FakeConnection:
     def __init__(self):
@@ -30,6 +33,8 @@ class FakeConnection:
     def execute(self, sql, params=()):
         self.execute_calls.append((sql, tuple(params)))
         normalized = " ".join(sql.split())
+        if "FROM class_offerings WHERE" in normalized:
+            return FakeCursor(FakeRow({"id": 20, "course_id": 10, "teacher_id": 3}))
         if normalized.startswith("SELECT id, name, nickname"):
             return FakeCursor(
                 FakeRow(
@@ -42,7 +47,7 @@ class FakeConnection:
                     }
                 )
             )
-        if normalized.startswith("SELECT id, author_identity, status, allow_comments"):
+        if normalized.startswith("SELECT * FROM blog_posts"):
             return FakeCursor(
                 FakeRow(
                     {
@@ -55,6 +60,8 @@ class FakeConnection:
             )
         if normalized.startswith("SELECT * FROM agent_runtime_api_keys"):
             return FakeCursor(FakeRow({"id": 44, "key_label": "DeepSeek"}))
+        if normalized.startswith("SELECT section_key FROM blog_sections"):
+            return FakeCursor(FakeRow({"section_key": "learning"}))
         return FakeCursor()
 
 
@@ -92,7 +99,7 @@ class AgentPostgresWriteTests(unittest.TestCase):
         self.assertEqual({"id": 77, "status": "queued"}, result)
         self.assertEqual(1, insert_helper.call_count)
         self.assertIn("INSERT INTO agent_tasks", insert_helper.call_args.args[1])
-        get_task.assert_called_once_with(conn, 77, teacher_id=3)
+        get_task.assert_called_once_with(conn, 77, teacher_id=3, actor_role="teacher")
         self.assertTrue(any("INSERT INTO agent_task_events" in sql for sql, _ in conn.execute_calls))
 
     def test_create_agent_api_key_uses_insert_returning_helper(self):
@@ -112,11 +119,13 @@ class AgentPostgresWriteTests(unittest.TestCase):
             return_value=[{"id": 44}],
         ), patch.object(
             agent_key_service,
-            "sync_active_agent_runtime_config",
+            "get_agent_model_configuration",
             return_value={"status": "missing_active_key"},
+        ), patch.object(
+            agent_key_service,
+            "_lock_model_configuration",
         ):
-            result = run_async(
-                agent_key_service.create_agent_api_key(
+            result = agent_key_service.create_agent_api_key(
                     conn,
                     {
                         "api_key": "sk-test-secret",
@@ -124,7 +133,6 @@ class AgentPostgresWriteTests(unittest.TestCase):
                         "make_active": False,
                     },
                     teacher_id=3,
-                )
             )
 
         self.assertTrue(result["saved"])
@@ -136,7 +144,7 @@ class AgentPostgresWriteTests(unittest.TestCase):
         conn = FakeConnection()
 
         with patch.object(
-            agent_platform_actions,
+            blog_service,
             "execute_insert_returning_id",
             return_value=55,
         ) as insert_helper:
@@ -157,7 +165,7 @@ class AgentPostgresWriteTests(unittest.TestCase):
         conn = FakeConnection()
 
         with patch.object(
-            agent_platform_actions,
+            blog_service,
             "execute_insert_returning_id",
             return_value=56,
         ) as insert_helper:
@@ -179,7 +187,7 @@ class AgentPostgresWriteTests(unittest.TestCase):
         conn = FakeConnection()
 
         with patch.object(
-            agent_platform_actions,
+            blog_service,
             "execute_insert_returning_id",
             return_value=57,
         ) as insert_helper:
@@ -199,15 +207,11 @@ class AgentPostgresWriteTests(unittest.TestCase):
     def test_assignment_draft_uses_insert_returning_helper(self):
         conn = FakeConnection()
 
-        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
-            agent_platform_actions,
-            "HOMEWORK_SUBMISSIONS_DIR",
-            Path(tmpdir),
-        ), patch.object(
-            agent_platform_actions,
+        with patch.object(
+            assignment_creation_service,
             "execute_insert_returning_id",
             return_value=66,
-        ) as insert_helper:
+        ) as insert_helper, patch.object(assignment_creation_service, "initialize_assignment_assessment_kind", return_value={"assessment_kind": "homework"}):
             result = agent_platform_actions._create_assignment_draft(
                 conn,
                 course_id=10,

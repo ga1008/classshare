@@ -665,13 +665,15 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
         "ON ai_psychology_profiles (session_id, round_index DESC)"
     )
 
-    # 13.55 教师 Agent 任务中心：全平台单队列，任务详情仅所有者可见
+    # 13.55 Agent 任务中心：主体以 role/id 区分，任务详情仅所有者可见
     conn.execute('''
                  CREATE TABLE IF NOT EXISTS agent_tasks
                  (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
                      task_uuid TEXT NOT NULL UNIQUE,
-                     teacher_id INTEGER NOT NULL,
+                     teacher_id INTEGER,
+                     actor_role TEXT NOT NULL DEFAULT 'teacher',
+                     actor_id INTEGER,
                      teacher_name TEXT NOT NULL DEFAULT '',
                      task_type TEXT NOT NULL,
                      title TEXT NOT NULL,
@@ -680,7 +682,7 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
                      context_snapshot_json TEXT NOT NULL DEFAULT '{}',
                      status TEXT NOT NULL DEFAULT 'queued',
                      priority INTEGER NOT NULL DEFAULT 0,
-                     runtime_provider TEXT NOT NULL DEFAULT 'deepseek-tui',
+                     runtime_provider TEXT NOT NULL DEFAULT 'deepseek-dsh',
                      runtime_task_id TEXT,
                      runtime_thread_id TEXT,
                      runtime_turn_id TEXT,
@@ -712,11 +714,14 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
     conn.execute('''
                  CREATE TABLE IF NOT EXISTS agent_task_composers
                  (
-                     teacher_id INTEGER PRIMARY KEY,
+                     teacher_id INTEGER,
+                     actor_role TEXT NOT NULL DEFAULT 'teacher',
+                     actor_id INTEGER,
                      teacher_name TEXT NOT NULL DEFAULT '',
                      page_label TEXT NOT NULL DEFAULT '',
                      updated_at TEXT NOT NULL,
-                     FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+                     FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                     UNIQUE (actor_role, actor_id)
                  )
                  ''')
     for statement in (
@@ -776,7 +781,7 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
                  CREATE TABLE IF NOT EXISTS agent_runtime_usage_snapshots
                  (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                     source TEXT NOT NULL DEFAULT 'deepseek-tui',
+                     source TEXT NOT NULL DEFAULT 'legacy-runtime',
                      runtime_url TEXT NOT NULL DEFAULT '',
                      usage_json TEXT NOT NULL DEFAULT '{}',
                      fetched_by_teacher_id INTEGER,

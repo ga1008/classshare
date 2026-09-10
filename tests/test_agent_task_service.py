@@ -118,6 +118,8 @@ class AgentTaskServiceTests(unittest.TestCase):
                 id INTEGER PRIMARY KEY,
                 task_uuid TEXT DEFAULT '',
                 teacher_id INTEGER,
+                actor_role TEXT NOT NULL DEFAULT 'teacher',
+                actor_id INTEGER,
                 teacher_name TEXT DEFAULT 'Teacher',
                 task_type TEXT DEFAULT 'general_teaching_task',
                 title TEXT DEFAULT 'Task',
@@ -153,7 +155,9 @@ class AgentTaskServiceTests(unittest.TestCase):
                 created_at TEXT
             );
             CREATE TABLE agent_task_composers (
-                teacher_id INTEGER PRIMARY KEY,
+                teacher_id INTEGER,
+                actor_role TEXT NOT NULL DEFAULT 'teacher',
+                actor_id INTEGER,
                 teacher_name TEXT,
                 page_label TEXT,
                 updated_at TEXT
@@ -174,7 +178,7 @@ class AgentTaskServiceTests(unittest.TestCase):
         self.assertFalse(state["is_running"])
         self.assertFalse(state["is_composing"])
         self.assertIn("updated_at >=", conn.composer_query)
-        self.assertEqual(42, conn.composer_params[0])
+        self.assertEqual(("teacher", 42), conn.composer_params[:2])
 
     def test_sqlite_agent_claim_preserves_single_running_behavior(self):
         conn = self._sqlite_conn()

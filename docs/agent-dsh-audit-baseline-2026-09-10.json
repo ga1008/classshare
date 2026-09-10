@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "audited_at": "2026-09-10T14:11:40+08:00",
+  "scope": "Read-only production configuration, aggregate task statistics, local source review and official DSH source research",
+  "production_data_modified": false,
+  "runtime_installed_or_changed": false,
+  "local_git_head": "3c6e330e4094574c95a3d246f3fcb08d709c8272",
+  "production_release_id": "20260910-012744-d83074a36d06",
+  "host": {
+    "cpu_count": 2,
+    "memory_total_mib": 3659,
+    "memory_available_mib": 1946,
+    "root_filesystem_available_human": "28G",
+    "agent_workspace_size_human": "21M"
+  },
+  "runtime": {
+    "service": "deepseek-runtime",
+    "image": "ghcr.io/hmbown/deepseek-tui:latest",
+    "digest": "sha256:f70c436f72c84dfd1e8fde779a3433b2ad6bbf06d6752a06dbef180e837c7a98",
+    "workers": 2,
+    "model": "deepseek-v4-pro",
+    "health_http_status": 200,
+    "usage_http_status": 200,
+    "container_memory_limit_bytes": 0,
+    "container_nano_cpus": 0,
+    "snapshot_idle_memory_human": "16.67MiB",
+    "shared_agent_workspace_read_write": true,
+    "environment_presence_only": {
+      "DATABASE_URL": true,
+      "POSTGRES_PASSWORD": true,
+      "SECRET_KEY": true,
+      "DEEPSEEK_API_KEY": true,
+      "AGENT_TASK_RUNTIME_TOKEN": true,
+      "DEEPSEEK_RUNTIME_TOKEN": true
+    },
+    "secret_values_recorded": false
+  },
+  "task_counts": [
+    {"provider": "deepseek-tui", "status": "completed", "count": 2},
+    {"provider": "deepseek-tui", "status": "failed", "count": 1},
+    {"provider": "lanshare-business-agent", "status": "completed", "count": 3},
+    {"provider": "lanshare-session-material", "status": "failed", "count": 1}
+  ],
+  "active_tasks": 0,
+  "active_deepseek_keys": 1,
+  "matched_source_sha256": {
+    "docker-compose.yml": "cf5016313ae1f956d36977ee06912ce425a53f0d46f3ee10a79a88bfbebb89f9",
+    "agent_task_worker.py": "295b503216d792a015f5ffbe75020de040768ecf221f906aa26bb8e84be3d0c4",
+    "classroom_app/config.py": "5548e6e17b6619cebd8dd9f9d3cd400b5050e0a45512f9a27bb5ddadf9b13ee7",
+    "classroom_app/services/agent_task_service.py": "a8032aa6b5c971ee21104110c93f4f9f10801986f8dce71ce5e5c8f836ad9da8",
+    "classroom_app/services/agent_bridge_service.py": "6cff954b82a4c979971217acac26b0f22714d6b1ca2b2260e318cea7ec5f6ab9",
+    "classroom_app/services/agent_action_registry.py": "1963e1f5ccef1cb265884aab84f70845543b3fb4abfb0ae371fabb24f4602856",
+    "classroom_app/routers/agent_tasks.py": "923aae9b938bf7a893fde98699ff129ca2ba15e40b96c65da0151e5451a48874"
+  },
+  "dsh_candidate": {
+    "official_repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "npm_package": "@deepseek-ai/dsh",
+    "version": "0.1.5-rc.1",
+    "tag": "dsh-v0.1.5-rc.1",
+    "commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+    "prerelease": true,
+    "preferred_integration": "ACP over stdio in an isolated runner; subject to local proof of concept"
+  },
+  "limitations": [
+    "Point-in-time configuration and idle resource snapshot, not a load test",
+    "Seven selected production source files matched the checkout; this does not assert whole-release equivalence",
+    "No production private prompts, API keys, password values, or personal records were inspected",
+    "SQL masking and context-to-thread findings were reproduced only with synthetic data or no-database test doubles",
+    "Official DSH was researched but not installed or exercised in this planning turn"
+  ]
+}

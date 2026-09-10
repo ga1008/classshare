@@ -15,6 +15,20 @@ TEACHER_PASSWORD_HINT = "密码至少 8 位。"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def lock_teacher_account_management(conn) -> None:
+    """Serialize account/role/membership invariants in the caller transaction.
+
+    Both Web and Agent use this lock. In particular, checking the last active
+    administrator and changing it must never race another administrator change.
+    PostgreSQL advisory locks are transaction scoped; there is no runtime DDL.
+    """
+    if isinstance(conn, sqlite3.Connection):
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute("SELECT pg_advisory_xact_lock(?)", (76125662298437715,))
+
+
 def _now_iso() -> str:
     return datetime.now().isoformat()
 
@@ -311,6 +325,7 @@ def upsert_teacher_membership(
     actor_teacher_id: int | None = None,
     source: str = "manual",
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
     if not target or not bool(target["is_active"]):
         raise ValueError("教师账号不存在或已停用。")
@@ -381,6 +396,7 @@ def set_teacher_primary_membership(
     teacher_id: int,
     membership_id: int,
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     row = conn.execute(
         """
         SELECT *
@@ -415,6 +431,7 @@ def deactivate_teacher_membership(
     membership_id: int,
     actor_teacher_id: int | None = None,
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     active_count = conn.execute(
         """
         SELECT COUNT(*) AS cnt
@@ -530,6 +547,7 @@ def create_teacher_account(
     college: str = "",
     department: str = "",
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     normalized_name, normalized_email = _validate_teacher_identity(name, email)
     validate_teacher_password(password)
     org_scope = build_org_scope(
@@ -644,6 +662,7 @@ def update_teacher_account(
     college: str = "",
     department: str = "",
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
     if not target:
         raise ValueError("教师账号不存在。")
@@ -719,6 +738,7 @@ def reset_teacher_password(
     teacher_id: int,
     password: str,
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
     if not target:
         raise ValueError("教师账号不存在。")
@@ -740,6 +760,7 @@ def reset_teacher_password(
 
 
 def grant_teacher_super_admin(conn: sqlite3.Connection, *, teacher_id: int) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
     if not target:
         raise ValueError("教师账号不存在。")
@@ -757,6 +778,7 @@ def revoke_teacher_super_admin(
     *,
     teacher_id: int,
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
     if not target:
         raise ValueError("教师账号不存在。")
@@ -777,6 +799,7 @@ def deactivate_teacher_account(
     teacher_id: int,
     actor_teacher_id: int,
 ) -> dict[str, Any]:
+    lock_teacher_account_management(conn)
     if int(teacher_id) == int(actor_teacher_id):
         raise ValueError("不能删除当前登录的教师账号。")
     target = _get_teacher_account_row(conn, teacher_id)

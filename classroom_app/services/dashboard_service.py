@@ -2972,7 +2972,7 @@ def _dashboard_current_semester_key(semester_rows: list[dict[str, Any]]) -> str:
     return ""
 
 
-def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
+def _load_teacher_offerings(conn, teacher_id: int, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     rows = conn.execute(
         f"""
         SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info,
@@ -2995,13 +2995,13 @@ def _load_teacher_offerings(conn, teacher_id: int) -> list[dict[str, Any]]:
                  o.first_class_date, o.weekly_schedule_json, o.created_at,
                  c.name, c.description, c.credits, c.department, cl.name, cl.description, cl.department
         ORDER BY COALESCE(cl.department, ''), cl.name, c.name, o.id DESC
-        """,
-        (teacher_id,),
+        """ + (" LIMIT ? OFFSET ?" if limit is not None else ""),
+        (teacher_id, max(1, min(int(limit), 51)), max(0, min(int(offset), 10000))) if limit is not None else (teacher_id,),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
+def _load_student_offerings(conn, student_id: int, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     rows = conn.execute(
         f"""
         SELECT o.id, o.class_id, o.course_id, o.teacher_id, o.semester, o.semester_id, o.schedule_info, o.created_at,
@@ -3014,8 +3014,8 @@ def _load_student_offerings(conn, student_id: int) -> list[dict[str, Any]]:
         JOIN teachers t ON t.id = o.teacher_id
         WHERE {student_offering_where_by_student_id(offering_alias="o", require_active=True)}
         ORDER BY o.id DESC
-        """,
-        (student_id,),
+        """ + (" LIMIT ? OFFSET ?" if limit is not None else ""),
+        (student_id, max(1, min(int(limit), 51)), max(0, min(int(offset), 10000))) if limit is not None else (student_id,),
     ).fetchall()
     return [dict(row) for row in rows]
 

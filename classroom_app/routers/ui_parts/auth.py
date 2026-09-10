@@ -182,6 +182,7 @@ def api_student_password_setup(
     next: Optional[str] = Form(default=None),
 ):
     """完成学生首次设密或重置后设密，并自动登录。"""
+    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     if password != confirm_password:
         raise HTTPException(status_code=400, detail="两次输入的密码不一致。")
 
@@ -201,6 +202,7 @@ def api_student_password_setup(
     user_agent = request.headers.get("user-agent", "")
 
     with get_db_connection() as conn:
+        prepare_credentials_change(conn, role="student", user_id=int(token_payload["student_id"]))
         student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
         if not student_row:
             raise HTTPException(status_code=404, detail="学生账号不存在。")
@@ -212,6 +214,7 @@ def api_student_password_setup(
         elif student_row["hashed_password"] and not student_row["password_reset_required"]:
             raise HTTPException(status_code=400, detail="该账号已设置密码，请直接使用密码登录。")
 
+        credentials_changed(conn, role="student", user_id=int(student_row["id"]), invalidate_sessions=True)
         conn.execute(
             """
             UPDATE students
@@ -307,6 +310,7 @@ def api_student_password_change(
     user: dict = Depends(get_current_student),
 ):
     """学生登录后主动修改密码。"""
+    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     if new_password != confirm_password:
         raise HTTPException(status_code=400, detail="两次输入的新密码不一致。")
     if current_password == new_password:
@@ -317,6 +321,7 @@ def api_student_password_change(
         raise HTTPException(status_code=400, detail=password_error)
 
     with get_db_connection() as conn:
+        prepare_credentials_change(conn, role="student", user_id=int(user["id"]))
         student_row = get_student_auth_record_by_pk(conn, int(user["id"]))
         if not student_row:
             raise HTTPException(status_code=404, detail="学生账号不存在。")
@@ -325,6 +330,7 @@ def api_student_password_change(
         if not student_row["hashed_password"] or not verify_password(current_password, student_row["hashed_password"]):
             raise HTTPException(status_code=400, detail="当前密码错误。")
 
+        credentials_changed(conn, role="student", user_id=int(student_row["id"]))
         conn.execute(
             """
             UPDATE students

@@ -193,12 +193,23 @@ def init_database():
             agent_ext_conn = get_db_connection()
             try:
                 ensure_agent_task_extension_schema(agent_ext_conn)
+                from .schema_agent_authority import ensure_agent_authority_schema
+                from .schema_agent_model import ensure_agent_model_schema
+                from .schema_agent_request_budget import ensure_agent_request_budget_schema
+                from .schema_agent_interactions import ensure_agent_interactions_schema
+                from .schema_agent_platform_requests import ensure_agent_platform_requests_schema
+
+                ensure_agent_authority_schema(agent_ext_conn)
+                ensure_agent_model_schema(agent_ext_conn)
+                ensure_agent_request_budget_schema(agent_ext_conn)
+                ensure_agent_interactions_schema(agent_ext_conn)
+                ensure_agent_platform_requests_schema(agent_ext_conn)
                 agent_ext_conn.commit()
             finally:
                 agent_ext_conn.close()
             print("[DB] PostgreSQL agent task extension columns ensured")
         except Exception as exc:
-            print(f"[DB] PostgreSQL agent task extension step skipped: {exc}")
+            raise RuntimeError("PostgreSQL Agent identity schema migration failed") from exc
         # The lesson-plan (教案) table follows the same runtime-managed,
         # engine-aware pattern (isolated connection so the validate path above
         # stays DDL-free) — owned content asset with org-scoped sharing.
@@ -301,6 +312,9 @@ def init_database():
     try:
         conn = get_db_connection()
         try:
+            from .schema_agent_ext import prepare_sqlite_agent_actor_schema
+
+            prepare_sqlite_agent_actor_schema(conn)
             ensure_foundation_schema(conn)
             ensure_assignment_schema(conn)
             ensure_ai_job_schema(conn, engine="sqlite")
@@ -319,6 +333,17 @@ def init_database():
             ensure_scheduler_schema(conn)
             ensure_gongwen_schema(conn)
             ensure_agent_task_extension_schema(conn)
+            from .schema_agent_authority import ensure_agent_authority_schema
+            from .schema_agent_model import ensure_agent_model_schema
+            from .schema_agent_request_budget import ensure_agent_request_budget_schema
+            from .schema_agent_interactions import ensure_agent_interactions_schema
+            from .schema_agent_platform_requests import ensure_agent_platform_requests_schema
+
+            ensure_agent_authority_schema(conn)
+            ensure_agent_model_schema(conn)
+            ensure_agent_request_budget_schema(conn)
+            ensure_agent_interactions_schema(conn)
+            ensure_agent_platform_requests_schema(conn)
             ensure_lesson_plan_schema(conn)
             ensure_assessment_plan_schema(conn)
             ensure_teacher_evaluation_schema(conn)

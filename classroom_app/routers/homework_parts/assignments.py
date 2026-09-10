@@ -11,13 +11,28 @@ from ...services.assessment_classification_service import (
     assessment_classification_impact,
     assessment_classification_impacts,
     enrich_assessment_classifications,
-    initialize_assignment_assessment_kind,
     normalize_assessment_kind,
     set_assignment_assessment_kind,
 )
+from ...services.assignment_creation_service import create_assignment_record
 
 
 router = APIRouter()
+
+
+@router.get("/classrooms/{class_offering_id}/assignments", response_class=JSONResponse)
+def get_classroom_assignment_list(class_offering_id: int, limit: int = 30, offset: int = 0,
+                                 user: dict = Depends(get_current_user)):
+    from ...services.assignment_read_service import list_classroom_assignments
+    with get_db_connection() as conn:
+        return list_classroom_assignments(conn, class_offering_id=class_offering_id, user=user, limit=limit, offset=offset)
+
+
+@router.get("/assignments/{assignment_id}/details", response_class=JSONResponse)
+def get_assignment_details_json(assignment_id: str, user: dict = Depends(get_current_user)):
+    from ...services.assignment_read_service import get_assignment_details
+    with get_db_connection() as conn:
+        return get_assignment_details(conn, assignment_id=assignment_id, user=user)
 
 
 def _classification_request(model, payload):
@@ -227,83 +242,15 @@ async def update_assignment_ordinary_grade_kind(
 async def create_assignment(course_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     """V4.0: 在指定课程下创建新作业"""
     data = await request.json()
-    try:
-        assessment_kind = normalize_assessment_kind(data.get("assessment_kind") if "assessment_kind" in data else "homework")
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    created_at = datetime.now().isoformat()
     class_offering_id = data.get('class_offering_id')
     allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data))
     learning_stage_key = _get_learning_stage_key(data, class_offering_id=class_offering_id)
-    try:
-        schedule_fields = build_assignment_schedule_fields(
-            data,
-            default_status="new",
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
-        actual_course_id = course_id
-        if class_offering_id:
-            offering = conn.execute(
-                "SELECT id, course_id FROM class_offerings WHERE id = ? AND teacher_id = ?",
-                (int(class_offering_id), user['id'])
-            ).fetchone()
-            if not offering:
-                raise HTTPException(404, "当前课堂不存在或您无权操作")
-            actual_course_id = int(offering['course_id'])
-        else:
-            owned_course = conn.execute(
-                "SELECT id FROM courses WHERE id = ? AND created_by_teacher_id = ?",
-                (course_id, user['id'])
-            ).fetchone()
-            if not owned_course:
-                raise HTTPException(404, "课程不存在或您无权操作")
-
-        new_id = insert_and_get_id(
-            conn,
-            """
-            INSERT INTO assignments (
-                course_id, title, status, requirements_md, rubric_md, grading_mode,
-                class_offering_id, created_at, allowed_file_types_json,
-                availability_mode, starts_at, due_at, duration_minutes, auto_close, closed_at,
-                late_submission_enabled, late_submission_until, late_penalty_strategy,
-                late_penalty_interval_hours, late_penalty_points, late_penalty_min_score, late_score_cap,
-                learning_stage_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                actual_course_id,
-                data['title'],
-                schedule_fields["status"],
-                data.get('requirements_md', ''),
-                data.get('rubric_md', ''),
-                data.get('grading_mode', 'manual'),
-                int(class_offering_id) if class_offering_id else None,
-                created_at,
-                allowed_file_types_json,
-                schedule_fields["availability_mode"],
-                schedule_fields["starts_at"],
-                schedule_fields["due_at"],
-                schedule_fields["duration_minutes"],
-                schedule_fields["auto_close"],
-                schedule_fields["closed_at"],
-                schedule_fields["late_submission_enabled"],
-                schedule_fields["late_submission_until"],
-                schedule_fields["late_penalty_strategy"],
-                schedule_fields["late_penalty_interval_hours"],
-                schedule_fields["late_penalty_points"],
-                schedule_fields["late_penalty_min_score"],
-                schedule_fields["late_score_cap"],
-                learning_stage_key,
-            )
-        )
-        classification = initialize_assignment_assessment_kind(
-            conn, new_id, assessment_kind=assessment_kind, teacher_id=int(user["id"]),
-            source="teacher_create" if "assessment_kind" in data else "ordinary_create_default",
-        )
+        created = create_assignment_record(conn, teacher_id=int(user["id"]), course_id=course_id, data=data,
+                                           allowed_file_types_json=allowed_file_types_json, learning_stage_key=learning_stage_key)
+        new_id, actual_course_id = created["id"], created["course_id"]
+        schedule_fields, classification = created["schedule_fields"], created["classification"]
         if schedule_fields["status"] == "published":
             try:
                 create_assignment_published_notifications(
@@ -341,122 +288,14 @@ async def create_assignment(course_id: int, request: Request, user: dict = Depen
     response_model_exclude_unset=True,
 )
 async def update_assignment(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
+    from ...services.assignment_management_service import update_assignment_record
+
     data = await request.json()
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
-        assignment = conn.execute(
-            """SELECT a.*,
-                      c.created_by_teacher_id,
-                      o.teacher_id AS offering_teacher_id
-               FROM assignments a
-               JOIN courses c ON a.course_id = c.id
-               LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-               WHERE a.id = ?""",
-            (assignment_id,)
-        ).fetchone()
-        if not assignment:
-            raise HTTPException(404, "作业不存在")
-        if not _teacher_can_access_assignment(conn, dict(assignment), int(user["id"])):
-            raise HTTPException(403, "无权修改该作业")
-        if is_personal_stage_exam_assignment(conn, assignment_id):
-            _hide_personal_stage_asset()
-        assignment_dict = dict(assignment)
-        assignment_dict = refresh_assignment_runtime_status(conn, assignment_dict)
-        classification = assessment_kind_info(assignment_dict)
-        if "assessment_kind" in data:
-            classification = set_assignment_assessment_kind(
-                conn, assignment_dict, assessment_kind=data["assessment_kind"],
-                expected_version=data.get("expected_version"), teacher_id=int(user["id"]),
-                reason=data.get("classification_reason", ""),
-            )
-
-        previous_status = str(assignment_dict['status'] or '')
-        allowed_file_types_json = encode_allowed_file_types_json(_get_allowed_file_types(data, assignment_dict))
-        requirements_md = data.get('requirements_md', assignment_dict.get('requirements_md')) or ''
-        rubric_md = data.get('rubric_md', assignment_dict.get('rubric_md')) or ''
-        grading_inputs_changed = (
-            requirements_md != (assignment_dict.get('requirements_md') or '')
-            or rubric_md != (assignment_dict.get('rubric_md') or '')
-            or allowed_file_types_json != encode_allowed_file_types_json(_get_allowed_file_types({}, assignment_dict))
-        )
-        if "learning_stage_key" in data or "stage_key" in data:
-            learning_stage_key = _get_learning_stage_key(
-                data,
-                class_offering_id=assignment_dict.get("class_offering_id"),
-            )
-        else:
-            learning_stage_key = assignment_dict.get("learning_stage_key")
-        try:
-            schedule_fields = build_assignment_schedule_fields(
-                data,
-                existing=assignment_dict,
-                default_status=assignment_dict["status"],
-            )
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        conn.execute(
-            """
-            UPDATE assignments
-            SET title = ?, requirements_md = ?, rubric_md = ?, grading_mode = ?,
-                status = ?, allowed_file_types_json = ?,
-                availability_mode = ?, starts_at = ?, due_at = ?, duration_minutes = ?, auto_close = ?, closed_at = ?,
-                late_submission_enabled = ?, late_submission_until = ?, late_penalty_strategy = ?,
-                late_penalty_interval_hours = ?, late_penalty_points = ?, late_penalty_min_score = ?, late_score_cap = ?,
-                learning_stage_key = ?
-            WHERE id = ?
-            """,
-            (
-                data['title'],
-                requirements_md,
-                rubric_md,
-                data.get('grading_mode', assignment_dict['grading_mode']),
-                schedule_fields["status"],
-                allowed_file_types_json,
-                schedule_fields["availability_mode"],
-                schedule_fields["starts_at"],
-                schedule_fields["due_at"],
-                schedule_fields["duration_minutes"],
-                schedule_fields["auto_close"],
-                schedule_fields["closed_at"],
-                schedule_fields["late_submission_enabled"],
-                schedule_fields["late_submission_until"],
-                schedule_fields["late_penalty_strategy"],
-                schedule_fields["late_penalty_interval_hours"],
-                schedule_fields["late_penalty_points"],
-                schedule_fields["late_penalty_min_score"],
-                schedule_fields["late_score_cap"],
-                learning_stage_key,
-                assignment_id,
-            )
-        )
-        if grading_inputs_changed:
-            from ...services.ai_grading_service import invalidate_assignment_grading_inputs
-            invalidate_assignment_grading_inputs(conn, [assignment_id])
-        if previous_status != 'published' and schedule_fields["status"] == 'published':
-            try:
-                create_assignment_published_notifications(
-                    conn,
-                    assignment_id,
-                    send_email_notification=_wants_assignment_email_notification(data),
-                )
-            except Exception as exc:
-                print(f"[MESSAGE_CENTER] assignment publish notify failed: {exc}")
-        sync_assignment_due_reminders(
-            conn,
-            assignment_id,
-            status=schedule_fields["status"],
-            due_at=schedule_fields["due_at"],
-            class_offering_id=assignment_dict.get("class_offering_id"),
-            title=str(data.get('title') or ''),
-        )
+        result = update_assignment_record(conn, assignment_id=assignment_id, teacher_id=int(user["id"]), data=data)
         conn.commit()
-    return {
-        "status": "success",
-        "updated_assignment_id": assignment_id,
-        **{key: value for key, value in classification.items() if key not in {"assignment_id", "changed"}},
-        "assignment_status": schedule_fields["status"],
-        "due_at": schedule_fields["due_at"],
-    }
+    return result
 
 
 @router.delete(
@@ -559,6 +398,10 @@ async def get_assignment_time_state(request: Request, user: dict = Depends(get_c
 async def get_course_assignment_stats(course_id: int, user: dict = Depends(get_current_teacher),
                                       assessment_kind: str | None = None, class_offering_id: int | None = None,
                                       semester_id: int | None = None):
+    return await asyncio.to_thread(_read_course_assignment_stats, course_id, user, assessment_kind, class_offering_id, semester_id)
+
+
+def _read_course_assignment_stats(course_id, user, assessment_kind=None, class_offering_id=None, semester_id=None):
     """课程维度统计：汇总某课程下所有作业的提交率、批改进度和平均分。"""
     if assessment_kind is not None:
         try:
@@ -641,7 +484,6 @@ async def get_course_assignment_stats(course_id: int, user: dict = Depends(get_c
         for group in grouped.values():
             summary = summarize(group.pop("facts"))
             categories.append({**group, **summary})
-        conn.commit()
 
     return {"status": "success", "course_id": course_id, "assignments": stats_list, "categories": categories,
             "score_scale": 100, "score_summary_label": "已评分任务均分",

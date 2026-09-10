@@ -611,6 +611,8 @@ app.include_router(homework.router)
 app.include_router(ai.router)
 app.include_router(agent_tasks.router)
 app.include_router(agent_bridge.router)
+from .routers import agent_model_gateway
+app.include_router(agent_model_gateway.router)
 app.include_router(material_hub.router)
 app.include_router(lessondoc_router.router)
 app.include_router(lessondoc_editor_router.router)

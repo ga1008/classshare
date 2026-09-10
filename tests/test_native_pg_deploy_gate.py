@@ -10,6 +10,7 @@ from pathlib import Path
 from tools.deploy.validate_native_pg_rehearsal import (
     REPORT_CONTRACT, REQUIRED_MIGRATION_FILES, file_hash, migration_source_hashes, validate_report,
 )
+from tools.agent_authority_migration_rehearsal import prove as prove_agent_authority
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -41,6 +42,10 @@ class NativePostgresDeployGateTests(unittest.TestCase):
                           "production_tables_modified": False, "app_or_workers_started": False},
             "migration_source_sha256": migration_source_hashes(self.root),
         }
+        empty_agent_proof = prove_agent_authority({"tables": {}, "authority_tables": {}}, {"tables": {}, "authority_tables": {}})
+        for phase in ("incremental", "full_startup"):
+            self.report[phase]["agent_authority_migration_per_pass"] = [empty_agent_proof, copy.deepcopy(empty_agent_proof)]
+            self.report[phase]["unexpected_old_differences_per_pass"] = [[], []]
 
     def tearDown(self):
         self.temp.cleanup()
@@ -107,6 +112,51 @@ class NativePostgresDeployGateTests(unittest.TestCase):
         changed = copy.deepcopy(self.report)
         changed["incremental"]["old_differences_per_pass"][0].append("sequence:old_seq")
         self.assertEqual("failed", self.validate(changed)["status"])
+
+    def test_agent_proof_is_required_even_if_old_projection_has_no_differences(self):
+        self.report["incremental"].pop("agent_authority_migration_per_pass")
+        self.assertIn("incremental_differences_or_missing_checks", self.validate()["blockers"])
+
+    def test_agent_nullable_pk_and_row_changes_require_two_identical_exact_proofs(self):
+        from tests.test_agent_authority_migration_rehearsal import migration_fixture
+        before, after = migration_fixture()
+        agent = prove_agent_authority(before, after)
+        for phase in ("incremental", "full_startup"):
+            self.report[phase]["agent_authority_migration_per_pass"] = [agent, copy.deepcopy(agent)]
+            self.report[phase]["old_differences_per_pass"] = [agent["allowed_differences"], list(agent["allowed_differences"])]
+        self.report["full_startup"]["all_old_fields_and_sequences_unchanged"] = False
+        self.report["full_startup"]["all_old_fields_except_verified_migrations_and_sequences_unchanged"] = True
+        self.assertEqual("ok", self.validate()["status"])
+        changed = copy.deepcopy(self.report)
+        changed["incremental"]["agent_authority_migration_per_pass"][1] = prove_agent_authority(after, after)
+        self.assertEqual("failed", self.validate(changed)["status"])
+        changed = copy.deepcopy(self.report)
+        for item in changed["incremental"]["agent_authority_migration_per_pass"]:
+            item["allowed_differences"].append("sequence:agent_tasks_id_seq")
+        changed["incremental"]["old_differences_per_pass"][0].append("sequence:agent_tasks_id_seq")
+        changed["incremental"]["old_differences_per_pass"][1].append("sequence:agent_tasks_id_seq")
+        self.assertEqual("failed", self.validate(changed)["status"])
+
+    def test_agent_and_signature_proofs_combine_without_expanding_whitelists(self):
+        from tests.test_agent_authority_migration_rehearsal import migration_fixture
+        from tests.test_signature_visibility_rehearsal import SignatureVisibilityRehearsalTests
+        from tools.signature_visibility_rehearsal import prove as prove_signature
+        before, after = migration_fixture()
+        agent = prove_agent_authority(before, after)
+        fixture = SignatureVisibilityRehearsalTests()
+        fixture.setUp()
+        signature = prove_signature(fixture.before, fixture.after)
+        order = lambda item: ({"table": 0, "schema": 1}.get(item.split(":", 1)[0], 2), item)
+        allowed = sorted(set(agent["allowed_differences"] + signature["allowed_differences"]), key=order)
+        for phase in ("incremental", "full_startup"):
+            self.report[phase]["agent_authority_migration_per_pass"] = [agent, copy.deepcopy(agent)]
+            self.report[phase]["signature_visibility_migration_per_pass"] = [signature, copy.deepcopy(signature)]
+            self.report[phase]["old_differences_per_pass"] = [allowed, list(allowed)]
+        self.report["full_startup"]["all_old_fields_and_sequences_unchanged"] = False
+        self.report["full_startup"]["all_old_fields_except_verified_migrations_and_sequences_unchanged"] = True
+        self.assertEqual("ok", self.validate()["status"])
+        self.report["full_startup"]["old_differences_per_pass"][1].append("table:submissions")
+        self.assertEqual("failed", self.validate()["status"])
 
 
 @unittest.skipUnless(os.name == "nt" and (REPO / "deployment/deploy_remote.ps1").is_file(),

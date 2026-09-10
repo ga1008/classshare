@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -63,6 +63,35 @@ IDENTITY_PATTERN = re.compile(r"^(student|teacher|assistant):\d+$")
 
 def _now_iso() -> str:
     return datetime.now().isoformat()
+
+
+class BlogRevisionConflict(ValueError):
+    """The caller must reload/reconcile its edit; never silently overwrite."""
+
+
+def _post_for_mutation(conn, user: dict, post_id: int, expected_updated_at: Optional[str]) -> dict:
+    # All editing routes share this lock, including old Web callers without a
+    # revision. It also orders attachment metadata and post deletion on Pg.
+    suffix = " FOR UPDATE" if get_configured_db_engine() == "postgres" else ""
+    row = conn.execute("SELECT * FROM blog_posts WHERE id = ?" + suffix, (int(post_id),)).fetchone()
+    if row is None:
+        raise ValueError("帖子不存在")
+    post = dict(row)
+    if post["author_identity"] != _ensure_identity(user)[2]:
+        raise PermissionError("没有权限修改此帖子")
+    if expected_updated_at is not None and (not isinstance(expected_updated_at, str) or expected_updated_at != str(post.get("updated_at") or "")):
+        raise BlogRevisionConflict("帖子已被更新，请重新读取并核对后再操作；当前输入不会覆盖新内容。")
+    return post
+
+
+def _next_post_revision(previous: str) -> str:
+    now = _now_iso()
+    if now <= str(previous or ""):
+        try:
+            return (datetime.fromisoformat(previous) + timedelta(microseconds=1)).isoformat()
+        except (TypeError, ValueError):
+            pass
+    return now
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -871,19 +900,16 @@ def update_post(
     allow_comments: Optional[bool] = None,
     tags: Optional[list[str]] = None,
     status: Optional[str] = None,
+    expected_updated_at: Optional[str] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
-    if post["author_identity"] != identity:
-        raise PermissionError("没有权限编辑此帖子")
+    post = _post_for_mutation(conn, user, post_id, expected_updated_at)
 
     updates: list[str] = []
     params: list[Any] = []
     next_content = str(post.get("content_md") or "")
     attachments_need_sync = False
-    now = _now_iso()
+    now = _next_post_revision(str(post.get("updated_at") or ""))
 
     if title is not None:
         normalized_title = str(title or "").strip()[:MAX_TITLE_LENGTH]
@@ -997,16 +1023,12 @@ def update_post(
             ),
         )
 
-    return {"id": post_id, "updated": True, "edited_at": now}
+    return {"id": post_id, "updated": True, "edited_at": now, "updated_at": now}
 
 
-def delete_post(conn, user: dict, post_id: int) -> dict:
+def delete_post(conn, user: dict, post_id: int, *, expected_updated_at: Optional[str] = None) -> dict:
     user_pk, role, identity = _ensure_identity(user)
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
-    if post["author_identity"] != identity:
-        raise PermissionError("没有权限删除此帖子")
+    _post_for_mutation(conn, user, post_id, expected_updated_at)
 
     conn.execute("DELETE FROM blog_likes WHERE target_type = ? AND target_id = ?", (TARGET_TYPE_POST, post_id))
     conn.execute(

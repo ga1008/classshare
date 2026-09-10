@@ -43,7 +43,7 @@ async def report_card_page(request: Request, user: dict = Depends(get_current_us
 
 
 @router.get("/api/report-card", response_class=JSONResponse)
-async def api_report_card(user: dict = Depends(get_current_user),
+def api_report_card(user: dict = Depends(get_current_user),
                           assessment_kind: Literal["homework", "midterm", "final"] | None = None,
                           class_offering_id: int | None = None):
     _ensure_student(user)

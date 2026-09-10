@@ -2723,6 +2723,21 @@ def build_cultivation_rank_notice(
     }
 
 
+def read_student_learning_snapshot(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
+    """A factual cached view; dirty/missing data is never replaced with a zero score."""
+    snapshot = _load_learning_progress_snapshot(conn, class_offering_id, student_id)
+    metrics = json_loads(snapshot.get("metrics_json"), {}) if snapshot else {}
+    if not snapshot or safe_int(snapshot.get("dirty")) or not isinstance(metrics, dict) or not isinstance(metrics.get("components"), dict):
+        return {"status": "success", "snapshot_status": "refresh_required", "progress": None,
+                "message": "学习进度快照等待正常后台刷新；当前没有可确认的新结果。"}
+    state = _build_learning_state_from_metrics(conn, class_offering_id, student_id, metrics,
+                                               persist_stage_status=False, timestamp=snapshot.get("calculated_at"))
+    state["recent_score_events"] = list_cultivation_score_events(conn, class_offering_id, student_id, limit=6)
+    state["growth_trend"] = build_student_cultivation_growth_trend(conn, class_offering_id, student_id, weeks=8)
+    return {"status": "success", "snapshot_status": "ready", "progress": state,
+            "calculated_at": snapshot.get("calculated_at"), "peer_rank_status": "not_recalculated_in_read_only_view"}
+
+
 def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
     state = get_student_learning_state(conn, int(class_offering_id), int(student_id))
     state["class_position"] = build_student_class_position(

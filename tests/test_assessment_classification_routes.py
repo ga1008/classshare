@@ -129,7 +129,7 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
 
     def test_ordinary_creation_defaults_only_missing_kind_to_homework_and_audits(self):
         self._add_authoring_columns()
-        with patch.object(assignments, "close_overdue_assignments"), patch.object(assignments, "sync_assignment_due_reminders"), patch.object(assignments, "_build_assignment_storage_dir", return_value=MagicMock()):
+        with patch.object(assignments, "close_overdue_assignments"), patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"), patch.object(assignments, "_build_assignment_storage_dir", return_value=MagicMock()):
             for supplied, expected in (({}, "homework"), ({"assessment_kind": "final"}, "final")):
                 result = asyncio.run(assignments.create_assignment(10, JsonRequest({"title": "test", "class_offering_id": 100, **supplied}), user={"id": 7}))
                 row = self.conn.execute("SELECT * FROM assignments WHERE id = ?", (result["new_assignment_id"],)).fetchone()
@@ -214,8 +214,8 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         self._prepare_running_attempt()
         original_answers = self.conn.execute("SELECT score, feedback_md, answers_json FROM submissions WHERE id=11").fetchone()
         with patch.object(assignments, "close_overdue_assignments"), \
-             patch.object(assignments, "refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
-             patch.object(assignments, "sync_assignment_due_reminders"):
+             patch("classroom_app.services.assignment_management_service.refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
+             patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"):
             for payload in ({"title": "改标题"}, {"title": "改标题", "assessment_kind": "midterm", "expected_version": 0}):
                 asyncio.run(assignments.update_assignment("1", JsonRequest(payload), user={"id": 7}))
                 row = self.conn.execute("SELECT * FROM submissions WHERE id=11").fetchone()
@@ -234,8 +234,8 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         self.conn.execute("UPDATE submissions SET score=NULL WHERE id=11")
         self.conn.commit()
         with patch.object(assignments, "close_overdue_assignments"), \
-             patch.object(assignments, "refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
-             patch.object(assignments, "sync_assignment_due_reminders"):
+             patch("classroom_app.services.assignment_management_service.refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
+             patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"):
             asyncio.run(assignments.update_assignment("1", JsonRequest({"title": "同标题", "allowed_file_types": ["pdf"]}), user={"id": 7}))
         row = self.conn.execute("SELECT * FROM submissions WHERE id=11").fetchone()
         self.assertEqual("grading_review", row["status"])

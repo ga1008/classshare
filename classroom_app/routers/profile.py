@@ -462,6 +462,7 @@ def api_profile_avatar(
 
 @router.put("/api/profile/password", response_class=JSONResponse)
 async def api_change_profile_password(request: Request, user: dict = Depends(get_current_user)):
+    from ..services.account_credentials_service import credentials_changed, prepare_credentials_change
     data = await request.json()
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="密码格式不正确。")
@@ -479,6 +480,7 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
     now_value = datetime.now().isoformat()
 
     with get_db_connection() as conn:
+        prepare_credentials_change(conn, role=role, user_id=user_id)
         if role == "student":
             password_error = validate_student_password(new_password)
             if password_error:
@@ -490,6 +492,7 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
                 raise HTTPException(status_code=400, detail="当前账号处于重置流程，请重新登录后设置密码。")
             if not student_row["hashed_password"] or not verify_password(current_password, student_row["hashed_password"]):
                 raise HTTPException(status_code=400, detail="当前密码错误。")
+            credentials_changed(conn, role="student", user_id=user_id)
             conn.execute(
                 """
                 UPDATE students
@@ -511,6 +514,7 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
                 raise HTTPException(status_code=404, detail="教师账号不存在。")
             if not verify_password(current_password, teacher_row["hashed_password"]):
                 raise HTTPException(status_code=400, detail="当前密码错误。")
+            credentials_changed(conn, role="teacher", user_id=user_id)
             conn.execute(
                 """
                 UPDATE teachers

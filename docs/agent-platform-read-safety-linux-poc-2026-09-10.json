@@ -1,0 +1,19 @@
+{
+  "kind": "exact_source_linux_reader_component_probe",
+  "checks": {
+    "regular_snapshot": true,
+    "symlink_denied": true,
+    "directory_redirect_denied": true,
+    "oversize_denied": true,
+    "post_open_swap_keeps_authorized_inode": true,
+    "fifo_without_writer_denied_without_blocking": true
+  },
+  "source_sha256": {
+    "agent_platform_multipart_service.py": "d2f467acb8e0571f4324a73f95106d038f783559bf074624887d945f59767610",
+    "agent_bridge_service.py": "4e5b732c3e5a5d16e19525b9caa382819266dfabd2b34102d627ad21238971a3"
+  },
+  "production_data_accessed": false,
+  "paid_model_calls": 0,
+  "full_authenticated_http_integration": false,
+  "passed": true
+}

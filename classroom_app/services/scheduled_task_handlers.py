@@ -512,6 +512,13 @@ from .agent_subscription_service import (  # noqa: E402
 
 register_task_handler(AGENT_TASK_DISPATCH_KIND, handle_agent_task_dispatch)
 
+from .blog_effects_service import BLOG_MENTION_TASK_KIND, handle_blog_mention_reply
+
+register_task_handler(BLOG_MENTION_TASK_KIND, handle_blog_mention_reply)
+from .session_material_generation_jobs import SESSION_GENERATION_TASK_KIND, handle_session_material_generation
+
+register_task_handler(SESSION_GENERATION_TASK_KIND, handle_session_material_generation)
+
 # 职业发展网络 — 按专业生成网络 + 按学生定制推荐/必备知识（深度思考型 AI，异步）。
 # 导入即注册两个 handler（career_major_network_generate / career_personalize_generate）。
 from . import career_path_service  # noqa: E402,F401
