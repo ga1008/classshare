@@ -1,0 +1,97 @@
+{
+  "recorded_at": "2026-09-10T13:45:46.692391+00:00",
+  "baseline": "476fc7bd",
+  "tests_run": 7,
+  "passed": true,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "duration_seconds": 1.835,
+  "server_version": "16.14",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 55439,
+    "cluster": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-pg-rehearsal\\agent-20260910-172238-3bac5373",
+    "exclusive_database": "lanshare_assessment_rehearsal_agent_2a87e246b5ca",
+    "database_removed": true
+  },
+  "sources_sha256": {
+    "tests/test_teaching_lifecycle_postgres.py": "42b792323302e824bc7a9d9ec636c94f1314dbb9e128f4e5eaf923830f6e2f03",
+    "classroom_app/services/teaching_lifecycle_service.py": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b",
+    "classroom_app/services/assignment_creation_service.py": "6f0244d61ee54fd8f51bf319e52b097f7a5d6c01b0ec6079fa0481f7df935803",
+    "classroom_app/services/lesson_plan_service.py": "99adacf6d5710e30bd00f9e9134778cc8404f29b805d3aebb79a62cbf6dc93aa",
+    "classroom_app/services/assessment_classification_service.py": "d8a2d948f7c49467315af77b5ee3468da8f46c8aecd3ab0b89df2d27b39acfc9",
+    "classroom_app/services/resource_access_service.py": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3",
+    "classroom_app/db/schema_foundation.py": "25ed839d06c9830aa9c199e893c0cbf6e4e82713f0d065f29d586101c521e347",
+    "classroom_app/db/schema_assignments.py": "541c96d2a179f5934d87bbac8acd757a3252aee785af179357a1dcc6459e1c6b",
+    "classroom_app/db/schema_lesson_plans.py": "4982277598e8a4ea8296c7aadff9a6cb0a99b4c2f860266929271588c769d556",
+    "classroom_app/db/postgres.py": "a0b078f00cfd7f3d2baaed684b92668b707566a40e9bf26f5df1e437ead7446e",
+    "classroom_app/db/connection.py": "d2f55c70f2337c10cee8d38def3b8251bcfe51801a512ac3df413372d7cdb212"
+  },
+  "native_observations": [
+    {
+      "test": "test_course_delete_committed_first_rejects_waiting_document",
+      "holder_pid": 34848,
+      "blocked_pids": [
+        29464
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_course_delete_committed_first_rejects_waiting_assignment",
+      "holder_pid": 9540,
+      "blocked_pids": [
+        36832
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_real_document_committed_first_invalidates_waiting_delete",
+      "holder_pid": 37664,
+      "blocked_pids": [
+        29868
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_real_assignment_committed_first_invalidates_waiting_delete",
+      "holder_pid": 18020,
+      "blocked_pids": [
+        7852
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_document_rechecks_offering_after_course_lock_wait",
+      "holder_pid": 28928,
+      "blocked_pids": [
+        33092
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_assignment_rechecks_offering_after_course_lock_wait",
+      "holder_pid": 24660,
+      "blocked_pids": [
+        33048
+      ],
+      "proof": "pg_blocking_pids"
+    },
+    {
+      "test": "test_metadata_relink_holding_document_exits_nowait_without_deadlock",
+      "proof": "real NOWAIT conflict returns HTTP409; domain row unchanged"
+    }
+  ],
+  "blocker_resolution": "The specific missing PostgreSQL teaching parent/context lock competition check is satisfied by these seven native tests.",
+  "verified": [
+    "Course delete commits first: waiting real document and assignment creation reject with 404, no orphan rows",
+    "Real document or assignment creation commits first: waiting real delete rechecks live references and rejects 409",
+    "Offering disappears while writer waits on course: both actual create services recheck and reject 409",
+    "Document row already held: metadata relink hits NOWAIT course conflict, returns 409 and preserves previous linkage"
+  ],
+  "limitations": [
+    "Narrow native domain service and SQL proof, not HTTP/DSH end-to-end or production deployment",
+    "Offering removal race uses the same course/offering locked source deletion boundary, not the complete merge migration",
+    "Other auxiliary fixture tables are minimal; this is not a full production schema rehearsal"
+  ]
+}

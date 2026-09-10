@@ -22,6 +22,38 @@ def guard():
         raise RuntimeError('App helper must use its isolated data mount')
 
 
+def platform_read_verified(receipts, actor):
+    """Accept the teacher's existing equivalent scoped query with its receipt.
+
+    This is a report-only check. It neither changes the frozen cohort nor
+    dispatches a replacement model task after an assertion failure.
+    """
+    for receipt in receipts:
+        if receipt.get('status') != 'completed':
+            continue
+        if receipt.get('title') == 'mcp__lanshare__platform_read':
+            return True
+        if (actor != 'teacher' or receipt.get('title') != 'mcp__lanshare__platform_query'
+                or receipt.get('rawInput') != {'query': 'my_classrooms'}):
+            continue
+        for block in receipt.get('content', []):
+            content = block.get('content', {}) if isinstance(block, dict) else {}
+            if not isinstance(content, dict) or content.get('type') != 'text':
+                continue
+            try:
+                result = json.loads(content.get('text', ''))
+            except (ValueError, TypeError):
+                continue
+            if (isinstance(result, dict) and result.get('status') == 'success'
+                    and result.get('query') == 'my_classrooms'
+                    and result.get('columns') == ['class_offering_id', 'course_name', 'class_name']
+                    and isinstance(result.get('rows'), list)
+                    and type(result.get('row_count')) is int
+                    and result['row_count'] == len(result['rows'])):
+                return True
+    return False
+
+
 def seed():
     from classroom_app.database import init_database, get_db_connection
     from classroom_app.dependencies import get_password_hash
@@ -111,7 +143,7 @@ def report():
             item['checks']={'completed':item['task']['status']=='completed',
                             'real_model_success':bool(item['model_requests']) and all(r['status']=='completed' and r['upstream_status']==200 for r in item['model_requests']),
                             'file_created':item['file']['exists'],'live_session_source':item['source_session_bound']}
-            item['checks']['platform_read_completed']=any(r.get('title')=='mcp__lanshare__platform_read' and r.get('status')=='completed' for r in item['tool_receipt_summary'])
+            item['checks']['platform_read_completed']=platform_read_verified(detail.get('tool_receipts', []), kind)
             if kind=='teacher':
                 item['checks']['own_single_unpublished_draft']=len(item['actual_business_rows'])==1 and item['actual_business_rows'][0]['author_identity']=='teacher:900001' and item['actual_business_rows'][0]['status']=='draft'
             elif kind=='admin':

@@ -1,0 +1,29 @@
+{
+  "frozen_source_commit": "476fc7bdb3a0a4758a97e33bda496b6bcc812594",
+  "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+  "cohort": "release-c3",
+  "task_id": 1,
+  "actor": "teacher:900001",
+  "origin": "Persisted authenticated task API result, extracted without modification after the frozen run.",
+  "frozen_task_response_sha256": "d806bd844e29bc731eeba0dc74c5ed71e44f90802df97dcedfb95686fd6c661d",
+  "tool_receipt": {
+    "tool_call_id": "call_01_xHZTeiEkvZgzLbZoB0tY7493",
+    "source": "acp",
+    "status": "completed",
+    "title": "mcp__lanshare__platform_query",
+    "kind": "other",
+    "rawInput": {
+      "query": "my_classrooms"
+    },
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "{\"status\": \"success\", \"query\": \"my_classrooms\", \"columns\": [\"class_offering_id\", \"course_name\", \"class_name\"], \"rows\": [], \"row_count\": 0, \"truncated\": false, \"max_rows\": 200}"
+        }
+      }
+    ],
+    "prompt_number": 1
+  }
+}

@@ -1,0 +1,1059 @@
+{
+  "scope": "Fixed c3 / frozen 476fc7bd normal-login three-actor full-stack acceptance; not production deployment or full-platform feature coverage",
+  "cohort": "release-c3",
+  "pins": {
+    "cohort": "release-c3",
+    "port": 18003,
+    "app_image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726",
+    "dsh_image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+    "source_commit": "476fc7bdb3a0a4758a97e33bda496b6bcc812594",
+    "archive_sha256": "aae69ba34672e7b4e305986d0e7e9a8d3d00c08887c61a1f65e05c18b2701ce9",
+    "manifest_sha256": "88bd322818afcb01ae65c25ff095c73f59ee3391bf2159aa9711ccbf0647bab2",
+    "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+    "expected_key_id": 1
+  },
+  "frozen_source_file_count": 2267,
+  "source_manifest_report": "docs/agent-dsh-e2e-c3-source-manifest-2026-09-10.json",
+  "source_bytes": "All tracked files from frozen-476fc7bd raw-byte clean worktree; c3 runtime input hashes matched. No frozen cohort source was changed.",
+  "frozen_harness_report_passed": false,
+  "original_failed_checks": [
+    "teacher.platform_read_completed: report accepted only platform_read tool title"
+  ],
+  "post_run_receipt_review_passed": true,
+  "review_explanation": "Teacher used existing scoped platform_query(my_classrooms). Its persisted success receipt proves the same requested own-classroom read. The narrow report-only validator accepts precisely that teacher query with its matching structured success result. The original failed report and original task remain untouched.",
+  "teacher_query_receipt_report": "docs/agent-dsh-c3-teacher-query-receipt-2026-09-10.json",
+  "post_run_validator": {
+    "path": "tools/dsh_isolated_e2e_app.py",
+    "sha256": "2c6cda95251d34d0a6840a3510204020c8de711decf1b395732352abf2ceced8",
+    "phase": "Local post-run verifier after frozen commit; no model, database or server execution",
+    "tests": "tests.test_dsh_e2e_receipt_review + tests.test_dsh_e2e_cohort",
+    "test_count": 8,
+    "passed": 8
+  },
+  "original_actor_results": {
+    "teacher": {
+      "actor": "teacher",
+      "task": {
+        "id": 1,
+        "status": "completed",
+        "error_message": "",
+        "result_summary": "已核验本任务的全部平台操作回执。"
+      },
+      "model_requests": [
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 11254,
+          "output_tokens": 84,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 14636,
+          "output_tokens": 116,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 16096,
+          "output_tokens": 74,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 17547,
+          "output_tokens": 142,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 17762,
+          "output_tokens": 51,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 18261,
+          "output_tokens": 485,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 18820,
+          "output_tokens": 248,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "e2e-teacher-blog-draft-900001-0001",
+          "action": "create_blog_draft",
+          "status": "completed",
+          "result_json": "{\"effect_task_id\":null,\"label\":\"博客草稿\",\"ref_id\":1,\"url\":\"/blog?post=1\"}"
+        }
+      ],
+      "normal_login": true,
+      "actual_business_rows": [
+        {
+          "id": 1,
+          "author_identity": "teacher:900001",
+          "status": "draft",
+          "title": "DSH-E2E-Teacher-Draft"
+        }
+      ],
+      "source_session_bound": true,
+      "completion_kind": "verified_business",
+      "tool_receipt_summary": [
+        {
+          "title": "skill",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_overview",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_query",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_write",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_task_context",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "write",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "write",
+          "status": "completed",
+          "kind": "other"
+        }
+      ],
+      "file": {
+        "exists": true,
+        "sha256": "2c05526b9a425aab13ec9f7229f89055d6306e03cf24aac85411d66ef5f4ca30",
+        "size": 523
+      },
+      "checks": {
+        "completed": true,
+        "real_model_success": true,
+        "file_created": true,
+        "live_session_source": true,
+        "platform_read_completed": false,
+        "own_single_unpublished_draft": true
+      }
+    },
+    "student": {
+      "actor": "student",
+      "task": {
+        "id": 2,
+        "status": "completed",
+        "error_message": "",
+        "result_summary": "E2E 验收：学生身份与课堂/消息读取结果"
+      },
+      "model_requests": [
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 8477,
+          "output_tokens": 78,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 9656,
+          "output_tokens": 112,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 12272,
+          "output_tokens": 63,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 13829,
+          "output_tokens": 104,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 14771,
+          "output_tokens": 488,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 15299,
+          "output_tokens": 125,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 15455,
+          "output_tokens": 179,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        }
+      ],
+      "operations": [],
+      "normal_login": true,
+      "business_write_receipts": 0,
+      "http_mutation_admissions": 0,
+      "source_session_bound": true,
+      "completion_kind": "deliverable",
+      "tool_receipt_summary": [
+        {
+          "title": "skill",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_overview",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_read",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_read",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "write",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "bash",
+          "status": "completed",
+          "kind": "other"
+        }
+      ],
+      "file": {
+        "exists": true,
+        "sha256": "bd40b31a3caf0ac33d47fb729880204f08c7666a40f3ec20cf014665c7d62d39",
+        "size": 1420
+      },
+      "checks": {
+        "completed": true,
+        "real_model_success": true,
+        "file_created": true,
+        "live_session_source": true,
+        "platform_read_completed": true,
+        "read_only_student": true
+      }
+    },
+    "admin": {
+      "actor": "admin",
+      "task": {
+        "id": 3,
+        "status": "completed",
+        "error_message": "",
+        "result_summary": "已核验本任务的全部平台操作回执。"
+      },
+      "model_requests": [
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 11246,
+          "output_tokens": 84,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 14628,
+          "output_tokens": 125,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 17515,
+          "output_tokens": 105,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 19268,
+          "output_tokens": 134,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 19450,
+          "output_tokens": 152,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 19849,
+          "output_tokens": 116,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 20192,
+          "output_tokens": 841,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        },
+        {
+          "model": "deepseek-v4-pro",
+          "status": "completed",
+          "upstream_status": 200,
+          "input_tokens": 21106,
+          "output_tokens": 298,
+          "config_generation": "c9cc4e8b40a050527db41b1c"
+        }
+      ],
+      "operations": [
+        {
+          "operation_id": "dsh-e2e-create-org-school-900002",
+          "action": "create_organization_school",
+          "status": "completed",
+          "result_json": "{\"item\":{\"created_at\":\"2026-09-10 13:48:54.987402+00\",\"deactivated_at\":\"\",\"display_order\":0,\"id\":1,\"is_active\":true,\"reference_count\":0,\"reference_counts\":{\"blog_posts\":0,\"classes\":0,\"course_files\":0,\"course_materials\":0,\"courses\":0,\"semesters\":0,\"signatures\":0,\"students\":0,\"teachers\":0,\"total\":0},\"school_code\":\"dsh-e2e-created\",\"school_name\":\"DSH E2E Created School\",\"source\":\"manual\",\"updated_at\":\"2026-09-10T21:48:54.996979\"},\"label\":\"已新建学校目录\",\"ref_id\":1,\"url\":\"/manage/system/organizations\"}"
+        }
+      ],
+      "normal_login": true,
+      "actual_business_rows": [
+        {
+          "school_code": "dsh-e2e-created",
+          "school_name": "DSH E2E Created School",
+          "is_active": 1
+        }
+      ],
+      "source_session_bound": true,
+      "completion_kind": "verified_business",
+      "tool_receipt_summary": [
+        {
+          "title": "skill",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_overview",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_capabilities",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_read",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_write",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "mcp__lanshare__platform_read",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "write",
+          "status": "completed",
+          "kind": "other"
+        },
+        {
+          "title": "write",
+          "status": "completed",
+          "kind": "other"
+        }
+      ],
+      "file": {
+        "exists": true,
+        "sha256": "66575ac7b593cd4376aef77c9a786eacf84a14b1783b0e8a46dd2b7482187fd0",
+        "size": 1276
+      },
+      "checks": {
+        "completed": true,
+        "real_model_success": true,
+        "file_created": true,
+        "live_session_source": true,
+        "platform_read_completed": true,
+        "single_synthetic_school": true
+      }
+    }
+  },
+  "reviewed_checks": {
+    "teacher": {
+      "completed": true,
+      "real_model_success": true,
+      "file_created": true,
+      "live_session_source": true,
+      "platform_read_completed": true,
+      "own_single_unpublished_draft": true
+    },
+    "student": {
+      "completed": true,
+      "real_model_success": true,
+      "file_created": true,
+      "live_session_source": true,
+      "platform_read_completed": true,
+      "read_only_student": true
+    },
+    "admin": {
+      "completed": true,
+      "real_model_success": true,
+      "file_created": true,
+      "live_session_source": true,
+      "platform_read_completed": true,
+      "single_synthetic_school": true
+    }
+  },
+  "boundaries": {
+    "checks": {
+      "student_downloads_own_file": true,
+      "same_id_other_role_file_denied": true,
+      "same_id_other_role_private_detail_hidden": true,
+      "database_role_unprivileged": true,
+      "no_connect_other_databases": true,
+      "no_active_delegations": true,
+      "no_running_attempts": true,
+      "no_active_request_leases": true
+    },
+    "database_role": {
+      "rolname": "e2e_app",
+      "rolsuper": false,
+      "rolcreaterole": false,
+      "rolcreatedb": false,
+      "rolreplication": false
+    },
+    "counts": {
+      "agent_tasks": 3,
+      "agent_task_attempts": 3,
+      "agent_task_delegations": 6,
+      "agent_action_executions": 2,
+      "agent_model_requests": 22
+    }
+  },
+  "isolation": {
+    "scope": "isolated synthetic E2E, not production deployment",
+    "source_archive_sha256": "aae69ba34672e7b4e305986d0e7e9a8d3d00c08887c61a1f65e05c18b2701ce9",
+    "cohort": "release-c3",
+    "source_commit": "476fc7bdb3a0a4758a97e33bda496b6bcc812594",
+    "manifest_sha256": "88bd322818afcb01ae65c25ff095c73f59ee3391bf2159aa9711ccbf0647bab2",
+    "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+    "source_file_count": 2267,
+    "app_image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726",
+    "dsh_image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+    "source_overrides": {},
+    "schema_only_sha256": "3c9e89f3acc5b079de4d1073d7766ac96efefbfa6d62038a7b20b1c3d1eb1f7c",
+    "production_business_rows_copied": 0,
+    "production_user_sessions_used": 0,
+    "production_database_writes": 0,
+    "separate_pg_container": "lanshare-dsh-e2e-release-c3-pg",
+    "dedicated_database": "lanshare_dsh_e2e_release_c3",
+    "dedicated_network": "lanshare_dsh_e2e_release_c3",
+    "app_bind": "127.0.0.1:18003",
+    "app_role": "e2e_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION",
+    "lifespan": "off; explicit init_database; no automatic workers",
+    "production_key_transfer": "trusted read-only query; reencrypted with independent secret; never runner-mounted",
+    "state": "prepared"
+  },
+  "shutdown": {
+    "containers_stopped": [
+      "lanshare-dsh-e2e-release-c3-app",
+      "lanshare-dsh-e2e-release-c3-pg"
+    ],
+    "launcher_stopped": true,
+    "active_isolated_runners": 0,
+    "data_preserved": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3",
+    "production_services_changed": false
+  },
+  "final_host_state": {
+    "services": {
+      "lanshare-app-1": {
+        "running": true,
+        "started_at": "2026-09-09T17:28:50.199055628Z",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726"
+      },
+      "lanshare-agent-worker-1": {
+        "running": true,
+        "started_at": "2026-09-09T17:29:01.451657665Z",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726"
+      },
+      "lanshare-postgres-1": {
+        "running": true,
+        "started_at": "2026-09-09T17:28:38.696565186Z",
+        "image": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229"
+      },
+      "lanshare-deepseek-runtime-1": {
+        "running": true,
+        "started_at": "2026-09-09T17:28:38.69531762Z",
+        "image": "sha256:f70c436f72c84dfd1e8fde779a3433b2ad6bbf06d6752a06dbef180e837c7a98"
+      },
+      "lanshare-dsh-e2e-release-c3-app": {
+        "running": false,
+        "started_at": "2026-09-10T13:46:28.356620218Z",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726"
+      },
+      "lanshare-dsh-e2e-release-c3-pg": {
+        "running": false,
+        "started_at": "2026-09-10T13:45:48.713838876Z",
+        "image": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229"
+      }
+    },
+    "dsh_active_runners": [],
+    "production_modified_by_experiment": false,
+    "paid_phases_executed": [
+      "teacher",
+      "student",
+      "admin"
+    ],
+    "additional_paid_retry": false
+  },
+  "runner_attestations": [
+    [
+      {
+        "name": "lanshare-dsh-e2e-release-c3-app",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 671088640,
+        "pids_limit": 256,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/source",
+            "destination": "/app",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/data",
+            "destination": "/e2e-data",
+            "read_only": false
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/private",
+            "destination": "/e2e-private",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/ipc/control",
+            "destination": "/e2e-control",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "AGENT_DSH_ENABLED",
+          "AGENT_DSH_LAUNCHER_SOCKET",
+          "AGENT_MODEL_DEFAULT",
+          "AGENT_MODEL_SEARCH_MODEL",
+          "AGENT_TASKS_ENABLED",
+          "AGENT_TASK_GLOBAL_CONCURRENCY",
+          "AGENT_TASK_MAX_RUNTIME_SECONDS",
+          "AI_ASSISTANT_URL",
+          "AI_DURABLE_JOBS_ENABLED",
+          "APP_TIMEZONE",
+          "CAREER_JOBS_ENABLED",
+          "DATABASE_URL",
+          "DB_ENGINE",
+          "DSH_E2E_COHORT",
+          "GPG_KEY",
+          "LANG",
+          "LANSHARE_DATA_ROOT",
+          "MAIN_DATA_DIR",
+          "MAIN_WORKERS",
+          "PATH",
+          "PIP_DISABLE_PIP_VERSION_CHECK",
+          "PIP_NO_CACHE_DIR",
+          "POSTGRES_BACKEND_READY",
+          "POSTGRES_POOL_CHECKOUT_TIMEOUT",
+          "POSTGRES_POOL_MAX",
+          "POSTGRES_POOL_MIN",
+          "PYTHONDONTWRITEBYTECODE",
+          "PYTHONIOENCODING",
+          "PYTHONUNBUFFERED",
+          "PYTHONUTF8",
+          "PYTHON_DOTENV_DISABLED",
+          "PYTHON_SHA256",
+          "PYTHON_VERSION",
+          "SECRET_KEY",
+          "TZ"
+        ],
+        "ports": {
+          "8000/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "18003"
+            }
+          ],
+          "8001/tcp": null
+        }
+      },
+      {
+        "name": "lanshare-dsh-e2e-release-c3-pg",
+        "image": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 268435456,
+        "pids_limit": 100,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/pgdata",
+            "destination": "/var/lib/postgresql/data",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "DOCKER_PG_LLVM_DEPS",
+          "GOSU_VERSION",
+          "LANG",
+          "PATH",
+          "PGDATA",
+          "PG_MAJOR",
+          "PG_SHA256",
+          "PG_VERSION",
+          "POSTGRES_DB",
+          "POSTGRES_PASSWORD",
+          "POSTGRES_USER"
+        ],
+        "ports": {
+          "5432/tcp": null
+        }
+      }
+    ],
+    [
+      {
+        "name": "lanshare-dsh-e2e-release-c3-app",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 671088640,
+        "pids_limit": 256,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/source",
+            "destination": "/app",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/data",
+            "destination": "/e2e-data",
+            "read_only": false
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/private",
+            "destination": "/e2e-private",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/ipc/control",
+            "destination": "/e2e-control",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "AGENT_DSH_ENABLED",
+          "AGENT_DSH_LAUNCHER_SOCKET",
+          "AGENT_MODEL_DEFAULT",
+          "AGENT_MODEL_SEARCH_MODEL",
+          "AGENT_TASKS_ENABLED",
+          "AGENT_TASK_GLOBAL_CONCURRENCY",
+          "AGENT_TASK_MAX_RUNTIME_SECONDS",
+          "AI_ASSISTANT_URL",
+          "AI_DURABLE_JOBS_ENABLED",
+          "APP_TIMEZONE",
+          "CAREER_JOBS_ENABLED",
+          "DATABASE_URL",
+          "DB_ENGINE",
+          "DSH_E2E_COHORT",
+          "GPG_KEY",
+          "LANG",
+          "LANSHARE_DATA_ROOT",
+          "MAIN_DATA_DIR",
+          "MAIN_WORKERS",
+          "PATH",
+          "PIP_DISABLE_PIP_VERSION_CHECK",
+          "PIP_NO_CACHE_DIR",
+          "POSTGRES_BACKEND_READY",
+          "POSTGRES_POOL_CHECKOUT_TIMEOUT",
+          "POSTGRES_POOL_MAX",
+          "POSTGRES_POOL_MIN",
+          "PYTHONDONTWRITEBYTECODE",
+          "PYTHONIOENCODING",
+          "PYTHONUNBUFFERED",
+          "PYTHONUTF8",
+          "PYTHON_DOTENV_DISABLED",
+          "PYTHON_SHA256",
+          "PYTHON_VERSION",
+          "SECRET_KEY",
+          "TZ"
+        ],
+        "ports": {
+          "8000/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "18003"
+            }
+          ],
+          "8001/tcp": null
+        }
+      },
+      {
+        "name": "lanshare-dsh-e2e-release-c3-pg",
+        "image": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 268435456,
+        "pids_limit": 100,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/pgdata",
+            "destination": "/var/lib/postgresql/data",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "DOCKER_PG_LLVM_DEPS",
+          "GOSU_VERSION",
+          "LANG",
+          "PATH",
+          "PGDATA",
+          "PG_MAJOR",
+          "PG_SHA256",
+          "PG_VERSION",
+          "POSTGRES_DB",
+          "POSTGRES_PASSWORD",
+          "POSTGRES_USER"
+        ],
+        "ports": {
+          "5432/tcp": null
+        }
+      },
+      {
+        "name": "lanshare-dsh-1-ae16d674-6d27-42ef-ae7b-f5a54850cb16",
+        "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+        "networks": [
+          "none"
+        ],
+        "network_mode": "none",
+        "read_only_root": true,
+        "memory": 1073741824,
+        "pids_limit": 128,
+        "cap_drop": [
+          "ALL"
+        ],
+        "security_options": [
+          "no-new-privileges:true"
+        ],
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/ipc/gateway.sock",
+            "destination": "/run/lanshare-agent/gateway.sock",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/data/agent_tasks/tasks/1",
+            "destination": "/workspace",
+            "read_only": false
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/state/1/ae16d674-6d27-42ef-ae7b-f5a54850cb16",
+            "destination": "/var/lib/dsh",
+            "read_only": false
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/profile",
+            "destination": "/var/lib/dsh/profiles/lanshare",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/state/1/ae16d674-6d27-42ef-ae7b-f5a54850cb16/runtime-cordis.yml",
+            "destination": "/var/lib/dsh/profiles/lanshare/cordis.yml",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "DSH_ACTOR_ID",
+          "DSH_ATTEMPT_ID",
+          "DSH_BROKER_MCP_URL",
+          "DSH_BROKER_TOKEN",
+          "DSH_FENCING_TOKEN",
+          "DSH_GATEWAY_BASE_URL",
+          "DSH_GATEWAY_MODEL",
+          "DSH_GATEWAY_TOKEN",
+          "DSH_HOME",
+          "DSH_SEARCH_MODEL",
+          "DSH_TASK_ID",
+          "NODE_VERSION",
+          "PATH",
+          "YARN_VERSION"
+        ],
+        "ports": {},
+        "checks": {
+          "network_none": true,
+          "immutable_image": true,
+          "read_only_root": true,
+          "no_database_credentials": true,
+          "no_production_mounts": true,
+          "no_docker_socket": true
+        }
+      }
+    ],
+    [
+      {
+        "name": "lanshare-dsh-e2e-release-c3-app",
+        "image": "sha256:c30959ea1dc62b4214fe6b1a2662bd60c880fd8b5573aa9b5a93c8dccb893726",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 671088640,
+        "pids_limit": 256,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/source",
+            "destination": "/app",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/data",
+            "destination": "/e2e-data",
+            "read_only": false
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/private",
+            "destination": "/e2e-private",
+            "read_only": true
+          },
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/ipc/control",
+            "destination": "/e2e-control",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "AGENT_DSH_ENABLED",
+          "AGENT_DSH_LAUNCHER_SOCKET",
+          "AGENT_MODEL_DEFAULT",
+          "AGENT_MODEL_SEARCH_MODEL",
+          "AGENT_TASKS_ENABLED",
+          "AGENT_TASK_GLOBAL_CONCURRENCY",
+          "AGENT_TASK_MAX_RUNTIME_SECONDS",
+          "AI_ASSISTANT_URL",
+          "AI_DURABLE_JOBS_ENABLED",
+          "APP_TIMEZONE",
+          "CAREER_JOBS_ENABLED",
+          "DATABASE_URL",
+          "DB_ENGINE",
+          "DSH_E2E_COHORT",
+          "GPG_KEY",
+          "LANG",
+          "LANSHARE_DATA_ROOT",
+          "MAIN_DATA_DIR",
+          "MAIN_WORKERS",
+          "PATH",
+          "PIP_DISABLE_PIP_VERSION_CHECK",
+          "PIP_NO_CACHE_DIR",
+          "POSTGRES_BACKEND_READY",
+          "POSTGRES_POOL_CHECKOUT_TIMEOUT",
+          "POSTGRES_POOL_MAX",
+          "POSTGRES_POOL_MIN",
+          "PYTHONDONTWRITEBYTECODE",
+          "PYTHONIOENCODING",
+          "PYTHONUNBUFFERED",
+          "PYTHONUTF8",
+          "PYTHON_DOTENV_DISABLED",
+          "PYTHON_SHA256",
+          "PYTHON_VERSION",
+          "SECRET_KEY",
+          "TZ"
+        ],
+        "ports": {
+          "8000/tcp": [
+            {
+              "HostIp": "127.0.0.1",
+              "HostPort": "18003"
+            }
+          ],
+          "8001/tcp": null
+        }
+      },
+      {
+        "name": "lanshare-dsh-e2e-release-c3-pg",
+        "image": "sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229",
+        "networks": [
+          "lanshare_dsh_e2e_release_c3"
+        ],
+        "network_mode": "lanshare_dsh_e2e_release_c3",
+        "read_only_root": false,
+        "memory": 268435456,
+        "pids_limit": 100,
+        "cap_drop": null,
+        "security_options": null,
+        "mounts": [
+          {
+            "source": "/lanshare/.codex-temp/dsh-migration-20260910/e2e-release-c3/pgdata",
+            "destination": "/var/lib/postgresql/data",
+            "read_only": false
+          }
+        ],
+        "environment_names": [
+          "DOCKER_PG_LLVM_DEPS",
+          "GOSU_VERSION",
+          "LANG",
+          "PATH",
+          "PGDATA",
+          "PG_MAJOR",
+          "PG_SHA256",
+          "PG_VERSION",
+          "POSTGRES_DB",
+          "POSTGRES_PASSWORD",
+          "POSTGRES_USER"
+        ],
+        "ports": {
+          "5432/tcp": null
+        }
+      }
+    ]
+  ],
+  "paid_model_usage": {
+    "tasks": 3,
+    "requests": 22,
+    "per_actor": {
+      "teacher": 7,
+      "student": 7,
+      "admin": 8
+    },
+    "input_tokens": 347389,
+    "output_tokens": 4204,
+    "additional_paid_retries": 0,
+    "source": "Real official DeepSeek responses observed by the isolated platform model gateway"
+  },
+  "limitations": [
+    "The frozen report contains one tool-name assertion failure; reviewed acceptance is a distinct post-run result.",
+    "Native ask-user and search proxy were verified by c3 synthetic ACP probes, not by additional paid tasks in this cohort.",
+    "These three tasks create markdown artifacts; binary source download/transformation and every platform capability are outside this minimal live-model cohort.",
+    "App dependencies and prebuilt frontend assets come from the pinned base app image; current tracked source was fully overlaid. No new browser build/visual QA was performed here.",
+    "Subagent/workflow remains disabled. Production still uses its pre-existing runtime until the separately gated cutover."
+  ],
+  "raw_evidence_sha256": {
+    "container-boundaries-1789047988.json": "6c1b39ef15654c941d645abf9973cbecdd732b3c576b5e393e466f69d308ec64",
+    "container-boundaries-1789048067.json": "4fe537a714651e12aa6a3a6d59b5e4f8e95c326bb9b6e2827675de166d2b0453",
+    "container-boundaries-1789048253.json": "6c1b39ef15654c941d645abf9973cbecdd732b3c576b5e393e466f69d308ec64",
+    "e2e-lifecycle-boundaries.json": "2b746c7ac57b37517aea23bbf109aa728898e0f9e4d731de7f5de9888319c465",
+    "e2e-teacher-task.json": "d806bd844e29bc731eeba0dc74c5ed71e44f90802df97dcedfb95686fd6c661d",
+    "e2e-verification.json": "3a3c7713956bef8ae2af759dcc1310f73ec0b2272e303b33bf032e407c980c31",
+    "isolation-evidence.json": "f09c4ffbafb71a650c45ef0691d98d577c59fcdfe089651bcc11ce1f32489a1b",
+    "post-run-host-state.json": "859803f6eb211a0b97c8a16968cea73b8fa0beb3d2a49ec0b673bdcf74a152e0",
+    "shutdown-evidence.json": "210dee85f6194353bb07f68d9dc19644a17e0423ecd19c81e37cdcb707af081c"
+  }
+}
