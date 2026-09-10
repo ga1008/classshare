@@ -8,7 +8,7 @@ const styles = fs.readFileSync('static/css/grade_publication.css', 'utf8');
 const builtStyles = fs.readFileSync('static/css/tailwind-app.css', 'utf8');
 const ui = `export function escapeHtml(value){const n=document.createElement('span');n.textContent=String(value??'');return n.innerHTML.replaceAll('"','&quot;');}`;
 
-async function mount(page: Page, mode: 'normal' | 'retry' | 'conflict' | 'roster' | 'unknown' = 'normal', kind: 'grades' | 'signature' | 'teaching' = 'grades', approveAllowed = true) {
+async function mount(page: Page, mode: 'normal' | 'retry' | 'conflict' | 'roster' | 'unknown' = 'normal', kind: 'grades' | 'signature' | 'teaching' | 'route' = 'grades', approveAllowed = true) {
   const posts: any[] = [];
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -17,7 +17,12 @@ async function mount(page: Page, mode: 'normal' | 'retry' | 'conflict' | 'roster
   let executed = false;
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const preview = () => kind === 'teaching' ? ({action: 'delete_empty_class', execution_mode: 'user_confirmation',
+  const preview = () => kind === 'route' ? ({ action: 'platform_route_request', execution_mode: 'user_confirmation',
+    params: { capability_key: 'route.0123456789abcdef0123', path_params: { poll_id: 5 }, expected_review_hash: reviewHash }, confirmation_token: 'token-' + hash,
+    confirmation_review: { can_execute: true, method: 'DELETE', path: '/api/polls/5', label: '<img src=x onerror=alert(1)>', domain: 'polls', risk: 'destructive', mutates: true,
+      path_params: { poll_id: 5 }, query_params: {}, body: null,
+      warnings: [{ code: 'destructive_route', message: '该接口具有破坏性或不可逆影响。' }], blocking_reasons: [] }
+  }) : kind === 'teaching' ? ({action: 'delete_empty_class', execution_mode: 'user_confirmation',
     params: {class_id: 82, expected_review_hash: reviewHash}, confirmation_token: 'token-' + hash,
     confirmation_review: {title: '删除空班级', summary: '网络工程2401班', expected_confirmation_text: '网络工程2401班', can_execute: approveAllowed,
       impact_sections: [{key: 'history',label: '历史记录',effect: 'detach',count: 2}],
@@ -88,6 +93,29 @@ test('explicit human checks, zero versus missing, escaping and single submission
   h.release();
   await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
   await expect(page.locator('#trigger')).toBeFocused();
+  expect(h.errors).toEqual([]);
+});
+
+test('route confirmation shows method, path and parameters, escapes labels and posts the destructive acknowledgement once', async ({ page }) => {
+  const h = await mount(page, 'normal', 'route');
+  await expect(page.locator('[data-agent-business-review] code')).toHaveText('DELETE /api/polls/5');
+  await expect(page.locator('[data-agent-business-review] img')).toHaveCount(0);
+  await expect(page.locator('[data-agent-business-review] h4')).toContainText('<img');
+  await expect(page.locator('[data-agent-business-review] pre')).toContainText('"poll_id": 5');
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  await page.locator('[data-agent-business-reviewed]').check();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  await confirm(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.locator('.lp-modal__body').evaluate(n => n.scrollWidth <= n.clientWidth + 1)).toBe(true);
+  await page.screenshot({ path: '.codex-temp/agent-route-confirmation-mobile.png', fullPage: true });
+  await page.locator('[data-agent-business-publish]').click();
+  await expect(page.locator('[data-agent-business-publish]')).toBeDisabled();
+  expect(h.posts).toHaveLength(1);
+  expect(h.posts[0]).toEqual({ params: { capability_key: 'route.0123456789abcdef0123', path_params: { poll_id: 5 }, expected_review_hash: 'c'.repeat(64) },
+    confirmation_token: 'token-' + 'a'.repeat(64), confirmation_inputs: { accepted_warning_codes: ['destructive_route'], confirmation_note: '已核对原始成绩与学生名单' } });
+  h.release();
+  await expect(page.locator('[data-agent-business-confirmation]')).toHaveCount(0);
   expect(h.errors).toEqual([]);
 });
 

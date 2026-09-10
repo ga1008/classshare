@@ -23,6 +23,7 @@ from ..database import get_db_connection
 from .agent_delegation_service import verify_task_delegation
 from .agent_platform_request_context import _RequestIdentity, _request_identity, _SCOPE_KEY
 from .agent_platform_request_registry import arguments, matched_route, resolve_capability, platform_request_catalog
+from .agent_platform_route_capability import ROUTE_KEY_PREFIX, resolve_route_capability, route_arguments
 from .agent_request_context import _broker_identity
 
 MAX_RESPONSE_BYTES = 128 * 1024
@@ -212,6 +213,16 @@ def _observation(response, operation=None):
         return 'uncertain', result
     try: payload = response.json()
     except ValueError: return 'uncertain', {**result,'follow_up':'needs_response_adapter'}
+    if operation is not None and operation.response_contract == 'generic_json':
+        # Generic route capabilities have no reviewed success marker. A 2xx JSON
+        # body is exactly what the normal Web client would have observed; it is
+        # recorded as such and still never promoted to verified business.
+        if not isinstance(payload, (dict, list)):
+            return 'uncertain', {**result, 'follow_up': 'needs_response_adapter'}
+        result['data'] = payload
+        if response.status_code == 202:
+            return 'submitted', {**result, 'follow_up': 'needs_job_tracker_not_completed'}
+        return 'observed_http_result', result
     if not isinstance(payload,dict): return 'uncertain', {**result,'follow_up':'needs_response_adapter'}
     result['data'] = payload
     if response.status_code == 202:
@@ -321,12 +332,23 @@ async def dispatch_platform_request(app, token, capability_key, operation_id, *,
     """MCP-facing seam; accepts a reviewed key and bounded parameters, no URL/header."""
     if _request_identity.get() is not None or _broker_identity.get() is not None:
         raise HTTPException(403,'不允许嵌套 Agent 平台请求。')
-    operation,route = resolve_capability(app,capability_key)
-    if files is not None and (operation.transport != 'form' or not operation.allows_files):
-        raise HTTPException(400,'该平台能力不支持任务附件。')
-    if operation.transport not in {'json', 'form'}:
-        raise HTTPException(503,'该平台能力的请求格式尚未接入。')
-    path,query,raw,normalized = arguments(operation,path_params=path_params,query_params=query_params,body=body)
+    if isinstance(capability_key, str) and capability_key.startswith(ROUTE_KEY_PREFIX):
+        # Digital-twin layer: any mounted JSON route outside the hard exclusions,
+        # governed by classification instead of a hand-written adapter.
+        operation, route = resolve_route_capability(app, capability_key)
+        if operation.requires_user_confirmation:
+            raise HTTPException(403, {'message': '该操作具有破坏性或不可逆影响，模型不能直接执行。请在最终输出中提出 platform_route_request 提案，由用户本人在平台核对后确认执行。',
+                                      'capability_key': capability_key, 'proposal_action': 'platform_route_request'})
+        if files is not None:
+            raise HTTPException(400, '平台路由能力不支持任务附件。')
+        path, query, raw, normalized = route_arguments(operation, path_params=path_params, query_params=query_params, body=body)
+    else:
+        operation,route = resolve_capability(app,capability_key)
+        if files is not None and (operation.transport != 'form' or not operation.allows_files):
+            raise HTTPException(400,'该平台能力不支持任务附件。')
+        if operation.transport not in {'json', 'form'}:
+            raise HTTPException(503,'该平台能力的请求格式尚未接入。')
+        path,query,raw,normalized = arguments(operation,path_params=path_params,query_params=query_params,body=body)
     if operation.server_operation_id_field is not None:
         if operation.transport != 'json':
             raise HTTPException(503,'下游保存编号只支持经过审核的 JSON 请求。')

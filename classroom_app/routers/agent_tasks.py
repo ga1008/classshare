@@ -513,10 +513,10 @@ async def api_preview_agent_task_action(
     if not isinstance(data, dict):
         data = {}
     return await run_in_threadpool(_preview_agent_task_action, task_id=task_id,
-                                  action_index=action_index, data=data, user=user)
+                                  action_index=action_index, data=data, user=user, app=getattr(request, "app", None))
 
 
-def _preview_agent_task_action(*, task_id, action_index, data, user):
+def _preview_agent_task_action(*, task_id, action_index, data, user, app=None):
     from ..services.agent_action_registry import (
         AGENT_ACTION_DEFINITIONS,
         ensure_action_actor_role,
@@ -555,7 +555,7 @@ def _preview_agent_task_action(*, task_id, action_index, data, user):
             clean, errors = validate_action_params(action, merged_params, reject_unknown=True)
             if errors:
                 raise HTTPException(400, "；".join(errors[:4]))
-            prepared = prepare_user_confirmation(conn, action=action, params=clean, user=user)
+            prepared = prepare_user_confirmation(conn, action=action, params=clean, user=user, app=app)
             merged_params = prepared["params"]
             confirmation_review = prepared["review"]
         confirmation = issue_action_confirmation_token(
@@ -599,10 +599,10 @@ async def api_execute_agent_task_action(
     # Domain locks, password hashing and synchronous SQL must not block the
     # event loop serving streaming tasks and other users' platform requests.
     return await run_in_threadpool(_execute_agent_task_action, task_id=task_id,
-                                  action_index=action_index, data=data, user=user)
+                                  action_index=action_index, data=data, user=user, app=getattr(request, "app", None))
 
 
-def _execute_agent_task_action(*, task_id, action_index, data, user):
+def _execute_agent_task_action(*, task_id, action_index, data, user, app=None):
     from ..services.agent_action_registry import (
         AGENT_ACTION_DEFINITIONS,
         ensure_action_actor_role,
@@ -647,7 +647,7 @@ def _execute_agent_task_action(*, task_id, action_index, data, user):
                 outcome = dispatch_user_confirmation(
                     conn, user=user, source_session_id=session_id, task_id=task_id,
                     operation_id=operation_id, action=action, params=confirmed_params,
-                    confirmation_inputs=data.get("confirmation_inputs"),
+                    confirmation_inputs=data.get("confirmation_inputs"), app=app,
                 )
             elif action in SECURE_ACTION_DEFINITIONS:
                 outcome = dispatch_user_secure_action(

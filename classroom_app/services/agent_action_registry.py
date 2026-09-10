@@ -559,6 +559,8 @@ def proposed_actions_prompt_block(*, actor_role: str = "teacher") -> str:
         "只有尚需用户确认的新操作才在最终输出末尾附以下 JSON（平台会渲染确认按钮）；"
         "user_input_actions 中的 secure_input 动作必须生成提案，由用户在平台安全表单填写密码；"
         "user_confirmation 动作只能生成提案，由用户本人核对平台显示的业务快照后确认，不能代用户勾选或调用 platform_write 执行；"
+        "platform_routes 中 status=route_confirmation_required 的破坏性接口（删除/发布/合并/重置等）同样只能生成 platform_route_request 提案，"
+        "params 为 capability_key 及该路由的 path_params/query_params/body；"
         "不要用提问工具索取密码，不要将密码放入 params、消息、文件或工具参数。"
         "缺少必要参数先使用提问工具补齐，单纯可选建议不要生成动作提案。待确认提案不代表已写入平台：",
         "```json",

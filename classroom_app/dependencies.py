@@ -588,6 +588,10 @@ def get_current_user_optional(request: Request) -> Optional[dict]:
     platform_request_user = current_agent_platform_request_user(request)
     if platform_request_user is not None:
         return platform_request_user
+    from .services.agent_user_route_request_context import current_agent_user_route_request_user
+    confirmed_user = current_agent_user_route_request_user(request)
+    if confirmed_user is not None:
+        return confirmed_user
     return get_active_user_from_request(request)
 
 

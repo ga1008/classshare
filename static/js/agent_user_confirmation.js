@@ -50,6 +50,23 @@ const forms = {
         },
     },
 };
+const routeParams = (value) => JSON.stringify({ path_params: value.path_params || {}, query_params: value.query_params || {}, body: value.body ?? null }, null, 2);
+forms.platform_route_request = {
+    title: '核对并以本人身份执行平台操作', submit: '确认执行本次平台操作', pending: '正在以本人身份执行平台操作…',
+    introduction: '请核对将以你的身份调用的平台接口、路径和参数。该操作可能不可逆，执行结果以平台实际返回为准。',
+    acknowledgement: '我已核对以上接口、路径与参数，确认以本人身份执行本次操作。',
+    noteLimit: 2000, needsNote: () => true,
+    canExecute: (value) => value.can_execute === true,
+    ready: () => true, inputs: () => ({}),
+    render(value) {
+        return `<h4>${escapeHtml(value.label || '平台操作')}</h4>
+            <p><code>${escapeHtml(value.method || '')} ${escapeHtml(value.path || '')}</code></p>
+            <p>领域：${escapeHtml(value.domain || '')} · 风险：${escapeHtml(value.risk || '')}${value.mutates ? ' · 会修改平台数据' : ''}</p>
+            <div class="grade-publication__table" tabindex="0" role="region" aria-label="本次请求参数">
+                <pre style="margin:0;white-space:pre-wrap;word-break:break-all">${escapeHtml(routeParams(value))}</pre>
+            </div>`;
+    },
+};
 for (const [action, title, submit] of [
     ['delete_empty_class', '核对并删除空班级', '确认删除此空班级'],
     ['delete_unreferenced_course', '核对并删除未引用课程', '确认删除此课程'],

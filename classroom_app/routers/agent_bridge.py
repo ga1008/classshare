@@ -279,7 +279,7 @@ def _mcp_tools(actor):
     obj = {"type": "object"}
     tools = [
         tool("platform_overview", "读取当前用户身份和平台业务概览。"),
-        tool("platform_capabilities", "默认列出精简能力索引；query检索索引，keys获取所选能力的完整参数。先取参数再执行，目录可见性不替代当前业务权限。",
+        tool("platform_capabilities", "默认列出精简能力索引（含审核能力与 platform_routes 全站接口路由）；query检索索引，keys获取所选能力的完整参数。先取参数再执行，目录可见性不替代当前业务权限。",
              {"keys": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "maxLength": 160}},
               "query": {"type": "string", "minLength": 1, "maxLength": 80}}),
         tool("platform_read", "通过现有平台业务接口读取本人有权访问的数据。",
@@ -287,7 +287,7 @@ def _mcp_tools(actor):
         tool("platform_write", "执行当前用户要求的已审核平台操作。先查看能力目录；同一操作重试必须复用 operation_id 和参数，成功以返回的业务回执为准。",
              {"operation_id": {"type": "string", "minLength": 8, "maxLength": 128}, "action": string, "params": obj},
              ["operation_id", "action", "params"]),
-        tool("platform_request", "以当前登录用户身份调用目录中已审核的普通平台接口。返回的是接口观察回执，不能当作异步业务完成证明；不确定结果须先核对，不能换编号重试。",
+        tool("platform_request", "以当前登录用户身份调用平台接口：capability_key 可以是目录中的审核能力，也可以是 platform_routes 中的 route.* 全站路由（权限即用户本人权限）。破坏性路由不能直接执行，须提出 platform_route_request 提案由用户确认。返回的是接口观察回执，不能当作异步业务完成证明；不确定结果须先核对，不能换编号重试。",
              {"capability_key": string, "operation_id": {"type": "string", "format": "uuid"},
               "path_params": obj, "query_params": obj, "body": obj,
               "files": {"type": "array", "maxItems": 16, "items": {"type": "object", "properties": {
