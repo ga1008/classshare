@@ -1,0 +1,82 @@
+{
+  "release_id": "20260910-215713-b420b6c46e55",
+  "checked_at_utc": "2026-09-10T14:04:40.386636+00:00",
+  "scope": "Production runtime read-only acceptance; no account/task/model creation",
+  "production_tasks_created": 0,
+  "paid_model_calls": 0,
+  "credentials_printed": false,
+  "checks": {
+    "installer_verify": true,
+    "launcher_systemd_active": true,
+    "worker_container_running": true,
+    "worker_control_mount_readonly": true,
+    "worker_no_docker_socket_mount": true,
+    "worker_long_running_python_command": true,
+    "required_config_valid": true,
+    "worker_poll_activity_observed": true,
+    "single_active_model_configuration": true,
+    "anonymous_access_denied": true,
+    "old_runtime_container_absent": true
+  },
+  "limitations": [
+    "Agent worker has no independent idle-heartbeat record in this source; process and successive PostgreSQL activity are verified separately."
+  ],
+  "installer_verify": {
+    "mode": "verify",
+    "status": "passed",
+    "dsh_package_version": "0.1.5-rc.1",
+    "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+    "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911"
+  },
+  "worker_started_at": "2026-09-10T14:00:09.261140656Z",
+  "configuration_checks": {
+    "tasks_enabled": true,
+    "dsh_enabled": true,
+    "launcher_path_expected": true,
+    "model_configured": true,
+    "search_model_configured": true,
+    "search_base_configured": true,
+    "global_concurrency_one": true,
+    "worker_concurrency_one": true
+  },
+  "worker_activity": {
+    "first": {
+      "connections": 2,
+      "latest_activity_epoch": 1789049078.035275,
+      "single_active_model_configuration": true
+    },
+    "second": {
+      "connections": 2,
+      "latest_activity_epoch": 1789049088.043163,
+      "single_active_model_configuration": true
+    },
+    "kind": "Read-only pg_stat_activity samples correlated to worker container IP; no query text returned"
+  },
+  "anonymous_http": {
+    "public_bootstrap": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    },
+    "public_tasks": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    },
+    "public_bridge": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    },
+    "local_chat_gateway": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    },
+    "local_search_gateway": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    },
+    "public_chat_gateway": {
+      "http_status": 401,
+      "denied_without_credentials": true
+    }
+  },
+  "passed": true
+}
