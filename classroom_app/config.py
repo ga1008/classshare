@@ -172,24 +172,16 @@ PUBLIC_SITE_BASE_URL = _read_url_env("PUBLIC_SITE_BASE_URL") or _read_url_env("S
 
 # --- Teacher agent task center ---
 AGENT_TASKS_ENABLED = _read_bool_env("AGENT_TASKS_ENABLED", True)
-AGENT_TASK_RUNTIME_URL = _read_url_env("AGENT_TASK_RUNTIME_URL") or ""
-AGENT_TASK_RUNTIME_TOKEN = str(os.getenv("AGENT_TASK_RUNTIME_TOKEN") or "").strip()
-AGENT_TASK_RUNTIME_MODEL = str(os.getenv("AGENT_TASK_RUNTIME_MODEL") or "deepseek-v4-pro").strip()
-AGENT_TASK_RUNTIME_WORKSPACE_PREFIX = str(
-    os.getenv("AGENT_TASK_RUNTIME_WORKSPACE_PREFIX") or "/workspace/tasks"
-).strip().rstrip("/")
+AGENT_DSH_ENABLED = _read_bool_env("AGENT_DSH_ENABLED", False)
+AGENT_MODEL_DEFAULT = str(os.getenv("AGENT_MODEL_DEFAULT") or "deepseek-v4-pro").strip()
+AGENT_DSH_LAUNCHER_SOCKET = str(os.getenv("AGENT_DSH_LAUNCHER_SOCKET") or "/run/lanshare-agent/launcher.sock").strip()
 AGENT_TASK_WORKSPACE_ROOT = DATA_DIR / "agent_tasks"
-AGENT_TASK_DEEPSEEK_HOME = AGENT_TASK_WORKSPACE_ROOT / "deepseek_home"
-AGENT_TASK_RUNTIME_CONFIG_PATH = AGENT_TASK_DEEPSEEK_HOME / "config.toml"
 AGENT_TASK_WORKER_ID = str(os.getenv("AGENT_TASK_WORKER_ID") or "agent-task-worker").strip()
 AGENT_TASK_WORKER_POLL_SECONDS = max(2, int(os.getenv("AGENT_TASK_WORKER_POLL_SECONDS", 5)))
-AGENT_TASK_RUNTIME_POLL_SECONDS = max(2, int(os.getenv("AGENT_TASK_RUNTIME_POLL_SECONDS", 5)))
 AGENT_TASK_MAX_RUNTIME_SECONDS = max(60, int(os.getenv("AGENT_TASK_MAX_RUNTIME_SECONDS", 1800)))
-AGENT_TASK_DEEPSEEK_AUTO_APPROVE = _read_bool_env("AGENT_TASK_DEEPSEEK_AUTO_APPROVE", False)
-AGENT_TASK_ALLOW_RUNTIME_SHELL = _read_bool_env("AGENT_TASK_ALLOW_RUNTIME_SHELL", False)
-# Global Agent tasks allowed to run at once. Each teacher is still capped at 1.
-# Agent runtime calls are mostly IO-bound; keep the default at 2 for the 2c/4GB VPS.
-AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 2)), 4))
+# Global Agent tasks allowed to run at once. Each actor is capped at 1.
+# Each isolated DSH runner has a 1 GiB limit; default to 1 on the 2c/4GB VPS.
+AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 1)), 4))
 AGENT_TASK_WORKER_CONCURRENCY = max(
     1,
     min(
@@ -198,13 +190,9 @@ AGENT_TASK_WORKER_CONCURRENCY = max(
         4,
     ),
 )
-# 运行时优先：开放式任务交给独立运行时执行（False 时回退平台模板处理器）。
-AGENT_TASK_RUNTIME_FIRST = _read_bool_env("AGENT_TASK_RUNTIME_FIRST", True)
 # transient 类运行时错误自动重试次数（不含首次）。
 AGENT_TASK_AUTO_RETRY_LIMIT = max(0, min(int(os.getenv("AGENT_TASK_AUTO_RETRY_LIMIT", 1)), 3))
 AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT = max(0, min(int(os.getenv("AGENT_TASK_AUTO_RETRY_HOURLY_LIMIT", 10)), 100))
-# Agent 桥接：运行时容器回连主应用的内网地址（compose 网络里是 http://app:8000）
-AGENT_BRIDGE_BASE_URL = (_read_url_env("AGENT_BRIDGE_BASE_URL") or "http://app:8000").rstrip("/")
 
 # --- Email notification worker ---
 EMAIL_WORKER_POLL_SECONDS = max(1, int(os.getenv("EMAIL_WORKER_POLL_SECONDS", 5)))
@@ -253,7 +241,6 @@ RUNTIME_DIRECTORIES = (
     TEXTBOOK_ATTACHMENT_DIR,
     CHUNKED_UPLOADS_DIR,
     AGENT_TASK_WORKSPACE_ROOT,
-    AGENT_TASK_DEEPSEEK_HOME,
 )
 
 

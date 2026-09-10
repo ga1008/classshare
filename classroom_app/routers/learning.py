@@ -51,6 +51,29 @@ from ..services.resource_access_service import ensure_classroom_access as ensure
 router = APIRouter(prefix="/api")
 
 
+@router.get("/classrooms/mine", response_class=JSONResponse)
+def list_my_classrooms(limit: int = 30, offset: int = 0, user: dict = Depends(get_current_user)):
+    from ..services.dashboard_service import _load_student_offerings, _load_teacher_offerings
+    if user.get("role") not in {"student", "teacher"}:
+        raise HTTPException(403, "当前身份不能读取课堂。")
+    size, start = max(1, min(limit, 50)), max(0, min(offset, 10000))
+    with get_db_connection() as conn:
+        loader = _load_teacher_offerings if user["role"] == "teacher" else _load_student_offerings
+        rows = loader(conn, int(user["id"]), limit=size + 1, offset=start)
+    return {"status": "success", "offerings": rows[:size], "limit": size, "offset": start, "has_more": len(rows) > size}
+
+
+@router.get("/classrooms/{class_offering_id}/learning/snapshot", response_class=JSONResponse)
+def get_student_learning_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
+    """Read the current student's ready snapshot without recalculating any peer."""
+    from ..services.learning_progress_service import read_student_learning_snapshot
+    if user.get("role") != "student":
+        raise HTTPException(403, "个人学习快照仅对学生本人开放。")
+    with get_db_connection() as conn:
+        ensure_scoped_classroom_access(conn, class_offering_id, user)
+        return read_student_learning_snapshot(conn, class_offering_id, int(user["id"]))
+
+
 class MaterialProgressPayload(BaseModel):
     material_id: int
     session_id: Optional[int] = None
@@ -229,7 +252,7 @@ async def get_learning_progress(class_offering_id: int, user: dict = Depends(get
 
 
 @router.get("/classrooms/{class_offering_id}/learning/weights", response_class=JSONResponse)
-async def get_learning_weights(class_offering_id: int, user: dict = Depends(get_current_user)):
+def get_learning_weights(class_offering_id: int, user: dict = Depends(get_current_user)):
     if user["role"] != "teacher":
         raise HTTPException(403, "仅教师可查看课堂修为权重")
     with get_db_connection() as conn:
@@ -280,7 +303,7 @@ async def update_learning_weights(
 
 
 @router.get("/classrooms/{class_offering_id}/learning/score-events", response_class=JSONResponse)
-async def get_learning_score_events(class_offering_id: int, user: dict = Depends(get_current_user)):
+def get_learning_score_events(class_offering_id: int, user: dict = Depends(get_current_user)):
     if user["role"] != "student":
         raise HTTPException(403, "仅学生可以查看自己的修为流水")
     with get_db_connection() as conn:

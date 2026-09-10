@@ -674,36 +674,19 @@ async function handleSaveCourse() {
 
 async function handleDeleteCourse(button) {
     const courseId = Number(button.dataset.courseId || 0);
-    const courseName = button.dataset.courseName || '当前课程';
     if (!courseId) return;
 
-    const confirmed = window.confirm(`确定删除课程“${courseName}”吗？\n该操作会影响与课程相关的课堂绑定和课程资源。`);
-    if (!confirmed) return;
-
+    if (button.disabled) return;
+    button.disabled = true;
     try {
-        const result = await apiFetch(`/api/manage/courses/${courseId}`, { method: 'DELETE', silent: true });
+        const { openTeachingDeleteConfirmation } = await import('./teaching_lifecycle_review.js');
+        const result = await openTeachingDeleteConfirmation({ kind: 'course', resourceId: courseId });
+        if (!result) return;
         showMessage(result.message || '课程已删除', 'success');
         window.location.reload();
     } catch (error) {
-        if (error?.status === 409) {
-            // 教务排课保护：展示服务端详情后允许显式二次确认
-            const reconfirmed = window.confirm(`${error.message}`);
-            if (reconfirmed) {
-                try {
-                    const result = await apiFetch(
-                        `/api/manage/courses/${courseId}?confirm_academic=1`,
-                        { method: 'DELETE', silent: true },
-                    );
-                    showMessage(result.message || '课程已删除', 'success');
-                    window.location.reload();
-                } catch (retryError) {
-                    showMessage(retryError.message || '删除课程失败', 'error');
-                }
-            }
-            return;
-        }
         showMessage(error.message || '删除课程失败', 'error');
-    }
+    } finally { button.disabled = false; }
 }
 
 async function handleAiGenerateLessons() {

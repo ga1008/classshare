@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
+import json
 from typing import Any, Iterable
 
 from fastapi import HTTPException
@@ -46,7 +48,8 @@ def _normalize_session_id(session_id: int | None) -> int:
 
 def _ensure_offering_owner(conn, class_offering_id: int, teacher_id: int):
     row = conn.execute(
-        "SELECT * FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
+        "SELECT * FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1"
+        + (" FOR UPDATE" if get_configured_db_engine() == "postgres" else ""),
         (class_offering_id, teacher_id),
     ).fetchone()
     if not row:
@@ -250,13 +253,17 @@ def build_material_entries(
     return entries
 
 
-def add_material(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
+def bind_material_in_transaction(
+    conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int, *, make_primary: bool = False,
+) -> dict:
+    """Bind through normal access policy; caller commits the material and its reference together."""
     ensure_session_learning_materials_schema(conn)
     _ensure_offering_owner(conn, class_offering_id, teacher_id)
     session_id = _normalize_session_id(session_id)
     if session_id > 0:
         owned = conn.execute(
-            "SELECT id FROM class_offering_sessions WHERE id = ? AND class_offering_id = ? LIMIT 1",
+            "SELECT id FROM class_offering_sessions WHERE id = ? AND class_offering_id = ? LIMIT 1"
+            + (" FOR UPDATE" if get_configured_db_engine() == "postgres" else ""),
             (session_id, class_offering_id),
         ).fetchone()
         if not owned:
@@ -270,7 +277,8 @@ def add_material(conn, class_offering_id: int, session_id: int, material_id: int
     if any(int(row["material_id"]) == int(material_id) for row in existing):
         raise HTTPException(409, "该材料已绑定到此处")
 
-    next_order = (max((int(row["sort_order"]) for row in existing), default=-1)) + 1
+    next_order = ((min((int(row["sort_order"]) for row in existing), default=0) - 1) if make_primary
+                  else (max((int(row["sort_order"]) for row in existing), default=-1) + 1))
     _insert_row(conn, class_offering_id, session_id, int(material_id), teacher_id, sort_order=next_order)
 
     # 同步课堂访问权限，并在主材料为空时镜像为主材料。
@@ -280,17 +288,28 @@ def add_material(conn, class_offering_id: int, session_id: int, material_id: int
         teacher_id=teacher_id,
         material_ids=[int(material_id)],
     )
-    if _primary_material_id(conn, class_offering_id, session_id) <= 0:
+    if make_primary or _primary_material_id(conn, class_offering_id, session_id) <= 0:
         _set_primary_material_id(conn, class_offering_id, session_id, int(material_id))
 
-    conn.commit()
     return {"added": True, "material_id": int(material_id), "session_id": session_id}
 
 
-def remove_material(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
+def add_material(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
+    result = bind_material_in_transaction(conn, class_offering_id, session_id, material_id, teacher_id)
+    conn.commit()
+    return result
+
+
+def unbind_material_in_transaction(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
     ensure_session_learning_materials_schema(conn)
     _ensure_offering_owner(conn, class_offering_id, teacher_id)
     session_id = _normalize_session_id(session_id)
+    if session_id > 0 and not conn.execute(
+        "SELECT id FROM class_offering_sessions WHERE id=? AND class_offering_id=?"
+        + (" FOR UPDATE" if get_configured_db_engine() == "postgres" else ""),
+        (session_id, class_offering_id),
+    ).fetchone():
+        raise HTTPException(404, "课次不存在或无权操作")
     _backfill_primary(conn, class_offering_id, session_id, teacher_id)
 
     conn.execute(
@@ -304,8 +323,21 @@ def remove_material(conn, class_offering_id: int, session_id: int, material_id: 
         new_primary = int(remaining[0]["material_id"]) if remaining else None
         _set_primary_material_id(conn, class_offering_id, session_id, new_primary)
 
-    conn.commit()
     return {"removed": True, "material_id": int(material_id), "session_id": session_id}
+
+def remove_material(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
+    result = unbind_material_in_transaction(conn, class_offering_id, session_id, material_id, teacher_id)
+    conn.commit()
+    return result
+
+
+def material_binding_version(conn, class_offering_id: int, session_id: int) -> str:
+    """Pure revision of the full binding set, independent of blurbs and projections."""
+    rows = _fetch_rows(conn, class_offering_id, session_id) if has_material_bindings_table(conn) else []
+    payload = {"primary": _primary_material_id(conn, class_offering_id, session_id),
+               "rows": [(int(row["material_id"]), int(row["sort_order"])) for row in rows]}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
 
 
 def set_blurb(conn, row_id: int, blurb: str, status: str = "ready") -> None:

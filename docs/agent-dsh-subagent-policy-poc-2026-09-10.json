@@ -1,0 +1,203 @@
+{
+  "checked_at": "2026-09-10T12:39:09.367Z",
+  "package_version": "0.1.5-rc.1",
+  "node_version": "v24.13.0",
+  "method": "Official Cordis scopes, tools and child-composition function; workflow real worker threads with synthetic child provider, no model or platform credentials",
+  "scope": {
+    "parent_tools": [
+      "mcp__session__echo"
+    ],
+    "child_tools": [
+      "global_file"
+    ]
+  },
+  "workflow": [
+    {
+      "kind": "bounded",
+      "result": {
+        "value": [
+          "FIXTURE",
+          "FIXTURE",
+          "FIXTURE"
+        ],
+        "stopReason": "completed",
+        "agentsStarted": 3
+      },
+      "maximum": 1,
+      "started": 3,
+      "disposed": 3,
+      "aborted": 0,
+      "active_after_dispose": 0,
+      "requests": [
+        {
+          "hasToolFilter": false,
+          "maxDepth": null,
+          "signal": true
+        },
+        {
+          "hasToolFilter": false,
+          "maxDepth": null,
+          "signal": true
+        },
+        {
+          "hasToolFilter": false,
+          "maxDepth": null,
+          "signal": true
+        }
+      ]
+    },
+    {
+      "kind": "total_cap",
+      "result": {
+        "value": null,
+        "stopReason": "error",
+        "error": "WorkflowError: this run reached its total agent cap (3) — a runaway-loop backstop; raise the applicable maxTotalAgents limit if the scale is intentional",
+        "agentsStarted": 3
+      },
+      "maximum": 1,
+      "started": 1,
+      "disposed": 1,
+      "aborted": 1,
+      "active_after_dispose": 0,
+      "requests": [
+        {
+          "hasToolFilter": false,
+          "maxDepth": null,
+          "signal": true
+        }
+      ]
+    },
+    {
+      "kind": "cancel",
+      "result": {
+        "value": null,
+        "stopReason": "cancelled",
+        "error": "workflow run cancelled: workflow signal aborted",
+        "agentsStarted": 2
+      },
+      "maximum": 1,
+      "started": 1,
+      "disposed": 1,
+      "aborted": 1,
+      "active_after_dispose": 0,
+      "requests": [
+        {
+          "hasToolFilter": false,
+          "maxDepth": null,
+          "signal": true
+        }
+      ]
+    },
+    {
+      "kind": "two_runs_same_parent",
+      "results": [
+        {
+          "value": "FIXTURE",
+          "stopReason": "completed",
+          "agentsStarted": 1
+        },
+        {
+          "value": "FIXTURE",
+          "stopReason": "completed",
+          "agentsStarted": 1
+        }
+      ],
+      "maximum": 2,
+      "started": 2,
+      "disposed": 2,
+      "active_after_dispose": 0
+    }
+  ],
+  "official_package_sources": {
+    "dsh-agent-loop": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/core/agent-loop"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-agent-loop/v/0.1.5-rc.1",
+      "index_sha256": "257eb83c00a05ee068e9f4ba80ca71ab94e3a1275d24b7a0cf5038ff23dd0fd8"
+    },
+    "dsh-tools": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/core/tools"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-tools/v/0.1.5-rc.1",
+      "index_sha256": "aaba52bf5d0149355407642b3965c06977d1e9143f5c61bc19429abbe6a11c5d"
+    },
+    "dsh-scope": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/core/scope"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-scope/v/0.1.5-rc.1",
+      "index_sha256": "2829df71d76e08941457d4dd173eac60783e55354921137c8b75e8b5c0d2ecca"
+    },
+    "dsh-subagent": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/subagent/subagent"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-subagent/v/0.1.5-rc.1",
+      "index_sha256": "b8ea0e37bd6f1d9c4bd870c4ca03839f6d0e42f648a83578e31a448f6dffe4ef"
+    },
+    "dsh-subagent-in-process-driver": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/subagent/subagent-in-process-driver"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-subagent-in-process-driver/v/0.1.5-rc.1",
+      "index_sha256": "a169b6dac8f9fd0ef6e8db4ec0d2c009580c5c10b6d561e6d214cbe9b89521d1"
+    },
+    "dsh-subagent-spawn-in-process": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/subagent/subagent-spawn-in-process"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-subagent-spawn-in-process/v/0.1.5-rc.1",
+      "index_sha256": "11c92108dd145957f8251a81fc9bfb8a30e7f6f25d96e34a5cb8581a4be4be06"
+    },
+    "dsh-tool-subagent": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/subagent/tool-subagent"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent/v/0.1.5-rc.1",
+      "index_sha256": "674e8008e9dcb8009c8662b50e4d4971a7e02b6e1ae6a8972434713d43060f00"
+    },
+    "dsh-workflow-worker-thread": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/workflow/workflow-worker-thread"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-workflow-worker-thread/v/0.1.5-rc.1",
+      "index_sha256": "6cc60bafcea0450dff962253b008c74aa71ee64e50127fe1ce83c13e38a416e1"
+    },
+    "dsh-acp": {
+      "version": "0.1.5-rc.1",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+        "directory": "packages/acp/acp"
+      },
+      "npm_url": "https://www.npmjs.com/package/@deepseek-ai/dsh-acp/v/0.1.5-rc.1",
+      "index_sha256": "dcfa3790c65b58280d812e656ac439fe40303bf9b2f3b45842bdfb2345899cde"
+    }
+  }
+}

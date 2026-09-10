@@ -64,6 +64,8 @@ def invalidate_pending_material_plans(conn, material_type, material_id, current_
 
     if get_configured_db_engine() == "sqlite" and not conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'signature_point_flows'").fetchone():
         return
+    from .signature_workflow_lock_service import lock_signature_materials
+    lock_signature_materials(conn, [(material_type, material_id)])
     args = (material_type, str(material_id), current_revision)
     predicate = "material_type = ? AND material_id = ? AND material_revision <> ?"
     pending = f"SELECT id FROM signature_access_requests WHERE {predicate} AND status = 'pending'"

@@ -1,0 +1,181 @@
+{
+  "recorded_at": "2026-09-10T12:24:55.161386+00:00",
+  "scope": "Local teaching business setup, preview-bound plan editing and student lifecycle authorization. No deployment or live model task acceptance.",
+  "base_checkpoint": "4958a4a5",
+  "capabilities": [
+    {
+      "key": "http.teaching.course.create",
+      "label": "新建自己的课程基础资料",
+      "method": "POST",
+      "path": "/api/manage/courses/create",
+      "handler": "manage_parts.classes_courses_courses.api_create_course",
+      "source_sha256": "dc92879ab0f3096ba1783894a4760650d5e9124c071cd420debc5e9b16cd77b6",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.course.plan.create",
+      "label": "新建课程并配置课程课时内容",
+      "method": "POST",
+      "path": "/api/manage/courses/save",
+      "handler": "manage_parts.classes_courses_courses.api_save_course",
+      "source_sha256": "e93b3b789579786346f1ac8a71fa134d7961ee2ebdba63a8850fa46f730eb766",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.class.create",
+      "label": "新建自己的自定义班级",
+      "method": "POST",
+      "path": "/api/manage/classes/custom",
+      "handler": "manage_parts.classes_courses_classes.api_create_custom_class",
+      "source_sha256": "21637078f216cc4fd8617112e8726eac71fddae9c6d54373285149a96cdb41c9",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.student.create",
+      "label": "向自己可管理班级加入新学生",
+      "method": "POST",
+      "path": "/api/manage/classes/{class_id}/students",
+      "handler": "manage_parts.classes_courses_classes.api_create_class_student",
+      "source_sha256": "bfb203a4b5ea11e740c46698e095c177ddd86152a57e2c8b5533e727db497d55",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.student.status",
+      "label": "按名单版本调整学生学籍并撤销旧授权",
+      "method": "POST",
+      "path": "/api/manage/students/{student_id}/status",
+      "handler": "manage_parts.classes_courses_classes.api_update_class_student_status",
+      "source_sha256": "a234de0113e85fae4afe7930c8406ced1c8f06ab6e0bb64cd2c070a2b975f2fa",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.offering.preview",
+      "label": "预览当前资料对应的课堂排课、历史影响及版本",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/preview",
+      "handler": "manage_parts.classes_courses_offerings.api_preview_class_offering",
+      "source_sha256": "c57753d4a872ee1f2e5b14e93e612957ad5cc97536dffa688aa6149242594e69",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.offering.plan.create",
+      "label": "按已核对预览新开课堂并生成课次",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/save",
+      "handler": "manage_parts.classes_courses_offerings.api_save_class_offering",
+      "source_sha256": "666ffa51e316a564ab0bf7477ffd58395cceb0fbba53e673ed4137e7b0c728af",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.offering.plan.update",
+      "label": "按新预览更新自己的课堂排课；停排保留历史、拒绝覆盖已使用内容",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/save",
+      "handler": "manage_parts.classes_courses_offerings.api_save_class_offering",
+      "source_sha256": "666ffa51e316a564ab0bf7477ffd58395cceb0fbba53e673ed4137e7b0c728af",
+      "verified_business": false
+    },
+    {
+      "key": "http.teaching.offering.create",
+      "label": "新建课堂基础绑定（学期、教材、班级和课程）",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/create",
+      "handler": "manage_parts.classes_courses_offerings.api_create_class_offering",
+      "source_sha256": "9d815747967293ae15814933708790f2b306b3b484f73cf0bda839abbb55e914",
+      "verified_business": false
+    }
+  ],
+  "guarantee": "B current-actor normal HTTP observation; verified_business=false. No A transactional receipt claim.",
+  "python": {
+    "tests_run": 90,
+    "passed": true,
+    "skipped": 0,
+    "duration_seconds": 17.605,
+    "modules": [
+      "tests.test_agent_platform_request_teaching",
+      "tests.test_agent_academic_roster_authority",
+      "tests.test_academic_roster_sync_contract",
+      "tests.test_academic_sync_reconciliation_service",
+      "tests.test_offering_bootstrap",
+      "tests.test_offering_membership_service",
+      "tests.test_manage_postgres_writes",
+      "tests.test_agent_credential_changes"
+    ],
+    "teaching_tests": 17,
+    "batch_roster_tests": 6,
+    "sql_contract_test_limitation": "test_manage_postgres_writes is a SQL contract fixture, not native PostgreSQL."
+  },
+  "native_postgres": {
+    "tests_run": 3,
+    "passed": true,
+    "skipped": 0,
+    "module": "tests.test_offering_plan_postgres",
+    "cluster": "Explicit isolated loopback fixture, port 55439; newly created random synthetic database dropped by tearDownClass",
+    "evidence": [
+      "Actual pg_locks proves course template replacement waits for the shared course lock",
+      "A new learning progress FK insert waits for the session FOR UPDATE guard",
+      "Actual cancellation SQL keeps generation results, learning records and material bindings; rollback restores snapshot"
+    ],
+    "limitation": "Shared lock, snapshot and domain SQL proof. Full HTTP policy/save CAS uses the separate SQLite suite."
+  },
+  "browser": {
+    "tests_run": 5,
+    "passed": true,
+    "runner": "Actual installed Chrome through Playwright",
+    "file": "tests/e2e/components/offering-plan-cas.spec.ts",
+    "fixture": "Real offering form fragment and built tailwind-app.css; actual manage_offerings.js and api.js, mocked HTTP responses, no server/DB",
+    "evidence": [
+      "Reviewed revision submitted with form; failed save preserves inputs and permits retry",
+      "409 requires a refreshed displayed preview and another user action",
+      "Late responses cannot replace newer form/accepted revision",
+      "Historical-content blockers visible and no automatic write",
+      "Repeated submit is disabled until the actual request settles"
+    ]
+  },
+  "authority": {
+    "ordinary_student_status": "Server-owned class permission checked before and after task/actor locks; monotonic revision; suspended or changed state revokes task/persistent grants and sessions in one transaction; activation never revives grants",
+    "academic_batch": "Only affected incoming current-owner students; task queries in chunks of 400, all task IDs locked in ascending order before sorted actor mutexes; no per-school scan; after-wait state requires prepared actor or rolls back with 409",
+    "same_numbered_roles": "teacher:7 stays independent from student:7",
+    "independent_native_credential_recheck": "Parent permissions agent reran five actual PostgreSQL credential issuance/revocation races after helper extraction; all passed."
+  },
+  "plan_edit": {
+    "snapshot": "Desired schedule and source course/class/semester/textbook plus existing offering, every session, linked classes, material binding rows and protected session IDs",
+    "locks": "Course IDs ascending, then target offering, then session IDs ascending; actual FK insert blocked until guard transaction ends",
+    "history": "Removed sessions marked canceled, never deleted by existing editor. Dates can be corrected with stable IDs. Protected content and main material cannot be silently repurposed. Class composition/course/semester changes with existing sessions require separate lifecycle workflow; changing primary class within unchanged membership remains allowed.",
+    "legacy": "Primary-only installations do not create optional material-binding tables during preview. Existing Web editor now submits required preview revision.",
+    "performance": "Preview/save SQL runs in threadpool; same ASGI-loop ping remains responsive during a simulated waiting DB lock."
+  },
+  "not_covered": [
+    "Existing course lesson-plan update capability",
+    "Course/class/classroom deletion and merge execution confirmation",
+    "Student account move across existing classes outside the ordinary reviewed roster workflow",
+    "Production migration/deployment or real DSH task acceptance"
+  ],
+  "isolation": "Teaching HTTP connectors are restricted to one per-test temporary SQLite file or :memory:; imported DB aliases patched and unexpected connectors rejected. Native PostgreSQL uses connect_offline target validation and exclusive random fixture DB creation.",
+  "prior_test_limitation_reference": "docs/agent-credential-changes-verification-2026-09-10.json retains the earlier local synthetic-session incident and possible local student re-login limitation; this report does not erase that disclosure.",
+  "source_sha256": {
+    "classroom_app/routers/manage_parts/classes_courses_classes.py": "53ece584906756be939f55ccf6ee90608136b55893d0d1df4aaf1474a1eef973",
+    "classroom_app/routers/manage_parts/classes_courses_courses.py": "5b1a5b6495a8049c9423a6a3c535f72d330d28d04a806c9c55e3a77d100d8bbf",
+    "classroom_app/routers/manage_parts/classes_courses_offerings.py": "e02cca39a2fc1a5fe36cdb8214d9824fb5df553e3eb59fd015b209bb1d185ef8",
+    "classroom_app/services/account_credentials_service.py": "842417d3a1820136d4fa7827140295e2849da200a1a005c8d4a6129ea30222f2",
+    "classroom_app/services/academic_roster_sync_service.py": "2fd685acb1e27ff7c8b18c79a76b1a66cf925adba63797d3de554c59b459371a",
+    "classroom_app/services/academic_sync_reconciliation_service.py": "026546bcad221fbbe25eaa07b78a6c1e6c6b33610670e781e866978e4887c93b",
+    "classroom_app/services/course_planning_service.py": "eefaffd24a5378acba9727c6db1f092795b27d244ab17c7f816e1a67af6fc13b",
+    "classroom_app/services/offering_plan_edit_service.py": "86970c19b4997b9d10a7427b2855c1e287b4f3c57de40a2f2d62b74c82b376a8",
+    "classroom_app/services/agent_platform_request_teaching.py": "47e4bcf01699e807241ba2e68f16e0b8a08501c08c0b335d49521fb6241e3b99",
+    "static/js/manage_offerings.js": "1c5e48229d8fa4489e42aaa76641214d6d8875bba5b7dfd709908e4c22f23b51",
+    "tests/test_agent_platform_request_teaching.py": "ebecf8f1c888cf9faf2f728c0542593bdf2ab03334dd2722dc218c717c43b953",
+    "tests/test_agent_academic_roster_authority.py": "964adde2b91b3782ee6b9c30dc4ceee8dad3fb29d083a01c32d4598bda193b75",
+    "tests/test_offering_plan_postgres.py": "a9745373aa9db827011223e07b0f46357cdfb1c3f8cba5e276587b37e09f53a4",
+    "tests/e2e/components/offering-plan-cas.spec.ts": "e654f6b6678709488aa11173eff9db03dbc04da7170fbf29510e87b75bbc0332",
+    "templates/manage/offerings.html": "f32716dea128736fb8df3bd8fff44f7c959a2e25f6f9babf88ee8479231c2875"
+  },
+  "checks": {
+    "source_pins": 9,
+    "source_pins_current": true,
+    "unicode_replacement_characters": 0,
+    "node_syntax": true,
+    "git_diff_check": true,
+    "web_asset_version": "20260910-plan-cas"
+  }
+}

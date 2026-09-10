@@ -1,7 +1,12 @@
 import logging
+import hashlib
+from starlette.concurrency import run_in_threadpool
 
 from .common import *
 from ...services.academic_service import build_textbook_prompt_context
+from ...services.offering_plan_edit_service import (
+    lock_plan_row, offering_edit_snapshot, offering_edit_impact, validate_offering_edit,
+)
 
 from ...services.offering_bootstrap_service import build_offering_bootstrap_candidates
 from ...services.offering_membership_service import (
@@ -192,7 +197,7 @@ async def api_offering_bootstrap_execute(
 
 
 @router.get("/class_offerings/merge/candidates", response_class=JSONResponse)
-async def api_offering_merge_candidates(user: dict = Depends(get_current_teacher)):
+def api_offering_merge_candidates(user: dict = Depends(get_current_teacher)):
     """检测当前教师的历史双开课堂（同课程+同学期多课堂且班级互斥）。"""
     with get_db_connection() as conn:
         candidates = find_merge_candidates(conn, int(user["id"]))
@@ -205,13 +210,31 @@ async def api_offering_merge_preview(
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_preview_offering_merge, data, user)
+
+
+def _merge_selection(data):
+    if not isinstance(data, dict):
+        raise HTTPException(400, "合班参数必须是对象。")
+    target, sources = data.get("target_offering_id"), data.get("source_offering_ids")
+    if (type(target) is not int or not 1 <= target <= 9223372036854775807
+            or not isinstance(sources, list) or not 1 <= len(sources) <= 11
+            or any(type(value) is not int or not 1 <= value <= 9223372036854775807 for value in sources)
+            or len(set(sources)) != len(sources) or target in sources):
+        raise HTTPException(400, "请选择有效的主课堂及 1 至 11 个不重复的源课堂。")
+    return target, sorted(sources)
+
+
+def _preview_offering_merge(data, user):
+    target, sources = _merge_selection(data)
     try:
         with get_db_connection() as conn:
             preview = build_merge_preview(
                 conn,
                 teacher_id=int(user["id"]),
-                target_offering_id=int(data.get("target_offering_id") or 0),
-                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+                target_offering_id=target,
+                source_offering_ids=sources,
             )
     except OfferingMergeError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -225,18 +248,32 @@ async def api_offering_merge_execute(
 ):
     """执行合并：单事务，失败整体回滚；快照与审计在同事务内落库。"""
     data = await _parse_json_request(request)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_execute_reviewed_offering_merge, data, user)
+
+
+def _execute_reviewed_offering_merge(data, user):
+    import re
+    target, sources = _merge_selection(data)
+    revision = data.get("expected_review_hash")
+    if (not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{64}", revision)
+            or data.get("acknowledged_irreversible") is not True):
+        raise HTTPException(400, "请重新预览合班并确认不可逆影响。")
+    if not isinstance(data.get("confirm_class_name"), str) or len(data["confirm_class_name"]) > 500:
+        raise HTTPException(400, "确认名称格式无效。")
     try:
         with get_db_connection() as conn:
             result = execute_offering_merge(
                 conn,
                 teacher_id=int(user["id"]),
-                target_offering_id=int(data.get("target_offering_id") or 0),
-                source_offering_ids=[int(v) for v in (data.get("source_offering_ids") or [])],
+                target_offering_id=target,
+                source_offering_ids=sources,
                 confirm_class_name=str(data.get("confirm_class_name") or ""),
+                expected_review_hash=revision,
             )
             conn.commit()
     except OfferingMergeError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(409, str(exc)) from exc
     return result
 
 @router.post("/class_offerings/preview", response_class=JSONResponse)
@@ -245,6 +282,10 @@ async def api_preview_class_offering(
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    return await run_in_threadpool(_preview_class_offering, data, user)
+
+
+def _preview_class_offering(data, user):
 
     try:
         with get_db_connection() as conn:
@@ -255,6 +296,7 @@ async def api_preview_class_offering(
                 require_schedule=True,
                 allow_missing_lessons=True,
             )
+            existing = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
     except CoursePlanningError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -264,6 +306,8 @@ async def api_preview_class_offering(
     return {
         "status": "success",
         "preview": plan,
+        "plan_revision": _offering_plan_revision(payload, existing),
+        "edit_impact": offering_edit_impact(existing, payload),
         "class_name": str(payload["class_row"]["name"] or ""),
         "course_name": str(payload["course_row"]["name"] or ""),
         "semester_name": str(payload["semester_row"]["name"] or ""),
@@ -279,12 +323,32 @@ async def api_preview_class_offering(
     }
 
 
+def _offering_snapshot_for_payload(conn, payload, teacher_id):
+    if not payload["offering_id"]:
+        return None
+    owned = _ensure_teacher_owned_offering(conn, payload["offering_id"], teacher_id)
+    return offering_edit_snapshot(conn, owned)
+
+
+def _offering_plan_revision(payload, existing=None):
+    """Bind the displayed schedule and its selected source rows, without writes."""
+    snapshot = {key: dict(value) if hasattr(value, "keys") else value for key, value in payload.items()}
+    if existing is not None:
+        snapshot["existing"] = existing
+    return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":"), default=str).encode()).hexdigest()
+
+
 @router.post("/class_offerings/save", response_class=JSONResponse)
 async def api_save_class_offering(
     request: Request,
     user: dict = Depends(get_current_teacher),
 ):
     data = await _parse_json_request(request)
+    return await run_in_threadpool(_save_class_offering, data, user)
+
+
+def _save_class_offering(data, user):
 
     try:
         with get_db_connection() as conn:
@@ -295,6 +359,32 @@ async def api_save_class_offering(
                 require_schedule=True,
                 allow_missing_lessons=False,
             )
+            # Source course -> classroom -> session order is shared with lesson
+            # replacement. Recheck both resource policy and snapshot after waits.
+            before = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
+            course_ids = {int(payload["course_id"])}
+            if before:
+                course_ids.add(int(before["offering"]["course_id"]))
+            for course_id in sorted(course_ids):
+                lock_plan_row(conn, "courses", course_id)
+            if payload["offering_id"]:
+                lock_plan_row(conn, "class_offerings", payload["offering_id"])
+                owned = _ensure_teacher_owned_offering(conn, payload["offering_id"], user["id"])
+                if int(owned["course_id"]) not in course_ids:
+                    raise HTTPException(409, "课堂课程绑定已变更，请重新预览。")
+                for row in conn.execute("SELECT id FROM class_offering_sessions WHERE class_offering_id = ? ORDER BY id", (payload["offering_id"],)).fetchall():
+                    lock_plan_row(conn, "class_offering_sessions", row["id"])
+            payload = _prepare_offering_payload(
+                conn, teacher_id=int(user["id"]), data=data,
+                require_schedule=True, allow_missing_lessons=False,
+            )
+            existing = _offering_snapshot_for_payload(conn, payload, int(user["id"]))
+            if (existing and not data.get("expected_plan_revision")) or (
+                data.get("expected_plan_revision") is not None
+                and data["expected_plan_revision"] != _offering_plan_revision(payload, existing)
+            ):
+                raise HTTPException(409, "排课预览或课程资料已更新，请重新预览并核对后保存。")
+            edit_impact = validate_offering_edit(existing, payload)
 
             if payload["offering_id"]:
                 _ensure_teacher_owned_offering(conn, payload["offering_id"], user["id"])
@@ -396,6 +486,8 @@ async def api_save_class_offering(
                 conn,
                 offering_id=offering_id,
                 sessions=payload["plan"]["sessions"],
+                preserve_removed=bool(existing),
+                removal_note="本次调整已停排，保留课次以维护既有课堂记录",
             )
             sync_classroom_learning_material_assignments(
                 conn,
@@ -414,6 +506,8 @@ async def api_save_class_offering(
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "保存失败，该班级课程在当前学期可能已存在。")
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(500, f"数据库错误: {exc}")
 
@@ -424,6 +518,7 @@ async def api_save_class_offering(
         ),
         "offering_id": offering_id,
         "preview": payload["plan"],
+        "edit_impact": edit_impact,
     }
 
 
@@ -486,6 +581,8 @@ async def api_create_class_offering(
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.IntegrityError:
         raise HTTPException(400, "创建失败，该班级课程在当前学期可能已存在。")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"数据库错误: {e}")
 

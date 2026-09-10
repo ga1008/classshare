@@ -61,14 +61,14 @@ class GradeWithdrawalRequest(BaseModel):
 
 
 @router.get("/api/classrooms/{class_offering_id}/grade-publication", response_class=JSONResponse)
-async def get_grade_publication_status(class_offering_id: int, user: dict = Depends(get_current_teacher)):
+def get_grade_publication_status(class_offering_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         result = teacher_grade_publication_status(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]))
     return {"status": "success", **result}
 
 
 @router.get("/api/classrooms/{class_offering_id}/grade-publication/preview", response_class=JSONResponse)
-async def get_grade_publication_preview(class_offering_id: int, material_id: int, user: dict = Depends(get_current_teacher)):
+def get_grade_publication_preview(class_offering_id: int, material_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         preview = preview_grade_publication(conn, class_offering_id=class_offering_id, teacher_id=int(user["id"]), material_id=material_id)
     return {"status": "success", "preview": preview}

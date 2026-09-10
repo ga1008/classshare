@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-09-10T13:05:03.073844+00:00",
+  "profile_enabled": false,
+  "server_image_rebuilt": false,
+  "paid_model_requests": 0,
+  "official_dsh_package": "0.1.5-rc.1",
+  "postgres_version": "16.14",
+  "validations": [
+    {
+      "command": "node --test tests/test_agent_dsh_workflow.mjs",
+      "passed": 9,
+      "skipped": 0,
+      "kind": "Official Cordis/Tools with synthetic child factory"
+    },
+    {
+      "command": "python -m unittest tests.test_agent_child_admission tests.test_agent_dsh_launcher -q",
+      "passed": 21,
+      "skipped": 1,
+      "skip_reason": "Windows account cannot create symlinks",
+      "kind": "Actual HTTP/SQLite and Node relay"
+    },
+    {
+      "command": "python -m unittest tests.test_agent_child_admission_postgres.AgentChildAdmissionPostgresTests -v",
+      "passed": 3,
+      "skipped": 0,
+      "kind": "Isolated native PostgreSQL DB real simultaneous transactions"
+    },
+    {
+      "command": "python tools/dsh_workflow_poc.py",
+      "evidence": "agent-dsh-bounded-workflow-poc-2026-09-10.json",
+      "kind": "Actual pinned ACP/workflow/child/MCP; local synthetic model"
+    },
+    {
+      "command": "python -m unittest tests.test_agent_child_admission -q",
+      "passed": 7,
+      "skipped": 0,
+      "kind": "Final malformed dict/list status HTTP 422 and service 400; no mutation"
+    }
+  ],
+  "full_activation_acceptance": false,
+  "limitations": [
+    "Official workflow VM and same-container shell do not form a host security boundary.",
+    "Runtime finish reports do not prove host or remote business quiescence and never refund total admission.",
+    "Actual ACP cancellation did not stop the in-flight remote MCP fixture handler.",
+    "New image/profile inputs need a future pinned image build and Linux acceptance; no existing image evidence is reused."
+  ],
+  "input_sha256": {
+    "classroom_app/db/schema.py": "56184a2a6b375a6f25e046019b5b253c83e3d68370f525811c0c88081a1ecd06",
+    "classroom_app/db/schema_agent_children.py": "31e2373147fd8772153b2039ef336de58174c1153966445976b768635c4e8cfc",
+    "classroom_app/routers/agent_bridge.py": "a7d48796dd67c45b64491c8eebe68537cce1f034f5a4861d3dffdcc895177173",
+    "classroom_app/services/agent_child_admission_service.py": "dd22bb9f9463ff00bd726acb62a572e6a505dfb941b86f2e5970fc09fad6cd21",
+    "deployment/dsh/gateway-relay.mjs": "277e787c88612b6c89e5580b5655650459c52649b4cea625d07d99804e27cb62",
+    "deployment/dsh/plugins/bounded-workflow/admission.mjs": "73b4e9da0234bcb95a9528638402c5dd2371e1e4cd44ff1ce07a8a07b5509ad4",
+    "deployment/dsh/plugins/bounded-workflow/index.mjs": "93ba1a85ee8fcf980b006d97abf76fc05b5898d474ea265ee685bc478b7624cf",
+    "deployment/dsh/plugins/bounded-workflow/ledger.mjs": "0a5e5967b5b67df160b126e10060d055da28ca98f087b9a4d9ba3ce63c8f1031",
+    "deployment/dsh/plugins/bounded-workflow/provider.mjs": "3567abc7c2559e1592ad5172053bcb9647524c90b83717be7acf0cf9a67cedf5",
+    "deployment/dsh/plugins/bounded-workflow/scope.mjs": "4541594c51bb67cece0a966ff145adeed5b498b2ee3d9fc1edfd38d9ef674c3c",
+    "deployment/dsh/plugins/bounded-workflow/structured.mjs": "898165d7289b3e3ff9720cee117f8bb3c2a07b9e6a834eb6651bc019c73a93f4",
+    "deployment/dsh/profile/cordis.patch.yml": "0ab585f43c947183d80426748ba447ec631b4ed4d365f477a4cb049f0ed1c8ed",
+    "tests/fixtures/dsh_gateway_relay.mjs": "f1a972aa806b4fc401b8ac03f356039c69dde6b8d86bfc066734c2ef9d19cf73",
+    "tests/test_agent_child_admission.py": "f28375c1949cb4a079daa669bdce41dba6393a9647af149380143bd511c9d199",
+    "tests/test_agent_child_admission_postgres.py": "6cc9d70525b9cf5a6d9c746cef4ca51153762c71f6bfac415efc2c2afa823e66",
+    "tests/test_agent_dsh_launcher.py": "676c02f33ddcb871426aa43ec80397d02e605289af9b4ae3966e6352e5224c04",
+    "tests/test_agent_dsh_workflow.mjs": "8ec24233a8c9c20f9c7061d9eacae4507abb28a791e4ccf6379a537428a5e667",
+    "tools/agent_dsh_launcher.py": "0d12e7695661d7537fa939533b713f9258d2926e9c0dd9336a37a10d5f8e6e4f",
+    "tools/dsh_workflow_poc.py": "31cb1505d9a4b86698eee73daa0eec749c18b09f84ae29092a364f3ba191acf0"
+  }
+}

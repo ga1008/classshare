@@ -24,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tools.assessment_migration_rehearsal import file_digest, quote_identifier, row_bytes, update_digest
 from tools.signature_visibility_rehearsal import capture as capture_signature_visibility, prove as prove_signature_visibility
+from tools.agent_authority_migration_rehearsal import capture as capture_agent_authority, prove as prove_agent_authority
 
 
 def digest(value: Any) -> str:
@@ -120,10 +121,14 @@ def snapshot(conn, baseline: dict[str, Any] | None = None) -> dict[str, Any]:
         if missing := set(columns) - set(actual_columns):
             tables[table] = {"missing_columns": sorted(missing)}
             continue
-        keys = [row[0] for row in conn.execute("""SELECT a.attname FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
+        actual_keys = [row[0] for row in conn.execute("""SELECT a.attname FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
             JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL unnest(k.conkey) WITH ORDINALITY AS x(attnum,ord)
             JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=x.attnum
             WHERE n.nspname='public' AND c.relname=%s AND k.contype='p' ORDER BY x.ord""", (table,))]
+        # Old-row projections retain their original identity/relationship
+        # columns. Changed PK semantics are proved separately by schema hashes;
+        # a new actor PK must never index columns absent from the old projection.
+        keys = baseline["tables"][table]["primary_key_columns"] if baseline else actual_keys
         foreign_keys = conn.execute("""SELECT k.conname, pg_get_constraintdef(k.oid,true), k.convalidated FROM pg_constraint k
             JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='public' AND c.relname=%s AND k.contype='f' ORDER BY k.conname""", (table,)).fetchall()
@@ -131,7 +136,8 @@ def snapshot(conn, baseline: dict[str, Any] | None = None) -> dict[str, Any]:
             JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL unnest(k.conkey) AS x(attnum)
             JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=x.attnum
             WHERE n.nspname='public' AND c.relname=%s AND k.contype='f'""", (table,))}
-        relations = [name for name in columns if name in fk_columns or name.endswith(("_id", "_pk", "_ids", "_ids_json"))]
+        relations = (baseline["tables"][table]["association_columns"] if baseline else
+                     [name for name in columns if name in fk_columns or name.endswith(("_id", "_pk", "_ids", "_ids_json"))])
         key_indices = [columns.index(name) for name in keys]
         relation_indices = [columns.index(name) for name in dict.fromkeys(keys + relations)]
         row_hashes, key_hashes, relation_hashes = [], [], []
@@ -201,6 +207,23 @@ def apply_assessment_migrations(conn) -> None:
         from classroom_app.db.postgres import LanSharePostgresConnection
         from classroom_app.db.schema_signature_workflow import migrate_signature_visibility_levels
         migrate_signature_visibility_levels(LanSharePostgresConnection(conn), engine="postgres")
+    if conn.execute("SELECT to_regclass('public.agent_tasks')").fetchone()[0]:
+        from classroom_app.db.postgres import LanSharePostgresConnection
+        from classroom_app.db.schema_agent_ext import ensure_agent_task_extension_schema
+        from classroom_app.db.schema_agent_authority import ensure_agent_authority_schema
+        from classroom_app.db.schema_agent_model import ensure_agent_model_schema
+        from classroom_app.db.schema_agent_request_budget import ensure_agent_request_budget_schema
+        from classroom_app.db.schema_agent_interactions import ensure_agent_interactions_schema
+        from classroom_app.db.schema_agent_platform_requests import ensure_agent_platform_requests_schema
+        from classroom_app.db.schema_agent_children import ensure_agent_children_schema
+        adapter = LanSharePostgresConnection(conn)
+        ensure_agent_task_extension_schema(adapter, force=True, engine="postgres")
+        ensure_agent_authority_schema(adapter)
+        ensure_agent_model_schema(adapter)
+        ensure_agent_request_budget_schema(adapter)
+        ensure_agent_interactions_schema(adapter)
+        ensure_agent_platform_requests_schema(adapter)
+        ensure_agent_children_schema(adapter)
 
 
 def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrations, progress: Callable = print):
@@ -209,6 +232,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         before = snapshot(conn)
         signature_before = capture_signature_visibility(conn, before["tables"])
+        agent_before = capture_agent_authority(conn, before["tables"])
     if not {"assignments", "submissions"}.issubset(before["tables"]):
         raise ValueError("Required restored application tables are missing")
     progress(f"Baseline: {len(before['tables'])} tables, {sum(t['row_count'] for t in before['tables'].values())} rows")
@@ -222,12 +246,16 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
                 preserved = snapshot(conn, baseline=before)
                 full = snapshot(conn)
                 signature_after = capture_signature_visibility(conn, full["tables"])
+                agent_after = capture_agent_authority(conn, full["tables"])
             changes = differences(before, preserved)
             signature_proof = prove_signature_visibility(signature_before, signature_after)
-            unexpected = [change for change in changes if change not in signature_proof["allowed_differences"]]
+            agent_proof = prove_agent_authority(agent_before, agent_after)
+            allowed = set(signature_proof["allowed_differences"]) | set(agent_proof["allowed_differences"])
+            unexpected = [change for change in changes if change not in allowed]
             stages.append({"migration": number, "old_field_differences": changes,
                            "unexpected_old_field_differences": unexpected,
                            "signature_visibility_migration": signature_proof,
+                           "agent_authority_migration": agent_proof,
                            "old_projection": preserved, "full_schema_sha256": full["schema_sha256"]})
             progress(f"Migration {number}: old-data/schema differences={len(changes)}")
             if number == 1:
@@ -241,11 +269,12 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
     source_unchanged = file_digest(backup) == source_hash
     passed = source_unchanged and not idempotency and all(
         not item["unexpected_old_field_differences"] and item["signature_visibility_migration"]["status"] == "ok"
+        and item["agent_authority_migration"]["status"] == "ok"
         for item in stages)
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,
         "source_unchanged": source_unchanged, "database_preservation_passed": passed,
-        "migration_scope": "assessment classification, durable AI/review ledger, grade publication runtime schema, one-time explicit signature visibility migration",
+        "migration_scope": "assessment classification, durable AI/review ledger, grade publication, signature visibility, Agent actor/delegation/key/budget schema",
         "before": before, "stages": stages, "idempotency_differences": idempotency,
         "added_tables": sorted(set(first_full["tables"]) - set(before["tables"])),
         "added_columns": {table: added for table, meta in before["tables"].items()

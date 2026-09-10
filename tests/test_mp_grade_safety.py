@@ -23,6 +23,7 @@ from classroom_app.services.submission_grade_guard_service import (
 )
 from classroom_app.services.grading_revision_service import retire_submission_grade_for_replacement
 from classroom_app.services import group_assignment_service as groups
+from classroom_app.services import submission_grading_service as grading_domain
 from classroom_app.services.score_projection_service import load_submission_score_facts
 
 _real_record_member_work_score = groups.record_member_work_score
@@ -122,7 +123,7 @@ class ManualGradeSafetyTests(unittest.TestCase):
         # No user notifications / learning snapshots leave the synthetic fixture.
         for name in ("create_student_grading_notification", "handle_stage_exam_grading_complete",
                      "handle_assignment_stage_grading_complete", "refresh_student_learning_state"):
-            self.stack.enter_context(patch.object(grading, name, Mock()))
+            self.stack.enter_context(patch.object(grading_domain, name, Mock()))
         self.stack.enter_context(patch("classroom_app.services.group_assignment_service.record_member_work_score", Mock()))
 
     def tearDown(self):
@@ -174,7 +175,7 @@ class ManualGradeSafetyTests(unittest.TestCase):
                 self.grade({"score": value})
             self.assertEqual(400, error.exception.status_code)
         self.assertEqual(0, self.count_revisions())
-        grading.create_student_grading_notification.assert_not_called()
+        grading_domain.create_student_grading_notification.assert_not_called()
         self.grade({"score": 0})
         self.assertEqual(0, self.review()["score"])
 
@@ -194,7 +195,7 @@ class ManualGradeSafetyTests(unittest.TestCase):
             results = list(pool.map(edit, (70, 90)))
         self.assertEqual([200, 409], sorted(results))
         self.assertEqual(1, self.count_revisions())
-        self.assertEqual(1, grading.create_student_grading_notification.call_count)
+        self.assertEqual(1, grading_domain.create_student_grading_notification.call_count)
 
     def test_stale_answer_after_resubmit_is_rejected_even_without_existing_grade_revision(self):
         token = self.review()["review_revision"]
@@ -250,7 +251,7 @@ class ManualGradeSafetyTests(unittest.TestCase):
         with self.connection() as conn:
             conn.execute("INSERT INTO ai_jobs(id,status,lease_token) VALUES(11,'running','lease')")
             conn.execute("UPDATE submissions SET grading_job_id=11,status='grading' WHERE id=1")
-        with patch.object(grading, "activate_submission_grade_revision", side_effect=RuntimeError("synthetic failure")):
+        with patch.object(grading_domain, "activate_submission_grade_revision", side_effect=RuntimeError("synthetic failure")):
             with self.assertRaises(RuntimeError):
                 self.grade({"score": 80, "expected_review_revision": self.review()["review_revision"]})
         with self.connection() as conn:
@@ -259,7 +260,7 @@ class ManualGradeSafetyTests(unittest.TestCase):
         self.assertEqual("lease", job["lease_token"])
         self.assertIsNone(self.review()["score"])
         self.assertEqual("grading", self.review()["status"])
-        grading.create_student_grading_notification.assert_not_called()
+        grading_domain.create_student_grading_notification.assert_not_called()
 
     def test_group_failure_propagates_and_rolls_back_grade_instead_of_success(self):
         with patch.object(groups, "record_member_work_score", side_effect=RuntimeError("group settlement failed")):
@@ -357,13 +358,42 @@ class NativePostgresGradeSafetyTests(ManualGradeSafetyTests):
 
     engine = "postgres"
 
+    def test_manual_grade_waits_for_rubric_editor_and_rechecks_assignment_revision(self):
+        from classroom_app.services.assignment_management_service import load_assignment_row, assignment_revision
+        with self.connection() as conn:
+            conn.execute("ALTER TABLE assignments ADD COLUMN rubric_md TEXT")
+            conn.execute("UPDATE assignments SET rubric_md='Old rubric' WHERE id='1'")
+        with self.connection() as conn:
+            reviewed = assignment_revision(load_assignment_row(conn, '1'))
+        entered = threading.Event()
+        def grade():
+            entered.set()
+            try:
+                self.grade({'score': 80, 'expected_assignment_revision': reviewed})
+                return 200
+            except HTTPException as error:
+                return error.status_code
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with self.connection() as editor:
+                editor.execute("SELECT id FROM assignments WHERE id='1' FOR UPDATE").fetchone()
+                editor.execute("UPDATE assignments SET rubric_md='New rubric' WHERE id='1'")
+                future = pool.submit(grade)
+                self.assertTrue(entered.wait(timeout=3))
+                # Without assignment-first locking, the old rubric would be
+                # accepted while the editor has an uncommitted new revision.
+                with self.assertRaises(TimeoutError):
+                    future.result(timeout=0.2)
+            self.assertEqual(409, future.result(timeout=5))
+        self.assertEqual(0, self.count_revisions())
+        self.assertIsNone(self.review()['score'])
+
     def test_swallowed_postgres_error_never_becomes_a_successful_grade(self):
         def failing_hook(conn, *args, **kwargs):
             try:
                 conn.execute("SELECT * FROM missing_table_for_grade_safety_probe")
             except Exception:
                 pass  # Simulates an existing best-effort downstream hook.
-        with patch.object(grading, "create_student_grading_notification", failing_hook):
+        with patch.object(grading_domain, "create_student_grading_notification", failing_hook):
             with self.assertRaises(Exception):
                 self.grade({"score": 80})
         self.assertIsNone(self.review()["score"])
@@ -390,8 +420,8 @@ class NativePostgresGradeSafetyTests(ManualGradeSafetyTests):
             release_replacement = threading.Event()
             grading_entered = threading.Event()
             grading_reached_row_lock = threading.Event()
-            real_row_lock = grading.lock_submission_for_manual_grade
-            real_group_lock = grading.lock_group_grading_for_submission
+            real_row_lock = grading_domain.lock_submission_for_manual_grade
+            real_group_lock = grading_domain.lock_group_grading_for_submission
 
             def grade_group_lock(conn, sid):
                 grading_entered.set()
@@ -415,8 +445,8 @@ class NativePostgresGradeSafetyTests(ManualGradeSafetyTests):
                         manifest="", files=[], actor_role="student", actor_user_pk=1, channel="online", existing_submission=previous,
                     ))
 
-            with patch.object(grading, "lock_group_grading_for_submission", grade_group_lock), \
-                 patch.object(grading, "lock_submission_for_manual_grade", grade_row_lock), \
+            with patch.object(grading_domain, "lock_group_grading_for_submission", grade_group_lock), \
+                 patch.object(grading_domain, "lock_submission_for_manual_grade", grade_row_lock), \
                  patch.object(groups, "record_member_work_score", _real_record_member_work_score), \
                  patch.object(common, "_build_submission_storage_dir", return_value=Path(self.temp.name) / "concurrent_files"), \
                  patch.object(common, "refresh_student_learning_state", Mock()), \

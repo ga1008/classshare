@@ -8,6 +8,7 @@ from ...db.connection import begin_immediate_transaction, get_configured_db_engi
 from ...services.base_resource_modes_service import (
     build_mode_permissions,
 )
+from ...services.material_attributes_service import update_material_attributes
 from ...services.material_delete_service import build_material_delete_impact, unlink_material_delete_references
 from ...services.ordinary_grade_record_service import classify_ordinary_grade_assignment
 
@@ -96,16 +97,9 @@ def _extract_zip_upload_entries(zip_name: str, payload: bytes) -> list[dict]:
 
 def _save_payload_bytes_globally(payload: bytes) -> dict:
     """按内容哈希落盘（与 save_file_globally 同一存储布局），返回 {hash, size}。"""
-    file_hash = hashlib.sha256(payload).hexdigest()
-    target_path = global_file_write_path(file_hash)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    if not target_path.exists():
-        existing = resolve_global_file_path(file_hash)
-        if existing and existing != target_path:
-            target_path.write_bytes(existing.read_bytes())
-        else:
-            target_path.write_bytes(payload)
-    return {"hash": file_hash, "size": target_path.stat().st_size}
+    import io
+    from ...services.file_service import store_file_object_globally
+    return store_file_object_globally(io.BytesIO(payload))
 
 
 def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]:
@@ -161,59 +155,6 @@ def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]
     return item
 
 
-def _rename_material_subtree(conn, material, new_name: str) -> None:
-    normalized_name = normalize_material_path(new_name, fallback_name=str(material["name"] or "material"))
-    if "/" in normalized_name or normalized_name in {"", ".git"}:
-        raise HTTPException(400, "材料名称不合法")
-    parent_id = material["parent_id"]
-    if parent_id is None:
-        conflict = conn.execute(
-            """
-            SELECT id
-            FROM course_materials
-            WHERE parent_id IS NULL
-              AND teacher_id = ?
-              AND LOWER(name) = LOWER(?)
-              AND id != ?
-            LIMIT 1
-            """,
-            (int(material["teacher_id"]), normalized_name, int(material["id"])),
-        ).fetchone()
-    else:
-        conflict = conn.execute(
-            """
-            SELECT id
-            FROM course_materials
-            WHERE parent_id = ?
-              AND LOWER(name) = LOWER(?)
-              AND id != ?
-            LIMIT 1
-            """,
-            (int(parent_id), normalized_name, int(material["id"])),
-        ).fetchone()
-    if conflict:
-        raise HTTPException(409, "同一目录下已有同名材料")
-
-    old_path = str(material["material_path"] or "").strip()
-    if not old_path:
-        raise HTTPException(400, "材料路径异常，不能重命名")
-    prefix = old_path.rsplit("/", 1)[0] if "/" in old_path else ""
-    new_path = f"{prefix}/{normalized_name}" if prefix else normalized_name
-    subtree = _collect_subtree_rows(conn, material)
-    now_text = datetime.now().isoformat()
-    for row in subtree:
-        row_path = str(row["material_path"] or "")
-        suffix = row_path[len(old_path):] if row_path.startswith(old_path) else ""
-        conn.execute(
-            """
-            UPDATE course_materials
-            SET name = CASE WHEN id = ? THEN ? ELSE name END,
-                material_path = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (int(material["id"]), normalized_name, f"{new_path}{suffix}", now_text, int(row["id"])),
-        )
 
 
 def _build_material_type_registry() -> list[dict[str, Any]]:
@@ -672,55 +613,10 @@ async def patch_material_attributes(
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(400, "请求数据格式错误")
-    normalized_scope = None
-    if "scope_level" in payload:
-        normalized_scope = str(payload.get("scope_level") or "private").strip().lower()
-        if normalized_scope not in {"private", "school", "college", "department", "public"}:
-            raise HTTPException(400, "Invalid material scope")
-
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
-        if "name" in payload:
-            _rename_material_subtree(conn, material, str(payload.get("name") or ""))
-            material = ensure_teacher_material_owner(conn, material_id, user["id"])
-        if normalized_scope is not None and material["parent_id"] is not None:
-            raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
-        if normalized_scope is not None:
-            owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
-            now_text = datetime.now().isoformat()
-            conn.execute(
-                """
-                UPDATE course_materials
-                SET scope_level = ?,
-                    owner_role = 'teacher',
-                    owner_user_pk = ?,
-                    school_code = ?,
-                    school_name = ?,
-                    college = ?,
-                    department = ?,
-                    published_at = CASE WHEN ? != 'private' THEN COALESCE(published_at, ?) ELSE published_at END,
-                    updated_at = ?
-                WHERE root_id = ?
-                  AND (material_path = ? OR material_path LIKE ?)
-                """,
-                (
-                    normalized_scope,
-                    int(material["teacher_id"]),
-                    owner_scope["school_code"],
-                    owner_scope["school_name"],
-                    owner_scope["college"],
-                    owner_scope["department"],
-                    normalized_scope,
-                    now_text,
-                    now_text,
-                    int(material["root_id"]),
-                    material["material_path"],
-                    f"{material['material_path']}/%",
-                ),
-            )
-        conn.commit()
-        refreshed = ensure_teacher_material_owner(conn, material_id, user["id"])
+        refreshed = update_material_attributes(conn, material_id=material_id, teacher_id=int(user["id"]), payload=payload)
         attributes = _serialize_material_attributes(conn, refreshed, user)
+        conn.commit()
     return {"status": "success", "message": "材料属性已保存", "attributes": attributes}
 
 
@@ -797,11 +693,21 @@ async def upload_materials(
 ):
     if not files:
         raise HTTPException(400, "请选择要上传的材料")
+    from ...services.material_tree_service import lock_material_trees, ensure_plain_tree_operation, touch_material_nodes
+    # Authorize before reading/decompressing uploads, then repeat under lock.
+    if parent_id is not None:
+        with get_db_connection() as conn:
+            destination = ensure_teacher_material_owner(conn, parent_id, user['id'])
+            if destination['node_type'] != 'folder':
+                raise HTTPException(400, '请选择有管理权的普通材料文件夹。')
+            ensure_plain_tree_operation(conn, destination, action='upload')
 
     try:
         manifest_items = json.loads(manifest) if manifest else []
     except json.JSONDecodeError:
         raise HTTPException(400, "上传清单格式错误")
+    if not isinstance(manifest_items, list) or any(not isinstance(item, dict) for item in manifest_items):
+        raise HTTPException(400, '上传清单必须是对象数组。')
 
     if manifest_items and len(manifest_items) != len(files):
         raise HTTPException(400, "上传文件与清单数量不匹配")
@@ -845,20 +751,26 @@ async def upload_materials(
         base_prefix = ""
         base_root_id = None
         inherited_scope = "private"
+        locked = lock_material_trees(conn, teacher_id=user['id'], material_ids=(parent_id,))
         if parent_id is not None:
-            base_parent = ensure_teacher_material_owner(conn, parent_id, user["id"])
+            base_parent = locked[parent_id]
             if base_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能上传到文件夹中")
+            ensure_plain_tree_operation(conn, base_parent, action='upload')
             base_prefix = str(base_parent["material_path"])
             base_root_id = int(base_parent["root_id"])
             inherited_scope = str(base_parent["scope_level"] or "private")
+
+        # An administrator may manage another teacher's folder. New nodes
+        # inherit that folder's owner; the operation actor remains the admin.
+        owner_user = {**user, 'id': int(base_parent['teacher_id']) if base_parent else int(user['id'])}
 
         top_level_name_map: dict[str, str] = {}
         for entry in prepared_entries:
             top_name = entry["relative_path"].split("/", 1)[0]
             if top_name in top_level_name_map:
                 continue
-            top_level_name_map[top_name] = make_unique_material_name(conn, user["id"], parent_id, top_name)
+            top_level_name_map[top_name] = make_unique_material_name(conn, owner_user['id'], parent_id, top_name)
 
         created_paths: dict[str, int] = {}
         created_roots: dict[str, int] = {}
@@ -866,7 +778,7 @@ async def upload_materials(
         uploaded_file_count = 0
         uploaded_folder_count = 0
         now = datetime.now().isoformat()
-        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        owner_scope = load_teacher_org_scope(conn, owner_user['id'])
 
         for entry in prepared_entries:
             file = entry["file"]
@@ -877,7 +789,8 @@ async def upload_materials(
             full_path = normalize_material_path(full_path)
             full_segments = full_path.split("/")
 
-            for depth in range(1, len(full_segments)):
+            base_depth = len(base_prefix.split('/')) if base_prefix else 0
+            for depth in range(base_depth + 1, len(full_segments)):
                 folder_path = "/".join(full_segments[:depth])
                 if folder_path in created_paths:
                     continue
@@ -898,7 +811,7 @@ async def upload_materials(
 
                 folder_id, actual_root_id = _insert_material_folder_row(
                     conn,
-                    user=user,
+                    user=owner_user,
                     name=folder_name,
                     material_path=folder_path,
                     parent_id=folder_parent_id,
@@ -910,7 +823,7 @@ async def upload_materials(
 
                 created_paths[folder_path] = folder_id
                 created_roots[folder_path] = actual_root_id
-                if depth == 1 and parent_path == base_prefix:
+                if depth == base_depth + 1 and parent_path == base_prefix:
                     top_level_created_ids.append(folder_id)
                     uploaded_folder_count += 1
 
@@ -940,7 +853,7 @@ async def upload_materials(
 
             file_id = _insert_material_file_row(
                 conn,
-                user=user,
+                user=owner_user,
                 name=full_segments[-1],
                 material_path=full_path,
                 parent_id=file_parent_id,
@@ -964,6 +877,7 @@ async def upload_materials(
         affected_root_ids.update(int(root_id) for root_id in created_roots.values() if root_id)
         for affected_root_id in sorted(affected_root_ids):
             refresh_root_git_metadata(conn, affected_root_id)
+        touch_material_nodes(conn, (base_root_id, parent_id), now)
 
         conn.commit()
 
@@ -1147,24 +1061,29 @@ async def delete_material(
 ):
     with get_db_connection() as conn:
         begin_immediate_transaction(conn)
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        from ...services.material_tree_service import lock_material_trees, archive_deleted_packs, touch_material_nodes
+        from ...services.material_attributes_service import subtree_pattern
+        material = lock_material_trees(conn, teacher_id=user['id'], material_ids=(material_id,))[material_id]
         if get_configured_db_engine() == "postgres":
             conn.execute(
                 """
                 SELECT id
                 FROM course_materials
                 WHERE root_id = ?
-                  AND (material_path = ? OR material_path LIKE ?)
+                  AND (material_path = ? OR material_path LIKE ? ESCAPE '!')
                 FOR UPDATE
                 """,
                 (
                     int(material["root_id"]),
                     material["material_path"],
-                    f"{material['material_path']}/%",
+                    subtree_pattern(material['material_path']),
                 ),
             ).fetchall()
 
-        impact = build_material_delete_impact(conn, material)
+        impact = build_material_delete_impact(conn, material, lock=True)
+        if impact_token and impact_token != impact['impact_token']:
+            raise HTTPException(409, detail={'code': 'material_delete_impact_changed',
+                'message': '材料或关联对象已变化，请重新查看并确认后再删除。', 'impact': impact})
         if impact["total_reference_count"] and not unlink_references:
             raise HTTPException(
                 409,
@@ -1203,14 +1122,9 @@ async def delete_material(
 
         subtree_rows = _collect_subtree_rows(conn, material)
         file_hashes = {row["file_hash"] for row in subtree_rows if row["node_type"] == "file" and row["file_hash"]}
-        # LessonDoc 学习文档包:包根被删时把 pack 登记置 archived(留审计,不删行)。
-        try:
-            from ...services.lessondoc.pack_service import archive_pack_for_material
-
-            archive_pack_for_material(conn, material_id)
-        except Exception:
-            pass
+        archived_pack_count = archive_deleted_packs(conn, material)
         conn.execute("DELETE FROM course_materials WHERE id = ?", (material_id,))
+        touch_material_nodes(conn, (material['parent_id'], material['root_id']), datetime.now().isoformat())
         conn.commit()
 
         removed_files = 0
@@ -1223,6 +1137,7 @@ async def delete_material(
         "status": "success",
         "message": f"《{material['name']}》已删除",
         "removed_file_count": removed_files,
+        "archived_pack_count": archived_pack_count,
         "unlinked_reference_count": int((unlinked_impact or {}).get("total_reference_count") or 0),
         "deleted_learning_progress_count": int((unlinked_impact or {}).get("destructive_reference_count") or 0),
     }
@@ -1245,16 +1160,19 @@ async def ai_rewrite_material(
 
 
 @router.get("/api/materials/{material_id}/content", response_class=JSONResponse)
-async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher)):
+async def get_material_content(material_id: int, user: dict = Depends(get_current_teacher), max_response_bytes: int | None = None):
     from ...services.lessondoc import source_edit
+    _validate_content_response_bound(max_response_bytes)
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
         if not is_editable_material(material):
             raise HTTPException(400, "当前仅支持编辑文本类材料")
         registered = source_edit.context(conn, material)
+        if max_response_bytes is not None and int(material["file_size"] or 0) > max_response_bytes:
+            raise HTTPException(413, "材料源码超过本次读取上限，请使用文件通道或拆分材料")
 
     content, encoding = await _load_material_text_content(material, prefer_optimized=False)
-    return {
+    return _bound_content_response({
         "status": "success",
         "material": {
             "id": material["id"],
@@ -1266,7 +1184,18 @@ async def get_material_content(material_id: int, user: dict = Depends(get_curren
         },
         "content": content,
         "encoding": encoding,
-    }
+    }, max_response_bytes)
+
+
+def _validate_content_response_bound(value):
+    if value is not None and not 1024 <= value <= 4 * 1024 * 1024:
+        raise HTTPException(400, "材料响应上限无效")
+
+
+def _bound_content_response(payload, limit):
+    if limit is not None and len(JSONResponse(payload).body) > limit:
+        raise HTTPException(413, "材料源码超过本次响应上限，请使用文件通道或拆分材料")
+    return payload
 
 
 @router.put("/api/materials/{material_id}/content", response_class=JSONResponse)
@@ -1274,15 +1203,17 @@ async def update_material_content(
     material_id: int,
     payload: MaterialContentUpdateRequest,
     user: dict = Depends(get_current_teacher),
+    max_response_bytes: int | None = None,
 ):
     from ...services.lessondoc import editor_service, pack_service, source_edit
     normalized_encoding = str(payload.encoding or "utf-8").strip().lower()
+    _validate_content_response_bound(max_response_bytes)
     if normalized_encoding not in TEXT_CONTENT_ENCODINGS:
         raise HTTPException(400, "当前文本编码暂不支持保存")
 
     # Validation/rendering of a whole LessonDoc can be substantial; keep it off
     # the async event loop and open the transaction in that same worker.
-    document_result = await asyncio.to_thread(_save_registered_document_source, material_id, payload, user)
+    document_result = await asyncio.to_thread(_save_registered_document_source, material_id, payload, user, max_response_bytes)
     if document_result is not None:
         return document_result
     with get_db_connection() as conn:
@@ -1300,11 +1231,19 @@ async def update_material_content(
             raise HTTPException(getattr(exc, "status", 409), str(exc)) from exc
         if payload.revision is not None and material["file_hash"] != payload.revision:
             raise HTTPException(409, "材料源码已被修改，请重新读取后再保存")
-        payload_bytes = payload.content.encode(normalized_encoding)
+        try:
+            payload_bytes = payload.content.encode(normalized_encoding)
+        except UnicodeEncodeError as exc:
+            raise HTTPException(400, "所选编码不能表示当前内容，请选择 UTF-8 或 UTF-16") from exc
+        # Preserve an unambiguous encoding signal for a later source read.
+        if normalized_encoding == "utf-16-le":
+            payload_bytes = b"\xff\xfe" + payload_bytes
+        elif normalized_encoding == "utf-16-be":
+            payload_bytes = b"\xfe\xff" + payload_bytes
         old_hash = material["file_hash"]
         new_hash = hashlib.sha256(payload_bytes).hexdigest()
         if old_hash == new_hash and int(material["file_size"] or 0) == len(payload_bytes):
-            return {
+            return _bound_content_response({
                 "status": "success",
                 "message": "源码没有变化",
                 "unchanged": True,
@@ -1315,7 +1254,7 @@ async def update_material_content(
                     "revision": old_hash,
                     "source_revision": old_hash,
                 },
-            }
+            }, max_response_bytes)
 
         await _write_material_file(new_hash, payload_bytes)
 
@@ -1342,6 +1281,11 @@ async def update_material_content(
             raise HTTPException(409, "材料源码已被修改，请重新读取后再保存")
         if saved and saved.get("engine_asset"):
             conn.execute("UPDATE course_doc_packs SET assets_fingerprint='' WHERE id=?", (saved["pack_id"],))
+        response = _bound_content_response({
+            "status": "success", "message": "材料源码已保存", "unchanged": False,
+            "material": {"id": material_id, "name": material["name"], "updated_at": updated_at,
+                "revision": new_hash, "source_revision": new_hash, "viewer_url": f"/materials/view/{material_id}"},
+        }, max_response_bytes)
         conn.commit()
 
         should_remove_old_file = bool(old_hash and old_hash != new_hash and _count_global_file_references(conn, old_hash) <= 0)
@@ -1349,22 +1293,10 @@ async def update_material_content(
     if should_remove_old_file:
         await delete_global_file(old_hash)
 
-    return {
-        "status": "success",
-        "message": "材料源码已保存",
-        "unchanged": False,
-        "material": {
-            "id": material_id,
-            "name": material["name"],
-            "updated_at": updated_at,
-            "revision": new_hash,
-            "source_revision": new_hash,
-            "viewer_url": f"/materials/view/{material_id}",
-        },
-    }
+    return response
 
 
-def _save_registered_document_source(material_id, payload, user):
+def _save_registered_document_source(material_id, payload, user, max_response_bytes=None):
     from ...services.lessondoc import editor_service, pack_service, source_edit
     with get_db_connection() as conn:
         material = ensure_teacher_material_owner(conn, material_id, user["id"])
@@ -1383,7 +1315,9 @@ def _save_registered_document_source(material_id, payload, user):
         updated = conn.execute("SELECT * FROM course_materials WHERE id=?", (material_id,)).fetchone()
         registered = source_edit.context(conn, updated)
         normalized_content = pack_service._load_file_text(conn, updated)
-        conn.commit()
-        return {"status": "success", "message": "学习文档源码已保存", "unchanged": saved["unchanged"], "warnings": saved["warnings"],
+        response = {"status": "success", "message": "学习文档源码已保存", "unchanged": saved["unchanged"], "warnings": saved["warnings"],
                 "content": normalized_content, "material": {"id": material_id, "name": updated["name"], "updated_at": updated["updated_at"],
                 "revision": registered["revision"], "source_revision": updated["file_hash"], "viewer_url": f"/materials/view/{material_id}"}}
+        _bound_content_response(response, max_response_bytes)
+        conn.commit()
+        return response

@@ -36,6 +36,7 @@ from .academic_roster_sync_service import (
     _load_semester_by_id,
     _now_iso,
     _persist_rosters,
+    _prepare_roster_authority_transitions,
 )
 from .academic_service import china_now
 from .offering_membership_service import (
@@ -1090,6 +1091,8 @@ async def apply_teacher_academic_sync_plan(
             return {"status": "invalid_plan", "message": "该同步方案已由其他操作处理，请重新生成差异预览。"}
         conn.commit()
         try:
+            prepared_authority_ids = _prepare_roster_authority_transitions(
+                conn, teacher_id=teacher_id, rosters=rosters, reconciliation=reconciliation)
             course_result = _upsert_courses_and_schedule_items(
                 conn,
                 teacher_id=teacher_id,
@@ -1138,6 +1141,7 @@ async def apply_teacher_academic_sync_plan(
                 synced_at=synced_at,
                 reconciliation=reconciliation,
                 course_identity_map=course_identity_map,
+                prepared_authority_ids=prepared_authority_ids,
             )
             for preview_item in preview.get("items") or []:
                 if preview_item.get("entity_type") != "class":

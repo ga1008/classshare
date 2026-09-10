@@ -118,7 +118,6 @@ from ...services.agent_key_service import (
     delete_agent_api_key,
     fetch_agent_runtime_usage,
     set_active_agent_api_key,
-    test_saved_agent_api_key,
 )
 from ...services.roster_handler import parse_excel_to_students
 from ...services.student_auth_service import build_student_security_summary, list_student_login_history

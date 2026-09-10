@@ -1,0 +1,73 @@
+{
+  "kind": "c3_runtime_synthetic_acceptance_not_full_platform_release",
+  "dsh_package_version": "0.1.5-rc.1",
+  "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+  "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+  "tag": "lanshare-dsh:0.1.5-rc.1-lanshare-20260910-c3",
+  "runtime_acceptance_passed": true,
+  "production_switched": false,
+  "paid_model_requests": 0,
+  "real_credentials_used": false,
+  "server_directory": "/lanshare/.codex-temp/dsh-migration-20260910/runtime-c3",
+  "reports": {
+    "linux-poc-result-v2.json": "agent-dsh-linux-c3-poc-2026-09-10.json",
+    "launcher-service-poc.json": "agent-dsh-launcher-c3-poc-2026-09-10.json",
+    "linux-quota-poc.json": "agent-dsh-quota-c3-poc-2026-09-10.json",
+    "runtime-c3-inputs.json": "agent-dsh-runtime-c3-inputs-2026-09-10.json"
+  },
+  "linux_launcher_tests": {
+    "run": 16,
+    "passed": 16,
+    "skipped": 0,
+    "output": "test_actual_node_relay_framing_auth_sse_and_cancellation (test_agent_dsh_launcher.LauncherBoundaryTests.test_actual_node_relay_framing_auth_sse_and_cancellation) ... ok\ntest_container_has_no_network_root_capabilities_or_platform_mounts (test_agent_dsh_launcher.LauncherBoundaryTests.test_container_has_no_network_root_capabilities_or_platform_mounts) ... ok\ntest_created_or_running_capacity_is_checked_before_home_mutation (test_agent_dsh_launcher.LauncherBoundaryTests.test_created_or_running_capacity_is_checked_before_home_mutation) ... ok\ntest_identity_and_credential_purpose_are_strict (test_agent_dsh_launcher.LauncherBoundaryTests.test_identity_and_credential_purpose_are_strict) ... ok\ntest_image_profile_mismatch_refuses_launcher (test_agent_dsh_launcher.LauncherBoundaryTests.test_image_profile_mismatch_refuses_launcher) ... ok\ntest_mount_path_traversal_and_symlink_are_rejected (test_agent_dsh_launcher.LauncherBoundaryTests.test_mount_path_traversal_and_symlink_are_rejected) ... ok\ntest_only_explicit_scoped_settings_enter_runner (test_agent_dsh_launcher.LauncherBoundaryTests.test_only_explicit_scoped_settings_enter_runner) ... ok\ntest_search_is_explicitly_optional (test_agent_dsh_launcher.LauncherBoundaryTests.test_search_is_explicitly_optional) ... ok\ntest_stop_checks_actor_and_fence_then_confirms_removal (test_agent_dsh_launcher.LauncherBoundaryTests.test_stop_checks_actor_and_fence_then_confirms_removal) ... ok\ntest_unconfirmed_termination_poison_does_not_acknowledge (test_agent_dsh_launcher.LauncherBoundaryTests.test_unconfirmed_termination_poison_does_not_acknowledge) ... ok\ntest_workspace_quota_counts_regular_files (test_agent_dsh_launcher.LauncherBoundaryTests.test_workspace_quota_counts_regular_files) ... ok\ntest_zero_byte_files_and_directories_are_bounded (test_agent_dsh_launcher.LauncherBoundaryTests.test_zero_byte_files_and_directories_are_bounded) ... ok\ntest_ambiguous_overlimit_and_truncated_frames_never_reach_upstream (test_agent_dsh_launcher.LauncherGatewayTests.test_ambiguous_overlimit_and_truncated_frames_never_reach_upstream) ... ok\ntest_children_only_allow_exact_admit_and_finish_post_paths (test_agent_dsh_launcher.LauncherGatewayTests.test_children_only_allow_exact_admit_and_finish_post_paths) ... ok\ntest_questions_use_exact_uuid_paths_and_methods (test_agent_dsh_launcher.LauncherGatewayTests.test_questions_use_exact_uuid_paths_and_methods) ... ok\ntest_real_http_keeps_search_auth_and_rejects_unlisted_paths (test_agent_dsh_launcher.LauncherGatewayTests.test_real_http_keeps_search_auth_and_rejects_unlisted_paths) ... ok\n\n----------------------------------------------------------------------\nRan 16 tests in 9.324s\n\nOK\n"
+  },
+  "host_final_state": {
+    "old_image_unchanged": "sha256:15312d67bf62400d238ebd74034b29795064cca199ffbdf9a8ad1b2e6b2d8a47",
+    "dedicated_builder_stopped": true,
+    "dsh_runner_containers_remaining": [],
+    "production_services_observed": [
+      "lanshare-blog-crawler-1\tUp 20 hours",
+      "lanshare-agent-worker-1\tUp 20 hours",
+      "lanshare-scheduler-1\tUp 20 hours (healthy)",
+      "lanshare-app-1\tUp 20 hours (healthy)",
+      "lanshare-ai-1\tUp 20 hours (healthy)",
+      "lanshare-mailer-1\tUp 20 hours (healthy)",
+      "lanshare-postgres-1\tUp 20 hours (healthy)",
+      "lanshare-deepseek-runtime-1\tUp 20 hours",
+      "lanshare-nginx-1\tUp 20 hours (healthy)"
+    ],
+    "profile_disabled_child_tools_absent_from_actual_schemas": true,
+    "load": [
+      0.3984375,
+      0.51904296875,
+      0.3212890625
+    ],
+    "paid_model_requests": 0,
+    "real_credentials_used": false
+  },
+  "first_probe_attempt": {
+    "report_preserved_at": "/lanshare/.codex-temp/dsh-migration-20260910/runtime-c3/linux-poc-result.json",
+    "failure": "Original tool never received search sources",
+    "classification": "fixture_assertion_expected_assistant_prose_but_official_provider_returns_cited_sources",
+    "runtime_inputs_changed_for_retry": false,
+    "probe_source_sha256": "bff1b7160d233b41cb6dc26b14621182692c30b2ccd7665fbb4eb029f74e7441",
+    "retry_run_id": "v2"
+  },
+  "limitations": [
+    "No new full-application E2E or paid model test was run for this image.",
+    "Subagent/workflow remains disabled; official remote MCP cancellation is not host-observed quiescence.",
+    "Kernel reports partial Landlock enforcement on its older ABI; outer network-none, nonroot, read-only Docker isolation remains required.",
+    "Workspace/home quotas are launcher checks and periodic termination, not an atomic filesystem hard quota.",
+    "PDF generation checks only its header; no visual rendering QA.",
+    "Historical upstream paid-service smoke is retained separately and is not evidence of c3 platform authorization."
+  ],
+  "evidence_sha256": {
+    "build.log": "2a018f358bea3c2b860c06bff4937aeb66df6cdaf9970334ee7c9cc87dd88e2a",
+    "linux-poc-result.json": "7fe0e664125eb69d67cab7abf54e8545e2544c316ad6f70ae32ceed24d2c41f1",
+    "linux-poc-result-v2.json": "8ef661efaac90d751c2739bc5647002b8612e0788ceca5672ea1e59e1f9a483f",
+    "launcher-service-poc.json": "f322ad16916517447789ec21ce4602b671852e7b21b32502910ee0eb98dfc74d",
+    "linux-quota-poc.json": "239ae0bd514ebc505da56481e1ebb66c806d4855e16e88ecdc3bf744adb67234",
+    "linux-launcher-unit.log": "256dbff87649d2ece6970d2c51dc1407880af1ac9c4b72f229a767ac49175e89",
+    "final-host-state.json": "404e891e4d4a849d1242be902879e1004491f12080fe1182f43fe410534fb172"
+  }
+}

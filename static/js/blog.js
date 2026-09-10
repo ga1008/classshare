@@ -1873,6 +1873,7 @@ class BlogCenter {
         this.state.editingPostId = post?.id || null;
         const recovered = this.loadComposerRecovery(this.state.editingPostId);
         const source = recovered ? { ...(post || {}), ...recovered } : (post || {});
+        this.state.editingUpdatedAt = recovered?.expected_updated_at || post?.updated_at || null;
 
         $('[data-blog-compose-title]', this.shell).value = source.title || '';
         $('[data-blog-compose-content]', this.shell).value = source.content_md || '';
@@ -1943,6 +1944,7 @@ class BlogCenter {
 
     composerSnapshot() {
         return {
+            expected_updated_at: this.state.editingUpdatedAt || null,
             title: $('[data-blog-compose-title]', this.shell)?.value || '',
             content_md: $('[data-blog-compose-content]', this.shell)?.value || '',
             tags: $('[data-blog-compose-tags]', this.shell)?.value || '',
@@ -2110,6 +2112,7 @@ class BlogCenter {
         try {
             const editingPostId = this.state.editingPostId;
             if (this.state.editingPostId) {
+                if (this.state.editingUpdatedAt) payload.expected_updated_at = this.state.editingUpdatedAt;
                 await api.put(`/api/blog/posts/${this.state.editingPostId}`, payload);
                 showToast('帖子已更新', 'success');
             } else {

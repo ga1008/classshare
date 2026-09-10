@@ -6,6 +6,13 @@ import { showMessage } from '/static/js/ui.js';
 const mergeContainer = document.getElementById('offeringMergeCandidates');
 const loadingEl = document.getElementById('offeringMergeLoading');
 const emptyEl = document.getElementById('offeringMergeEmpty');
+const reviews = new WeakMap();
+const stateFor = (element) => {
+    if (!reviews.has(element)) reviews.set(element, { sequence: 0, hash: '', selection: '', saving: false });
+    return reviews.get(element);
+};
+const selectionKey = ({ targetId, sourceIds }) => JSON.stringify([targetId, [...sourceIds].sort((a, b) => a - b)]);
+const strategyLabels = { repoint: '迁入主课堂', repoint_guarded: '保留并迁入', dedup_skip: '去重后迁入，原记录留档', keep_target: '保留主课堂配置，来源留档', session_structure: '映射课次后留档', assignment_coexist: '各份作业并存', grade_publications: '保留成绩历史', keep_billing_scope: '保留原计费范围', scope_review: '先核对读者范围' };
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (ch) => (
@@ -52,14 +59,23 @@ function mergeGroupState(groupEl, candidates) {
 async function handleMergePreview(groupEl, candidates) {
     const { targetId, sourceIds, targetName } = mergeGroupState(groupEl, candidates);
     const resultEl = groupEl.querySelector('[data-merge-preview-result]');
+    const state = stateFor(groupEl);
+    if (state.saving) return;
+    const sequence = ++state.sequence;
+    const selected = selectionKey({ targetId, sourceIds });
+    state.hash = '';
+    groupEl.querySelector('[data-merge-execute]')?.setAttribute('disabled', '');
     try {
         const data = await apiFetch('/api/manage/class_offerings/merge/preview', {
             method: 'POST',
             body: { target_offering_id: targetId, source_offering_ids: sourceIds },
         });
+        if (state.sequence !== sequence || selected !== selectionKey(mergeGroupState(groupEl, candidates))) return;
         const preview = data.preview;
+        state.hash = preview.can_execute ? preview.review_hash : '';
+        state.selection = selected;
         const tableRows = preview.tables.map((t) => `
-            <tr><td>${escapeHtml(t.table)}</td><td>${escapeHtml(t.strategy)}</td><td>${t.source_rows}</td></tr>`).join('');
+            <tr><td>${escapeHtml(t.label || '课堂关联记录')}</td><td>${escapeHtml(strategyLabels[t.strategy] || '按预览处理')}</td><td>${t.source_rows}</td></tr>`).join('');
         const warnings = preview.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
         const blockers = preview.blockers.map((b) => `<li class="text-danger">${escapeHtml(b)}</li>`).join('');
         resultEl.hidden = false;
@@ -67,19 +83,20 @@ async function handleMergePreview(groupEl, candidates) {
             <p>共 ${preview.total_source_rows} 行数据将迁入主课堂「${escapeHtml(preview.target.class_name)}」。</p>
             ${blockers ? `<ul>${blockers}</ul><p class="text-danger">存在阻断项，无法执行。</p>` : ''}
             ${warnings ? `<ul>${warnings}</ul>` : ''}
-            <details><summary>各表迁移明细（${preview.tables.length} 张表）</summary>
-                <table class="offering-merge-table"><thead><tr><th>表</th><th>策略</th><th>迁移行数</th></tr></thead>
+            <details><summary>关联内容明细（${preview.tables.length} 类）</summary>
+                <table class="offering-merge-table"><thead><tr><th>关联内容</th><th>处理方式</th><th>数量</th></tr></thead>
                 <tbody>${tableRows}</tbody></table>
             </details>
             ${preview.can_execute ? `
             <div class="offering-merge-confirm">
                 <input type="text" class="form-control" data-merge-confirm-input
-                       placeholder="输入主课堂班级名「${escapeHtml(targetName)}」确认">
+                       placeholder="输入主课堂班级名「${escapeHtml(preview.target.class_name || targetName)}」确认">
                 <label class="offering-merge-ack"><input type="checkbox" data-merge-ack> 我已知晓该操作不可逆（已生成数据快照兜底）</label>
                 <button type="button" class="btn btn-sm text-danger" data-merge-execute>确认合并（不可逆）</button>
             </div>` : ''}
         `;
     } catch (error) {
+        if (state.sequence !== sequence) return;
         showMessage(error.message || '合并预检失败', 'error');
     }
 }
@@ -88,12 +105,20 @@ async function handleMergeExecute(groupEl, candidates) {
     const { targetId, sourceIds } = mergeGroupState(groupEl, candidates);
     const confirmInput = groupEl.querySelector('[data-merge-confirm-input]');
     const ack = groupEl.querySelector('[data-merge-ack]');
+    const state = stateFor(groupEl);
+    if (state.saving) return;
+    if (!state.hash || state.selection !== selectionKey({ targetId, sourceIds })) {
+        showMessage('课堂选择或预览已变化，请重新预检。', 'error');
+        return;
+    }
     if (!ack?.checked) {
         showMessage('请先勾选"我已知晓该操作不可逆"。', 'error');
         return;
     }
     const button = groupEl.querySelector('[data-merge-execute]');
+    state.saving = true;
     button.disabled = true;
+    groupEl.querySelectorAll('input,[data-merge-preview]').forEach((input) => { input.disabled = true; });
     button.textContent = '合并中...';
     try {
         const result = await apiFetch('/api/manage/class_offerings/merge/execute', {
@@ -102,14 +127,20 @@ async function handleMergeExecute(groupEl, candidates) {
                 target_offering_id: targetId,
                 source_offering_ids: sourceIds,
                 confirm_class_name: confirmInput?.value || '',
+                expected_review_hash: state.hash,
+                acknowledged_irreversible: true,
             },
         });
         showMessage(result.message || '合并完成', 'success');
         window.setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
-        showMessage(error.message || '合并失败，已整体回滚', 'error');
-        button.disabled = false;
-        button.textContent = '确认合并（不可逆）';
+        state.hash = '';
+        showMessage(error.message || '未收到确定结果，请重新预检核对课堂状态。', 'error');
+        button.disabled = true;
+        button.textContent = '请重新预检后确认';
+    } finally {
+        state.saving = false;
+        groupEl.querySelectorAll('input,[data-merge-preview]').forEach((input) => { input.disabled = false; });
     }
 }
 
@@ -130,6 +161,14 @@ async function initMergeWizard() {
         return;
     }
     renderMergeCandidates(candidates);
+    mergeContainer.addEventListener('change', (event) => {
+        if (!event.target.matches('input[type="radio"]')) return;
+        const groupEl = event.target.closest('[data-merge-group]');
+        if (!groupEl) return;
+        const state = stateFor(groupEl); state.sequence += 1; state.hash = '';
+        const result = groupEl.querySelector('[data-merge-preview-result]');
+        result.hidden = false; result.textContent = '已更换主课堂，请重新预检后确认。';
+    });
     mergeContainer.addEventListener('click', (event) => {
         const groupEl = event.target.closest('[data-merge-group]');
         if (!groupEl) return;

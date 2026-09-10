@@ -1,0 +1,15 @@
+{
+  "kind": "exact_source_linux_filesystem_component_probe",
+  "source_sha256": "d2f467acb8e0571f4324a73f95106d038f783559bf074624887d945f59767610",
+  "checks": {
+    "regular_file_snapshot": true,
+    "symlink_denied": true,
+    "oversize_denied": true,
+    "fifo_without_writer_denied_without_blocking": true
+  },
+  "fifo_elapsed_seconds": 0.0064,
+  "paid_model_calls": 0,
+  "production_data_accessed": false,
+  "full_authenticated_http_integration": false,
+  "passed": true
+}

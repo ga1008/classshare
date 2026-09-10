@@ -20,6 +20,8 @@ class MaterialDeleteServiceTests(unittest.TestCase):
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(
             """
+            CREATE TABLE teachers(id INTEGER PRIMARY KEY);
+            INSERT INTO teachers VALUES(1);
             CREATE TABLE course_materials (
                 id INTEGER PRIMARY KEY,
                 teacher_id INTEGER NOT NULL,

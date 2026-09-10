@@ -837,6 +837,19 @@ async def _persist_final_material_record_update(
     package_id = int(record["package_material_id"] or 0) or None
 
     with get_db_connection() as conn:
+        # Lock the whole document's signature set once before any point/flow
+        # writes. Different documents may select the same signatures backwards.
+        from ...services.signature_workflow_lock_service import lock_signature_materials
+        from ...services.signature_account_lock_service import lock_signature_rows
+        intents = signature_use_intents or []
+        lock_signature_materials(conn, [('academic_final_material', str(record_id)),
+            *((str(item['context_type']), str(item['context_id'])) for item in intents)])
+        signature_ids = [identifier for item in intents for identifier in
+                         (item.get('signature_ids') if isinstance(item.get('signature_ids'), list) else [item['signature_id']])]
+        if expected_signature_flow_id:
+            signature_ids.extend(row['signature_id'] for row in conn.execute(
+                'SELECT signature_id FROM signature_point_flow_items WHERE flow_id=?', (expected_signature_flow_id,)).fetchall())
+        lock_signature_rows(conn, signature_ids)
         if expected_signature_flow_id:
             from ...services.material_signature_apply_service import validate_application
 

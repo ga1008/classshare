@@ -39,6 +39,9 @@ let taskEventStreamDisabled = false;
 let agentSubscriptionPayload = { subscriptions: [], recent_tasks: [] };
 let agentSubscriptionBusy = false;
 const taskTerminalNotificationRefreshIds = new Set();
+const agentQuestionRefreshes = new Map();
+const agentQuestionExpiryTimers = new Map();
+const taskDetailRequestVersions = new Map();
 
 function $(selector, root = document) {
     return root.querySelector(selector);
@@ -677,7 +680,7 @@ function setQueueState(queueState = {}, counts = {}) {
     let modebarStatus = queued > 0 ? `排队 ${queued}` : '队列空闲';
     if (state === 'red') {
         const running = queueState.running || {};
-        tooltip = `${running.teacher_name || '某位老师'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行（${runningLabel}）`;
+        tooltip = `${running.teacher_name || '某位用户'}的${running.public_summary || running.task_type_label || 'Agent 任务'}正在运行（${runningLabel}）`;
         modebarStatus = queued > 0 ? `${runningLabel} · 排队 ${queued}` : runningLabel;
     } else if (state === 'yellow') {
         const composer = queueState.composer || {};
@@ -685,7 +688,7 @@ function setQueueState(queueState = {}, counts = {}) {
             tooltip = `已有 ${queued} 个 Agent 任务在等待全平台队列`;
             modebarStatus = `排队 ${queued}`;
         } else {
-            tooltip = `${composer.teacher_name || '某位老师'}正在编写新任务`;
+            tooltip = `${composer.teacher_name || '某位用户'}正在编写新任务`;
             modebarStatus = '有人正在编辑';
         }
     }
@@ -826,6 +829,246 @@ function terminalTitle(status) {
     return '当前状态';
 }
 
+function taskCompletionPresentation(task) {
+    const detail = task.result_detail || {};
+    const pendingDomain = (detail.completion_blockers || []).some((item) => item.code === 'domain_job_pending')
+        || (detail.platform_operations || []).some((item) => ['queued', 'running'].includes(item.domain_result?.status));
+    const pendingRequests = (detail.platform_requests || []).some((item) => item.status !== 'observed_http_result');
+    if (task.is_terminal && task.status !== 'canceled') {
+        if (pendingDomain) return { label: '业务结果待跟进', title: '已提交，等待业务结果', tone: 'is-warning', pendingDomain: true };
+        if (detail.completion_kind === 'partial') return { label: '部分完成', title: '已保留结果，仍有待完成事项', tone: 'is-warning', pendingRequests };
+        if (detail.completion_kind === 'authority_changed') return { label: '权限变更已提交', title: '已按新权限停止当前任务', tone: 'is-result' };
+        if (detail.completion_kind === 'observed_http_result') return { label: '已收到平台响应', title: '平台已响应，业务结果以记录为准', tone: 'is-result' };
+        if (task.status === 'completed' && detail.business_outcome_verified === true) return { label: '业务结果已核验', title: '平台操作已完成并核验', tone: 'is-result' };
+        if (task.status === 'completed' && detail.completion_kind === 'deliverable') return { label: '内容已交付', title: '已交付内容', tone: 'is-result' };
+    }
+    return { label: task.status_label || task.status, title: terminalTitle(task.status), tone: terminalTone(task.status), pendingDomain, pendingRequests };
+}
+
+function renderAgentOperationReceipts(detail = {}, taskId = null) {
+    const operations = Array.isArray(detail.platform_operations) ? detail.platform_operations.slice(0, 100) : [];
+    const requests = Array.isArray(detail.platform_requests) ? detail.platform_requests.slice(0, 100) : [];
+    const blockers = Array.isArray(detail.completion_blockers) ? detail.completion_blockers : [];
+    if (!operations.length && !requests.length && !blockers.length) return '';
+    const blockerLabels = { domain_job_pending: '已提交的领域任务尚在排队或运行，请跟进原任务。', domain_job_failed: '领域任务未成功完成，请查看原任务的原因。',
+        domain_job_identity_mismatch: '领域任务的归属发生变化，结果尚未核验。', domain_material_binding_missing: '生成材料或课时绑定尚未核验。',
+        domain_material_integrity_failed: '生成文件完整性尚未核验。', domain_result_unverified: '业务结果尚未核验。',
+        unprocessed_supplements: '仍有补充说明未处理。', unanswered_questions: '仍有未回答的问题。', unexecuted_proposals: '仍有建议动作未执行。',
+        platform_request_uncertain: '平台请求结果尚不确定，请核对原业务记录后再决定下一步。', platform_request_submitted: '平台已接收请求，还需跟进后续处理结果。',
+        platform_request_admitted: '平台请求已登记，尚无执行回执。', platform_request_executing: '平台请求尚无确定响应，请先核对。', request_identity_mismatch: '请求归属尚未核验。' };
+    return `<div class="ai-task-detail__block ai-agent-operation-receipts"><h4>平台操作回执</h4>
+        ${operations.map((item) => {
+            const result = item.result || {};
+            const domain = item.domain_result;
+            const status = domain?.status || item.completion_status || item.status;
+            const labels = { queued: '已提交 · 排队中', running: '已提交 · 处理中', committed: '已提交', completed: domain?.binding_verified ? '成品及课时绑定已核验' : '已完成', failed: '领域任务失败', canceled: '已取消', unverified: '结果待核验' };
+            const href = safeLocalHref(result.url);
+            return `<div class="ai-agent-operation-receipt"><div><strong>${escapeHtml(domain ? '课时文档生成' : result.label || item.action || '平台操作')}</strong><span>${escapeHtml(labels[status] || '回执待核验')}</span></div>
+                ${domain?.generation_task_id ? `<small>生成任务 #${escapeHtml(domain.generation_task_id)}${domain.generated_material_path ? ` · ${escapeHtml(domain.generated_material_path)}` : ''}</small>` : ''}
+                ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${domain && ['queued', 'running'].includes(status) ? '前往课堂查看当前状态' : '查看业务记录'}</a>` : ''}</div>`;
+        }).join('')}
+        ${requests.map((item) => {
+            const labels = { observed_http_result: '已收到平台响应 · 业务结果未单独核验', submitted: '平台已接收 · 后续结果待跟进', uncertain: '结果不确定 · 请先核对', admitted: '请求已登记', executing: '请求执行中 · 等待回执' };
+            const names = { 'http.blog.bookmark.toggle': '博客收藏', 'http.blog.follow.set': '博客关注设置', 'http.blog.follows.list': '读取博客关注',
+                'http.messages.read': '消息已读设置', 'http.messages.private.open': '打开私信', 'http.messages.blocks.list': '读取私信屏蔽',
+                'http.messages.blocks.add': '屏蔽私信联系人', 'http.messages.blocks.remove': '解除私信屏蔽',
+                'http.polls.snapshot': '课堂投票', 'http.polls.detail': '投票详情', 'http.polls.vote': '提交投票' };
+            const status = Number(item.observation?.http_status);
+            return `<div class="ai-agent-operation-receipt ai-agent-request-receipt"><div><strong>${escapeHtml(names[item.capability_key] || '平台业务请求')}</strong><span>${escapeHtml(labels[item.status] || '请求回执待核对')}</span></div>
+                <small>请求编号 ${escapeHtml(item.request_id || item.operation_id || '')}${Number.isInteger(status) && status >= 100 && status <= 599 ? ` · HTTP ${status}` : ''}</small>
+                ${taskId && item.request_id ? `<button type="button" class="btn btn-outline btn-sm" data-agent-reconcile-open="${escapeHtml(item.request_id)}" data-task-id="${escapeHtml(taskId)}">查看请求与核对</button>` : ''}</div>`;
+        }).join('')}
+        ${requests.length ? '<small>以上保留平台响应事实；不确定或仍在处理的请求需先核对原记录，避免重复执行。</small>' : ''}
+        ${requests.length && taskId ? `<button type="button" class="btn btn-outline btn-sm" data-agent-request-list="${escapeHtml(taskId)}">全部平台请求</button>` : ''}
+        ${blockers.length ? `<ul class="ai-agent-completion-blockers">${Array.from(new Set(blockers.map((item) => blockerLabels[item.code] || '仍有操作需要核对回执。'))).map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>` : ''}
+        ${operations.some((item) => item.domain_result) ? '<small>以上为 Agent 结束时核对的状态；已提交的生成任务会继续处理，可前往课堂查看最新结果。</small>' : ''}
+    </div>`;
+}
+
+async function openAgentRequestList(button) {
+    let dialog = document.querySelector('[data-agent-request-list-dialog]');
+    if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.className = 'ai-agent-reconciliation-dialog';
+        dialog.dataset.agentRequestListDialog = 'true';
+        dialog.setAttribute('aria-labelledby', 'agent-request-list-title');
+        dialog.innerHTML = '<header><h3 id="agent-request-list-title">平台请求记录</h3><button type="button" data-request-list-close aria-label="关闭请求记录">×</button></header><p>逐条查看原请求与平台响应，需要时再保存独立核对声明。</p><div data-request-list-items></div><p data-request-list-feedback role="status" aria-live="polite"></p><footer><button type="button" class="btn btn-outline" data-request-list-close>关闭</button><button type="button" class="btn btn-outline" data-request-list-more>加载更多</button></footer>';
+        dialog.addEventListener('keydown', (event) => { if (event.key === 'Escape') event.stopPropagation(); });
+        dialog.addEventListener('click', (event) => {
+            if (event.target.closest('[data-request-list-close]')) dialog.close();
+            if (event.target.closest('[data-request-list-more]')) loadAgentRequestPage(dialog).catch(() => {});
+            const detailButton = event.target.closest('[data-agent-reconcile-open]');
+            if (detailButton) openAgentReconciliation(detailButton).catch(() => {});
+        });
+        dialog.addEventListener('close', () => {
+            dialog.agentListVersion = (dialog.agentListVersion || 0) + 1;
+            const opener = dialog.agentOpener?.isConnected ? dialog.agentOpener : Array.from(document.querySelectorAll('[data-agent-request-list]')).find((item) => item.dataset.agentRequestList === dialog.dataset.taskId);
+            opener?.focus({ preventScroll: true });
+        });
+        document.body.appendChild(dialog);
+    }
+    if (dialog.open) return;
+    dialog.agentOpener = button;
+    dialog.dataset.taskId = button.dataset.agentRequestList;
+    dialog.agentListVersion = (dialog.agentListVersion || 0) + 1;
+    dialog.agentRequestIds = new Set();
+    dialog.agentNextOffset = 0;
+    dialog.dataset.loading = 'false';
+    dialog.querySelector('[data-request-list-items]').replaceChildren();
+    dialog.querySelector('[data-request-list-more]').hidden = false;
+    dialog.showModal();
+    await loadAgentRequestPage(dialog);
+}
+
+async function loadAgentRequestPage(dialog) {
+    if (dialog.dataset.loading === 'true' || dialog.agentNextOffset === null) return;
+    const version = dialog.agentListVersion;
+    const more = dialog.querySelector('[data-request-list-more]');
+    const feedback = dialog.querySelector('[data-request-list-feedback]');
+    dialog.dataset.loading = 'true'; more.disabled = true;
+    feedback.textContent = '正在读取请求记录…';
+    try {
+        const data = await apiJson(`/api/agent-tasks/${encodeURIComponent(dialog.dataset.taskId)}/platform-requests?limit=20&offset=${dialog.agentNextOffset}`);
+        if (!dialog.open || dialog.agentListVersion !== version) return;
+        const container = dialog.querySelector('[data-request-list-items]');
+        for (const item of (Array.isArray(data.requests) ? data.requests : [])) {
+            const id = String(item.id || '');
+            if (!id || dialog.agentRequestIds.has(id)) continue;
+            dialog.agentRequestIds.add(id);
+            const row = document.createElement('div'); row.className = 'ai-agent-operation-receipt'; row.dataset.requestListItem = id;
+            const title = document.createElement('strong'); title.textContent = String(item.summary || item.capability_key || '平台请求').slice(0, 500);
+            const status = document.createElement('small');
+            const labels = { observed_http_result: '已收到平台响应', uncertain: '结果不确定', submitted: '后续结果待跟进', executing: '执行中', admitted: '已登记' };
+            const declaration = item.reconciliation?.resolution;
+            status.textContent = (labels[item.observation?.status] || '回执待核对') + (declaration === 'occurred' ? ' · 人工声明已生效' : declaration === 'not_occurred' ? ' · 人工声明未生效' : '');
+            const detail = document.createElement('button'); detail.type = 'button'; detail.className = 'btn btn-outline btn-sm';
+            detail.dataset.agentReconcileOpen = id; detail.dataset.taskId = dialog.dataset.taskId; detail.textContent = '查看详情与核对';
+            row.append(title, status, detail); container.appendChild(row);
+        }
+        dialog.agentNextOffset = data.has_more && Number.isInteger(data.next_offset) && data.next_offset > dialog.agentNextOffset ? data.next_offset : null;
+        more.hidden = dialog.agentNextOffset === null;
+        feedback.textContent = dialog.agentRequestIds.size ? `已显示 ${dialog.agentRequestIds.size} 条请求。` : '没有平台请求记录。';
+    } catch (error) {
+        if (dialog.agentListVersion === version) feedback.textContent = error.message || '请求记录读取失败，请重试。';
+    } finally {
+        if (dialog.agentListVersion === version) { dialog.dataset.loading = 'false'; more.disabled = false; }
+    }
+}
+
+function agentReconciliationDialog() {
+    let dialog = document.querySelector('[data-agent-reconciliation-dialog]');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.className = 'ai-agent-reconciliation-dialog';
+    dialog.dataset.agentReconciliationDialog = 'true';
+    dialog.setAttribute('aria-labelledby', 'agent-reconciliation-title');
+    dialog.innerHTML = `<form novalidate><header><h3 id="agent-reconciliation-title">核对平台请求</h3><button type="button" data-reconcile-close aria-label="关闭核对">×</button></header>
+        <p data-reconcile-summary></p><div class="ai-agent-reconciliation-facts"><strong>平台响应事实</strong><p data-reconcile-observation></p>
+        <details><summary>查看原请求参数</summary><pre data-reconcile-parameters></pre></details></div>
+        <div data-reconcile-statement hidden><strong>已保存的人工核对声明</strong><p data-reconcile-statement-text></p></div>
+        <fieldset data-reconcile-fields><legend>你的核对结论</legend><p>请查看正常业务记录后选择。人工声明会单独保留，不会替代平台响应或自动执行操作。</p>
+        <label><input type="radio" name="reconciliation-resolution" value="occurred"> 已确认该操作生效</label>
+        <label><input type="radio" name="reconciliation-resolution" value="not_occurred"> 已确认该操作未生效</label>
+        <label class="ai-agent-reconciliation-note">核对说明<textarea name="note" maxlength="1000" rows="4" placeholder="例如：已打开投票详情，确认当前没有该选项记录。"></textarea></label></fieldset>
+        <p data-reconcile-block></p><p data-reconcile-feedback role="status" aria-live="polite"></p>
+        <footer><button type="button" class="btn btn-outline" data-reconcile-close>关闭</button><button type="submit" class="btn btn-primary" data-reconcile-submit>保存核对声明</button></footer></form>`;
+    dialog.addEventListener('click', (event) => { if (event.target.closest('[data-reconcile-close]') && dialog.dataset.submitting !== 'true') dialog.close(); });
+    dialog.addEventListener('keydown', (event) => { if (event.key === 'Escape') event.stopPropagation(); });
+    dialog.addEventListener('cancel', (event) => { if (dialog.dataset.submitting === 'true') event.preventDefault(); });
+    dialog.addEventListener('close', () => {
+        const target = dialog.agentOpener?.isConnected ? dialog.agentOpener
+            : Array.from(document.querySelectorAll('[data-agent-reconcile-open]')).find((button) => button.dataset.agentReconcileOpen === dialog.dataset.requestId);
+        target?.focus({ preventScroll: true });
+    });
+    dialog.querySelector('form').addEventListener('submit', (event) => { event.preventDefault(); submitAgentReconciliation(dialog).catch(() => {}); });
+    document.body.appendChild(dialog);
+    return dialog;
+}
+
+function renderAgentReconciliation(dialog, view) {
+    dialog.agentRequestView = view;
+    dialog.querySelector('[data-reconcile-summary]').textContent = view.summary || `平台请求 ${view.id}`;
+    const observation = view.observation || {};
+    const labels = { observed_http_result: '已收到平台响应', uncertain: '结果不确定', submitted: '已接收，后续结果待跟进', admitted: '已登记', executing: '执行中' };
+    const http = Number(observation.http_status);
+    dialog.querySelector('[data-reconcile-observation]').textContent = `${labels[observation.status] || '尚无确定响应'}${Number.isInteger(http) && http >= 100 && http <= 599 ? ` · HTTP ${http}` : ''}。业务结果未单独核验。`;
+    dialog.querySelector('[data-reconcile-parameters]').textContent = JSON.stringify(view.request?.parameters || {}, null, 2).slice(0, 20000);
+    const statement = view.reconciliation || {};
+    const resolved = ['occurred', 'not_occurred'].includes(statement.resolution);
+    dialog.querySelector('[data-reconcile-statement]').hidden = !resolved;
+    dialog.querySelector('[data-reconcile-statement-text]').textContent = resolved ? `${statement.resolution === 'occurred' ? '已确认生效' : '已确认未生效'} · ${statement.note || ''}${statement.at ? ` · ${statement.at}` : ''}${statement.late_http_observation ? '。声明后又收到平台响应，请结合两份记录核对。' : ''}` : '';
+    dialog.querySelector('[data-reconcile-block]').textContent = view.block_reason || '';
+    const finished = Boolean(view.host_execution_finished_at);
+    const canOccurred = !resolved && finished && view.can_reconcile_occurred === true;
+    const canNotOccurred = !resolved && finished && view.can_reconcile_not_occurred === true;
+    dialog.querySelector('[value="occurred"]').disabled = !canOccurred;
+    dialog.querySelector('[value="not_occurred"]').disabled = !canNotOccurred;
+    dialog.querySelector('[data-reconcile-fields]').hidden = resolved;
+    dialog.querySelector('[data-reconcile-submit]').disabled = !(canOccurred || canNotOccurred);
+    dialog.querySelector('[data-reconcile-submit]').hidden = resolved;
+    if (!finished && !resolved && !view.block_reason) dialog.querySelector('[data-reconcile-block]').textContent = '执行是否结束尚未获得证明，仍需执行恢复核查。';
+}
+
+async function openAgentReconciliation(button) {
+    const dialog = agentReconciliationDialog();
+    if (dialog.open || dialog.dataset.submitting === 'true') return;
+    const loadVersion = (dialog.agentLoadVersion || 0) + 1;
+    dialog.agentLoadVersion = loadVersion;
+    dialog.agentRequestView = null;
+    dialog.agentOpener = button;
+    dialog.dataset.taskId = button.dataset.taskId;
+    dialog.dataset.requestId = button.dataset.agentReconcileOpen;
+    dialog.querySelector('form').reset();
+    dialog.querySelector('[data-reconcile-fields]').disabled = true;
+    dialog.querySelector('[data-reconcile-fields]').hidden = false;
+    dialog.querySelector('[data-reconcile-submit]').disabled = true;
+    dialog.querySelector('[data-reconcile-submit]').hidden = false;
+    dialog.querySelector('[data-reconcile-feedback]').textContent = '正在读取原请求…';
+    dialog.querySelector('[data-reconcile-summary]').textContent = '';
+    dialog.querySelector('[data-reconcile-observation]').textContent = '';
+    dialog.querySelector('[data-reconcile-statement]').hidden = true;
+    dialog.querySelector('[data-reconcile-block]').textContent = '';
+    dialog.querySelector('[data-reconcile-parameters]').textContent = '';
+    dialog.showModal();
+    try {
+        const data = await apiJson(`/api/agent-tasks/${encodeURIComponent(dialog.dataset.taskId)}/platform-requests/${encodeURIComponent(dialog.dataset.requestId)}`);
+        if (!dialog.open || dialog.agentLoadVersion !== loadVersion) return;
+        renderAgentReconciliation(dialog, data.request);
+        dialog.querySelector('[data-reconcile-feedback]').textContent = '';
+        dialog.querySelector('[data-reconcile-fields]').disabled = false;
+    } catch (error) {
+        if (!dialog.open || dialog.agentLoadVersion !== loadVersion) return;
+        dialog.querySelector('[data-reconcile-feedback]').textContent = error.message || '请求读取失败，请关闭后重新打开。';
+    }
+}
+
+async function submitAgentReconciliation(dialog) {
+    if (dialog.dataset.submitting === 'true') return;
+    const feedback = dialog.querySelector('[data-reconcile-feedback]');
+    const selected = dialog.querySelector('[name="reconciliation-resolution"]:checked');
+    const note = dialog.querySelector('[name="note"]').value.trim();
+    if (!selected || selected.disabled || !note) { feedback.textContent = '请选择允许的核对结论，并填写核对说明。'; return; }
+    dialog.dataset.submitting = 'true';
+    dialog.querySelector('[data-reconcile-fields]').disabled = true;
+    dialog.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+    feedback.textContent = '正在保存核对声明…';
+    const url = `/api/agent-tasks/${encodeURIComponent(dialog.dataset.taskId)}/platform-requests/${encodeURIComponent(dialog.dataset.requestId)}`;
+    try {
+        const data = await apiJson(`${url}/reconcile`, { method: 'POST', body: JSON.stringify({ resolution: selected.value, note, expected_revision: dialog.agentRequestView.revision }) });
+        renderAgentReconciliation(dialog, data.request);
+        feedback.textContent = '核对声明已保存。平台原响应保持不变，没有自动执行新操作。';
+        await loadTaskDetail(Number(dialog.dataset.taskId)).catch(() => {});
+    } catch (error) {
+        feedback.textContent = error.message || '保存失败，核对说明已保留，请重试。';
+        try { const latest = await apiJson(url); renderAgentReconciliation(dialog, latest.request); } catch { /* retain the original form and draft */ }
+    } finally {
+        dialog.dataset.submitting = 'false';
+        dialog.querySelector('[data-reconcile-fields]').disabled = false;
+        dialog.querySelectorAll('[data-reconcile-close]').forEach((button) => { button.disabled = false; });
+        if (dialog.agentRequestView) renderAgentReconciliation(dialog, dialog.agentRequestView);
+    }
+}
+
 function resultSummaryText(task) {
     if (task.result_summary) return task.result_summary;
     if (task.error_message) {
@@ -841,9 +1084,8 @@ function resultSummaryText(task) {
 
 function safeLocalHref(value) {
     const text = String(value || '').trim();
-    if (!text) return '';
-    if (text.startsWith('/')) return text;
-    return '';
+    if (!text.startsWith('/') || text.startsWith('//') || /[\\\u0000-\u0020]/.test(text)) return '';
+    return text;
 }
 
 function renderPlatformResult(detail = {}) {
@@ -951,6 +1193,14 @@ function renderDeliverable(detail = {}) {
     `;
 }
 
+function renderAgentArtifact(item, fallbackLabel = '产物') {
+    const artifact = item && typeof item === 'object' ? item : { name: String(item || '') };
+    const href = safeLocalHref(artifact.download_url || '');
+    const label = artifact.path || artifact.name || artifact.id || fallbackLabel;
+    const meta = artifact.size ? ` · ${formatAgentFileSize(artifact.size)}` : '';
+    return `<li>${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : escapeHtml(label)}<small>${escapeHtml(meta)}</small></li>`;
+}
+
 function renderRuntimeDetail(detail = {}) {
     if (detail.platform_action) {
         return renderPlatformResult(detail);
@@ -982,18 +1232,13 @@ function renderRuntimeDetail(detail = {}) {
             ${recoveredArtifacts.length ? `
                 <div class="ai-task-runtime-section is-recovered">
                     <strong>已挽救的中间产物</strong>
-                    <ul>${recoveredArtifacts.map((item) => {
-                        const href = safeLocalHref(item.download_url || '');
-                        const label = item.path || item.name || '中间产物';
-                        const meta = item.size ? ` · ${formatAgentFileSize(item.size)}` : '';
-                        return `<li>${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : escapeHtml(label)}<small>${escapeHtml(meta)}</small></li>`;
-                    }).join('')}</ul>
+                    <ul>${recoveredArtifacts.map((item) => renderAgentArtifact(item, '中间产物')).join('')}</ul>
                 </div>
             ` : ''}
             ${regularArtifacts.length ? `
                 <div class="ai-task-runtime-section">
                     <strong>产物</strong>
-                    <ul>${regularArtifacts.map((item) => `<li>${escapeHtml(item.path || item.name || item.id || JSON.stringify(item))}</li>`).join('')}</ul>
+                    <ul>${regularArtifacts.map((item) => renderAgentArtifact(item)).join('')}</ul>
                 </div>
             ` : ''}
             ${toolCalls.length ? `
@@ -1022,6 +1267,7 @@ function protocolArtifactLabel(text) {
 }
 
 function userFacingTaskEvent(event) {
+    if (event?.event_type === 'supplements_delivered') return { ...event, message: '补充说明已送达，Agent 正在当前任务中继续处理。' };
     const message = String(event?.message || event?.event_type || '').trim();
     const lower = message.toLowerCase();
     const protocol = /^\s*#?\d+\s+(item\.(delta|started|completed)|response\.[\w.-]+|turn\.[\w.-]+)\s*:/i.test(message);
@@ -1063,7 +1309,8 @@ function renderEventDetail(event) {
         const encoded = encodeURIComponent(String(detail.supplement || ''));
         return `
             <small class="ai-task-event__supplement">补充说明：${escapeHtml(detail.supplement)}</small>
-            ${detail.follow_up_available ? `
+            ${detail.runtime_injection === 'next_turn' ? '<small>当前轮次结束后继续处理。</small>' : ''}
+            ${detail.follow_up_available && detail.runtime_injection !== 'next_turn' ? `
                 <button type="button" class="btn btn-outline btn-sm ai-task-event__followup" data-agent-supplement-followup="${escapeHtml(encoded)}">作为追问继续</button>
             ` : ''}
         `;
@@ -1095,6 +1342,7 @@ function renderProposedActions(task) {
     const items = proposals.map((proposal, index) => {
         const executed = proposal.executed || null;
         const params = proposal.params || {};
+        const needsRecipients = ['send_student_notification', 'send_private_message'].includes(proposal.action);
         if (executed) {
             const url = safeLocalHref(executed.url || '');
             return `
@@ -1104,7 +1352,7 @@ function renderProposedActions(task) {
                 </div>
             `;
         }
-        if (proposal.execution_mode === 'manual_link') {
+        if (proposal.execution_mode === 'manual_link' && !needsRecipients) {
             return `
                 <div class="ai-task-action">
                     <div class="ai-task-action__head">
@@ -1125,6 +1373,7 @@ function renderProposedActions(task) {
                 </div>
                 <button type="button" class="btn btn-primary btn-sm" data-agent-action-open="${escapeHtml(task.id)}" data-action-index="${index}">${escapeHtml(proposal.label || '执行')}</button>
                 <div class="ai-task-action__confirm" hidden>
+                    ${needsRecipients ? `<label>选择收件人<select data-agent-action-recipients data-recipient-action="${escapeHtml(proposal.action)}" data-class-offering-id="${Number(params.class_offering_id) || ''}" data-initial-recipients="${escapeHtml(JSON.stringify(params.recipient_identities || (params.contact_identity ? [params.contact_identity] : [])))}" ${proposal.action === 'send_student_notification' ? 'multiple size="5"' : ''} aria-label="选择当前可联系的收件人"><option value="">正在读取可见联系人…</option></select></label><small data-agent-recipient-status>请核对姓名与课堂后再确认；多选时最多选择 30 人。</small>` : ''}
                     ${titleValue !== '' ? `
                         <label>标题<input type="text" data-agent-action-title value="${escapeHtml(titleValue)}" maxlength="120"></label>
                     ` : ''}
@@ -1149,6 +1398,8 @@ function renderFollowUpBox(task) {
     if (!task.is_owner || !task.is_terminal) {
         return '';
     }
+    if (taskCompletionPresentation(task).pendingDomain) return `<div class="ai-task-detail__block"><p>请跟进已提交的生成任务，避免重复创建。</p><button type="button" class="btn btn-outline btn-sm" data-agent-domain-followup="${escapeHtml(task.id)}">跟进已有生成任务</button></div>`;
+    if (taskCompletionPresentation(task).pendingRequests) return `<div class="ai-task-detail__block"><p>请先核对已有平台请求的回执和业务记录。</p><button type="button" class="btn btn-outline btn-sm" data-agent-request-followup="${escapeHtml(task.id)}">核对已有平台请求</button></div>`;
     const retryButtons = (task.status === 'failed' || task.status === 'canceled') ? `
         <div class="ai-task-retry-row">
             <button type="button" class="btn btn-outline btn-sm" data-agent-retry="${escapeHtml(task.id)}">原样重试</button>
@@ -1168,7 +1419,7 @@ function renderTaskList(tasks = []) {
         return;
     }
     list.innerHTML = tasks.map((task, index) => {
-        const ownerLabel = task.is_owner ? '我的任务' : `${escapeHtml(task.teacher_name || '某位老师')}`;
+        const ownerLabel = task.is_owner ? '我的任务' : `${escapeHtml(task.teacher_name || '某位用户')}`;
         const runningText = task.status === 'running' ? ` · 已运行 ${formatElapsed(task.elapsed_seconds)}` : '';
         const queuePieces = [];
         if (task.status === 'queued' && task.queue_position) {
@@ -1188,7 +1439,7 @@ function renderTaskList(tasks = []) {
                     <span class="ai-task-item__order">${index + 1}</span>
                     <span class="ai-task-item__body">
                         <strong>${escapeHtml(task.title || task.public_summary || '教学任务')}</strong>
-                        <small>${ownerLabel} · ${escapeHtml(task.status_label || task.status)}${runningText}${queueText}</small>
+                        <small>${ownerLabel} · ${escapeHtml(taskCompletionPresentation(task).label)}${runningText}${queueText}</small>
                     </span>
                 </button>
                 ${deleteButton}
@@ -1319,11 +1570,170 @@ function renderTaskEventsPanel(task) {
     `;
 }
 
+function renderAgentQuestions(task) {
+    const requests = Array.isArray(task.questions) ? task.questions : [];
+    return `<section class="ai-agent-questions" data-agent-questions>${requests.map((request) => {
+        const status = request.status === 'pending' && Number(request.expires_at) * 1000 <= Date.now() ? 'expired' : request.status;
+        const pending = status === 'pending';
+        const label = { pending: '需要你的回答', answered: '已回答 · Agent 将继续任务', canceled: '本次提问已取消', expired: '本次提问已过期' }[status] || '本次提问已结束';
+        const signature = JSON.stringify([status, request.expires_at, request.questions, request.answers]);
+        const answers = new Map((request.answers || []).map((answer) => [answer.id, answer]));
+        return `<details class="ai-agent-question-request" data-agent-question-request="${escapeHtml(request.id)}" data-question-signature="${escapeHtml(signature)}" ${pending ? 'open' : ''}>
+            <summary><span class="ai-agent-question-mark" aria-hidden="true">?</span><strong>${escapeHtml(label)}</strong><span class="ai-agent-question-chevron" aria-hidden="true">⌄</span></summary>
+            <form data-agent-question-form data-task-id="${escapeHtml(task.id)}" data-question-id="${escapeHtml(request.id)}" data-expires-at="${escapeHtml(request.expires_at)}" data-question-state="${escapeHtml(status)}">
+                ${(request.questions || []).map((question, index) => {
+                    const answer = answers.get(question.id);
+                    return `<fieldset data-question-item="${escapeHtml(question.id)}" data-multi-select="${question.multiSelect ? 'true' : 'false'}" ${!pending ? 'disabled' : ''}>
+                        <legend>${question.header ? `<small>${escapeHtml(question.header)}</small>` : ''}${escapeHtml(question.question)}</legend>
+                        ${question.detail ? `<p class="ai-agent-question-detail">${escapeHtml(question.detail)}</p>` : ''}
+                        ${pending ? `<div class="ai-agent-question-options">${(question.options || []).map((option) => `<label class="ai-agent-question-option"><input type="${question.multiSelect ? 'checkbox' : 'radio'}" name="agent-question-${escapeHtml(request.id)}-${index}" value="${escapeHtml(option.label)}"><span><strong>${escapeHtml(option.label)}</strong>${option.description ? `<small>${escapeHtml(option.description)}</small>` : ''}</span></label>`).join('')}</div>
+                        <label class="ai-agent-question-custom">${question.options?.length ? (question.multiSelect ? '补充说明（可选）' : '或填写自己的答案') : '你的回答'}<textarea data-question-custom maxlength="4000" rows="2" placeholder="写下你的想法…"></textarea></label>` : `<p class="ai-agent-question-answer">${status === 'answered' ? escapeHtml([...(answer?.selected || []), answer?.custom].filter(Boolean).join('；')) : escapeHtml(status === 'expired' ? '等待时间已结束，未提交的回答不会发送。' : '任务已结束等待，无需继续回答。')}</p>`}
+                    </fieldset>`;
+                }).join('')}
+                ${pending ? `<div class="ai-agent-question-footer"><small>回答后继续当前任务${request.expires_at ? ` · ${escapeHtml(new Date(Number(request.expires_at) * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))} 前有效` : ''}</small><button type="submit" class="btn btn-primary btn-sm" data-question-submit>提交回答</button></div>` : ''}
+                <p class="ai-agent-question-feedback" data-question-feedback role="status" aria-live="polite"></p>
+            </form></details>`;
+    }).join('')}</section>`;
+}
+
+// Keep unchanged question nodes attached: polling must not blur inputs or interrupt IME composition.
+function preserveAgentQuestionNodes(article, nextArticle) {
+    const existing = article.querySelector('[data-agent-questions]');
+    const incoming = nextArticle.querySelector('[data-agent-questions]');
+    if (!existing || !incoming) {
+        article.replaceChildren(...nextArticle.childNodes);
+        return;
+    }
+    const known = new Map(Array.from(existing.children).map((node) => [node.dataset.agentQuestionRequest, node]));
+    const keep = new Set();
+    for (const next of Array.from(incoming.children)) {
+        const old = known.get(next.dataset.agentQuestionRequest);
+        if (old && old.dataset.questionSignature === next.dataset.questionSignature) {
+            keep.add(old);
+        } else {
+            const hadFocus = old?.contains(document.activeElement);
+            if (old) old.replaceWith(next);
+            else existing.appendChild(next);
+            keep.add(next);
+            if (hadFocus) next.querySelector('summary')?.focus({ preventScroll: true });
+        }
+    }
+    Array.from(existing.children).forEach((node) => { if (!keep.has(node)) node.remove(); });
+    Array.from(article.childNodes).forEach((node) => { if (node !== existing) node.remove(); });
+    let passedQuestions = false;
+    for (const node of Array.from(nextArticle.childNodes)) {
+        if (node === incoming) { passedQuestions = true; continue; }
+        if (passedQuestions) article.appendChild(node);
+        else article.insertBefore(node, existing);
+    }
+}
+
+function closeExpiredAgentQuestions(taskId) {
+    const id = Number(taskId);
+    clearTimeout(agentQuestionExpiryTimers.get(id));
+    agentQuestionExpiryTimers.delete(id);
+    const node = agentTaskMessages.get(id);
+    let nextExpiry = Infinity;
+    node?.querySelectorAll('[data-agent-question-form][data-question-state="pending"]').forEach((form) => {
+        const remaining = Number(form.dataset.expiresAt) * 1000 - Date.now();
+        if (remaining <= 0) {
+            form.dataset.questionState = 'expired';
+            form.querySelectorAll('fieldset, button').forEach((control) => { control.disabled = true; });
+            form.querySelector('[data-question-feedback]').textContent = '本次提问已过期，未提交的回答不会发送。';
+            form.closest('details').querySelector('summary strong').textContent = '本次提问已过期';
+        } else nextExpiry = Math.min(nextExpiry, remaining);
+    });
+    if (Number.isFinite(nextExpiry)) agentQuestionExpiryTimers.set(id, setTimeout(() => closeExpiredAgentQuestions(id), Math.min(nextExpiry + 25, 2147483647)));
+}
+
+async function refreshAgentQuestionTask(taskId) {
+    const id = Number(taskId);
+    if (agentQuestionRefreshes.has(id)) return agentQuestionRefreshes.get(id);
+    const pending = loadTaskDetail(id).finally(() => agentQuestionRefreshes.delete(id));
+    agentQuestionRefreshes.set(id, pending);
+    return pending;
+}
+
+async function submitAgentQuestionForm(form) {
+    if (form.dataset.submitting === 'true' || form.dataset.questionState !== 'pending') return;
+    closeExpiredAgentQuestions(form.dataset.taskId);
+    if (form.dataset.questionState !== 'pending') return;
+    const feedback = form.querySelector('[data-question-feedback]');
+    const answers = Array.from(form.querySelectorAll('[data-question-item]')).map((field) => ({
+        id: field.dataset.questionItem,
+        selected: Array.from(field.querySelectorAll('input:checked')).map((input) => input.value),
+        custom: field.querySelector('[data-question-custom]')?.value.trim() || '',
+    }));
+    const unanswered = answers.findIndex((answer) => !answer.selected.length && !answer.custom);
+    if (unanswered >= 0) {
+        feedback.textContent = '请回答每个问题：选择选项或填写自己的答案。';
+        form.querySelectorAll('[data-question-item]')[unanswered].querySelector('input, textarea')?.focus();
+        return;
+    }
+    form.dataset.submitting = 'true';
+    form.querySelectorAll('fieldset, button').forEach((control) => { control.disabled = true; });
+    feedback.textContent = '正在提交你的回答…';
+    delete feedback.dataset.error;
+    let accepted = false;
+    try {
+        await apiJson(`/api/agent-tasks/${encodeURIComponent(form.dataset.taskId)}/questions/${encodeURIComponent(form.dataset.questionId)}/answer`, { method: 'POST', body: JSON.stringify({ answers }) });
+        accepted = true;
+        form.dataset.questionState = 'answered';
+        feedback.textContent = '回答已提交，Agent 正在继续当前任务。';
+        form.closest('details').querySelector('summary strong').textContent = '已回答 · Agent 将继续任务';
+    } catch (error) {
+        feedback.textContent = error.message || '提交失败，答案已保留，请重试。';
+        feedback.dataset.error = 'true';
+    } finally {
+        form.dataset.submitting = 'false';
+        if (!accepted && form.dataset.questionState === 'pending') form.querySelectorAll('fieldset, button').forEach((control) => { control.disabled = false; });
+        // Reconcile cancellation, expiry and a response lost after a committed answer.
+        await refreshAgentQuestionTask(form.dataset.taskId).catch(() => {});
+    }
+}
+
+function bindAgentQuestionInteractions(messagesBox) {
+    if (!messagesBox || messagesBox.dataset.agentQuestionsBound) return;
+    messagesBox.dataset.agentQuestionsBound = 'true';
+    messagesBox.addEventListener('click', (event) => {
+        const listButton = event.target.closest('[data-agent-request-list]');
+        if (listButton) { openAgentRequestList(listButton).catch(() => {}); return; }
+        const button = event.target.closest('[data-agent-reconcile-open]');
+        if (button) openAgentReconciliation(button).catch(() => {});
+    });
+    messagesBox.addEventListener('submit', (event) => {
+        const form = event.target.closest('[data-agent-question-form]');
+        if (!form) return;
+        event.preventDefault();
+        submitAgentQuestionForm(form).catch(() => {});
+    });
+    messagesBox.addEventListener('input', (event) => {
+        const field = event.target.closest('[data-question-item]');
+        const form = field?.closest('[data-agent-question-form]');
+        if (form?.dataset.questionState === 'pending' && form.dataset.submitting !== 'true') {
+            const feedback = form.querySelector('[data-question-feedback]');
+            feedback.textContent = '';
+            delete feedback.dataset.error;
+        }
+        if (!field || field.dataset.multiSelect === 'true') return;
+        if (event.target.matches('textarea') && event.target.value.trim()) field.querySelectorAll('input').forEach((input) => { input.checked = false; });
+        if (event.target.matches('input')) field.querySelector('textarea').value = '';
+    });
+    messagesBox.addEventListener('keydown', (event) => {
+        const request = event.target.closest('[data-agent-question-request]');
+        if (event.key !== 'Escape' || !request?.open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        request.open = false;
+        request.querySelector('summary')?.focus({ preventScroll: true });
+    });
+}
+
 function buildAgentTaskDetailHtml(task) {
     if (!task) {
         return '<div class="ai-task-detail__empty">选择一个任务查看状态。自己的任务会显示详情和执行记录。</div>';
     }
-    const runtime = task.runtime_status ? `<span>运行时：${escapeHtml(task.runtime_status)}</span>` : '';
+    const runtime = task.runtime_status && task.runtime_status !== 'waiting_input' ? `<span>运行时：${escapeHtml(task.runtime_status)}</span>` : '';
     const elapsed = task.elapsed_seconds ? `<span>已运行：${formatElapsed(task.elapsed_seconds)}</span>` : '';
     const cancelButton = task.is_owner && task.is_active
         ? `<button type="button" class="btn btn-outline btn-sm" data-agent-cancel="${escapeHtml(task.id)}">取消任务</button>`
@@ -1332,6 +1742,7 @@ function buildAgentTaskDetailHtml(task) {
         ? `<button type="button" class="btn btn-outline btn-sm ai-task-delete-btn" data-agent-delete="${escapeHtml(task.id)}">删除记录</button>`
         : '';
     const detailPayload = task.result_detail || {};
+    const completion = taskCompletionPresentation(task);
     const attachments = Array.isArray(task.attachments) ? task.attachments : [];
     const waitHint = task.status === 'queued' && task.estimated_wait_label
         ? `<div class="ai-task-wait-hint">${escapeHtml(task.estimated_wait_label)} · 完成后会在消息中心通知你</div>`
@@ -1342,17 +1753,19 @@ function buildAgentTaskDetailHtml(task) {
     const ownerBody = task.is_owner ? `
         ${waitHint}
         ${originHint}
+        ${renderAgentQuestions(task)}
         <div class="ai-task-detail__block">
             <h4>任务要求</h4>
             <p>${escapeHtml(task.private_instruction || '无')}</p>
             ${attachments.length ? `<small class="ai-task-attachment-list">附件：${attachments.map((item) => escapeHtml(item.name || '')).join('、')}</small>` : ''}
         </div>
         ${task.is_terminal ? `
-        <div class="ai-task-detail__block ${terminalTone(task.status)}">
-            <h4>${terminalTitle(task.status)}</h4>
+        <div class="ai-task-detail__block ${completion.tone}">
+            <h4>${escapeHtml(completion.title)}</h4>
             <p>${escapeHtml(resultSummaryText(task))}</p>
         </div>` : ''}
         ${task.is_terminal ? renderDeliverable(detailPayload) : ''}
+        ${renderAgentOperationReceipts(detailPayload, task.is_owner ? task.id : null)}
         ${task.error_message ? `
         <div class="ai-task-detail__block is-error">
             <h4>异常信息</h4>
@@ -1374,7 +1787,7 @@ function buildAgentTaskDetailHtml(task) {
             <div>
                 <div class="ai-agent-card__label-row">
                     <span class="ai-agent-card__badge">Agent</span>
-                    <span class="ai-task-status ${statusClass(task.status)}">${escapeHtml(task.status_label || task.status)}</span>
+                    <span class="ai-task-status ${statusClass(completion.tone === 'is-warning' ? 'canceled' : task.status)}">${escapeHtml(completion.label)}</span>
                 </div>
                 <h3>${escapeHtml(task.title || task.public_summary || '教学任务')}</h3>
                 <div class="ai-task-detail__meta">
@@ -1429,10 +1842,16 @@ function renderAgentTaskMessage(task, { autoScroll = false } = {}) {
     }
     const bubble = msgDiv.querySelector('.bubble') || document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = `<article class="ai-agent-task-card">${buildAgentTaskDetailHtml(task)}</article>`;
+    const nextArticle = document.createElement('article');
+    nextArticle.className = 'ai-agent-task-card';
+    nextArticle.innerHTML = buildAgentTaskDetailHtml(task);
+    const article = bubble.querySelector('.ai-agent-task-card');
+    if (article) preserveAgentQuestionNodes(article, nextArticle);
+    else bubble.appendChild(nextArticle);
     if (!bubble.parentNode) {
         msgDiv.appendChild(bubble);
     }
+    closeExpiredAgentQuestions(task.id);
     const events = Array.isArray(task.events) ? task.events : [];
     const lastEventId = events.reduce((maxId, event) => Math.max(maxId, Number(event.id || 0)), 0);
     if (lastEventId > 0) {
@@ -1512,6 +1931,9 @@ function handleTaskEventPayload(taskId, payload = {}) {
     appendTaskEventsToCard(id, payload.events || []);
     if (payload.last_event_id) {
         taskLastEventIds.set(id, Number(payload.last_event_id));
+    }
+    if ((payload.events || []).some((event) => ['question_requested', 'question_answered', 'question_closed'].includes(event.event_type || event.kind))) {
+        refreshAgentQuestionTask(id).catch(() => {});
     }
     if (payload.is_terminal) {
         closeTaskEventStream(id);
@@ -1596,16 +2018,7 @@ async function pollTaskEventsOnce() {
         for (const taskId of taskIds) {
             const after = Number(taskLastEventIds.get(Number(taskId)) || 0);
             const data = await apiJson(`/api/agent-tasks/${taskId}/events?after=${after}`);
-            appendTaskEventsToCard(taskId, data.events || []);
-            if (data.last_event_id) {
-                taskLastEventIds.set(Number(taskId), Number(data.last_event_id));
-            }
-            if (data.is_terminal && (data.events || []).length) {
-                refreshAgentTaskFinishNotification(taskId);
-                if (Number(selectedTaskId) === Number(taskId)) {
-                    await refreshTerminalTaskCard(taskId);
-                }
-            }
+            handleTaskEventPayload(taskId, data);
         }
     } catch {
         // The 5s full task refresh is the fallback; keep this channel quiet.
@@ -1624,8 +2037,11 @@ function startTaskEventPolling() {
 }
 
 async function loadTaskDetail(taskId, { autoScroll = false } = {}) {
+    const id = Number(taskId);
+    const version = (taskDetailRequestVersions.get(id) || 0) + 1;
+    taskDetailRequestVersions.set(id, version);
     const data = await apiJson(`/api/agent-tasks/${taskId}`);
-    renderTaskDetail(data.task, { autoScroll });
+    if (taskDetailRequestVersions.get(id) === version) renderTaskDetail(data.task, { autoScroll });
     return data.task;
 }
 
@@ -1636,6 +2052,8 @@ function removeAgentTaskMessage(taskId) {
         node.remove();
     }
     agentTaskMessages.delete(id);
+    clearTimeout(agentQuestionExpiryTimers.get(id));
+    agentQuestionExpiryTimers.delete(id);
 }
 
 async function deleteAgentTask(taskId) {
@@ -1732,6 +2150,18 @@ async function executeAgentAction(button) {
     const actionIndex = Number(button.dataset.actionIndex || 0);
     const block = button.closest('[data-agent-action-block]');
     const params = {};
+    const recipients = block?.querySelector('[data-agent-action-recipients]');
+    if (recipients) {
+        const selected = [...recipients.selectedOptions].map((option) => option.value).filter(Boolean);
+        if (!selected.length || selected.length > 30 || recipients.dataset.loaded !== 'true') {
+            throw new Error('请先选择 1 至 30 位可联系的收件人。');
+        }
+        if (recipients.dataset.recipientAction === 'send_student_notification') {
+            params.recipient_identities = selected;
+        } else {
+            params.contact_identity = selected[0];
+        }
+    }
     const titleInput = block?.querySelector('[data-agent-action-title]');
     if (titleInput && titleInput.value.trim()) {
         params.title = titleInput.value.trim();
@@ -1742,6 +2172,22 @@ async function executeAgentAction(button) {
             method: 'POST',
             body: JSON.stringify({ params }),
         });
+        if (preview.execution_mode === 'user_confirmation') {
+            const { openAgentUserConfirmation } = await import('./agent_user_confirmation.js?v=20260910-signature-confirmation');
+            await openAgentUserConfirmation({ taskId, actionIndex, preview, apiJson,
+                onComplete: async (data) => {
+                    if (data.task) renderTaskDetail(data.task, { autoScroll: true });
+                    await refreshTasks({ silent: true }).catch(() => {});
+                    notify(data.result?.label || '业务操作已完成。', 'success');
+                },
+                onClose: () => { if (button.isConnected) button.focus({ preventScroll: true }); },
+            });
+            return;
+        }
+        if (preview.execution_mode === 'secure_input' || preview.secure_fields?.length) {
+            await confirmSecureAgentAction({ button, taskId, actionIndex, params, preview });
+            return;
+        }
         const data = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/execute`, {
             method: 'POST',
             body: JSON.stringify({
@@ -1754,6 +2200,140 @@ async function executeAgentAction(button) {
         notify(data.result?.label ? `已执行：${data.result.label}` : '动作已执行。', 'success');
     } finally {
         button.disabled = false;
+    }
+}
+
+function confirmSecureAgentAction({ button, taskId, actionIndex, params, preview }) {
+    if (document.querySelector('[data-agent-secure-dialog]')) return Promise.resolve();
+    // Secret values exist only in these input elements and the final HTTPS body.
+    // Keep this dialog outside the task card so polling cannot replace its inputs.
+    const fields = Array.isArray(preview.secure_fields) ? preview.secure_fields : [];
+    if (fields.length !== 1 || fields[0].name !== 'password' || fields[0].type !== 'password') {
+        throw new Error('当前安全输入表单不可用，请刷新任务后重试。');
+    }
+    const dialog = document.createElement('dialog');
+    dialog.className = 'ai-agent-reconciliation-dialog ai-agent-secure-dialog';
+    dialog.dataset.agentSecureDialog = 'true';
+    dialog.setAttribute('aria-labelledby', 'agent-secure-title');
+    dialog.innerHTML = `<form><header><h3 id="agent-secure-title"></h3><button type="button" data-secure-close aria-label="关闭安全操作">×</button></header>
+        <p data-secure-summary></p><div class="ai-agent-reconciliation-facts"><strong>确认操作对象与内容</strong><pre data-secure-parameters></pre></div>
+        <fieldset><label class="ai-agent-reconciliation-note"><span data-secure-label></span><input type="password" name="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" required></label>
+        <p>口令仅用于这次账户操作，不会提供给 Agent 或保存在任务记录中。</p></fieldset>
+        <p data-secure-feedback role="status" aria-live="polite"></p><footer><button type="button" class="btn btn-outline" data-secure-close>取消</button><button type="submit" class="btn btn-primary">确认执行</button></footer></form>`;
+    dialog.querySelector('h3').textContent = preview.label || '安全账户操作';
+    dialog.querySelector('[data-secure-summary]').textContent = preview.summary || '请核对信息并输入口令。';
+    const publicParams = preview.params || params;
+    const labels = { teacher_id: '教师编号', name: '姓名', username: '登录名', email: '邮箱', school_code: '学校代码', school_name: '学校', college: '学院', college_name: '学院', department: '部门', department_name: '部门', is_super_admin: '设为超级管理员' };
+    dialog.querySelector('[data-secure-parameters]').textContent = Object.entries(publicParams)
+        .filter(([key]) => !key.startsWith('expected_'))
+        .map(([key, value]) => `${preview.fields?.[key]?.label || labels[key] || key}：${typeof value === 'boolean' ? (value ? '是' : '否') : typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}`).join('\n');
+    dialog.querySelector('[data-secure-label]').textContent = fields[0].label || '口令';
+    const input = dialog.querySelector('input');
+    input.minLength = Math.max(8, Number(fields[0].min_length) || 8);
+    input.maxLength = Math.min(128, Number(fields[0].max_length) || 128);
+    const feedback = dialog.querySelector('[data-secure-feedback]');
+    let submitting = false;
+    let settled = false;
+    let firstAttempt = true;
+    document.body.appendChild(dialog);
+    return new Promise((resolve) => {
+        const clearInput = () => { input.value = ''; };
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearInput();
+            window.removeEventListener('pagehide', clearInput);
+            dialog.remove();
+            const target = button.isConnected ? button : document.querySelector(`[data-agent-action-confirm="${taskId}"][data-action-index="${actionIndex}"]`);
+            if (target) { target.disabled = false; target.focus({ preventScroll: true }); }
+            resolve();
+        };
+        window.addEventListener('pagehide', clearInput);
+        dialog.addEventListener('close', finish);
+        dialog.addEventListener('click', (event) => { if (event.target.closest('[data-secure-close]') && !submitting) dialog.close(); });
+        dialog.addEventListener('keydown', (event) => { if (event.key === 'Escape') event.stopPropagation(); });
+        dialog.addEventListener('cancel', (event) => { if (submitting) event.preventDefault(); });
+        dialog.querySelector('form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (submitting || settled) return;
+            if (input.value.length < input.minLength || input.value.length > input.maxLength) {
+                feedback.textContent = `请输入 ${input.minLength} 至 ${input.maxLength} 个字符的口令。`;
+                input.focus();
+                return;
+            }
+            submitting = true;
+            dialog.querySelector('fieldset').disabled = true;
+            dialog.querySelectorAll('button').forEach((node) => { node.disabled = true; });
+            feedback.textContent = '正在提交安全操作…';
+            try {
+                const currentPreview = firstAttempt ? preview : await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/preview`, { method: 'POST', body: JSON.stringify({ params }) });
+                firstAttempt = false;
+                if (currentPreview.action !== preview.action || JSON.stringify(currentPreview.params || params) !== JSON.stringify(publicParams)) {
+                    feedback.textContent = '操作内容已经变化，请关闭窗口并重新核对。';
+                    return;
+                }
+                const data = await apiJson(`/api/agent-tasks/${taskId}/actions/${actionIndex}/execute`, {
+                    method: 'POST',
+                    body: JSON.stringify({ params, confirmation_token: currentPreview.confirmation_token, secure_inputs: { password: input.value } }),
+                });
+                clearInput();
+                dialog.close();
+                if (data.task) renderTaskDetail(data.task, { autoScroll: true });
+                if (data.result?.requires_relogin) {
+                    notify('账户操作已完成，当前会话已结束，请重新登录。', 'warning');
+                } else {
+                    await refreshTasks({ silent: true }).catch(() => {});
+                    notify(data.result?.label ? `已执行：${data.result.label}` : '账户操作已完成。', 'success');
+                }
+            } catch (error) {
+                const latest = await apiJson(`/api/agent-tasks/${taskId}`).catch(() => null);
+                const executed = latest?.task?.result_detail?.proposed_actions?.[actionIndex]?.executed;
+                if (executed) {
+                    clearInput();
+                    dialog.close();
+                    renderTaskDetail(latest.task, { autoScroll: true });
+                    notify(executed.label || '已确认该账户操作完成。', 'success');
+                    return;
+                }
+                // Never reflect an accidentally echoed secret from an error body.
+                feedback.textContent = String(error.message || '安全操作未完成，请重试。').split(input.value || '\u0000').join('••••');
+            } finally {
+                submitting = false;
+                dialog.querySelector('fieldset').disabled = false;
+                dialog.querySelectorAll('button').forEach((node) => { node.disabled = false; });
+            }
+        });
+        dialog.showModal();
+        input.focus();
+    });
+}
+
+async function loadAgentActionRecipients(block) {
+    const select = block?.querySelector('[data-agent-action-recipients]');
+    if (!select || select.dataset.loaded === 'true' || select.dataset.loading === 'true') return;
+    const confirm = block.querySelector('[data-agent-action-confirm]');
+    const status = block.querySelector('[data-agent-recipient-status]');
+    if (confirm) confirm.disabled = true;
+    select.disabled = true;
+    select.dataset.loading = 'true';
+    try {
+        const offeringId = Number(select.dataset.classOfferingId) || 0;
+        const data = await apiJson(offeringId ? `/api/classrooms/${offeringId}/private/contacts` : '/api/message-center/private/contacts');
+        const initial = new Set(JSON.parse(select.dataset.initialRecipients || '[]'));
+        const contacts = [...new Map((data.contacts || []).filter((contact) =>
+            contact.can_send && !contact.is_blocked && ['teacher', 'student'].includes(contact.role) &&
+            (select.dataset.recipientAction !== 'send_student_notification' || contact.role === 'student')
+        ).map((contact) => [contact.identity, contact])).values()];
+        select.innerHTML = `${select.multiple ? '' : '<option value="">请选择联系人</option>'}${contacts.map((contact) => `<option value="${escapeHtml(contact.identity)}" ${initial.has(contact.identity) ? 'selected' : ''}>${escapeHtml(contact.display_name || '')} · ${escapeHtml(contact.subtitle || (contact.role === 'teacher' ? '教师' : '学生'))}</option>`).join('')}`;
+        select.dataset.loaded = 'true';
+        if (status) status.textContent = contacts.length ? '请核对收件人后确认。发送时平台会再次检查联系人权限。' : '当前没有可发送的联系人。';
+        if (confirm) confirm.disabled = !contacts.length;
+    } catch (error) {
+        if (status) status.textContent = '联系人读取失败；请收起后重新打开以重试。';
+        throw error;
+    } finally {
+        select.disabled = false;
+        select.dataset.loading = 'false';
     }
 }
 
@@ -1906,7 +2486,7 @@ function refreshAgentComposerChrome() {
         surface.textarea.placeholder = agentMode
             ? (isActiveTarget
                 ? '给正在执行的 Agent 补充说明...'
-                : (targetTask ? '对这个 Agent 结果继续提要求...' : '描述要让 Agent 执行的教学业务任务...'))
+                : (targetTask ? '对这个 Agent 结果继续提要求...' : '描述要让 Agent 执行的平台任务...'))
             : '把当前页面作为上下文提问...';
     }
     if (surface.attachBtn) {
@@ -2147,7 +2727,8 @@ async function submitAgentTaskFromChat() {
     }
     const surface = currentChatSurface();
     const textarea = surface.textarea;
-    const instruction = textarea?.value.trim() || '';
+    const originalInput = textarea?.value || '';
+    const instruction = originalInput.trim();
     const pendingFiles = Array.from(chatComponent?.pendingFiles || []);
     const targetTask = currentAgentComposerTargetTask();
     if (targetTask) {
@@ -2170,12 +2751,6 @@ async function submitAgentTaskFromChat() {
     const context = collectPageContext();
     const selectedWorkflow = selectedAgentWorkflowKey ? workflowByKey(selectedAgentWorkflowKey) : null;
     const taskType = selectedWorkflow?.task_type || inferAgentTaskType(instruction, context);
-    surface.renderMessage('user', instruction, agentAttachmentPreviews(pendingFiles));
-    if (textarea) {
-        textarea.value = '';
-        resetTextareaHeight(textarea);
-    }
-    await updateComposerPresence(false);
     try {
         const payload = {
             task_type: taskType,
@@ -2196,7 +2771,23 @@ async function submitAgentTaskFromChat() {
             method: 'POST',
             body: requestBody,
         });
-        chatComponent?.clearPendingFiles?.();
+        surface.renderMessage('user', instruction, agentAttachmentPreviews(pendingFiles));
+        if (textarea && textarea.value === originalInput) {
+            textarea.value = '';
+            resetTextareaHeight(textarea);
+        }
+        if (chatComponent) {
+            // Files added while the request was pending belong to the next draft.
+            const remainingFiles = chatComponent.pendingFiles.filter((file) => !pendingFiles.includes(file));
+            if (remainingFiles.length) {
+                chatComponent.pendingFiles = remainingFiles;
+                chatComponent.renderPreviews?.();
+                chatComponent.updateSendButtonState?.();
+            } else {
+                chatComponent.clearPendingFiles?.();
+            }
+        }
+        await updateComposerPresence(Boolean(textarea?.value.trim()));
         selectedAgentWorkflowKey = '';
         selectedTaskId = data.task?.id || null;
         if (data.task) {
@@ -2206,7 +2797,8 @@ async function submitAgentTaskFromChat() {
         if (noHistoryInput) {
             noHistoryInput.checked = false;
         }
-        await refreshTasks({ silent: true });
+        // A refresh failure does not invalidate the task already accepted by the server.
+        await refreshTasks({ silent: true }).catch(() => {});
         notify('Agent 任务已加入全平台队列。', 'success');
     } catch (error) {
         surface.renderMessage('assistant', `Agent 任务提交失败：${error.message || '未知错误'}`);
@@ -2225,6 +2817,7 @@ function bindTaskCenter() {
     if (!CONFIG.taskCenterEnabled) {
         return;
     }
+    bindAgentQuestionInteractions($('#ai-chat-messages-box'));
     window.addEventListener('lanshare:agent-handoff', (event) => {
         selectedAgentWorkflowKey = '';
         prefillAgentTaskFromChat(event.detail?.instruction || '');
@@ -2312,6 +2905,18 @@ function bindTaskCenter() {
         }
     });
     $('#ai-chat-messages-box')?.addEventListener('click', async (event) => {
+        const requestFollowup = event.target.closest('[data-agent-request-followup]');
+        if (requestFollowup) {
+            selectedTaskId = Number(requestFollowup.dataset.agentRequestFollowup);
+            prefillAgentTaskFromChat(`请核对任务 #${selectedTaskId} 中已有平台请求的回执和真实业务记录，先确认是否已生效或仍在处理，不要直接重复执行不确定的请求。`);
+            return;
+        }
+        const domainFollowup = event.target.closest('[data-agent-domain-followup]');
+        if (domainFollowup) {
+            selectedTaskId = Number(domainFollowup.dataset.agentDomainFollowup);
+            prefillAgentTaskFromChat(`请跟进任务 #${selectedTaskId} 中已提交的课时文档生成，核对原生成任务状态、成品和课时绑定。不要重新创建生成任务。`);
+            return;
+        }
         const deleteButton = event.target.closest('[data-agent-delete]');
         if (deleteButton) {
             deleteButton.disabled = true;
@@ -2342,6 +2947,11 @@ function bindTaskCenter() {
             const panel = block?.querySelector('.ai-task-action__confirm');
             if (panel) {
                 panel.hidden = false;
+            }
+            try {
+                await loadAgentActionRecipients(block);
+            } catch (error) {
+                notify(error.message || '联系人读取失败', 'error');
             }
             return;
         }
@@ -2527,7 +3137,7 @@ function initFallbackShell() {
         }
     });
     if (!CONFIG.classOfferingId) {
-        $('#ai-chat-textarea')?.setAttribute('placeholder', CONFIG.taskCenterEnabled ? '描述要让 Agent 执行的教学业务任务...' : '当前页面未绑定具体课堂。');
+        $('#ai-chat-textarea')?.setAttribute('placeholder', CONFIG.taskCenterEnabled ? '描述要让 Agent 执行的平台任务...' : '当前页面未绑定具体课堂。');
         ['#ai-chat-btn-send', '#ai-chat-btn-attach', '#ai-deep-think-btn'].forEach((selector) => {
             const button = $(selector);
             if (button) {

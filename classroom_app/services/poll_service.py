@@ -501,6 +501,11 @@ def _write_assignments(
     assigned_by_user_pk: int,
 ) -> None:
     now = _now_iso()
+    # A poll row may already be locked. Fail/retry instead of waiting in the
+    # reverse order of classroom merging, then recheck every logical target.
+    from .teaching_lifecycle_service import lock_teaching_context
+    for class_offering_id in sorted(set(class_offering_ids)):
+        lock_teaching_context(conn, class_offering_id=int(class_offering_id), nowait=True)
     for class_offering_id in class_offering_ids:
         conn.execute(
             """

@@ -32,16 +32,23 @@ from classroom_app.services.agent_subscription_service import (
     list_agent_subscriptions,
     set_agent_subscription,
 )
-from classroom_app.services.agent_task_progress_service import (
-    ERROR_CLASS_CONTENT,
-    ERROR_CLASS_TRANSIENT,
-    MAX_NEW_EVENTS_PER_DIFF,
-    classify_runtime_error,
-    diff_runtime_snapshot,
-)
 
 
 class AgentTaskImprovementTests(unittest.TestCase):
+    def _subscription_user(self, conn):
+        from classroom_app.db.schema_agent_authority import ensure_agent_authority_schema
+        ensure_agent_authority_schema(conn)
+        conn.execute("CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY, name TEXT, nickname TEXT, email TEXT, is_active INTEGER DEFAULT 1)")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(teachers)")}
+        for name, definition in {"is_super_admin": "INTEGER DEFAULT 0", "school_code": "TEXT", "school_name": "TEXT", "college": "TEXT", "department": "TEXT"}.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE teachers ADD COLUMN {name} {definition}")
+        conn.execute("INSERT OR IGNORE INTO teachers(id,name,nickname,email) VALUES (7,'Teacher','','')")
+        conn.execute("CREATE TABLE IF NOT EXISTS user_sessions (session_id TEXT PRIMARY KEY, session_user_key TEXT, user_id TEXT, role TEXT, expires_at TEXT)")
+        conn.execute("INSERT OR IGNORE INTO user_sessions VALUES ('subscription-fixture','teacher:7','7','teacher','2099-01-01T00:00:00+00:00')")
+        conn.commit()
+        return {"id": 7, "role": "teacher", "name": "Teacher", "session_id": "subscription-fixture"}
+
     def _open_agent_task_conn(self):
         schema_agent_ext._SCHEMA_READY = False
         conn = sqlite3.connect(":memory:")
@@ -103,88 +110,11 @@ class AgentTaskImprovementTests(unittest.TestCase):
         )
         return int(cursor.lastrowid)
 
-    def test_runtime_snapshot_diff_humanizes_new_steps_and_tools(self):
-        events = diff_runtime_snapshot(
-            {"status": "running", "timeline": ["已理解任务"], "tool_calls": []},
-            {
-                "status": "running",
-                "timeline": ["已理解任务", {"message": "正在整理课堂材料"}],
-                "tool_calls": [{"name": "query", "arguments": {"sql": "SELECT * FROM courses"}}],
-            },
-        )
 
-        self.assertEqual(["runtime_step", "runtime_tool_call"], [event["event_type"] for event in events])
-        self.assertIn("正在整理课堂材料", events[0]["message"])
-        self.assertIn("正在查询平台数据库", events[1]["message"])
 
-    def test_runtime_snapshot_diff_suppresses_raw_protocol_noise(self):
-        events = diff_runtime_snapshot(
-            {"status": "running", "timeline": []},
-            {
-                "status": "running",
-                "timeline": [
-                    '#13261 item.delta: {"delta":"什么是","kind":"agent_reasoning"}',
-                    '#13357 item.started: {"item":{"kind":"file_change","summary":"write_file {\\\"path\\\":\\\"/workspace/tasks/9/blog_draft.md\\\"}"}}',
-                    '#13358 item.completed: {"item":{"kind":"agent_message","summary":"I have material combined with domain knowledge."}}',
-                ],
-            },
-        )
 
-        messages = [event["message"] for event in events]
-        self.assertEqual(["正在写入任务产物：blog_draft.md"], messages)
-        self.assertFalse(any("item.delta" in message or "agent_reasoning" in message for message in messages))
 
-    def test_runtime_snapshot_diff_surfaces_output_deltas(self):
-        new_output_events = diff_runtime_snapshot(
-            {"status": "running", "text_outputs": []},
-            {
-                "status": "running",
-                "text_outputs": [{"path": "outputs/plan.md", "text": "已生成第一版课堂讨论安排。"}],
-            },
-        )
 
-        self.assertEqual(["runtime_output_delta"], [event["event_type"] for event in new_output_events])
-        self.assertIn("已生成一段结果草稿", new_output_events[0]["message"])
-        self.assertEqual("outputs/plan.md", new_output_events[0]["detail"]["source"])
-
-        growing_output_events = diff_runtime_snapshot(
-            {"status": "running", "output": "第一段：课堂导入。"},
-            {"status": "running", "output": "第一段：课堂导入。\n第二段：分组讨论任务。"},
-        )
-
-        self.assertEqual(["runtime_output_delta"], [event["event_type"] for event in growing_output_events])
-        self.assertIn("已继续生成结果草稿", growing_output_events[0]["message"])
-        self.assertIn("分组讨论任务", growing_output_events[0]["message"])
-
-    def test_runtime_snapshot_diff_event_cap_includes_summary_within_limit(self):
-        events = diff_runtime_snapshot(
-            {"status": "running", "timeline": [], "tool_calls": []},
-            {
-                "status": "running",
-                "timeline": [f"步骤 {index}" for index in range(20)],
-                "tool_calls": [{"name": "query"} for _ in range(4)],
-            },
-        )
-
-        self.assertLessEqual(len(events), MAX_NEW_EVENTS_PER_DIFF)
-        self.assertIn("另外", events[-1]["message"])
-
-    def test_runtime_error_classifier_keeps_retry_budget_conservative(self):
-        self.assertEqual(ERROR_CLASS_TRANSIENT, classify_runtime_error("503 service unavailable"))
-        self.assertEqual(ERROR_CLASS_CONTENT, classify_runtime_error("JSON parse failed"))
-        self.assertEqual("fatal", classify_runtime_error("invalid api key"))
-
-    def test_runtime_result_summary_ignores_protocol_noise(self):
-        summary = agent_task_service.runtime_result_summary(
-            {
-                "status": "completed",
-                "message": '#13261 item.delta: {"delta":"什么是","kind":"agent_reasoning"}',
-                "timeline": ['#13262 item.delta: {"delta":" Agent","kind":"agent_reasoning"}'],
-            }
-        )
-
-        self.assertIn("没有返回明确的业务结论", summary)
-        self.assertNotIn("item.delta", summary)
 
     def test_finished_agent_task_notification_links_back_to_task_card(self):
         conn = self._open_agent_task_conn()
@@ -314,18 +244,15 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("队列第", render_list_block)
         self.assertIn("queuePieces.join(' · ')", render_list_block)
 
-    def test_agent_queue_deploy_shape_defaults_to_two_parallel_workers(self):
+    def test_agent_queue_deploy_shape_uses_one_isolated_dsh_runner(self):
         compose_yml = Path("docker-compose.yml").read_text(encoding="utf-8")
         docker_env_example = Path("docker.env.example").read_text(encoding="utf-8")
-        deploy_script = Path("deployment/deploy_remote.ps1").read_text(encoding="utf-8")
 
-        self.assertIn('"${DEEPSEEK_TUI_WORKERS:-2}"', compose_yml)
-        self.assertIn("AGENT_TASK_GLOBAL_CONCURRENCY=2", docker_env_example)
-        self.assertIn("AGENT_TASK_WORKER_CONCURRENCY=2", docker_env_example)
-        self.assertIn("DEEPSEEK_TUI_WORKERS=2", docker_env_example)
-        self.assertIn("ensure_env_value AGENT_TASK_GLOBAL_CONCURRENCY 2", deploy_script)
-        self.assertIn("ensure_env_value AGENT_TASK_WORKER_CONCURRENCY 2", deploy_script)
-        self.assertIn("ensure_env_value DEEPSEEK_TUI_WORKERS 2", deploy_script)
+        self.assertNotIn("ghcr.io/hmbown/deepseek-tui", compose_yml)
+        self.assertIn("/run/lanshare-agent/control:/run/lanshare-agent:ro", compose_yml)
+        self.assertIn("AGENT_TASK_GLOBAL_CONCURRENCY=1", docker_env_example)
+        self.assertIn("AGENT_TASK_WORKER_CONCURRENCY=1", docker_env_example)
+        self.assertIn("AGENT_DSH_ENABLED=false", docker_env_example)
 
     def test_agent_attachment_validator_rejects_unsupported_types_before_submit(self):
         workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
@@ -354,7 +281,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                     conn,
                     first_id,
                     error_text="503 service unavailable",
-                    error_class=ERROR_CLASS_TRANSIENT,
+                    error_class="transient",
                     hourly_limit=1,
                     now=now,
                 )
@@ -362,7 +289,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                     conn,
                     second_id,
                     error_text="503 service unavailable",
-                    error_class=ERROR_CLASS_TRANSIENT,
+                    error_class="transient",
                     hourly_limit=1,
                     now=now + timedelta(minutes=5),
                 )
@@ -391,12 +318,6 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertEqual(1, exhausted_detail["retry_count_last_hour"])
             self.assertEqual(1, exhausted_detail["hourly_limit"])
 
-            from agent_task_worker import _retry_budget_error_message
-
-            failed_message = _retry_budget_error_message("503 service unavailable", 1)
-            self.assertIn("自动重试次数已达上限", failed_message)
-            self.assertIn("任务卡片上的重试按钮", failed_message)
-            self.assertIn("503 service unavailable", failed_message)
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
@@ -621,41 +542,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
-    def test_follow_up_runtime_payload_uses_parent_thread_id(self):
-        from agent_task_worker import _build_runtime_task_payload
 
-        task = {
-            "id": 42,
-            "context_snapshot_json": json.dumps(
-                {
-                    "agent_options": {"deep_thinking": False},
-                    "follow_up": {"parent_thread_id": "thread-parent-123"},
-                },
-                ensure_ascii=False,
-            ),
-        }
-
-        payload = _build_runtime_task_payload(task, "/workspace/tasks/42", "prompt")
-
-        self.assertEqual("thread-parent-123", payload["thread_id"])
-        self.assertEqual("prompt", payload["prompt"])
-        self.assertEqual("/workspace/tasks/42", payload["workspace"])
-        self.assertEqual("agent", payload["mode"])
-
-    def test_runtime_payload_omits_blank_follow_up_thread_id(self):
-        from agent_task_worker import _build_runtime_task_payload
-
-        task = {
-            "id": 43,
-            "context_snapshot_json": json.dumps(
-                {"follow_up": {"parent_thread_id": "   "}},
-                ensure_ascii=False,
-            ),
-        }
-
-        payload = _build_runtime_task_payload(task, "/workspace/tasks/43", "prompt")
-
-        self.assertNotIn("thread_id", payload)
 
     def test_retry_task_inherits_no_history_option(self):
         conn = self._open_agent_task_conn()
@@ -769,20 +656,6 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(1, len(proposals))
         self.assertEqual("publish_blog_post", proposals[0]["action"])
 
-    def test_runtime_text_outputs_exclude_prompt_and_tool_call_noise(self):
-        # 回归：回显的 prompt、tool_calls 入参、产物路径都不是给教师的输出，必须排除。
-        runtime_task = {
-            "result_summary": "这是 Agent 给教师的真实结论，足够长以便被采集进关键输出。",
-            "prompt": "你是 LanShare 平台的常驻 Agent —— 整个平台随时待命的灵魂。" * 8,
-            "tool_calls": [{"input_summary": '{"command":"curl -s -X POST ..."}' * 4}],
-            "result_detail_path": "artifacts/task_x/20260615_result.txt and some more text here",
-        }
-        outputs = agent_task_service._extract_runtime_text_outputs(runtime_task)
-        paths = [item["path"] for item in outputs]
-        self.assertIn("result_summary", paths)
-        self.assertNotIn("prompt", paths)
-        self.assertFalse(any("tool_calls" in path for path in paths))
-        self.assertNotIn("result_detail_path", paths)
 
     def test_read_task_result_deliverable_reads_workspace_result_md(self):
         import tempfile
@@ -938,7 +811,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 },
             )
 
-    def test_registered_agent_actions_execute_safe_drafts_and_manual_notification_link(self):
+    def test_registered_agent_actions_execute_safe_drafts_and_require_notification_recipients(self):
         conn = self._open_agent_action_conn()
         try:
             assignment = execute_proposed_action(
@@ -1040,19 +913,12 @@ class AgentTaskImprovementTests(unittest.TestCase):
             ).fetchone()["comment_count"]
             self.assertEqual(1, comment_count)
 
-            manual = execute_proposed_action(
-                conn,
-                teacher_id=7,
-                action="send_student_notification",
-                params={
-                    "title": "提醒",
-                    "content_md": "请及时查看本周任务。",
-                    "student_names": ["Alice"],
-                },
-            )
-            self.assertTrue(manual["manual"])
-            self.assertEqual("/message-center", manual["url"])
-            self.assertIn("本周任务", manual["copy_text"])
+            with self.assertRaises(HTTPException) as missing_recipient:
+                execute_proposed_action(conn, teacher_id=7, action="send_student_notification", params={
+                    "title": "提醒", "content_md": "请及时查看本周任务。", "student_names": ["Alice"],
+                })
+            self.assertEqual(400, missing_recipient.exception.status_code)
+            self.assertIn("recipient_identities", str(missing_recipient.exception.detail))
         finally:
             conn.close()
 
@@ -1131,73 +997,22 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertIn("setAgentMode(button.dataset.aiModeSelect === 'agent', { showRuntimeWarning: true })", workspace_js)
         self.assertIn("setAgentMode(true, { showRuntimeWarning: true })", workspace_js)
 
-    def test_manual_notification_action_execute_route_audits_without_sending(self):
+    def test_notification_preview_requires_explicit_recipients_without_sending(self):
+        from classroom_app.routers.agent_tasks import _preview_agent_task_action
         conn = self._open_agent_task_conn()
         try:
-            from classroom_app.routers.agent_tasks import (
-                api_execute_agent_task_action,
-                api_preview_agent_task_action,
-            )
-
-            class _Request:
-                def __init__(self, payload):
-                    self.payload = payload
-
-                async def json(self):
-                    return self.payload
-
-            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
-            detail = {
-                "proposed_actions": [
-                    {
-                        "action": "send_student_notification",
-                        "label": "去消息中心发送通知",
-                        "summary": "提醒学生查看任务",
-                        "execution_mode": "manual_link",
-                        "risk": "medium",
-                        "params": {
-                            "title": "提醒",
-                            "content_md": "请查看本周任务。",
-                            "student_names": ["Alice"],
-                        },
-                        "executed": None,
-                    }
-                ]
-            }
-            conn.execute(
-                "UPDATE agent_tasks SET result_detail_json = ? WHERE id = ?",
-                (json.dumps(detail, ensure_ascii=False), task_id),
-            )
+            task_id = self._insert_agent_task_row(conn)
+            detail = {"proposed_actions": [{"action": "send_student_notification", "label": "发送通知", "params": {
+                "title": "提醒", "content_md": "请查看本周任务。", "student_names": ["Alice"],
+            }, "executed": None}]}
+            conn.execute("UPDATE agent_tasks SET result_detail_json=? WHERE id=?", (json.dumps(detail, ensure_ascii=False), task_id))
             conn.commit()
-
             with patch("classroom_app.routers.agent_tasks.get_db_connection", return_value=conn):
-                preview = asyncio.run(api_preview_agent_task_action(task_id, 0, _Request({}), {"id": 7}))
-                executed = asyncio.run(
-                    api_execute_agent_task_action(
-                        task_id,
-                        0,
-                        _Request({"confirmation_token": preview["confirmation_token"]}),
-                        {"id": 7},
-                    )
-                )
-
-            self.assertTrue(executed["result"]["manual"])
-            self.assertEqual("/message-center", executed["result"]["url"])
-            self.assertIn("本周任务", executed["result"]["copy_text"])
-            event = conn.execute(
-                "SELECT event_type, message, detail_json FROM agent_task_events WHERE task_id = ? ORDER BY id DESC LIMIT 1",
-                (task_id,),
-            ).fetchone()
-            self.assertEqual("action_executed", event["event_type"])
-            self.assertIn("去消息中心发送通知", event["message"])
-            event_detail = json.loads(event["detail_json"])
-            self.assertEqual("send_student_notification", event_detail["action"])
-            updated_detail = json.loads(
-                conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()[
-                    "result_detail_json"
-                ]
-            )
-            self.assertEqual("/message-center", updated_detail["proposed_actions"][0]["executed"]["url"])
+                with self.assertRaises(HTTPException) as error:
+                    _preview_agent_task_action(task_id=task_id, action_index=0, data={}, user={"id": 7, "role": "teacher"})
+            self.assertEqual(400, error.exception.status_code)
+            self.assertIn("recipient_identities", str(error.exception.detail))
+            self.assertIsNone(json.loads(conn.execute("SELECT result_detail_json FROM agent_tasks WHERE id=?", (task_id,)).fetchone()[0])["proposed_actions"][0]["executed"])
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
@@ -1210,7 +1025,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
                 result = set_agent_subscription(
                     conn,
-                    {"id": 7, "name": "Teacher"},
+                    self._subscription_user(conn),
                     template_key="weekly_report",
                     enabled=True,
                     hour=8,
@@ -1221,7 +1036,8 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertEqual(DISPATCH_TASK_KIND, row["task_kind"])
             self.assertEqual("pending", row["status"])
             payload = json.loads(row["payload_json"])
-            self.assertEqual({"teacher_id": 7, "template_key": "weekly_report", "hour": 8}, payload)
+            self.assertEqual({"teacher_id": 7, "template_key": "weekly_report", "hour": 8}, {key: payload[key] for key in ("teacher_id", "template_key", "hour")})
+            self.assertTrue(payload["authorization_id"])
             self.assertTrue(result["subscriptions"][0]["enabled"])
         finally:
             conn.close()
@@ -1235,7 +1051,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
                 set_agent_subscription(
                     conn,
-                    {"id": 7, "name": "Teacher"},
+                    self._subscription_user(conn),
                     template_key="exam_briefing",
                     enabled=True,
                     hour=7,
@@ -1292,11 +1108,13 @@ class AgentTaskImprovementTests(unittest.TestCase):
             )
             conn.execute("INSERT INTO teachers (id, name, email, nickname, is_active) VALUES (7, 'Teacher', '', '', 1)")
             conn.commit()
-            payload = {"teacher_id": 7, "template_key": "exam_briefing", "hour": 7}
-            task_row = {
-                "payload_json": json.dumps(payload, ensure_ascii=False),
-                "last_result": "skipped: no upcoming exams",
-            }
+            schema_scheduler._SCHEMA_READY = False
+            user = self._subscription_user(conn)
+            with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
+                set_agent_subscription(conn, user, template_key="exam_briefing", enabled=True, hour=7)
+            conn.execute("UPDATE scheduled_tasks SET status='running', last_result='skipped: no upcoming exams'")
+            conn.commit()
+            task_row = dict(conn.execute("SELECT * FROM scheduled_tasks").fetchone())
 
             with patch("classroom_app.database.get_db_connection", return_value=conn):
                 self.assertEqual("skipped: no upcoming exams", handle_agent_task_dispatch(task_row))
@@ -1335,7 +1153,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             with patch.object(schema_scheduler, "get_configured_db_engine", return_value="sqlite"):
                 set_agent_subscription(
                     conn,
-                    {"id": 7, "name": "Teacher"},
+                    user,
                     template_key="exam_briefing",
                     enabled=True,
                     hour=7,
@@ -1401,7 +1219,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
         class _Upload:
             filename = "classroom-screenshot.png"
 
-            async def read(self):
+            async def read(self, size=-1):
                 return buffer.getvalue()
 
         item = asyncio.run(_process_agent_attachment(_Upload()))
@@ -1430,7 +1248,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
         class _Upload:
             filename = "broken.png"
 
-            async def read(self):
+            async def read(self, size=-1):
                 return b"not a real image"
 
         with self.assertRaises(HTTPException) as ctx:
@@ -1438,7 +1256,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
         self.assertEqual(400, ctx.exception.status_code)
         self.assertIn("无法读取", ctx.exception.detail)
 
-    def test_failed_runtime_detail_recovers_safe_workspace_artifacts(self):
+    def test_failed_task_detail_recovers_safe_workspace_artifacts(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.object(
             agent_task_service,
             "AGENT_TASK_WORKSPACE_ROOT",
@@ -1456,12 +1274,8 @@ class AgentTaskImprovementTests(unittest.TestCase):
             (outputs / "table.csv").write_text("name,score\nAlice,95", encoding="utf-8")
             (attachments / "source.txt").write_text("teacher upload", encoding="utf-8")
 
-            detail, summary = agent_task_service.build_failed_runtime_detail(
-                42,
-                runtime_task={"status": "running", "summary": "已完成课堂数据整理"},
-                error_class="timeout",
-                error_message="timeout",
-            )
+            detail = agent_task_service._augment_failed_task_recovery_detail(42, {"error_class": "timeout"})
+            summary = agent_task_service._failed_recovery_summary("failed", "", detail)
 
             recovered_paths = [item["path"] for item in detail["recovered_artifacts"]]
             self.assertIn("PARTIAL_RESULT.md", recovered_paths)
@@ -1474,7 +1288,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertIn("next_actions", detail)
             self.assertTrue(any("底部输入框" in item for item in detail["next_actions"]))
             self.assertIn("部分完成总结", summary)
-            self.assertIn("已完成课堂数据整理", summary)
+            self.assertIn("PARTIAL_RESULT.md", summary)
 
             resolved = agent_task_service.resolve_task_workspace_artifact(42, "outputs/table.csv")
             self.assertEqual(outputs / "table.csv", resolved["path"])
@@ -1573,6 +1387,30 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 self.assertFalse(workspaces[failed_id].exists())
                 self.assertTrue(workspaces[queued_id].exists())
                 self.assertTrue(workspaces[other_teacher_id].exists())
+        finally:
+            conn.close()
+            schema_agent_ext._SCHEMA_READY = False
+
+    def test_clear_history_preserves_all_ancestors_of_active_follow_up(self):
+        conn = self._open_agent_task_conn()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir, patch.object(agent_task_service, "AGENT_TASK_WORKSPACE_ROOT", Path(tmpdir)):
+                parent = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                child = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_FAILED, parent_task_id=parent)
+                active = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_QUEUED, parent_task_id=child)
+                unrelated = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_COMPLETED)
+                for task_id in (parent, child, active, unrelated):
+                    workspace = Path(tmpdir) / "tasks" / str(task_id)
+                    workspace.mkdir(parents=True)
+                    (workspace / "report.md").write_text("Useful history", encoding="utf-8")
+                result = agent_task_service.delete_agent_task_history(conn, teacher_id=7)
+                self.assertEqual([unrelated], result["task_ids"])
+                for task_id in (parent, child, active):
+                    self.assertIsNotNone(conn.execute("SELECT id FROM agent_tasks WHERE id=?", (task_id,)).fetchone())
+                    self.assertTrue((Path(tmpdir) / "tasks" / str(task_id) / "report.md").exists())
+                conn.execute("UPDATE agent_tasks SET status='completed' WHERE id=?", (active,))
+                result = agent_task_service.delete_agent_task_history(conn, teacher_id=7)
+                self.assertCountEqual([parent, child, active], result["task_ids"])
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
@@ -1758,6 +1596,40 @@ class AgentTaskImprovementTests(unittest.TestCase):
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
 
+    def test_supplement_limit_rejects_new_input_without_dropping_pending_history(self):
+        conn = self._open_agent_task_conn()
+        try:
+            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+            for number in range(8):
+                agent_task_service.add_task_supplement(conn, {"id": 7}, task_id, f"Instruction {number}")
+            conn.commit()
+            before = conn.execute("SELECT context_snapshot_json FROM agent_tasks WHERE id=?", (task_id,)).fetchone()[0]
+            with self.assertRaises(HTTPException) as error:
+                agent_task_service.add_task_supplement(conn, {"id": 7}, task_id, "Instruction that must remain in the input field")
+            self.assertEqual(409, error.exception.status_code)
+            self.assertEqual(before, conn.execute("SELECT context_snapshot_json FROM agent_tasks WHERE id=?", (task_id,)).fetchone()[0])
+            self.assertEqual(8, conn.execute("SELECT COUNT(*) FROM agent_task_events WHERE event_type='pending_supplement'").fetchone()[0])
+            context = json.loads(before)
+            context["agent_options"]["pending_supplements"][0]["delivery_status"] = "delivered"
+            conn.execute("UPDATE agent_tasks SET context_snapshot_json=? WHERE id=?", (json.dumps(context), task_id))
+            agent_task_service.add_task_supplement(conn, {"id": 7}, task_id, "Accepted after prior delivery")
+            after = json.loads(conn.execute("SELECT context_snapshot_json FROM agent_tasks WHERE id=?", (task_id,)).fetchone()[0])
+            self.assertEqual(8, len([item for item in after["agent_options"]["pending_supplements"] if item["delivery_status"] == "pending"]))
+        finally:
+            conn.close()
+
+    def test_supplement_during_cancel_is_rejected_without_recording_input(self):
+        conn = self._open_agent_task_conn()
+        try:
+            task_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+            conn.execute("UPDATE agent_tasks SET cancel_requested_at='2026-09-10' WHERE id=?", (task_id,))
+            with self.assertRaises(HTTPException) as error:
+                agent_task_service.add_task_supplement(conn, {"id": 7}, task_id, "Too late")
+            self.assertEqual(409, error.exception.status_code)
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM agent_task_events WHERE event_type='pending_supplement'").fetchone()[0])
+        finally:
+            conn.close()
+
     def test_running_task_supplement_surfaces_follow_up_fallback(self):
         conn = self._open_agent_task_conn()
         try:
@@ -1776,10 +1648,10 @@ class AgentTaskImprovementTests(unittest.TestCase):
                 (task_id,),
             ).fetchone()
             self.assertEqual("pending_supplement", event["event_type"])
-            self.assertIn("一键作为追问", event["message"])
+            self.assertIn("同一任务中继续", event["message"])
             detail = json.loads(event["detail_json"])
-            self.assertEqual("visible_event", detail["runtime_injection"])
-            self.assertTrue(detail["follow_up_available"])
+            self.assertEqual("next_turn", detail["runtime_injection"])
+            self.assertFalse(detail["follow_up_available"])
             self.assertEqual("请把课堂活动再压缩成 15 分钟版本", detail["supplement"])
 
             workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")

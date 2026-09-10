@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from classroom_app.db.schema_assignments import ensure_assessment_classification_schema
 from classroom_app.routers.homework_parts import assignments, exam_papers
 from tests.test_assessment_classification_service import classification_database, grade_hash
+from classroom_app.services import exam_paper_management_service as exam_domain
 
 
 class JsonRequest:
@@ -129,7 +130,7 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
 
     def test_ordinary_creation_defaults_only_missing_kind_to_homework_and_audits(self):
         self._add_authoring_columns()
-        with patch.object(assignments, "close_overdue_assignments"), patch.object(assignments, "sync_assignment_due_reminders"), patch.object(assignments, "_build_assignment_storage_dir", return_value=MagicMock()):
+        with patch.object(assignments, "close_overdue_assignments"), patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"), patch.object(assignments, "_build_assignment_storage_dir", return_value=MagicMock()):
             for supplied, expected in (({}, "homework"), ({"assessment_kind": "final"}, "final")):
                 result = asyncio.run(assignments.create_assignment(10, JsonRequest({"title": "test", "class_offering_id": 100, **supplied}), user={"id": 7}))
                 row = self.conn.execute("SELECT * FROM assignments WHERE id = ?", (result["new_assignment_id"],)).fetchone()
@@ -146,13 +147,13 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         paper = {"id": "new-paper", "title": "共享试卷", "description": "test", "questions_json": "{}"}
         with patch.object(exam_papers, "get_db_connection", lambda: transactional_connection(self.conn)), \
              patch.object(exam_papers, "close_overdue_assignments"), \
-             patch.object(exam_papers, "_get_exam_paper_for_teacher", return_value=paper), \
-             patch.object(exam_papers, "normalize_exam_scoring_payload", side_effect=lambda value, **kw: value), \
-             patch.object(exam_papers, "build_exam_rubric_md", return_value="existing rubric"), \
-             patch.object(exam_papers, "teacher_can_manage_exam_paper", return_value=False), \
-             patch.object(exam_papers, "create_assignment_published_notifications"), \
-             patch.object(exam_papers, "sync_assignment_due_reminders"), \
-             patch.object(exam_papers, "_auto_add_class_name_tag"), \
+             patch.object(exam_domain, "_get_exam_paper_for_teacher", return_value=paper), \
+             patch.object(exam_domain, "normalize_exam_scoring_payload", side_effect=lambda value, **kw: value), \
+             patch.object(exam_domain, "build_exam_rubric_md", return_value="existing rubric"), \
+             patch.object(exam_domain, "teacher_can_manage_exam_paper", return_value=False), \
+             patch.object(exam_domain, "create_assignment_published_notifications"), \
+             patch.object(exam_domain, "sync_assignment_due_reminders"), \
+             patch.object(exam_domain, "_auto_add_class_name_tag"), \
              patch.object(exam_papers, "_build_assignment_storage_dir", return_value=MagicMock()):
             result = asyncio.run(exam_papers.assign_exam_paper("new-paper", JsonRequest({"class_offering_id": 100, "assessment_kind": "homework"}), user={"id": 7}))
         row = self.conn.execute("SELECT * FROM assignments WHERE id = ?", (result["assignment_id"],)).fetchone()
@@ -214,8 +215,8 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         self._prepare_running_attempt()
         original_answers = self.conn.execute("SELECT score, feedback_md, answers_json FROM submissions WHERE id=11").fetchone()
         with patch.object(assignments, "close_overdue_assignments"), \
-             patch.object(assignments, "refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
-             patch.object(assignments, "sync_assignment_due_reminders"):
+             patch("classroom_app.services.assignment_management_service.refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
+             patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"):
             for payload in ({"title": "改标题"}, {"title": "改标题", "assessment_kind": "midterm", "expected_version": 0}):
                 asyncio.run(assignments.update_assignment("1", JsonRequest(payload), user={"id": 7}))
                 row = self.conn.execute("SELECT * FROM submissions WHERE id=11").fetchone()
@@ -234,8 +235,8 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         self.conn.execute("UPDATE submissions SET score=NULL WHERE id=11")
         self.conn.commit()
         with patch.object(assignments, "close_overdue_assignments"), \
-             patch.object(assignments, "refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
-             patch.object(assignments, "sync_assignment_due_reminders"):
+             patch("classroom_app.services.assignment_management_service.refresh_assignment_runtime_status", side_effect=lambda conn, value: value), \
+             patch("classroom_app.services.assignment_management_service.sync_assignment_due_reminders"):
             asyncio.run(assignments.update_assignment("1", JsonRequest({"title": "同标题", "allowed_file_types": ["pdf"]}), user={"id": 7}))
         row = self.conn.execute("SELECT * FROM submissions WHERE id=11").fetchone()
         self.assertEqual("grading_review", row["status"])
@@ -247,7 +248,7 @@ class AssessmentClassificationRouteTests(unittest.TestCase):
         self.conn.execute("UPDATE assignments SET exam_paper_id='paper-a' WHERE id=2")
         self.conn.execute("UPDATE submissions SET status='grading', grading_attempt_fingerprint='other' WHERE id=12")
         self.conn.commit()
-        with patch.object(exam_papers, "build_exam_rubric_md", return_value="新量表"):
+        with patch.object(exam_domain, "build_exam_rubric_md", return_value="新量表"):
             synced = exam_papers._sync_exam_assignment_content(self.conn, paper_id="paper-a", title="卷", description="新内容", exam_data={})
         self.assertEqual(2, synced)
         rows = self.conn.execute("SELECT score,status,grading_attempt_fingerprint FROM submissions WHERE id IN (11,12) ORDER BY id").fetchall()

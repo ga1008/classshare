@@ -6,6 +6,7 @@ from .rewrite_helpers import *
 from ...services.html_package_service import apply_package_session_bindings, parse_html_package
 from ...services.material_render_service import attach_render_metadata
 from ...services.materials_service import is_bindable_learning_material
+from ...services.session_material_generation_jobs import create_scheduled_generation_task
 from ...db.schema_session_learning_materials import ensure_session_learning_materials_schema
 from ...services.session_learning_materials_service import (
     AI_BLURB_GENERATE_LIMIT,
@@ -106,6 +107,8 @@ async def list_classroom_learning_materials(
         can_manage = user["role"] == "teacher" and (
             int(user["id"]) == teacher_id or is_super_admin_teacher(conn, int(user["id"]))
         )
+        from ...services.session_learning_materials_service import material_binding_version
+        binding_version = material_binding_version(conn, class_offering_id, session_id) if can_manage else None
         if generate_blurbs:
             conn.commit()
 
@@ -135,7 +138,7 @@ async def list_classroom_learning_materials(
     for entry in entries:
         entry["type_label"] = _material_entry_type_label(entry)
 
-    return {"status": "success", "materials": entries, "can_manage": can_manage}
+    return {"status": "success", "materials": entries, "can_manage": can_manage, "binding_version": binding_version}
 
 
 @router.post("/api/classrooms/{class_offering_id}/learning-materials", response_class=JSONResponse)
@@ -762,6 +765,7 @@ async def get_classroom_session_ai_material_task(
     class_offering_id: int,
     session_id: int,
     user: dict = Depends(get_current_teacher),
+    refresh_stale: bool = True,
 ):
     with get_db_connection() as conn:
         session_item = get_teacher_session_with_material_state(
@@ -769,10 +773,12 @@ async def get_classroom_session_ai_material_task(
             class_offering_id=class_offering_id,
             session_id=session_id,
             teacher_id=int(user["id"]),
+            expire_stale=refresh_stale,
         )
         if not session_item:
             raise HTTPException(404, "Session not found or access denied")
-        conn.commit()
+        if refresh_stale:
+            conn.commit()
 
     return {
         "status": "success",
@@ -837,7 +843,7 @@ async def create_classroom_session_ai_material_task(
     )
 
     with get_db_connection() as conn:
-        task = create_generation_task(
+        task = create_scheduled_generation_task(
             conn,
             class_offering_id=class_offering_id,
             session_id=session_id,
@@ -854,9 +860,6 @@ async def create_classroom_session_ai_material_task(
             teacher_id=int(user["id"]),
         )
         conn.commit()
-
-    if task and not task.get("already_running"):
-        asyncio.create_task(run_generation_task(int(task["id"])))
 
     return {
         "status": "accepted",

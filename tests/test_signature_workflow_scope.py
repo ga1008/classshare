@@ -139,6 +139,7 @@ class SignatureWorkflowScopeTests(unittest.TestCase):
         self.assert_denied(lambda: self.use(user={"role": "teacher", "id": 9}))
 
     def test_legacy_consumption_can_only_replay_the_same_actors_valid_grant(self):
+        self.conn.execute('CREATE TABLE assessment_plans(id TEXT PRIMARY KEY, teacher_id INTEGER, title TEXT, signature_revision TEXT)')
         point = "assessment_plan.reviewer_signature"
         request = self.create_request(legacy=True, point=point)
         self.approve(request)

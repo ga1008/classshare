@@ -1,0 +1,1015 @@
+{
+  "checked_at": "2026-09-10T09:08:36.793933+00:00",
+  "dsh_version": "0.1.5-rc.1",
+  "model_mode": "deterministic_local_fixture_not_official_DeepSeek",
+  "real_credentials_used": false,
+  "paid_model_requests": 0,
+  "model_fixture_requests": [
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "high",
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "high",
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__poc__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__pocglobal__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    },
+    {
+      "path": "/chat/completions",
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null,
+      "authorization_is_fixture": true,
+      "tool_names": [
+        "create_goal",
+        "edit",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep",
+        "interrupt_agent",
+        "job_kill",
+        "job_list",
+        "job_output",
+        "list_agents",
+        "mcp__pocglobal__echo",
+        "pwsh",
+        "ralph",
+        "read",
+        "read_image",
+        "send_message",
+        "skill",
+        "subagent",
+        "subagent_fork",
+        "todo_write",
+        "update_goal",
+        "web_fetch",
+        "web_search",
+        "workflow",
+        "write"
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "method": "session/request_permission",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "toolCall": {
+          "toolCallId": "poc-tool-3"
+        },
+        "options": [
+          {
+            "optionId": "allow-once",
+            "name": "Allow once",
+            "kind": "allow_once"
+          },
+          {
+            "optionId": "reject-once",
+            "name": "Reject",
+            "kind": "reject_once"
+          }
+        ]
+      }
+    }
+  ],
+  "checks": {
+    "initialize": {
+      "protocolVersion": 1,
+      "agentInfo": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "agentCapabilities": {
+        "mcpCapabilities": {
+          "http": true
+        },
+        "promptCapabilities": {
+          "image": false,
+          "audio": false,
+          "embeddedContext": false
+        },
+        "sessionCapabilities": {
+          "close": {},
+          "list": {},
+          "resume": {}
+        }
+      },
+      "authMethods": []
+    },
+    "authenticate": {},
+    "session_new": {
+      "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+      "configOptions": [
+        {
+          "id": "model",
+          "name": "Model",
+          "category": "model",
+          "type": "select",
+          "currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "options": [
+            {
+              "group": "deepseek-official",
+              "name": "DeepSeek",
+              "options": [
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-flash\"]",
+                  "name": "DeepSeek-V41-Flash"
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+                  "name": "DeepSeek-V4-Flash",
+                  "description": "Fast, efficient, and economical; suited to focused, routine, or parallel tasks."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-pro\"]",
+                  "name": "DeepSeek-V4-Pro",
+                  "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash-vision-exp\"]",
+                  "name": "DeepSeek-V4-Flash-Vision-Exp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reasoning_effort",
+          "name": "Reasoning effort",
+          "category": "thought_level",
+          "type": "select",
+          "currentValue": "off",
+          "options": [
+            {
+              "value": "off",
+              "name": "Off",
+              "description": "Use for simple tasks that do not need reasoning."
+            },
+            {
+              "value": "low",
+              "name": "Low",
+              "description": "Prefer for routine or latency-sensitive tasks."
+            },
+            {
+              "value": "high",
+              "name": "High",
+              "description": "The default balance for most tasks."
+            },
+            {
+              "value": "max",
+              "name": "Max",
+              "description": "Reserve for the hardest quality-first tasks."
+            }
+          ]
+        }
+      ]
+    },
+    "mcp_prompt": {
+      "stopReason": "end_turn"
+    },
+    "permission_prompt": {
+      "stopReason": "end_turn"
+    },
+    "running_prompt_cancel": {
+      "stopReason": "cancelled"
+    },
+    "session_close": {},
+    "session_list": {
+      "sessions": [
+        {
+          "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "11f4f488-09be-4a8a-975b-c8922f74f590",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "41dab196-6df9-499d-a5ce-a742b0541ac4",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "d635a37c-6e7b-42d1-bdd1-10988d229c22",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "6ecb18cd-82fb-4933-8fa0-58fd7e4829bf",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "cd4ff96e-5a01-4028-99f0-2751e3ef0bfd",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "2540f77b-fa07-4539-b8a5-d34f4c4d6fd3",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "02067b62-ea5f-4b7b-90f1-4bf4b99efbb5",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "4bc3a128-43cc-4641-8b27-0e415125d88e",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        },
+        {
+          "sessionId": "be522c86-bb91-40fc-9e96-1f3218127df8",
+          "cwd": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\dsh-poc\\workspace"
+        }
+      ]
+    },
+    "session_resume": {
+      "configOptions": [
+        {
+          "id": "model",
+          "name": "Model",
+          "category": "model",
+          "type": "select",
+          "currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "options": [
+            {
+              "group": "deepseek-official",
+              "name": "DeepSeek",
+              "options": [
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-flash\"]",
+                  "name": "DeepSeek-V41-Flash"
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+                  "name": "DeepSeek-V4-Flash",
+                  "description": "Fast, efficient, and economical; suited to focused, routine, or parallel tasks."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-pro\"]",
+                  "name": "DeepSeek-V4-Pro",
+                  "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash-vision-exp\"]",
+                  "name": "DeepSeek-V4-Flash-Vision-Exp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reasoning_effort",
+          "name": "Reasoning effort",
+          "category": "thought_level",
+          "type": "select",
+          "currentValue": "off",
+          "options": [
+            {
+              "value": "off",
+              "name": "Off",
+              "description": "Use for simple tasks that do not need reasoning."
+            },
+            {
+              "value": "low",
+              "name": "Low",
+              "description": "Prefer for routine or latency-sensitive tasks."
+            },
+            {
+              "value": "high",
+              "name": "High",
+              "description": "The default balance for most tasks."
+            },
+            {
+              "value": "max",
+              "name": "Max",
+              "description": "Reserve for the hardest quality-first tasks."
+            }
+          ]
+        }
+      ]
+    },
+    "resumed_close": {},
+    "first_process_exit": 0,
+    "restart_resume": {
+      "configOptions": [
+        {
+          "id": "model",
+          "name": "Model",
+          "category": "model",
+          "type": "select",
+          "currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "options": [
+            {
+              "group": "deepseek-official",
+              "name": "DeepSeek",
+              "options": [
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-flash\"]",
+                  "name": "DeepSeek-V41-Flash"
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+                  "name": "DeepSeek-V4-Flash",
+                  "description": "Fast, efficient, and economical; suited to focused, routine, or parallel tasks."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-pro\"]",
+                  "name": "DeepSeek-V4-Pro",
+                  "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost."
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash-vision-exp\"]",
+                  "name": "DeepSeek-V4-Flash-Vision-Exp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reasoning_effort",
+          "name": "Reasoning effort",
+          "category": "thought_level",
+          "type": "select",
+          "currentValue": "off",
+          "options": [
+            {
+              "value": "off",
+              "name": "Off",
+              "description": "Use for simple tasks that do not need reasoning."
+            },
+            {
+              "value": "low",
+              "name": "Low",
+              "description": "Prefer for routine or latency-sensitive tasks."
+            },
+            {
+              "value": "high",
+              "name": "High",
+              "description": "The default balance for most tasks."
+            },
+            {
+              "value": "max",
+              "name": "Max",
+              "description": "Reserve for the hardest quality-first tasks."
+            }
+          ]
+        }
+      ]
+    },
+    "restart_exit": 0
+  },
+  "events": [
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 7881,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "poc-tool-1",
+          "title": "mcp__poc__echo",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "text": "fixture-only"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "poc-tool-1",
+          "status": "completed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "MCP_OK:fixture-only"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "dd6e9767-6008-4b05-8103-cbdc0071b55c",
+          "content": {
+            "type": "text",
+            "text": "POC complete: local fixture response only."
+          }
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 7917,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 7998,
+          "size": 1000000
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": "poc-tool-3",
+          "title": "pwsh",
+          "kind": "other",
+          "status": "in_progress",
+          "rawInput": {
+            "command": "Write-Output 'PocPermissionMustBeRejected'",
+            "description": "Test rejected fixture permission",
+            "sandbox_permissions": "danger-full-access",
+            "justification": "Synthetic local PoC; client must reject before execution"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": "poc-tool-3",
+          "status": "failed",
+          "content": [
+            {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "Error: the user rejected escalating this command to \"danger-full-access\""
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "agent_message_chunk",
+          "messageId": "d0ccbb10-21a7-4dfb-9e81-650c0447bde8",
+          "content": {
+            "type": "text",
+            "text": "POC complete: local fixture response only."
+          }
+        }
+      }
+    },
+    {
+      "method": "session/update",
+      "params": {
+        "sessionId": "0f0db5cb-800f-46b0-ba11-dee522e32ff4",
+        "update": {
+          "sessionUpdate": "usage_update",
+          "used": 8047,
+          "size": 1000000
+        }
+      }
+    }
+  ],
+  "node_version": "v24.13.0",
+  "npm_lock_sha256": "169f8fdc6a1b76d5ce0036d725a51be5400e28893f8c70c255759af71e952c19",
+  "pid": 3084,
+  "profile_sha256": "553e1da84f8fe6aaace610fb93c2290ac69a1afa9646e944be7f5a6fb99ca597",
+  "profile_kind": "official ACP plus isolated local-fixture overlay",
+  "provider_checks": {
+    "completed": true,
+    "stop_reason": "end_turn",
+    "final_text": "POC complete: local fixture response only.",
+    "tool_receipts": [
+      {
+        "tool_call_id": "poc-tool-6",
+        "source": "acp",
+        "status": "completed",
+        "title": "mcp__poc__echo",
+        "kind": "other",
+        "rawInput": {
+          "text": "fixture-only"
+        },
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "MCP_OK:fixture-only"
+            }
+          }
+        ]
+      }
+    ],
+    "identity": {
+      "task_id": "poc-task",
+      "actor_id": "teacher:poc",
+      "attempt_id": "poc-attempt",
+      "fencing_token": "poc-fence"
+    },
+    "event_types": [
+      "usage",
+      "tool_start",
+      "tool_result",
+      "assistant_text",
+      "usage"
+    ]
+  },
+  "reasoning_checks": {
+    "normal": {
+      "thinking": {
+        "type": "disabled"
+      },
+      "reasoning_effort": null
+    },
+    "deep": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "high"
+    },
+    "config_options": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+        "options": [
+          {
+            "group": "deepseek-official",
+            "name": "DeepSeek",
+            "options": [
+              {
+                "value": "[\"deepseek-official\",\"deepseek-flash\"]",
+                "name": "DeepSeek-V41-Flash"
+              },
+              {
+                "value": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+                "name": "DeepSeek-V4-Flash",
+                "description": "Fast, efficient, and economical; suited to focused, routine, or parallel tasks."
+              },
+              {
+                "value": "[\"deepseek-official\",\"deepseek-v4-pro\"]",
+                "name": "DeepSeek-V4-Pro",
+                "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost."
+              },
+              {
+                "value": "[\"deepseek-official\",\"deepseek-v4-flash-vision-exp\"]",
+                "name": "DeepSeek-V4-Flash-Vision-Exp"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "reasoning_effort",
+        "name": "Reasoning effort",
+        "category": "thought_level",
+        "type": "select",
+        "currentValue": "high",
+        "options": [
+          {
+            "value": "off",
+            "name": "Off",
+            "description": "Use for simple tasks that do not need reasoning."
+          },
+          {
+            "value": "low",
+            "name": "Low",
+            "description": "Prefer for routine or latency-sensitive tasks."
+          },
+          {
+            "value": "high",
+            "name": "High",
+            "description": "The default balance for most tasks."
+          },
+          {
+            "value": "max",
+            "name": "Max",
+            "description": "Reserve for the hardest quality-first tasks."
+          }
+        ]
+      }
+    ],
+    "protocol": "session/set_config_option",
+    "config_id": "reasoning_effort"
+  },
+  "http_mcp_methods": [
+    "initialize",
+    "notifications/initialized",
+    "tools/list",
+    "initialize",
+    "notifications/initialized",
+    "tools/list",
+    "tools/call"
+  ],
+  "global_scoped_mcp_checks": {
+    "same_server_name": true,
+    "tool_name_unique": true,
+    "scoped_tool_receipt_completed": true
+  },
+  "scoped_mcp_admission_failure": {
+    "failure_type": "AcpRemoteError",
+    "model_calls_before_tools_ready": 0
+  },
+  "exit_code": 0,
+  "stderr_tail": "",
+  "passed": true
+}

@@ -426,7 +426,7 @@ class OfferingMergeServiceTests(unittest.TestCase):
                 source_offering_ids=[self.source_id],
             )
             self.assertFalse(preview["can_execute"])
-            self.assertTrue(any("learning_progress_snapshots" in b for b in preview["blockers"]))
+            self.assertTrue(any("学习进度" in b for b in preview["blockers"]))
             with self.assertRaises(merge.OfferingMergeError):
                 merge.execute_offering_merge(
                     conn,

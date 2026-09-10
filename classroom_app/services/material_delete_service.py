@@ -5,8 +5,10 @@ import json
 import sqlite3
 from datetime import datetime
 from typing import Any, Callable
+from fastapi import HTTPException
 
 from ..db.connection import get_configured_db_engine
+from .material_attributes_service import subtree_pattern
 
 
 MATERIAL_DELETE_ITEM_LIMIT = 12
@@ -20,13 +22,14 @@ _REFERENCE_TABLES = {
     "learning_material_progress",
     "material_ai_import_records",
     "session_material_generation_tasks",
+    "course_doc_packs",
 }
 
 _SUBTREE_ID_SQL = """
     SELECT id
     FROM course_materials
     WHERE root_id = ?
-      AND (material_path = ? OR material_path LIKE ?)
+      AND (material_path = ? OR material_path LIKE ? ESCAPE '!')
 """
 
 
@@ -69,7 +72,57 @@ def _available_reference_tables(conn) -> set[str]:
 def _subtree_params(material_row: Any) -> tuple[Any, ...]:
     material = _row_dict(material_row)
     path = str(material.get("material_path") or "")
-    return (int(material["root_id"]), path, f"{path}/%")
+    return (int(material["root_id"]), path, subtree_pattern(path))
+
+
+def _snapshot_digest(conn, material, available_tables, *, lock=False):
+    """Hash every affected row, independently of truncated UI samples/counts.
+
+    Existing reference rows are locked in a deterministic table/id order for a
+    delete. Material row locks also prevent new FK references being inserted
+    while the referenced nodes are deleted. No caller-provided SQL is used.
+    """
+    columns_by_table = {
+        'course_materials': ('id',),
+        'course_material_assignments': ('material_id',),
+        'class_offering_learning_materials': ('material_id',),
+        'class_offering_sessions': ('learning_material_id',),
+        'class_offerings': ('home_learning_material_id',),
+        'course_lessons': ('learning_material_id',),
+        'learning_material_progress': ('material_id',),
+        'material_ai_import_records': ('package_material_id', 'source_material_id', 'parsed_material_id', 'parent_material_id'),
+        'session_material_generation_tasks': ('generated_material_id',),
+        'course_doc_packs': ('root_material_id',),
+    }
+    engine = get_configured_db_engine()
+    digest = hashlib.sha256()
+    params = _subtree_params(material)
+    def consume(label, cursor):
+        digest.update(label.encode() + b'\x00')
+        while (row := cursor.fetchone()) is not None:
+            encoded = json.dumps(dict(row), ensure_ascii=True, sort_keys=True, separators=(',', ':'), default=str).encode()
+            digest.update(str(len(encoded)).encode() + b':' + encoded)
+    for table, candidates in sorted(columns_by_table.items()):
+        if table != 'course_materials' and table not in available_tables:
+            continue
+        if engine == 'postgres':
+            columns = {row[0] for row in conn.execute('SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=?', ('public', table)).fetchall()}
+        else:
+            columns = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+        fields = [name for name in candidates if name in columns]
+        if not fields:
+            continue
+        condition = ' OR '.join(f'{name} IN ({_SUBTREE_ID_SQL})' for name in fields)
+        order = 'id' if 'id' in columns else ','.join(fields)
+        suffix = ' FOR UPDATE' if lock and engine == 'postgres' else ''
+        consume(table, conn.execute(f'SELECT * FROM {table} WHERE {condition} ORDER BY {order}{suffix}', params * len(fields)))
+    if 'material_ai_import_records' in available_tables:
+        references = _final_transcript_source_dependencies(conn, source_record_ids=_source_import_record_ids(conn, material),
+            teacher_id=_safe_int(material.get('teacher_id')), excluded_material_ids=_material_subtree_ids(conn, material))
+        for reference in sorted(references, key=lambda row: row['reference_id']):
+            suffix = ' FOR UPDATE' if lock and engine == 'postgres' else ''
+            consume('final_transcript', conn.execute('SELECT * FROM material_ai_import_records WHERE id=?' + suffix, (reference['reference_id'],)))
+    return digest.hexdigest()
 
 
 def _query_count(conn, sql: str, params: tuple[Any, ...]) -> int:
@@ -382,6 +435,7 @@ def build_material_delete_impact(
     *,
     include_items: bool = True,
     item_limit: int = MATERIAL_DELETE_ITEM_LIMIT,
+    lock: bool = False,
 ) -> dict[str, Any]:
     """Reverse trace every business reference affected by deleting a material subtree."""
 
@@ -390,6 +444,8 @@ def build_material_delete_impact(
     limit = max(1, min(int(item_limit or MATERIAL_DELETE_ITEM_LIMIT), 50))
     groups: list[dict[str, Any]] = []
     available_tables = _available_reference_tables(conn)
+
+    before_snapshot = _snapshot_digest(conn, material, available_tables, lock=lock)
 
     subtree_row = conn.execute(
         f"""
@@ -407,6 +463,17 @@ def build_material_delete_impact(
         "file_count": _safe_int(subtree.get("file_count")),
         "folder_count": _safe_int(subtree.get("folder_count")),
     }
+    from .material_tree_service import related_active_packs
+    packs = related_active_packs(conn, material)
+    material_path = str(material['material_path'])
+    subtree_summary['registered_pack_count'] = sum(
+        pack['material_path'] == material_path or pack['material_path'].startswith(material_path + '/')
+        for pack in packs
+    )
+    structural_blocker = (
+        '不能单独删除学习文档包内部材料，请使用学习文档编辑功能。'
+        if len(packs) > subtree_summary['registered_pack_count'] else None
+    )
 
     if "course_material_assignments" in available_tables:
         assignment_count = _query_count(
@@ -801,7 +868,10 @@ def build_material_delete_impact(
         "updated_at": str(material.get("updated_at") or ""),
         "subtree": subtree_summary,
         "groups": [(group["key"], int(group["count"])) for group in groups],
+        "snapshot": _snapshot_digest(conn, material, available_tables, lock=lock),
     }
+    if token_payload['snapshot'] != before_snapshot:
+        raise HTTPException(409, '材料或关联正在变化，请重新查看删除影响。')
     impact_token = hashlib.sha256(
         json.dumps(token_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -819,7 +889,8 @@ def build_material_delete_impact(
         "total_reference_count": total_count,
         "destructive_reference_count": destructive_count,
         "preserved_history_count": preserved_history_count,
-        "can_delete_directly": total_count == 0,
+        "can_delete_directly": total_count == 0 and not structural_blocker,
+        "structural_blocker": structural_blocker,
         "impact_token": impact_token,
     }
 

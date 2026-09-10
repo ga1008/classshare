@@ -1,5 +1,6 @@
 {% set ai_widget_role = user_info.role if user_info is defined and user_info.role is defined else '' %}
 {% set ai_widget_is_teacher = ai_widget_role == 'teacher' %}
+{% set ai_widget_has_agent = ai_widget_role in ['teacher', 'student'] %}
 {% set ai_widget = namespace(class_offering_id=none, assignment_id=none, material_id=none) %}
 {% if classroom is defined and classroom.id is defined %}
 {% set ai_widget.class_offering_id = classroom.id %}
@@ -23,7 +24,7 @@
         classOfferingId: {{ ai_widget.class_offering_id | tojson }},
         assignmentId: {{ ai_widget.assignment_id | tojson }},
         materialId: {{ ai_widget.material_id | tojson }},
-        taskCenterEnabled: {{ ai_widget_is_teacher | tojson }}
+        taskCenterEnabled: {{ ai_widget_has_agent | tojson }}
     });
 </script>
 
@@ -36,7 +37,7 @@
             <path d="M12 8v8"></path>
         </svg>
     </span>
-    {% if ai_widget_is_teacher %}
+    {% if ai_widget_has_agent %}
     <span class="ai-workspace-fab__light is-green" id="ai-agent-fab-light" title="可以执行新任务" aria-hidden="true"></span>
     <span class="ai-workspace-fab__badge" id="ai-agent-fab-queue-badge" title="当前排队数量">0</span>
     {% endif %}
@@ -60,21 +61,21 @@
                 </span>
                 <div>
                     <h3>AI 助手</h3>
-                    {% if ai_widget_is_teacher %}
-                    <small id="ai-workspace-subtitle">懂当前页面的教学工作台</small>
+                    {% if ai_widget_has_agent %}
+                    <small id="ai-workspace-subtitle">懂当前页面的智能工作台</small>
                     {% else %}
                     <small>围绕本课堂答疑</small>
                     {% endif %}
                 </div>
             </div>
-            {% if ai_widget_is_teacher %}
+            {% if ai_widget_has_agent %}
             <div class="ai-agent-queue-indicator" aria-label="Agent 队列状态">
                 <span id="ai-agent-traffic-light" class="ai-agent-traffic-light is-green" title="可以执行新任务" aria-hidden="true"></span>
                 <span class="ai-agent-queue-tag" title="当前排队数量"><span id="ai-agent-queue-count">0</span></span>
             </div>
             {% endif %}
             <div class="header-buttons">
-                {% if ai_widget_is_teacher %}
+                {% if ai_widget_has_agent %}
                 <button id="ai-agent-history-toggle" class="chat-btn agent-history" type="button" title="Agent 队列与历史" aria-label="Agent 队列与历史" aria-expanded="false"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path><path d="M12 7v5l3 2"></path></svg></button>
                 {% endif %}
                 <button id="ai-chat-btn-new" class="chat-btn" type="button" title="新对话" aria-label="新对话"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m-7-7h14"/></svg></button>
@@ -91,7 +92,7 @@
             </div>
             <div class="ai-chat-attachment-previews" id="ai-chat-previews"></div>
             <div class="ai-chat-input-area">
-                {% if ai_widget_is_teacher %}
+                {% if ai_widget_has_agent %}
                 <div class="ai-workspace-modebar" id="ai-workspace-modebar" role="group" aria-label="AI 工作模式">
                     <button type="button" class="ai-workspace-mode-option is-active" data-ai-mode-select="chat" aria-pressed="true">
                         <span class="ai-workspace-mode-option__icon" aria-hidden="true">
@@ -135,7 +136,7 @@
             </div>
         </section>
 
-        {% if ai_widget_is_teacher %}
+        {% if ai_widget_has_agent %}
         <aside id="ai-agent-history-drawer" class="ai-agent-history-drawer" hidden aria-label="Agent 队列与历史">
             <header>
                 <div>
@@ -147,10 +148,12 @@
                     <button id="ai-agent-history-close" class="chat-btn agent-history-close" type="button" title="收起" aria-label="收起 Agent 历史"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.05" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
                 </div>
             </header>
+            {% if ai_widget_is_teacher %}
             <details class="ai-agent-subscriptions" id="ai-agent-subscriptions-panel">
                 <summary>定时任务</summary>
                 <div class="ai-agent-subscription-list" id="agent-subscription-list"></div>
             </details>
+            {% endif %}
             <div class="ai-task-list" id="agent-task-list" aria-live="polite"></div>
         </aside>
         {% endif %}

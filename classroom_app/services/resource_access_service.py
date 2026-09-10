@@ -643,6 +643,12 @@ def build_course_file_scope(
     if role != "teacher" or user_pk is None:
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    # This builder is used only immediately before a file INSERT. Keep its
+    # logical classroom/class target alive until the caller commits, and read
+    # current ownership after acquiring the shared teaching parent locks.
+    from .teaching_lifecycle_service import lock_teaching_context, lock_teaching_parent
+    lock_teaching_context(conn, course_id=int(course_id), class_offering_id=class_offering_id, nowait=True)
+
     course = conn.execute(
         """
         SELECT id, school_code, school_name, college, department, created_by_teacher_id
@@ -671,6 +677,7 @@ def build_course_file_scope(
         if int(offering["teacher_id"]) != user_pk and not is_super_admin_teacher(conn, user_pk):
             raise HTTPException(status_code=403, detail="Permission denied")
         class_id = int(offering["class_id"])
+        lock_teaching_parent(conn, "class", class_id, nowait=True)
     elif int(course["created_by_teacher_id"]) != user_pk and not is_super_admin_teacher(conn, user_pk):
         raise HTTPException(status_code=403, detail="Permission denied")
 

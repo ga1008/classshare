@@ -3,6 +3,9 @@
 from .common import *
 from .generation_helpers import *
 from .final_material_helpers import *
+from ...services.material_tree_service import (
+    lock_material_trees, ensure_plain_tree_operation, touch_material_nodes, check_material_revision,
+)
 
 
 router = APIRouter()
@@ -23,6 +26,8 @@ class MaterialFileCreateRequest(BaseModel):
 
 class MaterialMoveRequest(BaseModel):
     target_parent_id: int | None = None
+    expected_updated_at: str | None = None
+    expected_target_updated_at: str | None = None
 
 
 class MaterialAiExpandRequest(BaseModel):
@@ -44,13 +49,15 @@ def _normalize_node_name(raw_name: str, *, fallback: str = "") -> str:
 
 def _resolve_create_base(conn, parent_id: int | None, teacher_id: int):
     """Return (base_parent_row_or_None, base_prefix, inherited_root_id, inherited_scope)."""
+    locked = lock_material_trees(conn, teacher_id=teacher_id, material_ids=(parent_id,))
     if parent_id is None:
         return None, "", None, "private"
-    base_parent = ensure_teacher_material_owner(conn, parent_id, teacher_id)
+    base_parent = locked[parent_id]
     if base_parent["node_type"] != "folder":
         raise HTTPException(400, "只能在文件夹中新建")
     if is_git_internal_material_path(base_parent["material_path"]):
         raise HTTPException(400, "不能在 Git 内部目录中新建")
+    ensure_plain_tree_operation(conn, base_parent, action='create')
     inherited_scope = str(base_parent["scope_level"] or "private").strip().lower() or "private"
     return base_parent, str(base_parent["material_path"]), int(base_parent["root_id"]), inherited_scope
 
@@ -65,15 +72,16 @@ async def create_material_folder(
         base_parent, base_prefix, inherited_root_id, inherited_scope = _resolve_create_base(
             conn, payload.parent_id, user["id"]
         )
+        owner_user = {**user, 'id': int(base_parent['teacher_id']) if base_parent else int(user['id'])}
         unique_name = make_unique_material_name(
-            conn, int(user["id"]), int(base_parent["id"]) if base_parent else None, name
+            conn, owner_user['id'], int(base_parent["id"]) if base_parent else None, name
         )
         material_path = normalize_material_path(f"{base_prefix}/{unique_name}" if base_prefix else unique_name)
-        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        owner_scope = load_teacher_org_scope(conn, owner_user['id'])
         now = datetime.now().isoformat()
         folder_id, actual_root_id = _insert_material_folder_row(
             conn,
-            user=user,
+            user=owner_user,
             name=unique_name,
             material_path=material_path,
             parent_id=int(base_parent["id"]) if base_parent else None,
@@ -83,6 +91,7 @@ async def create_material_folder(
             scope_level=inherited_scope,
         )
         refresh_root_git_metadata(conn, int(actual_root_id))
+        touch_material_nodes(conn, (inherited_root_id, payload.parent_id), now)
         conn.commit()
         item = _fetch_material_response_item(conn, folder_id, user)
     return {
@@ -104,24 +113,28 @@ async def create_material_markdown_file(
     if not content.strip():
         title = name.rsplit(".", 1)[0]
         content = f"# {title}\n\n"
-    payload_bytes = content.encode("utf-8")
+    try:
+        payload_bytes = content.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise HTTPException(400, '文档内容包含无效字符。') from exc
     file_hash = hashlib.sha256(payload_bytes).hexdigest()
-    await _write_material_file(file_hash, payload_bytes)
 
     with get_db_connection() as conn:
         base_parent, base_prefix, inherited_root_id, inherited_scope = _resolve_create_base(
             conn, payload.parent_id, user["id"]
         )
+        await _write_material_file(file_hash, payload_bytes)
+        owner_user = {**user, 'id': int(base_parent['teacher_id']) if base_parent else int(user['id'])}
         unique_name = make_unique_material_name(
-            conn, int(user["id"]), int(base_parent["id"]) if base_parent else None, name
+            conn, owner_user['id'], int(base_parent["id"]) if base_parent else None, name
         )
         material_path = normalize_material_path(f"{base_prefix}/{unique_name}" if base_prefix else unique_name)
-        owner_scope = load_teacher_org_scope(conn, int(user["id"]))
+        owner_scope = load_teacher_org_scope(conn, owner_user['id'])
         now = datetime.now().isoformat()
         file_profile = infer_material_profile(unique_name, "text/markdown")
         file_id = _insert_material_file_row(
             conn,
-            user=user,
+            user=owner_user,
             name=unique_name,
             material_path=material_path,
             parent_id=int(base_parent["id"]) if base_parent else None,
@@ -135,6 +148,7 @@ async def create_material_markdown_file(
         )
         actual_root_id = inherited_root_id or file_id
         refresh_root_git_metadata(conn, int(actual_root_id))
+        touch_material_nodes(conn, (inherited_root_id, payload.parent_id), now)
         conn.commit()
         item = _fetch_material_response_item(conn, file_id, user)
     return {
@@ -154,7 +168,7 @@ async def list_material_folder_options(
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, parent_id, root_id, name, material_path
+            SELECT id, parent_id, root_id, name, material_path, updated_at
             FROM course_materials
             WHERE teacher_id = ?
               AND node_type = 'folder'
@@ -182,6 +196,7 @@ async def list_material_folder_options(
                 "name": str(row["name"] or ""),
                 "material_path": row_path,
                 "depth": row_path.count("/"),
+                "updated_at": str(row['updated_at'] or 'legacy'),
             }
         )
     return {"status": "success", "folders": options}
@@ -194,13 +209,17 @@ async def move_material_node(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
+        locked = lock_material_trees(conn, teacher_id=user['id'], material_ids=(material_id, payload.target_parent_id))
+        material = locked[material_id]
+        check_material_revision(material, payload.expected_updated_at)
         if is_git_internal_material_path(material["material_path"]):
             raise HTTPException(400, "不能移动 Git 内部内容")
 
         target_parent = None
         if payload.target_parent_id is not None:
-            target_parent = ensure_teacher_material_owner(conn, int(payload.target_parent_id), user["id"])
+            target_parent = locked[int(payload.target_parent_id)]
+            if int(target_parent['teacher_id']) != int(material['teacher_id']):
+                raise HTTPException(400, '移动不能隐式转移材料所属教师。')
             if target_parent["node_type"] != "folder":
                 raise HTTPException(400, "只能移动到文件夹中")
             if is_git_internal_material_path(target_parent["material_path"]):
@@ -209,11 +228,14 @@ async def move_material_node(
                 raise HTTPException(400, "不能把项目移动到它自己里面")
             if is_descendant_path(str(target_parent["material_path"]), str(material["material_path"])):
                 raise HTTPException(400, "不能移动到自己的子目录中")
+            ensure_plain_tree_operation(conn, target_parent, action='move')
+        check_material_revision(target_parent, payload.expected_target_updated_at, target=True)
 
         current_parent_id = int(material["parent_id"]) if material["parent_id"] is not None else None
         target_parent_id = int(target_parent["id"]) if target_parent else None
         if current_parent_id == target_parent_id:
             return {"status": "success", "message": "材料已在目标位置", "unchanged": True}
+        ensure_plain_tree_operation(conn, material, action='move')
 
         old_root_id = int(material["root_id"])
         old_path = str(material["material_path"])
@@ -283,6 +305,7 @@ async def move_material_node(
 
         for root_id in {old_root_id, new_root_id}:
             refresh_root_git_metadata(conn, int(root_id))
+        touch_material_nodes(conn, (old_root_id, new_root_id, current_parent_id, target_parent_id, material_id), now_text)
         conn.commit()
         item = _fetch_material_response_item(conn, int(material["id"]), user)
 
@@ -333,7 +356,25 @@ async def get_material_subtree(
         ).fetchone()
         if not root_row:
             raise HTTPException(404, "材料根节点不存在")
+        # A grant to one child is not a grant to its private siblings. Start at
+        # that child when the enclosing root itself is not readable.
+        try:
+            ensure_user_material_access(conn, int(root_row['id']), user, material_row=root_row)
+        except HTTPException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
+            root_row = material
         rows = [dict(row) for row in _collect_subtree_rows(conn, root_row, include_internal=False)]
+        visible_rows = []
+        for row in rows:
+            try:
+                ensure_user_material_access(conn, int(row['id']), user, material_row=row)
+            except HTTPException as exc:
+                if exc.status_code not in {403, 404}:
+                    raise
+                continue
+            visible_rows.append(row)
+        rows = visible_rows
 
     nodes: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -357,6 +398,12 @@ async def get_material_subtree(
             _sort_children(child)
 
     _sort_children(root_node)
+
+    # Exclude disconnected descendants of a hidden ancestor from statistics.
+    def _visible_ids(node):
+        return {node['id']} | {item for child in node['children'] for item in _visible_ids(child)}
+    visible_ids = _visible_ids(root_node)
+    rows = [row for row in rows if int(row['id']) in visible_ids]
 
     file_rows = [row for row in rows if row.get("node_type") == "file"]
     stats = {

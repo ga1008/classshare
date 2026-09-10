@@ -730,12 +730,17 @@ async def broadcast_file_update(course_id: int, message_text: str):
         }
         message_json = json.dumps(message_obj)
 
-        # 广播到所有相关的聊天室
-        for room_id in room_ids:
-            try:
-                await manager.broadcast(room_id, message_json)
-            except Exception as e:
-                print(f"[ERROR] 广播到聊天室 {room_id} 失败: {e}")
+        # One stalled WebSocket must not keep an already committed upload and
+        # its Agent budget alive indefinitely. The file list remains canonical.
+        try:
+            async with asyncio.timeout(5):
+                for room_id in room_ids:
+                    try:
+                        await manager.broadcast(room_id, message_json)
+                    except Exception:
+                        continue
+        except TimeoutError:
+            return
 
 
 router = APIRouter()
@@ -1249,7 +1254,7 @@ async def upload_course_file(
                 is_teacher_resource=is_teacher_resource,
             )
             timestamp = datetime.now().isoformat()
-            conn.execute("""
+            file_id = execute_insert_returning_id(conn, """
                          INSERT INTO course_files
                          (course_id, file_name, file_hash, file_size, is_public, is_teacher_resource, uploaded_by_teacher_id,
                           owner_role, owner_user_pk, scope_level, class_offering_id, class_id,
@@ -1277,8 +1282,10 @@ async def upload_course_file(
                          ))
             conn.commit()
 
-        except Exception as e:
-            raise HTTPException(500, f"数据库操作失败: {e}")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(500, "课程文件保存失败，请核对上传结果后重试。") from None
 
         # 广播消息
         try:
@@ -1288,7 +1295,10 @@ async def upload_course_file(
 
     return {
         "status": "success",
-        "message": f"文件 '{file.filename}' 上传成功"
+        "message": f"文件 '{file.filename}' 上传成功",
+        "file": {'id': file_id, 'file_name': file.filename, 'file_size': file_info['size'],
+                 'sha256': file_info['hash'], 'course_id': resolved_course_id,
+                 'download_url': f'/download/course_file/{file_id}', 'scope_level': scope_payload['scope_level']},
     }
 
 

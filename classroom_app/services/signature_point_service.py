@@ -336,6 +336,9 @@ def create_point_flow(
     opinion_text: str = "",
 ) -> dict[str, Any]:
     from .material_signature_revision_service import ordered_binding_hash
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(material_type, material_id)])
 
     if snapshot:
         from .material_signature_service import pin_snapshot
@@ -362,6 +365,7 @@ def create_point_flow(
         raise signature_service.SignatureServiceError(400, "请至少选择一个需要申请的签名。")
     if len(ordered) > MAX_SIGNATURES_PER_POINT:
         raise signature_service.SignatureServiceError(400, f"同一签名点一次最多申请 {MAX_SIGNATURES_PER_POINT} 个签名。")
+    lock_signature_rows(conn, ordered)
     engine = get_configured_db_engine()
     if engine == "postgres":
         lock_key = ":".join(
@@ -455,6 +459,8 @@ def create_point_flow(
 
 
 def end_point_flow(conn: Any, user: dict[str, Any], flow_id: int) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, flow_ids=[flow_id])
     actor = signature_service.build_signature_actor(conn, user)
     flow = conn.execute("SELECT * FROM signature_point_flows WHERE id = ? LIMIT 1", (int(flow_id),)).fetchone()
     if not flow:
@@ -505,6 +511,8 @@ def bind_point_signatures(
     ip: str = "",
     user_agent: str = "",
 ) -> list[int]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    lock_signature_materials(conn, [(material_type, material_id)])
     actor, scope = _scope(
         conn,
         user,
@@ -522,6 +530,8 @@ def bind_point_signatures(
             ordered.append(normalized)
     if len(ordered) > MAX_SIGNATURES_PER_POINT:
         raise signature_service.SignatureServiceError(400, f"同一签名点最多绑定 {MAX_SIGNATURES_PER_POINT} 个签名。")
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_rows(conn, ordered)
     # Binding is a replace-all operation. Without a scope lock, two concurrent
     # saves can both delete the old rows and then interleave their inserts,
     # producing a mixed order that neither user submitted.

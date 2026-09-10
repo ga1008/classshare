@@ -122,6 +122,8 @@ def set_account_identity(conn: Any, role: str, user_id: Any, identity: str) -> b
     normalized_identity = normalize_identity_category(identity)
     if not table or normalized_id <= 0:
         return False
+    from .signature_account_lock_service import lock_identity_accounts
+    lock_identity_accounts(conn, [(role, normalized_id)])
     conn.execute(
         f"UPDATE {table} SET identity_category = ? WHERE id = ?",
         (normalized_identity, normalized_id),
@@ -131,6 +133,8 @@ def set_account_identity(conn: Any, role: str, user_id: Any, identity: str) -> b
 
 def sync_identity_for_signature(conn: Any, signature_id: int) -> dict[str, str]:
     """After a bind, fill whichever identity side is missing from the other."""
+    from .signature_account_lock_service import lock_signature_accounts
+    lock_signature_accounts(conn, [signature_id])
     row = conn.execute(
         """
         SELECT id, subject_role, subject_id, identity_category
@@ -341,6 +345,8 @@ def effective_identities_bulk(
 def recompute_primary_identity(conn: Any, role: str, user_id: Any) -> str:
     """Primary identity = most senior effective appointment; keeps the legacy
     single-value column (and bound signatures) in sync with appointments."""
+    from .signature_account_lock_service import lock_identity_accounts
+    lock_identity_accounts(conn, [(role, user_id)])
     effective = effective_identity_categories(conn, role, user_id)
     primary = effective[0] if effective else ""
     current = get_account_identity(conn, role, user_id)
@@ -382,6 +388,8 @@ def set_identity_appointments(
         normalized.append({"identity_category": category, "term_start": term_start, "term_end": term_end})
     if len(normalized) > 4:
         raise ValueError("一个账号最多登记 4 个任职身份。")
+    from .signature_account_lock_service import lock_identity_accounts
+    lock_identity_accounts(conn, [(table_role, holder_id)])
     conn.execute(
         "DELETE FROM identity_appointments WHERE holder_role = ? AND holder_id = ?",
         (table_role, holder_id),
@@ -395,7 +403,12 @@ def set_identity_appointments(
             """,
             (table_role, holder_id, item["identity_category"], item["term_start"], item["term_end"]),
         )
-    recompute_primary_identity(conn, table_role, holder_id)
+    if normalized:
+        recompute_primary_identity(conn, table_role, holder_id)
+    else:
+        # An explicit removal is not the legacy no-appointments fallback.
+        set_account_identity(conn, table_role, holder_id, '')
+        propagate_account_identity(conn, table_role, holder_id, '')
     return list_identity_appointments(conn, table_role, holder_id)
 
 
@@ -411,17 +424,32 @@ def expire_identity_appointments(conn: Any, *, today: Any = None) -> int:
     ).fetchall()
     if not rows:
         return 0
-    cursor = conn.execute(
-        """
-        UPDATE identity_appointments
-        SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-        WHERE status = 'active' AND term_end <> '' AND term_end < ?
-        """,
-        (today_text,),
-    )
-    for row in rows:
-        recompute_primary_identity(conn, str(row["holder_role"]), int(row["holder_id"]))
-    return int(cursor.rowcount or 0)
+    from .signature_account_lock_service import lock_identity_accounts
+    holders = sorted({(str(row['holder_role']), int(row['holder_id'])) for row in rows})
+    lock_identity_accounts(conn, holders)
+    from .signature_account_lock_service import lock_signature_rows
+    signatures = set()
+    for offset in range(0, len(holders), 400):
+        chunk = holders[offset:offset + 400]
+        predicate = ' OR '.join('(subject_role=? AND subject_id=?)' for _ in chunk)
+        params = tuple(value for holder in chunk for value in holder)
+        signatures.update(int(row['id']) for row in conn.execute(
+            f'SELECT id FROM electronic_signatures WHERE {predicate}', params).fetchall())
+    # The whole sweep must lock signatures by id, not holder-by-holder. A
+    # multi-signature document can otherwise hold the opposite signature first.
+    lock_signature_rows(conn, signatures)
+    expired = 0
+    # A holder added after the snapshot belongs to the next sweep. Never write
+    # an account/appointment outside the already sorted locked holder set.
+    for role, holder_id in holders:
+        cursor = conn.execute(
+            "UPDATE identity_appointments SET status='expired', updated_at=CURRENT_TIMESTAMP "
+            "WHERE holder_role=? AND holder_id=? AND status='active' AND term_end<>'' AND term_end<?",
+            (role, holder_id, today_text),
+        )
+        expired += int(cursor.rowcount or 0)
+        recompute_primary_identity(conn, role, holder_id)
+    return expired
 
 
 def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str) -> int:
@@ -434,6 +462,11 @@ def propagate_account_identity(conn: Any, role: str, user_id: Any, identity: str
     normalized_identity = normalize_identity_category(identity)
     if table_role not in {"teacher", "student"} or normalized_id <= 0:
         return 0
+    from .signature_account_lock_service import lock_identity_accounts, lock_signature_rows
+    lock_identity_accounts(conn, [(table_role, normalized_id)])
+    rows = conn.execute('SELECT id FROM electronic_signatures WHERE subject_role=? AND subject_id=?',
+                        (table_role, normalized_id)).fetchall()
+    lock_signature_rows(conn, [row['id'] for row in rows])
     cursor = conn.execute(
         """
         UPDATE electronic_signatures

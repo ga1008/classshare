@@ -18,14 +18,14 @@ x-lanshare-service: &lanshare-service
   volumes:
     # Canonical runtime data root. Legacy mounts below keep upgrades safe until
     # `python tools/migrate_data_layout.py --apply --verify` has been run.
-    - ./data:/app/data
-    - ./attendance:/app/attendance
-    - ./chat_logs:/app/chat_logs
-    - ./homework_submissions:/app/homework_submissions
-    - ./logs:/app/logs
-    - ./rosters:/app/rosters
-    - ./shared_files:/app/shared_files
-    - ./storage:/app/storage
+    - &lanshare-data ./data:/app/data
+    - &lanshare-attendance ./attendance:/app/attendance
+    - &lanshare-chat-logs ./chat_logs:/app/chat_logs
+    - &lanshare-submissions ./homework_submissions:/app/homework_submissions
+    - &lanshare-logs ./logs:/app/logs
+    - &lanshare-rosters ./rosters:/app/rosters
+    - &lanshare-shared ./shared_files:/app/shared_files
+    - &lanshare-storage ./storage:/app/storage
   networks:
     - lanshare
 
@@ -70,6 +70,9 @@ services:
       # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much
       # larger than DB concurrency; requests wait briefly for a pooled slot.
       POSTGRES_POOL_MAX: "12"
+    # Only the host's narrow Agent gateway uses this loopback listener.
+    ports:
+      - "127.0.0.1:18000:8000"
     expose:
       - "8000"
     healthcheck:
@@ -135,39 +138,28 @@ services:
       retries: 5
       start_period: 40s
 
-  deepseek-runtime:
-    image: ghcr.io/hmbown/deepseek-tui:${DEEPSEEK_TUI_TAG:-latest}
-    restart: unless-stopped
-    init: true
-    env_file:
-      - ./docker.env
-    environment:
-      <<: *lanshare-timezone
-    command: ["serve", "--http", "--host", "0.0.0.0", "--port", "7878", "--workers", "${DEEPSEEK_TUI_WORKERS:-2}"]
-    volumes:
-      - ./data/agent_tasks/deepseek_home:/home/deepseek/.deepseek
-      - ./data/agent_tasks:/workspace
-    expose:
-      - "7878"
-    networks:
-      - lanshare
-
   agent-worker:
     <<: *lanshare-service
     command: ["agent-worker"]
     depends_on:
       app:
         condition: service_healthy
-      deepseek-runtime:
-        condition: service_started
+    volumes:
+      - *lanshare-data
+      - *lanshare-attendance
+      - *lanshare-chat-logs
+      - *lanshare-submissions
+      - *lanshare-logs
+      - *lanshare-rosters
+      - *lanshare-shared
+      - *lanshare-storage
+      # A directory bind survives launcher socket replacement. Only control IPC
+      # is exposed here; gateway.sock, Docker IPC and transient env files stay out.
+      - /run/lanshare-agent/control:/run/lanshare-agent:ro
     environment:
       <<: *lanshare-timezone
-      AGENT_TASK_RUNTIME_URL: http://deepseek-runtime:7878
-      AGENT_TASK_RUNTIME_WORKSPACE_PREFIX: /workspace/tasks
+      AGENT_DSH_LAUNCHER_SOCKET: /run/lanshare-agent/launcher.sock
       AGENT_TASK_WORKER_ID: agent-worker-compose
-      # 允许运行时使用 shell：Agent 通过 curl 调平台桥接接口（只读）并可直接联网
-      AGENT_TASK_ALLOW_RUNTIME_SHELL: "1"
-      AGENT_BRIDGE_BASE_URL: http://app:8000
 
   nginx:
     image: nginx:1.27-alpine

@@ -20,7 +20,7 @@ class ScoreProjectionTests(unittest.TestCase):
     def setUp(self):
         self._previous_ai_ready = set(schema_ai_jobs._SCHEMA_READY_ENGINES)
         self._previous_group_ready = schema_study_group_scheme._SCHEMA_READY
-        self.conn = sqlite3.connect(":memory:")
+        self.conn = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         from classroom_app.db.schema_grade_publications import ensure_grade_publication_schema
         ensure_grade_publication_schema(self.conn, engine="sqlite")

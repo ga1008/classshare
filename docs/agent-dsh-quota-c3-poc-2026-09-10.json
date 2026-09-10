@@ -1,0 +1,19 @@
+{
+  "paid_model_requests": 0,
+  "real_credentials_used": false,
+  "kind": "synthetic_fixture_not_official_DeepSeek",
+  "checks": {
+    "preflight_workspace_bytes": true,
+    "preflight_workspace_entries": true,
+    "live_workspace_bytes_confirmed_removed": true,
+    "live_home_entries_confirmed_removed": true
+  },
+  "evidence": {
+    "dsh_package_version": "0.1.5-rc.1",
+    "profile_sha256": "e4bdb76edddef2f20935e61bc4e32dc186f135da057e704b03332fdabecf0cd6",
+    "image": "sha256:8037a4ea6d2d8760733f60b7a1a8222e7444f519bcf371b3734da86da1b7d911",
+    "network": "none",
+    "max_concurrency": 1
+  },
+  "passed": true
+}

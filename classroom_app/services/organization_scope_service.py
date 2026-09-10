@@ -139,9 +139,15 @@ def load_teacher_org_memberships(
     the membership table has not been created yet or is empty.
     """
     teacher_id_int = int(teacher_id)
-    rows = _teacher_membership_rows(conn, teacher_id_int, include_inactive=include_inactive)
+    # Existing membership records are authoritative even when all were revoked.
+    # Filtering in SQL first used to turn "all inactive" into "no records" and
+    # resurrect the legacy teachers.school_* scope.
+    all_rows = _teacher_membership_rows(conn, teacher_id_int, include_inactive=True)
+    rows = all_rows if include_inactive else [
+        row for row in all_rows if row["is_active"] is None or int(row["is_active"] or 0) == 1
+    ]
     memberships: list[dict[str, str]] = []
-    seen_school_codes: set[str] = set()
+    seen_scopes: set[tuple[str, str, str]] = set()
     for row in rows:
         scope = build_org_scope(
             school_code=row["school_code"],
@@ -150,19 +156,20 @@ def load_teacher_org_memberships(
             department=row["department"],
         )
         school_code = scope["school_code"]
-        if not school_code or school_code in seen_school_codes:
+        scope_key = (school_code, scope["college"], scope["department"])
+        if not school_code or scope_key in seen_scopes:
             continue
-        seen_school_codes.add(school_code)
+        seen_scopes.add(scope_key)
         memberships.append(
             {
                 **scope,
                 "membership_id": str(row["id"]),
                 "is_primary": "1" if int(row["is_primary"] or 0) else "0",
-                "is_active": "1" if int(row["is_active"] or 0) else "0",
+                "is_active": "1" if row["is_active"] is None or int(row["is_active"] or 0) else "0",
             }
         )
 
-    if memberships:
+    if all_rows:
         return memberships
 
     row = conn.execute(

@@ -1,5 +1,5 @@
 from .common import *
-from ...services.base_resource_modes_service import build_class_delete_blockers, raise_if_delete_blocked
+from datetime import timedelta
 
 
 router = APIRouter()
@@ -633,10 +633,11 @@ async def api_create_class_student(
 
 
 @router.post("/students/{student_id}/status", response_class=JSONResponse)
-async def api_update_class_student_status(
+def api_update_class_student_status(
     student_id: int,
     enrollment_status: str = Form(...),
     enrollment_note: str = Form(default=""),
+    expected_updated_at: str | None = Form(default=None, max_length=100),
     user: dict = Depends(get_current_teacher),
 ):
     """切换学生学籍状态；休学学生保留数据但不再纳入课堂管理统计。"""
@@ -648,7 +649,21 @@ async def api_update_class_student_status(
     note = _clean_form_text(enrollment_note, limit=500)
 
     with get_db_connection() as conn:
+        from ...services.account_credentials_service import prepare_credentials_change, actor_authority_changed
+        _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        # In-flight writes and new grant issuance finish before this transition;
+        # never take task locks after updating the student's row.
+        prepare_credentials_change(conn, role="student", user_id=int(student_id))
         student_row = _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
+        previous_revision = str(_row_get(student_row, "enrollment_status_updated_at") or "")
+        if expected_updated_at is not None and expected_updated_at != (previous_revision or "legacy"):
+            raise HTTPException(409, "学生学籍状态已更新，请刷新名单后再操作。")
+        changed_at = local_iso(timespec="microseconds")
+        if previous_revision and changed_at <= previous_revision:
+            try:
+                changed_at = (datetime.fromisoformat(previous_revision) + timedelta(microseconds=1)).isoformat()
+            except ValueError:
+                raise HTTPException(409, "原学籍版本无法核对，请刷新名单后重试。") from None
         conn.execute(
             """
             UPDATE students
@@ -657,12 +672,12 @@ async def api_update_class_student_status(
                 enrollment_note = ?
             WHERE id = ?
             """,
-            (normalized_status, local_iso(), note, int(student_id)),
+            (normalized_status, changed_at, note, int(student_id)),
         )
+        if normalized_status != STUDENT_STATUS_ACTIVE or normalize_student_enrollment_status(_row_get(student_row, "enrollment_status")) != normalized_status:
+            actor_authority_changed(conn, role="student", user_id=int(student_id),
+                                    reason="student_enrollment_changed", invalidate_sessions=True)
         conn.commit()
-
-    if normalized_status != STUDENT_STATUS_ACTIVE:
-        invalidate_session_for_user(str(student_id), "student")
 
     student_name = str(student_row["name"] or "学生")
     return {
@@ -673,6 +688,7 @@ async def api_update_class_student_status(
             "enrollment_status": normalized_status,
             "enrollment_status_label": student_enrollment_status_label(normalized_status),
             "enrollment_note": note,
+            "enrollment_status_updated_at": changed_at,
         },
     }
 
@@ -725,33 +741,28 @@ async def api_delete_class_student(student_id: int, user: dict = Depends(get_cur
     return {"status": "success", "message": f"已删除学生 {student_name}。"}
 
 
+@router.get("/classes/{class_id}/delete-impact", response_class=JSONResponse)
+def api_class_delete_impact(class_id: int, user: dict = Depends(get_current_teacher)):
+    from ...services.teaching_lifecycle_service import build_teaching_delete_review
+    with get_db_connection() as conn:
+        review = build_teaching_delete_review(conn, kind="class", resource_id=class_id, user=user)
+    return {"status": "success", "review": review}
+
+
+def _delete_reviewed_class(class_id: int, data: dict, user: dict):
+    from ...services.teaching_lifecycle_service import delete_teaching_resource_from_web
+    with get_db_connection() as conn:
+        result = delete_teaching_resource_from_web(conn, kind="class", resource_id=class_id, user=user, payload=data)
+        conn.commit()
+    return {**result, "message": "班级删除成功。"}
+
+
 @router.delete("/classes/{class_id}", response_class=JSONResponse)
-async def api_delete_class(class_id: int, user: dict = Depends(get_current_teacher)):
-    """删除一个未产生学生、课堂或学习历史引用的班级。"""
-    try:
-        with get_db_connection() as conn:
-            # 权限检查
-            cursor = conn.execute(
-                "SELECT * FROM classes WHERE id = ?",
-                (class_id,),
-            )
-            class_row = cursor.fetchone()
-            if not class_row or not teacher_can_manage_class(conn, user["id"], class_row):
-                raise HTTPException(403, "无权删除该班级或班级不存在")
-
-            # 仅允许删除从未被课堂或学生历史引用过的空班级，避免误清线上业务数据。
-            raise_if_delete_blocked("班级", build_class_delete_blockers(conn, int(class_id)))
-            conn.execute("DELETE FROM classes WHERE id = ?", (class_id,))
-            conn.commit()
-
-    except HTTPException:
-        raise
-    except sqlite3.IntegrityError as e:
-        raise HTTPException(400, f"删除失败: {e}")
-    except Exception as e:
-        raise HTTPException(500, f"服务器错误: {e}")
-
-    return {"status": "success", "message": "班级删除成功。"}
+async def api_delete_class(class_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    """删除核对快照仍有效且没有阻断引用的空班级。"""
+    from starlette.concurrency import run_in_threadpool
+    data = await _parse_json_request(request)
+    return await run_in_threadpool(_delete_reviewed_class, class_id, data, user)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

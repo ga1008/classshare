@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
-from ..services.blog_ai_service import maybe_reply_to_comment_mention, maybe_reply_to_post_mention
+from ..services.blog_effects_service import enqueue_blog_mention
 from ..services.blog_community_service import (
     create_report,
     list_following_posts,
@@ -28,6 +28,7 @@ from ..services.blog_opportunity_service import (
 from ..services.blog_section_service import list_blog_sections, save_blog_section
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.blog_service import (
+    BlogRevisionConflict,
     POST_STATUS_DRAFT,
     POST_STATUS_PUBLISHED,
     VISIBILITY_PUBLIC,
@@ -68,15 +69,6 @@ MAX_BLOG_IMAGE_BYTES = 10 * 1024 * 1024
 def _require_blog_super_admin(conn, user: dict) -> None:
     if str(user.get("role") or "").strip().lower() != "teacher" or not is_super_admin_teacher(conn, user.get("id")):
         raise HTTPException(status_code=403, detail="只有超管教师可以管理博客板块")
-
-
-def _build_background_user(user: dict) -> dict:
-    return {
-        "id": user.get("id"),
-        "role": user.get("role", ""),
-        "name": user.get("name", ""),
-        "nickname": user.get("nickname", ""),
-    }
 
 
 def _build_blog_user_info(conn, user: dict) -> dict:
@@ -336,8 +328,8 @@ async def api_create_post(
                 tags=data.get("tags"),
                 status=str(data.get("status") or POST_STATUS_PUBLISHED),
             )
+            enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=int(result["id"]))
             conn.commit()
-            background_tasks.add_task(maybe_reply_to_post_mention, int(result["id"]), _build_background_user(user))
             return {"status": "success", **result}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -369,10 +361,13 @@ async def api_update_post(
                 allow_comments=data.get("allow_comments"),
                 tags=data.get("tags"),
                 status=data.get("status"),
+                expected_updated_at=data.get("expected_updated_at"),
             )
+            enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=post_id)
             conn.commit()
-            background_tasks.add_task(maybe_reply_to_post_mention, post_id, _build_background_user(user))
             return {"status": "success", **result}
+        except BlogRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -380,12 +375,14 @@ async def api_update_post(
 
 
 @router.delete("/api/blog/posts/{post_id}", response_class=JSONResponse)
-def api_delete_post(post_id: int, user: dict = Depends(get_current_user)):
+def api_delete_post(post_id: int, user: dict = Depends(get_current_user), expected_updated_at: Optional[str] = Query(default=None, max_length=100)):
     with get_db_connection() as conn:
         try:
-            result = delete_post(conn, user, post_id)
+            result = delete_post(conn, user, post_id, expected_updated_at=expected_updated_at)
             conn.commit()
             return {"status": "success", **result}
+        except BlogRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -483,8 +480,8 @@ async def api_add_comment(
                 notify_callback=notify_new_comment,
                 hot_notify_callback=notify_post_hot,
             )
+            enqueue_blog_mention(conn, user, trigger_type="comment", trigger_id=int(result["id"]))
             conn.commit()
-            background_tasks.add_task(maybe_reply_to_comment_mention, int(result["id"]), _build_background_user(user))
             return {"status": "success", **result}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

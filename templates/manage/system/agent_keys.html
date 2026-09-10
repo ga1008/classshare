@@ -344,22 +344,22 @@
             </div>
             <div>
                 <h2>Agent 任务运行密钥</h2>
-                <p>超管教师统一管理任务中心使用的 DeepSeek Key。新增 Key 会先做最小 API 可用性测试；启用后会写入独立 DeepSeek-TUI 运行时配置。</p>
+                <p>超管统一管理 DSH 任务使用的 DeepSeek Key。启用前测试所选模型，后续请求通过平台模型网关读取当前配置。</p>
                 <div class="agent-key-metrics">
                     <div class="agent-key-metric">
                         <span>启用 Key</span>
                         <strong id="agent-active-key">-</strong>
                     </div>
                     <div class="agent-key-metric">
-                        <span>运行时</span>
+                        <span>调用状态</span>
                         <strong id="agent-runtime-state">-</strong>
                     </div>
                     <div class="agent-key-metric">
-                        <span>运行任务</span>
+                        <span>模型请求</span>
                         <strong id="agent-usage-turns">-</strong>
                     </div>
                     <div class="agent-key-metric">
-                        <span>估算消耗</span>
+                        <span>费用回执</span>
                         <strong id="agent-usage-cost">-</strong>
                     </div>
                 </div>
@@ -367,12 +367,12 @@
         </div>
         <aside class="agent-key-runtime">
             <div>
-                <h3>运行时配置</h3>
+                <h3>模型配置与回执</h3>
                 <p id="agent-runtime-message">正在读取状态...</p>
             </div>
             <div class="agent-key-runtime-list">
-                <div><span>Runtime URL</span><strong id="agent-runtime-url">-</strong></div>
-                <div><span>配置文件</span><strong id="agent-runtime-config">-</strong></div>
+                <div><span>模型网关</span><strong id="agent-runtime-url">-</strong></div>
+                <div><span>配置版本</span><strong id="agent-runtime-config">-</strong></div>
                 <div><span>最近刷新</span><strong id="agent-runtime-usage-time">-</strong></div>
             </div>
         </aside>
@@ -410,7 +410,7 @@
                 </div>
                 <button id="agent-key-save-btn" type="submit" class="btn btn-primary">测试并保存</button>
             </form>
-            <p class="agent-key-note">DeepSeek 官方按 Key 用量明细需要在平台 Usage 页导出；此处展示的是任务中心运行时聚合用量。</p>
+            <p class="agent-key-note">启用始终先测试当前模型。这里展示平台记录的请求及上游实际报告的用量；缺少完整回执或费用时显示“未提供”。</p>
         </article>
 
         <div class="agent-key-shell">
@@ -418,7 +418,7 @@
                 <div class="agent-key-panel-header">
                     <div>
                         <h3>运行用量</h3>
-                        <p class="agent-key-note">来自 DeepSeek-TUI Runtime API。</p>
+                        <p class="agent-key-note">来自平台模型请求账本。用量回执计数表示已返回输入或输出 token 数的请求数量；历史数据保留，测试请求不计入任务用量。</p>
                     </div>
                     <div class="agent-key-actions">
                         <button id="agent-usage-refresh-btn" type="button" class="btn btn-outline btn-sm">刷新用量</button>

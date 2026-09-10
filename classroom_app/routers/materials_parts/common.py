@@ -279,10 +279,35 @@ async def _load_material_markdown(material_row, prefer_optimized: bool = False) 
 
 
 def _decode_text_bytes(raw_bytes: bytes) -> tuple[str, str]:
+    # UTF-16 text legitimately contains zero bytes. Recognize its byte order
+    # before applying the binary-file guard, including files saved by this UI.
+    if raw_bytes.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            text = raw_bytes.decode("utf-16")
+            if "\x00" in text:
+                raise HTTPException(400, "当前材料不是可编辑的文本文件")
+            return text, "utf-16"
+        except UnicodeDecodeError as exc:
+            raise HTTPException(400, "UTF-16 文本内容不完整或已损坏") from exc
     if b"\x00" in raw_bytes:
+        # A BOM-less UTF-16 file with an ASCII lane has a reliable byte-order
+        # signal. Arbitrary binary input must not be decoded as text by chance.
+        if len(raw_bytes) >= 4 and len(raw_bytes) % 2 == 0:
+            for encoding, zero_lane in (("utf-16-le", raw_bytes[1::2]), ("utf-16-be", raw_bytes[::2])):
+                if zero_lane.count(0) < max(2, len(zero_lane) * 0.6):
+                    continue
+                try:
+                    text = raw_bytes.decode(encoding)
+                except UnicodeDecodeError:
+                    continue
+                if all(ord(char) >= 32 or char in "\t\r\n" for char in text):
+                    return text, encoding
         raise HTTPException(400, "当前材料不是可编辑的文本文件")
 
-    for encoding in TEXT_CONTENT_ENCODINGS:
+    # BOM-less UTF-16 cannot be inferred safely from arbitrary Chinese bytes.
+    # Prefer the established UTF-8/GB encodings when no UTF-16 signal exists.
+    candidates = ("utf-8-sig", "gb18030", "gbk") if raw_bytes.startswith(b"\xef\xbb\xbf") else ("utf-8", "gb18030", "gbk")
+    for encoding in candidates:
         try:
             return raw_bytes.decode(encoding), encoding
         except UnicodeDecodeError:
@@ -313,14 +338,17 @@ async def _load_material_text_content(material_row, prefer_optimized: bool = Fal
 
 
 async def _write_material_file(file_hash: str, payload_bytes: bytes):
-    target_path = global_file_write_path(file_hash)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    if target_path.exists():
-        return target_path
-
-    async with aiofiles.open(target_path, "wb") as handle:
-        await handle.write(payload_bytes)
-    return target_path
+    import io
+    from ...services.file_service import store_file_object_globally
+    if hashlib.sha256(payload_bytes).hexdigest() != file_hash:
+        raise ValueError("材料内容与文件摘要不一致")
+    def store():
+        result = store_file_object_globally(io.BytesIO(payload_bytes))
+        target = Path(result["path"])
+        if target.stat().st_size != len(payload_bytes) or hashlib.sha256(target.read_bytes()).hexdigest() != file_hash:
+            raise HTTPException(409, "材料存储校验失败，请联系管理员核对文件完整性")
+        return target
+    return await asyncio.to_thread(store)
 
 
 def _decorate_material_ownership(conn, item: dict, user: dict | None) -> dict:
@@ -998,20 +1026,7 @@ def _estimate_material_archive_size(conn, material_rows: list[dict]) -> int:
     return total_size
 
 
-def _collect_subtree_rows(conn, material_row, include_internal: bool = True):
-    rows = conn.execute(
-        """
-        SELECT *
-        FROM course_materials
-        WHERE root_id = ?
-          AND (material_path = ? OR material_path LIKE ?)
-        ORDER BY material_path
-        """,
-        (material_row["root_id"], material_row["material_path"], f"{material_row['material_path']}/%"),
-    ).fetchall()
-    if include_internal:
-        return rows
-    return [row for row in rows if not is_git_internal_material_path(row["material_path"])]
+from ...services.material_attributes_service import collect_subtree_rows as _collect_subtree_rows
 
 
 HOME_DOCUMENT_NAME_SCORES = {

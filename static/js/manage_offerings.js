@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { showMessage } from '/static/js/ui.js';
+import { showMessage, escapeHtml } from '/static/js/ui.js';
 
 const config = window.OFFERINGS_PAGE_DATA || {};
 const courseMap = new Map((config.courses || []).map((item) => [Number(item.id), item]));
@@ -37,6 +37,9 @@ const elements = {
 
 let previewDebounceTimer = null;
 let activeScheduleIndex = 0;
+let previewSequence = 0;
+let acceptedPreview = null;
+let savingPlan = false;
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -329,7 +332,10 @@ function renderPreviewPlaceholder(message) {
 function renderPreview(previewResponse) {
     const preview = previewResponse?.preview || {};
     const sessions = Array.isArray(preview.sessions) ? preview.sessions : [];
-    const warnings = Array.isArray(preview.warnings) ? preview.warnings : [];
+    const warnings = [...(Array.isArray(preview.warnings) ? preview.warnings : [])];
+    const impact = previewResponse?.edit_impact || {};
+    if (Number(impact.canceled_count) > 0) warnings.push(`本次将停排 ${Number(impact.canceled_count)} 个原课次，已有材料、学习与考勤记录保留。`);
+    if (Array.isArray(impact.blockers)) warnings.push(...impact.blockers);
     const previewAcademicClassName = preview.academic_teaching_class_display_name
         || previewResponse.academic_teaching_class_display_name
         || preview.academic_teaching_class_name
@@ -363,7 +369,7 @@ function renderPreview(previewResponse) {
 
     if (elements.previewWarnings) {
         elements.previewWarnings.innerHTML = warnings.length
-            ? warnings.map((item) => `<div class="offering-warning-item">${item}</div>`).join('')
+            ? warnings.map((item) => `<div class="offering-warning-item">${escapeHtml(item)}</div>`).join('')
             : '';
     }
 
@@ -471,6 +477,9 @@ function collectFormPayload() {
 
 async function fetchPreview({ silent = true } = {}) {
     const payload = collectFormPayload();
+    const payloadKey = JSON.stringify(payload);
+    const sequence = ++previewSequence;
+    acceptedPreview = null;
     const needsFixedDate = payload.schedule_source !== 'academic_sync';
     if (!payload.semester_id || !payload.class_id || !payload.course_id || !payload.textbook_id || (needsFixedDate && !payload.first_class_date)) {
         renderPreviewPlaceholder(needsFixedDate
@@ -485,9 +494,14 @@ async function fetchPreview({ silent = true } = {}) {
             body: payload,
             silent: true,
         });
+        if (sequence !== previewSequence || payloadKey !== JSON.stringify(collectFormPayload())) return null;
+        if (typeof result.plan_revision === 'string' && /^[0-9a-f]{64}$/.test(result.plan_revision)) {
+            acceptedPreview = { payloadKey, revision: result.plan_revision, blockers: result.edit_impact?.blockers || [] };
+        }
         renderPreview(result);
         return result;
     } catch (error) {
+        if (sequence !== previewSequence || payloadKey !== JSON.stringify(collectFormPayload())) return null;
         renderPreviewPlaceholder(error.message || '预览生成失败，请检查表单配置。');
         if (!silent) {
             showMessage(error.message || '预览生成失败', 'error');
@@ -497,6 +511,8 @@ async function fetchPreview({ silent = true } = {}) {
 }
 
 function schedulePreviewRefresh() {
+    acceptedPreview = null;
+    ++previewSequence;
     window.clearTimeout(previewDebounceTimer);
     previewDebounceTimer = window.setTimeout(() => {
         fetchPreview({ silent: true });
@@ -511,6 +527,9 @@ function toggleEditorState(isEditing, title = '') {
 }
 
 function resetForm() {
+    acceptedPreview = null;
+    ++previewSequence;
+    window.clearTimeout(previewDebounceTimer);
     if (elements.offeringIdInput) elements.offeringIdInput.value = '';
     if (elements.classSelect) elements.classSelect.value = '';
     extraClassCheckboxes().forEach((box) => { box.checked = false; });
@@ -571,7 +590,19 @@ function populateForm(offering) {
 
 async function handleSave(event) {
     event.preventDefault();
-    if (!elements.saveBtn) return;
+    if (!elements.saveBtn || savingPlan) return;
+    const payload = collectFormPayload();
+    if (!acceptedPreview || acceptedPreview.payloadKey !== JSON.stringify(payload)) {
+        const refreshed = await fetchPreview({ silent: false });
+        if (refreshed) showMessage('预览已更新，请核对时间安排和历史影响后再次保存。', 'info');
+        return;
+    }
+    if (acceptedPreview.blockers.length) {
+        showMessage(acceptedPreview.blockers.join(' '), 'error');
+        return;
+    }
+    const revision = acceptedPreview.revision;
+    savingPlan = true;
 
     const originalText = elements.saveBtn.textContent;
     elements.saveBtn.disabled = true;
@@ -580,14 +611,19 @@ async function handleSave(event) {
     try {
         const result = await apiFetch('/api/manage/class_offerings/save', {
             method: 'POST',
-            body: collectFormPayload(),
+            body: { ...payload, expected_plan_revision: revision },
             silent: true,
         });
         showMessage(result.message || '课堂已保存', 'success');
         window.location.reload();
     } catch (error) {
+        if (Number(error.status) === 409 || Number(error.statusCode) === 409) {
+            acceptedPreview = null;
+            ++previewSequence;
+        }
         showMessage(error.message || '保存课堂失败', 'error');
     } finally {
+        savingPlan = false;
         elements.saveBtn.disabled = false;
         elements.saveBtn.textContent = originalText;
         toggleEditorState(Boolean(elements.offeringIdInput?.value), elements.editorStateText?.textContent || '');

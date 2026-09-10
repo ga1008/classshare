@@ -20,6 +20,7 @@ import json
 import os
 import socket
 import time
+import uuid
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
@@ -190,7 +191,7 @@ def get_owner_task_by_dedupe(conn, dedupe_key: str) -> dict[str, Any] | None:
 def _claim_due_tasks(limit: int) -> list[dict[str, Any]]:
     now = _now_iso()
     stale_cutoff = _to_iso(_now() - timedelta(minutes=SCHEDULER_STALE_MINUTES))
-    worker_tag = os.getenv("SCHEDULER_WORKER_ID") or socket.gethostname()
+    worker_tag = (os.getenv("SCHEDULER_WORKER_ID") or socket.gethostname()) + ":" + uuid.uuid4().hex
     engine = get_configured_db_engine()
     safe_limit = max(1, min(int(limit), 100))
     with get_db_connection() as conn:
@@ -242,7 +243,7 @@ def _claim_due_tasks(limit: int) -> list[dict[str, Any]]:
                 (now, worker_tag, now, now, int(row["id"]), now, stale_cutoff),
             )
             if cursor.rowcount:
-                claimed.append(dict(row))
+                claimed.append({**dict(row), "status": "running", "locked_at": now, "locked_by": worker_tag, "started_at": now, "updated_at": now})
         conn.commit()
         return claimed
 
@@ -272,9 +273,9 @@ def _mark_success(task: dict[str, Any], result: Any) -> None:
                 SET status = 'pending', run_at = ?, attempt_count = 0,
                     locked_at = NULL, locked_by = '', last_error = '',
                     last_result = ?, finished_at = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'running' AND locked_by = ? AND locked_at = ?
                 """,
-                (next_run, result_text, now, now, int(task["id"])),
+                (next_run, result_text, now, now, int(task["id"]), task.get("locked_by"), task.get("locked_at")),
             )
         else:
             conn.execute(
@@ -282,9 +283,9 @@ def _mark_success(task: dict[str, Any], result: Any) -> None:
                 UPDATE scheduled_tasks
                 SET status = 'done', locked_at = NULL, locked_by = '',
                     last_error = '', last_result = ?, finished_at = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'running' AND locked_by = ? AND locked_at = ?
                 """,
-                (result_text, now, now, int(task["id"])),
+                (result_text, now, now, int(task["id"]), task.get("locked_by"), task.get("locked_at")),
             )
         conn.commit()
 
@@ -301,9 +302,9 @@ def _mark_failure(task: dict[str, Any], error: str) -> None:
                 UPDATE scheduled_tasks
                 SET status = 'failed', attempt_count = ?, locked_at = NULL,
                     locked_by = '', last_error = ?, finished_at = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'running' AND locked_by = ? AND locked_at = ?
                 """,
-                (attempt_count, error[:480], now, now, int(task["id"])),
+                (attempt_count, error[:480], now, now, int(task["id"]), task.get("locked_by"), task.get("locked_at")),
             )
         else:
             backoff = min(MAX_BACKOFF_SECONDS, 60 * (2 ** max(attempt_count - 1, 0)))
@@ -313,9 +314,9 @@ def _mark_failure(task: dict[str, Any], error: str) -> None:
                 UPDATE scheduled_tasks
                 SET status = 'pending', attempt_count = ?, run_at = ?,
                     locked_at = NULL, locked_by = '', last_error = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'running' AND locked_by = ? AND locked_at = ?
                 """,
-                (attempt_count, next_run, error[:480], now, int(task["id"])),
+                (attempt_count, next_run, error[:480], now, int(task["id"]), task.get("locked_by"), task.get("locked_at")),
             )
         conn.commit()
 

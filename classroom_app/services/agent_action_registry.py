@@ -1,12 +1,12 @@
 """结果落地白名单动作注册表（G3）。
 
 Agent 在最终输出里附带 ``proposed_actions`` JSON 提案；平台解析、校验后渲染
-为按钮，教师预览/编辑/确认后由平台以教师身份执行白名单函数。
+为按钮，用户预览/编辑/确认后由平台以当前用户身份执行白名单函数。
 
 原则：
 - 只有注册表里的动作能执行；参数逐字段按 schema 清洗，多余字段丢弃。
 - 默认走低风险草稿；少数教师确认后的公开动作（如发布博客、发表评论）可直接落地。
-- 发送学生通知降级为「预填跳转」：按钮带着内容跳到消息中心，由教师手动发送。
+- 发送消息必须提供当前用户可联系的明确身份，禁止通过姓名猜测收件人。
 - 每次执行写审计事件（谁、何时、什么动作、参数摘要、结果）。
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 import time
 from typing import Any
@@ -40,8 +41,41 @@ PROPOSED_ACTIONS_PROMPT_EXAMPLE: dict[str, Any] = {
     },
 }
 
-# 字段 schema：type ∈ {int, str, text, str_list}；text 为长文本。
+# 字段 schema：int/number/bool/str/text/str_list/json_object；text 为长文本。
 AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "generate_session_document": {
+        "label": "生成课时学习文档", "done_label": "已提交文档生成", "risk": "medium", "execution_mode": "execute",
+        "description": "使用现有课时材料服务创建持久生成任务；返回任务编号后查询 session.document_task 获得最终材料及绑定回执。",
+        "fields": {"class_offering_id": {"type": "int", "required": True}, "session_id": {"type": "int", "required": True},
+                   "mode": {"type": "str", "max_chars": 20}, "document_type": {"type": "str", "max_chars": 80},
+                   "requirement_text": {"type": "text", "max_chars": 10000}},
+    },
+    "update_class_attributes": {
+        "label": "修改班级属性", "done_label": "已修改班级", "risk": "medium", "execution_mode": "execute",
+        "description": "复用正常班级维护权限修改属性；expected_updated_at 来自最新属性，空版本使用 legacy。",
+        "fields": {"class_id": {"type": "int", "required": True}, "expected_updated_at": {"type": "str", "required": True, "max_chars": 80},
+                   **{key: {"type": "str", "max_chars": 200} for key in ("name", "school_code", "school_name", "college", "department", "major", "scope_level")},
+                   "description": {"type": "text", "max_chars": 10000}},
+    },
+    "update_course_attributes": {
+        "label": "修改课程属性", "done_label": "已修改课程", "risk": "medium", "execution_mode": "execute",
+        "description": "复用正常课程维护权限修改属性；expected_updated_at 来自最新属性，空版本使用 legacy。",
+        "fields": {"course_id": {"type": "int", "required": True}, "expected_updated_at": {"type": "str", "required": True, "max_chars": 80},
+                   **{key: {"type": "str", "max_chars": 200} for key in ("name", "sect_name", "school_code", "school_name", "college", "department", "scope_level")},
+                   "description": {"type": "text", "max_chars": 10000}},
+    },
+    "update_textbook_attributes": {
+        "label": "修改教材属性", "done_label": "已修改教材", "risk": "medium", "execution_mode": "execute",
+        "description": "复用正常教材维护权限修改属性；expected_updated_at 来自最新属性，空版本使用 legacy。",
+        "fields": {"textbook_id": {"type": "int", "required": True}, "expected_updated_at": {"type": "str", "required": True, "max_chars": 80},
+                   **{key: {"type": "str", "max_chars": 200} for key in ("title", "publisher", "publication_date", "scope_level")},
+                   **{key: {"type": "str_list", "max_items": 30} for key in ("authors", "tags")}},
+    },
+    "create_organization_school": {
+        "label": "维护学校目录", "done_label": "已保存学校", "risk": "medium", "execution_mode": "execute", "requires_super_admin": True,
+        "description": "管理员使用正常组织目录服务创建学校；同代码已存在时按正常页面语义更新名称并启用。",
+        "fields": {"school_code": {"type": "str", "required": True, "max_chars": 80}, "school_name": {"type": "str", "required": True, "max_chars": 200}},
+    },
     "create_assignment_draft": {
         "label": "创建为作业草稿",
         "done_label": "已创建作业草稿",
@@ -69,6 +103,7 @@ AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "create_blog_draft": {
+        "roles": ["teacher", "student"],
         "label": "创建为博客草稿",
         "done_label": "已创建博客草稿",
         "risk": "low",
@@ -82,11 +117,12 @@ AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "publish_blog_post": {
+        "roles": ["teacher", "student"],
         "label": "发布博客",
         "done_label": "已发布博客",
         "risk": "medium",
         "execution_mode": "execute",
-        "description": "以当前教师身份发布一篇博客；需要教师在任务卡片中确认后才会公开或按可见范围发布。",
+        "description": "以当前用户身份发布一篇博客，按正常博客的可见范围与权限执行。",
         "confirmation_note": "确认后将以你的身份发布博客，学生或其他可见用户可能立即看到。",
         "fields": {
             "title": {"type": "str", "required": True, "max_chars": 120, "label": "博客标题", "editable": True},
@@ -97,11 +133,12 @@ AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "create_blog_comment": {
+        "roles": ["teacher", "student"],
         "label": "发表评论",
         "done_label": "已发表评论",
         "risk": "medium",
         "execution_mode": "execute",
-        "description": "以当前教师身份在指定博客下发表评论或回复；需要教师确认后才会写入。",
+        "description": "以当前用户身份在指定博客下发表评论或回复，遵守正常博客可见范围与评论权限。",
         "confirmation_note": "确认后将以你的身份发表评论，帖子作者和可见用户可能立即看到。",
         "fields": {
             "post_id": {"type": "int", "required": True, "label": "博客"},
@@ -110,19 +147,51 @@ AGENT_ACTION_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "send_student_notification": {
-        "label": "去消息中心发送通知",
-        "done_label": "已打开消息中心",
+        "label": "发送学生通知",
+        "done_label": "已发送通知",
         "risk": "medium",
-        "execution_mode": "manual_link",
-        "description": "通知内容已拟好；为避免误发，请在消息中心确认收件人后手动发送。",
-        "confirmation_note": "确认后只会复制通知草稿并打开消息中心，仍需你手动选择收件人并发送。",
+        "execution_mode": "execute",
+        "description": "向明确选择且当前用户可联系的学生发送平台私信通知。",
+        "confirmation_note": "请核对收件人身份；确认后将通过消息中心以你的身份发送。",
         "fields": {
             "title": {"type": "str", "required": False, "max_chars": 80, "label": "通知标题", "editable": True},
-            "content_md": {"type": "text", "required": True, "max_chars": 8000, "label": "通知内容"},
+            "content_md": {"type": "text", "required": True, "max_chars": 4000, "label": "通知内容"},
+            "recipient_identities": {"type": "str_list", "required": True, "max_items": 30, "label": "学生收件人身份（student:编号）", "editable": True},
+            "class_offering_id": {"type": "int", "required": False, "label": "课堂"},
             "student_names": {"type": "str_list", "required": False, "max_items": 60, "label": "建议收件人"},
         },
     },
+    "send_private_message": {
+        "roles": ["teacher", "student"], "label": "发送私信", "done_label": "已发送私信", "risk": "medium", "execution_mode": "execute",
+        "description": "通过消息中心向当前用户可联系的师生发送私信。", "confirmation_note": "确认后将以你的身份向选定联系人发送私信。",
+        "fields": {"contact_identity": {"type": "str", "required": True, "max_chars": 80, "label": "联系人身份（角色:编号）", "editable": True},
+                   "class_offering_id": {"type": "int", "required": False, "label": "课堂"},
+                   "content": {"type": "text", "required": True, "max_chars": 4000, "label": "私信内容"}},
+    },
 }
+
+
+from .agent_material_actions import ACTION_DEFINITIONS as MATERIAL_ACTION_DEFINITIONS
+from .agent_organization_actions import ACTION_DEFINITIONS as ORGANIZATION_ACTION_DEFINITIONS
+from .agent_identity_management_adapter import IDENTITY_ACTION_DEFINITIONS
+from .agent_assignment_actions import ACTION_DEFINITIONS as ASSIGNMENT_ACTION_DEFINITIONS
+from .agent_secure_account_actions import SECURE_ACTION_DEFINITIONS
+from .agent_assessment_actions import ACTION_DEFINITIONS as ASSESSMENT_ACTION_DEFINITIONS
+from .agent_user_confirmation_actions import USER_CONFIRMATION_ACTION_DEFINITIONS
+
+AGENT_ACTION_DEFINITIONS.update(MATERIAL_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(ORGANIZATION_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(IDENTITY_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(ASSIGNMENT_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(SECURE_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(ASSESSMENT_ACTION_DEFINITIONS)
+AGENT_ACTION_DEFINITIONS.update(USER_CONFIRMATION_ACTION_DEFINITIONS)
+
+
+def ensure_action_actor_role(action: str, actor_role: str) -> None:
+    definition = AGENT_ACTION_DEFINITIONS.get(action)
+    if not definition or actor_role not in definition.get("roles", ["teacher"]):
+        raise HTTPException(403, "当前身份无权执行此平台动作。")
 
 
 def _clean_str(value: Any, *, max_chars: int) -> str:
@@ -154,27 +223,64 @@ def validate_action_params(
     for field_name, spec in definition["fields"].items():
         raw = params.get(field_name)
         field_type = spec["type"]
-        if raw in (None, "", []):
+        if raw in (None, "", []) and not (spec.get("allow_empty") and field_name in params and raw is not None):
             if spec.get("required"):
                 errors.append(f"缺少必填字段 {field_name}")
             continue
         if field_type == "int":
             try:
+                if isinstance(raw, bool) or isinstance(raw, float):
+                    raise ValueError
                 parsed = int(raw)
             except (TypeError, ValueError):
                 errors.append(f"字段 {field_name} 必须是整数")
                 continue
-            if parsed <= 0:
-                errors.append(f"字段 {field_name} 必须是正整数")
+            minimum = int(spec.get("minimum", 1))
+            maximum = int(spec.get("maximum", 2**63 - 1))
+            if not minimum <= parsed <= maximum:
+                errors.append(f"字段 {field_name} 必须在 {minimum} 至 {maximum} 之间")
                 continue
             clean[field_name] = parsed
+        elif field_type == "number":
+            try:
+                if isinstance(raw, bool):
+                    raise ValueError
+                number = float(raw)
+                if not math.isfinite(number) or not float(spec.get("minimum", -1e100)) <= number <= float(spec.get("maximum", 1e100)):
+                    raise ValueError
+            except (ValueError, TypeError, OverflowError):
+                errors.append(f"字段 {field_name} 必须是允许范围内的有限数值")
+                continue
+            clean[field_name] = number
+        elif field_type == "json_object":
+            try:
+                clean[field_name] = _bounded_json_object(raw, max_bytes=int(spec.get("max_bytes", 200000)))
+            except ValueError as exc:
+                errors.append(f"字段 {field_name}：{exc}")
+        elif field_type == "bool":
+            if type(raw) is not bool:
+                errors.append(f"字段 {field_name} 必须是布尔值")
+                continue
+            clean[field_name] = raw
         elif field_type in ("str", "text"):
             text = _clean_str(raw, max_chars=int(spec.get("max_chars") or 4000))
             if not text and spec.get("required"):
                 errors.append(f"字段 {field_name} 不能为空")
                 continue
-            if text:
+            if text or spec.get("allow_empty"):
                 clean[field_name] = text
+        elif field_type == "int_list":
+            # Batch intent must never be silently truncated or coerced (True
+            # is an int subclass). Domains can request deterministic ordering.
+            minimum_items = int(spec.get("min_items", 1))
+            maximum_items = int(spec.get("max_items", 100))
+            if (not isinstance(raw, list) or not minimum_items <= len(raw) <= maximum_items
+                    or any(type(item) is not int or item < int(spec.get("minimum", 1))
+                           or item > int(spec.get("maximum", 9223372036854775807)) for item in raw)
+                    or len(set(raw)) != len(raw)):
+                errors.append(f"字段 {field_name} 必须是 {minimum_items} 至 {maximum_items} 个不重复的有效整数")
+                continue
+            clean[field_name] = sorted(raw) if spec.get("canonical_sorted") else list(raw)
         elif field_type == "str_list":
             if not isinstance(raw, list):
                 raw = [raw]
@@ -186,6 +292,43 @@ def validate_action_params(
         else:  # pragma: no cover - registry misconfiguration guard
             errors.append(f"字段 {field_name} 的类型未支持")
     return clean, errors
+
+
+def _bounded_json_object(value: Any, *, max_bytes: int) -> dict[str, Any]:
+    """Bound structured domain input before canonicalization or persistence."""
+    if not isinstance(value, dict):
+        raise ValueError("必须是 JSON 对象")
+    pending = [(value, 0)]
+    seen = 0
+    while pending:
+        item, depth = pending.pop()
+        seen += 1
+        if seen > 10000 or depth > 12:
+            raise ValueError("内容层级或条目过多")
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise ValueError("对象字段名必须是文本")
+                pending.append((key, depth + 1))
+                pending.append((child, depth + 1))
+        elif isinstance(item, list):
+            pending.extend((child, depth + 1) for child in item)
+        elif isinstance(item, str):
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in item):
+                raise ValueError("文本编码无效")
+        elif item is None or isinstance(item, (bool, int)):
+            pass
+        elif isinstance(item, float) and math.isfinite(item):
+            pass
+        else:
+            raise ValueError("包含非 JSON 值或非有限数值")
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > max_bytes:
+            raise ValueError("内容过大")
+        return json.loads(encoded)
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError("JSON 内容无效") from exc
 
 
 def _secret_key_bytes() -> bytes:
@@ -212,6 +355,7 @@ def _params_hash(params: dict[str, Any]) -> str:
 def issue_action_confirmation_token(
     *,
     teacher_id: int,
+    actor_role: str = "teacher",
     task_id: int,
     action_index: int,
     action: str,
@@ -226,6 +370,7 @@ def issue_action_confirmation_token(
     payload = {
         "v": 1,
         "teacher_id": int(teacher_id),
+        "actor_role": actor_role,
         "task_id": int(task_id),
         "action_index": int(action_index),
         "action": str(action or ""),
@@ -246,6 +391,7 @@ def verify_action_confirmation_token(
     *,
     token: str,
     teacher_id: int,
+    actor_role: str = "teacher",
     task_id: int,
     action_index: int,
     action: str,
@@ -276,6 +422,8 @@ def verify_action_confirmation_token(
         "action_index": int(action_index),
         "action": str(action or ""),
     }
+    if payload.get("actor_role", "teacher") != actor_role:
+        raise HTTPException(status_code=403, detail="动作确认令牌与当前身份不匹配。")
     for key, expected_value in expected_scope.items():
         if payload.get(key) != expected_value:
             raise HTTPException(status_code=403, detail="动作确认令牌与当前任务不匹配。")
@@ -403,33 +551,35 @@ def extract_proposed_actions(text: Any) -> list[dict[str, Any]]:
     return proposals
 
 
-def proposed_actions_prompt_block() -> str:
+def proposed_actions_prompt_block(*, actor_role: str = "teacher") -> str:
     """注入 runtime prompt 的提案协议说明。"""
     lines = [
-        "结构化动作提案（重要）：如果你的结论包含可以在平台落地的产物"
-        "（作业草案、课堂材料、博客草稿/发布稿、博客评论、学生通知文案），请在最终输出的末尾"
-        "附带一个 ```json 代码块，格式如下（平台会渲染成确认按钮，教师点击后才会执行，"
-        "你自己永远不要声称已经写入平台）：",
+        "结构化动作提案：用户已经明确要求执行、且 platform_capabilities 提供对应写能力时，"
+        "直接用 platform_write 完成并报告实际回执，不要再附重复执行提案。"
+        "只有尚需用户确认的新操作才在最终输出末尾附以下 JSON（平台会渲染确认按钮）；"
+        "user_input_actions 中的 secure_input 动作必须生成提案，由用户在平台安全表单填写密码；"
+        "user_confirmation 动作只能生成提案，由用户本人核对平台显示的业务快照后确认，不能代用户勾选或调用 platform_write 执行；"
+        "platform_routes 中 status=route_confirmation_required 的破坏性接口（删除/发布/合并/重置等）同样只能生成 platform_route_request 提案，"
+        "params 为 capability_key 及该路由的 path_params/query_params/body；"
+        "不要用提问工具索取密码，不要将密码放入 params、消息、文件或工具参数。"
+        "缺少必要参数先使用提问工具补齐，单纯可选建议不要生成动作提案。待确认提案不代表已写入平台：",
         "```json",
         json.dumps(
-            {"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE]},
+            {"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE if actor_role == "teacher" else {
+                "action": "create_blog_draft", "label": "保存学习总结草稿",
+                "params": {"title": "学习总结", "content_md": "请替换为本次总结正文。"},
+            }]},
             ensure_ascii=False,
             indent=2,
         ),
         "```",
         "（上面只是格式示例，必须换成本次任务的真实动作和参数，不要原样照抄示例文字。）",
-        "可用动作与参数：",
+        "可用动作与完整参数以 platform_capabilities(keys=[动作名称]) 的当前返回为准；索引不包含参数，不能凭名称猜字段。",
     ]
-    for action, definition in AGENT_ACTION_DEFINITIONS.items():
-        fields = ", ".join(
-            f"{name}({spec['type']}{'，必填' if spec.get('required') else ''})"
-            for name, spec in definition["fields"].items()
-        )
-        lines.append(f"- {action}：{definition['description']} 参数：{fields}")
     lines.append(
         "规则：最多提案 4 个动作；params 必须完整可执行；没有合适动作就不要输出该 JSON 块。"
-        " 如果教师要求发布博客或发表评论，先用平台数据/文件核对内容；若涉及近期政策、新闻、技术标准或其他可能更新的信息，"
-        "请先调用 /api/agent-bridge/web 联网检索并在正文中保留来源链接，再提案 publish_blog_post 或 create_blog_comment。"
+        " 如果用户要求发布博客或发表评论，先用平台数据/文件核对内容；若涉及近期政策、新闻、技术标准或其他可能更新的信息，"
+        "请先使用搜索和 public_fetch 核验并在正文中保留来源链接，再按用户的明确要求执行或提出待确认动作。"
     )
     return "\n".join(lines)
 
@@ -452,6 +602,11 @@ def _owned_offering(conn, teacher_id: int, class_offering_id: int) -> dict[str, 
 
 def _ensure_agent_draft_folder(conn, teacher_id: int) -> dict[str, Any]:
     from .session_material_generation_service import _create_folder_row
+    from ..db.connection import get_configured_db_engine
+
+    # Serialize folders/names across different concurrent tasks of one actor.
+    if get_configured_db_engine() == "postgres":
+        conn.execute("SELECT id FROM teachers WHERE id=? FOR UPDATE", (int(teacher_id),)).fetchone()
 
     row = conn.execute(
         """
@@ -500,11 +655,13 @@ def _execute_save_material_draft(conn, teacher_id: int, params: dict[str, Any]) 
     from datetime import datetime, timezone
 
     from .session_material_generation_service import _create_file_row, _material_path_join
+    from .materials_service import make_unique_material_name
 
     folder = _ensure_agent_draft_folder(conn, teacher_id)
     title = str(params.get("title") or "Agent 材料草稿").strip()
     name = title if title.lower().endswith(".md") else f"{title}.md"
     name = re.sub(r"[\\/:*?\"<>|]", "-", name)
+    name = make_unique_material_name(conn, int(teacher_id), int(folder["id"]), name)
     now = datetime.now(timezone.utc).isoformat()
     content = f"{params.get('content_md') or ''}\n\n> 本文档由 LanShare Agent 生成，教师确认后入库。\n"
     created = _create_file_row(
@@ -521,6 +678,9 @@ def _execute_save_material_draft(conn, teacher_id: int, params: dict[str, Any]) 
         "url": f"/materials/view/{int(created['id'])}",
         "label": f"材料：{name}",
         "ref_id": int(created["id"]),
+        "file_hash": created["file_hash"],
+        "file_size": int(created["file_size"]),
+        "storage_status": "verified_immutable_blob",
     }
 
 
@@ -579,13 +739,17 @@ def _execute_create_blog_comment(conn, teacher_id: int, params: dict[str, Any]) 
 
 
 def _execute_send_student_notification(conn, teacher_id: int, params: dict[str, Any]) -> dict[str, Any]:
-    # 降级为预填跳转：不直接群发，教师在消息中心确认收件人后手动发送。
-    return {
-        "url": "/message-center",
-        "label": "打开消息中心",
-        "manual": True,
-        "copy_text": params.get("content_md") or "",
-    }
+    from .agent_platform_write_service import execute_actor_action
+
+    return execute_actor_action(conn, actor_role="teacher", actor_id=teacher_id,
+                                action="send_student_notification", params=params)
+
+
+def _execute_send_private_message(conn, teacher_id: int, params: dict[str, Any]) -> dict[str, Any]:
+    from .agent_platform_write_service import execute_actor_action
+
+    return execute_actor_action(conn, actor_role="teacher", actor_id=teacher_id,
+                                action="send_private_message", params=params)
 
 
 _ACTION_EXECUTORS = {
@@ -595,6 +759,7 @@ _ACTION_EXECUTORS = {
     "publish_blog_post": _execute_publish_blog_post,
     "create_blog_comment": _execute_create_blog_comment,
     "send_student_notification": _execute_send_student_notification,
+    "send_private_message": _execute_send_private_message,
 }
 
 

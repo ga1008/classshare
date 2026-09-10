@@ -579,6 +579,19 @@ def get_active_user_from_request(request: Request) -> Optional[dict]:
 
 def get_current_user_optional(request: Request) -> Optional[dict]:
     """获取当前用户（如果已登录），但不强制。"""
+    from .services.agent_request_context import current_agent_broker_user
+
+    broker_user = current_agent_broker_user(request)
+    if broker_user is not None:
+        return broker_user
+    from .services.agent_platform_request_context import current_agent_platform_request_user
+    platform_request_user = current_agent_platform_request_user(request)
+    if platform_request_user is not None:
+        return platform_request_user
+    from .services.agent_user_route_request_context import current_agent_user_route_request_user
+    confirmed_user = current_agent_user_route_request_user(request)
+    if confirmed_user is not None:
+        return confirmed_user
     return get_active_user_from_request(request)
 
 

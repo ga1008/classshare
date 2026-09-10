@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -14,7 +15,7 @@ from fastapi import HTTPException, UploadFile
 
 from ..core import ai_client
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
-from .file_service import global_file_write_path, resolve_global_file_path
+from .file_service import global_file_write_path, resolve_global_file_path, store_file_object_globally
 from .html_package_service import (
     build_package_outline_text,
     extract_html_text,
@@ -28,7 +29,6 @@ from .materials_service import (
     infer_material_profile,
     make_unique_material_name,
     normalize_material_path,
-    sync_classroom_learning_material_assignments,
 )
 
 
@@ -233,8 +233,10 @@ def attach_generation_tasks(
     items: list[dict[str, Any]],
     *,
     teacher_id: int | None = None,
+    expire_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    expire_stale_generation_tasks(conn)
+    if expire_stale:
+        expire_stale_generation_tasks(conn)
     session_ids = []
     for item in items:
         try:
@@ -1140,12 +1142,13 @@ def _get_child_row(conn, *, teacher_id: int, parent_id: int | None, name: str):
 
 def _store_markdown_bytes(content: str) -> tuple[str, int]:
     payload_bytes = content.encode("utf-8")
-    file_hash = hashlib.sha256(payload_bytes).hexdigest()
-    target_path = global_file_write_path(file_hash)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    if not target_path.exists():
-        target_path.write_bytes(payload_bytes)
-    return file_hash, len(payload_bytes)
+    stored = store_file_object_globally(io.BytesIO(payload_bytes))
+    target_path = Path(stored["path"])
+    # Publication is atomic and immutable. An existing corrupt blob must not
+    # become a successful material reference, including concurrent uploads.
+    if target_path.stat().st_size != len(payload_bytes) or hashlib.sha256(target_path.read_bytes()).hexdigest() != stored["hash"]:
+        raise HTTPException(409, "材料存储校验失败，请联系管理员核对文件完整性。")
+    return str(stored["hash"]), len(payload_bytes)
 
 
 def _create_folder_row(
@@ -1386,20 +1389,11 @@ def persist_generated_materials(
     if not bound_material_row:
         raise HTTPException(500, "系统未找到可绑定到课时的生成文档。")
 
-    conn.execute(
-        """
-        UPDATE class_offering_sessions
-        SET learning_material_id = ?,
-            updated_at = ?
-        WHERE id = ? AND class_offering_id = ?
-        """,
-        (int(bound_material_row["id"]), now, int(session_id), int(class_offering_id)),
-    )
-    sync_classroom_learning_material_assignments(
-        conn,
-        class_offering_id=int(class_offering_id),
-        teacher_id=int(teacher_id),
-        material_ids=[int(bound_material_row["id"])],
+    from .session_learning_materials_service import bind_material_in_transaction
+
+    bind_material_in_transaction(
+        conn, int(class_offering_id), int(session_id), int(bound_material_row["id"]), int(teacher_id),
+        make_primary=True,
     )
 
     for root_id in sorted(root_id for root_id in affected_root_ids if root_id):
@@ -1425,6 +1419,7 @@ def get_teacher_session_with_material_state(
     class_offering_id: int,
     session_id: int,
     teacher_id: int,
+    expire_stale: bool = True,
 ) -> dict[str, Any] | None:
     row = conn.execute(
         """
@@ -1457,7 +1452,7 @@ def get_teacher_session_with_material_state(
         teacher_id=int(teacher_id),
         markdown_only=True,
     )
-    attach_generation_tasks(conn, items, teacher_id=int(teacher_id))
+    attach_generation_tasks(conn, items, teacher_id=int(teacher_id), expire_stale=expire_stale)
     return items[0]
 
 
@@ -1541,6 +1536,17 @@ def _claim_generation_task_for_run(
     return task_row
 
 
+def _ensure_generation_task_authority(conn, task_id: int) -> dict[str, Any]:
+    row = conn.execute("""SELECT t.* FROM session_material_generation_tasks t
+        JOIN class_offering_sessions s ON s.id=t.session_id AND s.class_offering_id=t.class_offering_id
+        JOIN class_offerings o ON o.id=t.class_offering_id AND o.teacher_id=t.teacher_id
+        JOIN teachers teacher ON teacher.id=t.teacher_id AND COALESCE(teacher.is_active,1)=1
+        WHERE t.id=?""", (int(task_id),)).fetchone()
+    if not row:
+        raise HTTPException(403, "课时生成任务的教师或课堂归属已变化，无法继续写入。")
+    return dict(row)
+
+
 async def run_generation_task(task_id: int) -> None:
     task_id = int(task_id)
     try:
@@ -1550,6 +1556,7 @@ async def run_generation_task(task_id: int) -> None:
             task_row = _claim_generation_task_for_run(conn, task_id)
             if not task_row:
                 return
+            _ensure_generation_task_authority(conn, task_id)
 
             request_payload = _load_json_payload(task_row["request_payload_json"])
             example_documents = list(request_payload.get("example_documents") or [])
@@ -1702,6 +1709,13 @@ async def run_generation_task(task_id: int) -> None:
             base_parent_id = base_parent["parent_id"]
 
         with get_db_connection() as conn:
+            # Reserve the running row before any material/file/binding write.
+            # An expired/replaced task cannot publish a late model result.
+            locked = conn.execute("UPDATE session_material_generation_tasks SET updated_at=? WHERE id=? AND status=?", (_now_iso(), task_id, TASK_STATUS_RUNNING))
+            if int(locked.rowcount or 0) != 1:
+                conn.rollback()
+                return
+            _ensure_generation_task_authority(conn, task_id)
             generated_material = persist_generated_materials(
                 conn,
                 teacher_id=int(task_row["teacher_id"]),

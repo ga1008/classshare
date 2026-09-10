@@ -139,9 +139,14 @@ def create_report(
         raise ValueError("举报对象不正确")
     if normalized_type not in REPORT_TARGET_TYPES or normalized_reason not in REPORT_REASONS:
         raise ValueError("请选择有效的举报原因")
-    table = {"post": "blog_posts", "comment": "blog_comments", "opportunity": "blog_opportunities"}[normalized_type]
-    if conn.execute(f"SELECT id FROM {table} WHERE id = ? LIMIT 1", (normalized_id,)).fetchone() is None:
-        raise ValueError("举报对象不存在")
+    if normalized_type == "post":
+        post = blog_service._get_post_raw(conn, normalized_id)
+    else:
+        table = "blog_comments" if normalized_type == "comment" else "blog_opportunities"
+        target = conn.execute(f"SELECT post_id FROM {table} WHERE id = ? LIMIT 1", (normalized_id,)).fetchone()
+        post = blog_service._get_post_raw(conn, int(target["post_id"])) if target else None
+    if not post or not blog_service._can_view_post(conn, user, post):
+        raise ValueError("举报对象不存在或不可访问")
     normalized_details = str(details or "").strip()[:2000]
     conn.execute(
         """

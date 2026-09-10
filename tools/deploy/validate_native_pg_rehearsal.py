@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from tools.signature_visibility_rehearsal import valid_report_proof
+from tools.agent_authority_migration_rehearsal import valid_report_proof as valid_agent_proof
 REPORT_CONTRACT = "native-pg-rehearsal-v1"
 REQUIRED_MIGRATION_FILES = (
     "classroom_app/config.py", "classroom_app/database.py", "classroom_app/storage_paths.py",
@@ -18,6 +19,8 @@ REQUIRED_MIGRATION_FILES = (
     "classroom_app/db/postgres_required_columns.py", "classroom_app/db/schema_assignments.py",
     "classroom_app/db/schema_ai_jobs.py", "classroom_app/db/schema_grade_publications.py",
     "classroom_app/db/schema_signature_workflow.py",
+    "tools/assessment_postgres_rehearsal.py", "tools/signature_visibility_rehearsal.py",
+    "tools/agent_authority_migration_rehearsal.py", "tools/deploy/validate_native_pg_rehearsal.py",
 )
 
 
@@ -45,18 +48,27 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
 
     def preserved_phase(phase):
         raw = phase.get("old_differences_per_pass")
-        if raw == [[], []] and not phase.get("signature_visibility_migration_per_pass"):
-            return True
+        agent_proofs = phase.get("agent_authority_migration_per_pass")
+        if (not isinstance(agent_proofs, list) or len(agent_proofs) != 2
+                or not all(valid_agent_proof(proof) for proof in agent_proofs)
+                or agent_proofs[0] != agent_proofs[1]):
+            return False
         proofs = phase.get("signature_visibility_migration_per_pass")
         # A registry created by this migration has no old rows to compare;
         # its sole new marker is still verified in each proof and on restart.
         registry_added = "schema_migrations" in (phase.get("added_tables") or [])
-        return (isinstance(proofs, list) and len(proofs) == 2
-                and all(valid_report_proof(proof) for proof in proofs)
-                and proofs[0] == proofs[1]
-                and raw == [[item for item in proof["allowed_differences"]
-                             if item != "table:schema_migrations" or not registry_added] for proof in proofs]
-                and phase.get("unexpected_old_differences_per_pass") == [[], []])
+        if proofs is None:
+            signature_differences = [[], []]
+        elif (isinstance(proofs, list) and len(proofs) == 2
+                and all(valid_report_proof(proof) for proof in proofs) and proofs[0] == proofs[1]):
+            signature_differences = [proof["allowed_differences"] for proof in proofs]
+        else:
+            return False
+        order = lambda item: ({"table": 0, "schema": 1, "sequence": 2}.get(item.split(":", 1)[0], 3), item)
+        allowed = [sorted(set(agent["allowed_differences"]) | {item for item in signature
+                   if item != "table:schema_migrations" or not registry_added}, key=order)
+                   for agent, signature in zip(agent_proofs, signature_differences)]
+        return raw == allowed and phase.get("unexpected_old_differences_per_pass") == [[], []]
 
     require(report.get("report_contract") == REPORT_CONTRACT, "native_report_contract_missing")
     require(report.get("status") == "ok", "native_report_not_passed")
@@ -83,9 +95,11 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
     require(preserved_phase(incremental)
             and incremental.get("idempotency_differences") == [], "incremental_differences_or_missing_checks")
     startup = report.get("full_startup") or {}
+    no_agent_changes = all(not proof.get("allowed_differences") for proof in startup.get("agent_authority_migration_per_pass", []) if isinstance(proof, dict))
     require(startup.get("strict_status") == "ok" and startup.get("fresh_process_per_pass") is True
-            and (startup.get("all_old_fields_and_sequences_unchanged") is True
-                 or startup.get("all_old_fields_except_verified_signature_scope_and_sequences_unchanged") is True), "full_startup_not_passed")
+            and ((startup.get("all_old_fields_and_sequences_unchanged") is True and startup.get("old_differences_per_pass") == [[], []])
+                 or (startup.get("all_old_fields_except_verified_signature_scope_and_sequences_unchanged") is True and no_agent_changes)
+                 or startup.get("all_old_fields_except_verified_migrations_and_sequences_unchanged") is True), "full_startup_not_passed")
     require(preserved_phase(startup)
             and startup.get("idempotency_differences") == [], "full_startup_differences_or_missing_checks")
     runs = startup.get("runs")

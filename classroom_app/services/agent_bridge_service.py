@@ -1,31 +1,24 @@
-﻿"""
-Agent 桥接服务 —— 让独立运行时里的 Agent 把「平台本身」当成工具使用。
+"""Shared bounded extraction, named-query execution and platform search helpers.
 
-能力（全部只读，无任何写入路径）：
-- 只读 SQL 查询：单条 SELECT/WITH，自动限行、敏感表拒绝、敏感列脱敏
-- 数据库结构速查：表名 + 列名（排除凭据/会话等敏感表）
-- 平台文件读取：仅限白名单数据目录内的文本文件
-- 互联网访问：服务端代理抓取网页（SSRF 防护，仅公网 http/https）
-
-鉴权：按任务签发 HMAC token（SECRET_KEY 派生，自带过期时间），写入任务
-workspace，由运行时携带 Bearer 调用。任务结束后 token 自然过期。
+HTTP access is mediated by live actor/resource checks in agent_scoped_read_service
+and revocable delegations in the Agent Broker; no runtime credentials are issued here.
 """
 from __future__ import annotations
 
 import hashlib
-import hmac
 import ipaddress
+import os
 import re
 import socket
+import stat
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from ..config import SECRET_KEY
 from .. import storage_paths
 
-BRIDGE_TOKEN_SLACK_SECONDS = 1800
 MAX_QUERY_ROWS = 200
 MAX_CELL_CHARS = 2000
 MAX_FILE_BYTES = 256 * 1024
@@ -75,32 +68,10 @@ def allowed_file_roots() -> list[Path]:
     return [root for root in roots if str(root)]
 
 
-def _bridge_signature(task_id: int, expires_at: int) -> str:
-    message = f"agent-bridge:{int(task_id)}:{int(expires_at)}".encode("utf-8")
-    return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
-def issue_bridge_token(task_id: int, *, ttl_seconds: int) -> str:
-    expires_at = int(time.time()) + max(60, int(ttl_seconds)) + BRIDGE_TOKEN_SLACK_SECONDS
-    return f"{int(task_id)}.{expires_at}.{_bridge_signature(task_id, expires_at)}"
 
 
-def verify_bridge_token(token: str) -> int | None:
-    """校验 token，返回 task_id；无效或过期返回 None。"""
-    parts = str(token or "").strip().split(".")
-    if len(parts) != 3:
-        return None
-    try:
-        task_id = int(parts[0])
-        expires_at = int(parts[1])
-    except ValueError:
-        return None
-    if expires_at < time.time():
-        return None
-    expected = _bridge_signature(task_id, expires_at)
-    if not hmac.compare_digest(expected, parts[2]):
-        return None
-    return task_id
 
 
 def validate_readonly_sql(sql: str) -> str:
@@ -259,53 +230,82 @@ def describe_schema(conn, engine: str) -> dict[str, list[str]]:
     return tables
 
 
-def read_platform_file(raw_path: str) -> dict[str, Any]:
-    """读取白名单根目录内的文本/文档文件；越界/二进制/超限均拒绝。"""
-    requested = Path(str(raw_path or "").strip())
-    if not str(requested):
+def read_platform_file(raw_path: str, *, filename: str | None = None) -> dict[str, Any]:
+    """Read a confined stable snapshot; document parsers never reopen runner paths."""
+    from .agent_platform_multipart_service import _open_confined
+
+    if not str(raw_path or "").strip():
         raise ValueError("path 不能为空。")
-    resolved = requested.resolve()
-    allowed = False
-    for root in allowed_file_roots():
+    resolved = Path(raw_path).absolute()
+    allowed_root = None
+    relative = None
+    for candidate in allowed_file_roots():
         try:
-            resolved.relative_to(root.resolve())
-            allowed = True
+            root = candidate.absolute()
+            relative = resolved.relative_to(root)
+            if ".." in relative.parts:
+                continue
+            allowed_root = root
             break
         except (ValueError, OSError):
             continue
-    if not allowed:
+    if allowed_root is None or not relative.parts:
         raise ValueError("路径不在允许的平台数据目录内（材料/共享文件/教材附件/Agent 工作区）。")
-    if not resolved.is_file():
-        raise ValueError("文件不存在。")
-    size = resolved.stat().st_size
-    ext = resolved.suffix.lower()
+    # Content-addressed material blobs have no extension; the authorized
+    # material record supplies its display filename for document extraction.
+    ext = Path(filename).suffix.lower() if filename else resolved.suffix.lower()
+    is_document = ext in {".docx", ".doc", ".pdf", ".pptx", ".ppt", ".xlsx", ".xls"}
+    bound = MAX_DOCUMENT_FILE_BYTES if is_document else MAX_FILE_BYTES
+    descriptor = None
+    try:
+        descriptor = _open_confined(allowed_root, relative)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("仅可读取普通文件。")
+        if before.st_size > bound:
+            raise ValueError(f"文件超过本次读取的 {bound} 字节上限，请拆分文件。")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            data = handle.read(bound + 1)
+            after = os.fstat(handle.fileno())
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+        if len(data) != before.st_size or identity(before) != identity(after):
+            raise ValueError("文件仍在变化，请待写入完成后重试。")
+        size = len(data)
+    except OSError:
+        raise ValueError("无法安全读取指定平台文件。") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
     # docx/pdf 等文档：复用聊天链路的文本抽取器返回纯文本。
-    if ext in {".docx", ".doc", ".pdf", ".pptx", ".ppt", ".xlsx", ".xls"}:
-        if size > MAX_DOCUMENT_FILE_BYTES:
-            raise ValueError(
-                f"文档超过 {MAX_DOCUMENT_FILE_BYTES // (1024 * 1024)}MB 上限（实际 {size} 字节）。"
-            )
+    if is_document:
         from ai_assistant_doc_extract import extract_document_text
 
-        result = extract_document_text(resolved, ext, max_bytes=MAX_DOCUMENT_TEXT_BYTES)
+        # A task's shell can replace any workspace path concurrently. Parse a
+        # host-private copy of the verified bytes, outside the runner mount.
+        with tempfile.TemporaryDirectory(prefix="lanshare-agent-read-") as temporary:
+            snapshot = Path(temporary) / ("document" + ext)
+            snapshot.write_bytes(data)
+            result = extract_document_text(snapshot, ext, max_bytes=MAX_DOCUMENT_TEXT_BYTES)
         text = result.text or ""
         if not text.strip():
             raise ValueError("无法从该文档抽取文本。")
         return {
             "path": str(resolved),
             "size": size,
+            "sha256": hashlib.sha256(data).hexdigest(),
             "extracted": True,
             "truncated": bool(result.truncated),
             "content": text,
+            "issues": list(result.issues),
+            "embedded_image_count": len(result.images),
         }
-    if size > MAX_FILE_BYTES:
-        raise ValueError(f"文件超过 {MAX_FILE_BYTES // 1024}KB 上限（实际 {size} 字节）。")
-    data = resolved.read_bytes()
     if b"\x00" in data[:4096]:
         raise ValueError("看起来是二进制文件，本接口只读取文本（docx/pdf 等文档会自动抽取）。")
     return {
         "path": str(resolved),
         "size": size,
+        "sha256": hashlib.sha256(data).hexdigest(),
         "content": data.decode("utf-8", errors="replace"),
     }
 

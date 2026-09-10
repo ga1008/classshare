@@ -381,6 +381,10 @@ def create_access_request(
     snapshot: dict[str, Any] | None = None,
     notify_reviewers: bool = True,
 ) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(material_type, material_id)])
+    lock_signature_rows(conn, [signature_id])
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以提出签名使用申请。")
@@ -814,14 +818,9 @@ def review_access_request(
     note: str = "",
     expected_snapshot_id: str | None = None,
 ) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, request_ids=[request_id])
     actor = signature_service.build_signature_actor(conn, user)
-    # A no-op conditional update takes the request row lock on both supported
-    # engines.  It serializes owner/signer decisions without introducing a
-    # transient workflow status that could leak to readers.
-    conn.execute(
-        "UPDATE signature_access_requests SET status = status WHERE id = ? AND status = 'pending'",
-        (int(request_id),),
-    )
     request = get_request(conn, request_id)
     if request["status"] != "pending":
         raise signature_service.SignatureServiceError(409, "该申请已结束，不能重复审批。")
@@ -996,6 +995,8 @@ def batch_review_access_requests(
         raise signature_service.SignatureServiceError(400, "请选择至少一条申请。")
     if len(normalized_ids) > 50:
         raise signature_service.SignatureServiceError(400, "一次最多批量处理 50 条申请。")
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, request_ids=normalized_ids)
     results = {"processed": 0, "failed": 0, "items": []}
     for request_id in normalized_ids:
         savepoint = f"signature_review_{request_id}"
@@ -1018,16 +1019,20 @@ def batch_review_access_requests(
 
 
 def cancel_access_request(conn: Any, user: dict[str, Any], request_id: int) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, request_ids=[request_id])
     actor = signature_service.build_signature_actor(conn, user)
     request = get_request(conn, request_id)
     if request["requester_role"] != actor["role"] or int(request["requester_id"]) != int(actor["id"]):
         raise signature_service.SignatureServiceError(403, "只有申请人可以撤销申请。")
     if request["status"] != "pending":
         raise signature_service.SignatureServiceError(409, "只有待审批申请可以撤销。")
-    conn.execute(
+    updated = conn.execute(
         "UPDATE signature_access_requests SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
         (int(request_id),),
     )
+    if int(updated.rowcount or 0) != 1:
+        raise signature_service.SignatureServiceError(409, "申请状态已变化，请重新读取后操作。")
     conn.execute(
         "UPDATE signature_access_request_items SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE request_id = ? AND status = 'pending'",
         (int(request_id),),
@@ -1052,6 +1057,9 @@ def create_claim_request(
     Approval transfers ownership to the requester, binds the signature to the
     requester's account and syncs identity attributes both ways.
     """
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, claim_signature_ids=[signature_id],
+                             account_holders=[(user.get('role'), user.get('id'))])
     actor = signature_service.build_signature_actor(conn, user)
     if actor.get("role") not in REQUESTER_ROLES:
         raise signature_service.SignatureServiceError(403, "仅教师或学生账号可以申请认领签名。")
@@ -1213,14 +1221,18 @@ def _apply_claim_transfer(conn: Any, request: dict[str, Any]) -> None:
             ref_id=str(signature_id),
             metadata={"signature_id": signature_id, "request_id": int(request["id"])},
         )
-    # Other users' pending claims on the same signature are now moot.
+    _cancel_other_claim_requests(conn, signature_id, except_request_id=int(request['id']))
+
+
+def _cancel_other_claim_requests(conn, signature_id, *, except_request_id=0):
+    """Caller holds the signature and its pending claims in shared lock order."""
     other_rows = conn.execute(
         """
         SELECT id FROM signature_access_requests
         WHERE signature_id = ? AND COALESCE(request_kind, 'use') = 'claim'
           AND status = 'pending' AND id <> ?
         """,
-        (signature_id, int(request["id"])),
+        (signature_id, except_request_id),
     ).fetchall()
     for row in other_rows:
         other_id = int(row["id"])
@@ -1241,6 +1253,9 @@ def _apply_claim_transfer(conn: Any, request: dict[str, Any]) -> None:
 
 def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[str, Any]:
     """Bind an unbound signature bearing the actor's own name to their account."""
+    from .signature_workflow_lock_service import lock_signature_workflows
+    lock_signature_workflows(conn, claim_signature_ids=[signature_id],
+                             account_holders=[(user.get('role'), user.get('id'))])
     actor = signature_service.build_signature_actor(conn, user)
     signature = _signature_row(conn, signature_id)
     if not signature_service.can_view_signature(actor, signature):
@@ -1260,6 +1275,7 @@ def claim_signature(conn: Any, user: dict[str, Any], signature_id: int) -> dict[
     if int(cursor.rowcount or 0) != 1:
         raise signature_service.SignatureServiceError(409, "该签名刚刚已被认领，请刷新查看。")
     signature_identity_service.sync_identity_for_signature(conn, int(signature_id))
+    _cancel_other_claim_requests(conn, int(signature_id))
     owner_role = str(signature["owner_role"] or "").strip().lower()
     try:
         owner_id = int(signature["owner_id"] or 0)
@@ -1634,6 +1650,10 @@ def authorize_and_consume_signature_use(
     ip: str = "",
     user_agent: str = "",
 ) -> dict[str, Any]:
+    from .signature_workflow_lock_service import lock_signature_materials
+    from .signature_account_lock_service import lock_signature_rows
+    lock_signature_materials(conn, [(context_type, context_id)], legacy_context=True)
+    lock_signature_rows(conn, [signature_id])
     actor = signature_service.build_signature_actor(conn, user)
     signature = _signature_row(conn, signature_id)
     point = _function_points(conn, [function_point_key])[0]

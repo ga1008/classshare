@@ -260,6 +260,8 @@ def replace_course_lessons(
     course_id: int,
     lessons: list[dict[str, Any]],
 ) -> None:
+    from .offering_plan_edit_service import lock_plan_row
+    lock_plan_row(conn, "courses", course_id)
     conn.execute("DELETE FROM course_lessons WHERE course_id = ?", (course_id,))
     if not lessons:
         return
@@ -298,6 +300,7 @@ def replace_offering_sessions(
     offering_id: int,
     sessions: list[dict[str, Any]],
     preserve_removed: bool = False,
+    removal_note: str = "本次教务同步已停排，保留课次以维护既有课堂记录",
 ) -> dict[str, int]:
     keep_order_indexes = [
         int(item["order_index"])
@@ -318,14 +321,14 @@ def replace_offering_sessions(
             UPDATE class_offering_sessions
             SET schedule_status = 'cancelled',
                 schedule_note = CASE
-                    WHEN TRIM(COALESCE(schedule_note, '')) = '' THEN '本次教务同步已停排，保留课次以维护既有课堂记录'
-                    WHEN schedule_note LIKE '%本次教务同步已停排%' THEN schedule_note
-                    ELSE schedule_note || '；本次教务同步已停排，保留课次以维护既有课堂记录'
+                    WHEN TRIM(COALESCE(schedule_note, '')) = '' THEN ?
+                    WHEN schedule_note LIKE ? THEN schedule_note
+                    ELSE schedule_note || '；' || ?
                 END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE {where_sql}
             """,
-            where_params,
+            (removal_note, '%' + removal_note + '%', removal_note, *where_params),
         )
         removed_count = int(cursor.rowcount or 0)
     else:

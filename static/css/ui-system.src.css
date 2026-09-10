@@ -8008,6 +8008,45 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     opacity: 0.6;
 }
 
+.ai-agent-reconciliation-dialog {
+    width: min(560px, calc(100vw - 24px));
+    max-height: min(88dvh, 780px);
+    box-sizing: border-box;
+    padding: 22px;
+    border: 1px solid #cce1df;
+    border-radius: 20px;
+    color: #243c44;
+    background: #fff;
+    box-shadow: 0 24px 80px #123c4b38;
+    font: 14px/1.6 ui-sans-serif, system-ui, sans-serif;
+    overflow: auto;
+}
+.ai-agent-reconciliation-dialog::backdrop { background: #12334066; backdrop-filter: blur(3px); }
+.ai-agent-reconciliation-dialog header, .ai-agent-reconciliation-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-agent-reconciliation-dialog header h3 { margin: 0; font-size: 18px; font-weight: 700; }
+.ai-agent-reconciliation-dialog header button { min-width: 44px; min-height: 44px; border: 0; background: transparent; font-size: 24px; }
+.ai-agent-reconciliation-dialog p { margin: 10px 0; overflow-wrap: anywhere; }
+.ai-agent-reconciliation-dialog fieldset { margin: 16px 0; padding: 14px; border: 1px solid #d7e6e5; border-radius: 12px; }
+.ai-agent-reconciliation-dialog legend { padding: 0 5px; font-weight: 600; }
+.ai-agent-reconciliation-dialog label { display: flex; align-items: center; gap: 9px; min-height: 44px; }
+.ai-agent-reconciliation-dialog .ai-agent-reconciliation-note { display: block; margin-top: 8px; }
+.ai-agent-reconciliation-dialog textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #afcfcd; border-radius: 10px; resize: vertical; font: inherit; font-size: 16px; }
+.ai-agent-reconciliation-dialog pre { max-height: 180px; margin: 8px 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.ai-agent-reconciliation-dialog summary { cursor: pointer; min-height: 32px; }
+.ai-agent-reconciliation-dialog .ai-agent-reconciliation-facts, .ai-agent-reconciliation-dialog [data-reconcile-statement] { padding: 12px; background: #f1f7f6; border-radius: 12px; }
+.ai-agent-reconciliation-dialog [data-reconcile-block] { color: #926022; }
+.ai-agent-reconciliation-dialog [data-reconcile-feedback] { color: #256b66; }
+.ai-agent-reconciliation-dialog footer { position: sticky; bottom: -22px; padding: 12px 0; background: #fff; }
+.ai-agent-reconciliation-dialog footer button { min-height: 44px; }
+.ai-agent-reconciliation-dialog :focus-visible { outline: 2px solid #148c82; outline-offset: 2px; }
+.ai-agent-reconciliation-dialog button:disabled, .ai-agent-reconciliation-dialog input:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 480px) { .ai-agent-reconciliation-dialog { padding: 16px; } .ai-agent-reconciliation-dialog footer { bottom: -16px; } }
+
+.ai-chat-message.agent-task-message {
+    width: 100%;
+    max-width: 100%;
+}
+
 .ai-chat-message.agent-task-message .bubble {
     width: min(100%, 580px);
     max-width: 100%;
@@ -8020,6 +8059,48 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .ai-agent-task-card {
     display: block;
     min-width: 0;
+}
+
+.ai-agent-questions:empty { display: none; }
+.ai-agent-questions { margin: 12px; }
+.ai-agent-question-request { margin-block: 10px; border: 1px solid hsl(166 50% 75%); border-radius: 14px; background: hsl(166 40% 98%); overflow: hidden; }
+.ai-agent-question-request > summary { display: flex; align-items: center; gap: 8px; padding: 12px; cursor: pointer; list-style: none; color: hsl(170 55% 24%); font-size: 13px; }
+.ai-agent-question-request > summary::-webkit-details-marker { display: none; }
+.ai-agent-question-mark { display: grid; place-items: center; flex: 0 0 23px; height: 23px; border-radius: 50%; background: hsl(166 40% 90%); font-weight: 700; }
+.ai-agent-question-chevron { margin-left: auto; transition: transform .15s; }
+.ai-agent-question-request[open] .ai-agent-question-chevron { transform: rotate(180deg); }
+.ai-agent-question-request form { padding: 0 12px 12px; }
+.ai-agent-question-request fieldset { min-width: 0; padding: 0; margin: 0 0 16px; border: 0; }
+.ai-agent-question-request legend { display: block; width: 100%; margin-bottom: 8px; color: var(--gray-800); font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.ai-agent-question-request legend small { display: block; margin-bottom: 3px; color: var(--gray-500); font-size: 11px; font-weight: 500; }
+.ai-agent-question-detail, .ai-agent-question-answer { margin: 0 0 9px; color: var(--gray-600); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-agent-question-options { display: grid; gap: 6px; }
+.ai-agent-question-option { display: flex; align-items: flex-start; gap: 9px; min-height: 44px; padding: 10px; border: 1px solid hsl(210 20% 88%); border-radius: 9px; background: white; cursor: pointer; }
+.ai-agent-question-option:has(input:checked) { border-color: hsl(166 55% 42%); background: hsl(166 55% 96%); box-shadow: inset 0 0 0 1px hsl(166 55% 42%); }
+.ai-agent-question-option input { margin-top: 3px; flex: 0 0 auto; accent-color: hsl(166 55% 32%); }
+.ai-agent-question-option span { min-width: 0; overflow-wrap: anywhere; }
+.ai-agent-question-option strong { display: block; font-size: 13px; font-weight: 600; }
+.ai-agent-question-option small { display: block; margin-top: 3px; color: var(--gray-500); font-size: 12px; line-height: 1.5; }
+.ai-agent-question-custom { display: block; margin-top: 10px; color: var(--gray-600); font-size: 12px; }
+.ai-agent-question-custom textarea { display: block; width: 100%; min-height: 66px; margin-top: 5px; padding: 9px 10px; border: 1px solid hsl(210 20% 85%); border-radius: 9px; background: white; color: var(--gray-800); font: inherit; font-size: 14px; line-height: 1.5; resize: vertical; }
+.ai-agent-question-request :is(summary, input, textarea, button):focus-visible { outline: 2px solid hsl(166 55% 35%); outline-offset: 3px; }
+.ai-agent-question-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ai-agent-question-footer small { color: var(--gray-500); font-size: 11px; }
+.ai-agent-question-footer button { min-height: 40px; margin-left: auto; }
+.ai-agent-question-feedback { margin: 9px 0 0; font-size: 12px; color: hsl(170 55% 27%); overflow-wrap: anywhere; }
+.ai-agent-question-feedback:empty { display: none; }
+.ai-agent-question-feedback[data-error="true"] { color: hsl(0 62% 40%); }
+.ai-agent-question-request fieldset:disabled { opacity: .75; }
+.ai-agent-operation-receipt { padding-block: 9px; border-bottom: 1px solid hsl(210 20% 91%); }
+.ai-agent-operation-receipt > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px; }
+.ai-agent-operation-receipt strong { font-size: 13px; }
+.ai-agent-operation-receipt span, .ai-agent-operation-receipt small { color: var(--gray-600); font-size: 12px; overflow-wrap: anywhere; }
+.ai-agent-operation-receipt small { display: block; margin-top: 4px; }
+.ai-agent-operation-receipt a { display: inline-block; margin-top: 5px; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.ai-agent-completion-blockers { padding-left: 17px; margin-block: 10px; font-size: 12px; color: hsl(30 60% 33%); }
+@media (max-width: 560px) {
+    .ai-agent-question-request { border-radius: 11px; }
+    .ai-agent-question-custom textarea { font-size: 16px; }
 }
 
 .ai-agent-task-card .ai-task-detail__header {
@@ -53863,6 +53944,19 @@ html.scene-cover-collapsing .main-content {
 body.offering-hub-drawer-open {
     overflow: hidden;
 }
+
+.ai-agent-secure-dialog input[type="password"] {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 16px;
+}
+.ai-agent-secure-dialog input[type="password"]:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
 
 /* Transitions reverse from the currently painted frame. The nonvisual exit
    animation keeps Radix presence mounted for the same duration. At rest scale

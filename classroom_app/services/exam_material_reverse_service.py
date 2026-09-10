@@ -299,6 +299,10 @@ async def run_assessment_plan_reverse_job(
             warnings.append(f"考核项分值合计为 {normalized['score_total']}，请教师复核。")
 
         with get_db_connection() as conn:
+            from .signature_workflow_lock_service import lock_signature_materials
+            from .signature_account_lock_service import lock_signature_rows
+            lock_signature_materials(conn, [('assessment_plan', str(plan_id))])
+            lock_signature_rows(conn, [own_signature_id] if own_signature_id else [])
             ap.update_content(
                 conn,
                 plan_id,

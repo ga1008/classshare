@@ -1,3 +1,7 @@
+from ...services.assignment_management_service import (
+    _truthy_request_flag, _wants_assignment_email_notification, _get_allowed_file_types,
+    _get_learning_stage_key, _teacher_can_access_assignment, _hide_personal_stage_asset,
+)
 import uuid
 import json
 import io
@@ -145,24 +149,8 @@ _ai_grading_submit_semaphore = asyncio.Semaphore(10)
 PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE = "学生个人试炼属于学生资产，不在教师作业与考试中展示；请查看班级修行统计。"
 
 
-def _truthy_request_flag(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "checked"}
 
 
-def _wants_assignment_email_notification(data: dict[str, Any]) -> bool:
-    for key in (
-        "send_email_notification",
-        "send_email_notifications",
-        "notify_students_by_email",
-        "email_notification_enabled",
-    ):
-        if key in data:
-            return _truthy_request_flag(data.get(key))
-    return False
 
 
 def _build_assignment_storage_dir(course_id: int, assignment_id: int | str):
@@ -181,14 +169,6 @@ def _build_submission_file_path(submission_dir: Path, relative_path: str) -> Pat
     return submission_dir.joinpath(*PurePosixPath(relative_path).parts)
 
 
-def _get_allowed_file_types(data: dict, assignment_row=None) -> list[str]:
-    if "allowed_file_types" in data:
-        return normalize_allowed_file_types(data.get("allowed_file_types"))
-    if "allowed_file_types_json" in data:
-        return decode_allowed_file_types_json(data.get("allowed_file_types_json"))
-    if assignment_row is not None:
-        return decode_allowed_file_types_json(assignment_row["allowed_file_types_json"])
-    return []
 
 
 def _question_id_from_submission_relative_path(relative_path: str) -> str | None:
@@ -327,15 +307,6 @@ def _dropped_files_response_fields(dropped_files: list[dict[str, Any]], *, actio
     }
 
 
-def _get_learning_stage_key(data: dict, *, class_offering_id: Any = None) -> str | None:
-    raw_stage_key = data.get("learning_stage_key", data.get("stage_key"))
-    try:
-        stage_key = normalize_assignment_stage_key(raw_stage_key)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if stage_key and not class_offering_id:
-        raise HTTPException(400, "仅课堂内作业或考试可以设定为阶段试炼")
-    return stage_key
 
 
 def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
@@ -363,46 +334,23 @@ def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
     raise HTTPException(400, "作业已截止，当前只能查看，不能作答或提交")
 
 
-def _teacher_can_access_assignment(conn, assignment: dict[str, Any], teacher_id: int) -> bool:
-    return teacher_can_manage_assignment(conn, int(teacher_id), assignment)
 
 
-def _hide_personal_stage_asset() -> None:
-    raise HTTPException(404, PERSONAL_STAGE_TEACHER_HIDDEN_MESSAGE)
-
-
-EXAM_OPEN_SCOPES = {SCOPE_PRIVATE, SCOPE_DEPARTMENT, SCOPE_SCHOOL}
-EXAM_SCOPE_LABELS = {
-    SCOPE_PRIVATE: "私有",
-    SCOPE_DEPARTMENT: "本系部开放",
-    SCOPE_SCHOOL: "全校开放",
-}
 
 
 def _normalize_exam_open_scope(value: Any, default: str = SCOPE_DEPARTMENT) -> str:
-    scope = normalize_scope_level(value, default=default)
-    return scope if scope in EXAM_OPEN_SCOPES else default
+    from ...services.exam_paper_management_service import _normalize_exam_open_scope as shared
+    return shared(value, default=default)
 
 
 def _exam_scope_label(scope_level: Any) -> str:
-    return EXAM_SCOPE_LABELS.get(_normalize_exam_open_scope(scope_level, default=SCOPE_PRIVATE), "私有")
+    from ...services.exam_paper_management_service import _exam_scope_label as shared
+    return shared(scope_level)
 
 
 def _get_exam_paper_for_teacher(conn, paper_id: str, teacher_id: int, *, manage: bool = False) -> dict[str, Any]:
-    paper = conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone()
-    if not paper:
-        raise HTTPException(404, "试卷不存在")
-    paper_dict = dict(paper)
-    allowed = (
-        teacher_can_manage_exam_paper(conn, teacher_id, paper_dict)
-        if manage
-        else teacher_can_use_exam_paper(conn, teacher_id, paper_dict)
-    )
-    if not allowed:
-        raise HTTPException(403, "无权操作此试卷")
-    if is_personal_stage_exam_paper(conn, paper_id):
-        _hide_personal_stage_asset()
-    return paper_dict
+    from ...services.exam_paper_management_service import _get_exam_paper_for_teacher as shared
+    return shared(conn, paper_id, teacher_id, manage=manage)
 
 
 def _get_assignment_for_teacher(conn, assignment_id: str, teacher_id: int) -> dict[str, Any]:
@@ -456,42 +404,8 @@ def _expire_stale_ai_grading_for_assignment(conn, assignment_id: str) -> int:
 
 
 def _get_submission_for_teacher(conn, submission_id: int, teacher_id: int) -> dict[str, Any]:
-    submission = conn.execute(
-        """
-        SELECT s.*,
-               a.course_id,
-               a.class_offering_id,
-               a.allowed_file_types_json,
-               a.due_at AS assignment_due_at,
-               a.late_submission_enabled AS assignment_late_submission_enabled,
-               a.late_submission_until AS assignment_late_submission_until,
-               a.late_penalty_strategy AS assignment_late_penalty_strategy,
-               a.late_penalty_interval_hours AS assignment_late_penalty_interval_hours,
-               a.late_penalty_points AS assignment_late_penalty_points,
-               a.late_penalty_min_score AS assignment_late_penalty_min_score,
-               a.late_score_cap AS assignment_late_score_cap,
-               a.title AS assignment_title,
-               c.created_by_teacher_id,
-               o.teacher_id AS offering_teacher_id,
-               lsea.id AS personal_stage_attempt_id
-        FROM submissions s
-        JOIN assignments a ON a.id = s.assignment_id
-        JOIN courses c ON c.id = a.course_id
-        LEFT JOIN class_offerings o ON o.id = a.class_offering_id
-        LEFT JOIN learning_stage_exam_attempts lsea ON lsea.assignment_id = a.id
-        WHERE s.id = ?
-        LIMIT 1
-        """,
-        (submission_id,),
-    ).fetchone()
-    if not submission:
-        raise HTTPException(404, "提交记录不存在")
-    submission_dict = dict(submission)
-    if not _teacher_can_access_assignment(conn, submission_dict, int(teacher_id)):
-        raise HTTPException(403, "无权操作该提交")
-    if submission_dict.get("personal_stage_attempt_id") is not None:
-        _hide_personal_stage_asset()
-    return submission_dict
+    from ...services.submission_grading_service import load_teacher_submission
+    return load_teacher_submission(conn, submission_id, teacher_id)
 
 
 def _parse_int_set(raw_values: Any, field_name: str) -> set[int]:
@@ -1753,25 +1667,8 @@ def _sanitize_zip_path(name: str) -> str:
 
 
 def _auto_add_class_name_tag(conn, paper_row: sqlite3.Row, class_id: int) -> None:
-    """自动将课堂名称添加为试卷标签（去重）。"""
-    class_row = conn.execute("SELECT name FROM classes WHERE id = ?", (class_id,)).fetchone()
-    if not class_row:
-        return
-    class_name = class_row["name"].strip()
-    if not class_name or len(class_name) > 10:
-        return
-
-    try:
-        existing_tags = json.loads(paper_row["tags_json"]) if paper_row["tags_json"] else []
-    except (json.JSONDecodeError, TypeError):
-        existing_tags = []
-
-    if class_name not in existing_tags:
-        existing_tags.append(class_name)
-        conn.execute(
-            "UPDATE exam_papers SET tags_json = ? WHERE id = ?",
-            (json.dumps(existing_tags, ensure_ascii=False), paper_row["id"]),
-        )
+    from ...services.exam_paper_management_service import _auto_add_class_name_tag as shared
+    return shared(conn, paper_row, class_id)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

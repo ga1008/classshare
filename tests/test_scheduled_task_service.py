@@ -116,6 +116,40 @@ class ScheduledTaskServiceTests(unittest.TestCase):
         self.assertEqual(row["status"], "failed")
         self.assertIn("nope", row["last_error"])
 
+    def test_late_completion_and_failure_cannot_resurrect_canceled_subscription(self):
+        with get_db_connection() as conn:
+            task_id = sts.schedule_task(conn, task_kind="unit_test_kind", run_at=datetime.now() - timedelta(minutes=1),
+                                        recurrence_seconds=3600, dedupe_key="unit:cancel")
+            conn.commit()
+        claimed = sts._claim_due_tasks(1)[0]
+        with get_db_connection() as conn:
+            sts.cancel_tasks_by_dedupe(conn, "unit:cancel")
+            conn.commit()
+        sts._mark_success(claimed, "late success")
+        sts._mark_failure(claimed, "late failure")
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT status,last_result,last_error FROM scheduled_tasks WHERE id=?", (task_id,)).fetchone()
+        self.assertEqual("cancelled", row["status"])
+        self.assertNotEqual("late success", row["last_result"])
+        self.assertNotEqual("late failure", row["last_error"])
+
+    def test_old_claim_cannot_finalize_a_new_attempt_or_replaced_schedule(self):
+        with get_db_connection() as conn:
+            task_id = sts.schedule_task(conn, task_kind="unit_test_kind", run_at=datetime.now() - timedelta(minutes=1), dedupe_key="unit:fence")
+            conn.commit()
+        old = sts._claim_due_tasks(1)[0]
+        with get_db_connection() as conn:
+            sts.schedule_task(conn, task_kind="unit_test_kind", run_at=datetime.now() - timedelta(minutes=1), dedupe_key="unit:fence")
+            conn.commit()
+        current = sts._claim_due_tasks(1)[0]
+        self.assertNotEqual(old["locked_by"], current["locked_by"])
+        sts._mark_success(old, "old")
+        with get_db_connection() as conn:
+            self.assertEqual("running", conn.execute("SELECT status FROM scheduled_tasks WHERE id=?", (task_id,)).fetchone()[0])
+        sts._mark_success(current, "current")
+        with get_db_connection() as conn:
+            self.assertEqual("current", conn.execute("SELECT last_result FROM scheduled_tasks WHERE id=?", (task_id,)).fetchone()[0])
+
 
 if __name__ == "__main__":
     unittest.main()

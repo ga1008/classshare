@@ -13,6 +13,7 @@ const parseJsonScript = (id, fallback) => {
 
 const state = {
     dashboard: parseJsonScript('agent-key-dashboard-data', {}),
+    busy: false,
 };
 
 const refs = {
@@ -47,7 +48,9 @@ const statusLabels = {
 };
 
 function numberLabel(value, fractionDigits = 0) {
-    const numeric = Number(value || 0);
+    if (value === null || value === undefined || value === '') return '未提供';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '未提供';
     return numeric.toLocaleString('zh-CN', {
         maximumFractionDigits: fractionDigits,
         minimumFractionDigits: 0,
@@ -55,8 +58,9 @@ function numberLabel(value, fractionDigits = 0) {
 }
 
 function costLabel(value) {
-    const numeric = Number(value || 0);
-    if (!Number.isFinite(numeric) || numeric <= 0) return '$0';
+    if (value === null || value === undefined || value === '') return '未提供';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) return '未提供';
     return `$${numeric.toLocaleString('zh-CN', { maximumFractionDigits: 6 })}`;
 }
 
@@ -84,6 +88,11 @@ function statusClass(status) {
 }
 
 function setBusy(button, busy, label = '处理中') {
+    state.busy = busy;
+    document.querySelectorAll('.agent-key-shell button, #agent-key-form input').forEach((control) => {
+        control.disabled = busy;
+    });
+    refs.form?.setAttribute('aria-busy', String(busy));
     if (!button) return;
     if (busy) {
         button.dataset.originalText = button.textContent;
@@ -112,12 +121,12 @@ function renderHero() {
     const totals = usageTotals();
 
     refs.activeKey.textContent = current ? `${current.key_label || 'Agent Key'} · ****${current.key_suffix || ''}` : '未启用';
-    refs.runtimeState.textContent = runtime.configured ? '已配置' : '未配置';
+    refs.runtimeState.textContent = config.status === 'observed' ? '已观测调用' : config.configured ? '等待调用' : '未启用';
     refs.usageTurns.textContent = numberLabel(totals.turns);
     refs.usageCost.textContent = costLabel(totals.cost_usd);
-    refs.runtimeMessage.textContent = config.message || (runtime.configured ? '运行时已配置。' : '运行时未配置。');
+    refs.runtimeMessage.textContent = config.message || '尚未启用模型配置。';
     refs.runtimeUrl.textContent = runtime.url || '-';
-    refs.runtimeConfig.textContent = config.config_path || '-';
+    refs.runtimeConfig.textContent = `当前：${config.desired_generation || '未选择'} / 最近请求：${config.last_request_generation || '暂无'}`;
     refs.runtimeUsageTime.textContent = runtime.usage_fetched_at || (runtime.usage_snapshot?.fetched_at || '-');
 }
 
@@ -126,8 +135,8 @@ function renderUsage() {
     const cards = [
         ['输入 Tokens', numberLabel(totals.input_tokens)],
         ['输出 Tokens', numberLabel(totals.output_tokens)],
-        ['缓存 Tokens', numberLabel(totals.cached_tokens)],
-        ['推理 Tokens', numberLabel(totals.reasoning_tokens)],
+        ['成功 / 失败请求', `${numberLabel(totals.completed_requests)} / ${numberLabel(totals.failed_requests)}`],
+        ['输入 / 输出用量回执', `${numberLabel(totals.input_reported_requests)} / ${numberLabel(totals.output_reported_requests)}`],
     ];
 
     refs.usageSummary.innerHTML = cards.map(([label, value]) => `
@@ -139,11 +148,11 @@ function renderUsage() {
 
     const buckets = Array.isArray(latestUsage().buckets) ? latestUsage().buckets : [];
     if (!buckets.length) {
-        refs.usageBuckets.innerHTML = '<span>暂无运行用量</span>';
+        refs.usageBuckets.innerHTML = '<span>暂无模型请求记录</span>';
         return;
     }
     refs.usageBuckets.innerHTML = buckets.slice(-8).reverse().map((bucket) => {
-        const label = `${bucket.key || '-'} · ${numberLabel(bucket.turns)} 次 · ${costLabel(bucket.cost_usd)}`;
+        const label = `${bucket.key || '-'} · ${numberLabel(bucket.turns)} 次请求 · 输入 ${numberLabel(bucket.input_tokens)} / 输出 ${numberLabel(bucket.output_tokens)}`;
         return `<span>${escapeHtml(label)}</span>`;
     }).join('');
 }
@@ -198,9 +207,13 @@ function renderAll() {
     renderHero();
     renderUsage();
     renderKeys();
+    if (state.busy) {
+        document.querySelectorAll('.agent-key-shell button, #agent-key-form input').forEach((control) => { control.disabled = true; });
+    }
 }
 
 async function refreshDashboard(button = null) {
+    if (state.busy) return;
     setBusy(button, true, '刷新中');
     try {
         const result = await apiFetch('/api/manage/system/agent-keys/status', { silent: true });
@@ -215,6 +228,7 @@ async function refreshDashboard(button = null) {
 
 async function saveKey(event) {
     event.preventDefault();
+    if (state.busy) return;
     if (!refs.apiKey.value.trim()) {
         showMessage('请填写 DeepSeek API Key。', 'warning');
         refs.apiKey.focus();
@@ -225,7 +239,7 @@ async function saveKey(event) {
     payload.test_on_save = Boolean(refs.testOnSave?.checked);
     payload.make_active = Boolean(refs.makeActive?.checked);
 
-    setBusy(refs.saveBtn, true, payload.test_on_save ? '测试中' : '保存中');
+    setBusy(refs.saveBtn, true, payload.test_on_save || payload.make_active ? '测试中' : '保存中');
     try {
         const result = await apiFetch('/api/manage/system/agent-keys', {
             method: 'POST',
@@ -252,6 +266,7 @@ async function saveKey(event) {
 }
 
 async function refreshUsage(button) {
+    if (state.busy) return;
     setBusy(button, true, '读取中');
     try {
         const result = await apiFetch('/api/manage/system/agent-keys/usage/refresh', {
@@ -269,6 +284,7 @@ async function refreshUsage(button) {
 }
 
 async function testKey(id, button) {
+    if (state.busy) return;
     setBusy(button, true, '测试中');
     try {
         const result = await apiFetch(`/api/manage/system/agent-keys/${id}/test`, {
@@ -289,6 +305,7 @@ async function testKey(id, button) {
 }
 
 async function activateKey(id, button) {
+    if (state.busy) return;
     setBusy(button, true, '启用中');
     try {
         const result = await apiFetch(`/api/manage/system/agent-keys/${id}/activate`, {
@@ -300,7 +317,7 @@ async function activateKey(id, button) {
             runtime_config: result.runtime_config || state.dashboard.runtime_config || {},
         };
         renderAll();
-        showMessage(result.message || 'Agent API Key 已启用。', 'success');
+        showMessage(result.message || 'Agent API Key 已启用。', result.status === 'success' ? 'success' : 'warning');
     } catch (error) {
         showMessage(error.message || '启用 Agent API Key 失败。', 'error');
     } finally {
@@ -309,7 +326,8 @@ async function activateKey(id, button) {
 }
 
 async function deleteKey(id, button) {
-    if (!window.confirm('确定删除这个 Agent API Key 吗？')) {
+    if (state.busy) return;
+    if (!window.confirm('确定删除这个 Agent API Key 吗？新请求将无法再使用它，历史请求记录会保留。')) {
         return;
     }
     setBusy(button, true, '删除中');

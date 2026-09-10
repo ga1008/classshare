@@ -1,0 +1,128 @@
+{
+  "recorded_at": "2026-09-10T13:37:16.428984+00:00",
+  "baseline": "0283be34",
+  "scope": "local implementation checkpoint; no deployment",
+  "sources": {
+    "classroom_app/services/teaching_lifecycle_service.py": "869350bd18fc8eb9db5ecfda6a2e63f0605428136622627261f783946f0c878b",
+    "classroom_app/services/agent_teaching_confirmation_actions.py": "51b8b609372d51c246eda6f69cac009bc10c60023ae00d6155f7999458601c2f",
+    "classroom_app/services/agent_teaching_confirmation_service.py": "77dcae20e104a4c5af97bb027e45672d617401d1e935c01cb488933385ba96b1",
+    "classroom_app/services/offering_merge_service.py": "c5fe4b184dcd20a1c76184e7c0a0f2a3f35be6f06900f8f50b572e8138a8d73c",
+    "classroom_app/services/offering_membership_service.py": "90956d51d931ed679b0f8b67bfe5eb35e840b8d8ff28e0d9f0d6b0211c64b422",
+    "classroom_app/services/agent_action_registry.py": "105c261420151ffd775f3dcbd0b6d2648a783e1a4daddb79136dbb2427249048",
+    "classroom_app/services/assignment_creation_service.py": "6f0244d61ee54fd8f51bf319e52b097f7a5d6c01b0ec6079fa0481f7df935803",
+    "classroom_app/services/lesson_plan_service.py": "99adacf6d5710e30bd00f9e9134778cc8404f29b805d3aebb79a62cbf6dc93aa",
+    "classroom_app/services/teacher_evaluation_service.py": "cf4357b3a3817e692b6c1c5257dd394c2658b8b0f6de981cf81cc861a9c30338",
+    "classroom_app/services/assessment_plan_service.py": "4b609f986fadb77e8ae10e403c0123cd23301fb34dae43d181a8fbba19b33f4d",
+    "classroom_app/services/lessondoc/pack_service.py": "f03048c1b1d7c50f71887df25137d378cef505d40c0e96f3d3f3503f3b121de1",
+    "classroom_app/services/academic_class_mapping_service.py": "104698ae8455cc5114adef05f1a4c1e92571394afc979cec0e586733720cc458",
+    "classroom_app/services/blog_service.py": "a28ea37ba9583eeff61849abbb6c29628f0ed75cbf9617067330e381234530c8",
+    "classroom_app/services/poll_service.py": "37bafb2c1a305f2b4ce1a52c1b21edb148728700b95dd8870becc39a70050f53",
+    "classroom_app/services/resource_access_service.py": "7b2e65323b50f6c0b0b053cacd83716eb31f51d91ff2a1ff956d482568309ca3",
+    "classroom_app/routers/manage_parts/classes_courses_classes.py": "dc3430203a15c8f4f27c6c63d8a6fb49594ab9ee7f2a75b404ad82efd49b1e98",
+    "classroom_app/routers/manage_parts/classes_courses_courses.py": "789d4d5f96cb1bbb89c61c6ac70d7503fb16779d35bb531d5d50904e25d79ff2",
+    "classroom_app/routers/manage_parts/classes_courses_offerings.py": "2bc8a3879e7312e14396ecb55f4e0b934c4617790e5e62fe5db73c86807c9d7c",
+    "static/js/manage_classes.js": "fac3ececba7717c43428d78b609d1a7814569921d00a107b0f41a4e722f85353",
+    "static/js/manage_courses.js": "597bf2c62c8382f7af5352c34902ae5056818f6f4729939370283db226327895",
+    "static/js/manage_offering_merge.js": "a3efa013c862738e431146a69ffb8b81fa26c36b56e6de92e46051ab6168aca3",
+    "static/js/teaching_lifecycle_review.js": "15690fca0b9bd2a97b8d7b4d85aa4c95dca83f6aa9b57b00d7a81551564ad281",
+    "classroom_app/services/agent_platform_request_teaching.py": "47e4bcf01699e807241ba2e68f16e0b8a08501c08c0b335d49521fb6241e3b99"
+  },
+  "tests": {
+    "tests/test_teaching_lifecycle_http.py": "32cf6e961e61422691feda5ac92b94c9fb643c0fcd77c2a46114ef9c6be11a32",
+    "tests/test_offering_merge_confirmation.py": "79203a4d20f6c7671aebada029108a9a69e11311bf16a51a33fd05f4ffd0c3e5",
+    "tests/test_agent_action_int_list.py": "f3b8c8ffc7419c242d5cb6b4dd65f151554bba02596061274c5a68a2df3bd65f",
+    "tests/test_offering_merge_service.py": "b416fe39061fc18b4db6b8070b57925670f2237702636111f05fba820c142f27",
+    "tests/test_agent_teaching_confirmation.py": "e3de69283157872c45ea9a633cff5e4d533e2a3690c4373b45f02a20722e13ad",
+    "tests/e2e/components/teaching-lifecycle-confirmation.spec.ts": "d1f4604d5c6103b395dd2f565e7d36318416ae071ff754b5f4af673f374e8f2d",
+    "tests/test_agent_postgres_writes.py": "abbf4669512916902190edeb4a367e49827d5f971abbe0a1061b1f2b9d5e7306"
+  },
+  "confirmed_results": [
+    {
+      "group": "teaching HTTP / merge / membership / C / int_list before final poll scope guard",
+      "tests_run": 51,
+      "passed": 51,
+      "skipped": 0
+    },
+    {
+      "group": "real Chrome teaching lifecycle component fixture",
+      "tests_run": 4,
+      "passed": 4,
+      "skipped": 0,
+      "output": ".codex-temp/teaching-lifecycle-browser",
+      "screenshot": ".codex-temp/teaching-lifecycle-mobile.png",
+      "limits": "actual application JS and built styles; synthetic HTTP, not production"
+    },
+    {
+      "group": "independent assessment plan / final material / reverse service recheck",
+      "tests_run": 31,
+      "passed": 31,
+      "skipped": 0,
+      "evidence": ".codex-temp/agent-capability-assessment-source-recheck.json"
+    },
+    {
+      "group": "final ordinary poll/file permission/upload + teaching B source pins + merge + ordinary HTTP + C proposal",
+      "tests_run": 73,
+      "passed": 73,
+      "skipped": 0,
+      "duration_seconds": 20.896,
+      "modules": [
+        "tests.test_agent_platform_request_polls",
+        "tests.test_poll_broadcast_deadline",
+        "tests.test_permission_resource_access",
+        "tests.test_permission_course_files",
+        "tests.test_course_file_precheck",
+        "tests.test_agent_file_upload_requests",
+        "tests.test_agent_platform_request_teaching",
+        "tests.test_offering_merge_confirmation",
+        "tests.test_teaching_lifecycle_http",
+        "tests.test_agent_teaching_confirmation"
+      ],
+      "evidence": ".codex-temp/teaching-lifecycle-final-tests.log",
+      "log_sha256": "22600fd6742c001f66946196fbfae612e6b863990c0060096843f5e7d4148545"
+    },
+    {
+      "group": "PostgreSQL write helper fake-connection compatibility after parent-lock fixture update",
+      "tests_run": 6,
+      "passed": 6,
+      "skipped": 0,
+      "duration_seconds": 0.005,
+      "module": "tests.test_agent_postgres_writes",
+      "limits": "unit test doubles; not native PostgreSQL concurrency evidence"
+    }
+  ],
+  "normal_routes": [
+    {
+      "action": "delete_empty_class",
+      "method": "DELETE",
+      "path": "/api/manage/classes/{class_id}",
+      "handler": "classes_courses_classes.api_delete_class"
+    },
+    {
+      "action": "delete_unreferenced_course",
+      "method": "DELETE",
+      "path": "/api/manage/courses/{course_id}",
+      "handler": "classes_courses_courses.api_delete_course"
+    },
+    {
+      "action": "merge_class_offerings",
+      "method": "POST",
+      "path": "/api/manage/class_offerings/merge/execute",
+      "handler": "classes_courses_offerings.api_offering_merge_execute"
+    }
+  ],
+  "new_capabilities": {
+    "human_only_C": 3,
+    "generic_B_deletes_or_merge": 0
+  },
+  "production_ready": false,
+  "deployment_blockers": [
+    "New teaching parent/context locking has not received this batch independent native PostgreSQL concurrency validation."
+  ],
+  "not_completed": [
+    "Full classroom hard-delete/archive and complete historical access closure",
+    "Automatic undo of a merge",
+    "Real DSH end-to-end execution of these three C actions",
+    "Production migration/deployment/acceptance"
+  ],
+  "fixture_isolation": "New normal HTTP suite routes all DB access to an owned temporary SQLite path and rejects unexpected sqlite connectors; no production or normal local business DB used in this batch."
+}

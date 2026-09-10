@@ -5125,6 +5125,7 @@ function openMaterialDeleteImpactConfirm(material, impact) {
                         找到 <strong>${escapeHtml(String(impact?.total_reference_count || 0))}</strong> 项业务关联。
                         系统会在同一事务中解除引用，再删除材料及其
                         ${escapeHtml(String(subtree.folder_count || 0))} 个文件夹、${escapeHtml(String(subtree.file_count || 0))} 个文件。
+                        ${Number(subtree.registered_pack_count || 0) > 0 ? `其中 ${escapeHtml(String(subtree.registered_pack_count))} 个学习文档包将归档，登记与历史仍会保留。` : ''}
                     </p>
                 </section>
                 <div class="material-delete-impact__groups">
@@ -5179,22 +5180,28 @@ async function deleteActiveMaterial() {
         const material = { ...state.activeDetail };
         const impactResult = await apiFetch(`/api/materials/${material.id}/delete-impact`, { silent: true });
         const impact = impactResult.impact || {};
+        if (impact.structural_blocker) {
+            showToast(String(impact.structural_blocker), 'error');
+            return;
+        }
         const hasReferences = Number(impact.total_reference_count || 0) > 0;
         const confirmed = hasReferences
             ? await openMaterialDeleteImpactConfirm(material, impact)
             : await openProcessMaterialConfirm({
                 title: '删除材料',
                 message: `确定删除材料“${material.name || '未命名材料'}”吗？`,
-                detail: '删除后无法恢复，材料文件、过程预览与导出入口也会一并失效。',
+                detail: '删除后无法恢复，材料文件、过程预览与导出入口也会一并失效。'
+                    + (Number(impact.subtree?.registered_pack_count || 0) > 0
+                        ? `其中 ${impact.subtree.registered_pack_count} 个学习文档包将归档，登记与历史仍会保留。` : ''),
                 confirmText: '删除',
                 tone: 'danger',
             });
         if (!confirmed) return;
         if (deleteButton) deleteButton.textContent = '正在删除…';
         const deleteParams = new URLSearchParams();
+        deleteParams.set('impact_token', String(impact.impact_token || ''));
         if (hasReferences) {
             deleteParams.set('unlink_references', 'true');
-            deleteParams.set('impact_token', String(impact.impact_token || ''));
         }
         const deleteUrl = `/api/materials/${material.id}${deleteParams.toString() ? `?${deleteParams.toString()}` : ''}`;
         const result = await apiFetch(deleteUrl, { method: 'DELETE', silent: true });
@@ -5592,7 +5599,9 @@ function setModalStatus(statusEl, message = '', type = 'info') {
 }
 
 async function loadFolderOptions(select, { excludeSubtreeOf = null, selectedId = null, rootLabel = '材料库根目录' } = {}) {
-    if (!select) return;
+    if (!select) return false;
+    const requestId = (select.materialsFolderRequestId || 0) + 1;
+    select.materialsFolderRequestId = requestId;
     select.innerHTML = '<option value="">正在加载目录...</option>';
     const params = new URLSearchParams();
     if (excludeSubtreeOf) params.set('exclude_subtree_of', String(excludeSubtreeOf));
@@ -5600,14 +5609,16 @@ async function loadFolderOptions(select, { excludeSubtreeOf = null, selectedId =
         method: 'GET',
         silent: true,
     });
+    if (select.materialsFolderRequestId !== requestId) return false;
     const folders = result.folders || [];
     const optionHtml = folders.map((folder) => {
         const indent = '&nbsp;&nbsp;'.repeat(Math.min(Number(folder.depth) || 0, 8));
-        return `<option value="${escapeHtml(String(folder.id))}" title="${escapeHtml(folder.material_path)}">${indent}${escapeHtml(folder.name)}</option>`;
+        return `<option value="${escapeHtml(String(folder.id))}" data-revision="${escapeHtml(folder.updated_at || 'legacy')}" title="${escapeHtml(folder.material_path)}">${indent}${escapeHtml(folder.name)}</option>`;
     }).join('');
     select.innerHTML = `<option value="">${escapeHtml(rootLabel)}</option>${optionHtml}`;
     const desired = selectedId ? String(selectedId) : '';
     select.value = folders.some((folder) => String(folder.id) === desired) ? desired : '';
+    return true;
 }
 
 function setCreateMenuOpen(open) {
@@ -5701,47 +5712,78 @@ function openMoveModal() {
     if (!state.activeDetail || state.activeDetail.can_manage === false) return;
     state.move.materialId = Number(state.activeDetail.id);
     state.move.materialName = state.activeDetail.name || '';
+    state.move.expectedUpdatedAt = state.activeDetail.updated_at || 'legacy';
+    const requestId = (state.move.requestId || 0) + 1;
+    state.move.requestId = requestId;
+    state.move.optionsReady = false;
     state.move.busy = false;
     if (refs.moveName) refs.moveName.textContent = state.activeDetail.name || '-';
     if (refs.movePath) refs.movePath.textContent = state.activeDetail.material_path || '-';
     if (refs.moveSubmitBtn) {
-        refs.moveSubmitBtn.disabled = false;
+        refs.moveSubmitBtn.disabled = true;
         refs.moveSubmitBtn.textContent = '移动';
     }
     setModalStatus(refs.moveStatus, '', 'info');
     openModal('materials-move-modal');
-    const excludeId = state.activeDetail.node_type === 'folder' ? state.move.materialId : null;
-    loadFolderOptions(refs.moveTarget, {
-        excludeSubtreeOf: excludeId,
-        selectedId: state.activeDetail.parent_id || null,
+    const materialId = state.move.materialId;
+    apiFetch(`/api/materials/${materialId}/attributes`, { method: 'GET', silent: true }).then((result) => {
+        if (state.move.requestId !== requestId) return false;
+        const current = result.material;
+        if (!current || current.can_manage === false) throw new Error('材料已无法管理，请关闭后刷新列表。');
+        state.move.expectedUpdatedAt = current.updated_at || 'legacy';
+        state.move.materialName = current.name || '';
+        if (refs.moveName) refs.moveName.textContent = current.name || '-';
+        if (refs.movePath) refs.movePath.textContent = current.material_path || '-';
+        return loadFolderOptions(refs.moveTarget, {
+            excludeSubtreeOf: current.node_type === 'folder' ? materialId : null,
+            selectedId: current.parent_id || null,
+        });
+    }).then((ready) => {
+        if (!ready || state.move.requestId !== requestId) return;
+        state.move.optionsReady = true;
+        if (refs.moveSubmitBtn) refs.moveSubmitBtn.disabled = false;
     }).catch((error) => {
+        if (state.move.requestId !== requestId) return;
         setModalStatus(refs.moveStatus, error.message || '目录加载失败', 'error');
     });
 }
 
 async function submitMove() {
-    if (state.move.busy || !state.move.materialId) return;
+    if (state.move.busy || !state.move.materialId || !state.move.optionsReady) return;
     const targetValue = refs.moveTarget?.value || '';
+    const requestId = state.move.requestId;
+    const materialId = state.move.materialId;
     state.move.busy = true;
     if (refs.moveSubmitBtn) {
         refs.moveSubmitBtn.disabled = true;
         refs.moveSubmitBtn.textContent = '移动中...';
     }
     try {
-        const result = await apiFetch(`/api/materials/${state.move.materialId}/move`, {
+        const result = await apiFetch(`/api/materials/${materialId}/move`, {
             method: 'POST',
-            body: { target_parent_id: targetValue ? Number(targetValue) : null },
+            body: {
+                target_parent_id: targetValue ? Number(targetValue) : null,
+                expected_updated_at: state.move.expectedUpdatedAt,
+                expected_target_updated_at: targetValue ? (refs.moveTarget?.selectedOptions?.[0]?.dataset.revision || 'legacy') : 'root',
+            },
         });
+        if (state.move.requestId !== requestId) return;
         closeModal('materials-move-modal');
         showToast(result.message || '移动完成', 'success');
         closeDetailModal();
         await loadLibrary(state.currentParentId, false);
     } catch (error) {
+        if (state.move.requestId !== requestId) return;
+        if (error.status === 409) {
+            state.move.optionsReady = false;
+            error.message = `${error.message || '材料或目录已变化'} 请关闭此窗口后重新选择。`;
+        }
         setModalStatus(refs.moveStatus, error.message || '移动失败', 'error');
     } finally {
+        if (state.move.requestId !== requestId) return;
         state.move.busy = false;
         if (refs.moveSubmitBtn) {
-            refs.moveSubmitBtn.disabled = false;
+            refs.moveSubmitBtn.disabled = !state.move.optionsReady;
             refs.moveSubmitBtn.textContent = '移动';
         }
     }
