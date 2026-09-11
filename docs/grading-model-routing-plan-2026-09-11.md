@@ -87,3 +87,13 @@
 ## 8. 工作量与顺序
 
 阶段一+二约 6–8 个文件、新增/修改约 25 个单测；阶段三 2 个文件；阶段四五各半天。顺序：策略层单测 → 策略实现 → AI 服务层 → 仲裁 → 本地回放验证（复用 `/tmp/gbench` 数据）→ 部署 → 观察。全程不改数据库结构，无迁移。
+
+## 9. 阶段五实施记录（2026-09-11 14:20–14:35）
+
+- 提交 `269fee7e feat(ai): tier grading models by assessment kind`，已推送 `origin/dev`。
+- 线上 `docker.env`（备份 `docker.env.bak-20260911`）：`DEEPSEEK_MODEL_THINKING/DEEP_TEXT=deepseek-flash`、`DEEPSEEK_MAX_CONCURRENT_REQUESTS=8`、仲裁限额 40/10、新增 `AI_GRADING_STANDARD_PROVIDER=deepseek`、`AI_GRADING_STANDARD_MODEL=deepseek-flash`、`AI_TEXT_ASSESSMENT_PROVIDER=volcengine`、`AI_PROFILE_VISION_GRADING_FLASH_MAX_OUTPUT_TOKENS=32768`。
+- 部署方式：从冻结的 LF 工作树 `.codex-temp/grading-tier-release/frozen-269fee7e`（`git -c core.autocrlf=false worktree add`）运行 `deploy_remote.ps1 -QuiesceForMigration -MigrationReport <dsh-release/final-native-7131c35f/native-report.json> -MigrationBackup <db-inputs/agent-dsh-20260910-095830.dump>`。原因：① 原生 PG 门禁按 64 个 DB 源码文件的 SHA-256 绑定旧报告，CRLF 工作树会全部不匹配；本次未改任何 DB 源码，旧报告在 LF 检出下校验通过；② DSH 集成钩子 `deployment/dsh/deploy_integration.sh` 要求每次部署都走停写迁移流程。停服约 4 分钟，`DEPLOY_DONE`，release `20260911-142034-b00fdd8ca441`。
+- 健康检查：`/api/ai/health` 全部档位 `available`，`vision_homework/legacy_unknown/personal_stage → deepseek-flash 32k(+volcengine 降级)`，`vision_midterm/final、text_assessment → 豆包 pro`，`review_quota 40/10`，`provider_max_concurrent deepseek=8`。
+- 真实验证：`force_submit_submission_for_ai_grading(4310)` → 主评 deepseek-flash 22.3 s、¥0.039（新价表 `deepseek-2026-09-11`）；触发 `empty_text_with_attachments` 仲裁，豆包 pro 184 s、¥0.36；终分 76 与部署前一致，回调成功。
+- 观察项（3 天）：`ai_usage.jsonl` 中 `grading:*` 的模型分布/耗时/格式重试；`:adjudication` 次数与费用。**注意**：答题框留空只传截图的学生很多时，仲裁费用（≈0.36 元/次）会高于 flash 主评本身，日限 40/10 会兜底；若某班级频繁触顶，考虑把 `empty_text_with_attachments` 改为只标记 needs_review 不仲裁。
+- 回滚：`AI_GRADING_STANDARD_PROVIDER=volcengine` + `AI_TEXT_ASSESSMENT_PROVIDER=deepseek` 后 `docker compose ... up -d ai`。
