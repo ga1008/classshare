@@ -3,7 +3,7 @@
 线上批改链路（`ai_assistant.py` 批改提示词 + 确定性客观题覆盖 + 结果校验）被原样回放到多家模型上，样本为线上 7 份真实提交（0/5/9/6+代码/18 张图，文本 2.4k–18k 字）。
 人工基准由 Claude 逐题批改（含逐张看图）后给出；线上分为当时生产结果（旧提交由 deepseek-v4-pro 纯文本或火山 Responses API 批改）。
 
-- 复现脚本：`tools/experiments/grading_model_bench.py`（数据目录含 payloads.json + 提交文件，不进 git）。
+- 复现脚本：`tools/grading_bench/grading_model_bench.py`（数据目录含 payloads.json + 提交文件，不进 git）。
 - 费用按 2026-09 官方牌价（高峰）重算：deepseek-flash 2/8 元/M（缓存命中 0.04），deepseek-v4-pro 9/27，doubao-seed-2.1-pro 6/30（缓存 1.2），doubao-seed-2.0-lite 0.6/3.6，glm-4.6v 1/3，glm-4.6v-flash 免费，qwen3.7-plus 1.6/6.4，qwen3.6-flash 1.2/7.2。
 - **代码里的 DeepSeek 价表有误**：`ai_assistant._estimate_provider_cost_cny` 把 flash 记为 3/9 元/M（官方 2/8），高估 50%；pro 的 3 倍换算恰好正确。
 - SiliconFlow key 有效但 `Qwen/Qwen3-VL-235B-A22B-Thinking` 已被禁用（403 Model disabled）；千问 key 仅本地 .env 有，线上没有。

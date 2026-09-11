@@ -1,6 +1,6 @@
 # 批改模型分级路由改进计划（2026-09-11）
 
-> **实施状态（2026-09-11）**：阶段一～四已按本文落地（`ai_model_policy.py`、`ai_assistant.py`、`docker.env.example`、单测 `test_ai_execution_profiles`/`test_ai_execution_health`/`test_ai_multimodal_routing` 共 71 例通过）。用户确认的细节：未分类与破境试炼走 flash；非批改多模态不动；仲裁限额 40/10。与计划的差异：`_grading_adjudication_reasons` 里“证据冲突涉及高分题”的细化未做（保留“冲突非空即触发”）；`empty_text_with_attachments` 只在存在答题框且为空并带附件时触发，且不作为仲裁后的残留风险；env 的 `AI_*_PRIORITY` 顺序对批改/文本路由改为无效（厂商由业务档位决定）。本地端到端回放（`tools/experiments/replay_grading_pipeline.py`，4310/1591/1575）：flash 主评 76/85/78，风险信号触发豆包 pro 仲裁（1591 复核 83），无格式失败、无降级。阶段五（部署、线上 env、观察）记录见文末。
+> **实施状态（2026-09-11）**：阶段一～四已按本文落地（`ai_model_policy.py`、`ai_assistant.py`、`docker.env.example`、单测 `test_ai_execution_profiles`/`test_ai_execution_health`/`test_ai_multimodal_routing` 共 71 例通过）。用户确认的细节：未分类与破境试炼走 flash；非批改多模态不动；仲裁限额 40/10。与计划的差异：`_grading_adjudication_reasons` 里“证据冲突涉及高分题”的细化未做（保留“冲突非空即触发”）；`empty_text_with_attachments` 只在存在答题框且为空并带附件时触发，且不作为仲裁后的残留风险；env 的 `AI_*_PRIORITY` 顺序对批改/文本路由改为无效（厂商由业务档位决定）。本地端到端回放（`tools/grading_bench/replay_grading_pipeline.py`，4310/1591/1575）：flash 主评 76/85/78，风险信号触发豆包 pro 仲裁（1591 复核 83），无格式失败、无降级。阶段五（部署、线上 env、观察）记录见文末。
 
 依据：`docs/ai-grading-model-benchmark-2026-09-11.md` 横评结论 + 用户决策：**期末考试、期中测验等重要场合用豆包 2.1 pro，其余所有批改场合用 DeepSeek 4.1 flash（`deepseek-flash`）**。
 
@@ -73,7 +73,7 @@
 
 1. 部署前：查 `ai_jobs` 是否有 `queued/running/leased` 的 `ai_grading`（有则等其跑完，避免快照兼容路径首次上线就承压）。
 2. 按 `deploy-workflow` 记忆的标准命令部署；随后 SSH 改 `docker.env` 并 `docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d ai app`。
-3. 验证：① `/api/ai/health` 的 execution policy profiles 全部 `available`，homework 档显示 deepseek；② 用横评脚本 `tools/experiments/grading_model_bench.py` 对 4310/1591 再跑一次 flash 档，确认 32k 与软规范化后无校验失败；③ 在测试班级或征得教师同意的一份作业上 `force_submit_submission_for_ai_grading`，观察 `ai_usage.jsonl` 出现 `model=deepseek-flash, task_type=multimodal_grading`，耗时 < 90 s，`cost_estimate` 用新价表；④ 期中/期末类型的提交仍显示豆包 pro。
+3. 验证：① `/api/ai/health` 的 execution policy profiles 全部 `available`，homework 档显示 deepseek；② 用横评脚本 `tools/grading_bench/grading_model_bench.py` 对 4310/1591 再跑一次 flash 档，确认 32k 与软规范化后无校验失败；③ 在测试班级或征得教师同意的一份作业上 `force_submit_submission_for_ai_grading`，观察 `ai_usage.jsonl` 出现 `model=deepseek-flash, task_type=multimodal_grading`，耗时 < 90 s，`cost_estimate` 用新价表；④ 期中/期末类型的提交仍显示豆包 pro。
 4. 观察 3 天：统计 `ai_usage.jsonl` 中 grading 的模型分布、平均耗时、格式重试比例、仲裁次数、降级次数；若格式重试 > 15% 或降级 > 5%，回到 §3-5 加规则。
 5. 回滚：`AI_GRADING_STANDARD_PROVIDER=volcengine` + 重启 ai 容器即恢复全部豆包 pro，无需回退代码。
 
