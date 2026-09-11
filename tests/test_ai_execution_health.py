@@ -22,7 +22,8 @@ class AIExecutionHealthTests(unittest.IsolatedAsyncioTestCase):
         self.stack.enter_context(mock.patch.object(ai, "AI_DURABLE_JOBS_ENABLED", False))
         self.stack.enter_context(mock.patch.object(ai, "ENABLED_PLATFORMS", ["deepseek", "volcengine"]))
         self.stack.enter_context(mock.patch.object(ai, "PLATFORMS_CONFIG", {
-            "deepseek": {"enabled": True, "api_key": "synthetic-secret-marker", "max_concurrency": 4, "supports": {}},
+            "deepseek": {"enabled": True, "api_key": "synthetic-secret-marker", "max_concurrency": 4,
+                "supports": {"images": True, "authoritative_grading": True}},
             "volcengine": {"enabled": True, "api_key": "synthetic-secret-marker", "max_concurrency": 2,
                 "base_url": "https://synthetic-secret-marker.invalid", "supports": {"images": True, "authoritative_grading": True}},
         }))
@@ -37,15 +38,20 @@ class AIExecutionHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(policy["ok"])
         self.assertEqual(ai.AI_EXECUTION_POLICY_VERSION, policy["policy_version"])
         profiles = {item["case"]: item for item in policy["profiles"]}
-        for name, effort, cap in (("vision_homework", "low", 8192), ("vision_midterm", "high", 16384),
-                ("vision_final", "high", 16384), ("vision_personal_stage", "high", 16384),
-                ("vision_legacy_unknown", "high", 16384), ("vision_exam_generation", "high", 16384),
-                ("vision_adjudication", "high", 16384)):
-            self.assertEqual(("doubao-seed-2-1-pro-260628", effort, cap),
-                (profiles[name]["model"], profiles[name]["reasoning_effort"], profiles[name]["max_output_tokens_total"]))
+        for name, effort, cap in (("vision_midterm", "high", 16384), ("vision_final", "high", 16384),
+                ("vision_exam_generation", "high", 16384), ("vision_adjudication", "high", 16384)):
+            self.assertEqual(("doubao-seed-2-1-pro-260628", "volcengine", effort, cap),
+                (profiles[name]["model"], profiles[name]["provider"], profiles[name]["reasoning_effort"], profiles[name]["max_output_tokens_total"]))
+        for name in ("vision_homework", "vision_personal_stage", "vision_legacy_unknown"):
+            self.assertEqual(("deepseek-flash", "deepseek", "vision_grading_flash", "max", 32768, ["volcengine"]),
+                (profiles[name]["model"], profiles[name]["provider"], profiles[name]["profile_id"], profiles[name]["reasoning_effort"],
+                 profiles[name]["max_output_tokens_total"], profiles[name]["allowed_fallbacks"]))
         self.assertEqual("doubao-seed-2-0-lite-260428", profiles["vision_edge"]["model"])
-        self.assertEqual(("high", "max", "disabled"), (profiles["text_deep"]["reasoning_effort"],
-            profiles["text_assessment"]["reasoning_effort"], profiles["text_fast"]["thinking_type"]))
+        self.assertEqual(("doubao-seed-2-1-pro-260628", "volcengine", "high"),
+            (profiles["text_assessment"]["model"], profiles["text_assessment"]["provider"], profiles["text_assessment"]["reasoning_effort"]))
+        self.assertEqual(("deepseek-flash", "max"), (profiles["text_homework"]["model"], profiles["text_homework"]["reasoning_effort"]))
+        self.assertEqual(("high", "deepseek-flash", "disabled"), (profiles["text_deep"]["reasoning_effort"],
+            profiles["text_deep"]["model"], profiles["text_fast"]["thinking_type"]))
         self.assertEqual("process", policy["capacity"]["scope"])
         self.assertEqual(6, policy["capacity"]["global_max_concurrent"])
         self.assertEqual({}, policy["capacity"]["provider_reserved"])
@@ -56,7 +62,7 @@ class AIExecutionHealthTests(unittest.IsolatedAsyncioTestCase):
         self.db.assert_not_called()
 
     async def test_effective_caps_follow_current_configuration_not_hardcoded_health_labels(self):
-        with mock.patch.dict(os.environ, {"AI_PROFILE_VISION_PRO_LOW_MAX_OUTPUT_TOKENS": "12000",
+        with mock.patch.dict(os.environ, {"AI_PROFILE_VISION_GRADING_FLASH_MAX_OUTPUT_TOKENS": "12000",
                 "AI_STRUCTURED_OUTPUT_MEDIUM_MAX_TOKENS": "20000", "AI_STRUCTURED_OUTPUT_LARGE_MAX_TOKENS": "30000"}):
             policy = (await ai.internal_health())["model_routing"]["execution_policy"]
         self.assertTrue(policy["ok"])
@@ -65,8 +71,17 @@ class AIExecutionHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([12000, 20000, 30000],
             [tier["max_output_tokens_total"] for tier in policy["structured_output_tiers"]["grading_v1"]])
 
+    async def test_rollback_switch_restores_doubao_for_standard_grading(self):
+        with mock.patch.dict(os.environ, {"AI_GRADING_STANDARD_PROVIDER": "volcengine", "AI_TEXT_ASSESSMENT_PROVIDER": "deepseek"}):
+            policy = (await ai.internal_health())["model_routing"]["execution_policy"]
+        self.assertTrue(policy["ok"])
+        profiles = {item["case"]: item for item in policy["profiles"]}
+        self.assertEqual(("doubao-seed-2-1-pro-260628", "vision_pro_low", "low"),
+            (profiles["vision_homework"]["model"], profiles["vision_homework"]["profile_id"], profiles["vision_homework"]["reasoning_effort"]))
+        self.assertEqual(("deepseek", "max"), (profiles["text_assessment"]["provider"], profiles["text_assessment"]["reasoning_effort"]))
+
     async def test_invalid_profile_or_old_priority_marks_unavailable_without_echoing_value(self):
-        with mock.patch.dict(os.environ, {"AI_TEXT_DEEP_PRIORITY": "qwen",
+        with mock.patch.dict(os.environ, {"AI_GRADING_STANDARD_MODEL": "synthetic-secret-marker",
                 "AI_VISION_PRO_MODEL": "synthetic-secret-marker"}):
             response = await ai.internal_health()
         policy = response["model_routing"]["execution_policy"]
@@ -74,6 +89,7 @@ class AIExecutionHealthTests(unittest.IsolatedAsyncioTestCase):
         profiles = {item["case"]: item for item in policy["profiles"]}
         self.assertFalse(profiles["text_assessment"]["available"])
         self.assertEqual("invalid_execution_configuration", profiles["vision_homework"]["error"])
+        self.assertEqual("invalid_execution_configuration", profiles["vision_final"]["error"])
         self.assertNotIn("synthetic-secret-marker", json.dumps(response))
 
     async def test_database_health_failure_does_not_echo_connection_string(self):

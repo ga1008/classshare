@@ -53,10 +53,13 @@ from classroom_app.services.ai_model_policy import (
     AI_TASK_TYPES,
     AI_TASK_VISION_INTERACTIVE,
     AI_TASK_VISION_OCR,
+    DEEPSEEK_FLASH_MODEL,
     DEEPSEEK_PRO_MODEL,
     DEEPSEEK_TEXT_MODELS,
     MULTIMODAL_TASK_TYPES,
+    STANDARD_GRADING_PROFILE,
     TEXT_TASK_TYPES,
+    allowed_providers_for_task,
     capability_for_task_type as _policy_capability_for_task_type,
     configured_provider_order,
     normalize_ai_task_type as _policy_normalize_ai_task_type,
@@ -98,7 +101,13 @@ from classroom_app.services.exam_json_service import normalize_exam_scoring_payl
 from classroom_app.services.ai_usage_budget_service import (
     reserve_grading_review, mark_grading_review_sent, finish_grading_review, release_unsent_grading_review,
 )
-from classroom_app.services.grading_feedback_service import normalize_grading_result, validate_ai_grading_result
+from classroom_app.services.grading_feedback_service import (
+    QUESTION_DEDUCTION_MAX_CHARS,
+    QUESTION_EVALUATION_MAX_CHARS,
+    SUMMARY_MAX_CHARS,
+    normalize_grading_result,
+    validate_ai_grading_result,
+)
 
 # --- AI 平台 SDK ---
 try:
@@ -224,8 +233,10 @@ AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
 )
 AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 AI_GRADING_ADJUDICATION_ENABLED = _read_bool_env("AI_GRADING_ADJUDICATION_ENABLED", True)
-AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", default=10))
-AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", default=3))
+AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", default=40))
+AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", default=10))
+# Primary grading tiers whose risky results may escalate to the Doubao pro adjudicator.
+ADJUDICABLE_GRADING_PROFILES = frozenset({"vision_pro_low", STANDARD_GRADING_PROFILE})
 AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD = min(
     1.0,
     max(0.0, _read_float_env("AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD", 0.65)),
@@ -274,19 +285,28 @@ PLATFORMS_CONFIG = {
         "concurrency_limit_name": "DEEPSEEK_MAX_CONCURRENT_REQUESTS",
         "models": {
             "standard": os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-flash"),
-            "thinking": os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
-            "vision": None
+            # deepseek-v4-pro is routed to V4.1 Flash by DeepSeek from 2026-09-14.
+            "thinking": os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-flash"),
+            # Only deepseek-flash accepts images; used for standard (non midterm/final) grading.
+            "vision": os.getenv("AI_GRADING_STANDARD_MODEL", "deepseek-flash"),
         },
         "task_models": {
             AI_TASK_FAST_TEXT: os.getenv("DEEPSEEK_MODEL_FAST_TEXT") or os.getenv("DEEPSEEK_MODEL_STANDARD", "deepseek-flash"),
-            AI_TASK_DEEP_TEXT: os.getenv("DEEPSEEK_MODEL_DEEP_TEXT") or os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-v4-pro"),
+            AI_TASK_DEEP_TEXT: os.getenv("DEEPSEEK_MODEL_DEEP_TEXT") or os.getenv("DEEPSEEK_MODEL_THINKING", "deepseek-flash"),
             AI_TASK_LIGHT_MULTIMODAL: None,
             AI_TASK_DEEP_MULTIMODAL: None,
+            AI_TASK_MULTIMODAL_GRADING: os.getenv("AI_GRADING_STANDARD_MODEL", "deepseek-flash"),
         },
         "can_force_json": {
-            "standard": True, "thinking": True, "vision": False
+            "standard": True, "thinking": True, "vision": True
         },
         "type": "openai",
+        "supports": {
+            "images": True,
+            "native_pdf": False,
+            "structured_json": True,
+            "authoritative_grading": True,
+        },
     },
     "siliconflow": {
         "enabled": os.getenv("SILICONFLOW_ENABLED", "False").lower() == "true",
@@ -495,17 +515,19 @@ def _build_model_routes(
     preferred_platform: Optional[str] = None,
     business_context: AIBusinessContext | dict[str, Any] | None = None,
     execution_snapshot: dict[str, Any] | None = None,
+    plan_override: AIExecutionPlan | None = None,
 ) -> list[AIModelRoute]:
     normalized_task_type = _normalize_ai_task_type(task_type, capability)
     effective_capability = _capability_for_task_type(normalized_task_type, capability)
-    plan = resolve_execution_plan(normalized_task_type, effective_capability, business_context, execution_snapshot=execution_snapshot)
-    platform_order = provider_order_for_task(normalized_task_type, effective_capability)
+    plan = plan_override or resolve_execution_plan(normalized_task_type, effective_capability, business_context, execution_snapshot=execution_snapshot)
     if preferred_platform and preferred_platform != plan.provider:
         raise ValueError("Preferred provider is outside the business execution plan")
     routes: list[AIModelRoute] = []
 
-    for platform_name in platform_order:
-        if platform_name != plan.provider:
+    # The business plan picks the provider; deployment priority variables can
+    # neither widen the hard allowlist nor silently exclude the planned provider.
+    for platform_name in [plan.provider]:
+        if platform_name not in allowed_providers_for_task(normalized_task_type, effective_capability):
             continue
         if not platform_name or platform_name not in PLATFORMS_CONFIG:
             continue
@@ -1223,9 +1245,13 @@ def _estimate_provider_cost_cny(
                     price_basis = "peak_conservative_request_window" if peak else "off_peak_request_window"
             except (TypeError, ValueError, OverflowError):
                 pass
-        scale = (3.0 if model_name == DEEPSEEK_PRO_MODEL else 1.0) * (1.0 if peak else 0.5)
-        input_price, cached_price, output_price = 3.0 * scale, 0.1 * scale, 9.0 * scale
-        return {"currency": "CNY", "estimated_cost": round(((prompt - cached) * input_price + cached * cached_price + completion * output_price) / 1_000_000, 8), "prompt_tokens": prompt, "completion_tokens": completion, "cached_input_tokens": cached if cache_known else None, "cache_usage_reported": cache_known, "assumed_cached_input_tokens": cached, "input_price_per_million": input_price, "cached_price_per_million": cached_price, "output_price_per_million": output_price, "price_tier": price_basis, "model": model_name, "price_version": "deepseek-2026-09-07"}
+        # Official list prices (CNY per million tokens, peak): flash 2 / 0.04 / 8, pro 9 / 0.30 / 27.
+        scale = 1.0 if peak else 0.5
+        if model_name == DEEPSEEK_PRO_MODEL:
+            input_price, cached_price, output_price = 9.0 * scale, 0.30 * scale, 27.0 * scale
+        else:
+            input_price, cached_price, output_price = 2.0 * scale, 0.04 * scale, 8.0 * scale
+        return {"currency": "CNY", "estimated_cost": round(((prompt - cached) * input_price + cached * cached_price + completion * output_price) / 1_000_000, 8), "prompt_tokens": prompt, "completion_tokens": completion, "cached_input_tokens": cached if cache_known else None, "cache_usage_reported": cache_known, "assumed_cached_input_tokens": cached, "input_price_per_million": input_price, "cached_price_per_million": cached_price, "output_price_per_million": output_price, "price_tier": price_basis, "model": model_name, "price_version": "deepseek-2026-09-11"}
     if model_name and platform_name == "volcengine":
         from classroom_app.services.ai_model_policy import DOUBAO_PRO_MODEL, DOUBAO_LITE_MODEL
         input_key = "prompt_tokens" if "prompt_tokens" in provider_usage else "input_tokens"
@@ -1519,6 +1545,7 @@ GRADING_SYSTEM_PROMPT = """
 6. 如果输入中包含【内部个性化支持参考】，它只用于调整评语语气、详略和鼓励方式，不是评分依据。严禁在 summary、deduction_points、evaluation 或任何字段中提到后台来源、内部个性化参考、隐藏处理过程或相关信息，也不要让学生感觉自己被后台分析。
 7. 必须核对正文、代码、截图和不同附件之间的变量、角色、IP、计算结果与完成状态；发现矛盾时写入 evidence_conflicts，并将 needs_review 设为 true。不得因为文件数量多或页面看起来完整就直接给高分。
 8. confidence 反映“证据是否足以支持当前分数”，不是对学生能力的评价；证据缺失、模糊或冲突时必须低于 0.65。
+9. 上机操作题若答题框为空、只上传了截图：题目要求的文字记录、数据填写和分析说明部分一律不得给分，只能给截图证明操作已完成的那部分分值，并在 deduction_points 写明“答题框未填写”。截图齐全不等于题目完成。
 例如:
 {
   "score": 85,
@@ -2086,6 +2113,7 @@ def _public_execution_policy_health() -> dict[str, Any]:
         ("vision_final", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "assessment_kind": "final"}),
         ("vision_legacy_unknown", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading"}),
         ("vision_personal_stage", AI_TASK_MULTIMODAL_GRADING, {"operation": "grading", "source_feature": "personal_stage"}),
+        ("text_homework", AI_TASK_DEEP_TEXT, {"operation": "grading", "assessment_kind": "homework"}),
         ("vision_exam_generation", AI_TASK_DEEP_MULTIMODAL, {"operation": "generation", "intended_assessment_kind": "final"}),
         ("vision_adjudication", AI_TASK_MULTIMODAL_ADJUDICATION, {"operation": "adjudication", "assessment_kind": "homework"}),
     )
@@ -2510,13 +2538,25 @@ def is_image_file(file_path: Path) -> bool:
         return False
 
 
-def file_to_base64_url(file_path: Path) -> str:
+# DeepSeek caps each side at 4096 px once a request carries 15 or more images.
+MANY_IMAGES_THRESHOLD = 15
+MANY_IMAGES_MAX_SIDE = 4096
+
+
+def file_to_base64_url(file_path: Path, max_side: int | None = None) -> str:
     try:
         with open(file_path, "rb") as f:
             data = f.read()
         # Use Pillow to get mime type more reliably
         img = Image.open(file_path)
         mime = Image.MIME.get(img.format, "image/jpeg")
+        if max_side and max(img.size) > max_side:
+            import io as _io
+            scaled = img.convert("RGB") if img.mode not in {"RGB", "L"} else img.copy()
+            scaled.thumbnail((max_side, max_side))
+            buffer = _io.BytesIO()
+            scaled.save(buffer, format="JPEG", quality=90)
+            data, mime = buffer.getvalue(), "image/jpeg"
         img.close()  # Close the image file handle
         b64 = base64.b64encode(data).decode('utf-8')
         return f"data:{mime};base64,{b64}"
@@ -2576,6 +2616,26 @@ def _build_hidden_grading_profile_prompt(student_profile_context: str | None) ->
         "不能作为加分或扣分依据，也不能在反馈中透露来源、测评、后台判断或隐藏规则等信息。\n"
         f"{context[:4000]}"
     )
+
+
+def _has_blank_answers_with_attachments(answers_json: str | None) -> bool:
+    """True when some question has uploaded attachments but an empty typed answer."""
+    if not answers_json:
+        return False
+    try:
+        payload = json.loads(answers_json) if isinstance(answers_json, str) else answers_json
+    except (TypeError, ValueError):
+        return False
+    answers = payload.get("answers") if isinstance(payload, dict) else payload
+    if not isinstance(answers, list):
+        return False
+    for item in answers:
+        if not isinstance(item, dict):
+            continue
+        attachments = item.get("attachments")
+        if isinstance(attachments, list) and attachments and not str(item.get("answer") or "").strip():
+            return True
+    return False
 
 
 def _format_answer_attachment_lines(attachments: list[Any]) -> str:
@@ -2745,9 +2805,52 @@ def _grading_expected_question_count(job: GradingJob) -> int | None:
     return AIBusinessContext.from_mapping(job.business_context).expected_question_count
 
 
+def _trim_feedback_text(value: Any, limit: int) -> Any:
+    """Shorten prose at a sentence boundary; never touches scores or structure."""
+    if not isinstance(value, str):
+        return value
+    text = _re.sub(r"\s+", " ", value).strip()
+    if len(text) <= limit:
+        return value
+    head = text[:limit]
+    cut = max(head.rfind(mark) for mark in ("。", "；", "！", "？", ";", "."))
+    return (head[:cut + 1] if cut >= limit // 2 else head).rstrip()
+
+
+def _soften_grading_result_format(raw_result: dict[str, Any]) -> dict[str, Any]:
+    """Display-layer trimming so over-long prose does not cost a paid repair call.
+
+    Substantive checks (scores, coverage, zero-score deduction notes) still fail
+    hard in validate_ai_grading_result.
+    """
+    if not isinstance(raw_result, dict):
+        return raw_result
+    softened = dict(raw_result)
+    softened["summary"] = _trim_feedback_text(softened.get("summary"), SUMMARY_MAX_CHARS)
+    questions = softened.get("questions")
+    if isinstance(questions, list):
+        fixed = []
+        for item in questions:
+            if not isinstance(item, dict):
+                fixed.append(item)
+                continue
+            question = dict(item)
+            question["evaluation"] = _trim_feedback_text(question.get("evaluation"), QUESTION_EVALUATION_MAX_CHARS)
+            question["deduction_points"] = _trim_feedback_text(question.get("deduction_points"), QUESTION_DEDUCTION_MAX_CHARS)
+            try:
+                full_marks = question.get("max_score") is not None and float(question.get("score")) >= float(question.get("max_score"))
+            except (TypeError, ValueError):
+                full_marks = False
+            if full_marks and not str(question.get("evaluation") or "").strip():
+                question["evaluation"] = "达标"
+            fixed.append(question)
+        softened["questions"] = fixed
+    return softened
+
+
 def _validate_grading_result_for_job(raw_result: dict[str, Any], job: GradingJob) -> dict[str, Any]:
     """One result contract for main calls, repairs, high review and recovery."""
-    result = validate_ai_grading_result(raw_result, answers_json=job.answers_json)
+    result = validate_ai_grading_result(_soften_grading_result_format(raw_result), answers_json=job.answers_json)
     targets = _grading_teacher_question_targets(job)
     expected_count = len(targets) if targets else AIBusinessContext.from_mapping(job.business_context).expected_question_count
     questions = result["questions"]
@@ -3760,6 +3863,16 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
         except Exception:
             return ""
 
+    image_total = sum(1 for item in files if isinstance(item, dict) and item.get("category") == "image")
+    image_max_side = MANY_IMAGES_MAX_SIDE if image_total >= MANY_IMAGES_THRESHOLD else None
+
+    def _image_data_url(file_path: Path, file_info: dict[str, Any]) -> str:
+        # Pages rendered from PDFs / images embedded in documents carry a ready data URL.
+        return file_info.get("_embedded_data_url") or file_to_base64_url(file_path, max_side=image_max_side)
+
+    def _is_image_entry(file_path: Path, file_info: dict[str, Any]) -> bool:
+        return bool(file_info.get("_embedded_data_url")) or is_image_file(file_path)
+
     if platform_type == "volcengine":
         content = []
         text_content = ""
@@ -3778,9 +3891,9 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
             if file_info.get("category") == "metadata_only":
                 text_content += _format_metadata_only_grading_file(file_info)
                 continue
-            if is_image_file(file_path):
+            if _is_image_entry(file_path, file_info):
                 text_content += f"- 图片文件: {display_name}\n"
-                b64_url = file_to_base64_url(file_path)
+                b64_url = _image_data_url(file_path, file_info)
                 if b64_url:
                     content.append({
                         "type": "text",
@@ -3813,8 +3926,8 @@ def build_vision_messages(rubric: str, files: List[Any], platform_type: str,
             if file_info.get("category") == "metadata_only":
                 content.append({"type": "text", "text": _format_metadata_only_grading_file(file_info)})
                 continue
-            if is_image_file(file_path):
-                b64_url = file_to_base64_url(file_path)
+            if _is_image_entry(file_path, file_info):
+                b64_url = _image_data_url(file_path, file_info)
                 if b64_url:
                     content.append({
                         "type": "text",
@@ -4222,30 +4335,34 @@ async def _call_ai_platform(
     attempted_platforms: set[str] = set()
     last_exc: Optional[BaseException] = None
 
-    while True:
-        remaining = [
-            route for route in candidate_routes
-            if route.route_id not in attempted_platforms
-        ]
-        if not remaining:
-            break
-        async with ai_model_router.route(remaining, task_priority=task_priority) as selected_route:
+    async def _dispatch(routes: list[AIModelRoute], *, label: Optional[str]) -> Any:
+        async with ai_model_router.route(routes, task_priority=task_priority) as selected_route:
             attempted_platforms.add(selected_route.route_id)
+            return await _do_provider_call(
+                selected_route,
+                messages,
+                require_json_output=require_json_output,
+                allow_json_array=allow_json_array,
+                parse_json_response=parse_json_response,
+                task_priority=task_priority,
+                task_label=label,
+                tools=tools,
+                tool_choice=tool_choice,
+                return_tool_calls=return_tool_calls,
+                effort=effort,
+                metadata_out=metadata_out,
+            )
+
+    try:
+        while True:
+            remaining = [
+                route for route in candidate_routes
+                if route.route_id not in attempted_platforms
+            ]
+            if not remaining:
+                break
             try:
-                return await _do_provider_call(
-                    selected_route,
-                    messages,
-                    require_json_output=require_json_output,
-                    allow_json_array=allow_json_array,
-                    parse_json_response=parse_json_response,
-                    task_priority=task_priority,
-                    task_label=task_label,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    return_tool_calls=return_tool_calls,
-                    effort=effort,
-                    metadata_out=metadata_out,
-                )
+                return await _dispatch(remaining, label=task_label)
             except Exception as exc:
                 last_exc = exc
                 if (
@@ -4254,14 +4371,70 @@ async def _call_ai_platform(
                 ):
                     raise
                 print(
-                    f"[AI ROUTER] platform={selected_route.platform_name} failed "
+                    f"[AI ROUTER] platform={remaining[0].platform_name} failed "
                     f"({type(exc).__name__}: {getattr(exc, 'detail', exc)}); "
                     f"falling back to next platform. tried={sorted(attempted_platforms)}"
                 )
+    except Exception as primary_exc:
+        fallback_routes = _bounded_fallback_routes(
+            candidate_routes, primary_exc, capability=capability, task_type=task_type, business_context=business_context,
+        )
+        if not fallback_routes:
+            raise
+        print(
+            f"[AI ROUTER] {candidate_routes[0].platform_name}/{candidate_routes[0].model_name} could not produce a result "
+            f"({type(primary_exc).__name__}: {getattr(primary_exc, 'detail', primary_exc)}); "
+            f"one bounded fallback to {fallback_routes[0].platform_name}/{fallback_routes[0].model_name}."
+        )
+        if metadata_out is not None:
+            metadata_out["fallback_from"] = candidate_routes[0].execution_plan.to_dict() if candidate_routes[0].execution_plan else candidate_routes[0].platform_name
+        return await _dispatch(fallback_routes, label=f"{task_label}:fallback" if task_label else "fallback")
 
     if last_exc is not None:
         raise last_exc
     raise HTTPException(500, f"没有可用于 '{normalized_task_type}' 任务的AI平台。")
+
+
+def _fallback_eligible_error(exc: BaseException) -> bool:
+    """Only 'this provider cannot finish this request' errors may cross providers.
+
+    Incomplete/empty output (thinking budget exhausted) and 4xx request rejections
+    (image count/size limits) qualify; auth, quota and transport errors do not.
+    """
+    if isinstance(exc, HTTPException):
+        detail = str(getattr(exc, "detail", "") or "")
+        return exc.status_code == 502 or (exc.status_code == 500 and "空内容" in detail)
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status in {400, 413, 422}
+
+
+def _bounded_fallback_routes(
+    candidate_routes: list[AIModelRoute],
+    exc: BaseException,
+    *,
+    capability: str,
+    task_type: Optional[str],
+    business_context: dict[str, Any] | AIBusinessContext | None,
+) -> list[AIModelRoute]:
+    """Resolve the plan's declared fallback tier (currently: standard grading → Doubao pro low)."""
+    plan = candidate_routes[0].execution_plan if candidate_routes else None
+    if not plan or not plan.allowed_fallbacks or plan.profile_id != STANDARD_GRADING_PROFILE or not _fallback_eligible_error(exc):
+        return []
+    routes: list[AIModelRoute] = []
+    for provider in plan.allowed_fallbacks:
+        try:
+            fallback_plan = resolve_execution_plan(task_type, capability, business_context,
+                environ={**os.environ, "AI_GRADING_STANDARD_PROVIDER": provider})
+            if plan.output_schema:
+                fallback_plan = size_structured_execution_plan(fallback_plan, schema=plan.output_schema,
+                    question_count=plan.expected_question_count)
+            routes.extend(_build_model_routes(capability, task_type=task_type, business_context=business_context,
+                plan_override=fallback_plan))
+        except (ValueError, TypeError) as resolve_exc:
+            print(f"[AI ROUTER] fallback plan for provider={provider} unavailable: {resolve_exc}")
+    return routes
 
 
 async def _call_ai_platform_chat_stream_generator(
@@ -5210,6 +5383,7 @@ def _grading_adjudication_reasons(
     image_count: int,
     format_repair_required: bool,
     answers_empty: bool = False,
+    blank_answers_with_attachments: bool = False,
 ) -> list[str]:
     reasons: list[str] = []
     confidence = result.get("confidence")
@@ -5219,8 +5393,9 @@ def _grading_adjudication_reasons(
         confidence_value = None
     if confidence_value is not None and confidence_value < AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD:
         reasons.append(f"low_confidence={confidence_value:.3f}")
-    if bool(result.get("needs_review")):
-        reasons.append("model_requested_review")
+    # A bare needs_review flag stays a teacher-facing marker (see
+    # _grading_review_metadata); it no longer spends a paid adjudication slot
+    # because deepseek-flash raises it on most image-heavy submissions.
     conflicts = result.get("evidence_conflicts")
     if isinstance(conflicts, list) and any(str(item or "").strip() for item in conflicts):
         reasons.append("evidence_conflict")
@@ -5237,6 +5412,11 @@ def _grading_adjudication_reasons(
         reasons.append("many_images_without_confidence")
     if format_repair_required:
         reasons.append("format_repair_required")
+    if blank_answers_with_attachments:
+        # A typed-answer box left empty next to uploaded screenshots: the cheaper
+        # tier tends to award the written-analysis marks anyway, so the high tier
+        # re-checks it once (this signal is not re-raised after adjudication).
+        reasons.append("empty_text_with_attachments")
     if answers_empty and image_count and _re.search(
         r"(?:未提交|没有提交|无作答|未作答|没有答案|未提供答案|答案为空|未上传|没有附件)",
         str(result.get("summary") or "") + " " + str(result.get("feedback_md") or ""),
@@ -5276,7 +5456,8 @@ async def _review_grading_result_if_needed(
     reasons = _grading_adjudication_reasons(result,
         image_count=sum(item.get("category") == "image" for item in grading_files),
         format_repair_required=format_repair_required,
-        answers_empty=not bool(_extract_answers_text(job.answers_json).strip()))
+        answers_empty=not bool(_extract_answers_text(job.answers_json).strip()),
+        blank_answers_with_attachments=_has_blank_answers_with_attachments(job.answers_json))
     profile = execution_metadata.get("profile_id") or (execution.get("execution_plan") or {}).get("profile_id")
 
     def defer(reason):
@@ -5298,7 +5479,7 @@ async def _review_grading_result_if_needed(
         return restored, dict(saved_review.get("execution_metadata") or {})
     if not reasons:
         return result, {}
-    if profile != "vision_pro_low":
+    if profile not in ADJUDICABLE_GRADING_PROFILES:
         return defer("manual_review_required")
     if not AI_GRADING_ADJUDICATION_ENABLED:
         return defer("automatic_review_disabled")
@@ -5560,8 +5741,9 @@ async def _build_grading_callback_data_impl(
                     known_risks = _grading_adjudication_reasons(raw_result,
                         image_count=sum(item.get("category") == "image" for item in grading_files),
                         format_repair_required=False,
-                        answers_empty=not bool(_extract_answers_text(job.answers_json).strip())) if isinstance(raw_result, dict) else []
-                    if known_risks and (execution.get("execution_plan") or {}).get("profile_id") == "vision_pro_low":
+                        answers_empty=not bool(_extract_answers_text(job.answers_json).strip()),
+                        blank_answers_with_attachments=_has_blank_answers_with_attachments(job.answers_json)) if isinstance(raw_result, dict) else []
+                    if known_risks and (execution.get("execution_plan") or {}).get("profile_id") in ADJUDICABLE_GRADING_PROFILES:
                         if budget:
                             budget.state["repair_candidate"] = {"result": copy.deepcopy(raw_result),
                                 "validation_error": validation_error,

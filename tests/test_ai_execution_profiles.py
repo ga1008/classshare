@@ -15,11 +15,14 @@ with mock.patch.object(dotenv, "load_dotenv", return_value=False), mock.patch.di
     import ai_assistant as ai
 
 from classroom_app.services.ai_model_policy import (
-    AIBusinessContext, DOUBAO_LITE_MODEL, DOUBAO_PRO_MODEL,
+    AIBusinessContext, DEEPSEEK_FLASH_MODEL, DOUBAO_LITE_MODEL, DOUBAO_PRO_MODEL,
     AI_TASK_DEEP_TEXT, AI_TASK_DOCUMENT_MULTIMODAL, AI_TASK_MULTIMODAL_GRADING,
-    AI_TASK_MULTIMODAL_ADJUDICATION, AI_TASK_VISION_INTERACTIVE,
+    AI_TASK_MULTIMODAL_ADJUDICATION, AI_TASK_VISION_INTERACTIVE, STANDARD_GRADING_PROFILE, TEXT_ASSESSMENT_PROFILE,
     AIOutputSizeError, resolve_execution_plan, size_structured_execution_plan,
 )
+
+# Pre-2026-09-11 tier table (Doubao pro low for homework, DeepSeek for text exams).
+LEGACY_ENV = {"AI_GRADING_STANDARD_PROVIDER": "volcengine", "AI_TEXT_ASSESSMENT_PROVIDER": "deepseek"}
 
 
 IMAGE_MESSAGES = [{"role": "user", "content": [
@@ -37,18 +40,21 @@ class ProfileResolutionTests(unittest.TestCase):
             ("exam_generation_v1", "generation", [(10, 8192), (11, 16384), (20, 16384), (21, 32768), (40, 32768)]),
         ):
             context = {"operation": operation, "assessment_kind": "homework"}
-            base = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ={})
+            base = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ=LEGACY_ENV)
             for count, cap in cases:
                 plan = size_structured_execution_plan(base, schema=schema, question_count=count, environ={})
                 self.assertEqual(cap, plan.max_output_tokens_total)
             with self.assertRaises(AIOutputSizeError):
                 size_structured_execution_plan(base, schema=schema, question_count=cases[-1][0] + 1, environ={})
+        flash = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {"operation": "grading", "assessment_kind": "homework"}, environ={})
+        for count in (1, 21, 41, 80):
+            self.assertEqual(32768, size_structured_execution_plan(flash, schema="grading_v1", question_count=count, environ={}).max_output_tokens_total)
         context = {"operation": "grading", "assessment_kind": "homework"}
-        base = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ={})
+        base = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ=LEGACY_ENV)
         plan = size_structured_execution_plan(base, schema="grading_v1", question_count=30,
             environ={"AI_STRUCTURED_OUTPUT_MEDIUM_MAX_TOKENS": "20000"})
         self.assertEqual(20000, plan.max_output_tokens_total)
-        restored = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ={}, execution_snapshot=plan.to_dict())
+        restored = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ=LEGACY_ENV, execution_snapshot=plan.to_dict())
         self.assertEqual(plan, size_structured_execution_plan(restored, schema="grading_v1", question_count=30,
             execution_snapshot=plan.to_dict(), environ={"AI_STRUCTURED_OUTPUT_MEDIUM_MAX_TOKENS": "22000"}))
         with self.assertRaises(AIOutputSizeError):
@@ -62,41 +68,86 @@ class ProfileResolutionTests(unittest.TestCase):
 
     def test_business_matrix_and_edge_cannot_promote_itself(self):
         cases = [
-            ({"operation": "grading", "assessment_kind": "homework"}, "low", DOUBAO_PRO_MODEL),
-            ({"operation": "grading", "assessment_kind": "midterm"}, "high", DOUBAO_PRO_MODEL),
-            ({"operation": "grading", "assessment_kind": "final"}, "high", DOUBAO_PRO_MODEL),
-            ({"operation": "grading"}, "high", DOUBAO_PRO_MODEL),
-            ({"operation": "grading", "source_feature": "personal_stage"}, "high", DOUBAO_PRO_MODEL),
-            ({"operation": "generation", "intended_assessment_kind": "midterm"}, "high", DOUBAO_PRO_MODEL),
-            ({"operation": "document"}, "low", DOUBAO_PRO_MODEL),
-            ({"operation": "chat", "source_feature": "blog", "assessment_kind": "final"}, "low", DOUBAO_LITE_MODEL),
+            ({"operation": "grading", "assessment_kind": "homework"}, "max", DEEPSEEK_FLASH_MODEL, STANDARD_GRADING_PROFILE, 32768),
+            ({"operation": "grading", "assessment_kind": "midterm"}, "high", DOUBAO_PRO_MODEL, "vision_assessment_high", 16384),
+            ({"operation": "grading", "assessment_kind": "final"}, "high", DOUBAO_PRO_MODEL, "vision_assessment_high", 16384),
+            ({"operation": "grading"}, "max", DEEPSEEK_FLASH_MODEL, STANDARD_GRADING_PROFILE, 32768),
+            ({"operation": "grading", "assessment_kind": "legacy_unknown"}, "max", DEEPSEEK_FLASH_MODEL, STANDARD_GRADING_PROFILE, 32768),
+            ({"operation": "grading", "source_feature": "personal_stage"}, "max", DEEPSEEK_FLASH_MODEL, STANDARD_GRADING_PROFILE, 32768),
+            ({"operation": "adjudication", "assessment_kind": "homework"}, "high", DOUBAO_PRO_MODEL, "vision_assessment_high", 16384),
+            ({"operation": "generation", "intended_assessment_kind": "midterm"}, "high", DOUBAO_PRO_MODEL, "vision_assessment_high", 16384),
+            ({"operation": "generation", "source_feature": "personal_stage"}, "high", DOUBAO_PRO_MODEL, "vision_assessment_high", 16384),
+            ({"operation": "document"}, "low", DOUBAO_PRO_MODEL, "vision_pro_low", 8192),
+            ({"operation": "chat", "source_feature": "blog", "assessment_kind": "final"}, "low", DOUBAO_LITE_MODEL, "vision_edge_low", 4096),
         ]
-        for context, effort, model in cases:
+        for context, effort, model, profile, cap in cases:
             with self.subTest(context=context):
                 plan = resolve_execution_plan(AI_TASK_DOCUMENT_MULTIMODAL, "vision", context, environ={})
-                self.assertEqual((effort, model), (plan.reasoning_effort, plan.model))
+                self.assertEqual((effort, model, profile, cap), (plan.reasoning_effort, plan.model, plan.profile_id, plan.max_output_tokens_total))
                 self.assertEqual("enabled", plan.thinking_type)
+        flash = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {"operation": "grading", "assessment_kind": "homework"}, environ={})
+        self.assertEqual(("deepseek", ("volcengine",), "grading"), (flash.provider, flash.allowed_fallbacks, flash.quality_floor))
         with self.assertRaises(ValueError):
             resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {"operation": "grading", "source_feature": "blog"}, environ={})
 
-    def test_text_rule_precedes_assessment_and_snapshot_preserves_cap(self):
-        context = {"operation": "grading", "assessment_kind": "final"}
-        plan = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", context, environ={})
-        self.assertEqual("deepseek", plan.provider)
-        snapshot = plan.to_dict()
-        restored = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", context,
+    def test_rollback_switches_restore_previous_tiers_without_redeploy(self):
+        homework = {"operation": "grading", "assessment_kind": "homework"}
+        legacy = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ=LEGACY_ENV)
+        self.assertEqual(("vision_pro_low", "volcengine", DOUBAO_PRO_MODEL, "low", 8192, ()),
+            (legacy.profile_id, legacy.provider, legacy.model, legacy.reasoning_effort, legacy.max_output_tokens_total, legacy.allowed_fallbacks))
+        text_final = {"operation": "grading", "assessment_kind": "final"}
+        self.assertEqual("deepseek", resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", text_final, environ=LEGACY_ENV).provider)
+        with self.assertRaises(ValueError):
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ={"AI_GRADING_STANDARD_PROVIDER": "qwen"})
+        with self.assertRaises(ValueError):
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ={"AI_GRADING_STANDARD_MODEL": "deepseek-v4-pro"})
+        self.assertEqual(12000, resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework,
+            environ={"AI_PROFILE_VISION_GRADING_FLASH_MAX_OUTPUT_TOKENS": "12000"}).max_output_tokens_total)
+
+    def test_text_grading_tiers_and_snapshot_preserves_cap(self):
+        final = {"operation": "grading", "assessment_kind": "final"}
+        plan = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", final, environ={})
+        self.assertEqual((TEXT_ASSESSMENT_PROFILE, "volcengine", DOUBAO_PRO_MODEL, "thinking", "high", 16384),
+            (plan.profile_id, plan.provider, plan.model, plan.capability, plan.reasoning_effort, plan.max_output_tokens_total))
+        homework = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "grading", "assessment_kind": "homework"}, environ={})
+        self.assertEqual(("text_deep", "deepseek", DEEPSEEK_FLASH_MODEL, "max"), (homework.profile_id, homework.provider, homework.model, homework.reasoning_effort))
+        self.assertEqual(DEEPSEEK_FLASH_MODEL, resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "document"}, environ={}).model)
+        self.assertEqual("deepseek-v4-pro", resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "document"},
+            environ={"DEEPSEEK_MODEL_DEEP_TEXT": "deepseek-v4-pro"}).model)
+        snapshot = homework.to_dict()
+        restored = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "grading", "assessment_kind": "homework"},
             environ={"AI_PROFILE_TEXT_DEEP_MAX_OUTPUT_TOKENS": "25000"}, execution_snapshot=snapshot)
-        self.assertEqual(plan, restored)
+        self.assertEqual(homework, restored)
         with self.assertRaises(dataclasses.FrozenInstanceError):
             plan.model = "different"
         with self.assertRaises(ValueError):
             AIBusinessContext.from_mapping({"reasoning_effort": "high"})
 
+    def test_legacy_snapshots_finish_on_their_original_tier_but_cannot_downgrade(self):
+        homework = {"operation": "grading", "assessment_kind": "homework"}
+        old_low = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ=LEGACY_ENV).to_dict()
+        resumed = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ={}, execution_snapshot=old_low)
+        self.assertEqual(("vision_pro_low", "volcengine", DOUBAO_PRO_MODEL, 8192, ()),
+            (resumed.profile_id, resumed.provider, resumed.model, resumed.max_output_tokens_total, resumed.allowed_fallbacks))
+        old_text = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", homework, environ={"DEEPSEEK_MODEL_DEEP_TEXT": "deepseek-v4-pro"}).to_dict()
+        self.assertEqual("deepseek-v4-pro", resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", homework, environ={}, execution_snapshot=old_text).model)
+        old_text_final = resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "grading", "assessment_kind": "final"}, environ=LEGACY_ENV).to_dict()
+        self.assertEqual("deepseek", resolve_execution_plan(AI_TASK_DEEP_TEXT, "thinking", {"operation": "grading", "assessment_kind": "final"},
+            environ={}, execution_snapshot=old_text_final).provider)
+        with self.assertRaises(ValueError):
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {**homework, "assessment_kind": "final"}, environ={}, execution_snapshot=old_low)
+        with self.assertRaises(ValueError):
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ={},
+                execution_snapshot={**old_low, "model": "doubao-seed-9-9-mystery"})
+        with self.assertRaises(ValueError):
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", homework, environ={},
+                execution_snapshot={**old_low, "profile_id": "vision_edge_low", "model": DOUBAO_LITE_MODEL})
+
     def test_model_and_snapshot_cannot_bypass_operation_allowlist(self):
         context = {"operation": "grading", "assessment_kind": "homework"}
         plan = resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ={})
         with self.assertRaises(ValueError):
-            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", context, environ={"AI_VISION_PRO_MODEL": DOUBAO_LITE_MODEL})
+            resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {**context, "assessment_kind": "final"}, environ={"AI_VISION_PRO_MODEL": DOUBAO_LITE_MODEL})
         with self.assertRaises(ValueError):
             resolve_execution_plan(AI_TASK_MULTIMODAL_GRADING, "vision", {**context, "assessment_kind": "final"}, environ={}, execution_snapshot=plan.to_dict())
         high = resolve_execution_plan(AI_TASK_MULTIMODAL_ADJUDICATION, "vision", {**context, "operation": "adjudication"}, environ={})
@@ -107,18 +158,21 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
-        self.stack.enter_context(mock.patch.dict(os.environ, {}, clear=True))
+        # Transport tests default to the pre-2026-09-11 tiers; the flash tier has its own tests below.
+        self.stack.enter_context(mock.patch.dict(os.environ, dict(LEGACY_ENV), clear=True))
         self.stack.enter_context(mock.patch("socket.create_connection", side_effect=AssertionError("Network is forbidden in tests")))
         self.requests = []
         self.events = []
         self.finish = "stop"
+        self.finish_by_model = {}
         self.include_usage = True
         self.response_status = "completed"
         catalog = {
             "volcengine": {"enabled": True, "api_key": "unit-test-only", "type": "volcengine", "max_concurrency": 2,
                 "supports": {"images": True, "authoritative_grading": True}, "can_force_json": {"vision": False}},
             "deepseek": {"enabled": True, "api_key": "unit-test-only", "type": "openai", "base_url": "https://example.invalid/v1", "max_concurrency": 4,
-                "can_force_json": {"thinking": True, "standard": True}},
+                "supports": {"images": True, "authoritative_grading": True},
+                "can_force_json": {"thinking": True, "standard": True, "vision": True}},
         }
         self.stack.enter_context(mock.patch.object(ai, "PLATFORMS_CONFIG", catalog))
         self.stack.enter_context(mock.patch.object(ai, "ENABLED_PLATFORMS", list(catalog)))
@@ -150,14 +204,16 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
             if self.include_usage:
                 result["usage"] = usage
             return httpx.Response(200, json=result)
+        finish = self.finish_by_model.get(body["model"], self.finish)
+        content = "" if finish == "length" else json.dumps(GRADE)
         result = {"id": "chat-test", "object": "chat.completion", "created": 1, "model": body["model"],
-                  "choices": [{"index": 0, "finish_reason": self.finish, "message": {"role": "assistant", "content": json.dumps(GRADE)}}]}
+                  "choices": [{"index": 0, "finish_reason": finish, "message": {"role": "assistant", "content": content}}]}
         if self.include_usage:
             result["usage"] = usage
         if body.get("stream"):
-            first = {**result, "object": "chat.completion.chunk", "choices": [{"index": 0, "finish_reason": None, "delta": {"role": "assistant", "content": json.dumps(GRADE)}}]}
+            first = {**result, "object": "chat.completion.chunk", "choices": [{"index": 0, "finish_reason": None, "delta": {"role": "assistant", "content": content}}]}
             first.pop("usage", None)
-            last = {**result, "object": "chat.completion.chunk", "choices": [{"index": 0, "finish_reason": self.finish, "delta": {}}]}
+            last = {**result, "object": "chat.completion.chunk", "choices": [{"index": 0, "finish_reason": finish, "delta": {}}]}
             return httpx.Response(200, headers={"Content-Type": "text/event-stream"},
                 content="".join("data: " + json.dumps(chunk) + "\n\n" for chunk in (first, last)) + "data: [DONE]\n\n")
         return httpx.Response(200, json=result)
@@ -177,6 +233,73 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("vision_pro_low", metadata["profile_id"])
         self.assertEqual(before, json.dumps(ai.PLATFORMS_CONFIG, sort_keys=True))
         self.assertAlmostEqual(0.0108, self.events[-1]["cost_estimate"]["estimated_cost"])
+
+    async def test_standard_grading_sends_deepseek_flash_vision_profile(self):
+        metadata = {}
+        with mock.patch.dict(os.environ, {"AI_GRADING_STANDARD_PROVIDER": "deepseek"}):
+            result = await ai._call_ai_platform(IMAGE_MESSAGES, capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
+                business_context={"operation": "grading", "assessment_kind": "homework"}, require_json_output=True, metadata_out=metadata)
+        self.assertEqual(80, result["score"])
+        body = self.requests[0]
+        self.assertEqual((DEEPSEEK_FLASH_MODEL, "max", 32768), (body["model"], body["reasoning_effort"], body["max_tokens"]))
+        self.assertEqual({"type": "enabled"}, body["thinking"])
+        self.assertEqual({"type": "json_object"}, body["response_format"])
+        self.assertNotIn("max_completion_tokens", body)
+        self.assertEqual(IMAGE_MESSAGES, body["messages"])
+        self.assertEqual((STANDARD_GRADING_PROFILE, "deepseek"), (metadata["profile_id"], metadata["provider"]))
+        self.assertNotIn("fallback_from", metadata)
+        cost = self.events[-1]["cost_estimate"]
+        peak = cost["price_tier"].startswith("peak")
+        scale = 1.0 if peak else 0.5
+        self.assertEqual("deepseek-2026-09-11", cost["price_version"])
+        self.assertEqual((2.0 * scale, 0.04 * scale, 8.0 * scale),
+            (cost["input_price_per_million"], cost["cached_price_per_million"], cost["output_price_per_million"]))
+        self.assertAlmostEqual((750 * 2.0 + 250 * 0.04 + 200 * 8.0) * scale / 1_000_000, cost["estimated_cost"])
+        self.assertEqual({}, ai.ai_model_router.snapshot())
+
+    async def test_flash_output_exhaustion_falls_back_once_to_doubao_pro_low(self):
+        self.finish_by_model = {DEEPSEEK_FLASH_MODEL: "length"}
+        metadata = {}
+        with mock.patch.dict(os.environ, {"AI_GRADING_STANDARD_PROVIDER": "deepseek"}):
+            result = await ai._call_ai_platform(IMAGE_MESSAGES, capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
+                business_context={"operation": "grading", "assessment_kind": "homework"}, require_json_output=True,
+                task_label="grading:1:attempt:1", metadata_out=metadata)
+        self.assertEqual(80, result["score"])
+        self.assertEqual([DEEPSEEK_FLASH_MODEL, DOUBAO_PRO_MODEL], [body["model"] for body in self.requests])
+        self.assertEqual(("low", 8192), (self.requests[1]["reasoning_effort"], self.requests[1]["max_completion_tokens"]))
+        self.assertEqual(("vision_pro_low", "volcengine"), (metadata["profile_id"], metadata["provider"]))
+        self.assertEqual(STANDARD_GRADING_PROFILE, metadata["fallback_from"]["profile_id"])
+        self.assertEqual(["error", "success"], [event["status"] for event in self.events[-2:]])
+        self.assertEqual("grading:1:attempt:1:fallback", self.events[-1]["task_label"])
+        self.assertEqual({}, ai.ai_model_router.snapshot())
+
+    async def test_flash_fallback_is_bounded_to_eligible_errors_and_standard_tier(self):
+        rejected = []
+        def reject(request):
+            rejected.append(request)
+            return httpx.Response(429, json={"error": {"message": "rate limited", "type": "rate_limit_error"}})
+        self.transport = httpx.MockTransport(reject)
+        with mock.patch.dict(os.environ, {"AI_GRADING_STANDARD_PROVIDER": "deepseek"}), \
+                mock.patch.object(ai, "_provider_retry_delay_seconds", return_value=0):
+            with self.assertRaises(Exception):
+                await ai._call_ai_platform(IMAGE_MESSAGES, capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
+                    business_context={"operation": "grading", "assessment_kind": "homework"}, require_json_output=True)
+        self.assertTrue(all(json.loads(r.content)["model"] == DEEPSEEK_FLASH_MODEL for r in rejected))
+        # Important assessments never leave Doubao pro, even when the output is incomplete.
+        self.transport = httpx.MockTransport(self.respond)
+        self.finish_by_model = {DOUBAO_PRO_MODEL: "length"}
+        with self.assertRaises(ai.HTTPException):
+            await ai._call_ai_platform(IMAGE_MESSAGES, capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
+                business_context={"operation": "grading", "assessment_kind": "final"}, require_json_output=True)
+        self.assertEqual([DOUBAO_PRO_MODEL], [body["model"] for body in self.requests])
+
+    async def test_text_final_exam_uses_doubao_pro_thinking(self):
+        with mock.patch.dict(os.environ, {"AI_TEXT_ASSESSMENT_PROVIDER": "volcengine"}):
+            await ai._call_ai_platform([{"role": "user", "content": "Text exam"}], capability="thinking", task_type=AI_TASK_DEEP_TEXT,
+                business_context={"operation": "grading", "assessment_kind": "final"}, require_json_output=True)
+        body = self.requests[0]
+        self.assertEqual((DOUBAO_PRO_MODEL, "high", 16384, {"type": "enabled"}),
+            (body["model"], body["reasoning_effort"], body["max_completion_tokens"], body["thinking"]))
 
     async def test_stream_uses_same_adapter_and_actual_usage(self):
         result = [json.loads(event) async for event in ai._call_ai_platform_chat_stream_events("System", IMAGE_MESSAGES,
@@ -245,7 +368,7 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_text_exam_remains_deepseek_and_no_cross_provider_fallback(self):
         await ai._call_ai_platform([{"role": "user", "content": "Text exam"}], capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
             business_context={"operation": "grading", "assessment_kind": "final"}, require_json_output=True)
-        self.assertEqual("deepseek-v4-pro", self.requests[0]["model"])
+        self.assertEqual(DEEPSEEK_FLASH_MODEL, self.requests[0]["model"])
         self.assertEqual("max", self.requests[0]["reasoning_effort"])
         self.assertEqual(16384, self.requests[0]["max_tokens"])
         with self.assertRaises(ValueError):

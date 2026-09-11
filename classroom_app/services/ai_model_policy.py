@@ -199,6 +199,18 @@ def provider_order_for_task(
     return [provider for provider in _parse_provider_order(raw) if provider in allowed]
 
 
+def allowed_providers_for_task(task_type: str | None, capability: str = "standard") -> frozenset[str]:
+    """Providers a resolved execution plan may legitimately name for this task.
+
+    Deployment priority variables cannot widen this set; the business plan
+    (not the environment order) decides which of these providers actually runs.
+    """
+    policy = task_policy(task_type, capability)
+    if policy.route_group.startswith("text_") or policy.route_group == "multimodal_grading":
+        return frozenset({"deepseek", "volcengine"})
+    return frozenset({"volcengine"})
+
+
 AI_EXECUTION_POLICY_VERSION = "business-routing-2026-09-v2"
 # DeepSeek only publishes the unversioned ids below; "deepseek-v4-flash" is a
 # legacy alias the API still resolves to deepseek-flash. Accept it so a stale
@@ -210,6 +222,15 @@ DEEPSEEK_TEXT_MODELS = frozenset({DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL}) | L
 
 DOUBAO_PRO_MODEL = "doubao-seed-2-1-pro-260628"
 DOUBAO_LITE_MODEL = "doubao-seed-2-0-lite-260428"
+# deepseek-flash (V4.1 Flash) is the only DeepSeek model that accepts images.
+DEEPSEEK_VISION_MODELS = frozenset({DEEPSEEK_FLASH_MODEL})
+# 2026-09-11 benchmark decision: midterm/final grading stays on Doubao pro,
+# every other grading call uses deepseek-flash with a bounded Doubao fallback.
+STANDARD_GRADING_PROFILE = "vision_grading_flash"
+TEXT_ASSESSMENT_PROFILE = "text_assessment_high"
+IMPORTANT_ASSESSMENT_KINDS = frozenset({"midterm", "final"})
+# Profiles that earlier policy revisions could have frozen into a durable job.
+LEGACY_SNAPSHOT_PROFILES = frozenset({"vision_pro_low", "vision_assessment_high", "text_deep"})
 ASSESSMENT_KINDS = frozenset({"homework", "midterm", "final", "legacy_unknown"})
 EDGE_FEATURES = frozenset({"chat", "classroom_chat", "discussion", "private_message", "blog", "ocr"})
 OPERATIONS = frozenset({"grading", "adjudication", "generation", "chat", "document", "ocr"})
@@ -313,6 +334,97 @@ def _operation_for_task(task_type: str) -> str:
     return "chat"
 
 
+def _vision_model_from_env(env: Mapping[str, str], *, edge: bool) -> str:
+    expected = DOUBAO_LITE_MODEL if edge else DOUBAO_PRO_MODEL
+    model = env.get("AI_VISION_LITE_MODEL" if edge else "AI_VISION_PRO_MODEL") or expected
+    if model != expected:
+        raise ValueError("Vision model is outside the business operation allowlist")
+    return model
+
+
+def _standard_grading_plan(task: str, operation: str, env: Mapping[str, str]) -> AIExecutionPlan:
+    """Non-important grading: deepseek-flash by default, Doubao pro low on rollback."""
+    provider = str(env.get("AI_GRADING_STANDARD_PROVIDER") or "deepseek").strip().lower()
+    if provider == "volcengine":
+        return AIExecutionPlan("vision_pro_low", "volcengine", _vision_model_from_env(env, edge=False), "vision", task,
+            operation, "enabled", "low", 8192, quality_floor="grading")
+    if provider != "deepseek":
+        raise ValueError("Standard grading provider must be deepseek or volcengine")
+    model = env.get("AI_GRADING_STANDARD_MODEL") or DEEPSEEK_FLASH_MODEL
+    if model not in DEEPSEEK_VISION_MODELS:
+        raise ValueError("Standard grading model is outside the verified DeepSeek vision allowlist")
+    return AIExecutionPlan(STANDARD_GRADING_PROFILE, "deepseek", model, "vision", task, operation, "enabled", "max", 32768,
+        quality_floor="grading", allowed_fallbacks=("volcengine",))
+
+
+def _text_plan(task: str, operation: str, kind: str | None, env: Mapping[str, str]) -> AIExecutionPlan:
+    deep = task == AI_TASK_DEEP_TEXT
+    important = deep and operation == "grading" and kind in IMPORTANT_ASSESSMENT_KINDS
+    if important and str(env.get("AI_TEXT_ASSESSMENT_PROVIDER") or "volcengine").strip().lower() == "volcengine":
+        return AIExecutionPlan(TEXT_ASSESSMENT_PROFILE, "volcengine", _vision_model_from_env(env, edge=False), "thinking", task,
+            operation, "enabled", "high", 16384, quality_floor="assessment")
+    profile = "text_deep" if deep else "text_fast"
+    model = (env.get("DEEPSEEK_MODEL_DEEP_TEXT" if deep else "DEEPSEEK_MODEL_FAST_TEXT")
+             or env.get("DEEPSEEK_MODEL_THINKING" if deep else "DEEPSEEK_MODEL_STANDARD") or DEEPSEEK_FLASH_MODEL)
+    if model not in DEEPSEEK_TEXT_MODELS:
+        raise ValueError("Text model is outside the verified DeepSeek allowlist")
+    effort = ("max" if operation in {"grading", "adjudication", "generation"} else "high") if deep else None
+    return AIExecutionPlan(profile, "deepseek", model, "thinking" if deep else "standard", task, operation,
+        "enabled" if deep else "disabled", effort, 16384 if deep else 4096)
+
+
+def _vision_plan(task: str, operation: str, context: AIBusinessContext, kind: str | None, env: Mapping[str, str]) -> AIExecutionPlan:
+    edge = operation in {"chat", "ocr"} or context.source_feature in EDGE_FEATURES
+    if edge and operation in {"grading", "adjudication"}:
+        raise ValueError("An edge feature cannot perform authoritative grading")
+    important = kind in IMPORTANT_ASSESSMENT_KINDS
+    if edge:
+        return AIExecutionPlan("vision_edge_low", "volcengine", _vision_model_from_env(env, edge=True), "vision", task,
+            operation, "enabled", "low", 4096)
+    if operation == "grading" and not important:
+        return _standard_grading_plan(task, operation, env)
+    high = (
+        operation == "adjudication"
+        or context.source_feature == "personal_stage"
+        or (operation in {"grading", "generation"} and important)
+    )
+    profile = "vision_assessment_high" if high else "vision_pro_low"
+    return AIExecutionPlan(profile, "volcengine", _vision_model_from_env(env, edge=False), "vision", task, operation, "enabled",
+        "high" if high else "low", 16384 if high else 8192,
+        quality_floor="assessment" if high else ("grading" if operation == "grading" else "standard"))
+
+
+_SNAPSHOT_IMMUTABLE_FIELDS = ("profile_id", "provider", "model", "capability", "operation", "thinking_type",
+    "reasoning_effort", "policy_version", "quality_floor")
+
+
+def _plan_from_legacy_snapshot(plan: AIExecutionPlan, snapshot: Mapping[str, Any]) -> AIExecutionPlan | None:
+    """Honour a job frozen under the previous tier table so in-flight work finishes on its original provider.
+
+    Only the documented old profiles are trusted, and only when the new plan is the
+    revised tier for the same operation; a snapshot can never lower an important
+    assessment or leave the model allowlists.
+    """
+    old_profile = str(snapshot.get("profile_id") or "")
+    if old_profile not in LEGACY_SNAPSHOT_PROFILES or snapshot.get("policy_version") != plan.policy_version:
+        return None
+    provider, model = str(snapshot.get("provider") or ""), str(snapshot.get("model") or "")
+    if provider == "volcengine" and model not in {DOUBAO_PRO_MODEL, DOUBAO_LITE_MODEL}:
+        return None
+    if provider == "deepseek" and model not in DEEPSEEK_TEXT_MODELS:
+        return None
+    revised = (
+        (plan.profile_id == STANDARD_GRADING_PROFILE and old_profile in {"vision_pro_low", "vision_assessment_high"})
+        or (plan.profile_id in {"text_deep", TEXT_ASSESSMENT_PROFILE} and old_profile == "text_deep")
+    )
+    if not revised or snapshot.get("operation") != plan.operation or snapshot.get("capability") not in {"vision", "thinking"}:
+        return None
+    return replace(plan, profile_id=old_profile, provider=provider, model=model, capability=str(snapshot["capability"]),
+        thinking_type=str(snapshot.get("thinking_type") or plan.thinking_type),
+        reasoning_effort=snapshot.get("reasoning_effort"), quality_floor=str(snapshot.get("quality_floor") or plan.quality_floor),
+        allowed_fallbacks=())
+
+
 def resolve_execution_plan(
     task_type: str | None,
     capability: str = "standard",
@@ -326,32 +438,11 @@ def resolve_execution_plan(
     context = AIBusinessContext.from_mapping(business_context)
     task = normalize_ai_task_type(task_type, capability)
     operation = context.operation or _operation_for_task(task)
-    visual = task in MULTIMODAL_TASK_TYPES
-    if not visual:
-        deep = task == AI_TASK_DEEP_TEXT
-        profile = "text_deep" if deep else "text_fast"
-        default_model = DEEPSEEK_PRO_MODEL if deep else DEEPSEEK_FLASH_MODEL
-        model = env.get("DEEPSEEK_MODEL_DEEP_TEXT" if deep else "DEEPSEEK_MODEL_FAST_TEXT") or env.get("DEEPSEEK_MODEL_THINKING" if deep else "DEEPSEEK_MODEL_STANDARD") or default_model
-        if model not in DEEPSEEK_TEXT_MODELS:
-            raise ValueError("Text model is outside the verified DeepSeek allowlist")
-        effort = ("max" if operation in {"grading", "adjudication", "generation"} else "high") if deep else None
-        plan = AIExecutionPlan(profile, "deepseek", model, "thinking" if deep else "standard", task, operation, "enabled" if deep else "disabled", effort, 16384 if deep else 4096)
+    kind = context.assessment_kind or context.intended_assessment_kind
+    if task in MULTIMODAL_TASK_TYPES:
+        plan = _vision_plan(task, operation, context, kind, env)
     else:
-        kind = context.assessment_kind or context.intended_assessment_kind
-        edge = operation in {"chat", "ocr"} or context.source_feature in EDGE_FEATURES
-        if edge and operation in {"grading", "adjudication"}:
-            raise ValueError("An edge feature cannot perform authoritative grading")
-        high = not edge and (
-            operation == "adjudication"
-            or context.source_feature == "personal_stage"
-            or (operation in {"grading", "generation"} and kind in {"midterm", "final"})
-            or (operation == "grading" and kind in {None, "legacy_unknown"})
-        )
-        profile = "vision_edge_low" if edge else ("vision_assessment_high" if high else "vision_pro_low")
-        model = env.get("AI_VISION_LITE_MODEL" if edge else "AI_VISION_PRO_MODEL") or (DOUBAO_LITE_MODEL if edge else DOUBAO_PRO_MODEL)
-        if model != (DOUBAO_LITE_MODEL if edge else DOUBAO_PRO_MODEL):
-            raise ValueError("Vision model is outside the business operation allowlist")
-        plan = AIExecutionPlan(profile, "volcengine", model, "vision", task, operation, "enabled", "high" if high else "low", 4096 if edge else (16384 if high else 8192), quality_floor="assessment" if high else ("grading" if operation == "grading" else "standard"))
+        plan = _text_plan(task, operation, kind, env)
     limit_name = "AI_PROFILE_" + plan.profile_id.upper() + "_MAX_OUTPUT_TOKENS"
     raw_limit = env.get(limit_name)
     if raw_limit:
@@ -360,10 +451,11 @@ def resolve_execution_plan(
             raise ValueError("AI profile output limit must be between 1 and 32768")
         plan = replace(plan, max_output_tokens_total=limit)
     if execution_snapshot:
-        immutable = ("profile_id", "provider", "model", "capability", "operation", "thinking_type", "reasoning_effort", "policy_version", "quality_floor")
-        for field in immutable:
-            if execution_snapshot.get(field) != getattr(plan, field):
+        if any(execution_snapshot.get(field) != getattr(plan, field) for field in _SNAPSHOT_IMMUTABLE_FIELDS):
+            legacy = _plan_from_legacy_snapshot(plan, execution_snapshot)
+            if legacy is None or any(execution_snapshot.get(field) != getattr(legacy, field) for field in _SNAPSHOT_IMMUTABLE_FIELDS):
                 raise ValueError("AI execution snapshot is incompatible with trusted business context")
+            plan = legacy
         limit = int(execution_snapshot.get("max_output_tokens_total") or 0)
         if not 1 <= limit <= 32768:
             raise ValueError("Invalid AI execution snapshot output limit")

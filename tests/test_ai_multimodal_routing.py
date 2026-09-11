@@ -169,9 +169,42 @@ class DeterministicExamGradingTests(unittest.TestCase):
             format_repair_required=False,
         )
         self.assertTrue(any(reason.startswith("low_confidence=") for reason in reasons))
-        self.assertIn("model_requested_review", reasons)
+        # A bare needs_review flag is surfaced to the teacher but no longer buys a paid adjudication.
+        self.assertNotIn("model_requested_review", reasons)
         self.assertIn("evidence_conflict", reasons)
         self.assertIn("score_consistency_delta=15", reasons)
+        self.assertEqual([], ai_assistant._grading_adjudication_reasons(
+            {"confidence": 0.9, "needs_review": True, "evidence_conflicts": []}, image_count=3, format_repair_required=False))
+        self.assertIn("empty_text_with_attachments", ai_assistant._grading_adjudication_reasons(
+            {"confidence": 0.9, "needs_review": False, "evidence_conflicts": [], "summary": "截图完整"},
+            image_count=3, format_repair_required=False, blank_answers_with_attachments=True))
+        blank = json.dumps({"answers": [{"question_id": "q9", "type": "textarea", "answer": "  ",
+            "attachments": [{"file_name": "1.png"}]}]})
+        self.assertTrue(ai_assistant._has_blank_answers_with_attachments(blank))
+        self.assertFalse(ai_assistant._has_blank_answers_with_attachments(
+            json.dumps({"answers": [{"question_id": "q9", "answer": "172.10.8.1", "attachments": [{"file_name": "1.png"}]}]})))
+        self.assertFalse(ai_assistant._has_blank_answers_with_attachments(None))
+
+    def test_soft_format_trimming_keeps_substantive_validation_strict(self):
+        job = ai_assistant.GradingJob(submission_id=1, rubric_md="r", answers_json=json.dumps(
+            {"answers": [{"question_id": "q1", "answer": "A"}, {"question_id": "q2", "answer": "B"}]}))
+        raw = {"score": 90, "summary": "第一句总评。" * 30, "confidence": 0.9, "needs_review": False, "evidence_conflicts": [],
+            "questions": [
+                {"question_no": 1, "question_id": "q1", "score": 50, "max_score": 50, "deduction_points": "无", "evaluation": ""},
+                {"question_no": 2, "question_id": "q2", "score": 40, "max_score": 50, "deduction_points": "扣分" * 60,
+                 "evaluation": "这是一条明显超过二十个字上限的评价文字需要被截断处理"},
+            ]}
+        result = ai_assistant._validate_grading_result_for_job(raw, job)
+        self.assertLessEqual(len(result["summary"]), 120)
+        self.assertTrue(result["summary"].endswith("。"))
+        self.assertEqual("达标", result["questions"][0]["evaluation"])
+        self.assertLessEqual(len(result["questions"][1]["evaluation"]), 20)
+        self.assertLessEqual(len(result["questions"][1]["deduction_points"]), 80)
+        with self.assertRaises(ValueError):
+            ai_assistant._validate_grading_result_for_job({**raw, "questions": [
+                {**raw["questions"][0], "score": 0, "deduction_points": "无", "evaluation": "x"}, raw["questions"][1]]}, job)
+        with self.assertRaises(ValueError):
+            ai_assistant._validate_grading_result_for_job({**raw, "summary": ""}, job)
 
     def test_low_confidence_adjudication_result_requests_teacher_review(self):
         required, reasons, confidence = ai_assistant._grading_review_metadata(
