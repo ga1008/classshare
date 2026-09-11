@@ -552,7 +552,7 @@ def build_material_delete_impact(
                     f"{row.get('lesson_title') or '未命名课次'}"
                 ),
                 meta=f"材料：{row.get('material_name') or '未命名材料'}",
-                url="/manage/teaching/courses",
+                url="/manage/library/courses",
             ),
         )
 

@@ -3,859 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }} - 教师管理中心</title>
+    <title>{{ page_title }} - 教师工作台</title>
     {% include "partials/ui_system_assets.html" %}
-    {% if not embedded_mode %}
-    {% endif %}
     {% block extra_head %}{% endblock %}
-    <style>
-        body {
-            background-color: var(--bg-color);
-        }
-
-        body.manage-embedded-page {
-            background: transparent;
-        }
-
-        .manage-layout::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            background:
-                radial-gradient(circle at top left, rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.09), transparent 30%),
-                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 26%);
-            pointer-events: none;
-            z-index: -1;
-        }
-
-        .manage-layout {
-            display: flex;
-            min-height: 100vh;
-        }
-
-        .manage-sidebar {
-            --rail-pad: 14px;
-            width: 264px;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-            border-right: 1px solid var(--border-color);
-            box-shadow: 0 12px 40px -28px rgba(15, 23, 42, 0.5);
-            display: flex;
-            flex-direction: column;
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            z-index: 20;
-            transition: width 0.22s ease;
-        }
-
-        .manage-brand {
-            padding: 18px var(--rail-pad) 14px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: var(--primary-color);
-            text-decoration: none;
-        }
-
-        .manage-brand__mark {
-            flex: 0 0 auto;
-            width: 38px;
-            height: 38px;
-            border-radius: 11px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            background: linear-gradient(135deg, var(--manage-domain-accent, #4f46e5), var(--manage-domain-accent-dark, #6366f1));
-            box-shadow: 0 8px 20px -10px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.7);
-        }
-
-        .manage-brand__copy {
-            display: grid;
-            gap: 1px;
-            min-width: 0;
-        }
-
-        .manage-brand__copy strong {
-            font-size: 1.02rem;
-            font-weight: 800;
-            color: var(--text-primary);
-            line-height: 1.15;
-        }
-
-        .manage-brand__copy small {
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            letter-spacing: 0.02em;
-        }
-
-        .manage-sidebar-collapse {
-            margin-left: auto;
-            flex: 0 0 auto;
-            width: 28px;
-            height: 28px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            background: rgba(255, 255, 255, 0.9);
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: background var(--transition-fast), color var(--transition-fast), transform 0.22s ease;
-        }
-
-        .manage-sidebar-collapse:hover {
-            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.1);
-            color: var(--manage-domain-accent, var(--primary-color));
-        }
-
-        .manage-nav-search {
-            position: relative;
-            padding: 12px var(--rail-pad) 6px;
-        }
-
-        .manage-nav-search svg {
-            position: absolute;
-            left: calc(var(--rail-pad) + 11px);
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            pointer-events: none;
-        }
-
-        .manage-nav-search input {
-            width: 100%;
-            padding: 8px 12px 8px 34px;
-            border: 1px solid rgba(148, 163, 184, 0.3);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.85);
-            font-size: 0.85rem;
-            color: var(--text-primary);
-            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-        }
-
-        .manage-nav-search input:focus {
-            outline: none;
-            border-color: var(--manage-domain-accent, var(--primary-color));
-            box-shadow: 0 0 0 3px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
-        }
-
-        .manage-nav {
-            padding: 6px 8px 14px;
-            flex: 1;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
-        }
-
-        .manage-nav::-webkit-scrollbar { width: 7px; }
-        .manage-nav::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 999px; }
-
-        .manage-nav-group { margin-top: 4px; }
-        .manage-nav-group.is-empty { display: none; }
-
-        /* Collapsible category header — sticks to the top of the scrolling rail. */
-        .manage-nav-group-toggle {
-            position: sticky;
-            top: 0;
-            z-index: 3;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            padding: 9px 12px 8px;
-            border: none;
-            border-radius: 8px;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 62%, rgba(255, 255, 255, 0.86));
-            backdrop-filter: blur(6px);
-            font: inherit;
-            font-size: 0.7rem;
-            font-weight: 800;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.09em;
-            text-align: left;
-            cursor: pointer;
-            transition: color var(--transition-fast), background var(--transition-fast);
-        }
-
-        .manage-nav-group-toggle:hover {
-            color: var(--manage-domain-accent, var(--primary-color));
-            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.07);
-        }
-
-        .manage-nav-group-toggle__label { flex: 0 1 auto; min-width: 0; }
-
-        .manage-nav-group-toggle__count {
-            flex: 0 0 auto;
-            min-width: 18px;
-            padding: 1px 5px;
-            border-radius: 999px;
-            background: rgba(148, 163, 184, 0.16);
-            color: var(--text-muted);
-            font-size: 0.62rem;
-            font-weight: 800;
-            text-align: center;
-            letter-spacing: 0;
-            transition: background var(--transition-fast), color var(--transition-fast);
-        }
-
-        .manage-nav-group.is-open .manage-nav-group-toggle__count,
-        .manage-nav-group.is-active .manage-nav-group-toggle__count {
-            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
-            color: var(--manage-domain-accent-dark, var(--primary-color));
-        }
-
-        .manage-nav-group-toggle__chevron {
-            flex: 0 0 auto;
-            margin-left: auto;
-            transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .manage-nav-group.is-open .manage-nav-group-toggle__chevron { transform: rotate(180deg); }
-
-        .manage-nav-group.is-active .manage-nav-group-toggle {
-            color: var(--manage-domain-accent-dark, var(--primary-color));
-        }
-
-        /* Slide open/close via the grid-rows trick (animatable auto height). */
-        .manage-nav-group-items {
-            display: grid;
-            grid-template-rows: 0fr;
-            transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .manage-nav-group-items-inner {
-            min-height: 0;
-            overflow: hidden;
-            display: grid;
-            gap: 1px;
-        }
-
-        .manage-nav-group.is-open .manage-nav-group-items,
-        .manage-nav.is-searching .manage-nav-group-items {
-            grid-template-rows: 1fr;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .manage-nav-group-items,
-            .manage-nav-group-toggle__chevron { transition: none; }
-        }
-
-        .manage-nav-item {
-            position: relative;
-            display: flex;
-            align-items: flex-start;
-            gap: 11px;
-            padding: 9px 11px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.9rem;
-            border-radius: 10px;
-            transition: background var(--transition-fast), color var(--transition-fast);
-        }
-
-        .manage-nav-item__icon {
-            flex: 0 0 auto;
-            width: 30px;
-            height: 30px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 9px;
-            background: rgba(148, 163, 184, 0.14);
-            color: var(--text-muted);
-            transition: background var(--transition-fast), color var(--transition-fast);
-        }
-
-        .manage-nav-item__copy {
-            min-width: 0;
-            flex: 1;
-            display: grid;
-            gap: 2px;
-        }
-
-        .manage-nav-item__label {
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .manage-nav-item:hover {
-            background-color: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.08);
-            color: var(--text-primary);
-        }
-
-        .manage-nav-item:hover .manage-nav-item__icon {
-            background: rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14);
-            color: var(--manage-domain-accent, var(--primary-color));
-        }
-
-        .manage-nav-item.active {
-            background: linear-gradient(135deg, rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.14), rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.1));
-            color: var(--manage-domain-accent-dark, var(--primary-color));
-            box-shadow: inset 0 0 0 1px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.16);
-        }
-
-        .manage-nav-item.active::before {
-            content: "";
-            position: absolute;
-            left: -8px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 3px;
-            height: 20px;
-            border-radius: 0 3px 3px 0;
-            background: var(--manage-domain-accent, var(--primary-color));
-        }
-
-        .manage-nav-item.active .manage-nav-item__icon {
-            background: var(--manage-domain-accent, var(--primary-color));
-            color: #fff;
-            box-shadow: 0 8px 18px -10px rgba(var(--manage-domain-accent-rgb, 79, 70, 229), 0.8);
-        }
-
-        /* Admin domain: amber accent so privileged tools read as distinct.
-           The 管理 tab keeps a faint amber tint even when inactive. */
-        .manage-domain-tab--admin { color: #b45309; border-color: rgba(245, 158, 11, 0.3); }
-        .manage-domain-tab--admin:hover,
-        .manage-domain-tab--admin:focus-visible {
-            background: rgba(245, 158, 11, 0.1);
-            border-color: rgba(245, 158, 11, 0.4);
-            color: #92400e;
-        }
-        .manage-nav-group--admin .manage-nav-group-toggle { color: #b45309; }
-        .manage-nav-group--admin .manage-nav-group-toggle:hover { background: rgba(245, 158, 11, 0.09); }
-        .manage-nav-group--admin.is-open .manage-nav-group-toggle__count,
-        .manage-nav-group--admin.is-active .manage-nav-group-toggle__count {
-            background: rgba(245, 158, 11, 0.16);
-            color: #b45309;
-        }
-        .manage-nav-group--admin .manage-nav-item.active {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.1));
-            color: #b45309;
-            box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22);
-        }
-        .manage-nav-group--admin .manage-nav-item.active::before { background: #d97706; }
-        .manage-nav-group--admin .manage-nav-item.active .manage-nav-item__icon {
-            background: #d97706;
-            box-shadow: 0 8px 18px -10px rgba(217, 119, 6, 0.8);
-        }
-        .manage-nav-group--admin .manage-nav-item:hover { background: rgba(245, 158, 11, 0.1); color: #92400e; }
-        .manage-nav-group--admin .manage-nav-item:hover .manage-nav-item__icon { background: rgba(245, 158, 11, 0.18); color: #b45309; }
-
-        /* ── 材料域左栏：分类多选按钮列表（无传统菜单） ───────────────── */
-        .manage-cat-rail {
-            display: grid;
-            gap: 3px;
-            padding: 4px 4px 10px;
-        }
-
-        .manage-cat-rail__enter {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            margin: 2px 4px 8px;
-            padding: 9px 12px;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #9333ea, #7e22ce);
-            color: #fff;
-            font-size: 0.86rem;
-            font-weight: 800;
-            text-decoration: none;
-            box-shadow: 0 10px 24px -14px rgba(147, 51, 234, 0.8);
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .manage-cat-rail__enter:hover { transform: translateY(-1px); box-shadow: 0 14px 28px -14px rgba(147, 51, 234, 0.9); }
-
-        .manage-cat-rail__actions {
-            display: flex;
-            gap: 6px;
-            padding: 2px 4px 6px;
-        }
-
-        .manage-cat-rail__action {
-            flex: 1;
-            padding: 6px 8px;
-            border: 1px solid rgba(147, 51, 234, 0.24);
-            border-radius: 8px;
-            background: rgba(147, 51, 234, 0.06);
-            color: #7e22ce;
-            font-size: 0.76rem;
-            font-weight: 800;
-            cursor: pointer;
-            transition: background var(--transition-fast), transform 0.15s ease;
-        }
-
-        .manage-cat-rail__action:hover { background: rgba(147, 51, 234, 0.14); }
-        .manage-cat-rail__action:active { transform: scale(0.97); }
-
-        .manage-cat-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            width: 100%;
-            padding: 8px 10px;
-            border: none;
-            border-radius: 10px;
-            background: transparent;
-            color: var(--text-secondary);
-            font: inherit;
-            font-size: 0.88rem;
-            font-weight: 650;
-            text-align: left;
-            cursor: pointer;
-            transition: background var(--transition-fast), color var(--transition-fast), transform 0.14s ease;
-        }
-
-        .manage-cat-item:hover { background: rgba(147, 51, 234, 0.08); color: var(--text-primary); }
-        .manage-cat-item:active { transform: scale(0.985); }
-
-        .manage-cat-item__box {
-            flex: 0 0 auto;
-            width: 18px;
-            height: 18px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            border: 1.6px solid rgba(148, 163, 184, 0.55);
-            background: #fff;
-            color: #fff;
-            transition: background 0.16s ease, border-color 0.16s ease;
-        }
-
-        .manage-cat-item__box svg { opacity: 0; transform: scale(0.4); transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-
-        .manage-cat-item.is-checked { color: var(--text-primary); }
-        .manage-cat-item.is-checked .manage-cat-item__box {
-            background: #9333ea;
-            border-color: #9333ea;
-        }
-        .manage-cat-item.is-checked .manage-cat-item__box svg { opacity: 1; transform: scale(1); }
-
-        .manage-cat-item__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-        .manage-cat-item__count {
-            flex: 0 0 auto;
-            min-width: 20px;
-            padding: 1px 6px;
-            border-radius: 999px;
-            background: rgba(147, 51, 234, 0.1);
-            color: #7e22ce;
-            font-size: 0.68rem;
-            font-weight: 800;
-            text-align: center;
-        }
-
-        .manage-sidebar.is-collapsed .manage-cat-rail__actions,
-        .manage-sidebar.is-collapsed .manage-cat-item__label,
-        .manage-sidebar.is-collapsed .manage-cat-item__count,
-        .manage-sidebar.is-collapsed .manage-cat-rail__enter { display: none; }
-        .manage-sidebar.is-collapsed .manage-cat-item { justify-content: center; }
-
-        .manage-nav-empty {
-            display: none;
-            padding: 18px 14px;
-            font-size: 0.84rem;
-            color: var(--text-muted);
-            text-align: center;
-        }
-        .manage-nav-empty.is-visible { display: block; }
-
-        .manage-user {
-            padding: 12px var(--rail-pad);
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 11px;
-        }
-
-        .manage-user-avatar {
-            flex: 0 0 auto;
-            width: 38px;
-            height: 38px;
-            border-radius: var(--radius-full);
-            background: linear-gradient(135deg, var(--manage-domain-accent, #4f46e5), var(--manage-domain-accent-dark, #6366f1));
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1.1rem;
-        }
-
-        .manage-user-info {
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .manage-user-name {
-            font-weight: 700;
-            color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .manage-user-role {
-            font-size: 0.74rem;
-            color: var(--text-muted);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        /* Collapsed icon-rail (desktop) */
-        .manage-sidebar.is-collapsed { width: 76px; }
-        .manage-sidebar.is-collapsed .manage-brand { justify-content: center; padding-left: 0; padding-right: 0; }
-        .manage-sidebar.is-collapsed .manage-brand__copy,
-        .manage-sidebar.is-collapsed .manage-nav-search,
-        .manage-sidebar.is-collapsed .manage-nav-group-toggle,
-        .manage-sidebar.is-collapsed .manage-nav-item__copy,
-        .manage-sidebar.is-collapsed .manage-user-info,
-        .manage-sidebar.is-collapsed .manage-user .btn,
-        .manage-sidebar.is-collapsed .manage-nav-empty { display: none; }
-        /* Icon rail keeps every destination reachable: force groups open. */
-        .manage-sidebar.is-collapsed .manage-nav-group-items { grid-template-rows: 1fr; }
-        .manage-sidebar.is-collapsed .manage-sidebar-collapse { transform: rotate(180deg); margin-left: 0; }
-        .manage-sidebar.is-collapsed .manage-brand__mark { display: none; }
-        .manage-sidebar.is-collapsed .manage-nav { padding-left: 0; padding-right: 0; }
-        .manage-sidebar.is-collapsed .manage-nav-item { justify-content: center; padding: 9px 0; gap: 0; }
-        .manage-sidebar.is-collapsed .manage-nav-item.active::before { display: none; }
-        .manage-sidebar.is-collapsed .manage-user { justify-content: center; }
-
-        .manage-main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-        }
-
-        .manage-topbar {
-            --app-topbar-accent: #0f766e;
-            --app-topbar-accent-dark: #0f5f59;
-            --app-topbar-accent-rgb: 15, 118, 110;
-            --app-topbar-accent-soft: rgba(20, 184, 166, 0.12);
-            z-index: 30;
-            flex-wrap: nowrap;
-            min-height: 78px;
-        }
-
-        .manage-topbar-start {
-            display: flex;
-            align-items: center;
-            gap: 0.72rem;
-            min-width: 0;
-            flex: 0 1 33rem;
-        }
-
-        .manage-topbar .mobile-toggle {
-            flex: 0 0 auto;
-            border-radius: 10px;
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            background: rgba(255, 255, 255, 0.76);
-        }
-
-        .manage-topbar-brand {
-            min-width: 0;
-            flex: 0 1 auto;
-        }
-
-        .manage-topbar-page {
-            min-width: 9rem;
-            display: grid;
-            gap: 0.08rem;
-            padding: 0.42rem 0.72rem;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 10px;
-            background: rgba(248, 250, 252, 0.68);
-        }
-
-        .manage-topbar-page span {
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            line-height: 1.15;
-            font-weight: 800;
-        }
-
-        .manage-topbar-page strong {
-            min-width: 0;
-            overflow: hidden;
-            color: var(--text-primary);
-            font-size: 0.92rem;
-            line-height: 1.2;
-            font-weight: 820;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .manage-topbar-nav {
-            align-items: center;
-        }
-
-        .manage-context-actions {
-            padding: 0.28rem;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 12px;
-            background: rgba(248, 250, 252, 0.72);
-        }
-
-        .manage-context-actions .materials-toolbar-group {
-            display: contents;
-        }
-
-        .manage-header {
-            height: 70px;
-            padding: 0 var(--spacing-6);
-            background-color: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(8px);
-            border-bottom: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        .manage-header-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin: 0;
-        }
-
-        .manage-header-start,
-        .manage-header-end {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-            min-width: 0;
-        }
-
-        .manage-header-start {
-            flex: 1 1 auto;
-        }
-
-        .manage-header-end {
-            flex: 0 0 auto;
-            justify-content: flex-end;
-            flex-wrap: wrap;
-        }
-
-        .manage-header-bell-slot {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            flex: 0 0 auto;
-        }
-
-        .manage-header-page-actions {
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-end;
-            flex-wrap: wrap;
-            gap: var(--spacing-2);
-            min-width: 0;
-        }
-
-        .manage-header-page-actions:empty {
-            display: none;
-        }
-
-        .manage-content {
-            padding: var(--spacing-6);
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-lg);
-            max-width: 1200px;
-            width: 100%;
-            margin: 0 auto;
-        }
-
-        .manage-content.is-embedded {
-            max-width: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        /* Page float-in / float-out transition (MPA-friendly). */
-        @media (prefers-reduced-motion: no-preference) {
-            .manage-content:not(.is-embedded) {
-                /* fill-mode 必须是 backwards：both/forwards 会在动画结束后
-                   永久保留 transform 填充值（恒等矩阵也算 transformed），
-                   使本容器成为 position:fixed 的 containing block，
-                   页面内的 modal-backdrop 会被劫持而不再相对视口居中。 */
-                animation: managePageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
-            }
-
-            .manage-main.is-leaving .manage-content {
-                animation: managePageLeave 0.16s ease-in forwards;
-            }
-        }
-
-        @keyframes managePageEnter {
-            from { opacity: 0; transform: translateY(16px) scale(0.995); }
-            to { opacity: 1; transform: none; }
-        }
-
-        @keyframes managePageLeave {
-            to { opacity: 0; transform: translateY(-10px); }
-        }
-
-        .manage-embedded-root {
-            min-height: 100vh;
-        }
-
-        .page-header-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            margin-bottom: var(--spacing-5);
-        }
-
-        .mobile-toggle {
-            display: none;
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            cursor: pointer;
-            padding: var(--spacing-2);
-        }
-
-        @media (max-width: 768px) {
-            .manage-sidebar {
-                position: fixed;
-                left: -260px;
-                z-index: 50;
-                transition: left 0.3s ease;
-            }
-
-            .manage-sidebar.open {
-                left: 0;
-                box-shadow: var(--shadow-lg);
-            }
-
-            .mobile-toggle {
-                display: block;
-            }
-
-            .manage-content {
-                padding: var(--spacing-4);
-            }
-
-            .manage-content.is-embedded {
-                padding: 0;
-            }
-
-            .manage-topbar {
-                min-height: auto;
-                flex-wrap: nowrap;
-                align-items: flex-start;
-            }
-
-            .manage-topbar-start,
-            .manage-topbar-nav {
-                width: 100%;
-            }
-
-            .manage-topbar-start {
-                flex: 1 1 100%;
-                flex-wrap: wrap;
-            }
-
-            .manage-topbar .app-topbar-brand {
-                width: auto;
-                flex: 1 1 0;
-            }
-
-            .manage-topbar-page {
-                flex: 1 1 calc(100% - 42px - 0.72rem);
-                width: calc(100% - 42px - 0.72rem);
-                max-width: calc(100% - 42px - 0.72rem);
-                min-width: 0;
-                margin-left: calc(42px + 0.72rem);
-            }
-
-            .manage-topbar-nav {
-                flex-direction: column;
-                align-items: stretch;
-                margin-left: 0;
-            }
-
-            .manage-context-actions {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                width: 100%;
-            }
-
-            .manage-header {
-                height: auto;
-                min-height: 70px;
-                padding: var(--spacing-3) var(--spacing-4);
-                align-items: flex-start;
-            }
-
-            .manage-header,
-            .manage-header-start,
-            .manage-header-end {
-                flex-wrap: wrap;
-            }
-
-            .manage-header-start,
-            .manage-header-end {
-                width: 100%;
-            }
-
-            .manage-header-end {
-                justify-content: space-between;
-            }
-        }
-    </style>
 </head>
-<body class="{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }}">
+{#
+  App shell（教师端统一壳）。样式全部在 static/css/ui-system.src.css 的
+  "app-shell layer"（令牌化，禁止在此写内联样式）。
+  侧栏 = 六域手风琴：域标题即折叠开关，一次只开一个域；域内分组只做小标题。
+#}
+<body class="{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }} {% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}>
     {% if not embedded_mode %}
     {% from "macros/manage_icons.html" import manage_icon %}
     {% from "macros/ui_explanation.html" import explain_attrs %}
-    <div class="manage-layout manage-domain-{{ manage_nav.active_domain|default('teaching') }}" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
+    <div class="manage-layout app-shell" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
         <aside class="manage-sidebar" id="sidebar">
             <div class="manage-brand">
-                <a href="/dashboard" class="manage-brand__mark" aria-label="返回仪表盘" title="返回仪表盘">
+                <a href="/dashboard" class="manage-brand__mark" aria-label="返回首页" title="返回首页">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M9 7h6"></path><path d="M9 11h6"></path></svg>
                 </a>
                 <a href="/dashboard" class="manage-brand__copy">
-                    <strong>课堂平台</strong>
-                    <small>教师管理中心</small>
+                    <strong>课堂互动平台</strong>
+                    <small>教师工作台</small>
                 </a>
                 <button type="button" class="manage-sidebar-collapse" id="sidebarCollapseBtn" aria-label="折叠或展开菜单" title="折叠 / 展开菜单">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"></path><path d="m18 17-5-5 5-5"></path></svg>
                 </button>
-            </div>
-
-            <div class="manage-domain-tabs" role="tablist" aria-label="教师管理中心领域">
-                {% for domain in manage_nav.domains %}
-                <button
-                    type="button"
-                    class="manage-domain-tab manage-domain-tab--{{ domain.key }}{% if domain.active %} is-active{% endif %}"
-                    data-domain-tab="{{ domain.key }}"
-                    role="tab"
-                    aria-selected="{{ 'true' if domain.active else 'false' }}"
-                    aria-controls="manage-domain-{{ domain.key }}"
-                    {{ explain_attrs(domain.title, domain.description, placement='right') }}
-                >
-                    <span>{{ domain.short_label }}</span>
-                </button>
-                {% endfor %}
             </div>
 
             <div class="manage-nav-search">
@@ -863,56 +36,47 @@
                 <input type="search" id="manageNavSearch" placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项">
             </div>
 
-            <nav class="manage-nav" id="manageNav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}">
-                <div class="manage-nav-group manage-nav-group--utility">
-                    <a href="/dashboard" class="manage-nav-item" data-nav-text="返回仪表盘 首页 dashboard home" title="返回仪表盘">
-                        <span class="manage-nav-item__icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></span>
-                        <span class="manage-nav-item__label">返回仪表盘</span>
-                    </a>
-                </div>
-
+            <nav class="manage-nav" id="manageNav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}" aria-label="教师工作台导航">
                 {% for domain in manage_nav.domains %}
-                <div
-                    class="manage-nav-domain{% if domain.active %} is-active{% endif %}"
+                <section
+                    class="manage-nav-domain manage-nav-domain--{{ domain.key }}{% if domain.active %} is-active is-open{% endif %}"
                     id="manage-domain-{{ domain.key }}"
                     data-manage-domain="{{ domain.key }}"
-                    {% if not domain.active %}hidden{% endif %}
+                    data-nav-domain="{{ domain.key }}"
                 >
-                    {% if domain.key == 'library' %}
-                    {# 材料域：无传统菜单，左栏是分类多选按钮列表（默认全选 + 全选/全部取消）。 #}
-                    <div class="manage-cat-rail" id="libraryCategoryRail" data-hub-active="{{ '1' if active_page == 'material_hub' else '0' }}">
-                        {% if active_page != 'material_hub' %}
-                        <a class="manage-cat-rail__enter" href="/manage/library">进入材料中心 →</a>
-                        {% endif %}
-                        <div class="manage-cat-rail__actions">
-                            <button type="button" class="manage-cat-rail__action" data-cat-action="all">全选</button>
-                            <button type="button" class="manage-cat-rail__action" data-cat-action="none">全部取消</button>
-                        </div>
-                        {% for category in manage_nav.library_categories %}
-                        <button
-                            type="button"
-                            class="manage-cat-item is-checked"
-                            data-cat-key="{{ category.key }}"
-                            {{ explain_attrs(category.label, category.hint, placement='right') }}
-                        >
-                            <span class="manage-cat-item__box" aria-hidden="true">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
-                            </span>
-                            <span class="manage-cat-item__label">{{ category.label }}</span>
-                            <span class="manage-cat-item__count" data-cat-count hidden></span>
-                        </button>
-                        {% endfor %}
-                    </div>
+                    {% if domain.key == 'home' %}
+                    {% for group in domain.groups %}{% for item in group['items'] %}
+                    <a
+                        href="{{ item.href }}"
+                        class="manage-nav-item manage-nav-item--home{% if item.active %} active{% endif %}"
+                        data-nav-text="{{ item.search_text }}"
+                        data-nav-domain="{{ item.domain }}"
+                        {{ explain_attrs(item.label, item.help_text, placement='right') }}
+                    >
+                        <span class="manage-nav-item__icon">{{ manage_icon(item.icon) }}</span>
+                        <span class="manage-nav-item__copy"><span class="manage-nav-item__label">{{ item.label }}</span></span>
+                    </a>
+                    {% endfor %}{% endfor %}
                     {% else %}
-                    {% for group in domain.groups %}
-                    <div class="manage-nav-group manage-nav-group--{{ domain.key }}{% if group.active %} is-active is-open{% endif %}" data-nav-group="{{ domain.key }}:{{ group.label }}">
-                        <button type="button" class="manage-nav-group-toggle" aria-expanded="{{ 'true' if group.active else 'false' }}">
-                            <span class="manage-nav-group-toggle__label">{{ group.label }}</span>
-                            <span class="manage-nav-group-toggle__count">{{ group['items']|length }}</span>
-                            <svg class="manage-nav-group-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
-                        </button>
-                        <div class="manage-nav-group-items">
-                            <div class="manage-nav-group-items-inner">
+                    <button
+                        type="button"
+                        class="manage-nav-domain-toggle"
+                        aria-expanded="{{ 'true' if domain.active else 'false' }}"
+                        aria-controls="manage-domain-items-{{ domain.key }}"
+                        {{ explain_attrs(domain.title, domain.description, placement='right') }}
+                    >
+                        <span class="manage-nav-domain-toggle__dot" aria-hidden="true"></span>
+                        <span class="manage-nav-domain-toggle__label">{{ domain.label }}</span>
+                        <span class="manage-nav-domain-toggle__count">{{ domain.item_count }}</span>
+                        <svg class="manage-nav-domain-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                    </button>
+                    <div class="manage-nav-domain-items" id="manage-domain-items-{{ domain.key }}">
+                        <div class="manage-nav-domain-items-inner">
+                            {% for group in domain.groups %}
+                            <div class="manage-nav-group{% if group.active %} is-active{% endif %}" data-nav-group="{{ domain.key }}:{{ group.label }}">
+                                {% if domain.groups|length > 1 %}
+                                <div class="manage-nav-group-label">{{ group.label }}</div>
+                                {% endif %}
                                 {% for item in group['items'] %}
                                 <a
                                     href="{{ item.href }}"
@@ -925,14 +89,15 @@
                                     <span class="manage-nav-item__copy">
                                         <span class="manage-nav-item__label">{{ item.label }}</span>
                                     </span>
+                                    {% if item.step %}<span class="manage-nav-item__step" aria-label="第 {{ item.step }} 步">{{ item.step }}</span>{% endif %}
                                 </a>
                                 {% endfor %}
                             </div>
+                            {% endfor %}
                         </div>
                     </div>
-                    {% endfor %}
                     {% endif %}
-                </div>
+                </section>
                 {% endfor %}
 
                 <div class="manage-nav-empty" id="manageNavEmpty">没有匹配的菜单项</div>
@@ -946,7 +111,7 @@
                     <div class="manage-user-name">{{ user_info.name }}</div>
                     <div class="manage-user-role">{{ user_info.email }}</div>
                 </div>
-                <a href="/logout" class="btn btn-ghost btn-sm text-danger" title="退出登录" style="padding: 4px;">
+                <a href="/logout" class="manage-user-logout" title="退出登录" aria-label="退出登录">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                 </a>
             </div>
@@ -958,12 +123,12 @@
         <main class="manage-main">
             {% if not embedded_mode %}
             {% from "macros/app_topbar.html" import topbar_action %}
-            <header class="navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="管理中心顶栏">
+            <header class="navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="工作台顶栏">
                 <div class="manage-topbar-start">
-                    <button type="button" class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开管理菜单">
+                    <button type="button" class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开菜单">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                     </button>
-                    <a href="/dashboard" class="navbar-brand app-topbar-brand manage-topbar-brand" aria-label="返回教学首页">
+                    <a href="/dashboard" class="navbar-brand app-topbar-brand manage-topbar-brand" aria-label="返回首页">
                         <span class="app-topbar-brand__mark" aria-hidden="true">
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
@@ -973,20 +138,17 @@
                         </span>
                         <span class="app-topbar-brand__copy">
                             <strong>课堂互动平台</strong>
-                            <small>教师管理中心</small>
+                            <small>教师工作台</small>
                         </span>
                     </a>
-                    <div class="manage-topbar-page ls-anim-rise" aria-label="当前管理页面">
-                        <span>当前页面</span>
+                    <div class="manage-topbar-page ls-anim-rise" aria-label="当前页面">
+                        <span>{{ manage_nav.domain_meta[manage_nav.active_domain].label if manage_nav.active_domain in manage_nav.domain_meta else '工作台' }}</span>
                         <strong>{{ page_title }}</strong>
                     </div>
                 </div>
-                <nav class="navbar-user app-topbar-nav manage-topbar-nav" aria-label="管理中心入口">
+                <nav class="navbar-user app-topbar-nav manage-topbar-nav" aria-label="本页操作">
                     <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions ls-anim-stagger" aria-label="本页常用操作">
-                        {% block header_actions %}
-                        {{ topbar_action('开设课堂', '新学期入口', 'plus', href=manage_nav.hrefs.offerings, variant='solid', tone='teal') }}
-                        {% endblock %}
-                        {{ topbar_action('教学首页', '返回平台首页', 'gauge', href='/dashboard', variant='solid', tone='slate') }}
+                        {% block header_actions %}{% endblock %}
                     </div>
                 </nav>
             </header>
@@ -1042,70 +204,38 @@
             const search = document.getElementById('manageNavSearch');
             const nav = document.getElementById('manageNav');
             const empty = document.getElementById('manageNavEmpty');
-            const layout = document.querySelector('.manage-layout');
-            const domainTabs = Array.from(document.querySelectorAll('[data-domain-tab]'));
-            const domainPanels = Array.from(nav?.querySelectorAll('[data-manage-domain]') || []);
             const STORAGE_KEY = 'lanshare:manage-sidebar-collapsed';
-            const initialDomain = nav?.dataset.activeDomain || 'teaching';
 
-            const setActiveDomain = (domain) => {
-                const nextDomain = domain || initialDomain;
-                domainTabs.forEach((tab) => {
-                    const active = tab.dataset.domainTab === nextDomain;
-                    tab.classList.toggle('is-active', active);
-                    tab.setAttribute('aria-selected', active ? 'true' : 'false');
-                });
-                domainPanels.forEach((panel) => {
-                    const active = panel.dataset.manageDomain === nextDomain;
-                    panel.hidden = !active;
-                    panel.classList.toggle('is-active', active);
-                });
-                if (nav) nav.dataset.activeDomain = nextDomain;
-                if (layout) layout.dataset.manageDomain = nextDomain;
-            };
-
-            domainTabs.forEach((tab) => {
-                tab.addEventListener('click', () => {
-                    if (search) search.value = '';
-                    nav?.classList.remove('is-searching');
-                    setActiveDomain(tab.dataset.domainTab);
-                    nav?.querySelectorAll('.manage-nav-item').forEach((item) => { item.style.display = ''; });
-                    nav?.querySelectorAll('.manage-nav-group').forEach((group) => group.classList.remove('is-empty'));
-                    empty?.classList.remove('is-visible');
-                    centerActiveManageNavItem();
-                });
-            });
-
-            // Collapsible categories, accordion style: on load only the active
-            // group is open (server-rendered is-open); opening a category slides
-            // the others closed so the rail never piles up.
+            // 六域手风琴：域标题是折叠开关，一次只开一个域（页面所属域在服务端渲染为 is-open）。
             try { localStorage.removeItem('lanshare:manage-nav-open-groups'); } catch (_) {}
-            const groupEls = Array.from(nav?.querySelectorAll('.manage-nav-group[data-nav-group]') || []);
-            const syncGroupToggle = (group) => {
-                const isOpen = group.classList.contains('is-open');
-                group.querySelector('.manage-nav-group-toggle')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            const domainEls = Array.from(nav?.querySelectorAll('.manage-nav-domain[data-nav-domain]') || []);
+            const syncDomainToggle = (domain) => {
+                const isOpen = domain.classList.contains('is-open');
+                domain.querySelector('.manage-nav-domain-toggle')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             };
-            groupEls.forEach((group) => {
-                syncGroupToggle(group);
-                group.querySelector('.manage-nav-group-toggle')?.addEventListener('click', () => {
-                    const willOpen = !group.classList.contains('is-open');
+            domainEls.forEach((domain) => {
+                syncDomainToggle(domain);
+                domain.querySelector('.manage-nav-domain-toggle')?.addEventListener('click', () => {
+                    const willOpen = !domain.classList.contains('is-open');
                     if (willOpen) {
-                        groupEls.forEach((other) => {
-                            if (other !== group && other.classList.contains('is-open')) {
+                        domainEls.forEach((other) => {
+                            if (other !== domain && other.classList.contains('is-open')) {
                                 other.classList.remove('is-open');
-                                syncGroupToggle(other);
+                                syncDomainToggle(other);
                             }
                         });
                     }
-                    group.classList.toggle('is-open', willOpen);
-                    syncGroupToggle(group);
+                    domain.classList.toggle('is-open', willOpen);
+                    syncDomainToggle(domain);
                 });
             });
 
             // Restore the collapsed icon-rail (desktop only).
             if (sidebar && window.innerWidth > 768) {
                 try {
-                    if (localStorage.getItem(STORAGE_KEY) === '1') {
+                    const stored = localStorage.getItem(STORAGE_KEY);
+                    // 首页默认折叠成图标栏（用户手动切换后以其选择为准）。
+                    if (stored === '1' || (stored === null && nav?.dataset.activeDomain === 'home')) {
                         sidebar.classList.add('is-collapsed');
                     }
                 } catch (_) { /* private mode */ }
@@ -1122,49 +252,25 @@
                 const groups = Array.from(nav.querySelectorAll('.manage-nav-group'));
                 const apply = () => {
                     const q = search.value.trim().toLowerCase();
-                    // Searching temporarily slides every category open.
+                    // Searching temporarily slides every domain open.
                     nav.classList.toggle('is-searching', Boolean(q));
                     let anyVisible = false;
-                    const visibleDomains = new Set();
                     items.forEach((item) => {
                         const text = (item.dataset.navText || item.textContent || '').toLowerCase();
                         const match = !q || text.includes(q);
                         item.style.display = match ? '' : 'none';
-                        if (match) {
-                            anyVisible = true;
-                            if (item.dataset.navDomain) visibleDomains.add(item.dataset.navDomain);
-                        }
+                        if (match) anyVisible = true;
                     });
                     groups.forEach((group) => {
                         const hasVisible = Array.from(group.querySelectorAll('.manage-nav-item'))
                             .some((i) => i.style.display !== 'none');
                         group.classList.toggle('is-empty', !hasVisible);
                     });
-                    domainPanels.forEach((panel) => {
-                        if (!q) {
-                            const active = panel.dataset.manageDomain === (nav.dataset.activeDomain || initialDomain);
-                            panel.hidden = !active;
-                            panel.classList.toggle('is-active', active);
-                            return;
-                        }
-                        const hasVisibleDomainItem = Array.from(panel.querySelectorAll('.manage-nav-item'))
-                            .some((item) => item.style.display !== 'none');
-                        panel.hidden = !hasVisibleDomainItem;
-                        panel.classList.toggle('is-active', hasVisibleDomainItem);
+                    domainEls.forEach((domain) => {
+                        const hasVisible = Array.from(domain.querySelectorAll('.manage-nav-item'))
+                            .some((i) => i.style.display !== 'none');
+                        domain.classList.toggle('is-empty', Boolean(q) && !hasVisible);
                     });
-                    if (!q) {
-                        setActiveDomain(nav.dataset.activeDomain || initialDomain);
-                    } else if (visibleDomains.size > 0) {
-                        const firstDomain = Array.from(visibleDomains)[0];
-                        if (firstDomain) {
-                            domainTabs.forEach((tab) => {
-                                const active = tab.dataset.domainTab === firstDomain;
-                                tab.classList.toggle('is-active', active);
-                                tab.setAttribute('aria-selected', active ? 'true' : 'false');
-                            });
-                            if (layout) layout.dataset.manageDomain = firstDomain;
-                        }
-                    }
                     empty?.classList.toggle('is-visible', !anyVisible);
                     // Expand the rail while searching so labels are readable.
                     if (q && sidebar?.classList.contains('is-collapsed')) {
@@ -1178,20 +284,6 @@
             }
         };
         initManageSidebar();
-
-        // 材料域分类多选：材料中心页由 material_hub.js 接管；
-        // 在其他页面点分类按钮 → 带着该分类直接进入材料中心。
-        const libraryCatRail = document.getElementById('libraryCategoryRail');
-        if (libraryCatRail && libraryCatRail.dataset.hubActive !== '1') {
-            libraryCatRail.addEventListener('click', (event) => {
-                const action = event.target.closest('[data-cat-action]');
-                if (action) { window.location.href = '/manage/library'; return; }
-                const item = event.target.closest('[data-cat-key]');
-                if (item) {
-                    window.location.href = `/manage/library?cats=${encodeURIComponent(item.dataset.catKey)}`;
-                }
-            });
-        }
 
         window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();

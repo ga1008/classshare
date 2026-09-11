@@ -64,8 +64,7 @@ def _academic_event_label(row) -> str:
     return "教务日程"
 
 
-@router.get("/manage/teaching", response_class=HTMLResponse)
-@router.get("/manage", response_class=HTMLResponse)
+@router.get("/manage/teaching/workflow", response_class=HTMLResponse)
 async def manage_workflow_page(request: Request, user: dict = Depends(require_teacher_domain("teaching"))):
     with get_db_connection() as conn:
         workflow_snapshot = _build_classroom_opening_workflow_snapshot(conn, int(user["id"]))
@@ -76,7 +75,7 @@ async def manage_workflow_page(request: Request, user: dict = Depends(require_te
         _build_manage_template_context(
             request,
             user,
-            page_title="教学流程工作台",
+            page_title="开课向导",
             active_page="workflow",
             extra={
                 "workflow_snapshot": workflow_snapshot,
@@ -171,7 +170,7 @@ async def manage_academic_overview_page(request: Request, user: dict = Depends(r
 
 
 @router.get("/manage/me", response_class=HTMLResponse)
-async def manage_me_overview_page(request: Request, user: dict = Depends(require_teacher_domain("teacher"))):
+async def manage_me_overview_page(request: Request, user: dict = Depends(require_teacher_domain("me"))):
     with get_db_connection() as conn:
         profile_context = build_profile_page_context(conn, user, "overview")
         signature_context = build_signature_dashboard_context(conn, user)
@@ -231,7 +230,7 @@ async def manage_me_overview_page(request: Request, user: dict = Depends(require
 
 
 @router.get("/manage/me/credentials", response_class=HTMLResponse)
-async def manage_me_credentials_page(request: Request, user: dict = Depends(require_teacher_domain("teacher"))):
+async def manage_me_credentials_page(request: Request, user: dict = Depends(require_teacher_domain("me"))):
     teacher_id = int(user["id"])
     with get_db_connection() as conn:
         credential_groups = [
@@ -543,7 +542,7 @@ async def get_manage_classrooms_page(request: Request, user: dict = Depends(get_
     )
 
 
-@router.get("/manage/teaching/courses", response_class=HTMLResponse)
+@router.get("/manage/library/courses", response_class=HTMLResponse)
 @router.get("/manage/courses", response_class=HTMLResponse)
 async def get_manage_courses_page(request: Request, user: dict = Depends(get_current_teacher)):
     """显示课程管理页面 (列表和新建)"""
@@ -625,7 +624,7 @@ async def get_manage_semesters_page(request: Request, user: dict = Depends(get_c
     )
 
 
-@router.get("/manage/teaching/textbooks", response_class=HTMLResponse)
+@router.get("/manage/library/textbooks", response_class=HTMLResponse)
 @router.get("/manage/textbooks", response_class=HTMLResponse)
 async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -753,6 +752,8 @@ async def get_manage_offerings_page(request: Request, user: dict = Depends(get_c
 
 
 @router.get("/manage/teaching/classroom-hub", response_class=HTMLResponse)
+@router.get("/manage/teaching", response_class=HTMLResponse)
+@router.get("/manage", response_class=HTMLResponse)
 async def get_manage_offering_hub_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         semester_rows = load_teacher_semester_rows(conn, int(user["id"]))
@@ -856,8 +857,7 @@ async def get_manage_system_academic_integrations_page(request: Request, user: d
     )
 
 
-@router.get("/manage/teaching/smart-classroom-integrations", response_class=HTMLResponse)
-@router.get("/manage/system/smart-classroom-integrations", response_class=HTMLResponse)
+@router.get("/manage/academic/smart-classroom", response_class=HTMLResponse)
 async def get_manage_system_smart_classroom_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师个人智慧课堂账号与点名同步管理页面。"""
     profiles = list_smart_classroom_profiles()
@@ -880,7 +880,7 @@ async def get_manage_system_smart_classroom_integrations_page(request: Request, 
     )
 
 
-@router.get("/manage/teaching/course-schedule", response_class=HTMLResponse)
+@router.get("/manage/academic/course-schedule", response_class=HTMLResponse)
 async def get_manage_course_schedule_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师课时统计页面：同步智慧课堂课程表，按周 3D 展示并归集课时。"""
     from ...services.smart_classroom_schedule_sync_service import (

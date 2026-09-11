@@ -59,7 +59,7 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     return offerings
 
 
-@router.get("/manage/teaching/teacher-evaluations", response_class=HTMLResponse)
+@router.get("/manage/archive/teacher-evaluations", response_class=HTMLResponse)
 @router.get("/manage/teacher-evaluations", response_class=HTMLResponse)
 async def manage_teacher_evaluations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师评学表库管理页面（过程材料 → 教师评学表）。"""

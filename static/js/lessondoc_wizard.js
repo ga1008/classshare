@@ -6,7 +6,7 @@ import {parseStagesText,stagesToText} from './lessondoc_stages.js';
  * 用法:课程卡「学习文档」按钮 → window.openLessonDocWizard(courseId)。
  * 无包 → 建包向导(课次划分预填课程模板 → 主题 → 生成范围);
  * 有包 → 管理面板(逐课状态/生成/重写/排除、绑定课堂、切主题、刷新引擎)。
- * 深链:/manage/teaching/courses?lessondoc=<courseId> 自动打开。
+ * 深链:/manage/library/courses?lessondoc=<courseId> 自动打开。
  *
  * 依赖:页面存在 window.COURSE_PAGE_DATA(courses 含 lessons);
  * 绑定课堂的课堂清单复用 GET /api/materials/{rootId}/learning-bindings

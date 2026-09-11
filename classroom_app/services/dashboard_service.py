@@ -1203,6 +1203,56 @@ def build_dashboard_context(
     )
 
 
+
+def _build_teacher_domain_cards(
+    *,
+    is_super_admin: bool,
+    offering_count: int,
+    pending_review_total: int,
+    distinct_course_count: int,
+    inbox: dict[str, Any] | None,
+    agenda_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """首页「去哪里」域卡：注册表给结构，这里只补一行实时摘要（无数据就不编数字）。"""
+    counts = dict((inbox or {}).get("counts") or {})
+    gap_count = int(counts.get("offering_gap", 0))
+    approval_total = int((inbox or {}).get("approval_total") or 0)
+    feedback_count = int(counts.get("feedback", 0))
+
+    next_academic = ""
+    for event in sorted(
+        (e for e in agenda_events if e.get("kind") in {"invigilation", "exam"} and e.get("status") != "completed"),
+        key=lambda e: str(e.get("starts_at") or ""),
+    ):
+        starts_at = str(event.get("starts_at") or "")
+        label = {"invigilation": "监考", "exam": "考试"}.get(str(event.get("kind")), "教务")
+        try:
+            when = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+            next_academic = f"最近：{when.month}月{when.day}日 {label}"
+        except ValueError:
+            next_academic = f"最近：{label}"
+        break
+
+    summaries = {
+        "teaching": " · ".join(
+            part for part in (
+                f"{offering_count} 个课堂",
+                f"待批改 {pending_review_total}" if pending_review_total else "",
+                f"配置缺口 {gap_count}" if gap_count else "",
+            ) if part
+        ),
+        "library": f"{distinct_course_count} 门课程模板 · 教材 / 试卷 / 学习文档 / 教案",
+        "archive": "命题与考核 → 成绩链 → 教务归档 → 课后材料",
+        "academic": next_academic or "暂无教务安排 · 对接 / 教室 / 公文",
+        "me": f"{approval_total} 项申请待处理" if approval_total else "资料 · 签名 · 凭据 · 账号安全",
+        "admin": f"{feedback_count} 条反馈待处理" if feedback_count else "用户 · 组织 · AI 用量 · 监控",
+    }
+    cards = []
+    for card in build_dashboard_domain_cards(is_super_admin=is_super_admin):
+        cards.append({**card, "summary": summaries.get(card["domain"], card.get("description", ""))})
+    return cards
+
+
 def _build_teacher_dashboard_context(
     conn,
     user: dict,
@@ -1686,8 +1736,26 @@ def _build_teacher_dashboard_context(
         from .dashboard_workspace_service import load_dashboard_workspace
         workspace = load_dashboard_workspace(conn, user=user, offerings=enriched_offerings, limit=20, calendar_target=semester_calendar)
 
+    # 统一收件箱 + 带实时摘要的域卡（docs/manage-center-improvement-plan-2026-09-11.md §5.3/§5.4）。
+    from .message_center_service import is_super_admin_teacher
+    from .work_inbox_service import build_work_inbox
+    try:
+        current_teacher_is_super_admin = bool(is_super_admin_teacher(conn, teacher_id))
+    except Exception:
+        current_teacher_is_super_admin = False
+    work_inbox = build_work_inbox(conn, user, limit=6, workspace=workspace) if workspace else None
+    domain_cards = _build_teacher_domain_cards(
+        is_super_admin=current_teacher_is_super_admin,
+        offering_count=len(offerings),
+        pending_review_total=pending_review_total,
+        distinct_course_count=distinct_course_count,
+        inbox=work_inbox,
+        agenda_events=teacher_agenda_events,
+    )
+
     return {
         "dashboard_workspace": workspace,
+        "dashboard_work_inbox": work_inbox,
         "dashboard_theme": "teacher",
         "dashboard_hero": {
             "eyebrow": ui_copy["hero_eyebrow"],
@@ -1707,7 +1775,7 @@ def _build_teacher_dashboard_context(
             {"label": "未读提醒", "value": unread_total, "note": f"待审核 {pending_reset_count} 条"},
         ],
         "dashboard_quick_actions": quick_actions,
-        "dashboard_domain_cards": build_dashboard_domain_cards(),
+        "dashboard_domain_cards": domain_cards,
         "dashboard_sections": {
             "quick_actions": {
                 "title": ui_copy["quick_actions_title"],

@@ -19,7 +19,7 @@ test.describe('P03 materials management', () => {
     fs.writeFileSync(uploadPath, '# P03 material\n\nThis file is created only for the copied runtime database.\n', 'utf8');
 
     await loginTeacher(page, fixture);
-    await page.goto('/manage/teaching/materials');
+    await page.goto('/manage/library/materials');
     await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toBeAttached();
     await expect(page.getByTestId('p03-materials-list')).toBeVisible();
     await expect(page.getByTestId('p03-materials-refresh')).toBeVisible();
@@ -44,7 +44,7 @@ test.describe('P03 materials management', () => {
     const errors = collectBrowserErrors(page);
 
     await loginTeacher(page, fixture);
-    await page.goto('/manage/teaching/final-grade-transcripts');
+    await page.goto('/manage/archive/final-grade-transcripts');
     await expect(page.getByRole('heading', { name: '期末成绩单', exact: true })).toBeVisible();
     await expect(page.locator('[data-process-classroom-generate]')).toBeVisible();
     await expect(page.locator('[data-process-ai-import]')).toBeVisible();
@@ -130,7 +130,7 @@ test.describe('P03 materials management', () => {
               record_found: false,
               label: '考核登分表',
               message: '未找到严格对应材料。',
-              generate_url: '/manage/teaching/exam-grade-records',
+              generate_url: '/manage/archive/exam-grade-records',
             },
           },
           roster_sync: { status: 'success', cache_hit: true, freshness: { remaining_seconds: 1200 } },
@@ -212,12 +212,12 @@ test.describe('P03 materials management', () => {
     const errors = collectBrowserErrors(page);
 
     await loginStudent(page, fixture);
-    await page.goto('/manage/teaching/materials', { waitUntil: 'domcontentloaded' });
+    await page.goto('/manage/library/materials', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toHaveCount(0);
     await expect(page.getByTestId('p03-materials-list')).toHaveCount(0);
 
-    await page.goto('/manage/teaching/final-grade-transcripts', { waitUntil: 'domcontentloaded' });
+    await page.goto('/manage/archive/final-grade-transcripts', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await expect(page.locator('[data-lanshare-island="materials-manage-page"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: '期末成绩单', exact: true })).toHaveCount(0);

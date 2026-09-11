@@ -161,7 +161,7 @@ test.describe('unified explanation popover', () => {
     const errors = collectBrowserErrors(page);
     await loginTeacher(page, fixture);
 
-    await page.goto('/manage/teaching/materials');
+    await page.goto('/manage/library/materials');
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
     const navItem = page.locator('.manage-nav-item[data-explain]').first();

@@ -529,9 +529,9 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
             for domain in nav["domains"]
             for group in domain["groups"]
         }
-        self.assertIn("期末材料", groups)
-        keys = {item["key"] for item in groups["期末材料"]["items"]}
-        self.assertEqual({"academic_grade_registers", "academic_exam_analyses"}, keys)
+        self.assertIn("教务归档", groups)
+        keys = {item["key"] for item in groups["教务归档"]["items"]}
+        self.assertEqual({"academic_grade_registers", "academic_exam_analyses", "teacher_evaluations"}, keys)
 
     def test_schema_is_idempotent_and_enforces_one_batch_per_class(self) -> None:
         schema_academic_final_materials._SCHEMA_READY = False

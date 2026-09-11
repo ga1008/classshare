@@ -264,7 +264,7 @@ class ExamMaterialReverseServiceTests(unittest.TestCase):
         self.assertEqual(row["source_type"], "exam_reverse")
         self.assertEqual(row["status"], "generating")
         self.assertEqual(row["ai_gen_status"], "pending")
-        self.assertEqual(result["redirect_url"], "/manage/teaching/assessment-plans")
+        self.assertEqual(result["redirect_url"], "/manage/archive/assessment-plans")
 
     def test_assignment_context_tolerates_assignments_without_updated_at(self):
         _insert_paper(self.conn)
@@ -310,7 +310,7 @@ class ExamMaterialReverseServiceTests(unittest.TestCase):
         self.assertEqual(row["parse_status"], "running")
         self.assertEqual(row["parse_mode"], "ai_generated")
         self.assertEqual(row["extraction_method"], "exam_reverse")
-        self.assertEqual(result["redirect_url"], "/manage/teaching/grading-rubrics")
+        self.assertEqual(result["redirect_url"], "/manage/archive/grading-rubrics")
         metadata = json.loads(row["metadata_json"])
         self.assertEqual(metadata["source_exam_paper_id"], "paper-1")
         self.assertEqual(metadata["generation_mode"], "exam_reverse")

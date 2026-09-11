@@ -42,12 +42,12 @@ SCOPE_LABELS = {
 
 # 导入解析记录类分类 → material_ai_import_records.document_type + 落地页
 _IMPORT_RECORD_CATEGORIES: dict[str, tuple[str, str]] = {
-    "grading_rubrics": ("grading_rubric", "/manage/teaching/grading-rubrics"),
-    "ordinary_grade_records": ("ordinary_grade_record", "/manage/teaching/ordinary-grade-records"),
-    "exam_grade_records": ("exam_grade_record", "/manage/teaching/exam-grade-records"),
-    "final_grade_transcripts": ("final_grade_transcript", "/manage/teaching/final-grade-transcripts"),
-    "academic_grade_registers": ("academic_grade_register", "/manage/teaching/academic-grade-registers"),
-    "academic_exam_analyses": ("academic_exam_analysis", "/manage/teaching/academic-exam-analyses"),
+    "grading_rubrics": ("grading_rubric", "/manage/archive/grading-rubrics"),
+    "ordinary_grade_records": ("ordinary_grade_record", "/manage/archive/ordinary-grade-records"),
+    "exam_grade_records": ("exam_grade_record", "/manage/archive/exam-grade-records"),
+    "final_grade_transcripts": ("final_grade_transcript", "/manage/archive/final-grade-transcripts"),
+    "academic_grade_registers": ("academic_grade_register", "/manage/archive/academic-grade-registers"),
+    "academic_exam_analyses": ("academic_exam_analysis", "/manage/archive/academic-exam-analyses"),
 }
 
 
@@ -222,7 +222,7 @@ def _search_course_materials(conn, ctx: dict[str, Any], terms: list[str], *, pos
         [*visibility_params, *like_params, PER_CATEGORY_LIMIT],
     ).fetchall()
     category = "postclass" if postclass else "learning_docs"
-    base_page = "/manage/teaching/postclass-materials" if postclass else "/manage/teaching/materials"
+    base_page = "/manage/archive/postclass-materials" if postclass else "/manage/library/materials"
     pack_root_ids = _lessondoc_pack_root_ids(conn, [int(row["id"]) for row in rows])
     items = []
     for row in rows:
@@ -249,9 +249,9 @@ def _search_course_materials(conn, ctx: dict[str, Any], terms: list[str], *, pos
 
 
 _STRUCTURED_TABLES = {
-    "lesson_plans": ("lesson_plans", "/manage/teaching/lesson-plans", ["title", "tags_json", "cover_json"]),
-    "assessment_plans": ("assessment_plans", "/manage/teaching/assessment-plans", ["title", "tags_json", "fields_json"]),
-    "teacher_evaluations": ("teacher_evaluations", "/manage/teaching/teacher-evaluations", ["title", "tags_json", "analysis"]),
+    "lesson_plans": ("lesson_plans", "/manage/library/lesson-plans", ["title", "tags_json", "cover_json"]),
+    "assessment_plans": ("assessment_plans", "/manage/archive/assessment-plans", ["title", "tags_json", "fields_json"]),
+    "teacher_evaluations": ("teacher_evaluations", "/manage/archive/teacher-evaluations", ["title", "tags_json", "analysis"]),
 }
 
 
@@ -357,7 +357,7 @@ def _search_exam_papers(conn, ctx: dict[str, Any], terms: list[str]) -> list[dic
             owner=ctx["teacher_name"],
             scope_key="private",
             updated_at=row["updated_at"] or "",
-            url="/manage/teaching/exams",
+            url="/manage/library/exams",
             meta=[str(row["status"] or "")],
         )
         for row in rows
@@ -385,7 +385,7 @@ def _search_textbooks(conn, ctx: dict[str, Any], terms: list[str]) -> list[dict[
             owner=ctx["teacher_name"],
             scope_key="private",
             updated_at=row["updated_at"] or "",
-            url="/manage/teaching/textbooks",
+            url="/manage/library/textbooks",
             meta=[str(row["publisher"] or "")],
         )
         for row in rows

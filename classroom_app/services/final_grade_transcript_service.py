@@ -1995,9 +1995,9 @@ def _build_content_markdown(fields: dict[str, Any], students: list[dict[str, Any
 
 def _source_generate_url(document_type: str, class_offering_id: int) -> str:
     path = (
-        "/manage/teaching/ordinary-grade-records"
+        "/manage/archive/ordinary-grade-records"
         if document_type == ORDINARY_GRADE_RECORD_TYPE
-        else "/manage/teaching/exam-grade-records"
+        else "/manage/archive/exam-grade-records"
     )
     return f"{path}?open=classroom-generate&class_offering_id={int(class_offering_id)}"
 

@@ -37,7 +37,7 @@ const deck = createScheduleDeck(refs.deckMount, {
     description: '滚轮或方向键切换周次，点击周卡片放大；点击课程块进入课堂。',
     emptyHtml: () => (state.hasCredential
         ? '<strong>暂无课表数据</strong><p>点击右上角「同步智慧课堂」拉取本学期排课。</p>'
-        : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/teaching/smart-classroom-integrations">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>'),
+        : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/academic/smart-classroom">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>'),
 });
 
 let toastTimer = null;
@@ -232,7 +232,7 @@ async function reloadOverview({ keepWeek = true } = {}) {
     state.loading = true;
     try {
         const params = new URLSearchParams(currentFilters());
-        const data = await apiFetch(`/api/manage/teaching/course-schedule/overview?${params.toString()}`);
+        const data = await apiFetch(`/api/manage/academic/course-schedule/overview?${params.toString()}`);
         applyOverview(data.overview, { keepWeek });
     } catch (error) {
         showToast(error.message || '课表数据加载失败。', 'error');
@@ -253,7 +253,7 @@ async function runSync() {
     if (syncLabel) syncLabel.textContent = '同步中…';
     refs.syncBtn?.setAttribute('disabled', 'disabled');
     try {
-        const data = await apiFetch('/api/manage/teaching/course-schedule/sync', {
+        const data = await apiFetch('/api/manage/academic/course-schedule/sync', {
             method: 'POST',
             body: JSON.stringify(currentFilters()),
         });

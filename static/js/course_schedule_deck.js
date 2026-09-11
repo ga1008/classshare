@@ -12,7 +12,7 @@
  *   });
  *   deck.setOverview(overview, { keepWeek: false });
  *
- * overview 结构即 /api/manage/teaching/course-schedule/overview 的返回值：
+ * overview 结构即 /api/manage/academic/course-schedule/overview 的返回值：
  * terms / selected_term / weeks[{week_index,label,is_current,lessons[]}] /
  * section_range / filters.course_options。lesson.classroom_url 存在时课程块
  * 在放大视图中可点击跳转对应课堂。

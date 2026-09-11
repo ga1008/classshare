@@ -496,9 +496,9 @@
             ) }}
         </div>
         <div class="academic-hero-actions">
-            <a href="/manage/teaching/courses" class="academic-link-btn">先完善课程模板</a>
+            <a href="/manage/library/courses" class="academic-link-btn">先完善课程模板</a>
             <a href="/manage/teaching/semesters?open=new" class="academic-link-btn">新增学期</a>
-            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
+            <a href="/manage/library/textbooks?open=new" class="academic-link-btn">新增教材</a>
         </div>
     </section>
 
@@ -598,7 +598,7 @@
                                 <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}{% if course.is_shared_course %} · 系内共享{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/teaching/courses" class="academic-link-btn">新增课程</a>
+                            <a href="/manage/library/courses" class="academic-link-btn">新增课程</a>
                         </div>
                     </div>
 
@@ -611,7 +611,7 @@
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a href="/manage/library/textbooks?open=new" class="academic-link-btn">新增教材</a>
                         </div>
                     </div>
 

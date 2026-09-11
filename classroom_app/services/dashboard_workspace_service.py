@@ -149,7 +149,7 @@ def normalize_workspace_item(source: dict[str, Any], *, now: datetime) -> dict[s
     href = str(source.get("href") or source.get("link_url") or (f"/classroom/{offering_id}#timeline-panel" if offering_id else "/dashboard#dashboard-semester"))
     item = {
         "key": _stable_key(source, kind, offering_id), "source_type": str(source.get("source_type") or kind), "source_id": source_id,
-        "kind": kind, "type_label": KIND_LABELS.get(kind, "事项"), "offering_id": offering_id, "class_offering_id": offering_id,
+        "kind": kind, "type_label": str(source.get("type_label") or KIND_LABELS.get(kind, "事项")), "offering_id": offering_id, "class_offering_id": offering_id,
         "title": str(source.get("title") or "待办事项"), "subtitle": str(source.get("offering_label") or source.get("subtitle") or source.get("description") or ""),
         "href": href, "starts_at": _iso(starts), "ends_at": _iso(ends), "due_at": _iso(due), "effective_due_at": _iso(effective_due),
         "status": status, "status_label": status_label, "is_completed": completed, "is_actionable": actionable,
@@ -636,7 +636,7 @@ def iter_workspace_sources(conn, *, offerings: list[dict[str, Any]], user: dict[
                 WHERE o.id IN ({placeholders}) AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts e WHERE e.assignment_id = a.id)
                 GROUP BY o.id ORDER BY o.id""", tuple(ids)):
                 if row["pending_count"]:
-                    yield {"source_type": "grading", "source_id": row["offering_id"], "kind": "teacher_work", "class_offering_id": row["offering_id"],
+                    yield {"source_type": "grading", "source_id": row["offering_id"], "kind": "teacher_work", "type_label": "待批改", "class_offering_id": row["offering_id"],
                            "work_count": _integer(row["pending_count"]),
                            "title": f"{row['pending_count']} 份答卷待批改", "subtitle": labels.get(_integer(row["offering_id"]), ""),
                            "is_actionable": True, "href": f"/classroom/{row['offering_id']}#assignment-panel", "action_label": "查看待批改"}
@@ -644,8 +644,106 @@ def iter_workspace_sources(conn, *, offerings: list[dict[str, Any]], user: dict[
             WHERE r.teacher_id = ? AND c.created_by_teacher_id = ? AND r.status = 'pending'""", (int(user["id"]), int(user["id"]))):
             if row["pending_count"]:
                 from .manage_nav_service import canonical_manage_href
-                yield {"source_type": "password_reset", "source_id": "pending", "kind": "teacher_work", "title": f"{row['pending_count']} 项密码申请待审核", "is_actionable": True,
+                yield {"source_type": "password_reset", "source_id": "pending", "kind": "teacher_work", "type_label": "找回申请", "title": f"{row['pending_count']} 项密码申请待审核", "is_actionable": True,
                        "href": canonical_manage_href("system_password_resets"), "action_label": "审核申请"}
+        yield from iter_teacher_inbox_sources(conn, user=user, offering_ids=ids, labels=labels, now=now)
+
+
+# 统一收件箱来源（docs/manage-center-improvement-plan-2026-09-11.md §5.3）：
+# 每个来源独立降级——单个来源异常只记录，不拖垮整份「需要处理」。
+def _inbox_source(name: str, producer):
+    try:
+        return list(producer())
+    except Exception as exc:  # pragma: no cover - defensive degradation
+        print(f"[WORK_INBOX] source {name} failed: {exc}")
+        return []
+
+
+def iter_teacher_inbox_sources(conn, *, user: dict[str, Any], offering_ids: list[int], labels: dict[int, str], now: datetime):
+    """审批申请 / 签名申请 / 课堂配置缺口 / 用户反馈（超管）。只做 scoped SELECT。"""
+    teacher_id = _integer(user.get("id"))
+    if not teacher_id:
+        return
+
+    def approvals():
+        from .approval_workflow_service import list_requests
+        for req in list_requests(conn, user, scope="incoming", status="pending", limit=30):
+            offering_id = _integer(req.get("class_offering_id"))
+            if offering_id not in labels:
+                offering_id = 0
+            assignment_id = req.get("assignment_id")
+            href = f"/assignment/{assignment_id}?approval={req['id']}" if assignment_id else "/manage/me/inbox"
+            yield {
+                "source_type": "approval", "source_id": req["id"], "kind": "teacher_work", "type_label": "审批",
+                "class_offering_id": offering_id, "priority": "high", "is_actionable": True,
+                "title": f"{req.get('applicant_name') or '学生'} 申请{req.get('request_type_label') or '审批'}",
+                "subtitle": str(req.get("title") or labels.get(offering_id, "")), "due_at": req.get("expires_at"),
+                "href": href, "action_label": "去审批",
+            }
+
+    def signature_requests():
+        from .signature_workflow_service import list_access_requests
+        result = list_access_requests(conn, user, direction="incoming", status="pending", limit=20)
+        for item in result.get("items", []):
+            yield {
+                "source_type": "signature_request", "source_id": item["id"], "kind": "teacher_work", "type_label": "签名申请",
+                "priority": "high", "is_actionable": True,
+                "title": f"{item.get('requester_name') or '同事'} 申请使用签名「{item.get('signature_subject_name') or ''}」",
+                "subtitle": str(item.get("context_label") or ""), "href": f"/manage/me/signature-workflows?request_id={item['id']}",
+                "action_label": "去审批",
+            }
+
+    def offering_gaps():
+        if not offering_ids:
+            return
+        from .offering_hub_service import _ai_configured_ids
+        placeholders = ",".join("?" for _ in offering_ids)
+        ai_ready = _ai_configured_ids(conn, offering_ids)
+        today_iso = now.date().isoformat()
+        rows = conn.execute(
+            f"""SELECT o.id, o.textbook_id,
+                       (SELECT COUNT(*) FROM class_offering_sessions s WHERE s.class_offering_id = o.id) AS session_count,
+                       (SELECT COUNT(*) FROM class_offering_sessions s WHERE s.class_offering_id = o.id AND s.session_date >= ?) AS future_count
+                FROM class_offerings o WHERE o.id IN ({placeholders})""",
+            (today_iso, *offering_ids),
+        ).fetchall()
+        for row in rows:
+            row = dict(row)
+            offering_id = _integer(row["id"])
+            current = _integer(row["session_count"]) == 0 or _integer(row["future_count"]) > 0
+            if not current:
+                continue
+            gaps = []
+            if not row.get("textbook_id"):
+                gaps.append("缺教材")
+            if offering_id not in ai_ready:
+                gaps.append("未配 AI 助教")
+            if _integer(row["session_count"]) == 0:
+                gaps.append("未排课")
+            if not gaps:
+                continue
+            yield {
+                "source_type": "offering_gap", "source_id": offering_id, "kind": "teacher_work", "type_label": "课堂配置",
+                "class_offering_id": offering_id, "is_actionable": True, "priority": "normal",
+                "title": f"{labels.get(offering_id, '课堂')}：{' / '.join(gaps)}", "subtitle": "补齐后课堂才能完整运行",
+                "href": f"/manage/teaching/offerings?offering_id={offering_id}", "action_label": "去配置",
+            }
+
+    def feedback():
+        from .message_center_service import is_super_admin_teacher
+        if not is_super_admin_teacher(conn, teacher_id):
+            return
+        row = conn.execute("SELECT COUNT(*) AS n FROM app_feedback WHERE status = 'pending'").fetchone()
+        count = _integer(row["n"] if hasattr(row, "keys") else row[0]) if row else 0
+        if count:
+            yield {
+                "source_type": "feedback", "source_id": "pending", "kind": "teacher_work", "type_label": "用户反馈",
+                "is_actionable": True, "title": f"{count} 条用户反馈待处理", "subtitle": "平台管理 · 问题反馈",
+                "href": "/manage/system/feedback", "action_label": "去处理",
+            }
+
+    for name, producer in (("approval", approvals), ("signature_request", signature_requests), ("offering_gap", offering_gaps), ("feedback", feedback)):
+        yield from _inbox_source(name, producer)
 
 
 def load_dashboard_workspace(conn, *, user: dict[str, Any], offerings: list[dict[str, Any]] | None = None, continue_material: dict[str, Any] | None = None, now: datetime | None = None, **filters) -> dict[str, Any]:

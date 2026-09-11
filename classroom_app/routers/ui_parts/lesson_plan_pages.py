@@ -42,7 +42,7 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
     return offerings
 
 
-@router.get("/manage/teaching/lesson-plans", response_class=HTMLResponse)
+@router.get("/manage/library/lesson-plans", response_class=HTMLResponse)
 @router.get("/manage/lesson-plans", response_class=HTMLResponse)
 async def manage_lesson_plans_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教案库管理页面（内容资产 → 教案）。"""

@@ -4,7 +4,7 @@ from .common import *
 router = APIRouter()
 
 
-@router.get("/manage/teaching/polls", response_class=HTMLResponse)
+@router.get("/manage/library/polls", response_class=HTMLResponse)
 @router.get("/manage/polls", response_class=HTMLResponse)
 async def manage_polls_page(request: Request, user: dict = Depends(get_current_teacher)):
     """投票活动管理页面（内容资产 · 投票）。

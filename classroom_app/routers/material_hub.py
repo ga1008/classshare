@@ -38,7 +38,7 @@ async def manage_material_hub_page(
         _build_manage_template_context(
             request,
             user,
-            page_title="材料中心",
+            page_title="材料检索",
             active_page="material_hub",
         ),
     )

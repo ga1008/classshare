@@ -84,7 +84,7 @@ test('latest semester response wins and retry keeps the selected semester', asyn
     section_range: { min: 1, max: 11 }, weeks: [{ week_index: 1, label: year, is_current: true, lesson_count: 0, total_hours: 0, lessons: [] }] });
   let delayed: any;
   let fail = true;
-  await page.route('**/api/manage/teaching/course-schedule/overview?**', async route => {
+  await page.route('**/api/manage/academic/course-schedule/overview?**', async route => {
     const year = new URL(route.request().url()).searchParams.get('year') || '';
     if (year === '2024-2025') { delayed = route; return; }
     if (year === '2025-2026' && fail) { await route.fulfill({ status: 503, body: '{}' }); return; }
@@ -126,7 +126,7 @@ test('custom deck term survives a search without silently returning to the defau
 test('teacher third semester is requested explicitly and free-text terms do not substitute another semester', async ({ page }) => {
   await loginTeacher(page, readFixture());
   const requests: URL[] = [];
-  await page.route('**/api/manage/teaching/course-schedule/overview?**', async route => {
+  await page.route('**/api/manage/academic/course-schedule/overview?**', async route => {
     requests.push(new URL(route.request().url()));
     await route.fulfill({ json: { overview: { terms: [], weeks: [] } } });
   });

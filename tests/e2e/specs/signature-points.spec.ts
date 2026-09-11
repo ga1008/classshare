@@ -295,7 +295,7 @@ test.describe('material-scoped signature points', () => {
       });
     });
 
-    await page.goto('/manage/teaching/academic-exam-analyses');
+    await page.goto('/manage/archive/academic-exam-analyses');
     await page.locator(`[data-afm-edit="${batchId}"]`).click();
     const editor = page.locator('[data-afm-editor-dialog][open]');
     await expect(editor).toBeVisible();

@@ -259,6 +259,7 @@ async def api_sync_smart_classroom_data(user: dict = Depends(get_current_teacher
     }
 
 
+@router.get("/academic/course-schedule/overview", response_class=JSONResponse)
 @router.get("/teaching/course-schedule/overview", response_class=JSONResponse)
 async def api_course_schedule_overview(
     year: str = "",
@@ -281,6 +282,7 @@ async def api_course_schedule_overview(
     return {"status": "success", "overview": overview}
 
 
+@router.post("/academic/course-schedule/sync", response_class=JSONResponse)
 @router.post("/teaching/course-schedule/sync", response_class=JSONResponse)
 async def api_sync_course_schedule(request: Request, user: dict = Depends(get_current_teacher)):
     """立即从智慧课堂同步教师课程表（替换本地对应学期数据），并返回最新概览。"""

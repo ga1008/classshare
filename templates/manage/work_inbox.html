@@ -1,0 +1,53 @@
+{% extends "manage/layout.html" %}
+{% from "macros/ui_explanation.html" import explain_button %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('回首页', '今天的事', 'gauge', href='/dashboard', variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block content %}
+<section class="wi-page" data-work-inbox>
+    <header class="wi-head">
+        <div>
+            <div class="manage-pagehead__title-row">
+                <h2>待我处理</h2>
+                {{ explain_button('待我处理', '首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。', label='待我处理说明') }}
+            </div>
+            <p class="wi-lead">{% if inbox.total %}共 {{ inbox.total }} 项等你处理。{% else %}目前没有需要处理的事项。{% endif %}</p>
+        </div>
+    </header>
+
+    <nav class="wi-sources" aria-label="按来源筛选">
+        <a href="/manage/me/inbox" class="wi-chip{% if not inbox.source %} is-active{% endif %}">全部 <b>{{ inbox.total }}</b></a>
+        {% for src in inbox.sources %}{% if src.count %}
+        <a href="/manage/me/inbox?source={{ src.key }}" class="wi-chip wi-chip--{{ src.tone }}{% if inbox.source == src.key %} is-active{% endif %}" data-explain data-explain-title="{{ src.label }}" data-explain-text="{{ src.description }}">{{ src.label }} <b>{{ src.count }}</b></a>
+        {% endif %}{% endfor %}
+    </nav>
+
+    {% if inbox['items'] %}
+    <ul class="wi-list">
+        {% for item in inbox['items'] %}
+        <li class="wi-item{% if item.date_bucket in ['overdue', 'today'] %} is-urgent{% endif %}">
+            <span class="wi-item__kind">{{ item.type_label }}</span>
+            <span class="wi-item__copy">
+                <strong>{{ item.title }}</strong>
+                {% if item.subtitle %}<small>{% if item.offering_id %}<a href="/classroom/{{ item.offering_id }}">{{ item.subtitle }}</a>{% else %}{{ item.subtitle }}{% endif %}</small>{% endif %}
+            </span>
+            <span class="wi-item__time">
+                {% if item.status_label %}<span{% if item.date_bucket == 'overdue' %} class="wi-warn"{% endif %}>{{ item.status_label }}</span>{% endif %}
+                <span>{{ item.date_label }}{% if item.time_label %} · {{ item.time_label }}{% endif %}</span>
+            </span>
+            <a href="{{ item.href }}" class="btn btn-outline btn-sm">{{ item.action_label or '查看' }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="wi-empty">
+        <strong>没有需要处理的事项</strong>
+        <p>{% if inbox.source %}换一个来源看看，或回到全部。{% else %}批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。{% endif %}</p>
+        <a href="/dashboard" class="btn btn-primary btn-sm">回首页</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

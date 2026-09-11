@@ -1616,7 +1616,7 @@ def build_course_schedule_capability(conn, teacher_id: int) -> dict[str, Any]:
         "label": "教师课程表与课时统计",
         "description": "从智慧课堂读取本学期全部排课（课程、教室、节次、周次），并从教务系统回溯历史学期课表，按周展示课表并统计课程课时和学期课时。",
         "scope": "本学期排课（智慧课堂）+ 历史学期排课（教务系统）",
-        "endpoint": "/api/manage/teaching/course-schedule/sync",
+        "endpoint": "/api/manage/academic/course-schedule/sync",
         "method": "POST",
         "parameters": [
             {"name": "credential", "value": "使用当前教师已验证的智慧课堂账号"},

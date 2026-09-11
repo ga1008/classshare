@@ -202,7 +202,7 @@ def create_assessment_plan_reverse_placeholder(
     return {
         "plan_id": plan_id,
         "card": ap.serialize_card(plan) if plan else None,
-        "redirect_url": "/manage/teaching/assessment-plans",
+        "redirect_url": "/manage/archive/assessment-plans",
     }
 
 
@@ -241,7 +241,7 @@ def create_grading_rubric_reverse_placeholder(
     )
     return {
         "record_id": record_id,
-        "redirect_url": "/manage/teaching/grading-rubrics",
+        "redirect_url": "/manage/archive/grading-rubrics",
         "source_exam_paper_id": str(paper_id),
     }
 

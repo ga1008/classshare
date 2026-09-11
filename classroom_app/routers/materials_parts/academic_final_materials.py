@@ -584,9 +584,9 @@ def _render_page(
                 "document_type": document_type,
                 "document_type_label": ACADEMIC_GRADE_REGISTER_LABEL if is_grade else ACADEMIC_EXAM_ANALYSIS_LABEL,
                 "sibling_url": (
-                    "/manage/teaching/academic-exam-analyses"
+                    "/manage/archive/academic-exam-analyses"
                     if is_grade
-                    else "/manage/teaching/academic-grade-registers"
+                    else "/manage/archive/academic-grade-registers"
                 ),
                 "sibling_label": ACADEMIC_EXAM_ANALYSIS_LABEL if is_grade else ACADEMIC_GRADE_REGISTER_LABEL,
             },
@@ -594,12 +594,12 @@ def _render_page(
     )
 
 
-@router.get("/manage/teaching/academic-grade-registers", response_class=HTMLResponse)
+@router.get("/manage/archive/academic-grade-registers", response_class=HTMLResponse)
 async def manage_academic_grade_registers(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_page(request, user, document_type=ACADEMIC_GRADE_REGISTER_TYPE)
 
 
-@router.get("/manage/teaching/academic-exam-analyses", response_class=HTMLResponse)
+@router.get("/manage/archive/academic-exam-analyses", response_class=HTMLResponse)
 async def manage_academic_exam_analyses(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_page(request, user, document_type=ACADEMIC_EXAM_ANALYSIS_TYPE)
 

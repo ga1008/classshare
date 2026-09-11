@@ -290,7 +290,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
     def test_manage_workflow_page_renders_for_authenticated_teacher(self):
         with _authenticated_client(self.teacher) as client:
-            response = client.get("/manage/teaching", follow_redirects=False)
+            response = client.get("/manage/teaching/workflow", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
         html = response.text
@@ -473,7 +473,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
     def test_manage_materials_injects_page_island_without_direct_legacy_script(self):
         with _authenticated_client(self.teacher) as client:
-            response = client.get("/manage/teaching/materials", follow_redirects=False)
+            response = client.get("/manage/library/materials", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
         html = response.text
@@ -490,7 +490,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         teacher = dict(self.teacher)
         teacher.pop("email", None)
         with _authenticated_client(teacher) as client:
-            response = client.get("/manage/teaching/materials", follow_redirects=False)
+            response = client.get("/manage/library/materials", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
         self.assertIn('data-lanshare-island="materials-manage-page"', response.text)

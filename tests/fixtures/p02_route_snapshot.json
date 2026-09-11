@@ -88,11 +88,43 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-bridge/children/admit",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_admit_child",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/children/{child_id}/finish",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_finish_child",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/download",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_download",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-bridge/file",
     "methods": [
       "POST"
     ],
     "name": "bridge_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/mcp",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_mcp",
     "include_in_schema": true
   },
   {
@@ -109,6 +141,30 @@
       "POST"
     ],
     "name": "bridge_query",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/questions",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_create_question",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/questions/{question_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "bridge_poll_question",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-bridge/questions/{question_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "bridge_cancel_question",
     "include_in_schema": true
   },
   {
@@ -133,6 +189,22 @@
       "POST"
     ],
     "name": "bridge_web",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-model/chat/completions",
+    "methods": [
+      "POST"
+    ],
+    "name": "proxy_model",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-model/messages",
+    "methods": [
+      "POST"
+    ],
+    "name": "proxy_model",
     "include_in_schema": true
   },
   {
@@ -256,6 +328,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/platform-requests",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_agent_platform_requests",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/platform-requests/{request_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_agent_platform_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/platform-requests/{request_id}/reconcile",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reconcile_agent_platform_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/questions/{question_id}/answer",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_answer_agent_question",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/retry",
     "methods": [
       "POST"
@@ -373,6 +477,62 @@
       "POST"
     ],
     "name": "handle_ai_workspace_chat",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_requests",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals/types",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_types",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals/{request_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals/{request_id}/approve",
+    "methods": [
+      "POST"
+    ],
+    "name": "approve_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals/{request_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "cancel_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/approvals/{request_id}/reject",
+    "methods": [
+      "POST"
+    ],
+    "name": "reject_request",
     "include_in_schema": true
   },
   {
@@ -560,6 +720,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/{assignment_id}/details",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_assignment_details_json",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/{assignment_id}/draft",
     "methods": [
       "GET"
@@ -645,6 +813,14 @@
       "POST"
     ],
     "name": "submit_peer_eval",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/review-submissions",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_review_submissions",
     "include_in_schema": true
   },
   {
@@ -1264,11 +1440,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/mine",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_my_classrooms",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/assessment-classifications",
     "methods": [
       "GET"
     ],
     "name": "list_assessment_classifications",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/assignments",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_assignment_list",
     "include_in_schema": true
   },
   {
@@ -1525,6 +1717,14 @@
       "GET"
     ],
     "name": "get_learning_score_events",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/learning/snapshot",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_student_learning_snapshot",
     "include_in_schema": true
   },
   {
@@ -2064,6 +2264,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/exam-papers/review-catalog",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_exam_catalog",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/exam-papers/{paper_id}",
     "methods": [
       "DELETE"
@@ -2125,6 +2333,14 @@
       "PUT"
     ],
     "name": "put_exam_paper_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/exam-papers/{paper_id}/review",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_exam_paper",
     "include_in_schema": true
   },
   {
@@ -2760,6 +2976,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/overview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_course_schedule_overview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_course_schedule",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/ai/ai-generate",
     "methods": [
       "POST"
@@ -2901,6 +3133,14 @@
       "PATCH"
     ],
     "name": "api_update_class_attributes",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/classes/{class_id}/delete-impact",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_class_delete_impact",
     "include_in_schema": true
   },
   {
@@ -3061,6 +3301,14 @@
       "PUT"
     ],
     "name": "api_update_course_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/courses/{course_id}/delete-impact",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_course_delete_impact",
     "include_in_schema": true
   },
   {
@@ -5736,6 +5984,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/submissions/{submission_id}/review",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_submission_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/submissions/{submission_id}/review-files",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_submission_review_files",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/submissions/{submission_id}/stop-grading",
     "methods": [
       "POST"
@@ -5893,6 +6157,14 @@
       "PATCH"
     ],
     "name": "update_account_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/work-inbox",
+    "methods": [
+      "GET"
+    ],
+    "name": "work_inbox_api",
     "include_in_schema": true
   },
   {
@@ -6068,16 +6340,8 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_workflow_page",
+    "name": "get_manage_offering_hub_page",
     "include_in_schema": true
-  },
-  {
-    "path": "/manage",
-    "methods": [
-      "GET"
-    ],
-    "name": "redirect_manage_legacy_workflow",
-    "include_in_schema": false
   },
   {
     "path": "/manage/academic",
@@ -6093,6 +6357,14 @@
       "GET"
     ],
     "name": "get_manage_classrooms_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/course-schedule",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_course_schedule_page",
     "include_in_schema": true
   },
   {
@@ -6120,6 +6392,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/academic/smart-classroom",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_smart_classroom_integrations_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/ai",
     "methods": [
       "GET"
@@ -6134,6 +6414,78 @@
     ],
     "name": "redirect_manage_legacy_ai",
     "include_in_schema": false
+  },
+  {
+    "path": "/manage/archive/academic-exam-analyses",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_academic_exam_analyses",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/academic-grade-registers",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_academic_grade_registers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/assessment-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_assessment_plans_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/exam-grade-records",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_exam_grade_records_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/final-grade-transcripts",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_final_grade_transcripts_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/grading-rubrics",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_grading_rubrics_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/ordinary-grade-records",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_ordinary_grade_records_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/postclass-materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_postclass_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/teacher-evaluations",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_teacher_evaluations_page",
+    "include_in_schema": true
   },
   {
     "path": "/manage/assessment-plans",
@@ -6256,6 +6608,54 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/library/courses",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_courses_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_exams_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/lesson-plans",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_lesson_plans_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/materials",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_materials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/polls",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_polls_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/textbooks",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_textbooks_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/materials",
     "methods": [
       "GET"
@@ -6285,6 +6685,14 @@
       "GET"
     ],
     "name": "manage_me_credentials_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/inbox",
+    "methods": [
+      "GET"
+    ],
+    "name": "work_inbox_page",
     "include_in_schema": true
   },
   {
@@ -6464,6 +6872,14 @@
     "include_in_schema": false
   },
   {
+    "path": "/manage/system/life-tips",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_life_tips_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/system/monitor",
     "methods": [
       "GET"
@@ -6500,14 +6916,6 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_system_smart_classroom_integrations_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/system/smart-classroom-integrations",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_system_smart_classroom_integrations",
     "include_in_schema": false
   },
@@ -6536,11 +6944,19 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/teacher-evaluations",
+    "methods": [
+      "GET"
+    ],
+    "name": "redirect_manage_legacy_teacher_evaluations",
+    "include_in_schema": false
+  },
+  {
     "path": "/manage/teaching",
     "methods": [
       "GET"
     ],
-    "name": "manage_workflow_page",
+    "name": "get_manage_offering_hub_page",
     "include_in_schema": true
   },
   {
@@ -6548,16 +6964,16 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_academic_exam_analyses",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_academic_exam_analyses",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/academic-grade-registers",
     "methods": [
       "GET"
     ],
-    "name": "manage_academic_grade_registers",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_academic_grade_registers",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/ai",
@@ -6572,8 +6988,8 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_assessment_plans_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_assessment_plans",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/classes",
@@ -6596,72 +7012,72 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_course_schedule_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_course_schedule",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/courses",
     "methods": [
       "GET"
     ],
-    "name": "get_manage_courses_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_courses",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/exam-grade-records",
     "methods": [
       "GET"
     ],
-    "name": "manage_exam_grade_records_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_exam_grade_records",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/exams",
     "methods": [
       "GET"
     ],
-    "name": "manage_exams_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_exams",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/final-grade-transcripts",
     "methods": [
       "GET"
     ],
-    "name": "manage_final_grade_transcripts_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_final_grade_transcripts",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/grading-rubrics",
     "methods": [
       "GET"
     ],
-    "name": "manage_grading_rubrics_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_grading_rubrics",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/lesson-plans",
     "methods": [
       "GET"
     ],
-    "name": "manage_lesson_plans_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_lesson_plans",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/life-tips",
     "methods": [
       "GET"
     ],
-    "name": "manage_life_tips_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_life_tips",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/materials",
     "methods": [
       "GET"
     ],
-    "name": "manage_materials_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_materials",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/offering-merge",
@@ -6684,24 +7100,24 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_ordinary_grade_records_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_ordinary_grade_records",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/polls",
     "methods": [
       "GET"
     ],
-    "name": "manage_polls_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_polls",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/postclass-materials",
     "methods": [
       "GET"
     ],
-    "name": "manage_postclass_materials_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_postclass_materials",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/semesters",
@@ -6716,23 +7132,31 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_system_smart_classroom_integrations_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_system_smart_classroom_integrations",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/teacher-evaluations",
     "methods": [
       "GET"
     ],
-    "name": "manage_teacher_evaluations_page",
-    "include_in_schema": true
+    "name": "redirect_manage_legacy_teacher_evaluations",
+    "include_in_schema": false
   },
   {
     "path": "/manage/teaching/textbooks",
     "methods": [
       "GET"
     ],
-    "name": "get_manage_textbooks_page",
+    "name": "redirect_manage_legacy_textbooks",
+    "include_in_schema": false
+  },
+  {
+    "path": "/manage/teaching/workflow",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_workflow_page",
     "include_in_schema": true
   },
   {

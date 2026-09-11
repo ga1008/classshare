@@ -8,7 +8,7 @@
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('开设课堂', '创建/编辑课堂', 'plus', href='/manage/teaching/offerings', variant='solid', tone='slate') }}
 {{ topbar_action('AI 助教', '课堂 AI 配置', 'robot', href='/manage/teaching/ai', variant='solid', tone='teal') }}
-{{ topbar_action('课时统计', '3D 课表与课时', 'calendar', href='/manage/teaching/course-schedule', variant='primary', tone='blue') }}
+{{ topbar_action('课时统计', '3D 课表与课时', 'calendar', href='/manage/academic/course-schedule', variant='primary', tone='blue') }}
 {% endblock %}
 
 {% block content %}
@@ -34,7 +34,7 @@
             </div>
             <div class="manage-pagehead__actions">
                 <a class="btn btn-outline" href="/manage/teaching/ai">配置 AI 助教</a>
-                <a class="btn btn-outline" href="/manage/teaching/course-schedule">课时统计</a>
+                <a class="btn btn-outline" href="/manage/academic/course-schedule">课时统计</a>
                 <a class="btn btn-primary" href="/manage/teaching/offerings">去开设课堂</a>
             </div>
         </div>

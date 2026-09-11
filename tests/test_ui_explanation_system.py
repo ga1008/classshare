@@ -101,8 +101,8 @@ class UiExplanationSystemTests(unittest.TestCase):
         materials = next(item for item in items if item["key"] == "materials")
         self.assertTrue(materials["help_text"])
         # Fallback strips the "标签：" prefix so the popover title is not repeated.
-        self.assertEqual(materials["ai_hint"], "材料：" + materials["help_text"])
-        self.assertFalse(materials["help_text"].startswith("材料："))
+        self.assertEqual(materials["ai_hint"], "学习文档：" + materials["help_text"])
+        self.assertFalse(materials["help_text"].startswith("学习文档："))
 
     def test_runtime_is_delegated_lazy_and_replaces_legacy_css_tooltips(self) -> None:
         script = (ROOT / "static/js/ui_explanation.js").read_text(encoding="utf-8")

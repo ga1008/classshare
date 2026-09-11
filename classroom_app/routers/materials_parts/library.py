@@ -346,7 +346,7 @@ def _render_manage_materials_page(
     )
 
 
-@router.get("/manage/teaching/materials", response_class=HTMLResponse)
+@router.get("/manage/library/materials", response_class=HTMLResponse)
 @router.get("/manage/materials", response_class=HTMLResponse)
 async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
     # 内容资产 → 材料：只保留上课使用的学习文档；课后材料在过程材料的「课后材料」页。
@@ -359,7 +359,7 @@ async def manage_materials_page(request: Request, user: dict = Depends(get_curre
     )
 
 
-@router.get("/manage/teaching/postclass-materials", response_class=HTMLResponse)
+@router.get("/manage/archive/postclass-materials", response_class=HTMLResponse)
 async def manage_postclass_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
     """过程材料 → 课后材料：课堂生成 + 上传解析（AI解析/导入）材料包的统一入口。"""
     return _render_manage_materials_page(
@@ -373,7 +373,7 @@ async def manage_postclass_materials_page(request: Request, user: dict = Depends
     )
 
 
-@router.get("/manage/teaching/grading-rubrics", response_class=HTMLResponse)
+@router.get("/manage/archive/grading-rubrics", response_class=HTMLResponse)
 async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_manage_materials_page(
         request,
@@ -391,7 +391,7 @@ async def manage_grading_rubrics_page(request: Request, user: dict = Depends(get
     )
 
 
-@router.get("/manage/teaching/ordinary-grade-records", response_class=HTMLResponse)
+@router.get("/manage/archive/ordinary-grade-records", response_class=HTMLResponse)
 async def manage_ordinary_grade_records_page(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_manage_materials_page(
         request,
@@ -406,7 +406,7 @@ async def manage_ordinary_grade_records_page(request: Request, user: dict = Depe
     )
 
 
-@router.get("/manage/teaching/exam-grade-records", response_class=HTMLResponse)
+@router.get("/manage/archive/exam-grade-records", response_class=HTMLResponse)
 async def manage_exam_grade_records_page(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_manage_materials_page(
         request,
@@ -421,7 +421,7 @@ async def manage_exam_grade_records_page(request: Request, user: dict = Depends(
     )
 
 
-@router.get("/manage/teaching/final-grade-transcripts", response_class=HTMLResponse)
+@router.get("/manage/archive/final-grade-transcripts", response_class=HTMLResponse)
 async def manage_final_grade_transcripts_page(request: Request, user: dict = Depends(get_current_teacher)):
     return _render_manage_materials_page(
         request,

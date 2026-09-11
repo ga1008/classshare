@@ -34,6 +34,15 @@ def dashboard(
             params["q"] = current_search
         item["href"] = "/dashboard" if not params else f"/dashboard?{urlencode(params)}"
 
+    if str(user.get("role") or "") == "teacher":
+        # 教师首页进入统一壳（docs/manage-center-improvement-plan-2026-09-11.md §5.1/§5.4）。
+        shell_context = _build_manage_template_context(request, user, page_title="首页", active_page="home")
+        return templates.TemplateResponse(
+            request,
+            "dashboard_teacher.html",
+            {**shell_context, **dashboard_context},
+        )
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",

@@ -10,7 +10,7 @@ from ...services.life_tip_generation_service import ALLOWED_CATEGORIES
 router = APIRouter()
 
 
-@router.get("/manage/teaching/life-tips", response_class=HTMLResponse)
+@router.get("/manage/system/life-tips", response_class=HTMLResponse)
 async def manage_life_tips_page(request: Request, user: dict = Depends(get_current_teacher)):
     """一言提示治理页（内容资产 · 一言提示）。
 

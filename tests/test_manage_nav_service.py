@@ -6,9 +6,15 @@ from fastapi.routing import APIRoute
 from classroom_app.app import app
 from classroom_app.core import templates
 from classroom_app.services.manage_nav_service import (
+    ARCHIVE_STEP_TOTAL,
+    MANAGE_DOMAIN_HOME_KEYS,
+    MANAGE_DOMAIN_META,
     MANAGE_DOMAIN_ORDER,
     MANAGE_NAV_ITEMS,
+    build_dashboard_domain_cards,
     build_manage_nav,
+    canonical_manage_href,
+    iter_archive_steps,
     iter_manage_legacy_redirects,
     iter_platform_manage_routes,
 )
@@ -32,7 +38,10 @@ class ManageNavServiceTests(unittest.TestCase):
         for item in MANAGE_NAV_ITEMS:
             with self.subTest(key=item.key):
                 self.assertIn(item.domain, legal_domains)
-                self.assertTrue(item.href.startswith("/manage/"))
+                if item.domain == "home":
+                    self.assertEqual("/dashboard", item.href)
+                else:
+                    self.assertTrue(item.href.startswith("/manage/"))
                 self.assertTrue(item.label.strip())
                 self.assertTrue(item.search_text.strip())
                 self.assertTrue(item.ai_hint.strip())
@@ -40,19 +49,67 @@ class ManageNavServiceTests(unittest.TestCase):
                     self.assertTrue(legacy_href.startswith("/manage"))
                     self.assertNotEqual(legacy_href, item.href)
 
-    def test_grading_rubric_entry_sits_under_assessment_plan(self):
-        process_items = [item.key for item in MANAGE_NAV_ITEMS if item.group == "过程材料"]
-        self.assertIn("assessment_plans", process_items)
-        self.assertIn("grading_rubrics", process_items)
-        self.assertIn("ordinary_grade_records", process_items)
-        self.assertIn("exam_grade_records", process_items)
-        self.assertIn("final_grade_transcripts", process_items)
-        self.assertIn("teacher_evaluations", process_items)
-        self.assertLess(process_items.index("assessment_plans"), process_items.index("grading_rubrics"))
-        self.assertLess(process_items.index("grading_rubrics"), process_items.index("ordinary_grade_records"))
-        self.assertLess(process_items.index("ordinary_grade_records"), process_items.index("exam_grade_records"))
-        self.assertLess(process_items.index("exam_grade_records"), process_items.index("final_grade_transcripts"))
-        self.assertLess(process_items.index("final_grade_transcripts"), process_items.index("teacher_evaluations"))
+    def test_six_domains_follow_teacher_lifecycle(self):
+        self.assertEqual(("home", "teaching", "library", "archive", "academic", "me"), MANAGE_DOMAIN_ORDER)
+        by_domain: dict[str, list[str]] = {}
+        for item in MANAGE_NAV_ITEMS:
+            by_domain.setdefault(item.domain, []).append(item.key)
+        self.assertEqual(["home"], by_domain["home"])
+        self.assertEqual(
+            ["offering_hub", "offering_merge", "workflow", "semesters", "offerings", "ai", "classes"],
+            by_domain["teaching"],
+        )
+        self.assertEqual(
+            ["material_hub", "courses", "textbooks", "exams", "materials", "lesson_plans", "polls"],
+            by_domain["library"],
+        )
+        self.assertEqual(
+            [
+                "academic_overview",
+                "course_schedule",
+                "system_academic_integrations",
+                "system_smart_classroom_integrations",
+                "classrooms",
+                "gongwen",
+                "system_gongwen_integrations",
+            ],
+            by_domain["academic"],
+        )
+        self.assertEqual(
+            ["teacher_profile", "work_inbox", "signatures", "signature_workflows", "teacher_credentials", "system_password_resets"],
+            by_domain["me"],
+        )
+        self.assertTrue(all(item.required_flag == "super_admin" for item in MANAGE_NAV_ITEMS if item.domain == "admin"))
+        # 域身份只用 tone 令牌名表达，不再硬编码色值。
+        for meta in MANAGE_DOMAIN_META.values():
+            self.assertNotIn("accent", meta)
+            self.assertTrue(meta["tone"])
+        # 教学域首页 = 课堂管理。
+        self.assertEqual("offering_hub", MANAGE_DOMAIN_HOME_KEYS["teaching"])
+        self.assertEqual("/manage/teaching/classroom-hub", canonical_manage_href("offering_hub"))
+
+    def test_archive_domain_orders_nine_steps_by_pipeline(self):
+        steps = iter_archive_steps()
+        self.assertEqual(
+            [
+                "assessment_plans",
+                "grading_rubrics",
+                "ordinary_grade_records",
+                "exam_grade_records",
+                "final_grade_transcripts",
+                "academic_grade_registers",
+                "academic_exam_analyses",
+                "teacher_evaluations",
+                "postclass_materials",
+            ],
+            [item.key for item in steps],
+        )
+        self.assertEqual(list(range(1, 10)), [item.step for item in steps])
+        self.assertEqual(9, ARCHIVE_STEP_TOTAL)
+        for item in steps:
+            with self.subTest(key=item.key):
+                self.assertEqual("archive", item.domain)
+                self.assertTrue(item.href.startswith("/manage/archive/"))
 
         labels = {
             item.key: item.label
@@ -83,8 +140,8 @@ class ManageNavServiceTests(unittest.TestCase):
         process_items = [
             item
             for domain in nav["domains"]
+            if domain["key"] == "archive"
             for group in domain["groups"]
-            if group["label"] == "过程材料"
             for item in group["items"]
         ]
         by_key = {item["key"]: item for item in process_items}
@@ -105,15 +162,19 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertNotIn("manage-nav-item__note", template)
         self.assertNotIn("manage-nav-item__badge", template)
         self.assertIn("explain_attrs(item.label, item.help_text", template)
-        # Collapsible category rail contract.
-        self.assertIn("manage-nav-group-toggle", template)
-        self.assertIn("manage-nav-group-items", template)
+        # Six-domain accordion contract; the shell carries no inline styles or domain tabs.
+        self.assertIn("manage-nav-domain-toggle", template)
+        self.assertIn("manage-nav-domain-items", template)
+        self.assertNotIn("manage-domain-tab", template)
+        self.assertNotIn("<style", template)
 
     def test_life_tips_lives_under_platform_admin(self):
         life_tips = next(item for item in MANAGE_NAV_ITEMS if item.key == "life_tips")
         self.assertEqual("admin", life_tips.domain)
         self.assertEqual("平台管理", life_tips.group)
         self.assertEqual("super_admin", life_tips.required_flag)
+        self.assertEqual("/manage/system/life-tips", life_tips.href)
+        self.assertIn("/manage/teaching/life-tips", life_tips.legacy_hrefs)
 
         admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "life_tips", is_super_admin=True)
         admin_keys = [
@@ -140,24 +201,25 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertEqual("academic", by_key["system_smart_classroom_integrations"].domain)
         self.assertEqual("数据同步", by_key["system_smart_classroom_integrations"].group)
         self.assertEqual("academic", by_key["course_schedule"].domain)
+        self.assertEqual("/manage/academic/smart-classroom", by_key["system_smart_classroom_integrations"].href)
+        self.assertEqual("/manage/academic/course-schedule", by_key["course_schedule"].href)
 
     def test_manage_nav_filters_admin_items_and_marks_active_domain(self):
         teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "classrooms", is_super_admin=False)
         self.assertEqual("academic", teacher_nav["active_domain"])
-        # 管理域承载个人事务（原教师域菜单），对所有教师可见，排在最后。
-        self.assertEqual([*MANAGE_DOMAIN_ORDER, "admin"], [domain["key"] for domain in teacher_nav["domains"]])
+        # 普通教师看到六个域，没有平台域。
+        self.assertEqual(list(MANAGE_DOMAIN_ORDER), [domain["key"] for domain in teacher_nav["domains"]])
         self.assertTrue(any(domain["key"] == "academic" and domain["active"] for domain in teacher_nav["domains"]))
-        teacher_admin_keys = [
+        me_keys = [
             item["key"]
             for domain in teacher_nav["domains"]
-            if domain["key"] == "admin"
+            if domain["key"] == "me"
             for group in domain["groups"]
             for item in group["items"]
         ]
-        # 个人事务可见；平台维护（超管专属）不可见。
         for personal_key in ("teacher_profile", "signatures", "teacher_credentials", "system_password_resets"):
-            self.assertIn(personal_key, teacher_admin_keys)
-        self.assertNotIn("system_users", teacher_admin_keys)
+            self.assertIn(personal_key, me_keys)
+        self.assertNotIn("system_users", teacher_nav["hrefs"])
 
         admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "system_users", is_super_admin=True)
         self.assertEqual("admin", admin_nav["active_domain"])
@@ -166,13 +228,29 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertTrue(admin_domain["active"])
         self.assertTrue(admin_domain["groups"])
         self.assertIn("system_users", admin_nav["hrefs"])
+        # 每个域带条目数与域首页链接，供侧栏手风琴与首页域卡使用。
+        for domain in admin_nav["domains"]:
+            self.assertGreater(domain["item_count"], 0)
+            self.assertTrue(domain["href"].startswith("/"))
+
+    def test_dashboard_domain_cards_follow_registry(self):
+        cards = build_dashboard_domain_cards()
+        self.assertEqual(["teaching", "library", "archive", "academic", "me"], [card["domain"] for card in cards])
+        self.assertEqual("/manage/teaching/classroom-hub", cards[0]["href"])
+        admin_cards = build_dashboard_domain_cards(is_super_admin=True)
+        self.assertEqual("admin", admin_cards[-1]["domain"])
+        for card in admin_cards:
+            self.assertTrue(card["tone"])
+            self.assertTrue(card["actions"])
 
     def test_library_domain_hosts_material_hub_and_categories(self):
         by_key = {item.key: item for item in MANAGE_NAV_ITEMS}
         self.assertEqual("library", by_key["material_hub"].domain)
         self.assertEqual("/manage/library", by_key["material_hub"].href)
-        self.assertEqual("teaching", by_key["postclass_materials"].domain)
-        self.assertEqual("过程材料", by_key["postclass_materials"].group)
+        self.assertEqual("archive", by_key["postclass_materials"].domain)
+        self.assertEqual("/manage/library/courses", by_key["courses"].href)
+        self.assertEqual("/manage/library/exams", by_key["exams"].href)
+        self.assertIn("/manage/teaching/exams", by_key["exams"].legacy_hrefs)
 
         nav = build_manage_nav({"id": 1, "role": "teacher"}, "material_hub", is_super_admin=False)
         self.assertEqual("library", nav["active_domain"])
@@ -189,6 +267,10 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertEqual("/manage/teaching/offerings", by_legacy["/manage/offerings"])
         self.assertEqual("/manage/academic/classrooms", by_legacy["/manage/classrooms"])
         self.assertEqual("/manage/me/password-resets", by_legacy["/manage/system/password-resets"])
+        self.assertEqual("/manage/library/exams", by_legacy["/manage/teaching/exams"])
+        self.assertEqual("/manage/archive/ordinary-grade-records", by_legacy["/manage/teaching/ordinary-grade-records"])
+        self.assertEqual("/manage/academic/smart-classroom", by_legacy["/manage/teaching/smart-classroom-integrations"])
+        self.assertEqual("/manage/system/life-tips", by_legacy["/manage/teaching/life-tips"])
 
     def test_manage_canonical_and_legacy_routes_are_registered(self):
         paths = {
@@ -202,22 +284,31 @@ class ManageNavServiceTests(unittest.TestCase):
         for redirect in iter_manage_legacy_redirects():
             with self.subTest(legacy_href=redirect["legacy_href"]):
                 self.assertIn(redirect["legacy_href"], paths)
+        # 教学域入口直接落在课堂管理，不经过 301。
+        self.assertIn("/manage/teaching", paths)
+        self.assertIn("/manage", paths)
 
     def test_platform_knowledge_uses_manage_nav_registry(self):
         manage_routes = [route for route in iter_platform_manage_routes()]
         platform_paths = {route["path"] for route in PLATFORM_ROUTES}
         self.assertTrue({route["path"] for route in manage_routes}.issubset(platform_paths))
+        self.assertNotIn("/dashboard", {route["path"] for route in manage_routes})
 
         route_text = "\n".join(route["path"] for route in PLATFORM_ROUTES)
         self.assertIn("/manage/academic/gongwen", route_text)
+        self.assertIn("/manage/archive/teacher-evaluations", route_text)
         self.assertNotIn("/manage/gongwen", route_text)
         self.assertNotIn("/manage/system/password-resets", route_text)
+        self.assertNotIn("/manage/teaching/teacher-evaluations", route_text)
 
     def test_teacher_domain_dependency_marks_domain_without_changing_identity(self):
         dependency = require_teacher_domain("academic")
         user = dependency({"id": 7, "role": "teacher", "name": "Teacher"})
         self.assertEqual("academic", user["manage_domain"])
         self.assertEqual("teacher", user["role"])
+        for domain in ("home", "teaching", "library", "archive", "academic", "me", "admin"):
+            with self.subTest(domain=domain):
+                require_teacher_domain(domain)
 
         with self.assertRaises(ValueError):
             require_teacher_domain("unknown")

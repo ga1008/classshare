@@ -25,7 +25,7 @@
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('开设课堂', '选择配置对象', 'list', href='/manage/teaching/offerings', variant='solid', tone='teal') }}
-{{ topbar_action('教材管理', '补齐知识源', 'book', href='/manage/teaching/textbooks', variant='primary', tone='amber') }}
+{{ topbar_action('教材管理', '补齐知识源', 'book', href='/manage/library/textbooks', variant='primary', tone='amber') }}
 {% endblock %}
 
 {% block content %}
@@ -94,7 +94,7 @@
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/teaching/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a href="/manage/library/textbooks?open=new" class="academic-link-btn">新增教材</a>
                         </div>
                     </div>
                     <div class="academic-action-group" style="justify-content: space-between;">

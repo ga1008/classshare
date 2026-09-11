@@ -693,7 +693,7 @@ if (root) {
                     ? '<strong>该学期暂无可用的3D课表</strong><p>请使用列表查看课堂，或选择已配置的学年学期。</p>'
                     : dashboardRole === 'student'
                     ? '<strong>暂无课程安排</strong><p>已加入的课堂尚未发布课次安排，可切换学期或查看课堂列表。</p>'
-                    : '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/teaching/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
+                    : '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/academic/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
             });
         }
         // Free-text teacher semesters have no matching academic schedule key.
@@ -755,7 +755,7 @@ if (root) {
         setScheduleDeckStatus('正在加载课表…');
         try {
             const params = new URLSearchParams({ year, term });
-            const endpoint = dashboardRole === 'student' ? '/api/dashboard/course-schedule/overview' : '/api/manage/teaching/course-schedule/overview';
+            const endpoint = dashboardRole === 'student' ? '/api/dashboard/course-schedule/overview' : '/api/manage/academic/course-schedule/overview';
             const response = await fetch(`${endpoint}?${params.toString()}`, {
                 credentials: 'same-origin',
                 signal: request.signal,

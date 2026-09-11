@@ -1,0 +1,185 @@
+{% extends "manage/layout.html" %}
+{#
+  教师首页（docs/manage-center-improvement-plan-2026-09-11.md §5.4）——统一壳内的一个页面。
+  三段：今天（统一收件箱）/ 我的课堂 / 去哪里（六域卡带实时摘要）。
+  JS 契约不变：data-dashboard-root、data-agenda-*、data-dw-open、dashboard-workspace island。
+#}
+{% from "macros/ui_explanation.html" import explain_attrs, explain_button %}
+{% set workspace = dashboard_workspace|default({}) %}
+{% set inbox = dashboard_work_inbox|default({}) %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/dashboard_workspace.css') }}">
+{% endblock %}
+
+{% block body_class %}page-wrapper dashboard-page dw-page role-teacher{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('开设课堂', '新学期入口', 'plus', href=dashboard_empty_state.action_href|default('/manage/teaching/offerings'), variant='primary', tone='teal', attrs='data-teacher-onboarding-open') }}
+{% endblock %}
+
+{% block content %}
+<section class="dw-shell dw-shell--teacher" data-dashboard-root data-dashboard-user-id="{{ user_info.id }}" data-initial-filter="{{ dashboard_initial_filter }}" data-initial-search="{{ dashboard_initial_search }}" data-initial-group-mode="schedule3d" data-current-semester-key="{{ dashboard_current_semester_key|default('') }}" data-recent-activity-days="{{ dashboard_recent_activity_days|default(14) }}" data-dashboard-role="teacher">
+    <script type="application/json" data-agenda-todo-options>{{ {"options": dashboard_todo_create_options|default([]), "default_offering_id": dashboard_default_todo_offering_id|default(0), "actor_role": dashboard_todo_actor_role|default('teacher'), "email_reminder": dashboard_todo_email_reminder|default({"available": false, "reason": "仅教师待办支持邮件提醒。", "settings_url": "/profile?section=email"})}|tojson }}</script>
+
+    <header class="dw-page-head">
+        <div><h1>{{ workspace.greeting|default(user_info.name ~ '，你好') }}</h1><p>{{ workspace.date_label|default('') }}</p></div>
+        <div class="dw-head-actions">
+            <button type="button" class="dw-button" data-dw-open="calendar" aria-haspopup="dialog">日程</button>
+            {% if dashboard_can_create_todo %}<button type="button" class="dw-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
+            <details class="dw-tools-menu"><summary>日程工具</summary><div class="dw-tools-menu-body">
+                <button type="button" class="dw-link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
+                <button type="button" class="dw-link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
+                {{ explain_button('日程来源', '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。', label='日程来源说明') }}
+            </div></details>
+        </div>
+    </header>
+
+    {# ── 今天：统一收件箱 ─────────────────────────────────────────── #}
+    <div data-lanshare-island="dashboard-workspace" data-island-id="dashboard-workspace">
+        <script type="application/json" data-dashboard-workspace-payload>{{ workspace|tojson }}</script>
+        <section class="dw-focus" aria-labelledby="dw-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
+            <div class="dw-section-head">
+                <h2 id="dw-focus-title">需要处理{% if inbox.total %} <span class="dw-count">{{ inbox.total }}</span>{% endif %}</h2>
+                <div class="dw-inbox-tools">
+                    {% for src in inbox.sources|default([]) %}{% if src.count %}<a href="/manage/me/inbox?source={{ src.key }}" class="dw-inbox-chip dw-inbox-chip--{{ src.tone }}" {{ explain_attrs(src.label, src.description) }}>{{ src.label }} <b>{{ src.count }}</b></a>{% endif %}{% endfor %}
+                    <button type="button" class="dw-button" data-agenda-add-todo>＋ 新增待办</button>
+                </div>
+            </div>
+            {% set focus_items = inbox['items']|default([]) %}
+            {% if focus_items %}<ul class="dw-focus-list">
+                {% for item in focus_items %}
+                {% set source = item.agenda_data|default({}) %}
+                <li class="dw-focus-item{% if loop.first %} is-primary{% endif %}">
+                    <span class="dw-item-kind">{{ item.type_label|default('事项') }}</span><span class="dw-item-copy"><strong>{{ item.title }}</strong>{% if item.subtitle %}<small>{% if item.offering_id %}<a href="/classroom/{{ item.offering_id }}" aria-label="进入课堂：{{ item.subtitle }}">{{ item.subtitle }}</a>{% else %}{{ item.subtitle }}{% endif %}</small>{% endif %}</span><span class="dw-item-time">{% if item.status_label %}<span{% if item.date_bucket == "overdue" %} class="dw-status-warn"{% endif %}>{{ item.status_label }}</span>{% endif %}<span>{{ item.date_label }}{% if item.time_label %} · {{ item.time_label }}{% endif %}</span></span>
+                    {% if source.is_manual|default(false) or source.can_email_reminder|default(false) or not item.href or item.href.startswith('#') or item.href.endswith('#dashboard-semester') %}<button type="button" class="dw-button{% if loop.first %} dw-button-primary{% endif %}" data-agenda-item data-kind="{{ source.kind|default(item.kind) }}" data-status="{{ item.status }}" data-kind-label="{{ item.type_label|default('事项') }}" data-title="{{ item.title }}" data-subtitle="{{ item.subtitle }}" data-when="{{ item.date_label }} {{ item.time_label }}" data-href="{{ item.href }}" data-manual="{{ '1' if source.is_manual|default(false) else '0' }}" data-todo-id="{{ source.todo_id|default('') }}" data-class-offering-id="{{ source.class_offering_id|default(item.offering_id) }}" data-notes="{{ source.notes|default('') }}" data-due-at="{{ source.due_at_raw|default(item.due_at) }}" data-start-at="{{ source.start_at_raw|default(item.starts_at) }}" data-reminder-enabled="{{ '1' if source.reminder_enabled|default(false) else '0' }}" data-email-reminder-enabled="{{ '1' if source.email_reminder_enabled|default(false) else '0' }}" data-reminder-lead="{{ source.reminder_lead_minutes|default(1440) }}" data-priority="{{ source.priority|default('normal') }}" data-event-id="{{ source.event_id|default('') }}" data-can-reminder="{{ '1' if source.can_email_reminder|default(false) else '0' }}" aria-haspopup="dialog">{{ item.action_label|default('查看详情') }}</button>{% else %}<a href="{{ item.href }}" class="{% if loop.first %}dw-button dw-button-primary{% else %}dw-link{% endif %}">{{ item.action_label|default('查看') }}</a>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>{% else %}<p class="dw-empty-inline">暂无需要处理的事项。</p>{% endif %}
+            <div class="dw-focus-footer">
+                <a href="/manage/me/inbox" class="dw-link">全部待处理{% if inbox.total %}（{{ inbox.total }}）{% endif %} →</a>
+                <button type="button" class="dw-link" data-dw-open="items">全部事项与历史</button>
+            </div>
+        </section>
+    </div>
+
+    {# ── 我的课堂 ─────────────────────────────────────────────────── #}
+    <section class="dw-courses" id="dashboard-class-list" aria-labelledby="dw-courses-title">
+        <div class="dw-section-head"><h2 id="dw-courses-title">我的课堂</h2>{% if class_offerings %}<span class="dw-muted">{{ class_offerings|length }} 个课堂 · <a class="dw-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
+        {% if class_offerings %}
+        <div class="dw-course-toolbar">
+            <form method="get" action="/dashboard" class="dw-course-search" data-dashboard-search-form>
+                <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
+                <label class="sr-only" for="dashboard-search">搜索课堂</label><input id="dashboard-search" type="search" name="q" class="dw-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button type="submit" class="dw-button">搜索</button>
+            </form>
+            <details class="dw-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
+                <summary>筛选与显示</summary><div class="dw-course-options-body">
+                    <div class="dw-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a href="{{ filter.href }}" class="dw-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
+                    {% if dashboard_semester_options %}<label class="dw-field">学期<select id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
+                    <div class="dw-filter-group" role="group" aria-label="课堂显示方式" data-group-mode-tabs><button type="button" class="dw-filter" data-group-mode="flat" aria-pressed="false">列表</button><button type="button" class="dw-filter" data-group-mode="department" aria-pressed="false">系别班级</button><button type="button" class="dw-filter" data-group-mode="course" aria-pressed="false">按课程</button><button type="button" class="dw-filter" data-group-mode="schedule3d" aria-pressed="true">3D课表</button></div>
+                </div>
+            </details>
+        </div>
+        <div class="dw-results"><span>显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span><span data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span><button type="button" class="dw-link" data-reset-search{% if dashboard_initial_filter == 'all' and not dashboard_initial_search %} hidden{% endif %}>清除筛选</button></div>
+        <div class="dw-course-list" data-offering-list{% if dashboard_initial_visible_count == 0 %} hidden{% endif %}>
+        {% for offering in class_offerings %}{% set offering_summary = workspace.offering_summaries|default({}) %}{% set offering_summary = offering_summary.get(offering.id|string, {}) %}
+            <article class="dw-course-row" data-offering-card data-offering-id="{{ offering.id }}" data-attention="{{ 'true' if offering.needs_attention else 'false' }}" data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}" data-progress="{{ 'true' if offering.has_progress else 'false' }}" data-search-text="{{ offering.search_text }}" data-department="{{ offering.department_label|default('未分类') }}" data-class-name="{{ offering.class_name }}" data-class-id="{{ offering.class_id }}" data-course-name="{{ offering.course_name }}" data-course-id="{{ offering.course_id }}" data-semester-key="{{ offering.semester_key|default('') }}" data-semester-label="{{ offering.semester_label|default('未设学期') }}" data-teacher-name="{{ offering.teacher_name|default('') }}" data-activity-score="{{ offering.activity_score|default(0) }}" data-recent-user-count="{{ offering.recent_active_student_count|default(0) }}" data-recent-login-count="{{ offering.recent_login_count|default(0) }}" data-last-activity-sort="{{ offering.last_activity_sort|default(0) }}" aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"{% if not offering.initially_visible %} hidden{% endif %}>
+                <div class="dw-course-copy"><h3><a href="/classroom/{{ offering.id }}">{{ offering.course_name }}</a></h3><p>{{ offering.class_name }}{% if offering.semester_label|default('') %}<span>{{ offering.semester_label }}</span>{% endif %}</p></div>
+                <div class="dw-course-state">
+                    {% if offering_summary.pending_review_count|default(0) > 0 %}<a href="/classroom/{{ offering.id }}#assignment-panel" class="dw-status-warn">查看待批改</a>{% elif offering.grading_count|default(0) > 0 %}<span>批改中 {{ offering.grading_count }} 项</span>{% else %}{% set next_sessions = offering.timeline_items|default([])|rejectattr('status', 'equalto', 'completed')|list %}{% if next_sessions %}<span>{{ next_sessions[0].date_label }} {{ next_sessions[0].weekday_label }}{% if next_sessions[0].hour_label and not next_sessions[0].time_hint|default('') %} · {{ next_sessions[0].hour_label }}{% endif %}</span>{% endif %}{% endif %}
+                    <span data-academic-evaluation-summary>{% if offering.academic_evaluation %}<button type="button" class="dw-link" data-academic-evaluation-open="{{ offering.id }}" aria-label="查看 {{ offering.course_name }} 教学评价">教学评价 {{ offering.academic_evaluation.score_display }}</button>{% else %}<button type="button" class="dw-link" data-academic-evaluation-open="{{ offering.id }}">教学评价</button>{% endif %}</span>
+                </div>
+                <span class="dw-course-actions"><a href="/manage/teaching/offerings?offering_id={{ offering.id }}" class="dw-link">管理</a><a href="/classroom/{{ offering.id }}" class="dw-course-enter" data-offering-enter aria-label="进入 {{ offering.course_name }} {{ offering.class_name }} 课堂">进入课堂 <span aria-hidden="true">→</span></a></span>
+            </article>
+        {% endfor %}
+        </div>
+        <div class="dw-empty" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}><h3>没有匹配的课堂</h3><div data-empty-search-chips aria-label="当前筛选"></div><div data-empty-search-suggestions></div></div>
+        {% else %}
+        <div class="dw-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a href="{{ dashboard_empty_state.action_href }}" class="dw-button dw-button-primary">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="dw-empty-help"><summary>如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
+        {% endif %}
+        {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}
+        <details class="dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
+            <summary class="dashboard-evaluation-menu__trigger" aria-label="教学评价同步与设置">
+                <span class="dashboard-evaluation-menu__icon" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span data-academic-evaluation-sync-trigger-label>评价</span>
+                <span class="dashboard-evaluation-menu__state{% if evaluation_sync.has_data %} is-ready{% endif %}" aria-hidden="true"></span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </summary>
+            <div class="dashboard-evaluation-menu__popover">
+                <strong data-academic-evaluation-sync-title>
+                    {% if evaluation_sync.is_running %}正在同步教学评价{% elif evaluation_sync.has_data %}评价数据已对齐课堂{% elif evaluation_sync.auto_sync_completed %}已完成首次检查{% elif evaluation_sync.has_credential %}等待首次同步{% else %}尚未连接教务账号{% endif %}
+                </strong>
+                <small data-academic-evaluation-sync-status aria-live="polite">
+                    {% if evaluation_sync.has_data %}{{ evaluation_sync.freshness_label }} · 默认仅同步一次{% elif evaluation_sync.auto_sync_completed %}后续需要更新时请手动同步{% elif evaluation_sync.has_credential %}页面空闲时将执行一次默认同步{% else %}连接后可读取量化分数与匿名评语{% endif %}
+                </small>
+                <div class="dashboard-evaluation-menu__actions">
+                    {% if evaluation_sync.has_credential %}
+                    <button type="button" class="dashboard-evaluation-menu__action is-primary" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v6h-6"/><path d="M4 18v-6h6"/><path d="M18.5 9a7 7 0 0 0-12-2L4 9"/><path d="m20 15-2.5 2A7 7 0 0 1 5.5 15"/></svg>
+                        <span>手动同步</span>
+                    </button>
+                    {% endif %}
+                    <a class="dashboard-evaluation-menu__action" href="/manage/academic/integrations">教务连接</a>
+                </div>
+                <p data-explain data-explain-title="教学评价" data-explain-text="每门课程默认只自动同步一次；详情读取本地数据。">同步与详情</p>
+            </div>
+        </details>
+    </section>
+
+    {# ── 去哪里：六域卡 ───────────────────────────────────────────── #}
+    <section class="dw-domains" aria-labelledby="dw-domains-title">
+        <div class="dw-section-head"><h2 id="dw-domains-title">去哪里</h2></div>
+        <div class="dw-domain-grid">
+            {% for domain in dashboard_domain_cards %}
+            <article class="dw-domain-card dw-domain-card--{{ domain.domain }}" data-domain="{{ domain.domain }}">
+                <a href="{{ domain.href }}" class="dw-domain-card__head" {{ explain_attrs(domain.title, domain.description) }}>
+                    <span class="dw-domain-card__dot" aria-hidden="true"></span>
+                    <strong>{{ domain.label }}</strong>
+                    <span class="dw-domain-card__summary">{{ domain.summary }}</span>
+                </a>
+                <div class="dw-domain-card__links">
+                    {% for action in domain.actions %}<a href="{{ action.href }}" class="dw-link">{{ action.label }}</a>{% endfor %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <div data-dw-calendar-storage hidden>
+    {% with semester_calendar_panel_title='学期日历', semester_calendar_panel_subtitle='查看学期周次、节假日与周内事项。', semester_calendar_panel_hint='可以左右拖动周历，或使用定位今天。', semester_calendar_panel_class='dw-semester-calendar', semester_calendar_compact=true, semester_calendar_show_todos=true, semester_calendar_empty_title='暂无可展示的学期日历', semester_calendar_empty_description='教师创建学期并绑定课堂后可查看。' %}{% include "partials/semester_calendar_panel.html" %}{% endwith %}
+    </div>
+</section>
+
+<div class="academic-evaluation-modal" data-academic-evaluation-modal hidden>
+    <div class="academic-evaluation-modal__backdrop" data-academic-evaluation-close></div>
+    <section class="academic-evaluation-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="academic-evaluation-modal-title" tabindex="-1">
+        <header class="academic-evaluation-modal__header">
+            <div>
+                <span class="academic-evaluation-modal__eyebrow">课堂评价洞察</span>
+                <h2 id="academic-evaluation-modal-title" data-academic-evaluation-modal-title>教学评价详情</h2>
+                <p data-academic-evaluation-modal-subtitle>读取本地同步结果，不会再次访问教务系统</p>
+            </div>
+            <button type="button" class="academic-evaluation-modal__close" data-academic-evaluation-close aria-label="关闭评价详情">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </header>
+        <div class="academic-evaluation-modal__body" data-academic-evaluation-modal-body>
+            <div class="academic-evaluation-modal__loading" data-academic-evaluation-loading>
+                <span class="academic-evaluation-modal__loader" aria-hidden="true"></span>
+                <strong>正在整理课堂评价…</strong>
+                <small>评价洞察、量化指标与有效评语即将呈现</small>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.DASHBOARD_SEMESTER_CALENDAR = {{ dashboard_semester_calendar | tojson }};
+    window.DASHBOARD_ACADEMIC_EVALUATION_SYNC = {{ dashboard_academic_evaluation_sync | default({}) | tojson }};
+</script>
+<script type="module" src="/static/js/global_search.js?v=global-search-20260714"></script>
+{{ vite_entry_tags('frontend/src/islands/dashboard-quick-actions.tsx') }}
+{% endblock %}

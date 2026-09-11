@@ -610,7 +610,7 @@ export async function loadExamPapers() {
                 <div class="empty-state assignment-empty-state">
                     <h3>试卷库为空</h3>
                     <p class="text-muted">请先前往管理中心创建试卷，然后再发布到当前课堂。</p>
-                    <a href="/manage/teaching/exams" class="btn btn-outline btn-sm">前往试卷库</a>
+                    <a href="/manage/library/exams" class="btn btn-outline btn-sm">前往试卷库</a>
                 </div>
             `;
             publishExamAssignSnapshot();

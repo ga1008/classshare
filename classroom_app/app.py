@@ -93,6 +93,7 @@ from .services import approval_request_types  # noqa: F401  registers approval r
 from .services.approval_workflow_service import ensure_approval_reminder_task
 from .routers import manage_redirects
 from .routers import material_hub
+from .routers import work_inbox as work_inbox_router
 from .routers import lessondoc as lessondoc_router
 from .routers import lessondoc_editor as lessondoc_editor_router
 from .routers import mp as mp_router
@@ -618,6 +619,7 @@ app.include_router(agent_bridge.router)
 from .routers import agent_model_gateway
 app.include_router(agent_model_gateway.router)
 app.include_router(material_hub.router)
+app.include_router(work_inbox_router.router)
 app.include_router(lessondoc_router.router)
 app.include_router(lessondoc_editor_router.router)
 app.include_router(lessondoc_editor_router.page_router)

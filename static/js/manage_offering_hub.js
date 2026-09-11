@@ -114,7 +114,7 @@ async function handleBindLessonDoc(button) {
         const packs = listed?.packs || [];
         if (!packs.length) {
             showMessage('本课程还没有学习文档包，先去「内容资产 → 课程」生成', 'warning');
-            window.open(`/manage/teaching/courses?lessondoc=${courseId}`, '_blank', 'noopener');
+            window.open(`/manage/library/courses?lessondoc=${courseId}`, '_blank', 'noopener');
             return;
         }
         const pack = packs[0];

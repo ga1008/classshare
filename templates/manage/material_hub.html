@@ -1,10 +1,10 @@
 {% extends "manage/layout.html" %}
 
-{% block title %}材料中心{% endblock %}
+{% block title %}材料检索{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('学习文档', '内容资产材料库', 'folder', href='/manage/teaching/materials', variant='solid', tone='teal') }}
+{{ topbar_action('学习文档', '资源库', 'folder', href='/manage/library/materials', variant='outline', tone='slate') }}
 {% endblock %}
 
 {% block extra_head %}
@@ -138,9 +138,26 @@
 <section class="mh-shell">
     <div class="mh-hero">
         <div>
-            <h1 data-explain data-explain-title="材料中心" data-explain-text="汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。左侧勾选分类，这里模糊搜索或 AI 搜索。">材料中心</h1>
-            <p>左侧勾选材料分类，支持模糊搜索标题、内容、标签、归属人与归属层级，或让 AI 理解你的需求。<span class="mh-hero-count" id="mh-total"></span></p>
+            <h1 data-explain data-explain-title="材料检索" data-explain-text="汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。勾选分类后模糊搜索或 AI 搜索。">材料检索</h1>
+            <p>勾选材料分类，支持模糊搜索标题、内容、标签、归属人与归属层级，或让 AI 理解你的需求。<span class="mh-hero-count" id="mh-total"></span></p>
         </div>
+    </div>
+
+    {# 分类 chips：JS 契约与旧侧栏 rail 完全一致（#libraryCategoryRail / data-cat-key / data-cat-action / .is-checked）。 #}
+    <div class="mh-cats" id="libraryCategoryRail" data-hub-active="1" role="group" aria-label="材料分类">
+        <span class="mh-cats__actions">
+            <button type="button" class="manage-cat-rail__action" data-cat-action="all">全选</button>
+            <button type="button" class="manage-cat-rail__action" data-cat-action="none">全部取消</button>
+        </span>
+        {% for category in manage_nav.library_categories %}
+        <button type="button" class="manage-cat-item is-checked" data-cat-key="{{ category.key }}" data-explain data-explain-title="{{ category.label }}" data-explain-text="{{ category.hint }}">
+            <span class="manage-cat-item__box" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+            </span>
+            <span class="manage-cat-item__label">{{ category.label }}</span>
+            <span class="manage-cat-item__count" data-cat-count hidden></span>
+        </button>
+        {% endfor %}
     </div>
 
     <div class="mh-search-card">

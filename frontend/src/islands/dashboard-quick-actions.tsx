@@ -73,7 +73,7 @@ function start(): Promise<void> {
     await afterPaint();
     await Promise.all([
       import('./dashboard-workspace'),
-      loadLegacy('/static/js/dashboard.js?v=workspace-20260905'),
+      loadLegacy('/static/js/dashboard.js?v=workspace-20260911'),
       loadLegacy('/static/js/dashboard_agenda_widget.js?v=workspace-20260905'),
     ]);
     if (document.readyState === 'loading') await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }));

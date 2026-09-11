@@ -724,7 +724,7 @@ def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-MANAGE_TEACHER_DOMAINS = {"teaching", "academic", "teacher", "library", "admin"}
+MANAGE_TEACHER_DOMAINS = {"home", "teaching", "library", "archive", "academic", "me", "admin", "teacher"}
 
 
 def require_teacher_domain(domain: str):

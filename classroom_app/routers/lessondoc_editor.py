@@ -27,7 +27,7 @@ def _return_path(value):
     parts = urlsplit(value)
     if parts.scheme or parts.netloc or "\\" in value or any(ord(c) < 32 for c in value):
         return "/manage/materials"
-    allowed = ("/manage/materials", "/manage/teaching/materials", "/manage/teaching/courses", "/materials/render-view/", "/materials/view/", "/classroom/")
+    allowed = ("/manage/materials", "/manage/library/materials", "/manage/library/courses", "/materials/render-view/", "/materials/view/", "/classroom/")
     if any(parts.path == p or (p.endswith("/") and parts.path.startswith(p)) for p in allowed):
         return value
     return "/manage/materials"
