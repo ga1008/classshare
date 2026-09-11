@@ -1729,6 +1729,8 @@
     </div>
 </main>
 
+<div id="approval-panel-root" data-assignment-id="{{ assignment.id }}" data-auto-open="{{ approval_request_id or "" }}"></div>
+
 <!-- 导出附件进度遮罩 -->
 <div class="export-overlay" id="export-overlay">
     <div class="export-dialog">
@@ -1974,7 +1976,7 @@
                 <div class="form-group">
                     <label class="form-label" for="withdraw-resubmission-due-at">重交截止时间</label>
                     <input type="datetime-local" id="withdraw-resubmission-due-at" class="form-control">
-                    <p class="text-xs text-muted mt-1">留空时按下方延后时间自动计算。</p>
+                    <p class="text-xs text-muted mt-1">已按作业截止时间预填（作业已截止则为 24 小时后）。留空且不填延后分钟时按同一规则自动计算；填写的时间早于作业截止时以作业截止为准。</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="withdraw-extension-minutes">延后时间（分钟）</label>
@@ -2094,6 +2096,7 @@
     import { showToast, openModal, closeModal, renderMarkdown, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
+    import { mountPanel as mountApprovalPanel } from '{{ asset_url("js/approval_workflow.js") }}';
 
     window.openEditModal = () => openModal('edit-modal');
     window.closeEditModal = () => closeModal('edit-modal');
@@ -3295,8 +3298,19 @@
         const dueInput = document.getElementById('withdraw-resubmission-due-at');
         const minutesInput = document.getElementById('withdraw-extension-minutes');
         const reasonInput = document.getElementById('withdraw-reason');
-        if (minutesInput) minutesInput.value = '120';
-        if (dueInput) dueInput.value = toDatetimeLocalValue(new Date(Date.now() + 2 * 60 * 60 * 1000));
+        // Same rule as an approved withdraw request: the assignment's own deadline
+        // (late cutoff when enabled) if still ahead, otherwise 24 hours from now.
+        if (minutesInput) minutesInput.value = '';
+        if (dueInput) {
+            const fallback = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            const deadlineRaw = (Number(currentLatePolicy.late_submission_enabled) === 1 && currentLatePolicy.late_submission_until) || currentDueAt;
+            let recommended = fallback;
+            if (deadlineRaw) {
+                const deadline = new Date(String(deadlineRaw).replace(' ', 'T'));
+                if (!Number.isNaN(deadline.getTime()) && deadline > new Date()) recommended = deadline;
+            }
+            dueInput.value = toDatetimeLocalValue(recommended);
+        }
         if (reasonInput) reasonInput.value = '';
         document.getElementById('withdraw-modal-summary').textContent =
             scope === 'all'
@@ -3324,7 +3338,7 @@
         const reason = (document.getElementById('withdraw-reason')?.value || '').trim();
         const body = {
             scope: withdrawScope.scope === 'all' ? 'all' : 'selected',
-            extension_minutes: Number(minutesRaw || 120),
+            extension_minutes: minutesRaw ? Number(minutesRaw) : undefined,
             reason,
         };
         if (withdrawScope.scope !== 'all') body.student_pk_ids = withdrawScope.studentPkIds;
@@ -3985,5 +3999,16 @@
     function getStatusText(status) {
         return { 'new': '草稿', 'published': '进行中', 'closed': '已截止', 'submitted': '已提交', 'grading': '批改中', 'grading_review': '待人工复核', 'graded': '已批改', 'unsubmitted': '未提交' }[status] || status;
     }
+
+    (function initApprovalPanel() {
+        const rootEl = document.getElementById('approval-panel-root');
+        if (!rootEl) return;
+        const autoOpen = rootEl.dataset.autoOpen ? Number(rootEl.dataset.autoOpen) : null;
+        mountApprovalPanel(rootEl, {
+            assignmentId: rootEl.dataset.assignmentId,
+            autoOpenId: autoOpen,
+            onDecided: () => { if (typeof window.refreshSubmissions === 'function') window.refreshSubmissions(); },
+        });
+    })();
 </script>
 {% endblock %}

@@ -1682,6 +1682,7 @@
     import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
     import { initAssignmentClocks } from '/static/js/assignment_time.js';
     import { initReviewDocxExportButtons } from '/static/js/review_docx_export.js';
+    import { mountLauncher as mountApprovalLauncher } from '/static/js/approval_workflow.js';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -1727,6 +1728,20 @@
     try { SUBMISSION_DATA = typeof SUBMISSION_RAW === 'string' ? JSON.parse(SUBMISSION_RAW) : (SUBMISSION_RAW || null); } catch(e) { SUBMISSION_DATA = null; }
     const SUBMISSION_STATUS = "{{ submission.status }}";
     const SUBMISSION_SCORE = {{ submission.score | tojson }};
+    const CAN_REQUEST_WITHDRAW = {{ can_request_withdraw | tojson }};
+    const WITHDRAW_REQUEST = {{ (withdraw_request or none) | tojson }};
+    const SUBMISSION_ID = {{ (submission.id if submission else none) | tojson }};
+    function mountWithdrawLauncher() {
+        const el = document.getElementById('withdraw-request-launcher');
+        if (!el || el.dataset.mounted) return;
+        el.dataset.mounted = '1';
+        mountApprovalLauncher(el, {
+            requestType: 'submission_withdraw',
+            subjectId: SUBMISSION_ID,
+            currentRequest: WITHDRAW_REQUEST,
+            disabledReason: CAN_REQUEST_WITHDRAW ? '' : '当前作业状态不支持申请撤回重做',
+        });
+    }
     {% else %}
     const SUBMISSION_EXISTS = false;
     const SUBMISSION_DATA = null;
@@ -1822,6 +1837,7 @@
         if (SUBMISSION_EXISTS) {
             renderSubmittedView();
             initReviewDocxExportButtons({ notify: showMessage });
+            mountWithdrawLauncher();
         } else {
             loadFromLocal();
             await loadServerDraft();
@@ -3615,7 +3631,7 @@
                 <div class="result-banner success">
                     <div class="result-icon">🎉</div>
                     <h3>${gradedTitle}</h3>
-                    <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
+                    <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span>${(CAN_REQUEST_WITHDRAW || WITHDRAW_REQUEST) && !(GROUP_IS && GROUP_REVEALED) ? '<span id="withdraw-request-launcher"></span>' : ''}</div>
                     ${scoreCaption}
                     <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
                         <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>

@@ -46,6 +46,7 @@ SEVERITY_LABELS = {
 
 IMPORTANT_NOTIFICATION_CATEGORIES = {
     "signature_workflow",
+    "approval_workflow",
     "assignment",
     "discussion_mention",
     "submission",
@@ -66,6 +67,7 @@ SYSTEM_NOTIFICATION_CATEGORIES = {
 
 EMAIL_ELIGIBLE_CATEGORIES = {
     "signature_workflow",
+    "approval_workflow",
     "assignment",
     "discussion_mention",
     "submission",

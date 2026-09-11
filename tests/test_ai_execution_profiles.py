@@ -467,6 +467,9 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
         self.stack.enter_context(mock.patch.object(quota, "get_db_connection", side_effect=connect))
         self.stack.enter_context(mock.patch.object(quota, "get_configured_db_engine", return_value="sqlite"))
         self.stack.enter_context(mock.patch.object(ai, "AI_GRADING_ADJUDICATION_ENABLED", True))
+        # Adjudication mechanics are exercised on a homework fixture; production
+        # only adjudicates midterm/final (see test_default_adjudication_kinds_skip_homework).
+        self.stack.enter_context(mock.patch.object(ai, "AI_GRADING_ADJUDICATION_KINDS", frozenset({"homework"})))
         self.stack.enter_context(mock.patch.object(ai, "AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", 10))
         self.stack.enter_context(mock.patch.object(ai, "AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", 3))
         image = directory / "answer.png"
@@ -794,6 +797,19 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(self.requests))
         self.assertEqual("high", self.requests[-1]["reasoning_effort"])
         self.assertTrue(high["review_required"])
+
+    async def test_default_adjudication_kinds_skip_homework(self):
+        self.assertEqual(frozenset({"midterm", "final"}), ai.AI_GRADING_ADJUDICATION_KINDS)
+        self.assertFalse(ai._adjudication_allowed_for_context({"assessment_kind": "homework"}))
+        self.assertFalse(ai._adjudication_allowed_for_context({}))
+        self.assertTrue(ai._adjudication_allowed_for_context({"assessment_kind": "final"}))
+        job, connect, quota = self.review_fixture()
+        with mock.patch.object(ai, "AI_GRADING_ADJUDICATION_KINDS", frozenset({"midterm", "final"})), \
+                mock.patch.object(ai, "reserve_grading_review", side_effect=AssertionError("homework must not reserve")):
+            result = await ai._build_grading_callback_data(job, raise_on_failure=True)
+        self.assertEqual((80, True), (result["score"], result["review_required"]))
+        self.assertEqual(1, len(self.requests))
+        self.assertEqual("manual_review_required", result["quality_audit"]["review_deferred"])
 
     def test_blank_answer_claim_with_valid_image_is_an_explainable_risk(self):
         result = {**GRADE, "confidence": 0.99, "summary": "未提交答案"}

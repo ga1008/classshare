@@ -235,8 +235,20 @@ AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 AI_GRADING_ADJUDICATION_ENABLED = _read_bool_env("AI_GRADING_ADJUDICATION_ENABLED", True)
 AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", default=40))
 AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", default=10))
-# Primary grading tiers whose risky results may escalate to the Doubao pro adjudicator.
-ADJUDICABLE_GRADING_PROFILES = frozenset({"vision_pro_low", STANDARD_GRADING_PROFILE})
+# Only these assessment kinds buy a paid Doubao pro adjudication pass when the
+# primary result carries risk signals. Homework never adjudicates: the student
+# can request a withdraw-and-redo through the approval workflow instead.
+AI_GRADING_ADJUDICATION_KINDS = frozenset(
+    kind.strip().lower()
+    for kind in os.getenv("AI_GRADING_ADJUDICATION_KINDS", "midterm,final").split(",")
+    if kind.strip()
+)
+
+
+def _adjudication_allowed_for_context(business_context: dict[str, Any] | None) -> bool:
+    context = business_context or {}
+    kind = str(context.get("assessment_kind") or "").strip().lower()
+    return bool(kind) and kind in AI_GRADING_ADJUDICATION_KINDS
 AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD = min(
     1.0,
     max(0.0, _read_float_env("AI_GRADING_ADJUDICATION_CONFIDENCE_THRESHOLD", 0.65)),
@@ -5479,7 +5491,7 @@ async def _review_grading_result_if_needed(
         return restored, dict(saved_review.get("execution_metadata") or {})
     if not reasons:
         return result, {}
-    if profile not in ADJUDICABLE_GRADING_PROFILES:
+    if not _adjudication_allowed_for_context(business_context):
         return defer("manual_review_required")
     if not AI_GRADING_ADJUDICATION_ENABLED:
         return defer("automatic_review_disabled")
@@ -5743,7 +5755,7 @@ async def _build_grading_callback_data_impl(
                         format_repair_required=False,
                         answers_empty=not bool(_extract_answers_text(job.answers_json).strip()),
                         blank_answers_with_attachments=_has_blank_answers_with_attachments(job.answers_json)) if isinstance(raw_result, dict) else []
-                    if known_risks and (execution.get("execution_plan") or {}).get("profile_id") in ADJUDICABLE_GRADING_PROFILES:
+                    if known_risks and _adjudication_allowed_for_context(business_context):
                         if budget:
                             budget.state["repair_candidate"] = {"result": copy.deepcopy(raw_result),
                                 "validation_error": validation_error,

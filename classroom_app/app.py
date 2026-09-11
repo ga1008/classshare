@@ -88,6 +88,9 @@ from .database import get_db_connection
 # 导入所有 V4.0 路由
 from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks, agent_bridge, smart_classroom, signatures
 from .routers import user_ui_preferences
+from .routers import approval_workflow as approval_workflow_router
+from .services import approval_request_types  # noqa: F401  registers approval request types
+from .services.approval_workflow_service import ensure_approval_reminder_task
 from .routers import manage_redirects
 from .routers import material_hub
 from .routers import lessondoc as lessondoc_router
@@ -227,6 +230,7 @@ async def startup_event():
             cultivation_archive_task_id = ensure_cultivation_score_event_archive_task(align_conn)
             cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
             signature_reminder_task_id = ensure_signature_reminder_task(align_conn)
+            ensure_approval_reminder_task(align_conn)
             from .services.material_workflow_storage_service import ensure_material_workflow_cleanup_task
 
             ensure_material_workflow_cleanup_task(align_conn)
@@ -649,6 +653,7 @@ app.include_router(prompt_pool.router)
 app.include_router(academic_evaluations.router)
 app.include_router(smart_classroom.router)
 app.include_router(signatures.router)
+app.include_router(approval_workflow_router.router)
 app.include_router(manage_router.router)
 app.include_router(blog.router)
 app.include_router(feedback.router)

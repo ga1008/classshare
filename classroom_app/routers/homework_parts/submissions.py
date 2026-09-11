@@ -617,16 +617,30 @@ async def teacher_withdraw_submissions(
     if scope != "all" and not student_pk_ids and not submission_ids:
         raise HTTPException(400, "请选择要撤回的学生或提交记录")
 
-    try:
-        resubmission_due_at = build_resubmission_due_at(data, default_minutes=120)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    from ...services.submission_return_service import (
+        payload_has_explicit_deadline,
+        resolve_resubmission_due_at,
+        return_submissions_for_resubmission,
+    )
 
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
         conn.commit()
+        # Same deadline rule as an approved withdraw request: the later of the
+        # teacher's explicit window and the assignment's own deadline (or now+24h).
+        try:
+            if payload_has_explicit_deadline(data):
+                resubmission_due_at = resolve_resubmission_due_at(
+                    assignment,
+                    explicit_due_at=data.get("resubmission_due_at") or data.get("reopen_until") or data.get("due_at"),
+                    extension_minutes=data.get("extension_minutes"),
+                )
+            else:
+                resubmission_due_at = resolve_resubmission_due_at(assignment)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
         where_parts = ["assignment_id = ?"]
         params: list[Any] = [assignment_id]
@@ -660,47 +674,14 @@ async def teacher_withdraw_submissions(
                 "resubmission_due_at": resubmission_due_at,
             }
 
-        begin_immediate_transaction(conn)
-        from ...services.grading_revision_service import retire_submission_grade_for_replacement
-        from ...services.group_assignment_service import invalidate_member_work_score, lock_group_grading_for_students
-
-        # Lock every affected group in one stable order before taking any
-        # member's row, including when a batch spans multiple groups.
-        lock_group_grading_for_students(conn, assignment_id, [int(row["student_pk_id"]) for row in targets])
-        for target in sorted(targets, key=lambda row: int(row["student_pk_id"])):
-            lock_submission_writer(conn, assignment_id, int(target["student_pk_id"]))
-            current = conn.execute("SELECT * FROM submissions WHERE id = ?", (int(target["id"]),)).fetchone()
-            verify_submission_write(current, target, actor_role="teacher")
-            retire_submission_grade_for_replacement(conn, dict(current))
-            invalidate_member_work_score(conn, assignment_id=assignment_id, student_pk_id=int(target["student_pk_id"]))
-
-        now_iso = datetime.now().isoformat()
         reason = str(data.get("reason") or "").strip() or None
-        target_ids = [int(row["id"]) for row in targets]
-        placeholders = ",".join("?" for _ in target_ids)
-        conn.execute(
-            f"""
-            UPDATE submissions
-            SET status = 'submitted',
-                score = NULL,
-                feedback_md = NULL,
-                grading_started_at = NULL,
-                grading_attempt_fingerprint = NULL,
-                grading_revision_hash = NULL,
-                grading_job_id = NULL,
-                active_grade_revision_id = NULL,
-                score_before_late_penalty = NULL,
-                late_penalty_points = 0,
-                late_score_cap_applied = 0,
-                resubmission_allowed = 1,
-                resubmission_due_at = ?,
-                returned_at = ?,
-                returned_by_teacher_id = ?,
-                returned_reason = ?
-            WHERE assignment_id = ?
-              AND id IN ({placeholders})
-            """,
-            (resubmission_due_at, now_iso, int(user["id"]), reason, assignment_id, *target_ids),
+        target_ids = return_submissions_for_resubmission(
+            conn,
+            assignment=assignment,
+            targets=targets,
+            teacher_id=int(user["id"]),
+            resubmission_due_at=resubmission_due_at,
+            reason=reason,
         )
         conn.execute("SELECT 1")
         conn.commit()

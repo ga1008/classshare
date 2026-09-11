@@ -343,7 +343,8 @@ class GradingPipelineIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(callback_payloads[0]["status"], "graded")
         self.assertEqual(callback_payloads[0]["score"], 0)
         self.assertTrue(callback_payloads[0]["review_required"])
-        self.assertIn("automatic_review_disabled", callback_payloads[0]["review_reason_codes"])
+        # Homework never buys a paid adjudication pass; risky results go straight to the teacher.
+        self.assertIn("manual_review_required", callback_payloads[0]["review_reason_codes"])
         self.assertIn("客观题答案不正确", callback_payloads[0]["feedback_md"])
 
 

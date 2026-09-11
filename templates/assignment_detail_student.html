@@ -667,7 +667,14 @@
                         <div class="grade-result-layout">
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
-                                <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}</span>
+                                <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}
+                                    {% if (can_request_withdraw or withdraw_request) and not is_group_final %}
+                                    <span id="withdraw-request-launcher" data-request-type="submission_withdraw" data-subject-id="{{ submission.id }}" data-can-request="{{ 1 if can_request_withdraw else 0 }}"></span>
+                                    {% endif %}
+                                </span>
+                                {% if (can_request_withdraw or withdraw_request) and not is_group_final %}
+                                <script type="application/json" id="withdraw-request-state">{{ (withdraw_request or none) | tojson }}</script>
+                                {% endif %}
                                 <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
                                 <a href="/api/assignments/{{ assignment.id }}/export-review-docx" class="btn btn-primary btn-sm" data-review-docx-export data-export-url="/api/assignments/{{ assignment.id }}/export-review-docx" data-suggested-filename="{{ (assignment.title ~ '_复习导出.docx') | e }}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path></svg>
@@ -870,6 +877,7 @@
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { initAssignmentClocks } from '{{ asset_url("js/assignment_time.js") }}';
     import { initReviewDocxExportButtons } from '{{ asset_url("js/review_docx_export.js") }}';
+    import { mountLauncher } from '{{ asset_url("js/approval_workflow.js") }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -928,6 +936,17 @@
         initSubmissionUpload();
         {% endif %}
         initReviewDocxExportButtons({ notify: showToast });
+        const withdrawLauncher = document.getElementById('withdraw-request-launcher');
+        if (withdrawLauncher) {
+            let currentWithdrawRequest = null;
+            try { currentWithdrawRequest = JSON.parse(document.getElementById('withdraw-request-state')?.textContent || 'null'); } catch (_) { currentWithdrawRequest = null; }
+            mountLauncher(withdrawLauncher, {
+                requestType: withdrawLauncher.dataset.requestType,
+                subjectId: withdrawLauncher.dataset.subjectId,
+                currentRequest: currentWithdrawRequest,
+                disabledReason: withdrawLauncher.dataset.canRequest === '1' ? '' : '当前作业状态不支持申请撤回重做',
+            });
+        }
     });
 
     function escapeHtml(text) {

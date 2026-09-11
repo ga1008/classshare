@@ -595,6 +595,21 @@ def handle_signature_request_reminder(task: dict[str, Any]) -> str:
 
 register_task_handler(TASK_KIND_SIGNATURE_REQUEST_REMINDER, handle_signature_request_reminder)
 
+from .approval_workflow_service import (  # noqa: E402
+    TASK_KIND_APPROVAL_REMINDER,
+    remind_stale_requests as remind_stale_approval_requests,
+)
+
+
+def handle_approval_request_reminder(task: dict[str, Any]) -> str:
+    with get_db_connection() as conn:
+        result = remind_stale_approval_requests(conn)
+        conn.commit()
+    return f"approval request sweep: reminded={result.get('reminded', 0)} expired={result.get('expired', 0)}"
+
+
+register_task_handler(TASK_KIND_APPROVAL_REMINDER, handle_approval_request_reminder)
+
 from .material_workflow_storage_service import cleanup_expired_bundles  # noqa: E402
 
 register_task_handler("material_workflow_cleanup", cleanup_expired_bundles)
