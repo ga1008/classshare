@@ -19,6 +19,7 @@
 {% set _missing_textbook_count = hub_offerings | rejectattr('has_textbook') | list | length %}
 {% set _missing_ai_count = hub_offerings | rejectattr('has_ai_config') | list | length %}
 <div class="academic-shell offering-hub-shell">
+    {% include "partials/teaching_stage_bar.html" %}
     <section class="manage-pagehead">
         <div class="manage-pagehead__intro">
             <div>

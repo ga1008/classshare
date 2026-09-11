@@ -54528,6 +54528,31 @@ body.manage-embedded-page { background: transparent; }
 .wi-empty p { margin: 0 0 14px; color: hsl(var(--ls-muted-foreground)); font-size: var(--text-sm); }
 @media (max-width: 720px) { .wi-item { grid-template-columns: minmax(0, 1fr); } .wi-item__time { text-align: left; } }
 
+/* ── 学期阶段条（课堂管理页顶部，docs §5.5） ── */
+.stage-bar { border: 1px solid hsl(var(--ls-border)); border-left: 4px solid hsl(var(--ls-domain-accent)); border-radius: var(--radius-lg); background: hsl(var(--ls-card)); }
+.stage-bar--end { border-left-color: hsl(var(--ls-warning)); }
+.stage-bar--none { border-left-color: hsl(var(--ls-destructive)); }
+.stage-bar__summary { list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; cursor: pointer; }
+.stage-bar__summary::-webkit-details-marker { display: none; }
+.stage-bar__phase { padding: 2px 9px; border-radius: 999px; background: hsl(var(--ls-domain-accent) / 0.12); color: hsl(var(--ls-domain-accent-strong)); font-size: var(--text-xs); font-weight: 700; }
+.stage-bar--end .stage-bar__phase { background: hsl(var(--ls-warning) / 0.14); color: hsl(32 95% 36%); }
+.stage-bar__semester { font-size: var(--text-sm); color: hsl(var(--ls-muted-foreground)); }
+.stage-bar__headline { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); font-weight: 600; color: hsl(var(--ls-foreground)); }
+.stage-bar__toggle { font-size: var(--text-xs); color: hsl(var(--ls-muted-foreground)); }
+.stage-bar__toggle::after { content: " ▾"; }
+.stage-bar[open] .stage-bar__toggle::after { content: " ▴"; }
+.stage-bar__body { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; padding: 4px 16px 14px; border-top: 1px solid hsl(var(--ls-border)); }
+.stage-bar__checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.stage-bar__item { display: grid; grid-template-columns: auto auto; column-gap: 8px; align-items: center; padding-top: 10px; }
+.stage-bar__mark { width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 999px; background: hsl(var(--ls-muted)); color: hsl(var(--ls-muted-foreground)); font-size: var(--text-2xs); font-weight: 700; grid-row: span 2; }
+.stage-bar__item.is-done .stage-bar__mark { background: hsl(var(--ls-success) / 0.15); color: hsl(var(--ls-success)); }
+.stage-bar__label { font-size: var(--text-sm); font-weight: 600; color: hsl(var(--ls-foreground)); text-decoration: none; }
+.stage-bar__label:hover { color: hsl(var(--ls-domain-accent)); }
+.stage-bar__detail { font-size: var(--text-xs); color: hsl(var(--ls-muted-foreground)); }
+.stage-bar__item.is-done .stage-bar__detail { color: hsl(var(--ls-success)); }
+.stage-bar__actions { display: flex; gap: 8px; padding-top: 10px; }
+@media (max-width: 640px) { .stage-bar__checklist { flex-direction: column; gap: 4px; } }
+
 .manage-embedded-root { min-height: 100vh; }
 .page-header-actions { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--spacing-5); }
 .mobile-toggle { display: none; background: none; border: none; color: hsl(var(--ls-foreground)); cursor: pointer; padding: var(--spacing-2); }

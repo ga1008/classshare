@@ -767,6 +767,15 @@ async def get_manage_offering_hub_page(request: Request, user: dict = Depends(ge
             my_semesters,
             default_semester_id,
         )
+    from ...services.teaching_stage_service import build_teaching_stage
+    teaching_stage = build_teaching_stage(
+        semesters=my_semesters,
+        default_semester_id=default_semester_id,
+        hub_stats=hub_context.get("hub_stats") or {},
+        hub_todo=hub_context.get("hub_todo") or {},
+        hub_bootstrap=hub_context.get("hub_bootstrap"),
+        today=china_today(),
+    )
 
     return templates.TemplateResponse(
         request,
@@ -778,6 +787,7 @@ async def get_manage_offering_hub_page(request: Request, user: dict = Depends(ge
             active_page="offering_hub",
             extra={
                 **hub_context,
+                "teaching_stage": teaching_stage,
                 "default_semester_id": default_semester_id,
             },
         ),

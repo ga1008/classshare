@@ -1,0 +1,27 @@
+{# 学期阶段条：由 teaching_stage_service.build_teaching_stage 提供 teaching_stage。学期初默认展开开课清单。 #}
+{% set stage = teaching_stage|default(none) %}
+{% if stage %}
+<details class="stage-bar stage-bar--{{ stage.phase }}" data-teaching-stage{% if stage.expanded %} open{% endif %}>
+    <summary class="stage-bar__summary">
+        <span class="stage-bar__phase">{{ stage.phase_label }}</span>
+        {% if stage.semester_name %}<span class="stage-bar__semester">{{ stage.semester_name }}{% if stage.week_label %} · {{ stage.week_label }}{% endif %}</span>{% endif %}
+        <span class="stage-bar__headline">{{ stage.headline }}</span>
+        <span class="stage-bar__toggle" aria-hidden="true">开课清单</span>
+    </summary>
+    <div class="stage-bar__body">
+        <ol class="stage-bar__checklist">
+            {% for item in stage.checklist %}
+            <li class="stage-bar__item{% if item.done %} is-done{% endif %}">
+                <span class="stage-bar__mark" aria-hidden="true">{% if item.done %}✓{% else %}{{ loop.index }}{% endif %}</span>
+                <a href="{{ item.href }}" class="stage-bar__label">{{ item.label }}</a>
+                <span class="stage-bar__detail">{{ item.detail }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        <div class="stage-bar__actions">
+            {% if stage.next_label %}<a class="btn btn-primary btn-sm" href="{{ stage.next_href }}">{{ stage.next_label }}</a>{% endif %}
+            <button type="button" class="btn btn-outline btn-sm" data-teacher-onboarding-open>逐步开设课堂</button>
+        </div>
+    </div>
+</details>
+{% endif %}
