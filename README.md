@@ -61,6 +61,11 @@ LanShare 是一个为真实课堂打造的教学平台。它最早只是一个�
 - 页面标题、副标题、空状态和帮助文案的精简规则与验收标准见 [全系统文案精简计划](docs/ui-copy-simplification-plan.md)。
 - 可运行 `python tools/ui/audit_ui_copy.py --output docs/ui-copy-audit-candidates.md` 重新生成文案候选清单。
 
+## AI 与 Agent 开发约定
+
+- 任何调用模型的功能、Agent（数字分身）能力、审批/确认类流程，动手前先读 [AI 与 Agent 工程规范](docs/ai-and-agent-engineering-standard.md)：它规定了调用分层、模型路由真源、持久任务不变量、Agent 授权铁律、能力分层与提交前检查清单，并索引了所有设计文档、代码与测试的真源。
+- 修改了规范中描述的机制（新增 task_type、能力层、授权链路等）时必须同步更新该文档。
+
 ## 一句话总结
 
 LanShare 想做的事很简单：**把老师从琐碎的事务里解放出来，把 AI 变成课堂里靠谱的第二位老师。**
