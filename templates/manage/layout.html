@@ -154,6 +154,18 @@
             </header>
             {% endif %}
 
+            {% if not embedded_mode and manage_nav.active_item and manage_nav.active_item.step %}
+            {% set _step = manage_nav.active_item.step %}
+            <nav class="archive-steps" aria-label="成绩与归档流程">
+                <a class="archive-steps__home" href="/manage/archive">成绩与归档</a>
+                <ol class="archive-steps__list">
+                    {% for step in manage_nav.archive_steps %}
+                    <li class="archive-steps__item{% if step.step == _step %} is-current{% endif %}"><a href="{{ step.href }}" title="第 {{ step.step }} 步 {{ step.label }}"><span>{{ step.step }}</span><em>{{ step.label }}</em></a></li>
+                    {% endfor %}
+                </ol>
+                <span class="archive-steps__pos">第 {{ _step }} / {{ manage_nav.archive_step_total }} 步</span>
+            </nav>
+            {% endif %}
             <div class="manage-content{% if embedded_mode %} is-embedded{% endif %}">
                 {% block content %}{% endblock %}
             </div>

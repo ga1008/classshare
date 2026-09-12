@@ -1,0 +1,36 @@
+{% extends "manage/layout.html" %}
+{# 成绩与归档域首页：九步流水线（docs §5.6）。数量来自材料检索分类检索器（本人范围）。 #}
+{% from "macros/ui_explanation.html" import explain_button %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('材料检索', '跨类别搜索', 'list', href=manage_nav.hrefs.material_hub, variant='outline', tone='slate') }}
+{% endblock %}
+
+{% block content %}
+<div class="ap-page">
+    <header class="ah-head">
+        <div>
+            <div class="manage-pagehead__title-row">
+                <h2>成绩与归档</h2>
+                {{ explain_button('成绩与归档', '学期末的九步流水线：命题与考核 → 成绩链 → 教务归档 → 课后材料。按顺序做，每一步都能从上一步的数据生成。', placement='bottom', label='成绩与归档说明') }}
+            </div>
+            <p class="ah-lead">我的材料已覆盖 {{ done_steps }} / {{ step_total }} 步</p>
+        </div>
+    </header>
+
+    <ol class="ap-steps">
+        {% set ns = namespace(group='') %}
+        {% for entry in pipeline %}
+        {% if entry.group != ns.group %}{% set ns.group = entry.group %}<li class="ap-group-label">{{ entry.group }}</li>{% endif %}
+        <li class="ap-step is-{{ entry.state }}">
+            <span class="ap-step__num" aria-hidden="true">{% if entry.count %}✓{% else %}{{ entry.step }}{% endif %}</span>
+            <a class="ap-step__label" href="{{ entry.href }}">{{ entry.label }}</a>
+            <span class="ap-step__hint">{{ entry.hint }}</span>
+            <span class="ap-step__count">{% if entry.count %}{{ entry.count }} 份{% else %}尚无{% endif %}</span>
+            <a class="btn btn-outline btn-sm" href="{{ entry.href }}">{% if entry.count %}查看{% else %}开始{% endif %}</a>
+        </li>
+        {% endfor %}
+    </ol>
+</div>
+{% endblock %}

@@ -85,70 +85,12 @@ async def manage_workflow_page(request: Request, user: dict = Depends(require_te
 
 
 @router.get("/manage/academic", response_class=HTMLResponse)
-async def manage_academic_overview_page(request: Request, user: dict = Depends(require_teacher_domain("academic"))):
-    teacher_id = int(user["id"])
-    now_text = datetime.now().isoformat(timespec="minutes")
-    horizon_text = (datetime.now() + timedelta(days=14)).isoformat(timespec="minutes")
-    with get_db_connection() as conn:
-        academic_credentials = list_teacher_academic_credentials(conn, teacher_id)
-        gongwen_credentials = list_teacher_gongwen_credentials(conn, teacher_id)
-        teaching_place_count = count_teacher_teaching_places(conn, teacher_id)
-        classroom_dashboard = load_teacher_teaching_place_dashboard(conn, teacher_id)
-        upcoming_events = conn.execute(
-            """
-            SELECT source_type, tone, COUNT(*) AS event_count
-            FROM teacher_calendar_events
-            WHERE teacher_id = ?
-              AND status = 'active'
-              AND deleted_at IS NULL
-              AND COALESCE(starts_at, due_at, created_at) >= ?
-              AND COALESCE(starts_at, due_at, created_at) <= ?
-            GROUP BY source_type, tone
-            """,
-            (teacher_id, now_text, horizon_text),
-        ).fetchall()
-        scope = load_teacher_org_scope(conn, teacher_id)
-        is_admin = is_super_admin_teacher(conn, teacher_id)
-        gongwen_summary = count_visible_gongwen_documents(conn, scope, is_super_admin=is_admin)
+async def manage_academic_overview_page(request: Request, week: str = "", user: dict = Depends(require_teacher_domain("academic"))):
+    """教务域首页：我的教务日程（周视图 + 同步状态卡）。"""
+    from ...services.academic_home_service import build_academic_home
 
-    event_total = sum(int(row["event_count"] or 0) for row in upcoming_events)
-    event_breakdown = [
-        {
-            "label": _academic_event_label(row),
-            "value": int(row["event_count"] or 0),
-        }
-        for row in upcoming_events
-    ]
-    overview_cards = [
-        {
-            "label": "教务同步",
-            "value": len(academic_credentials),
-            "unit": "个账号",
-            "description": "用于课表、考试、监考和名册数据同步。",
-            "href": canonical_manage_href("system_academic_integrations"),
-        },
-        {
-            "label": "近期教务日程",
-            "value": event_total,
-            "unit": "条",
-            "description": "未来 14 天内的考试、监考和教务提醒。",
-            "href": "/dashboard#dashboard-semester",
-        },
-        {
-            "label": "教学场地",
-            "value": teaching_place_count,
-            "unit": "间",
-            "description": "已同步或维护的教室与空闲教室查询入口。",
-            "href": canonical_manage_href("classrooms"),
-        },
-        {
-            "label": "可见公文",
-            "value": int((gongwen_summary or {}).get("total") or 0),
-            "unit": "篇",
-            "description": "按组织范围可检索的学校、学院公文材料。",
-            "href": canonical_manage_href("gongwen"),
-        },
-    ]
+    with get_db_connection() as conn:
+        academic_home = build_academic_home(conn, user, week_anchor=week)
 
     return templates.TemplateResponse(
         request,
@@ -156,15 +98,9 @@ async def manage_academic_overview_page(request: Request, user: dict = Depends(r
         _build_manage_template_context(
             request,
             user,
-            page_title="教务总览",
+            page_title="教务日程",
             active_page="academic_overview",
-            extra={
-                "overview_cards": overview_cards,
-                "event_breakdown": event_breakdown,
-                "classroom_dashboard": classroom_dashboard,
-                "academic_credentials": academic_credentials,
-                "gongwen_credentials": gongwen_credentials,
-            },
+            extra={"academic_home": academic_home},
         ),
     )
 

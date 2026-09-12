@@ -12,8 +12,8 @@ import {
 const domainPages = [
   { path: '/manage/teaching', domain: 'teaching', title: '课堂管理' },
   { path: '/manage/library', domain: 'library', title: '材料检索' },
-  { path: '/manage/archive/ordinary-grade-records', domain: 'archive', title: '平时成绩表' },
-  { path: '/manage/academic', domain: 'academic', title: '教务总览' },
+  { path: '/manage/archive', domain: 'archive', title: '成绩与归档' },
+  { path: '/manage/academic', domain: 'academic', title: '教务日程' },
   { path: '/manage/me', domain: 'me', title: '我的概览' },
 ];
 

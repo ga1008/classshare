@@ -6416,6 +6416,14 @@
     "include_in_schema": false
   },
   {
+    "path": "/manage/archive",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_archive_pipeline_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/archive/academic-exam-analyses",
     "methods": [
       "GET"

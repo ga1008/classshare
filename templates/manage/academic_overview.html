@@ -1,44 +1,103 @@
 {% extends "manage/layout.html" %}
+{# 教务域首页 = 我的教务日程（docs §5.7）：周视图时间线 + 同步状态卡。数据来自 academic_home_service。 #}
+{% from "macros/ui_explanation.html" import explain_button %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('教务对接', '同步账号', 'shield', href=manage_nav.hrefs.system_academic_integrations, variant='solid', tone='teal') }}
-{{ topbar_action('空闲教室', '场地查询', 'building', href=manage_nav.hrefs.classrooms, variant='outline', tone='slate') }}
+{{ topbar_action('教室查询', '空闲教室', 'building', href=manage_nav.hrefs.classrooms, variant='outline', tone='slate') }}
 {% endblock %}
 
 {% block content %}
-<section class="manage-domain-grid" aria-label="教务状态">
-    {% for card in overview_cards %}
-    <a class="manage-domain-card" href="{{ card.href }}">
-        <span>{{ card.label }}</span>
-        <strong>{{ card.value }} {{ card.unit }}</strong>
-        <small>{{ card.description }}</small>
-    </a>
-    {% endfor %}
-</section>
-
-<section class="academic-panel">
-    <div class="academic-panel-header">
+{% set home = academic_home %}
+<div class="ah-page">
+    <header class="ah-head">
         <div>
-            <span class="academic-panel-kicker">近期教务</span>
-            <h2>未来 14 天</h2>
+            <div class="manage-pagehead__title-row">
+                <h2>我的教务日程</h2>
+                {{ explain_button('教务日程', '监考、考试与教务提醒来自教务对接同步和你的日程；与首页「需要处理」同一数据源。可为监考/考试设置邮件提醒。', placement='bottom', label='教务日程说明') }}
+            </div>
+            <p class="ah-lead">本周 {{ home.week_total }} 项{% for item in home.kind_counts %} · {{ item.label }} {{ item.count }}{% endfor %}</p>
         </div>
-        <a href="/dashboard#dashboard-semester" class="btn btn-outline btn-sm">查看日程</a>
+        <nav class="ah-weeknav" aria-label="切换周">
+            <a class="btn btn-outline btn-sm" href="?week={{ home.prev_week }}" aria-label="上一周">‹</a>
+            <strong>{{ home.week_label }}</strong>
+            <a class="btn btn-outline btn-sm" href="?week={{ home.next_week }}" aria-label="下一周">›</a>
+            {% if not home.is_current_week %}<a class="dw-link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
+        </nav>
+    </header>
+
+    <div class="ah-grid">
+        <section class="ah-week" aria-label="本周教务时间线" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
+            {% if home.kind_counts|length > 1 %}
+            <div class="ah-filters" data-ah-filters>
+                <button type="button" class="wi-chip is-active" data-ah-kind="">全部 <b>{{ home.week_total }}</b></button>
+                {% for item in home.kind_counts %}<button type="button" class="wi-chip" data-ah-kind="{{ item.kind }}">{{ item.label }} <b>{{ item.count }}</b></button>{% endfor %}
+            </div>
+            {% endif %}
+            <ol class="ah-days">
+                {% for day in home.days %}
+                <li class="ah-day{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if not day.events %} is-empty{% endif %}">
+                    <div class="ah-day__head"><strong>{{ day.weekday }}</strong><span>{{ day.label }}</span>{% if day.is_today %}<em>今天</em>{% endif %}</div>
+                    <div class="ah-day__events">
+                        {% for event in day.events %}
+                        <article class="ah-event ah-event--{{ event.kind }}" data-ah-event data-kind="{{ event.kind }}">
+                            <span class="ah-event__time">{{ event.hour_label }}</span>
+                            <span class="ah-event__copy"><span class="ah-event__kind">{{ event.kind_label }}</span><strong>{{ event.title }}</strong>{% if event.subtitle %}<small>{{ event.subtitle }}</small>{% endif %}</span>
+                            {% if event.can_email_reminder %}<button type="button" class="dw-link" data-agenda-item data-kind="{{ event.kind }}" data-status="{{ event.status }}" data-kind-label="{{ event.kind_label }}" data-title="{{ event.title }}" data-subtitle="{{ event.subtitle }}" data-when="{{ event.date_label }} {{ event.hour_label }}" data-href="{{ event.href }}" data-event-id="{{ event.event_id|default('') }}" data-can-reminder="1" data-start-at="{{ event.starts_at }}" aria-haspopup="dialog">详情 / 邮件提醒</button>{% elif event.href and event.href != '#' %}<a class="dw-link" href="{{ event.href }}">查看</a>{% endif %}
+                        </article>
+                        {% else %}
+                        <span class="ah-day__none">无安排</span>
+                        {% endfor %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ol>
+        </section>
+
+        <aside class="ah-side">
+            <section class="ah-card">
+                <h3>同步状态</h3>
+                <ul class="ah-sync">
+                    {% for card in home.sync_cards %}
+                    <li class="ah-sync__item is-{{ card.state }}">
+                        <span class="ah-sync__dot" aria-hidden="true"></span>
+                        <span class="ah-sync__copy"><strong>{{ card.label }}</strong><small>{{ card.detail }}</small></span>
+                        <a class="ah-sync__state" href="{{ card.href }}">{{ card.state_label }}{% if card.state != 'ok' %} →{% endif %}</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% if home.upcoming %}
+            <section class="ah-card">
+                <h3>之后的安排</h3>
+                <ul class="ah-upcoming">
+                    {% for event in home.upcoming %}
+                    <li><span>{{ event.date_label }} {{ event.hour_label }}</span><strong>{{ event.title }}</strong></li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+            <section class="ah-card ah-card--links">
+                <h3>教务入口</h3>
+                <a class="dw-link" href="{{ manage_nav.hrefs.course_schedule }}">课时统计与 3D 课表</a>
+                <a class="dw-link" href="{{ manage_nav.hrefs.classrooms }}">教室查询</a>
+                <a class="dw-link" href="{{ manage_nav.hrefs.gongwen }}">公文列表</a>
+            </section>
+        </aside>
     </div>
-    {% if event_breakdown %}
-    <div class="manage-domain-grid">
-        {% for item in event_breakdown %}
-        <div class="manage-domain-card">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }} 条</strong>
-            <small>来自教务同步或教师日程。</small>
-        </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-        <p>未来两周暂无教务日程。</p>
-    </div>
-    {% endif %}
-</section>
+</div>
+<script>
+    (() => {
+        const bar = document.querySelector('[data-ah-filters]');
+        if (!bar) return;
+        bar.addEventListener('click', (event) => {
+            const chip = event.target.closest('[data-ah-kind]');
+            if (!chip) return;
+            const kind = chip.dataset.ahKind || '';
+            bar.querySelectorAll('[data-ah-kind]').forEach((el) => el.classList.toggle('is-active', el === chip));
+            document.querySelectorAll('[data-ah-event]').forEach((el) => { el.hidden = Boolean(kind) && el.dataset.kind !== kind; });
+        });
+    })();
+</script>
 {% endblock %}

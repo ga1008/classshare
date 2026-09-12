@@ -274,6 +274,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
     ),
     # ── 成绩与归档（按学期末流程排步） ───────────────────────────────
     ManageNavItem(
+        key="archive_pipeline",
+        domain=MANAGE_ARCHIVE_DOMAIN,
+        group="总览",
+        label="归档流水线",
+        icon="workflow",
+        href="/manage/archive",
+        search_text="成绩与归档 流水线 九步 总览 archive pipeline",
+        ai_hint="归档流水线：成绩与归档域首页——九步一览（命题与考核 → 成绩链 → 教务归档 → 课后材料），显示每步已有材料数并直达对应页。",
+    ),
+    ManageNavItem(
         key="assessment_plans",
         domain=MANAGE_ARCHIVE_DOMAIN,
         group="命题与考核",
@@ -403,11 +413,11 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         key="academic_overview",
         domain="academic",
         group="日程",
-        label="教务总览",
-        icon="gauge",
+        label="教务日程",
+        icon="calendar",
         href="/manage/academic",
-        search_text="教务 总览 课表 考试 监考 academic overview 日程",
-        ai_hint="教务总览：教务域首页——查看教务同步、监考考试提醒、教室和公文的聚合入口。",
+        search_text="教务 总览 日程 周 课表 考试 监考 academic overview schedule",
+        ai_hint="教务日程：教务域首页——按周查看监考、考试与教务提醒（与首页同一数据源，可设邮件提醒），并查看教务对接/智慧课堂/公文通的同步状态。",
     ),
     ManageNavItem(
         key="course_schedule",
@@ -652,7 +662,7 @@ MANAGE_DOMAIN_HOME_KEYS: dict[str, str] = {
     MANAGE_HOME_DOMAIN: "home",
     "teaching": "offering_hub",
     MANAGE_LIBRARY_DOMAIN: "material_hub",
-    MANAGE_ARCHIVE_DOMAIN: "assessment_plans",
+    MANAGE_ARCHIVE_DOMAIN: "archive_pipeline",
     "academic": "academic_overview",
     MANAGE_ME_DOMAIN: "teacher_profile",
     MANAGE_ADMIN_DOMAIN: "system_users",
@@ -677,7 +687,7 @@ def canonical_manage_href(key: str, fallback: str = "/manage/teaching/classroom-
 
 def iter_archive_steps() -> list[ManageNavItem]:
     """成绩与归档域的九步，按流程顺序。"""
-    return sorted((item for item in MANAGE_NAV_ITEMS if item.domain == MANAGE_ARCHIVE_DOMAIN), key=lambda item: item.step)
+    return sorted((item for item in MANAGE_NAV_ITEMS if item.domain == MANAGE_ARCHIVE_DOMAIN and item.step), key=lambda item: item.step)
 
 
 def _can_view_item(item: ManageNavItem, *, is_super_admin: bool) -> bool:
@@ -791,6 +801,10 @@ def build_manage_nav(
         "domain_meta": MANAGE_DOMAIN_META,
         "library_categories": [dict(category) for category in MATERIAL_HUB_CATEGORIES],
         "archive_step_total": ARCHIVE_STEP_TOTAL,
+        "archive_steps": [
+            {"key": item.key, "step": item.step, "label": item.label, "href": item.href}
+            for item in iter_archive_steps()
+        ],
     }
 
 
