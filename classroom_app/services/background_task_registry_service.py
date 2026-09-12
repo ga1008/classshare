@@ -26,6 +26,16 @@ class BackgroundTaskDefinition:
 
 BACKGROUND_TASK_DEFINITIONS: tuple[BackgroundTaskDefinition, ...] = (
     BackgroundTaskDefinition(
+        task_type="attendance_export", display_name="签到原件导出",
+        source="ai_jobs + attendance_report_versions", recoverable=True,
+        recovery_action="lease-fenced recovery; bounded source retries; originals remain immutable", owner="academic_archive",
+    ),
+    BackgroundTaskDefinition(
+        task_type="attendance_parse", display_name="签到 AI 解析",
+        source="ai_jobs + attendance_parse_runs", recoverable=True,
+        recovery_action="recover committed candidates; explicit reparse creates a new run from the cached PDF", owner="academic_archive",
+    ),
+    BackgroundTaskDefinition(
         task_type="ai_grading",
         display_name="AI 批改",
         source="ai_jobs durable ledger + immutable grading results",

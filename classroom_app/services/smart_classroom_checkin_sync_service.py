@@ -17,6 +17,8 @@ from .smart_classroom_integration_service import (
     open_authenticated_smart_classroom_client,
 )
 from .smart_attendance_advice_service import attach_student_attendance_ai_advice
+from .semester_identity_service import parse_semester_identity
+from .smart_classroom_attendance_adapter import fetch_source_schedules, fetch_source_checkins, validate_source_term
 
 
 SMART_PLATFORM_CODE = "gxufl_smart_classroom"
@@ -261,23 +263,12 @@ def _section_text_contains(section_text: Any, section_index: int) -> bool:
 
 
 def _term_matches(candidate: OfferingCandidate, year: str, term: str) -> bool:
-    haystack = " ".join(
-        item
-        for item in [candidate.semester_name, candidate.semester_text]
-        if item
-    )
-    normalized_haystack = _normalize_text(haystack)
-    year_ok = not year or _normalize_text(year) in normalized_haystack
-    term_text = str(term or "").strip()
-    if not term_text:
-        return year_ok
-    term_markers = {
-        "1": ("1", "第一", "一"),
-        "2": ("2", "第二", "二"),
-        "12": ("2", "第二", "二"),
-    }.get(term_text, (term_text,))
-    term_ok = any(_normalize_text(marker) in normalized_haystack for marker in term_markers)
-    return year_ok and term_ok
+    try:
+        expected = validate_source_term(year, term)
+    except ValueError:
+        return False
+    identities = {identity for text in (candidate.semester_name, candidate.semester_text) if (identity := parse_semester_identity(text))}
+    return len(identities) == 1 and next(iter(identities)).as_year_term() == expected
 
 
 def _load_offering_candidates(conn, teacher_id: int) -> list[OfferingCandidate]:
@@ -347,9 +338,21 @@ def _match_offering(schedule: dict[str, Any], candidates: list[OfferingCandidate
 
     scored: list[tuple[int, OfferingCandidate, list[str]]] = []
     for candidate in candidates:
+        if not _term_matches(candidate, remote_year, remote_term):
+            continue
+        # A course code identifies a course, never its teaching group. Require
+        # an exact group/class identity before considering the course score.
+        group_matches = bool(remote_teaching_class) and _normalize_text(remote_teaching_class) in {
+            _normalize_text(candidate.academic_teaching_class_name), _normalize_text(candidate.class_name)
+        }
+        if not group_matches:
+            continue
         score = 0
         reasons: list[str] = []
         code_pool = {candidate.course_code, *candidate.session_course_codes}
+        if not ((remote_course_id and remote_course_id in code_pool) or
+                (remote_course_name and _normalize_text(remote_course_name) == _normalize_text(candidate.course_name))):
+            continue
         if remote_course_id and remote_course_id in code_pool:
             score += 5
             reasons.append("课程编号一致")
@@ -381,6 +384,8 @@ def _match_offering(schedule: dict[str, Any], candidates: list[OfferingCandidate
     scored.sort(key=lambda item: (item[0], item[1].id), reverse=True)
     if not scored or scored[0][0] < 6:
         return None, "未能按课程编号、教学班和学期匹配到本系统课堂。"
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None, "存在多个同等匹配的课堂，请明确关联教学班；未按课堂编号猜测。"
     best_score, best_candidate, reasons = scored[0]
     return best_candidate, f"匹配分 {best_score}：{'、'.join(reasons)}"
 
@@ -395,47 +400,12 @@ async def _post_json(client: httpx.AsyncClient, path: str, data: dict[str, Any] 
     return response.json()
 
 
-async def _fetch_schedule_list(client: httpx.AsyncClient) -> list[dict[str, Any]]:
-    payload = await _post_json(client, CHECKIN_SCHEDULE_LIST_PATH)
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    if isinstance(payload, dict):
-        for key in ("list", "data", "rows"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    return []
+async def _fetch_schedule_list(client: httpx.AsyncClient, year: str, term: str) -> list[dict[str, Any]]:
+    return await fetch_source_schedules(client, year, term)
 
 
-async def _fetch_checkin_pages(client: httpx.AsyncClient, schedule_id: str) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    page = 1
-    total_page = 1
-    while page <= total_page and page <= 30:
-        await _gentle_pause()
-        payload = await _post_json(
-            client,
-            CHECKIN_PAGE_PATH,
-            {
-                "page": page,
-                "pageSize": 100,
-                "teacherScheduleId": schedule_id,
-                "field": "id",
-                "order": "descend",
-            },
-        )
-        if isinstance(payload, dict):
-            page_records = payload.get("list") if isinstance(payload.get("list"), list) else []
-            total_page = max(1, _coerce_int(payload.get("totalPage"), 1))
-        elif isinstance(payload, list):
-            page_records = payload
-            total_page = 1
-        else:
-            page_records = []
-            total_page = 1
-        records.extend(item for item in page_records if isinstance(item, dict))
-        page += 1
-    return records
+async def _fetch_checkin_pages(client: httpx.AsyncClient, schedule_id: str, *, schedule: dict | None = None) -> list[dict[str, Any]]:
+    return await fetch_source_checkins(client, schedule_id, expected_schedule=schedule)
 
 
 async def _fetch_checkin_detail(client: httpx.AsyncClient, checkin_id: Any) -> dict[str, Any]:
@@ -453,7 +423,7 @@ def _upsert_schedule_item(
     match_message: str,
     synced_at: str,
 ) -> int:
-    remote_schedule_id = str(schedule.get("id") or schedule.get("kbId") or "").strip()
+    remote_schedule_id = str(schedule.get("id") or "").strip()
     remote_teaching_class = _clean_text(
         schedule.get("claName")
         or schedule.get("chooseCourseNo")
@@ -554,17 +524,23 @@ def _match_session(
     if date_text:
         same_date = [session for session in sessions if str(session.get("session_date") or "") == date_text]
         if len(same_date) == 1:
+            section = _extract_section_index(merged)
+            if section and same_date[0].get("academic_section_text") and not _section_text_contains(same_date[0]["academic_section_text"], section):
+                return None, "点名日期一致但节次冲突，请核对调课信息。"
             return same_date[0], "按点名日期对齐课次。"
         if same_date:
             section_index = _extract_section_index(merged)
-            for session in same_date:
-                if _section_text_contains(session.get("academic_section_text"), section_index):
-                    return session, "按点名日期和节次对齐课次。"
-            return same_date[0], "按点名日期对齐课次，存在同日多课请复核。"
+            matches = [session for session in same_date if _section_text_contains(session.get("academic_section_text"), section_index)]
+            if len(matches) == 1:
+                return matches[0], "按点名日期和节次对齐课次。"
+            return None, "同日课次无法唯一对应节次，请复核；未自动选择第一节课。"
+        return None, "点名日期没有对应本地课次，请检查调课记录。"
 
     week_index = _coerce_int(merged.get("week"))
     weekday = _remote_weekday_to_local(merged.get("dayOfWeek") or merged.get("xqj"))
     section_index = _extract_section_index(merged)
+    if not week_index or weekday is None or not section_index:
+        return None, "缺少完整日期或周次、星期、节次，无法可靠对齐课次。"
     candidates = []
     for session in sessions:
         if week_index and _coerce_int(session.get("week_index")) != week_index:
@@ -577,7 +553,7 @@ def _match_session(
     if len(candidates) == 1:
         return candidates[0], "按周次、星期和节次对齐课次。"
     if candidates:
-        return candidates[0], "按周次和星期对齐课次，存在多个候选请复核。"
+        return None, "按周次、星期和节次存在多个候选，请复核。"
     return None, "未能对齐到本系统课次，请检查该周是否调课或课次尚未生成。"
 
 
@@ -986,15 +962,24 @@ async def sync_teacher_smart_classroom_checkins(
         warnings: list[str] = []
         try:
             async with open_authenticated_smart_classroom_client(access_payload) as (client, _profile, _login_result):
-                schedules = await _fetch_schedule_list(client)
+                target_candidates = [item for item in candidates if not class_offering_id or item.id == int(class_offering_id)]
+                terms = set()
+                for candidate in target_candidates:
+                    identity = parse_semester_identity(candidate.semester_name, candidate.semester_text)
+                    if identity and identity.term in (1, 2) and _term_matches(candidate, *identity.as_year_term()):
+                        terms.add(identity.as_year_term())
+                if not terms:
+                    raise ValueError("本地课堂缺少明确学年学期，请完善后再同步。")
+                for year, term in sorted(terms, reverse=True):
+                    schedules.extend(await _fetch_schedule_list(client, year, term))
                 for schedule in schedules:
-                    remote_schedule_id = str(schedule.get("id") or schedule.get("kbId") or "").strip()
+                    remote_schedule_id = str(schedule.get("id") or "").strip()
                     if not remote_schedule_id:
                         continue
                     offering, match_message = _match_offering(schedule, candidates)
                     if class_offering_id and (not offering or offering.id != int(class_offering_id)):
                         continue
-                    records = await _fetch_checkin_pages(client, remote_schedule_id)
+                    records = await _fetch_checkin_pages(client, remote_schedule_id, schedule=schedule)
                     for record in records:
                         remote_checkin_id = record.get("id")
                         if not remote_checkin_id:

@@ -261,15 +261,16 @@ def _material_import_runtime_snapshot() -> dict[str, Any]:
         return {"queue_size": 0, "active_worker_count": 0, "worker_ids": []}
 
 
-def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
+def _build_durable_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
     if _table_exists(conn, "ai_jobs"):
         item = _base_item(definition)
-        task_filter = "task_type = 'ai_grading'"
+        # Registry-owned type; bind it as a parameter in every query.
+        task_filter = "task_type = ?"
         def count_grading(statuses: tuple[str, ...]) -> int:
             placeholders = ",".join("?" for _ in statuses)
             row = conn.execute(
                 f"SELECT COUNT(*) AS row_count FROM ai_jobs WHERE {task_filter} AND status IN ({placeholders})",
-                statuses,
+                (definition.task_type, *statuses),
             ).fetchone()
             return int(_row_scalar(row, "row_count", 0) or 0)
 
@@ -284,7 +285,7 @@ def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskD
               AND status = 'running'
               AND (lease_expires_at IS NULL OR lease_expires_at < ?)
             """,
-            (_now_iso(),),
+            (definition.task_type, _now_iso()),
         ).fetchone()
         item["stale_count"] = int(_row_scalar(stale_row, "row_count", 0) or 0)
         oldest = conn.execute(
@@ -293,7 +294,7 @@ def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskD
             FROM ai_jobs
             WHERE {task_filter}
               AND status IN ('queued', 'retry_wait', 'result_ready')
-            """
+            """, (definition.task_type,)
         ).fetchone()
         item["oldest_queued_at"] = str(_row_scalar(oldest, "oldest_value", "") or "")
         error_row = conn.execute(
@@ -305,11 +306,17 @@ def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskD
               AND TRIM(COALESCE(last_error, '')) <> ''
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
-            """
+            """, (definition.task_type,)
         ).fetchone()
         item["last_error_at"] = str(_row_scalar(error_row, "updated_at", "") or "")
         item["last_error"] = _sanitize_text(_row_scalar(error_row, "last_error", ""))
         return item
+    return _missing_source_item(definition, "ai_jobs")
+
+
+def _build_ai_grading_item(conn: sqlite3.Connection, definition: BackgroundTaskDefinition) -> dict[str, Any]:
+    if _table_exists(conn, "ai_jobs"):
+        return _build_durable_item(conn, definition)
     if not _table_exists(conn, "submissions"):
         return _missing_source_item(definition, "submissions")
     item = _base_item(definition)
@@ -655,6 +662,8 @@ def _build_behavior_write_pipeline_item(
 
 
 _DB_BUILDERS: dict[str, Callable[[sqlite3.Connection, BackgroundTaskDefinition], dict[str, Any]]] = {
+    "attendance_export": _build_durable_item,
+    "attendance_parse": _build_durable_item,
     "ai_grading": _build_ai_grading_item,
     "material_ai_import": _build_material_ai_import_item,
     "session_material_generation": _build_session_material_generation_item,

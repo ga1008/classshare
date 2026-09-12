@@ -1,0 +1,55 @@
+            <div class="learning-exam-roster-panel" data-exam-roster-panel data-class-offering-id="{{ classroom.id }}" aria-label="期末考试名单与签名表">
+                <div class="learning-exam-roster-panel__head">
+                    <div class="learning-exam-roster-title">
+                        <span>Final Exam</span>
+                        <h3>考试名单与签名表</h3>
+                        <p data-exam-roster-summary>同步教务名单后，确认考试信息并导出签名表。</p>
+                    </div>
+                    <button type="button" class="learning-exam-roster-sync-btn btn btn-primary btn-sm" data-exam-roster-sync>同步考试名单</button>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" data-exam-roster-refresh>刷新名单状态</button>
+                <div class="learning-exam-roster-layout">
+                    <section class="learning-exam-roster-card learning-exam-roster-card--status" aria-label="考试名单状态">
+                        <div class="learning-exam-roster-card__head">
+                            <span>名单状态</span>
+                            <strong data-exam-roster-status-title>等待同步</strong>
+                        </div>
+                        <div class="learning-exam-roster-status" data-exam-roster-status>正在读取考试名单状态...</div>
+                        <div class="learning-exam-roster-preview" data-exam-roster-preview hidden></div>
+                        <div class="learning-exam-roster-candidates" data-exam-roster-candidates hidden></div>
+                    </section>
+                    <form class="learning-exam-roster-card learning-exam-roster-form" data-exam-roster-export-form aria-label="导出签名表信息">
+                        <div class="learning-exam-roster-card__head">
+                            <span>导出确认</span>
+                            <strong>签名表信息</strong>
+                        </div>
+                        <div class="learning-exam-roster-form-grid">
+                            <label class="learning-exam-roster-field learning-exam-roster-field--wide">
+                                <span>考试时间</span>
+                                <input type="datetime-local" name="exam_datetime" class="form-control" required>
+                            </label>
+                            <label class="learning-exam-roster-field learning-exam-roster-field--wide">
+                                <span>考试地点</span>
+                                <div class="learning-exam-place-picker" data-exam-place-picker>
+                                    <input type="search" name="exam_location" class="form-control" placeholder="搜索教室，如 B422" autocomplete="off" required data-exam-place-input>
+                                    <input type="hidden" name="exam_location_place_key" data-exam-place-key>
+                                    <input type="hidden" name="exam_location_place_id" data-exam-place-id>
+                                    <div class="learning-exam-place-results" data-exam-place-results hidden></div>
+                                </div>
+                            </label>
+                            <label class="learning-exam-roster-field">
+                                <span>主监考</span>
+                                <input type="text" name="chief_invigilator" class="form-control">
+                            </label>
+                            <label class="learning-exam-roster-field">
+                                <span>辅监考</span>
+                                <input type="text" name="assistant_invigilator" class="form-control">
+                            </label>
+                        </div>
+                        <div class="learning-exam-roster-form-actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-exam-roster-cancel>取消修改</button>
+                            <button type="submit" class="btn btn-primary btn-sm" data-exam-roster-export disabled>导出签名表</button>
+                        </div>
+                    </form>
+                </div>
+            </div>

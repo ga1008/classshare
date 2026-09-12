@@ -9,7 +9,9 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
 
-const panel = document.querySelector('[data-retake-panel]');
+export function initClassroomRetakePanel(panel) {
+if (!panel) return;
+if (panel.retakeController) return panel.retakeController;
 
 const STATUS_META = {
     confirmed: { label: '已确认', tone: 'confirmed' },
@@ -21,6 +23,9 @@ const state = {
     classOfferingId: 0,
     items: [],
     busy: false,
+    loaded: false,
+    epoch: 0,
+    abort: null,
 };
 
 function renderList() {
@@ -34,7 +39,7 @@ function renderList() {
     list.hidden = false;
     list.innerHTML = state.items.map((item) => {
         const meta = STATUS_META[item.status] || STATUS_META.suggested;
-        const score = Number(item.default_ordinary_score || 70);
+        const score = Number(item.default_ordinary_score ?? 70);
         const confirmControls = item.status === 'confirmed'
             ? `
                 <span class="classroom-retake-score">默认平时分 <b>${escapeHtml(String(score))}</b> 分</span>
@@ -68,23 +73,32 @@ function setBusy(busy) {
         detectBtn.disabled = busy;
         detectBtn.textContent = busy ? '处理中…' : 'AI 识别插班生';
     }
-    panel?.querySelectorAll('[data-retake-confirm], [data-retake-revoke]').forEach((button) => {
+    panel?.querySelectorAll('[data-retake-confirm], [data-retake-revoke], [data-retake-score-input]').forEach((button) => {
         button.disabled = busy;
     });
 }
 
 async function loadList() {
+    if (state.loaded || state.busy || state.abort) return;
+    const epoch = ++state.epoch;
+    const abort = state.abort = new AbortController();
     try {
-        const data = await apiFetch(`/api/classroom/${state.classOfferingId}/retake-students`, { silent: true });
+        const data = await apiFetch(`/api/classroom/${state.classOfferingId}/retake-students`, { silent: true, signal: abort.signal });
+        if (abort.signal.aborted || epoch !== state.epoch) return;
+        state.loaded = true;
         state.items = Array.isArray(data.items) ? data.items : [];
         renderList();
     } catch (error) {
-        console.error('[RETAKE] 读取插班生名单失败', error);
-    }
+        if (abort.signal.aborted || epoch !== state.epoch) return;
+        const list = panel.querySelector('[data-retake-list]');
+        list.hidden = false;
+        list.innerHTML = `<p role="alert">${escapeHtml(error.message || '读取插班生名单失败')}</p><button type="button" class="btn btn-outline btn-sm" data-retake-retry>重新读取</button>`;
+    } finally { if (state.abort === abort) state.abort = null; }
 }
 
 async function detect() {
     if (state.busy) return;
+    state.abort?.abort(); state.abort = null; state.epoch++;
     setBusy(true);
     try {
         const data = await apiFetch(`/api/classroom/${state.classOfferingId}/retake-students/detect`, {
@@ -110,6 +124,7 @@ async function confirmStudent(studentId) {
         showToast('默认平时分必须在 0 到 100 之间。', 'warning');
         return;
     }
+    state.abort?.abort(); state.abort = null; state.epoch++;
     setBusy(true);
     try {
         const data = await apiFetch(`/api/classroom/${state.classOfferingId}/retake-students/confirm`, {
@@ -128,6 +143,7 @@ async function confirmStudent(studentId) {
 
 async function revokeStudent(studentId) {
     if (state.busy) return;
+    state.abort?.abort(); state.abort = null; state.epoch++;
     setBusy(true);
     try {
         const data = await apiFetch(`/api/classroom/${state.classOfferingId}/retake-students/revoke`, {
@@ -150,6 +166,7 @@ function init() {
     if (!state.classOfferingId) return;
     panel.querySelector('[data-retake-detect]')?.addEventListener('click', detect);
     panel.addEventListener('click', (event) => {
+        if (event.target.closest('[data-retake-retry]')) { loadList(); return; }
         const confirmBtn = event.target.closest('[data-retake-confirm]');
         if (confirmBtn) {
             confirmStudent(confirmBtn.dataset.retakeConfirm);
@@ -160,7 +177,15 @@ function init() {
             revokeStudent(revokeBtn.dataset.retakeRevoke);
         }
     });
-    loadList();
 }
 
 init();
+panel.retakeController = {
+    activate: loadList,
+    deactivate: () => { state.abort?.abort(); state.abort = null; state.epoch++; },
+    isDirty: () => [...panel.querySelectorAll('[data-retake-score-input]')].some(input => input.value !== input.defaultValue),
+    isBusy: () => state.busy,
+    reset: () => { if (!state.busy) renderList(); },
+};
+return panel.retakeController;
+}

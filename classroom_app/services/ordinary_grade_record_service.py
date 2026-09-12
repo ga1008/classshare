@@ -492,6 +492,8 @@ def build_ordinary_grade_record_payload(
         if any(value is None for value in raw_homework_scores) or raw_assessment_score is None:
             warnings.append(f"{student.get('student_name') or student.get('student_number')} 存在未批改或缺失的作业/测评成绩，原始成绩已按 0 分计入。")
         attendance_score = attendance_scores.get(student_id)
+        if attendance_score is None and getattr(attendance_scores, "strict", False):
+            raise ValueError("有当前课堂学生不在已确认签到原件的适用名单中，请先核对来源或明确豁免政策，不能按缺勤计零分。")
         if attendance_score is None:
             warnings.append(f"{student.get('student_name') or student.get('student_number')} 暂无智慧课堂签到记录，出勤成绩已按 0 分计入。")
         attendance_raw_score = _score_or_zero(attendance_score)
@@ -1199,6 +1201,10 @@ def _load_roster(conn, *, class_offering_id: int, context: dict[str, Any]) -> li
 
 
 def _load_attendance_scores(conn, *, class_offering_id: int, teacher_id: int) -> dict[int, float]:
+    from .attendance_fact_service import load_confirmed_attendance_scores
+    confirmed_scores = load_confirmed_attendance_scores(conn, class_offering_id=class_offering_id, teacher_id=teacher_id)
+    if confirmed_scores is not None:
+        return confirmed_scores
     session_rows = conn.execute(
         """
         SELECT *
@@ -1239,6 +1245,8 @@ def _load_attendance_scores(conn, *, class_offering_id: int, teacher_id: int) ->
     scores = {}
     total_sessions = len(checkin_ids)
     for student_id, statuses in statuses_by_student.items():
+        if len(statuses) != total_sessions or any(value not in {"CHECKED", "UNCHECKED", "SICK_LEAVE", "PERSONAL_LEAVE", "LATE_OR_EARLY"} for value in statuses.values()):
+            raise ValueError("签到明细不完整，无法计算可信的出勤成绩，请先核对签到数据。")
         checked = sum(1 for status in statuses.values() if status == "CHECKED")
         scores[student_id] = round(checked * 100.0 / total_sessions, 2)
     return scores

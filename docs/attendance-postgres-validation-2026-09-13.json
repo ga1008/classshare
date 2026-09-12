@@ -1,0 +1,148 @@
+{
+  "engine": "postgres",
+  "checks": [
+    {
+      "name": "isolated_search_path",
+      "ok": true
+    },
+    {
+      "name": "native_schema_idempotent",
+      "ok": true
+    },
+    {
+      "name": "concurrent_export_single_job",
+      "ok": true
+    },
+    {
+      "name": "shared_export_capacity_one",
+      "ok": true
+    },
+    {
+      "name": "claim_preserves_oldest_owner_request",
+      "ok": true
+    },
+    {
+      "name": "stale_lease_cannot_cache",
+      "ok": true
+    },
+    {
+      "name": "cache_publication_recovery",
+      "ok": true
+    },
+    {
+      "name": "blob_reference_count",
+      "ok": true
+    },
+    {
+      "name": "native_candidate_complete",
+      "ok": true
+    },
+    {
+      "name": "parse_publication_recovery",
+      "ok": true
+    },
+    {
+      "name": "concurrent_confirmation_cas",
+      "ok": true
+    },
+    {
+      "name": "native_search",
+      "ok": true
+    },
+    {
+      "name": "cross_teacher_original_denied",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_detail_versions",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_original_get_head",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_original_range_206",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_cross_teacher_404",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_student_403",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_unauthenticated_401",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_filters_pagination",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_facets_scope",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_cross_report_version_404",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_persistent_job_cancel",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_reparse_new_version",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_matrix_quality_search",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_matrix_exact_window",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_cross_report_run_404",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_review_cas",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_confirm_candidate",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_persistent_grade_source",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_soft_delete_historical_reads",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_deleted_write_blocked",
+      "ok": true
+    },
+    {
+      "name": "asgi_native_pg_restore_cas",
+      "ok": true
+    },
+    {
+      "name": "owned_schema_removal_verified",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "source_or_model_calls": 0,
+  "public_tables_modified": false,
+  "schema_removed": true,
+  "generated_at": "2026-09-12T18:09:10+00:00",
+  "asgi": "standalone FastAPI router with real per-request PostgreSQL connections",
+  "fixtures": "synthetic students and PDF bytes; no source PDF content recognition assertion"
+}

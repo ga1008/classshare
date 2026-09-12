@@ -2,12 +2,14 @@ import { apiFetch } from '/static/js/api.js';
 import { initLearningCertificateReveal } from '/static/js/learning_certificate_reveal.js?v=cultivation-certificate-20260612';
 import { showToast } from '/static/js/ui.js';
 import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
+import { initClassroomMemberWorkspace } from '/static/js/classroom_members.js';
+import { initCultivationWeightSettings } from '/static/js/cultivation_weight_editor.js';
 
 export function initLearningProgressModal() {
     const modal = document.getElementById('learning-progress-modal');
     const panel = document.querySelector('[data-learning-panel]');
     const triggers = Array.from(document.querySelectorAll('[data-learning-modal-open], [data-learning-scroll]'));
-    if (!modal || !panel || !triggers.length) return;
+    if (!modal || !panel || !triggers.length || modal.dataset.memberWorkspace !== undefined) return;
 
     const shell = modal.querySelector('.learning-modal-shell');
     const closeBtn = document.getElementById('learning-modal-close');
@@ -106,174 +108,6 @@ export function initLearningProgressModal() {
     });
 }
 
-function initTeacherLearningRoster() {
-    const searchInput = document.querySelector('[data-learning-roster-search]');
-    const rosterItems = Array.from(document.querySelectorAll('[data-learning-roster-item]'));
-    const emptyState = document.querySelector('[data-learning-roster-empty]');
-    if (!searchInput || !rosterItems.length) return;
-
-    const normalize = (value) => String(value || '').trim().toLowerCase();
-    const applyFilter = () => {
-        const query = normalize(searchInput.value);
-        let visibleCount = 0;
-        rosterItems.forEach((item) => {
-            const text = normalize(item.dataset.searchText || item.textContent);
-            const isVisible = !query || text.includes(query);
-            item.hidden = !isVisible;
-            if (isVisible) visibleCount += 1;
-        });
-        if (emptyState) {
-            emptyState.hidden = !query || visibleCount > 0;
-        }
-    };
-
-    searchInput.addEventListener('input', applyFilter);
-    applyFilter();
-}
-
-function initCultivationWeightSettings(config = window.APP_CONFIG || {}) {
-    const panel = document.querySelector('[data-cultivation-weight-settings]');
-    if (!panel) return;
-
-    const classOfferingId = Number(panel.dataset.classOfferingId || config.classOfferingId);
-    if (!classOfferingId) return;
-
-    const controls = Array.from(panel.querySelectorAll('[data-weight-key]'));
-    const totalEl = panel.querySelector('[data-weight-total]');
-    const totalState = totalEl?.closest('[data-weight-total-state]');
-    const previewEl = panel.querySelector('[data-weight-preview]');
-    const previewButton = panel.querySelector('[data-weight-preview-button]');
-    const saveButton = panel.querySelector('[data-weight-save]');
-    const canUpdate = panel.dataset.canUpdate === '1';
-    const keys = ['material', 'task', 'interaction', 'consistency'];
-
-    const getControl = (key) => controls.find((control) => control.dataset.weightKey === key);
-
-    const readWeights = () => keys.reduce((weights, key) => {
-        const control = getControl(key);
-        const number = control?.querySelector('[data-weight-number]');
-        weights[key] = Math.max(0, Math.min(100, Number.parseInt(number?.value || '0', 10) || 0));
-        return weights;
-    }, {});
-
-    const totalWeights = (weights = readWeights()) => keys.reduce((sum, key) => sum + Number(weights[key] || 0), 0);
-
-    const setBusy = (button, busy, text = '') => {
-        if (!button) return;
-        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
-        button.disabled = busy || (button === saveButton && !canUpdate);
-        button.classList.toggle('is-busy', busy);
-        button.textContent = busy ? text : button.dataset.originalText;
-    };
-
-    const updateTotalState = () => {
-        const total = totalWeights();
-        if (totalEl) totalEl.textContent = String(total);
-        totalState?.setAttribute('data-weight-total-state', total === 100 ? 'ok' : 'invalid');
-        if (previewButton) previewButton.disabled = total !== 100;
-        if (saveButton) saveButton.disabled = total !== 100 || !canUpdate;
-        if (previewEl && total !== 100) {
-            previewEl.hidden = false;
-            previewEl.innerHTML = `<span class="learning-weight-preview__warning">合计需为 100，当前为 ${total}。</span>`;
-        }
-        return total;
-    };
-
-    const setControlValue = (key, value) => {
-        const normalized = Math.max(0, Math.min(100, Number.parseInt(value, 10) || 0));
-        const control = getControl(key);
-        const slider = control?.querySelector('[data-weight-slider]');
-        const number = control?.querySelector('[data-weight-number]');
-        if (slider) slider.value = String(normalized);
-        if (number) number.value = String(normalized);
-    };
-
-    const renderPreview = (data = {}) => {
-        if (!previewEl) return;
-        const students = Array.isArray(data.students_preview) ? data.students_preview : [];
-        previewEl.hidden = false;
-        previewEl.innerHTML = `
-            <div class="learning-weight-preview__summary">
-                <span>均分 ${escapeHtml(data.old_average ?? 0)} → ${escapeHtml(data.new_average ?? 0)}</span>
-                <strong>${escapeHtml(data.average_delta_label || '+0.0')}</strong>
-                <small>${Number(data.affected_count || 0)} / ${Number(data.student_count || 0)} 人变化</small>
-            </div>
-            ${students.length ? `
-                <div class="learning-weight-preview__students">
-                    ${students.map((student) => `
-                        <span>
-                            <b>${escapeHtml(student.name || '')}</b>
-                            <small>${escapeHtml(student.old_score ?? 0)} → ${escapeHtml(student.new_score ?? 0)} · ${escapeHtml(student.delta_label || '+0.0')}</small>
-                        </span>
-                    `).join('')}
-                </div>
-            ` : '<p class="learning-weight-preview__empty">暂无可预览的学生数据。</p>'}
-        `;
-    };
-
-    controls.forEach((control) => {
-        const key = control.dataset.weightKey;
-        const slider = control.querySelector('[data-weight-slider]');
-        const number = control.querySelector('[data-weight-number]');
-        const sync = (source) => {
-            setControlValue(key, source.value);
-            updateTotalState();
-        };
-        slider?.addEventListener('input', () => sync(slider));
-        number?.addEventListener('input', () => sync(number));
-    });
-
-    panel.querySelectorAll('[data-weight-preset]').forEach((button) => {
-        button.addEventListener('click', () => {
-            keys.forEach((key) => {
-                const datasetKey = `weight${key.charAt(0).toUpperCase()}${key.slice(1)}`;
-                setControlValue(key, button.dataset[datasetKey]);
-            });
-            updateTotalState();
-            if (previewEl) previewEl.hidden = true;
-        });
-    });
-
-    previewButton?.addEventListener('click', async () => {
-        if (updateTotalState() !== 100) return;
-        setBusy(previewButton, true, '预览中...');
-        try {
-            const data = await apiFetch(`/api/classrooms/${classOfferingId}/learning/weights/preview`, {
-                method: 'POST',
-                body: { weights: readWeights() },
-                silent: true,
-            });
-            renderPreview(data);
-        } catch (error) {
-            showToast(error.message || '权重预览失败。', 'error');
-        } finally {
-            setBusy(previewButton, false);
-        }
-    });
-
-    saveButton?.addEventListener('click', async () => {
-        if (updateTotalState() !== 100 || !canUpdate) return;
-        setBusy(saveButton, true, '保存中...');
-        try {
-            const data = await apiFetch(`/api/classrooms/${classOfferingId}/learning/weights`, {
-                method: 'POST',
-                body: { weights: readWeights() },
-                silent: true,
-            });
-            showToast(data.message || '修为权重已保存。', data.updated === false ? 'info' : 'success');
-            if (data.updated !== false) {
-                window.setTimeout(() => window.location.reload(), 600);
-            }
-        } catch (error) {
-            showToast(error.message || '修为权重保存失败。', 'error');
-        } finally {
-            setBusy(saveButton, false);
-        }
-    });
-
-    updateTotalState();
-}
-
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -298,7 +132,13 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     const form = panel.querySelector('[data-exam-roster-export-form]');
     if (!classOfferingId || !syncButton || !statusEl || !form) return;
 
-    let latestStatus = null;
+    if (panel.examRosterController) return panel.examRosterController;
+    let latestStatus = null, statusLoaded = false, syncBusy = false, exportBusy = false;
+    let statusEpoch = 0, statusAbort = null;
+    const fieldNames = ['exam_datetime', 'exam_location', 'exam_location_place_key', 'exam_location_place_id', 'chief_invigilator', 'assistant_invigilator'];
+    const readForm = () => Object.fromEntries(fieldNames.map(name => [name, form.elements[name]?.value || '']));
+    let baseline = readForm();
+    const isDirty = () => fieldNames.some(name => readForm()[name] !== baseline[name]);
     const placePicker = panel.querySelector('[data-exam-place-picker]');
     const placeInput = panel.querySelector('[data-exam-place-input]');
     const placeKeyInput = panel.querySelector('[data-exam-place-key]');
@@ -316,7 +156,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     };
 
     const setExportEnabled = (enabled) => {
-        if (exportButton) exportButton.disabled = !enabled;
+        if (exportButton) exportButton.disabled = !enabled || syncBusy || exportBusy;
         form.classList.toggle('is-disabled', !enabled);
     };
 
@@ -395,19 +235,21 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     };
 
     const applyDefaults = (defaults = {}) => {
-        if (form.elements.exam_datetime && defaults.exam_datetime_local) {
-            form.elements.exam_datetime.value = String(defaults.exam_datetime_local).slice(0, 16);
-        }
-        if (form.elements.exam_location && defaults.exam_location) {
-            form.elements.exam_location.value = defaults.exam_location;
-            clearPlaceSelection();
-        }
-        if (form.elements.chief_invigilator && defaults.chief_invigilator) {
-            form.elements.chief_invigilator.value = defaults.chief_invigilator;
-        }
-        if (form.elements.assistant_invigilator && defaults.assistant_invigilator) {
-            form.elements.assistant_invigilator.value = defaults.assistant_invigilator;
-        }
+        const values = {
+            exam_datetime: String(defaults.exam_datetime_local || '').slice(0, 16),
+            exam_location: defaults.exam_location || '',
+            chief_invigilator: defaults.chief_invigilator || '',
+            assistant_invigilator: defaults.assistant_invigilator || '',
+        };
+        Object.entries(values).forEach(([name, value]) => {
+            const input = form.elements[name];
+            if (input && input.value === baseline[name]) {
+                input.value = String(value); baseline[name] = String(value);
+                if (name === 'exam_location') {
+                    clearPlaceSelection(); baseline.exam_location_place_key = ''; baseline.exam_location_place_id = '';
+                }
+            }
+        });
     };
 
     const renderCandidates = (candidates = []) => {
@@ -522,16 +364,23 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
     };
 
     const loadStatus = async () => {
+        if (syncBusy || exportBusy || statusAbort) return;
+        const epoch = ++statusEpoch, abort = statusAbort = new AbortController();
         try {
-            const data = await apiFetch(`/api/manage/classrooms/${classOfferingId}/exam-roster`, { silent: true });
-            renderStatus(data);
+            const data = await apiFetch(`/api/manage/classrooms/${classOfferingId}/exam-roster`, { silent: true, signal: abort.signal });
+            if (epoch !== statusEpoch || abort.signal.aborted) return;
+            statusLoaded = true; renderStatus(data);
         } catch (error) {
-            statusEl.textContent = error.message || '读取考试名单状态失败。';
-            setExportEnabled(false);
-        }
+            if (epoch !== statusEpoch || abort.signal.aborted) return;
+            statusEl.textContent = error.message || '读取考试名单状态失败，请点击刷新重试。';
+            if (!latestStatus) setExportEnabled(false);
+        } finally { if (statusAbort === abort) statusAbort = null; }
     };
 
     const syncRoster = async (examCourseKey = '') => {
+        if (syncBusy || exportBusy) return;
+        syncBusy = true; statusAbort?.abort(); statusAbort = null; statusEpoch++;
+        setExportEnabled(false);
         setBusy(syncButton, true, '正在同步...');
         try {
             const data = await apiFetch(`/api/manage/classrooms/${classOfferingId}/exam-roster/sync`, {
@@ -548,7 +397,9 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
         } catch (error) {
             showToast(error.message || '同步考试名单失败。', 'error');
         } finally {
+            syncBusy = false;
             setBusy(syncButton, false);
+            setExportEnabled(latestStatus?.status === 'success' && Number(latestStatus?.student_count || 0) > 0);
         }
     };
 
@@ -586,6 +437,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
+        if (exportBusy || syncBusy) return;
         if (!latestStatus || latestStatus.status !== 'success') {
             showToast('请先同步并确认考试名单。', 'warning');
             return;
@@ -598,6 +450,8 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             chief_invigilator: form.elements.chief_invigilator?.value || '',
             assistant_invigilator: form.elements.assistant_invigilator?.value || '',
         };
+        const submitted = readForm();
+        exportBusy = true;
         setBusy(exportButton, true, '正在导出...');
         try {
             const response = await fetch(`/api/manage/classrooms/${classOfferingId}/exam-roster/export`, {
@@ -629,15 +483,26 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             link.click();
             link.remove();
             URL.revokeObjectURL(url);
+            baseline = submitted;
             showToast('考试签名表已生成。', 'success');
         } catch (error) {
             showToast(error.message || '导出签名表失败。', 'error');
         } finally {
+            exportBusy = false;
             setBusy(exportButton, false);
+            setExportEnabled(latestStatus?.status === 'success' && Number(latestStatus?.student_count || 0) > 0);
         }
     });
 
-    loadStatus();
+    panel.querySelector('[data-exam-roster-refresh]')?.addEventListener('click', loadStatus);
+    const reset = () => { if (exportBusy || syncBusy) return; fieldNames.forEach(name => { if (form.elements[name]) form.elements[name].value = baseline[name]; }); closePlaceResults(); };
+    panel.querySelector('[data-exam-roster-cancel]')?.addEventListener('click', reset);
+    panel.examRosterController = {
+        isDirty, reset, isBusy: () => syncBusy || exportBusy,
+        activate: () => { if (!statusLoaded) loadStatus(); },
+        deactivate: () => { statusEpoch++; statusAbort?.abort(); statusAbort = null; placeLookupSeq++; window.clearTimeout(placeLookupTimer); closePlaceResults(); },
+    };
+    return panel.examRosterController;
 }
 
 export function initStudentInsightModal() {
@@ -1014,16 +879,19 @@ function initCultivationAlertInbox() {
         const item = button.closest('[data-cultivation-alert-item]');
         const alertId = item?.dataset.alertId;
         const action = button.dataset.cultivationAlertAction;
-        if (!item || !alertId || !action) return;
+        if (!item || !alertId || !action || item.classList.contains('is-updating') || button.disabled) return;
         item.classList.add('is-updating');
+        item.querySelectorAll('button').forEach(control => { control.disabled = true; });
         try {
-            await apiFetch(`/api/classrooms/${classOfferingId}/learning/alerts/${alertId}/actions`, {
+            const result = await apiFetch(`/api/classrooms/${classOfferingId}/learning/alerts/${alertId}/actions`, {
                 method: 'POST',
                 body: {
                     action,
                     snooze_days: action === 'snoozed' ? 7 : undefined,
                 },
             });
+            const count = document.querySelector('[data-member-alert-count]');
+            if (count) { count.hidden = !result.summary?.total_count; count.textContent = String(result.summary?.total_count || 0); }
             if (action === 'private_message' || action === 'support_note') {
                 markAlertSideEffect(item, action, button);
                 showToast(action === 'private_message' ? '已发送关怀私信。' : '已记入共享备注。', 'success');
@@ -1034,11 +902,16 @@ function initCultivationAlertInbox() {
         } catch (error) {
             item.classList.remove('is-updating');
             showToast(error.message || '预警状态更新失败。', 'error');
+        } finally {
+            item.classList.remove('is-updating');
+            item.querySelectorAll('button').forEach(control => { control.disabled = control.classList.contains('is-done'); });
         }
     });
 
-    window.addEventListener('message', (event) => {
+    const handleMessage = (event) => {
         if (event.origin !== window.location.origin) return;
+        const frame = document.querySelector('[data-member-detail] [data-student-insight-frame]');
+        if (frame && event.source !== frame.contentWindow) return;
         const data = event.data || {};
         if (data.type === 'cultivation-alert-updated') {
             removeAlertById(data.alertId);
@@ -1048,15 +921,24 @@ function initCultivationAlertInbox() {
             const item = findAlertById(data.alertId);
             markAlertSideEffect(item, data.action);
         }
-    });
+    };
+    window.addEventListener('message', handleMessage);
+    return { destroy: () => window.removeEventListener('message', handleMessage) };
 }
 
 export function initLearningProgress(config = window.APP_CONFIG || {}) {
     initLearningProgressModal();
-    initTeacherLearningRoster();
-    initCultivationWeightSettings(config);
-    initTeacherExamRoster(config);
-    initCultivationAlertInbox();
+    initClassroomMemberWorkspace(config, async (key, panel) => {
+        if (key === 'settings') {
+            const weights = initCultivationWeightSettings(config);
+            const retake = await import('/static/js/classroom_retake.js');
+            const retakeController = retake.initClassroomRetakePanel(panel.querySelector('[data-retake-panel]'));
+            return { isDirty: () => weights?.isDirty() || retakeController?.isDirty(), isBusy: () => weights?.isBusy() || retakeController?.isBusy(), reset: () => { weights?.reset(); retakeController?.reset(); }, save: () => weights?.save(), activate: () => retakeController?.activate?.(), deactivate: () => retakeController?.deactivate?.() };
+        }
+        if (key === 'exams') return initTeacherExamRoster(config);
+        if (key === 'alerts') return initCultivationAlertInbox();
+        return {};
+    });
     initStudentInsightModal();
     initStageExamButton(config);
     initLearningMountain(config);

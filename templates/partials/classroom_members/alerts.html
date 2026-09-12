@@ -1,0 +1,39 @@
+            {% set alerts = lo.alert_summary if lo.alert_summary is defined else none %}
+            {% if alerts %}
+            {% set alert_items = alerts.get('items', []) if alerts.get is defined else [] %}
+            <div class="learning-alert-inbox" data-cultivation-alert-inbox data-class-offering-id="{{ classroom.id }}" aria-label="班级修为预警收件箱">
+                <div class="learning-alert-inbox__head">
+                    <div>
+                        <span>Alerts</span>
+                        <strong>修为预警</strong>
+                        <p>{{ alerts.student_count }} 名学生有待处理信号，规则由后台任务生成。</p>
+                    </div>
+                    <div class="learning-alert-counts" aria-label="预警等级统计">
+                        <span class="is-l3">L3 {{ alerts.counts.L3 or 0 }}</span>
+                        <span class="is-l2">L2 {{ alerts.counts.L2 or 0 }}</span>
+                        <span class="is-l1">L1 {{ alerts.counts.L1 or 0 }}</span>
+                    </div>
+                </div>
+                {% if alert_items %}
+                <div class="learning-alert-list" data-cultivation-alert-list>
+                    {% for alert in alert_items %}
+                    <article class="learning-alert-item is-{{ (alert.severity or 'L1') | lower }}" data-cultivation-alert-item data-alert-id="{{ alert.id }}">
+                        <div class="learning-alert-item__main">
+                            <span>{{ alert.severity_label }} · {{ alert.student_name or ('学生 ' ~ alert.student_id) }}</span>
+                            <strong>{{ alert.title }}</strong>
+                            <p>{{ alert.body }}</p>
+                        </div>
+                        <div class="learning-alert-item__actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="private_message">私信学生</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="support_note">记备注</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="snoozed">本周静音</button>
+                            <button type="button" class="btn btn-primary btn-sm" data-cultivation-alert-action="handled">已处理</button>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="learning-alert-empty" data-cultivation-alert-empty>当前没有未处理修为预警。</p>
+                {% endif %}
+            </div>
+            {% endif %}

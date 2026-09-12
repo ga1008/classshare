@@ -1,0 +1,233 @@
+{
+  "investigated_at_local_date": "2026-09-13",
+  "timezone": "Asia/Shanghai",
+  "baseline_commit": "2ac3c9fba54b81cbcd5c49e6d9dd2970e730e35e",
+  "scope": "Read-only source investigation and design; no business code changes, migration, deployment, platform upload or production AI execution.",
+  "source_page": "https://edu.gxufl.edu.cn/teaching/checkin",
+  "api_base": "https://edu_api.gxufl.com/api",
+  "request_encoding": "application/x-www-form-urlencoded",
+  "live_contracts": [
+    {
+      "path": "/teaching/checkinCourse/teacherScheduleList",
+      "method": "POST",
+      "observed_payloads": [
+        {
+          "year": "2025-2026",
+          "semester": "1"
+        },
+        {
+          "year": "2025-2026",
+          "semester": "2"
+        }
+      ],
+      "second_term_schedule_count": 6,
+      "identity_keys": [
+        "id",
+        "year",
+        "semester",
+        "course",
+        "courseId",
+        "claId",
+        "claName",
+        "chooseCourseNo",
+        "kbId"
+      ],
+      "opaque_ids_and_account_fields_omitted": true
+    },
+    {
+      "path": "/teaching/checkinCourse/page",
+      "method": "POST",
+      "observed_payload_keys": [
+        "page",
+        "pageSize",
+        "teacherScheduleId",
+        "field",
+        "order"
+      ],
+      "observed_pages": [
+        1,
+        2
+      ],
+      "pageSize": 10,
+      "field": "id",
+      "order": "descend",
+      "totalRow": 15,
+      "totalPage": 2,
+      "page_lengths": [
+        10,
+        5
+      ],
+      "response_keys": [
+        "firstPage",
+        "lastPage",
+        "list",
+        "pageNumber",
+        "pageSize",
+        "totalPage",
+        "totalRow"
+      ],
+      "unique_checkin_ids": 15,
+      "all_checkin_datetimes": [
+        "2026-03-09 19:30:31",
+        "2026-03-12 20:21:49",
+        "2026-03-16 19:31:15",
+        "2026-03-19 21:00:59",
+        "2026-03-23 21:00:42",
+        "2026-03-26 20:21:25",
+        "2026-03-30 21:00:31",
+        "2026-04-02 19:31:35",
+        "2026-04-09 20:55:41",
+        "2026-04-10 16:02:06",
+        "2026-04-13 19:30:57",
+        "2026-04-16 19:31:13",
+        "2026-04-23 19:30:44",
+        "2026-04-27 19:31:07",
+        "2026-04-30 21:00:25"
+      ]
+    },
+    {
+      "path": "/teaching/checkinCourse/exportPdf",
+      "method": "POST",
+      "observed_payload_keys": [
+        "teacherScheduleId"
+      ],
+      "trials": [
+        "no rows selected",
+        "first row selected"
+      ],
+      "same_payload_in_both_trials": true,
+      "response_status": 200,
+      "media_type": "application/pdf",
+      "content_encoding": "gzip",
+      "decoded_byte_sizes": [
+        454359,
+        454359
+      ],
+      "pdf_version": "1.7",
+      "page_objects": 2,
+      "byte_equal_between_trials": false,
+      "interpretation": "UI row selection is not transmitted; implement all_schedule export only. Byte changes alone do not establish data changes."
+    },
+    {
+      "path": "/teaching/checkinCourse/checkinRecord",
+      "method": "POST",
+      "observed_payload_keys": [
+        "id"
+      ],
+      "response_keys": [
+        "stuList",
+        "statusCounts",
+        "checkinCourse"
+      ],
+      "student_keys": [
+        "no",
+        "name",
+        "status"
+      ],
+      "student_count": 37,
+      "ui_page_size": 10,
+      "checkin_datetime": "2026-04-30 21:00:25",
+      "status_counts": {
+        "CHECKED": 33,
+        "UNCHECKED": 4
+      },
+      "api_crosscheck_coverage": "One latest check-in, not all 15."
+    }
+  ],
+  "sample_pdf": {
+    "filename": "点名记录.pdf",
+    "sha256": "da0632b82404c57c120e9ec3563dc5cd01c4536005c1d9a26ac20bcb06e7f179",
+    "byte_size": 454359,
+    "pages": [
+      {
+        "page": 1,
+        "dimensions_pt": [
+          842,
+          595
+        ],
+        "student_rows": 29,
+        "columns": 19,
+        "embedded_images": 0,
+        "status_counts": {
+          "出勤": 378,
+          "缺课": 37,
+          "事假": 12,
+          "病假": 8
+        }
+      },
+      {
+        "page": 2,
+        "dimensions_pt": [
+          842,
+          595
+        ],
+        "student_rows": 8,
+        "columns": 19,
+        "embedded_images": 0,
+        "status_counts": {
+          "出勤": 107,
+          "事假": 6,
+          "缺课": 6,
+          "病假": 1
+        }
+      }
+    ],
+    "academic_year": "2025-2026",
+    "academic_term": 2,
+    "student_rows": 37,
+    "distinct_student_numbers": 37,
+    "session_columns": 15,
+    "session_headers": [
+      "03-09 19:30",
+      "03-12 20:21",
+      "03-16 19:31",
+      "03-19 21:00",
+      "03-23 21:00",
+      "03-26 20:21",
+      "03-30 21:00",
+      "04-02 19:31",
+      "04-09 20:55",
+      "04-10 16:02",
+      "04-13 19:30",
+      "04-16 19:31",
+      "04-23 19:30",
+      "04-27 19:31",
+      "04-30 21:00"
+    ],
+    "cell_count": 555,
+    "status_counts": {
+      "出勤": 485,
+      "缺课": 43,
+      "事假": 18,
+      "病假": 9
+    },
+    "latest_column_status_counts": {
+      "出勤": 33,
+      "缺课": 4
+    },
+    "raw_text_watermark_interference": true,
+    "extraction": "pdfplumber vector-grid table extraction after sample-specific rotation-matrix filtering, NFKC for normalized matching, page-header reconciliation; both pages visually inspected.",
+    "ai_provider_executed": false,
+    "all_session_headers_match_live_pages": true
+  },
+  "confirmed_code_issue": {
+    "file": "classroom_app/services/smart_classroom_checkin_sync_service.py",
+    "function": "_term_matches",
+    "candidate_semester": "2025-2026第一学期",
+    "remote_year": "2025-2026",
+    "remote_term": "2",
+    "actual": true,
+    "expected": false,
+    "verification": "Current AST pure-function reproduction without database access."
+  },
+  "not_verified": [
+    "All historical semesters and third term",
+    "Empty schedule export behavior",
+    "Large/scanned/horizontal-continuation PDF variants",
+    "Nonzero late/early source example",
+    "Live source mutation during export",
+    "Production AI accuracy, latency, cost",
+    "PostgreSQL migration, multiworker behavior, production deployment"
+  ],
+  "privacy": "No Authorization, cookies, tokens, credentials, actual student names/numbers, complete API responses or original screenshots are included."
+}

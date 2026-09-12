@@ -1,0 +1,387 @@
+{
+  "engine": "postgres",
+  "mode": "single bounded query probe",
+  "generated_at": "2026-09-12T18:22:55+00:00",
+  "scale": {
+    "students": 300,
+    "sessions": 100,
+    "cells": 30000
+  },
+  "source_or_model_calls": 0,
+  "public_tables_modified": false,
+  "timing_scope": "one local run, no throughput or production latency guarantee",
+  "queries": {
+    "report_page": {
+      "elapsed_ms": 11.712,
+      "returned_rows": 1,
+      "total": 1,
+      "sql_statements": 2
+    },
+    "student_page_with_all_session_summaries": {
+      "elapsed_ms": 5.894,
+      "returned_rows": 25,
+      "total": 300,
+      "sql_statements": 8
+    },
+    "session_page": {
+      "elapsed_ms": 1.365,
+      "returned_rows": 20,
+      "total": 100,
+      "sql_statements": 6
+    },
+    "matrix_25_by_20_window": {
+      "elapsed_ms": 4.866,
+      "returned_rows": 500,
+      "total": 500,
+      "sql_statements": 5
+    }
+  },
+  "plans": {
+    "report_page": {
+      "planning_ms": 0.429,
+      "execution_ms": 0.283,
+      "nodes": [
+        {
+          "Node Type": "Limit",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 17,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Result",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 17,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Sort",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 10,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash Join",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 10,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash Join",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Nested Loop",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_reports",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "smart_attendance_source_bindings",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_versions",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Aggregate",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_versions",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_parse_runs",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Aggregate",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Shared Hit Blocks": 4,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Nested Loop",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Shared Hit Blocks": 4,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_parse_runs",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_versions",
+          "Actual Rows": 1,
+          "Actual Loops": 2,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Aggregate",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_students",
+          "Actual Rows": 300,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Aggregate",
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_sessions",
+          "Actual Rows": 100,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        }
+      ]
+    },
+    "student_page": {
+      "planning_ms": 0.058,
+      "execution_ms": 0.032,
+      "nodes": [
+        {
+          "Node Type": "Limit",
+          "Actual Rows": 25,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Index Scan",
+          "Relation Name": "attendance_report_students",
+          "Index Name": "attendance_report_students_parse_run_id_row_index_key",
+          "Actual Rows": 175,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        }
+      ]
+    },
+    "student_summary": {
+      "planning_ms": 0.098,
+      "execution_ms": 0.617,
+      "nodes": [
+        {
+          "Node Type": "Aggregate",
+          "Actual Rows": 50,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 84,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Relation Name": "attendance_report_cells",
+          "Actual Rows": 2500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 84,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "attendance_report_cells_parse_run_id_student_row_id_session_key",
+          "Actual Rows": 2500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 50,
+          "Shared Read Blocks": 0
+        }
+      ]
+    },
+    "matrix_window": {
+      "planning_ms": 0.302,
+      "execution_ms": 2.043,
+      "nodes": [
+        {
+          "Node Type": "Limit",
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 407,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Sort",
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 407,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash Join",
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 407,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash Join",
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 405,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_cells",
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 29500,
+          "Shared Hit Blocks": 400,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash",
+          "Actual Rows": 300,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_students",
+          "Actual Rows": 300,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 5,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Hash",
+          "Actual Rows": 100,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        },
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "attendance_report_sessions",
+          "Actual Rows": 100,
+          "Actual Loops": 1,
+          "Rows Removed by Filter": 0,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 0
+        }
+      ]
+    }
+  },
+  "checks": [
+    {
+      "name": "isolated_search_path",
+      "ok": true
+    },
+    {
+      "name": "exact_synthetic_scale",
+      "ok": true
+    },
+    {
+      "name": "report_pagination_bounded",
+      "ok": true
+    },
+    {
+      "name": "student_pagination_bounded",
+      "ok": true
+    },
+    {
+      "name": "session_pagination_bounded",
+      "ok": true
+    },
+    {
+      "name": "matrix_window_bounded",
+      "ok": true
+    },
+    {
+      "name": "summary_denominator_all_100_sessions",
+      "ok": true
+    },
+    {
+      "name": "explain_core_queries_recorded",
+      "ok": true
+    },
+    {
+      "name": "temporary_blobs_removed",
+      "ok": true
+    },
+    {
+      "name": "owned_schema_removal_verified",
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "seed_elapsed_ms": 460.322,
+  "total_elapsed_ms": 858.801
+}

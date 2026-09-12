@@ -1,4 +1,5 @@
 from .common import *
+from ... import config as classroom_feature_flags
 from ...services.score_projection_service import load_submission_score_facts
 from ...services.offering_membership_service import student_belongs_to_offering
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
@@ -6,6 +7,31 @@ from ...services.session_learning_materials_service import attach_learning_mater
 
 
 router = APIRouter()
+
+
+@router.get("/api/classrooms/{class_offering_id}/member-panels/{panel_key}", response_class=HTMLResponse)
+def classroom_member_panel(request: Request, class_offering_id: int, panel_key: str,
+                           user: dict = Depends(get_current_user)):
+    from ...services.resource_access_service import ensure_classroom_access
+    from ...services.learning_progress_service import get_class_cultivation_weight_settings
+    from ...services.cultivation_alert_service import build_class_cultivation_alert_context
+    if user.get("role") != "teacher":
+        raise HTTPException(403, "仅教师可查看成员工作区")
+    if not classroom_feature_flags.CLASSROOM_MEMBERS_WORKSPACE_ENABLED:
+        raise HTTPException(503, "成员工作区暂时停用，请稍后重试。")
+    if panel_key not in {"overview", "alerts", "settings", "exams"}:
+        raise HTTPException(404, "成员页签不存在")
+    with get_db_connection() as conn:
+        classroom = dict(ensure_classroom_access(conn, class_offering_id, user))
+        context = {"request": request, "classroom": classroom, "user_info": user}
+        if panel_key == "overview":
+            context["lo"] = build_class_learning_overview(conn, class_offering_id)
+        elif panel_key == "alerts":
+            context["lo"] = {"alert_summary": build_class_cultivation_alert_context(conn, class_offering_id)}
+        elif panel_key == "settings":
+            context["weight_settings"] = get_class_cultivation_weight_settings(conn, class_offering_id)
+    return templates.TemplateResponse(request, f"partials/classroom_members/{panel_key}.html", context,
+                                      headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/classroom/{class_offering_id}", response_class=HTMLResponse)
@@ -352,6 +378,7 @@ def classroom_main(
         "user_info": user,
         "classroom": offering_data,
         "classroom_page": classroom_page,
+        "classroom_members_workspace_enabled": classroom_feature_flags.CLASSROOM_MEMBERS_WORKSPACE_ENABLED,
         "shared_files": files_info,
         "assignments": assignments,
         "student_security_summary": student_security_summary,

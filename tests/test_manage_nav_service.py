@@ -88,7 +88,7 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertEqual("offering_hub", MANAGE_DOMAIN_HOME_KEYS["teaching"])
         self.assertEqual("/manage/teaching/classroom-hub", canonical_manage_href("offering_hub"))
 
-    def test_archive_domain_orders_nine_steps_by_pipeline(self):
+    def test_archive_domain_orders_steps_with_optional_attendance_archive(self):
         steps = iter_archive_steps()
         self.assertEqual(
             [
@@ -100,12 +100,16 @@ class ManageNavServiceTests(unittest.TestCase):
                 "academic_grade_registers",
                 "academic_exam_analyses",
                 "teacher_evaluations",
+                "attendance_reports",
                 "postclass_materials",
             ],
             [item.key for item in steps],
         )
-        self.assertEqual(list(range(1, 10)), [item.step for item in steps])
-        self.assertEqual(9, ARCHIVE_STEP_TOTAL)
+        self.assertEqual(list(range(1, 11)), [item.step for item in steps])
+        self.assertEqual(10, ARCHIVE_STEP_TOTAL)
+        attendance = next(item for item in steps if item.key == "attendance_reports")
+        self.assertEqual("教务归档", attendance.group)
+        self.assertIn("可选归档", attendance.nav_note)
         for item in steps:
             with self.subTest(key=item.key):
                 self.assertEqual("archive", item.domain)

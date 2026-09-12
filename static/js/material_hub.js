@@ -122,7 +122,8 @@ function renderResults(data) {
         <section class="mh-group">
             <div class="mh-group-head">
                 <strong>${escapeHtml(group.label)}</strong>
-                <span class="mh-group-count">${group.items.length}</span>
+                <span class="mh-group-count">${group.truncated ? `显示 ${group.items.length} / ${Number(group.total)}` : group.items.length}</span>
+                ${group.truncated && group.more_url ? `<a href="${escapeHtml(group.more_url)}">查看全部</a>` : ''}
             </div>
             <div class="mh-items">
                 ${group.items.map((item) => `

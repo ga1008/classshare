@@ -12,6 +12,7 @@ from .schema_ai_jobs import (
     AI_JOB_REQUIRED_POSTGRES_COLUMNS,
 )
 from .schema_grade_publications import GRADE_PUBLICATION_POSTGRES_TABLES, GRADE_PUBLICATION_REQUIRED_COLUMNS
+from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -330,6 +331,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "academic_teaching_class_id": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_json": "TEXT NOT NULL DEFAULT ''",
         "cultivation_weights_version": "TEXT NOT NULL DEFAULT 'default-v1'",
+        "cultivation_weights_revision": "INTEGER NOT NULL DEFAULT 0",
         "cultivation_weights_updated_at": "TEXT",
         "cultivation_weights_updated_by_teacher_id": "INTEGER",
         "ai_weekly_budget_json": "TEXT NOT NULL DEFAULT ''",
@@ -402,6 +404,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
     **GRADE_PUBLICATION_POSTGRES_TABLES,
+    **ATTENDANCE_REPORT_POSTGRES_TABLES,
     "assignment_classification_revisions": """
         CREATE TABLE IF NOT EXISTS assignment_classification_revisions (
             id SERIAL PRIMARY KEY,
@@ -758,9 +761,11 @@ REQUIRED_POSTGRES_TABLES = (
     "cultivation_score_event_archives",
     "cultivation_weekly_snapshots",
     "cultivation_alerts",
+    "cultivation_alert_action_receipts",
     "ai_usage_log",
     *AI_JOB_REQUIRED_POSTGRES_COLUMNS,
     *GRADE_PUBLICATION_REQUIRED_COLUMNS,
+    *ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",

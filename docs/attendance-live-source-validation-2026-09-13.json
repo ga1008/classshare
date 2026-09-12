@@ -1,0 +1,52 @@
+{
+  "kind": "live_source_adapter_validation",
+  "year": "2025-2026",
+  "term": 2,
+  "course": "动态Web程序设计",
+  "teaching_group": "动态Web程序设计-0001",
+  "teacher_id": 1,
+  "model_calls": 0,
+  "public_business_tables_modified": false,
+  "ok": true,
+  "pdf_sha256": "89a8dc2b90c2e9f33ae33dbb2cdf1be26f4aa9e6a871c63b197ec8eae38bfd09",
+  "byte_size": 454359,
+  "page_count": 2,
+  "source_option_count": 6,
+  "source_checkin_count": 15,
+  "api_detail_coverage": 15,
+  "coverage": {
+    "page_count": 2,
+    "processed_pages": [
+      1,
+      2
+    ],
+    "complete": true,
+    "api_checked_cells": 555,
+    "api_total_sessions": 15,
+    "student_count": 37,
+    "session_count": 15,
+    "cell_count": 555
+  },
+  "validation": {
+    "blockers": [],
+    "warnings": [],
+    "student_count": 37,
+    "session_count": 15,
+    "cell_count": 555,
+    "unknown_count": 0,
+    "conflict_count": 0,
+    "can_confirm": false
+  },
+  "status_counts": {
+    "CHECKED": 485,
+    "UNCHECKED": 43,
+    "PERSONAL_LEAVE": 18,
+    "SICK_LEAVE": 9
+  },
+  "native_export_fields": [
+    "teacherScheduleId"
+  ],
+  "scope": "entire_remote_teaching_group",
+  "elapsed_seconds": 8.61,
+  "temporary_pdf_removed": true
+}

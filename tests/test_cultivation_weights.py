@@ -14,8 +14,8 @@ from classroom_app.services.cultivation_weight_service import (
 )
 
 
-def _build_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
+def _build_conn(*, check_same_thread: bool = True) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:", check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     ensure_cultivation_progress_schema(conn, engine="sqlite")
     conn.executescript(
@@ -42,6 +42,7 @@ def _build_conn() -> sqlite3.Connection:
             teacher_id INTEGER,
             cultivation_weights_json TEXT NOT NULL DEFAULT '',
             cultivation_weights_version TEXT NOT NULL DEFAULT 'default-v1',
+            cultivation_weights_revision INTEGER NOT NULL DEFAULT 0,
             cultivation_weights_updated_at TEXT,
             cultivation_weights_updated_by_teacher_id INTEGER
         );

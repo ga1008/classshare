@@ -1,0 +1,255 @@
+{
+  "kind": "real_ai_status_cell_validation",
+  "original_sha256": "da0632b82404c57c120e9ec3563dc5cd01c4536005c1d9a26ac20bcb06e7f179",
+  "expected_cells": 555,
+  "max_logical_calls": 3,
+  "max_http_attempts_per_call": 1,
+  "fallback_enabled": false,
+  "student_identity_sent": false,
+  "images_sent": false,
+  "source_api_validation_in_this_probe": false,
+  "archive_published": false,
+  "ai_used": true,
+  "model_id": "deepseek-v4-pro",
+  "coverage": {
+    "page_count": 2,
+    "processed_pages": [
+      1,
+      2
+    ],
+    "complete": true,
+    "api_checked_cells": 0,
+    "api_total_sessions": 0,
+    "student_count": 37,
+    "session_count": 15,
+    "cell_count": 555
+  },
+  "ai_coverage": {
+    "processed_cells": 555,
+    "total_cells": 555,
+    "complete": true,
+    "vision_pages": [],
+    "prompt_version": "attendance-evidence-v1",
+    "processed_pages": [
+      1,
+      2
+    ],
+    "call_count": 3,
+    "call_limit": 24,
+    "execution_metadata": [
+      {
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro",
+        "route_id": "text_deep:deepseek:deepseek-v4-pro:high:16384:chat_completions:business-routing-2026-09-v2",
+        "usage": {
+          "completion_tokens": 6769,
+          "prompt_tokens": 5572,
+          "total_tokens": 12341,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 2379,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 0
+          },
+          "prompt_cache_hit_tokens": 0,
+          "prompt_cache_miss_tokens": 5572
+        },
+        "usage_known": true,
+        "finish_reason": "stop"
+      },
+      {
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro",
+        "route_id": "text_deep:deepseek:deepseek-v4-pro:high:16384:chat_completions:business-routing-2026-09-v2",
+        "usage": {
+          "completion_tokens": 13828,
+          "prompt_tokens": 5572,
+          "total_tokens": 19400,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 8009,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 0
+          },
+          "prompt_cache_hit_tokens": 0,
+          "prompt_cache_miss_tokens": 5572
+        },
+        "usage_known": true,
+        "finish_reason": "stop"
+      },
+      {
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro",
+        "route_id": "text_deep:deepseek:deepseek-v4-pro:high:16384:chat_completions:business-routing-2026-09-v2",
+        "usage": {
+          "completion_tokens": 2165,
+          "prompt_tokens": 1942,
+          "total_tokens": 4107,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 780,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 256
+          },
+          "prompt_cache_hit_tokens": 256,
+          "prompt_cache_miss_tokens": 1686
+        },
+        "usage_known": true,
+        "finish_reason": "stop"
+      }
+    ]
+  },
+  "validation": {
+    "blockers": [],
+    "warnings": [],
+    "student_count": 37,
+    "session_count": 15,
+    "cell_count": 555,
+    "unknown_count": 0,
+    "conflict_count": 0,
+    "can_confirm": true
+  },
+  "status_counts": {
+    "CHECKED": 485,
+    "UNCHECKED": 43,
+    "PERSONAL_LEAVE": 18,
+    "SICK_LEAVE": 9
+  },
+  "ok": true,
+  "logical_calls": 3,
+  "elapsed_seconds": 149.63,
+  "physical_usage_events": [
+    {
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 6769,
+        "prompt_tokens": 5572,
+        "total_tokens": 12341,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 2379,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5572
+      },
+      "usage_known": true,
+      "cost_estimate": {
+        "currency": "CNY",
+        "estimated_cost": 0.1164555,
+        "prompt_tokens": 5572,
+        "completion_tokens": 6769,
+        "cached_input_tokens": 0,
+        "cache_usage_reported": true,
+        "assumed_cached_input_tokens": 0,
+        "input_price_per_million": 4.5,
+        "cached_price_per_million": 0.15,
+        "output_price_per_million": 13.5,
+        "price_tier": "off_peak_request_window",
+        "model": "deepseek-v4-pro",
+        "price_version": "deepseek-2026-09-11"
+      },
+      "cost_known": true,
+      "status": "success",
+      "duration_ms": 48240.03
+    },
+    {
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 13828,
+        "prompt_tokens": 5572,
+        "total_tokens": 19400,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 8009,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5572
+      },
+      "usage_known": true,
+      "cost_estimate": {
+        "currency": "CNY",
+        "estimated_cost": 0.211752,
+        "prompt_tokens": 5572,
+        "completion_tokens": 13828,
+        "cached_input_tokens": 0,
+        "cache_usage_reported": true,
+        "assumed_cached_input_tokens": 0,
+        "input_price_per_million": 4.5,
+        "cached_price_per_million": 0.15,
+        "output_price_per_million": 13.5,
+        "price_tier": "off_peak_request_window",
+        "model": "deepseek-v4-pro",
+        "price_version": "deepseek-2026-09-11"
+      },
+      "cost_known": true,
+      "status": "success",
+      "duration_ms": 84507.45
+    },
+    {
+      "platform": "deepseek",
+      "model": "deepseek-v4-pro",
+      "provider_usage": {
+        "completion_tokens": 2165,
+        "prompt_tokens": 1942,
+        "total_tokens": 4107,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 780,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 256
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 1686
+      },
+      "usage_known": true,
+      "cost_estimate": {
+        "currency": "CNY",
+        "estimated_cost": 0.0368529,
+        "prompt_tokens": 1942,
+        "completion_tokens": 2165,
+        "cached_input_tokens": 256,
+        "cache_usage_reported": true,
+        "assumed_cached_input_tokens": 256,
+        "input_price_per_million": 4.5,
+        "cached_price_per_million": 0.15,
+        "output_price_per_million": 13.5,
+        "price_tier": "off_peak_request_window",
+        "model": "deepseek-v4-pro",
+        "price_version": "deepseek-2026-09-11"
+      },
+      "cost_known": true,
+      "status": "success",
+      "duration_ms": 16600.83
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loginStudent, loginTeacher, readFixture } from '../fixtures/p03';
@@ -6,6 +6,13 @@ import { loginStudent, loginTeacher, readFixture } from '../fixtures/p03';
 // These save/closeout checks require the enriched disposable acceptance fixture,
 // including a pending alert. Keep the ordinary P03 smoke suite independent.
 test.skip(!process.env.HOME_CLASSROOM_BUSINESS_ACCEPTANCE, 'Requires an explicitly seeded disposable business fixture');
+
+async function openMembers(page: Page, tab = 'members') {
+  await page.locator('summary[aria-label="打开更多课堂入口"]').click();
+  await page.locator('[data-learning-modal-open]').filter({ visible: true }).first().click();
+  await expect(page.locator('#learning-progress-modal')).toBeVisible();
+  if (tab !== 'members') await page.locator(`[data-member-tab="${tab}"]`).click();
+}
 
 test('teacher saves ordinary grade kind from the complete task panel', async ({ page }) => {
   const fixture = readFixture();
@@ -32,29 +39,29 @@ test('member details return to the same roster filter, scroll and focused row', 
   const fixture = readFixture();
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  await page.locator('.cw-learning-line [data-learning-modal-open]').click();
+  await openMembers(page);
   const modal = page.locator('#learning-progress-modal');
   await expect(modal).toBeVisible();
   await modal.locator('[data-learning-roster-search]').fill(fixture.student.studentNumber);
   const row = modal.locator(`[data-student-insight-open][href="/manage/students/${fixture.student.id}"]`).last();
   await row.scrollIntoViewIfNeeded();
-  const scroll = await modal.locator('.learning-modal-shell').evaluate(element => element.scrollTop);
+  const scroll = await modal.locator('[data-member-panel="members"]').evaluate(element => element.scrollTop);
   await row.click();
-  const detail = page.locator('#student-insight-modal');
+  const detail = modal.locator('[data-member-detail]');
   await expect(detail).toBeVisible();
   await expect(page.frameLocator('[data-student-insight-frame]').getByText(new RegExp(`学号 ${fixture.student.studentNumber}`)).first()).toBeVisible();
-  await page.locator('#student-insight-modal-close').click();
+  await modal.locator('[data-member-detail-back]').click();
   await expect(detail).toBeHidden();
   await expect(row).toBeFocused();
   await expect(modal.locator('[data-learning-roster-search]')).toHaveValue(fixture.student.studentNumber);
-  expect(await modal.locator('.learning-modal-shell').evaluate(element => element.scrollTop)).toBe(scroll);
+  expect(await modal.locator('[data-member-panel="members"]').evaluate(element => element.scrollTop)).toBe(scroll);
 });
 
 test('teacher previews and saves real cultivation weights then sees persisted values', async ({ page }) => {
   const fixture = readFixture();
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  await page.locator('.cw-learning-line [data-learning-modal-open]').click();
+  await openMembers(page, 'settings');
   const panel = page.locator('[data-cultivation-weight-settings]');
   const weights: Record<string, number> = { material: 35, task: 35, interaction: 20, consistency: 10 };
   for (const [key, value] of Object.entries(weights)) {
@@ -67,8 +74,9 @@ test('teacher previews and saves real cultivation weights then sees persisted va
   const saved = page.waitForResponse(response => response.url().endsWith('/learning/weights') && response.request().method() === 'POST');
   await panel.locator('[data-weight-save]').click();
   expect((await saved).status()).toBe(200);
-  await page.waitForEvent('domcontentloaded');
-  await page.locator('.cw-learning-line [data-learning-modal-open]').click();
+  await expect(panel.locator('[data-weight-save]')).toBeDisabled();
+  await page.reload();
+  await openMembers(page, 'settings');
   for (const [key, value] of Object.entries(weights)) {
     await expect(panel.locator(`[data-weight-key="${key}"] [data-weight-number]`)).toHaveValue(String(value));
   }
@@ -181,7 +189,7 @@ test('teacher handles a local cultivation alert and reads back the saved result'
   const fixture = readFixture();
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  await page.locator('.cw-learning-line [data-learning-modal-open]').click();
+  await openMembers(page, 'alerts');
   const item = page.locator('[data-cultivation-alert-item]').filter({ hasText: 'QA isolated acceptance alert' });
   await expect(item).toBeVisible();
   const id = await item.getAttribute('data-alert-id');
@@ -190,8 +198,9 @@ test('teacher handles a local cultivation alert and reads back the saved result'
   expect((await saved).status()).toBe(200);
   await expect(item).toHaveCount(0);
   await page.reload();
-  await page.locator('.cw-learning-line [data-learning-modal-open]').click();
+  await openMembers(page, 'alerts');
   await expect(item).toHaveCount(0);
+  await page.locator('[data-member-tab="exams"]').click();
   await expect(page.locator('[data-exam-roster-panel]')).toBeVisible();
   await expect(page.locator('[data-exam-roster-status]')).not.toContainText('正在读取');
 });

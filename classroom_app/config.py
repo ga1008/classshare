@@ -299,6 +299,13 @@ UI_COPY_GENERATION_ENABLED = os.getenv("UI_COPY_GENERATION_ENABLED", "True").low
 UI_COPY_REFRESH_POLL_SECONDS = int(os.getenv("UI_COPY_REFRESH_POLL_SECONDS", 30 * 60))
 
 # --- Classroom download policy ---
+# Pause the teacher workspace entry/fragments; student cultivation is unaffected.
+CLASSROOM_MEMBERS_WORKSPACE_ENABLED = _read_bool_env("CLASSROOM_MEMBERS_WORKSPACE_ENABLED", True)
+# Rollback switches keep existing attendance originals readable.
+ATTENDANCE_ARCHIVE_ENABLED = _read_bool_env("ATTENDANCE_ARCHIVE_ENABLED", True)
+ATTENDANCE_PARSE_ENABLED = _read_bool_env("ATTENDANCE_PARSE_ENABLED", True)
+ATTENDANCE_CONFIRMED_FACTS_ENABLED = _read_bool_env("ATTENDANCE_CONFIRMED_FACTS_ENABLED", True)
+
 CLASSROOM_DOWNLOAD_LIMIT_ENABLED = _read_bool_env("CLASSROOM_DOWNLOAD_LIMIT_ENABLED", False)
 CLASSROOM_DOWNLOAD_MAX_SIZE_BYTES = _parse_size_limit_env("CLASSROOM_DOWNLOAD_MAX_SIZE", "0")
 CLASSROOM_DOWNLOAD_MAX_SIZE_LABEL = _format_size_label(CLASSROOM_DOWNLOAD_MAX_SIZE_BYTES)

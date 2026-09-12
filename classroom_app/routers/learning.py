@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
@@ -51,6 +51,22 @@ from ..services.resource_access_service import ensure_classroom_access as ensure
 router = APIRouter(prefix="/api")
 
 
+@router.get("/classrooms/{class_offering_id}/members", response_class=JSONResponse)
+def get_classroom_members(class_offering_id: int, q: str = "", class_id: int | None = None,
+                          state: str = "", page: int = 1, page_size: int = 50,
+                          user: dict = Depends(get_current_user)):
+    from ..services.classroom_member_service import list_classroom_members
+    if user.get("role") != "teacher":
+        raise HTTPException(403, "仅教师可查看完整成员名单")
+    if state not in {"", "attention"}:
+        raise HTTPException(400, "成员筛选状态无效")
+    with get_db_connection() as conn:
+        ensure_scoped_classroom_access(conn, class_offering_id, user)
+        result = list_classroom_members(conn, class_offering_id, q=q, class_id=class_id,
+                                        state=state, page=page, page_size=page_size)
+    return {"status": "success", **result, "capabilities": {"can_view_members": True}}
+
+
 @router.get("/classrooms/mine", response_class=JSONResponse)
 def list_my_classrooms(limit: int = 30, offset: int = 0, user: dict = Depends(get_current_user)):
     from ..services.dashboard_service import _load_student_offerings, _load_teacher_offerings
@@ -90,6 +106,7 @@ class MaterialMasteryCheckPayload(BaseModel):
 
 class CultivationWeightPayload(BaseModel):
     weights: dict[str, int | float] = {}
+    expected_revision: int | None = Field(default=None, ge=0)
 
 
 class ManualTodoPayload(BaseModel):
@@ -285,8 +302,11 @@ async def update_learning_weights(
     payload: CultivationWeightPayload,
     user: dict = Depends(get_current_user),
 ):
+    from ..services.cultivation_weight_service import CultivationWeightConflictError
     if user["role"] != "teacher":
         raise HTTPException(403, "仅教师可调整课堂修为权重")
+    if payload.expected_revision is None:
+        raise HTTPException(428, "请刷新修为权重后再保存")
     with get_db_connection() as conn:
         _ensure_classroom_access(conn, class_offering_id, user)
         try:
@@ -295,7 +315,11 @@ async def update_learning_weights(
                 class_offering_id,
                 teacher_id=int(user["id"]),
                 weights_payload=payload.weights,
+                expected_revision=payload.expected_revision,
             )
+        except CultivationWeightConflictError as exc:
+            conn.rollback()
+            raise HTTPException(409, {"message": str(exc), "weight_settings": get_class_cultivation_weight_settings(conn, class_offering_id)}) from exc
         except CultivationWeightValidationError as exc:
             raise HTTPException(400, str(exc)) from exc
         conn.commit()
@@ -346,6 +370,8 @@ async def update_learning_alert(
     payload: CultivationAlertActionPayload,
     user: dict = Depends(get_current_user),
 ):
+    import hashlib
+    import json
     if user["role"] != "teacher":
         raise HTTPException(403, "仅教师可处理班级修为预警")
     with get_db_connection() as conn:
@@ -365,6 +391,25 @@ async def update_learning_alert(
             "snooze": "snoozed",
             "snoozed": "snoozed",
         }.get(normalized_action, normalized_action)
+        # The receipt is claimed in the same transaction as the side effect.
+        # A concurrent request waits on its unique key, then sees the committed
+        # result; a failed transaction leaves no receipt and can be retried.
+        receipt_key = None
+        if normalized_action in {"private_message", "support_note"}:
+            fingerprint = json.dumps([int(alert_id), int(user["id"]), normalized_action,
+                                      alert.get("first_seen_at"), payload.content or "", payload.note or ""],
+                                     ensure_ascii=False, separators=(",", ":"))
+            receipt_key = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+            claimed = conn.execute("""INSERT INTO cultivation_alert_action_receipts
+                (receipt_key,alert_id,actor_teacher_id,action) VALUES (?,?,?,?)
+                ON CONFLICT (receipt_key) DO NOTHING""",
+                (receipt_key, int(alert_id), int(user["id"]), normalized_action))
+            if claimed.rowcount == 0:
+                receipt = conn.execute("SELECT response_json FROM cultivation_alert_action_receipts WHERE receipt_key=?", (receipt_key,)).fetchone()
+                saved = json.loads(receipt["response_json"] or "{}")
+                return {"status": "success", "message": saved.get("message") or "该操作已完成",
+                        "alert": alert, "summary": build_class_cultivation_alert_context(conn, class_offering_id),
+                        "side_effect": {"type": normalized_action, "already_applied": True}}
         try:
             if normalized_action == "private_message":
                 content = build_cultivation_alert_private_message(alert, payload.content or payload.note or "")
@@ -405,6 +450,9 @@ async def update_learning_alert(
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        if receipt_key:
+            conn.execute("UPDATE cultivation_alert_action_receipts SET response_json=? WHERE receipt_key=?",
+                         (json.dumps({"message": response_message}, ensure_ascii=False), receipt_key))
         conn.commit()
         summary = build_class_cultivation_alert_context(conn, class_offering_id)
         return {

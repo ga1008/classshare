@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from .manage_nav_service import MATERIAL_HUB_CATEGORIES
 from .organization_scope_service import load_teacher_org_scope
@@ -364,6 +365,50 @@ def _search_exam_papers(conn, ctx: dict[str, Any], terms: list[str]) -> list[dic
     ]
 
 
+def _search_attendance_reports(conn, ctx: dict[str, Any], terms: list[str]) -> tuple[list[dict[str, Any]], int]:
+    """Private archive summaries; never expose a roster or infer organization grants."""
+    from ..db.connection import get_configured_db_engine
+
+    if get_configured_db_engine() == "postgres":
+        available = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() "
+            "AND table_name IN ('attendance_reports','attendance_report_versions','smart_attendance_source_bindings')"
+        ).fetchall()
+    else:
+        available = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('attendance_reports','attendance_report_versions','smart_attendance_source_bindings')"
+        ).fetchall()
+    if len(available) != 3:
+        return [], 0
+    clauses, params = [], [ctx["teacher_id"]]
+    for term in terms:
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        clauses.append("(" + " OR ".join(f"b.{field} LIKE ? ESCAPE '\\'" for field in ("remote_course_name", "remote_course_id", "remote_class_name")) + ")")
+        params.extend([f"%{escaped}%"] * 3)
+    where = " AND ".join(clauses) if clauses else "1=1"
+    rows = conn.execute(
+        f"""SELECT r.id,r.updated_at,b.remote_course_name,b.remote_course_id,b.remote_class_name,
+                   b.academic_year,b.academic_term,COUNT(*) OVER() AS total_count
+            FROM attendance_reports r JOIN smart_attendance_source_bindings b ON b.id=r.binding_id
+            WHERE b.owner_teacher_id=? AND r.deleted_at IS NULL AND {where}
+              AND EXISTS(SELECT 1 FROM attendance_report_versions v WHERE v.report_id=r.id
+                         AND v.source_file_hash IS NOT NULL AND v.source_file_hash<>'')
+            ORDER BY r.updated_at DESC,r.id DESC LIMIT ?""",
+        [*params, PER_CATEGORY_LIMIT],
+    ).fetchall()
+    total = int(rows[0]["total_count"]) if rows else 0
+    return [
+        _item(
+            category="attendance_reports", item_id=row["id"],
+            title=f"{row['remote_course_name']} · {row['remote_class_name']}",
+            owner=ctx["teacher_name"], scope_key="private", updated_at=row["updated_at"],
+            url=f"/manage/archive/attendance-reports/{row['id']}",
+            meta=[f"{row['academic_year']} 第{row['academic_term']}学期", "智慧课堂原件"],
+        ) for row in rows
+    ], total
+
+
 def _search_textbooks(conn, ctx: dict[str, Any], terms: list[str]) -> list[dict[str, Any]]:
     like_sql, like_params = _like_condition(["title", "publisher"], terms)
     rows = conn.execute(
@@ -465,6 +510,21 @@ def search_material_hub(
     counts: dict[str, int] = {}
     failed: list[str] = []
     for category_key in picked:
+        if category_key == "attendance_reports":
+            try:
+                attendance_items, exact_total = _search_attendance_reports(conn, ctx, terms) if normalized_scope in {"all", "private"} else ([], 0)
+            except Exception as exc:
+                print(f"[MATERIAL_HUB] category attendance_reports search failed: {exc}")
+                failed.append(category_key)
+                attendance_items, exact_total = [], 0
+            counts[category_key] = exact_total
+            if attendance_items:
+                groups.append({
+                    "key": category_key, "label": CATEGORY_LABELS[category_key], "items": attendance_items,
+                    "total": exact_total, "truncated": exact_total > len(attendance_items),
+                    "more_url": "/manage/archive/attendance-reports" + ("?" + urlencode({"q": query}) if query else ""),
+                })
+            continue
         searcher = searchers.get(category_key)
         if not searcher:
             continue

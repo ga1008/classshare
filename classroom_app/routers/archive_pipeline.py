@@ -1,4 +1,4 @@
-"""成绩与归档域首页：九步流水线总览（docs/manage-center-improvement-plan-2026-09-11.md §5.6）。
+"""成绩与归档域首页：流水线总览。
 
 每一步的数量复用材料检索的分类检索器（material_hub_service），不新写 SQL；
 单步失败只记录不拖垮整页（检索器本身已按分类独立降级）。
@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import require_teacher_domain
-from ..services.manage_nav_service import ARCHIVE_STEP_TOTAL, iter_archive_steps
+from ..services.manage_nav_service import iter_archive_steps
 from ..services.material_hub_service import search_material_hub
 from .ui_parts.common import _build_manage_template_context
 
@@ -27,6 +27,7 @@ _STEP_CATEGORY = {
     "academic_grade_registers": "academic_grade_registers",
     "academic_exam_analyses": "academic_exam_analyses",
     "teacher_evaluations": "teacher_evaluations",
+    "attendance_reports": "attendance_reports",
     "postclass_materials": "postclass",
 }
 
@@ -50,6 +51,7 @@ def build_archive_pipeline(conn, user: dict) -> list[dict]:
             "hint": item.nav_note or "",
             "count": count,
             "state": "done" if count else "todo",
+            "optional": item.key == "attendance_reports",
         })
     return pipeline
 
@@ -58,7 +60,8 @@ def build_archive_pipeline(conn, user: dict) -> list[dict]:
 async def manage_archive_pipeline_page(request: Request, user: dict = Depends(require_teacher_domain("archive"))):
     with get_db_connection() as conn:
         pipeline = build_archive_pipeline(conn, user)
-    done_steps = sum(1 for entry in pipeline if entry["count"])
+    required_steps = [entry for entry in pipeline if not entry["optional"]]
+    done_steps = sum(1 for entry in required_steps if entry["count"])
     return templates.TemplateResponse(
         request,
         "manage/archive_pipeline.html",
@@ -67,6 +70,6 @@ async def manage_archive_pipeline_page(request: Request, user: dict = Depends(re
             user,
             page_title="成绩与归档",
             active_page="archive_pipeline",
-            extra={"pipeline": pipeline, "step_total": ARCHIVE_STEP_TOTAL, "done_steps": done_steps},
+            extra={"pipeline": pipeline, "step_total": len(required_steps), "done_steps": done_steps},
         ),
     )
