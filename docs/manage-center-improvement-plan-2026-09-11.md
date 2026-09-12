@@ -1,6 +1,7 @@
 # 管理端改进方案：首页与管理中心一体化（2026-09-11）
 
-> 状态：**调查完成，方案定稿，未动工**。代码基线 `dev @ fae155fe`。
+> 状态：**执行中**（分支 `feat/manage-center-unification`）。代码基线 `dev @ fae155fe`。
+> 进度（2026-09-12）：P0 ✅ 全部（S2 壳子令牌化 / N1+N2 六域重组与 301 / H5 资源库合一）；P1 ✅（S3 首页进壳 / I1 收件箱服务与 `/manage/me/inbox` / 首页三段重构；S1 顶栏合一部分——教师页已同壳，学生与 profile/消息页仍用旧顶栏）；P2 ▶ H1 学期阶段条已上线（向导页保留为「开课向导」菜单项，未删除）、I2 审批深链 `?approval=` 已接、H4 profile 合并未做；P3/P4/P5 未开始。
 > 范围：教师登录后的全部工作面——`/dashboard` 教师分支、`/manage/*` 四域管理中心、`/profile`、`/message-center`，以及它们之间的跳转与数据共享。学生端零改动。
 > 写法面向"其他 AI 直接执行"：每条改进给出 为什么 / 怎么改（含文件） / 验收 / 测试 / 偏差处理。执行顺序见第 8 节。
 > 前置阅读：`docs/frontend-redesign-2026-08.md`（令牌与 shadcn 铁律）、`docs/ux-overhaul-2026-08.md`（少即是多验收标准）、`docs/teacher-portal-three-domain-restructure-goals.md`（上一轮三域重构，本方案是它的第二版，已落地的 A1/A2/A4/B3/C4/D3/E2 不再重复）。
