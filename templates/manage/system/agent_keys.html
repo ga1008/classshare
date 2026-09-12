@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}Agent Key 管理{% endblock %}
 
@@ -11,14 +12,11 @@
 
 {% block content %}
 <div class="agent-key-shell">
+    {{ page_head('Agent 任务运行密钥', description='超管统一管理 DSH 任务使用的 DeepSeek Key。启用前测试所选模型，后续请求通过平台模型网关读取当前配置。') }}
     <section class="agent-key-hero">
         <div class="agent-key-hero-main">
-            <div class="agent-key-mark" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2"></path><path d="M19 4l-6.5 6.5"></path><circle cx="9" cy="15" r="4"></circle><path d="M7 17l-4 4"></path><path d="M11 13l3 3"></path></svg>
-            </div>
             <div>
-                <h2>Agent 任务运行密钥</h2>
-                <p>超管统一管理 DSH 任务使用的 DeepSeek Key。启用前测试所选模型，后续请求通过平台模型网关读取当前配置。</p>
+                <h3>运行指标</h3>
                 <div class="agent-key-metrics">
                     <div class="agent-key-metric">
                         <span>启用 Key</span>

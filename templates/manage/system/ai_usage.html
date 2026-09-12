@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}AI 用量{% endblock %}
 
@@ -24,6 +25,8 @@
 
 {% block content %}
 <div class="ai-usage-shell" data-ai-usage-dashboard>
+{% set _nav_item = manage_nav.active_item or {} %}
+{{ page_head(_nav_item.label | default('AI 用量'), explain=_nav_item.help_text | default(''), explain_label=(_nav_item.label | default('AI 用量')) ~ '说明') }}
     <section class="ai-usage-overview" aria-label="AI 用量总览">
         <div class="ai-usage-metric">
             <span>近 8 周调用</span>

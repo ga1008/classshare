@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}校园公文通对接{% endblock %}
 
@@ -10,26 +11,17 @@
 
 {% block content %}
 <section class="gw-shell">
+    {{ page_head('校园公文通对接', eyebrow='OFFICIAL DOCUMENTS', description='保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后系统会同步收件箱公文，拆解文号、发文单位、分类与附件，供检索与后续提醒使用。之后每 6 小时按账号错峰自动增量同步（仅拉取新增、按公文编号匹配、分页限速），无需手动操作。',
+        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'gw-account-manage-btn'}, {'label': '立即同步', 'variant': 'primary', 'id': 'gw-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'gw-capability-refresh-btn'}, {'label': '查看公文材料', 'variant': 'ghost', 'href': '/manage/academic/gongwen'}]) }}
     <div class="gw-hero">
         <article class="gw-card gw-intro">
-            <div class="gw-mark" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-            </div>
             <div>
-                <p class="gw-kicker">OFFICIAL DOCUMENTS</p>
-                <h2>校园公文通对接</h2>
-                <p>保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后系统会同步收件箱公文，拆解文号、发文单位、分类与附件，供检索与后续提醒使用。之后每 6 小时按账号错峰自动增量同步（仅拉取新增、按公文编号匹配、分页限速），无需手动操作。</p>
+                <h3>同步方式</h3>
                 <div class="gw-chip-row">
                     <span class="gw-chip">验证码识别</span>
                     <span class="gw-chip">增量同步</span>
                     <span class="gw-chip">每6小时自动</span>
                     <span class="gw-chip">限速·只读不回写</span>
-                </div>
-                <div class="gw-hero-actions">
-                    <button type="button" class="btn btn-outline" id="gw-account-manage-btn">账号管理</button>
-                    <button type="button" class="btn btn-primary" id="gw-sync-all-btn">立即同步</button>
-                    <button type="button" class="btn btn-outline" id="gw-capability-refresh-btn">刷新同步状态</button>
-                    <a class="btn btn-ghost" href="/manage/academic/gongwen">查看公文材料</a>
                 </div>
             </div>
         </article>

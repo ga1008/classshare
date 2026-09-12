@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}智慧课堂对接{% endblock %}
 
@@ -10,25 +11,17 @@
 
 {% block content %}
 <section class="smart-classroom-shell">
+    {{ page_head('广外智慧课堂对接', eyebrow='SMART CLASSROOM', description='保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。',
+        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}]) }}
     <div class="smart-classroom-hero">
         <article class="smart-classroom-card smart-classroom-intro">
-            <div class="smart-classroom-mark" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"></path><path d="M8 17V9"></path><path d="M12 19V7"></path><path d="M16 15v-4"></path><path d="M20 17V9"></path></svg>
-            </div>
             <div>
-                <p class="smart-classroom-kicker">SMART CLASSROOM</p>
-                <h2>广外智慧课堂对接</h2>
-                <p>保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。</p>
+                <h3>同步方式</h3>
                 <div class="smart-classroom-chip-row">
                     <span class="smart-classroom-chip">点名记录</span>
                     <span class="smart-classroom-chip">课次对齐</span>
                     <span class="smart-classroom-chip">顺序同步</span>
                     <span class="smart-classroom-chip">不写入智慧课堂</span>
-                </div>
-                <div class="smart-classroom-hero-actions">
-                    <button type="button" class="btn btn-outline" id="smart-account-manage-btn">账号管理</button>
-                    <button type="button" class="btn btn-primary" id="smart-sync-all-btn">一键同步</button>
-                    <button type="button" class="btn btn-outline" id="smart-sync-capability-refresh-btn">刷新同步状态</button>
                 </div>
             </div>
         </article>

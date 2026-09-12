@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}学校组织{% endblock %}
 
@@ -11,23 +12,14 @@
 
 {% block content %}
 <section class="org-page" data-organization-page>
-    <div class="org-overview">
-        <article class="org-hero">
-            <div class="org-hero-mark" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"></path><path d="M5 21V7l8-4 6 4v14"></path><path d="M9 21v-6h6v6"></path></svg>
-            </div>
-            <div>
-                <h2>学校、学院、系部目录</h2>
-                <p>这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。</p>
-            </div>
-        </article>
-        <div class="org-stat-grid" aria-label="组织概览">
+    {% call page_head('学校、学院、系部目录', description='这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。') %}
+        <div class="org-stat-grid" data-page-head-wide aria-label="组织概览">
             <article class="org-stat"><span>学校</span><strong id="org-stat-schools">{{ organization_payload.summary.school_count }}</strong></article>
             <article class="org-stat"><span>学院</span><strong id="org-stat-colleges">{{ organization_payload.summary.college_count }}</strong></article>
             <article class="org-stat"><span>系部</span><strong id="org-stat-departments">{{ organization_payload.summary.department_count }}</strong></article>
             <article class="org-stat"><span>启用学校</span><strong id="org-stat-active">{{ organization_payload.summary.active_school_count }}</strong></article>
         </div>
-    </div>
+    {% endcall %}
 
     <div class="org-workspace">
         <section class="org-panel" aria-label="组织树">
