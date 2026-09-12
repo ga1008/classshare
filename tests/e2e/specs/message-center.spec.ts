@@ -16,7 +16,7 @@ test.describe('P03 message center', () => {
     await loginTeacher(page, fixture);
     await expect(page.locator('[data-message-center-bell]').first()).toBeVisible();
     await Promise.all([
-      page.waitForURL(/\/profile\?section=notifications.*profile-message-center/, { timeout: 15_000 }),
+      page.waitForURL(/(\/manage\/me\/notifications|\/profile\?section=notifications).*profile-message-center/, { timeout: 15_000 }),
       page.locator('[data-message-center-bell]').first().click(),
     ]);
     await expect(page.locator('[data-lanshare-island="message-center-page"]')).toBeAttached();
