@@ -1,26 +1,7 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
-{% block extra_head %}
-<style>
-    .ai-textarea {
-        min-height: 220px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        line-height: 1.72;
-    }
-
-    .ai-context-columns {
-        display: grid;
-        gap: 16px;
-    }
-
-    .ai-material-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-</style>
-{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
@@ -30,17 +11,7 @@
 
 {% block content %}
 <div class="academic-shell">
-    <section class="academic-hero">
-        <div class="manage-pagehead__title-row">
-            <h2>AI 助教</h2>
-            {{ explain_button(
-                'AI 助教',
-                '为每个课堂配置独立的 AI 系统提示词和课程大纲；绑定教材后自动关联教材信息，课堂信息自动填充，可随时重新生成默认草稿。',
-                placement='bottom',
-                label='AI 助教说明'
-            ) }}
-        </div>
-    </section>
+    {{ page_head('AI 助教', explain='为每个课堂配置独立的 AI 系统提示词和课程大纲；绑定教材后自动关联教材信息，课堂信息自动填充，可随时重新生成默认草稿。') }}
 
     <section class="academic-stat-grid">
         <article class="academic-stat-card">

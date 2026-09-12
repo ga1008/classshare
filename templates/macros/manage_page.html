@@ -1,0 +1,57 @@
+{#
+  Manage Page Standard（docs/manage-center-improvement-plan-2026-09-11.md §5.10）
+  所有 /manage 页面共用的页头 / 空态 / 筛选条宏。样式在 ui-system.src.css 的 "pages layer"。
+  用法：
+    {% from "macros/manage_page.html" import page_head, empty_state, filter_bar %}
+    {{ page_head('课堂', explain='一句话说明', actions=[{'label': '去开设课堂', 'href': '/x', 'variant': 'primary'}]) }}
+    {% call page_head('教案库', description='...') %}<div data-lp-summary></div>{% endcall %}   {# 右侧 aside 槽 #}
+#}
+{% from "macros/ui_explanation.html" import explain_button %}
+
+{% macro page_head(title, description='', explain='', explain_label='', actions=[], eyebrow='', title_id='') %}
+<header class="page-head" data-page-head>
+    <div class="page-head__copy">
+        {% if eyebrow %}<span class="page-head__eyebrow">{{ eyebrow }}</span>{% endif %}
+        <div class="manage-pagehead__title-row">
+            <h2{% if title_id %} id="{{ title_id }}"{% endif %}>{{ title }}</h2>
+            {% if explain %}{{ explain_button(title, explain, placement='bottom', label=explain_label or (title ~ '说明')) }}{% endif %}
+        </div>
+        {% if description %}<p class="page-head__desc">{{ description }}</p>{% endif %}
+    </div>
+    {% if caller %}<div class="page-head__aside">{{ caller() }}</div>{% endif %}
+    {% if actions %}
+    <div class="page-head__actions">
+        {% for action in actions %}
+        {% set _cls = 'btn btn-sm ' ~ ('btn-primary' if action.variant == 'primary' else ('btn-ghost' if action.variant == 'ghost' else 'btn-outline')) %}
+        {% if action.href %}
+        <a class="{{ _cls }}" href="{{ action.href }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</a>
+        {% else %}
+        <button type="button" class="{{ _cls }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</button>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</header>
+{% endmacro %}
+
+{% macro empty_state(title, description='', action_label='', action_href='', action_attrs='') %}
+<div class="page-empty" data-page-empty>
+    <strong>{{ title }}</strong>
+    {% if description %}<p>{{ description }}</p>{% endif %}
+    {% if action_label %}
+    {% if action_href %}<a class="btn btn-primary btn-sm" href="{{ action_href }}" {{ action_attrs|safe }}>{{ action_label }}</a>{% else %}<button type="button" class="btn btn-primary btn-sm" {{ action_attrs|safe }}>{{ action_label }}</button>{% endif %}
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro filter_bar(search_id='', search_placeholder='搜索…', search_attrs='') %}
+<div class="filter-bar" data-filter-bar>
+    {% if search_id %}
+    <label class="filter-bar__search">
+        <span class="sr-only">搜索</span>
+        <input type="search" id="{{ search_id }}" placeholder="{{ search_placeholder }}" autocomplete="off" {{ search_attrs|safe }}>
+    </label>
+    {% endif %}
+    {% if caller %}<div class="filter-bar__controls">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}

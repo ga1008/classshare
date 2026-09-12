@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}考核计划表{% endblock %}
@@ -16,20 +17,7 @@
 {% endblock %}
 {% block content %}
 <section class="manage-lp" data-ap-root>
-    <div class="manage-lp__intro">
-        <div>
-            <div class="manage-lp__title-row">
-                <h2>考核计划表库</h2>
-                {{ explain_button(
-                    '考核计划表',
-                    '每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。',
-                    placement='bottom',
-                    label='考核计划表说明'
-                ) }}
-            </div>
-        </div>
-        <div class="manage-lp__summary" data-ap-summary></div>
-    </div>
+    {% call page_head('考核计划表库', explain='每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='考核计划表说明') %}<div class="manage-lp__summary" data-ap-summary></div>{% endcall %}
 
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
