@@ -4,7 +4,6 @@ import path from 'node:path';
 
 const calendarSource = fs.readFileSync(path.resolve('static/js/semester_calendar.js'), 'utf8');
 const sharedCss = fs.readFileSync(path.resolve('static/css/ui-system.src.css'), 'utf8');
-const dashboardCss = fs.readFileSync(path.resolve('static/css/dashboard_workspace.css'), 'utf8');
 
 async function mountCalendar(page: Page) {
   await page.route('http://calendar.test/**', async route => {
@@ -14,7 +13,7 @@ async function mountCalendar(page: Page) {
     } else if (url.pathname === '/static/js/api.js') {
       await route.fulfill({ contentType: 'text/javascript', body: 'export function apiFetch() { throw new Error("No API writes in calendar layout fixture"); }' });
     } else if (url.pathname === '/shared.css' || url.pathname === '/dashboard.css') {
-      await route.fulfill({ contentType: 'text/css', body: url.pathname === '/shared.css' ? sharedCss : dashboardCss });
+      await route.fulfill({ contentType: 'text/css', body: sharedCss });
     } else {
       await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
         <link rel="stylesheet" href="/shared.css"><link rel="stylesheet" href="/dashboard.css">
