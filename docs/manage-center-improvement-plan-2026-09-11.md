@@ -1,7 +1,7 @@
 # 管理端改进方案：首页与管理中心一体化（2026-09-11）
 
 > 状态：**执行中**（分支 `feat/manage-center-unification`）。代码基线 `dev @ fae155fe`。
-> 进度（2026-09-12）：P0 ✅ 全部；P1 ✅（首页进壳 / 收件箱 / 首页三段；S1 顶栏合一：教师所有壳内页同顶栏，学生与课堂页仍用旧顶栏）；P2 ✅ H1 学期阶段条、I2 审批深链、H4 教师「我的」并入壳（/manage/me/* 复用 profile 模板，/profile 与 /message-center 对教师 302）；P3 ✅ H2 归档流水线首页 `/manage/archive` + 壳内「第 k/9 步」步条、H3 教务日程周视图 `/manage/academic`；P4（页面宏、内联 style 清零、大页拆分）与 P5 清扫未开始。向导页保留为「开课向导」菜单项。
+> 进度（2026-09-12）：P0 ✅ 全部；P1 ✅（首页进壳 / 收件箱 / 首页三段；S1 顶栏合一：教师所有壳内页同顶栏，学生与课堂页仍用旧顶栏）；P2 ✅ H1 学期阶段条、I2 审批深链、H4 教师「我的」并入壳（/manage/me/* 复用 profile 模板，/profile 与 /message-center 对教师 302）；P3 ✅ H2 归档流水线首页 `/manage/archive` + 壳内「第 k/9 步」步条、H3 教务日程周视图 `/manage/academic`；P4 ▶ 页面宏 `macros/manage_page.html` 已建，第一批 8 页（开设课堂/AI/学期/投票/教案/考核计划/评学表/材料检索）已迁页头并清掉 3 处内联 style（迁入 pages layer，色值待令牌化）；剩 ~24 页内联 style、exams/courses/materials 拆分；P5 清扫未开始。向导页保留为「开课向导」菜单项。
 > 范围：教师登录后的全部工作面——`/dashboard` 教师分支、`/manage/*` 四域管理中心、`/profile`、`/message-center`，以及它们之间的跳转与数据共享。学生端零改动。
 > 写法面向"其他 AI 直接执行"：每条改进给出 为什么 / 怎么改（含文件） / 验收 / 测试 / 偏差处理。执行顺序见第 8 节。
 > 前置阅读：`docs/frontend-redesign-2026-08.md`（令牌与 shadcn 铁律）、`docs/ux-overhaul-2026-08.md`（少即是多验收标准）、`docs/teacher-portal-three-domain-restructure-goals.md`（上一轮三域重构，本方案是它的第二版，已落地的 A1/A2/A4/B3/C4/D3/E2 不再重复）。
