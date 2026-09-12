@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}压测与诊断{% endblock %}
 
@@ -6,15 +7,7 @@
 
 
 {% block content %}
-<div class="dg-hero">
-    <div class="dg-hero__icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
-    </div>
-    <div class="dg-hero__text">
-        <h2>压测与诊断</h2>
-        <p>查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。</p>
-    </div>
-</div>
+{{ page_head('压测与诊断', description='查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。') }}
 
 <div class="dg-grid">
     <section class="dg-card">

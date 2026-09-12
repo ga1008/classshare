@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block header_actions %}
@@ -8,15 +9,10 @@
 
 {% block content %}
 <section class="wi-page" data-work-inbox>
-    <header class="wi-head">
-        <div>
-            <div class="manage-pagehead__title-row">
-                <h2>待我处理</h2>
-                {{ explain_button('待我处理', '首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。', label='待我处理说明') }}
-            </div>
-            <p class="wi-lead">{% if inbox.total %}共 {{ inbox.total }} 项等你处理。{% else %}目前没有需要处理的事项。{% endif %}</p>
-        </div>
-    </header>
+    {{ page_head('待我处理',
+        description=('共 ' ~ inbox.total ~ ' 项等你处理。') if inbox.total else '目前没有需要处理的事项。',
+        explain='首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。',
+        explain_label='待我处理说明') }}
 
     <nav class="wi-sources" aria-label="按来源筛选">
         <a href="/manage/me/inbox" class="wi-chip{% if not inbox.source %} is-active{% endif %}">全部 <b>{{ inbox.total }}</b></a>

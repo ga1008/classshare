@@ -1,0 +1,136 @@
+{# 材料库主卡：目录导航 / 工具栏 / 列表（由 materials.html include）。 #}
+<div class="materials-shell materials-shell--single">
+    <section class="materials-card materials-library-card materials-library-card--expanded">
+        <div class="materials-toolbar materials-library-nav">
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-outline btn-sm" id="materials-repository-btn" hidden>仓库</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-ai-expand-btn" hidden title="根据本文件夹已有材料，让 AI 续写下一份材料">AI 续写</button>
+                <button type="button" class="btn btn-outline btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
+            </div>
+            <div class="materials-breadcrumbs" id="materials-breadcrumbs">
+                <span class="text-muted">材料库根目录</span>
+            </div>
+        </div>
+
+        <div class="materials-library-controls">
+            <div class="materials-filter-toolbar">
+                <label class="materials-search-box" for="materials-search-input">
+                    <span class="materials-search-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m20 20-3.5-3.5"></path>
+                        </svg>
+                    </span>
+                    <input
+                        type="search"
+                        id="materials-search-input"
+                        data-testid="p03-materials-search"
+                        class="form-control"
+                        placeholder="按名称或路径模糊搜索当前范围内的材料"
+                        autocomplete="off"
+                    >
+                    <button type="button" class="btn btn-ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
+                </label>
+                <button
+                    type="button"
+                    class="btn btn-outline btn-sm materials-filter-toggle"
+                    id="materials-filters-toggle"
+                    aria-controls="materials-filters-panel"
+                    aria-expanded="false"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M4 6h16"></path>
+                        <path d="M7 12h10"></path>
+                        <path d="M10 18h4"></path>
+                    </svg>
+                    <span>筛选</span>
+                    <span class="materials-filter-count" id="materials-filter-count" hidden>0</span>
+                </button>
+            </div>
+
+            <div class="materials-sort-controls" id="materials-filters-panel" hidden>
+                <label class="materials-inline-field">
+                    <span>开放范围</span>
+                    <select id="materials-scope-filter" class="form-control">
+                        <option value="all">全部范围</option>
+                        <option value="owned">我管理的</option>
+                        <option value="shared">共享给我的</option>
+                        <option value="private">私有</option>
+                        <option value="department">本系部公开</option>
+                        <option value="college">本院级公开</option>
+                        <option value="school">全校公开</option>
+                        <option value="public">完全公开</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>学校</span>
+                    <select id="materials-school-filter" class="form-control">
+                        <option value="">全部学校</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>系部</span>
+                    <select id="materials-department-filter" class="form-control">
+                        <option value="">全部系部</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>学院</span>
+                    <select id="materials-college-filter" class="form-control">
+                        <option value="">全部学院</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>课程</span>
+                    <select id="materials-course-filter" class="form-control">
+                        <option value="">全部课程</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>班级</span>
+                    <select id="materials-class-filter" class="form-control">
+                        <option value="">全部班级</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>排序字段</span>
+                    <select id="materials-sort-by" class="form-control">
+                        <option value="name">名称</option>
+                        <option value="created_at">创建时间</option>
+                        <option value="updated_at">更新时间</option>
+                    </select>
+                </label>
+                <label class="materials-inline-field">
+                    <span>排序方向</span>
+                    <select id="materials-sort-order" class="form-control">
+                        <option value="asc">升序</option>
+                        <option value="desc">降序</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="materials-selection-bar" id="materials-selection-bar" hidden>
+            <div>已选择 <strong id="materials-selection-count">0</strong> 项</div>
+            <div class="materials-toolbar-group">
+                <button type="button" class="btn btn-outline btn-sm" id="materials-selection-download-btn">下载选中</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="materials-selection-clear-btn">清空选择</button>
+            </div>
+        </div>
+
+        <div class="materials-list materials-manage-list">
+            <div class="materials-list-header materials-manage-list-header">
+                <div>
+                    <input type="checkbox" id="materials-select-all">
+                </div>
+                <div>材料信息</div>
+                <div>时间信息</div>
+                <div>操作</div>
+            </div>
+            <div id="materials-list-body" class="materials-list-body" data-testid="p03-materials-list">
+                <div class="materials-empty">正在加载课程材料...</div>
+            </div>
+        </div>
+    </section>
+
+</div>

@@ -42,6 +42,12 @@ from classroom_app.services.process_material_import_summary_service import (
 from classroom_app.db import schema_lesson_plans
 
 
+
+def _materials_template_source() -> str:
+    """materials.html 已拆为主模板 + partials/materials/*，契约测试读取合并后的源码。"""
+    paths = [Path("templates/manage/materials.html"), *sorted(Path("templates/partials/materials").glob("*.html"))]
+    return chr(10).join(path.read_text(encoding="utf-8") for path in paths)
+
 class ProcessMaterialWorkflowContractTests(unittest.TestCase):
     def test_final_material_academic_period_normalizes_local_and_jwxt_values(self):
         self.assertEqual(_academic_year_from_values("2025-2026学年"), "2025-2026")
@@ -668,7 +674,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("case 'sessions_asc'", lesson_script)
 
     def test_manage_ai_import_modal_uses_type_aware_file_format_guidance(self):
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
 
@@ -740,7 +746,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertGreater(int(overlay_z_index.group(1)), int(detail_z_index.group(1)))
 
     def test_manage_generic_generation_does_not_expose_grade_records(self):
-        html = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        html = _materials_template_source()
         match = re.search(r'<select id="materials-ai-generate-type".*?</select>', html, re.S)
         self.assertIsNotNone(match)
         select_html = match.group(0)
@@ -861,7 +867,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("data-lp-form-generate", script)
 
     def test_grade_record_manage_pages_offer_classroom_generate_and_import_shortcuts(self):
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
 
         self.assertIn("process_generate_blocked", template)
@@ -880,7 +886,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("final_material_type", script)
 
     def test_ordinary_grade_manage_generation_stays_on_page_and_highlights_result(self):
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
 
@@ -902,7 +908,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
 
     def test_exam_grade_manage_generation_stays_on_page_and_only_reveals_final_material(self):
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         classroom_script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
         styles = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
@@ -933,7 +939,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn(".exam-grade-generation-contract", styles)
 
     def test_final_grade_transcript_generation_syncs_roster_and_closes_source_loop(self):
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         router = Path("classroom_app/routers/materials_parts/final_materials.py").read_text(encoding="utf-8")
         helpers = Path("classroom_app/routers/materials_parts/final_material_helpers.py").read_text(encoding="utf-8")
@@ -1055,7 +1061,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
 
     def test_classroom_generation_picker_supports_semester_filter_and_fuzzy_search(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
         router = Path("classroom_app/routers/materials_parts/library.py").read_text(encoding="utf-8")
 
         self.assertIn('id="materials-classroom-semester-filter"', template)
@@ -1657,7 +1663,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
     def test_manage_ai_generation_guides_source_prerequisites_before_submit(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
         router = Path("classroom_app/routers/materials_parts/ai_import.py").read_text(encoding="utf-8")
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
 
         self.assertIn("def _attach_ai_generation_document_source", router)
         self.assertIn("ai_generation_document_type", router)
@@ -1892,7 +1898,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
 
     def test_ai_import_task_dismissals_survive_refresh_without_hiding_updates(self):
         script = Path("static/js/materials_manage.js").read_text(encoding="utf-8")
-        template = Path("templates/manage/materials.html").read_text(encoding="utf-8")
+        template = _materials_template_source()
 
         self.assertIn("userId: {{ user_info.id | tojson }}", template)
         self.assertIn('aiImportDismissStorageKey: "lanshare:materials:ai-import:dismissed:{{ user_info.id }}"', template)

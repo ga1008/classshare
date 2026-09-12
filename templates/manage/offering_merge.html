@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block header_actions %}
@@ -9,24 +10,12 @@
 
 {% block content %}
 <div class="academic-shell offering-merge-shell">
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>课堂合并</h2>
-                    {{ explain_button(
-                        '双开课堂合并',
-                        '合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。',
-                        placement='bottom',
-                        label='合并说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <a class="btn btn-outline" href="/manage/teaching/classroom-hub">返回课堂管理</a>
-            </div>
-        </div>
-    </section>
+    {% call page_head('课堂合并',
+        explain='合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。', explain_label='合并说明',
+        actions=[
+            {'label': '返回课堂管理', 'variant': 'outline', 'href': '/manage/teaching/classroom-hub'}
+        ]) %}
+    {% endcall %}
 
     <section class="academic-card offering-merge-section" id="offeringMergeSection">
         <div class="academic-card-header">

@@ -1,21 +1,7 @@
-{# 试卷页分区 partial（P4 拆分自 manage/exams.html，仅搬移不改逻辑） #}
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>试卷</h2>
-                    {{ explain_button(
-                        '试卷',
-                        '按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。',
-                        placement='bottom',
-                        label='试卷说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <a href="/exam/new" class="btn btn-primary">新建试卷</a>
-            </div>
-        </div>
+{# 试卷页分区 partial（P4 拆分自 manage/exams.html；页头已换 page_head 宏） #}
+{% from "macros/manage_page.html" import page_head %}
+    {% call page_head('试卷', explain='按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。', explain_label='试卷说明',
+        actions=[{'label': '新建试卷', 'variant': 'primary', 'href': '/exam/new'}]) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -30,4 +16,4 @@
                     (papers|length) ~ ' 份试卷累计题目数。', 'amber', '题') }}
             </div>
         </div>
-    </section>
+    {% endcall %}

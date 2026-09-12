@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 
@@ -24,25 +25,12 @@
         <span id="classroomStatStale">{{ stats.stale_count or 0 }} 条待复核</span>
     </div>
 
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>教室</h2>
-                    {{ explain_button(
-                        '教室',
-                        '教学场地来自教务系统同步；空闲教室按学期、周次、星期、节次实时查询。',
-                        placement='bottom',
-                        label='教室说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <button type="button" class="btn btn-outline" id="focusFreeRoomBtn">查询空闲教室</button>
-                <button type="button" class="btn btn-primary" id="syncClassroomsBtn">从教务系统同步</button>
-            </div>
-        </div>
-        <div class="classroom-sync-status" id="classroomSyncStatus" role="status" aria-live="polite"></div>
+    {% call page_head('教室',
+        explain='教学场地来自教务系统同步；空闲教室按学期、周次、星期、节次实时查询。', explain_label='教室说明',
+        actions=[
+            {'label': '查询空闲教室', 'variant': 'outline', 'id': 'focusFreeRoomBtn'},
+            {'label': '从教务系统同步', 'variant': 'primary', 'id': 'syncClassroomsBtn'}
+        ]) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -60,7 +48,7 @@
                     (stats.exam_count or 0) ~ ' / ' ~ _cr_active ~ ' 间') }}
             </div>
         </div>
-    </section>
+    {% endcall %}
 
     <section class="classroom-control-panel" aria-label="教学场地筛选">
         <div class="classroom-control-main">

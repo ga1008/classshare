@@ -1,7 +1,10 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% block title %}签名审批与使用{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/material_workflows.css') }}">{% endblock %}
 {% block content %}
+{% set _nav_item = manage_nav.active_item or {} %}
+{{ page_head(_nav_item.label | default(''), explain=_nav_item.help_text | default(''), explain_label=(_nav_item.label | default('')) ~ '说明') }}
 <section class="msw-page" data-signature-workflows>
   <details class="msw-point" data-start-application><summary>从材料发起签名申请</summary><p class="msw-note">进入材料列表，选择一份或多份同类文档，然后点击右侧“申请签名”。审批人会收到申请时的实际文档。</p><div class="msw-toolbar"><a class="msw-button" href="/manage/archive/academic-grade-registers">成绩登记表</a><a class="msw-button" href="/manage/archive/academic-exam-analyses">试卷分析表</a><a class="msw-button" href="/manage/archive/assessment-plans">考核计划表</a></div></details>
   <p class="msw-note" data-notification-readiness hidden role="status"></p>

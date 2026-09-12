@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 
 {% block title %}公文材料{% endblock %}
@@ -15,17 +16,12 @@
 {% set cat_bars = [] %}
 {% for cat in gongwen_categories or [] %}{% set _ = cat_bars.append({'label': cat.name, 'value': cat.total}) %}{% endfor %}
 <section class="gwlist-shell">
-    <div class="gwlist-hero">
-        <div>
-            <h1 data-explain data-explain-title="公文" data-explain-text="统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。">公文</h1>
-        </div>
-        <div class="gwlist-toolbar">
-            <span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>
-            <button type="button" class="btn btn-outline" id="gw-doc-refresh">刷新</button>
-            <button type="button" class="btn btn-outline" id="gw-follow-open">关注设置</button>
-            <button type="button" class="btn btn-primary" id="gw-doc-sync">立即同步</button>
-        </div>
-    </div>
+    {% call page_head('公文', explain='统一认证账号收件箱内的公文已同步到本地，可检索、查看与下载附件。', explain_label='公文说明',
+        actions=[
+            {'label': '刷新', 'variant': 'outline', 'id': 'gw-doc-refresh'},
+            {'label': '关注设置', 'variant': 'outline', 'id': 'gw-follow-open'},
+            {'label': '立即同步', 'variant': 'primary', 'id': 'gw-doc-sync'}
+        ]) %}<span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>{% endcall %}
 
     {% set follow_stats = gongwen_follow_stats or {'total': 0, 'unseen': 0} %}
     {% set follow_pct = ((follow_stats.total | int) / (summary.total | int) * 100) | round | int if (summary.total | int) > 0 else 0 %}

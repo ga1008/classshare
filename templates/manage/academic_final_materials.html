@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
 {% set sync_links = [
     {'label': '教务账号', 'href': '/manage/me/credentials'},
@@ -34,14 +35,8 @@ data-afm-open-sync {{ explain_attrs(
     data-document-type="{{ document_type }}"
     data-document-label="{{ document_type_label }}"
 >
-    <header class="afm-hero">
-        <div class="afm-hero__copy">
-            <span class="afm-eyebrow">期末材料 · 教务系统闭环</span>
-            <h2>{{ document_type_label }}</h2>
-            <p>
-                选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，
-                完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。
-            </p>
+    {% call page_head(document_type_label, eyebrow='期末材料 · 教务系统闭环',
+        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。') %}
             <div class="afm-hero__actions">
                 <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
                     '同步教务双表',
@@ -53,7 +48,6 @@ data-afm-open-sync {{ explain_attrs(
                 </button>
                 <a class="afm-btn afm-btn--ghost" href="{{ sibling_url }}">查看{{ sibling_label }}</a>
             </div>
-        </div>
         <div class="afm-hero__flow" aria-label="处理流程">
             <div><strong>01</strong><span>确认成绩已提交</span></div>
             <i aria-hidden="true"></i>
@@ -61,7 +55,7 @@ data-afm-open-sync {{ explain_attrs(
             <i aria-hidden="true"></i>
             <div><strong>03</strong><span>签名、预览、下载</span></div>
         </div>
-    </header>
+    {% endcall %}
 
     <div class="afm-toolbar">
         <div class="afm-toolbar__filters">

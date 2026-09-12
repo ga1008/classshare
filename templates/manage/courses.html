@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 
@@ -11,24 +12,12 @@
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 <div class="academic-shell course-page-shell">
     {% set _course_complete = my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length %}
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>课程</h2>
-                    {{ explain_button(
-                        '课程',
-                        '沉淀可复用的课程模板；开课时直接继承课堂设置并生成排课时间轴。',
-                        placement='bottom',
-                        label='课程说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <button type="button" class="btn btn-outline" id="heroCourseAcademicSyncBtn">从教务系统同步</button>
-                <button type="button" class="btn btn-primary" id="heroCourseCreateBtn">新增课程</button>
-            </div>
-        </div>
+    {% call page_head('课程',
+        explain='沉淀可复用的课程模板；开课时直接继承课堂设置并生成排课时间轴。', explain_label='课程说明',
+        actions=[
+            {'label': '从教务系统同步', 'variant': 'outline', 'id': 'heroCourseAcademicSyncBtn'},
+            {'label': '新增课程', 'variant': 'primary', 'id': 'heroCourseCreateBtn'}
+        ]) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -44,7 +33,7 @@
                 {{ insight_meter('教学总量', course_stats.total_hours, 100, course_stats.lesson_count ~ ' 条课堂设置 · ' ~ (textbooks_json|length) ~ ' 本教材可作拆课依据', 'amber', '学时') }}
             </div>
         </div>
-    </section>
+    {% endcall %}
 
     <section class="academic-card course-list-card">
         <div class="academic-card-header">

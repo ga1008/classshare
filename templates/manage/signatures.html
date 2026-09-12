@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block title %}电子签名{% endblock %}
@@ -103,20 +104,8 @@
         <span id="signature-stat-usage">{{ signature_stats.usage_total }}</span>
     </div>
 
-    <div class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>签名</h2>
-                    {{ explain_button(
-                        '签名',
-                        '本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。',
-                        placement='bottom',
-                        label='签名说明'
-                    ) }}
-                </div>
-            </div>
-        </div>
+    {% call page_head('签名',
+        explain='本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。', explain_label='签名说明') %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -132,7 +121,7 @@
                     '签名被课堂材料引用的累计次数。', 'amber', '次') }}
             </div>
         </div>
-    </div>
+    {% endcall %}
 
     <div class="signature-shell">
         <section class="signature-panel signature-library-panel" aria-label="签名列表">

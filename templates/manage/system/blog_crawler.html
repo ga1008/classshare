@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}AI博客管家{% endblock %}
 
@@ -9,15 +10,7 @@
 {% set dashboard = crawler_dashboard %}
 {% set config = dashboard.config %}
 {% set can_manage = current_teacher_is_super_admin %}
-<div class="bc-hero">
-    <div class="bc-hero__icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a8 8 0 0 1 16 0"></path><path d="M4 11v5a3 3 0 0 0 3 3h1"></path><path d="M20 11v5a3 3 0 0 1-3 3h-1"></path><path d="M8 19h8"></path><path d="M9 15h.01"></path><path d="M15 15h.01"></path></svg>
-    </div>
-    <div class="bc-hero__text">
-        <h2>AI博客管家</h2>
-        <p>按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。</p>
-    </div>
-</div>
+{{ page_head('AI博客管家', description='按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。') }}
 
 <div class="bc-toolbar">
     <button type="button" class="btn btn-outline btn-sm" id="bc-refresh-btn">刷新状态</button>

@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {# 成绩与归档域首页：九步流水线（docs §5.6）。数量来自材料检索分类检索器（本人范围）。 #}
 {% from "macros/ui_explanation.html" import explain_button %}
 
@@ -9,15 +10,10 @@
 
 {% block content %}
 <div class="ap-page">
-    <header class="ah-head">
-        <div>
-            <div class="manage-pagehead__title-row">
-                <h2>成绩与归档</h2>
-                {{ explain_button('成绩与归档', '学期末的九步流水线：命题与考核 → 成绩链 → 教务归档 → 课后材料。按顺序做，每一步都能从上一步的数据生成。', placement='bottom', label='成绩与归档说明') }}
-            </div>
-            <p class="ah-lead">我的材料已覆盖 {{ done_steps }} / {{ step_total }} 步</p>
-        </div>
-    </header>
+    {{ page_head('成绩与归档',
+        description='我的材料已覆盖 ' ~ done_steps ~ ' / ' ~ step_total ~ ' 步',
+        explain='学期末的九步流水线：命题与考核 → 成绩链 → 教务归档 → 课后材料。按顺序做，每一步都能从上一步的数据生成。',
+        explain_label='成绩与归档说明') }}
 
     <ol class="ap-steps">
         {% set ns = namespace(group='') %}

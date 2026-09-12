@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {# 教务域首页 = 我的教务日程（docs §5.7）：周视图时间线 + 同步状态卡。数据来自 academic_home_service。 #}
 {% from "macros/ui_explanation.html" import explain_button %}
 
@@ -11,21 +12,17 @@
 {% block content %}
 {% set home = academic_home %}
 <div class="ah-page">
-    <header class="ah-head">
-        <div>
-            <div class="manage-pagehead__title-row">
-                <h2>我的教务日程</h2>
-                {{ explain_button('教务日程', '监考、考试与教务提醒来自教务对接同步和你的日程；与首页「需要处理」同一数据源。可为监考/考试设置邮件提醒。', placement='bottom', label='教务日程说明') }}
-            </div>
-            <p class="ah-lead">本周 {{ home.week_total }} 项{% for item in home.kind_counts %} · {{ item.label }} {{ item.count }}{% endfor %}</p>
-        </div>
+    {% call page_head('我的教务日程',
+        explain='监考、考试与教务提醒来自教务对接同步和你的日程；与首页「需要处理」同一数据源。可为监考/考试设置邮件提醒。',
+        explain_label='教务日程说明') %}
+        <p class="ah-lead">本周 {{ home.week_total }} 项{% for item in home.kind_counts %} · {{ item.label }} {{ item.count }}{% endfor %}</p>
         <nav class="ah-weeknav" aria-label="切换周">
             <a class="btn btn-outline btn-sm" href="?week={{ home.prev_week }}" aria-label="上一周">‹</a>
             <strong>{{ home.week_label }}</strong>
             <a class="btn btn-outline btn-sm" href="?week={{ home.next_week }}" aria-label="下一周">›</a>
             {% if not home.is_current_week %}<a class="dw-link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
         </nav>
-    </header>
+    {% endcall %}
 
     <div class="ah-grid">
         <section class="ah-week" aria-label="本周教务时间线" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">

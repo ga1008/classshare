@@ -1,18 +1,11 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}超管设置{% endblock %}
 
 
 {% block content %}
-<div class="sa-hero">
-    <div class="sa-hero__icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-    </div>
-    <div class="sa-hero__text">
-        <h2>超管教师与反馈接收</h2>
-        <p>设置唯一超级管理员教师。超管教师会在通知区域收到所有问题反馈，并可在问题反馈页查看完整图文内容。普通教师不会收到这些反馈通知。</p>
-    </div>
-</div>
+{{ page_head('超管教师与反馈接收', description='设置唯一超级管理员教师。超管教师会在通知区域收到所有问题反馈，并可在问题反馈页查看完整图文内容。普通教师不会收到这些反馈通知。') }}
 
 <div class="sa-grid">
     <section class="sa-info-card">

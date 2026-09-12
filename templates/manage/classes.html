@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
@@ -22,26 +23,14 @@
 {% if _cnt %}{% set _dept_ns.dist = _dept_ns.dist + [{'label': department, 'value': _cnt}] %}{% endif %}
 {% endfor %}
 <div class="academic-shell class-page-shell">
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>班级</h2>
-                    {{ explain_button(
-                        '班级',
-                        '集中维护班级、系别与学生名单；开课、查看学生与通知可达性都从这里进入。',
-                        placement='bottom',
-                        label='班级说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <button type="button" class="btn btn-outline" id="syncAcademicRosterBtn">从教务系统同步</button>
-                <button type="button" class="btn btn-outline" id="heroTemplateDownloadBtn">名单模板</button>
-                <button type="button" class="btn btn-outline" id="heroCustomClassCreateBtn">自定义班级</button>
-                <button type="button" class="btn btn-primary" id="heroClassCreateBtn">导入新班级</button>
-            </div>
-        </div>
+    {% call page_head('班级',
+        explain='集中维护班级、系别与学生名单；开课、查看学生与通知可达性都从这里进入。', explain_label='班级说明',
+        actions=[
+            {'label': '从教务系统同步', 'variant': 'outline', 'id': 'syncAcademicRosterBtn'},
+            {'label': '名单模板', 'variant': 'outline', 'id': 'heroTemplateDownloadBtn'},
+            {'label': '自定义班级', 'variant': 'outline', 'id': 'heroCustomClassCreateBtn'},
+            {'label': '导入新班级', 'variant': 'primary', 'id': 'heroClassCreateBtn'}
+        ]) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -59,7 +48,7 @@
                     class_stats.custom_class_count ~ ' 个自定义班级 · ' ~ class_stats.academic_synced_class_count ~ ' 个班已教务同步（' ~ class_stats.academic_synced_student_count ~ ' 条学生记录）。', 'violet') }}
             </div>
         </div>
-    </section>
+    {% endcall %}
 
     <section class="class-control-panel" aria-label="班级筛选与搜索">
         <div class="class-control-main">

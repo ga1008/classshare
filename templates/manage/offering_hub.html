@@ -1,4 +1,5 @@
 {% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
 {% block extra_head %}
@@ -20,25 +21,13 @@
 {% set _missing_ai_count = hub_offerings | rejectattr('has_ai_config') | list | length %}
 <div class="academic-shell offering-hub-shell">
     {% include "partials/teaching_stage_bar.html" %}
-    <section class="manage-pagehead">
-        <div class="manage-pagehead__intro">
-            <div>
-                <div class="manage-pagehead__title-row">
-                    <h2>课堂</h2>
-                    {{ explain_button(
-                        '课堂',
-                        '课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动、成绩都发生在课堂里。这里集中查看授课进度与配置缺口。',
-                        placement='bottom',
-                        label='课堂说明'
-                    ) }}
-                </div>
-            </div>
-            <div class="manage-pagehead__actions">
-                <a class="btn btn-outline" href="/manage/teaching/ai">配置 AI 助教</a>
-                <a class="btn btn-outline" href="/manage/academic/course-schedule">课时统计</a>
-                <a class="btn btn-primary" href="/manage/teaching/offerings">去开设课堂</a>
-            </div>
-        </div>
+    {% call page_head('课堂',
+        explain='课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动、成绩都发生在课堂里。这里集中查看授课进度与配置缺口。', explain_label='课堂说明',
+        actions=[
+            {'label': '配置 AI 助教', 'variant': 'outline', 'href': '/manage/teaching/ai'},
+            {'label': '课时统计', 'variant': 'outline', 'href': '/manage/academic/course-schedule'},
+            {'label': '去开设课堂', 'variant': 'primary', 'href': '/manage/teaching/offerings'}
+        ]) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集{% if hub_default_semester_name %} · {{ hub_default_semester_name }}{% endif %}</span>
             <div class="insight-board">
@@ -58,7 +47,7 @@
                     (_combined_count ~ ' 个合班课堂。') if _combined_count else '', 'violet') }}
             </div>
         </div>
-    </section>
+    {% endcall %}
 
     <section class="class-control-panel offering-hub-controls" aria-label="课堂筛选与搜索">
         <div class="class-control-main">
