@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}教务系统对接{% endblock %}
 
@@ -12,23 +13,16 @@
 
 
 {% block content %}
+{{ page_head('教务系统对接', description='教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、班级学生、监考日历与待办提醒可以复用同一套访问方法。',
+    actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'academic-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'academic-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'academic-sync-capability-refresh-btn'}]) }}
 <section class="edu-hero">
     <div class="edu-hero-main">
-        <div class="edu-hero-icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h4"></path><path d="M6 14h8"></path><path d="M17 10h1"></path><path d="M17 14h1"></path></svg>
-        </div>
         <div>
-            <h2>教务系统对接</h2>
-            <p>教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、班级学生、监考日历与待办提醒可以复用同一套访问方法。</p>
+            <h3>对接方式</h3>
             <div class="edu-status-strip">
                 <span class="edu-chip">先验证后保存</span>
                 <span class="edu-chip">密码加密入库</span>
                 <span class="edu-chip">按教师隔离</span>
-            </div>
-            <div class="edu-hero-actions">
-                <button type="button" class="btn btn-outline" id="academic-account-manage-btn">账号管理</button>
-                <button type="button" class="btn btn-primary" id="academic-sync-all-btn">一键同步</button>
-                <button type="button" class="btn btn-outline" id="academic-sync-capability-refresh-btn">刷新同步状态</button>
             </div>
         </div>
     </div>

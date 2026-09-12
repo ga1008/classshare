@@ -1,4 +1,5 @@
 ﻿{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}用户管理{% endblock %}
 
@@ -9,14 +10,11 @@
 
 
 {% block content %}
+{{ page_head('教师账号与超管授权', description='教师账号由超管统一创建。删除账号会停用登录并清理会话，课程、班级、材料和历史记录继续保留。') }}
 <div class="um-hero">
     <section class="um-hero-main">
-        <div class="um-hero-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 11h-6"></path><path d="M19 8v6"></path></svg>
-        </div>
         <div>
-            <h2>教师账号与超管授权</h2>
-            <p>教师账号由超管统一创建。删除账号会停用登录并清理会话，课程、班级、材料和历史记录继续保留。</p>
+            <h3>账号概览</h3>
             <div class="um-seed-note">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
                 初始超管：{{ initial_super_admin_name }}（{{ initial_super_admin_email }}）
