@@ -76,7 +76,7 @@ class ManageNavServiceTests(unittest.TestCase):
             by_domain["academic"],
         )
         self.assertEqual(
-            ["teacher_profile", "work_inbox", "signatures", "signature_workflows", "teacher_credentials", "system_password_resets"],
+            ["teacher_profile", "work_inbox", "me_settings", "me_security", "me_notifications", "me_email", "signatures", "signature_workflows", "teacher_credentials", "system_password_resets"],
             by_domain["me"],
         )
         self.assertTrue(all(item.required_flag == "super_admin" for item in MANAGE_NAV_ITEMS if item.domain == "admin"))

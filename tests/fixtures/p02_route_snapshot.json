@@ -6696,6 +6696,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/me/email",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_email_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/me/inbox",
     "methods": [
       "GET"
@@ -6704,11 +6712,43 @@
     "include_in_schema": true
   },
   {
+    "path": "/manage/me/notifications",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_notifications_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/manage/me/password-resets",
     "methods": [
       "GET"
     ],
     "name": "get_manage_system_password_resets_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/private",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_private_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/security",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_security_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/settings",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_settings_page",
     "include_in_schema": true
   },
   {

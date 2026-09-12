@@ -54631,6 +54631,12 @@ body.manage-embedded-page { background: transparent; }
 @media (max-width: 1000px) { .ah-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) { .ah-day { grid-template-columns: minmax(0, 1fr); gap: 6px; } .ah-day__head { display: flex; gap: 8px; align-items: baseline; } .ah-event { grid-template-columns: minmax(0, 1fr); } }
 
+/* ── 个人中心在壳内（教师）：去掉旧顶栏假设，左子导航由侧栏承担 ── */
+.profile-page--shell .manage-topbar { background: hsl(var(--ls-card) / 0.92); box-shadow: none; }
+.profile-page--shell .profile-workspace { grid-template-columns: minmax(0, 1fr); }
+.profile-page--shell .profile-hero { margin-top: 0; }
+.profile-page--shell .manage-content { max-width: 1280px; }
+
 .manage-embedded-root { min-height: 100vh; }
 .page-header-actions { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: var(--spacing-5); }
 .mobile-toggle { display: none; background: none; border: none; color: hsl(var(--ls-foreground)); cursor: pointer; padding: var(--spacing-2); }

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from ..core import templates
 from ..database import get_db_connection
@@ -117,15 +117,31 @@ def _load_avatar_profile(conn, *, role: str, user_id: int) -> dict[str, Any] | N
     }
 
 
-@router.get("/profile", response_class=HTMLResponse)
-async def profile_page(
-    request: Request,
-    section: str = "overview",
-    tab: str = "all",
-    contact: str = "",
-    scope: int | None = None,
-    user: dict = Depends(get_current_user),
-):
+# 「我的」域在壳内的 section → 导航 key（docs/manage-center-improvement-plan §5.8）。
+_SHELL_SECTION_NAV = {
+    "overview": "teacher_profile",
+    "settings": "me_settings",
+    "security": "me_security",
+    "notifications": "me_notifications",
+    "private": "me_notifications",
+    "email": "me_email",
+}
+_SHELL_SECTION_TITLES = {
+    "overview": "我的概览",
+    "settings": "基础资料",
+    "security": "账号安全",
+    "notifications": "通知与私信",
+    "private": "私信",
+    "email": "邮箱通知",
+}
+
+
+def shell_profile_href(section: str) -> str:
+    section = normalize_profile_section(section)
+    return "/manage/me" if section == "overview" else f"/manage/me/{section}"
+
+
+def _render_profile(request: Request, user: dict, *, section: str, tab: str, contact: str, scope: int | None, in_shell: bool):
     active_section = normalize_profile_section(section)
     initial_tab = "private_message" if active_section == "private" else str(tab or "all")
     if active_section == "notifications" and initial_tab == "private_message":
@@ -135,24 +151,73 @@ async def profile_page(
         profile_context = build_profile_page_context(conn, user, active_section)
         active_section = profile_context["active_section"]
 
-    return templates.TemplateResponse(
-        request,
-        "profile.html",
-        {
-            "request": request,
-            "user_info": user,
-            "page_title": "个人中心",
-            "profile_context": profile_context,
-            "profile": profile_context["profile"],
-            "overview": profile_context["overview"],
-            "portfolio": profile_context.get("portfolio"),
-            "nav_items": profile_context["nav_items"],
-            "active_section": active_section,
-            "initial_tab": initial_tab,
-            "initial_contact": str(contact or ""),
-            "initial_scope": scope,
-        },
-    )
+    nav_items = profile_context["nav_items"]
+    if in_shell:
+        nav_items = [{**item, "href": shell_profile_href(item["section"])} for item in nav_items]
+        profile_context = {**profile_context, "nav_items": nav_items}
+
+    context = {
+        "request": request,
+        "user_info": user,
+        "page_title": _SHELL_SECTION_TITLES.get(active_section, "个人中心") if in_shell else "个人中心",
+        "profile_context": profile_context,
+        "profile": profile_context["profile"],
+        "overview": profile_context["overview"],
+        "portfolio": profile_context.get("portfolio"),
+        "nav_items": nav_items,
+        "active_section": active_section,
+        "initial_tab": initial_tab,
+        "initial_contact": str(contact or ""),
+        "initial_scope": scope,
+        "profile_in_shell": in_shell,
+        "profile_section_base": "/manage/me/" if in_shell else "/profile?section=",
+    }
+    if in_shell:
+        from .ui_parts.common import _build_manage_template_context
+
+        shell = _build_manage_template_context(
+            request, user, page_title=context["page_title"], active_page=_SHELL_SECTION_NAV.get(active_section, "teacher_profile")
+        )
+        context = {**shell, **context}
+    return templates.TemplateResponse(request, "profile.html", context)
+
+
+@router.get("/profile", response_class=HTMLResponse)
+async def profile_page(
+    request: Request,
+    section: str = "overview",
+    tab: str = "all",
+    contact: str = "",
+    scope: int | None = None,
+    user: dict = Depends(get_current_user),
+):
+    if str(user.get("role") or "") == "teacher":
+        # 教师的「我」统一住在工作台壳内；学生路径不变。
+        query = request.url.query
+        target = shell_profile_href(section)
+        params = "&".join(part for part in query.split("&") if part and not part.startswith("section="))
+        return RedirectResponse(url=f"{target}?{params}" if params else target, status_code=302)
+    return _render_profile(request, user, section=section, tab=tab, contact=contact, scope=scope, in_shell=False)
+
+
+def _shell_section_endpoint(section_name: str):
+    async def manage_me_section_page(
+        request: Request,
+        tab: str = "all",
+        contact: str = "",
+        scope: int | None = None,
+        user: dict = Depends(get_current_teacher),
+    ):
+        return _render_profile(request, user, section=section_name, tab=tab, contact=contact, scope=scope, in_shell=True)
+
+    manage_me_section_page.__name__ = f"manage_me_{section_name}_page"
+    return manage_me_section_page
+
+
+# 显式注册每个 section（路由快照与导航契约都按字面路径校验，不用 {section} 通配）。
+router.add_api_route("/manage/me", _shell_section_endpoint("overview"), methods=["GET"], response_class=HTMLResponse, name="manage_me_overview_page")
+for _section in ("settings", "security", "notifications", "private", "email"):
+    router.add_api_route(f"/manage/me/{_section}", _shell_section_endpoint(_section), methods=["GET"], response_class=HTMLResponse, name=f"manage_me_{_section}_page")
 
 
 @router.get("/api/profile/bootstrap", response_class=JSONResponse)

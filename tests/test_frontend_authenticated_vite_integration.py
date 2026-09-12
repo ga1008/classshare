@@ -453,7 +453,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(303, response.status_code)
         location = response.headers.get("location", "")
-        self.assertIn("/profile?section=notifications", location)
+        self.assertIn("/manage/me/notifications", location)
         self.assertTrue(location.endswith("#profile-message-center"))
 
         with _authenticated_client(self.teacher) as client:

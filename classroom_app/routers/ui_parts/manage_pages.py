@@ -105,66 +105,6 @@ async def manage_academic_overview_page(request: Request, week: str = "", user: 
     )
 
 
-@router.get("/manage/me", response_class=HTMLResponse)
-async def manage_me_overview_page(request: Request, user: dict = Depends(require_teacher_domain("me"))):
-    with get_db_connection() as conn:
-        profile_context = build_profile_page_context(conn, user, "overview")
-        signature_context = build_signature_dashboard_context(conn, user)
-        academic_credentials = list_teacher_academic_credentials(conn, int(user["id"]))
-        smart_credentials = list_teacher_smart_classroom_credentials(conn, int(user["id"]))
-        gongwen_credentials = list_teacher_gongwen_credentials(conn, int(user["id"]))
-
-    profile = profile_context["profile"]
-    overview = profile_context["overview"]
-    personal_cards = [
-        {
-            "label": "资料完整度",
-            "value": profile.get("completion", {}).get("percent", 0),
-            "unit": "%",
-            "description": "头像、联系方式、个人简介和心情等资料项。",
-            "href": "/profile?section=settings",
-        },
-        {
-            "label": "通知与私信",
-            "value": int(profile_context.get("notification_unread_count") or 0) + int(profile_context.get("private_unread_count") or 0),
-            "unit": "条",
-            "description": "未读通知和私信会优先显示在个人中心。",
-            "href": "/profile?section=notifications",
-        },
-        {
-            "label": "电子签名",
-            "value": int((signature_context.get("signature_stats") or {}).get("visible_total") or 0),
-            "unit": "份",
-            "description": "用于导出、签章和个人资产管理的手写签名。",
-            "href": canonical_manage_href("signatures"),
-        },
-        {
-            "label": "对接凭据",
-            "value": len(academic_credentials) + len(smart_credentials) + len(gongwen_credentials),
-            "unit": "个",
-            "description": "教务、智慧课堂和公文通个人凭据集中查看。",
-            "href": canonical_manage_href("teacher_credentials"),
-        },
-    ]
-
-    return templates.TemplateResponse(
-        request,
-        "manage/me.html",
-        _build_manage_template_context(
-            request,
-            user,
-            page_title="我的概览",
-            active_page="teacher_profile",
-            extra={
-                "profile_context": profile_context,
-                "profile": profile,
-                "overview": overview,
-                "personal_cards": personal_cards,
-            },
-        ),
-    )
-
-
 @router.get("/manage/me/credentials", response_class=HTMLResponse)
 async def manage_me_credentials_page(request: Request, user: dict = Depends(require_teacher_domain("me"))):
     teacher_id = int(user["id"])

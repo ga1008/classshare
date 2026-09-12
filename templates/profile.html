@@ -1,11 +1,14 @@
-{% extends "base_navbar.html" %}
+{% extends "manage/layout.html" if profile_in_shell|default(false) else "base_navbar.html" %}
+{# 教师在工作台壳内渲染（profile_in_shell），学生沿用旧顶栏；同一模板、同一 section partial。 #}
+{% set _sec = profile_section_base|default("/profile?section=") %}
 
 {% block title %}个人中心 | 课堂平台{% endblock %}
 
-{% block body_class %}page-wrapper profile-page role-{{ profile.role }}{% endblock %}
+{% block body_class %}page-wrapper profile-page role-{{ profile.role }}{% if profile_in_shell|default(false) %} profile-page--shell{% endif %}{% endblock %}
 
+{% block extra_head %}{{ self.css() }}{% endblock %}
 {% block css %}
-{{ super() }}
+{% if not profile_in_shell|default(false) %}{{ super() }}{% endif %}
 {% if active_section == 'signatures' %}
 <link rel="stylesheet" href="{{ asset_url('css/signature_scope_fields.css') }}">
 <style>
@@ -52,6 +55,7 @@
 {% endif %}
 {% endblock %}
 
+{% block content %}{{ self.main_content() }}{% endblock %}
 {% block main_content %}
 {% set current_nav = nav_items | selectattr('active') | map(attribute='label') | first %}
 {% set security_summary = overview.security_summary if overview.security_summary is defined else none %}
@@ -81,10 +85,10 @@
                 </div>
             </div>
             <div class="profile-hero__actions">
-                <a class="btn btn-primary" href="/profile?section={{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
-                {% if profile.role == 'student' and active_section != 'portfolio' %}<a class="btn btn-outline" href="/profile?section=portfolio">成长档案</a>{% endif %}
-                {% if active_section != 'notifications' %}<a class="btn btn-outline" href="/profile?section=notifications">通知</a>{% endif %}
-                {% if active_section != 'private' %}<a class="btn btn-outline" href="/profile?section=private">私信</a>{% endif %}
+                <a class="btn btn-primary" href="{{ _sec }}{{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
+                {% if profile.role == 'student' and active_section != 'portfolio' %}<a class="btn btn-outline" href="{{ _sec }}portfolio">成长档案</a>{% endif %}
+                {% if active_section != 'notifications' %}<a class="btn btn-outline" href="{{ _sec }}notifications">通知</a>{% endif %}
+                {% if active_section != 'private' %}<a class="btn btn-outline" href="{{ _sec }}private">私信</a>{% endif %}
             </div>
         </div>
         <aside class="profile-hero__signal">
@@ -122,11 +126,12 @@
         <div>
             <strong>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</strong>
         </div>
-        <a class="btn btn-outline btn-sm" href="/profile?section=settings#profile-email">去补充</a>
+        <a class="btn btn-outline btn-sm" href="{{ _sec }}settings#profile-email">去补充</a>
     </section>
     {% endif %}
 
     <section class="profile-workspace">
+        {% if not profile_in_shell|default(false) %}
         <aside class="profile-sidebar">
             <nav class="profile-nav profile-band profile-reveal" aria-label="个人中心菜单">
                 {% for item in nav_items %}
@@ -142,6 +147,7 @@
             </nav>
 
         </aside>
+        {% endif %}
 
         <section class="profile-main">
             {% if active_section == 'overview' %}
@@ -930,7 +936,7 @@
 {% endblock %}
 
 {% block scripts %}
-{{ super() }}
+{% if not profile_in_shell|default(false) %}{{ super() }}{% endif %}
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 <script type="module" src="{{ asset_url('js/profile.js') }}"></script>

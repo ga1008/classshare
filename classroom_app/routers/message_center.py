@@ -106,6 +106,11 @@ async def message_center_page(
         params["section"] = "notifications"
         if normalized_tab and normalized_tab != "all":
             params["tab"] = normalized_tab
+    if str(user.get("role") or "") == "teacher":
+        # 教师的消息中心住在工作台壳内（docs/manage-center-improvement-plan §5.8）。
+        section = params.pop("section")
+        query = f"?{urlencode(params)}" if params else ""
+        return RedirectResponse(url=f"/manage/me/{section}{query}#profile-message-center", status_code=303)
     return RedirectResponse(url=f"/profile?{urlencode(params)}#profile-message-center", status_code=303)
 
 
