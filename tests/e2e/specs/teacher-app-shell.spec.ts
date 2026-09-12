@@ -86,7 +86,10 @@ test.describe('P03 teacher app shell (six domains)', () => {
       await page.goto(`${legacyPath}?p03=1`, { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('networkidle').catch(() => undefined);
       expect(new URL(page.url()).pathname).toBe(canonicalPath);
-      expect(new URL(page.url()).searchParams.get('p03')).toBe('1');
+      // 301 本身要透传 query（页面脚本随后可能重写 URL，所以在 HTTP 层校验）。
+      const redirect = await page.request.get(`${legacyPath}?p03=1`, { maxRedirects: 0 });
+      expect(redirect.status()).toBe(301);
+      expect(redirect.headers()['location']).toContain(`${canonicalPath}?p03=1`);
     }
   });
 
@@ -120,6 +123,7 @@ test.describe('P03 teacher app shell (six domains)', () => {
     await expect(page.locator('.manage-nav-domain')).toHaveCount(6);
 
     await page.goto('/logout', { waitUntil: 'domcontentloaded' });
+    await page.setViewportSize({ width: 1440, height: 980 });
     await loginStudent(page, fixture);
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-dashboard-root]')).toBeVisible();

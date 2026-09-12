@@ -1,5 +1,5 @@
 {% from "macros/app_topbar.html" import app_topbar_icon %}
-{% if user_info.role == 'teacher' %}
+{% if user_info.role == 'teacher' and not topbar_in_shell|default(false) %}
 <a href="/manage" class="app-topbar-action app-topbar-action--tone-slate" title="管理中心" aria-label="打开管理中心">
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
     <span class="app-topbar-action__text">
@@ -7,7 +7,7 @@
         <small>管理中心</small>
     </span>
 </a>
-{% else %}
+{% elif user_info.role != 'teacher' %}
 <details class="app-topbar-menu app-topbar-menu--learning">
     <summary class="app-topbar-action app-topbar-action--tone-slate" title="学习工具" aria-label="打开学习工具">
         <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('map') }}</span>

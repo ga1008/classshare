@@ -150,6 +150,10 @@
                     <div class="app-topbar-actions app-topbar-actions--primary manage-context-actions ls-anim-stagger" aria-label="本页常用操作">
                         {% block header_actions %}{% endblock %}
                     </div>
+                    <div class="app-topbar-actions app-topbar-actions--utility manage-utility-actions" aria-label="常用入口">
+                        {% set topbar_in_shell = true %}
+                        {% include "partials/app_topbar_utility_actions.html" %}
+                    </div>
                 </nav>
             </header>
             {% endif %}

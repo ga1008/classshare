@@ -148,7 +148,7 @@ test.describe('unified explanation popover', () => {
 
     await expect(page.locator('.dashboard-hero__eyebrow')).toHaveCount(0);
 
-    const card = page.locator('.dashboard-domain-card[data-explain]').first();
+    const card = page.locator('.dw-domain-card__head[data-explain]').first();
     await expect(card).toBeVisible();
     await expect(card.locator('small')).toHaveCount(0);
     await expect(card).toHaveAttribute('data-explain-text', /.+/);
