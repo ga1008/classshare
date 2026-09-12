@@ -1,0 +1,117 @@
+{# 试卷页分区 partial（P4 拆分自 manage/exams.html，仅搬移不改逻辑） #}
+    <section class="exam-control-panel" aria-label="试卷筛选和排序">
+        <div class="exam-control-row primary">
+            <div class="search-box">
+                <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" id="searchInput" placeholder="搜索试卷名称、描述、标签、状态或题型..." oninput="onSearchInput(this)">
+                <button class="search-clear" id="searchClear" onclick="clearSearch()" title="清除搜索">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="exam-filter-field">
+                <label for="statusFilter">状态</label>
+                <select id="statusFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部状态</option>
+                    <option value="ready">可用</option>
+                    <option value="draft">草稿</option>
+                    <option value="published">已发布</option>
+                    <option value="generating">AI 生成中</option>
+                    <option value="failed">生成失败</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="assignmentFilter">分配</label>
+                <select id="assignmentFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部分配</option>
+                    <option value="unassigned">未分配</option>
+                    <option value="assigned">已分配</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="sourceFilter">来源</label>
+                <select id="sourceFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部来源</option>
+                    <option value="manual">手动 / 导入</option>
+                    <option value="ai">AI 生成</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="structureFilter">结构</label>
+                <select id="structureFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部结构</option>
+                    <option value="objective">客观题</option>
+                    <option value="subjective">主观题</option>
+                    <option value="mixed">混合题型</option>
+                    <option value="empty">未设置题目</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="scopeFilter">开放</label>
+                <select id="scopeFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部范围</option>
+                    <option value="owned">我管理的</option>
+                    <option value="shared">共享给我的</option>
+                    <option value="private">私有</option>
+                    <option value="department">本系部开放</option>
+                    <option value="school">全校开放</option>
+                </select>
+            </div>
+        </div>
+        <div class="exam-control-row secondary">
+            <div class="exam-filter-field">
+                <label for="schoolFilter">学校</label>
+                <select id="schoolFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部学校</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="departmentFilter">系部</label>
+                <select id="departmentFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <option value="all">全部系部</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="sortSelect">排序</label>
+                <select id="sortSelect" class="exam-filter-select" onchange="onSortChange()">
+                    <option value="updated-desc">最近更新</option>
+                    <option value="created-desc">最新创建</option>
+                    <option value="title-asc">名称 A-Z</option>
+                    <option value="assigned-desc">分配次数多</option>
+                    <option value="questions-desc">题量多</option>
+                    <option value="pages-desc">页数多</option>
+                </select>
+            </div>
+            <div class="exam-filter-field">
+                <label for="groupModeSelect">归集</label>
+                <select id="groupModeSelect" class="exam-filter-select" onchange="onGroupModeChange()">
+                    <option value="none">不归集</option>
+                    <option value="status">按状态</option>
+                    <option value="tag">按首个标签</option>
+                    <option value="structure">按题型结构</option>
+                    <option value="source">按来源</option>
+                </select>
+            </div>
+            <div>
+                <span class="exam-quick-label">快速题型</span>
+                <div class="filter-chips" id="filterChips">
+                    <!-- Dynamic filter chips injected by JS -->
+                </div>
+            </div>
+            <div class="tag-dropdown" id="tagDropdown">
+                <button class="tag-dropdown-btn" onclick="toggleTagDropdown(event)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                    标签筛选
+                    <span class="tag-dropdown-count" id="tagDropdownCount" style="display:none;">0</span>
+                </button>
+                <div class="tag-dropdown-menu" id="tagDropdownMenu">
+                    <!-- Dynamic tag options injected by JS -->
+                </div>
+            </div>
+            <button class="clear-filters-btn" id="clearFiltersBtn" onclick="clearAllFilters()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                清除筛选
+            </button>
+        </div>
+        <div class="exam-tag-filter-strip" id="tagFilterStrip"></div>
+        <div class="exam-active-pills" id="activeFilterPills"></div>
+    </section>

@@ -1,0 +1,33 @@
+{# 试卷页分区 partial（P4 拆分自 manage/exams.html，仅搬移不改逻辑） #}
+    <section class="manage-pagehead">
+        <div class="manage-pagehead__intro">
+            <div>
+                <div class="manage-pagehead__title-row">
+                    <h2>试卷</h2>
+                    {{ explain_button(
+                        '试卷',
+                        '按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。',
+                        placement='bottom',
+                        label='试卷说明'
+                    ) }}
+                </div>
+            </div>
+            <div class="manage-pagehead__actions">
+                <a href="/exam/new" class="btn btn-primary">新建试卷</a>
+            </div>
+        </div>
+        <div class="manage-pagehead__insights">
+            <span class="manage-pagehead__sub">信息归集</span>
+            <div class="insight-board">
+                {{ insight_ring('可用率', exam_stats.ready, papers|length,
+                    ((exam_stats.generating ~ ' 份生成中 · ' ~ exam_stats.failed ~ ' 份失败') if (exam_stats.generating or exam_stats.failed) else '试卷均已就绪，可直接分配。'),
+                    'teal', exam_stats.ready ~ ' / ' ~ (papers|length) ~ ' 份') }}
+                {{ insight_ring('已分配率', exam_stats.assigned, papers|length,
+                    '已用于课堂作业/考试的试卷占比。', 'indigo',
+                    exam_stats.assigned ~ ' / ' ~ (papers|length) ~ ' 份') }}
+                {{ insight_bars('题型结构', _exam_profile_dist, exam_stats.ai ~ ' 份由 AI 生成', 'violet') }}
+                {{ insight_meter('题目总量', exam_stats.question_total, 100,
+                    (papers|length) ~ ' 份试卷累计题目数。', 'amber', '题') }}
+            </div>
+        </div>
+    </section>

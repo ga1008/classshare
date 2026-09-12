@@ -1,0 +1,218 @@
+{# 试卷页分区 partial（P4 拆分自 manage/exams.html，仅搬移不改逻辑） #}
+    <section class="exam-board" aria-label="试卷列表">
+        <div class="exam-board-head">
+            <div>
+                <h3 class="exam-board-title">试卷列表</h3>
+                <p class="exam-board-summary" id="examResultSummary">正在整理试卷...</p>
+            </div>
+        </div>
+
+        <div class="exams-grid" id="examsGrid">
+    {% for paper in papers %}
+    {% set is_ai_active = paper.ai_gen_status in ('pending', 'running') %}
+    {% set is_ai_done = paper.ai_gen_status == 'completed' %}
+    {% set is_ai_failed = paper.ai_gen_status == 'failed' %}
+    {% set tags = paper.tags_json or [] %}
+    {% set max_visible_tags = 3 %}
+
+    <div class="card exam-card {% if is_ai_active %}is-generating{% elif is_ai_done %}is-completed{% elif is_ai_failed %}is-failed{% endif %}"
+         id="exam-card-{{ paper.id }}"
+         data-paper-id="{{ paper.id }}"
+         data-status="{{ paper.status or '' }}"
+         data-source="{{ paper.source_type or 'manual' }}"
+         data-question-profile="{{ paper.question_profile or 'empty' }}"
+         data-question-count="{{ paper.question_count|default(0)|int }}"
+         data-page-count="{{ paper.page_count|default(0)|int }}"
+         data-total-points="{{ paper.total_points|default(0) }}"
+         data-assigned-count="{{ paper.assigned_count|int }}"
+         data-created-at="{{ paper.created_at or '' }}"
+         data-updated-at="{{ paper.updated_at or '' }}"
+         data-primary-tag="{{ tags[0] if tags else '' }}"
+         data-scope-level="{{ paper.scope_level or 'private' }}"
+         data-school-name="{{ paper.school_name or '' }}"
+         data-department="{{ paper.department or '' }}"
+         data-ai-gen-status="{{ paper.ai_gen_status or '' }}"
+         data-task-id="{{ paper.ai_gen_task_id or '' }}">
+        <div class="card-body exam-card-body">
+            <div class="exam-card-head">
+                {% if is_ai_active %}
+                <span class="badge badge-generating">
+                    <span class="spinner" style="width: 10px; height: 10px; border-width: 2px; margin-right: 6px;"></span>
+                    AI生成中
+                </span>
+                {% elif is_ai_failed %}
+                <span class="badge badge-danger">生成失败</span>
+                {% elif is_ai_done %}
+                <span class="badge badge-completed">生成完成</span>
+                {% else %}
+                <span class="badge {{ 'badge-success' if paper.status == 'ready' else ('badge-primary' if paper.status == 'published' else 'badge-secondary') }}">
+                    {{ {'draft':'草稿','ready':'就绪', 'published':'已发布'}.get(paper.status, paper.status) }}
+                </span>
+                {% endif %}
+                <div class="exam-date-stack">
+                    <div title="更新时间">更 {{ paper.updated_at[:16] if paper.updated_at else '未知' }}</div>
+                    <div title="创建时间">建 {{ paper.created_at[:10] if paper.created_at else '未知' }}</div>
+                </div>
+            </div>
+
+            <h3 class="exam-title" title="{{ paper.title }}">{{ paper.title }}</h3>
+
+            {% if paper.description %}
+            <div class="exam-desc" title="{{ paper.description }}">{{ paper.description }}</div>
+            {% else %}
+            <div class="exam-desc italic text-muted">暂无描述</div>
+            {% endif %}
+
+            <!-- Tags Display -->
+            {% if tags %}
+            <div class="exam-tags">
+                {% for tag in tags[:max_visible_tags] %}
+                <span class="exam-tag-pill">{{ tag }}</span>
+                {% endfor %}
+                {% if tags|length > max_visible_tags %}
+                <span class="exam-tag-pill exam-tag-more" title="{{ tags[max_visible_tags:] | join(', ') }}">+{{ tags|length - max_visible_tags }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="exam-tags">
+                <span class="exam-tag-pill">{{ paper.scope_label or '私有' }}</span>
+                {% if paper.school_name %}<span class="exam-tag-pill exam-tag-more">{{ paper.school_name }}</span>{% endif %}
+                {% if paper.department %}<span class="exam-tag-pill exam-tag-more">{{ paper.department }}</span>{% endif %}
+                {% if paper.is_shared_paper %}<span class="exam-tag-pill exam-tag-more">共享试卷</span>{% endif %}
+            </div>
+
+            <!-- AI生成进度显示 -->
+            {% if is_ai_active %}
+            <div class="ai-gen-progress-container">
+                <div class="ai-gen-progress-bar">
+                    <div class="ai-gen-progress-fill" id="progress-fill-{{ paper.id }}" style="width: 15%;"></div>
+                </div>
+                <div class="ai-gen-status-text">
+                    <span class="spinner" style="display: inline-block;"></span>
+                    <span id="status-text-{{ paper.id }}">{% if paper.ai_gen_status == 'pending' %}排队等待AI处理...{% else %}AI正在生成试卷，请稍候...{% endif %}</span>
+                </div>
+            </div>
+            {% elif is_ai_failed %}
+            <div class="ai-gen-error">
+                <strong>生成失败:</strong> {{ paper.ai_gen_error or '未知错误，请删除后重试。' }}
+            </div>
+            {% endif %}
+
+            <div class="exam-meta-grid">
+                <div class="meta-item" title="题目页数">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <span>页数</span>
+                    <strong>{% if is_ai_active %}生成中{% else %}{{ paper.page_count|default(0)|int }} 页{% endif %}</strong>
+                </div>
+                <div class="meta-item" title="题目数量">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                    <span>题量</span>
+                    <strong>{{ paper.question_count|default(0)|int }} 题</strong>
+                </div>
+                <div class="meta-item" title="总分">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
+                    <span>总分</span>
+                    <strong>{{ paper.total_points|default(0) }}</strong>
+                </div>
+                <div class="meta-item" title="已分配班级数">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <span>分配</span>
+                    <strong>{{ paper.assigned_count }} 次</strong>
+                </div>
+            </div>
+
+            {% if paper.ordinary_grade_usages %}
+            <details class="ordinary-grade-usage-panel">
+                <summary>
+                    <span>课堂任务分类</span>
+                    <small class="ordinary-grade-usage-panel__count">{{ paper.ordinary_grade_usages|length }} 个课堂任务</small>
+                </summary>
+                <div class="ordinary-grade-usage-panel__body">
+                    {% for usage in paper.ordinary_grade_usages %}
+                    <div>
+                        <span class="ordinary-grade-usage-panel__context" title="{{ usage.course_name }} · {{ usage.class_name }} · {{ usage.assignment_title }}">
+                            <strong>{{ usage.course_name }} · {{ usage.class_name }}</strong>
+                            <span>{{ usage.assignment_title }}{% if usage.semester_display %} · {{ usage.semester_display }}{% endif %}</span>
+                        </span>
+                        {% with assessment=usage %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+
+            <div class="exam-actions">
+                <button class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="exam_paper" data-resource-id="{{ paper.id }}">
+                    属性
+                </button>
+                {% if is_ai_active %}
+                <button class="btn btn-outline btn-sm" disabled style="opacity: 0.5; cursor: not-allowed;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    内容
+                </button>
+                <button class="btn btn-primary btn-sm" disabled style="opacity: 0.5; cursor: not-allowed;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    分配
+                </button>
+                <button class="btn btn-ghost btn-sm" style="flex: 0 0 auto; padding: 0 8px; color: #d97706;" onclick="cancelAIGeneration('{{ paper.id }}', '{{ paper.ai_gen_task_id }}')" title="取消生成">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                {% elif is_ai_failed %}
+                {% if paper.can_manage %}
+                <button class="btn btn-outline btn-sm" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' style="color: #dc2626;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    删除
+                </button>
+                <a href="/exam/new?retry_from={{ paper.id }}" class="btn btn-primary btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                    重新生成
+                </a>
+                {% else %}
+                <button class="btn btn-outline btn-sm" disabled style="opacity: 0.58; cursor: not-allowed;">共享失败记录</button>
+                {% endif %}
+                {% else %}
+                {% if paper.can_manage %}
+                <a href="/exam/{{ paper.id }}/edit" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    内容
+                </a>
+                {% else %}
+                <button class="btn btn-outline btn-sm" disabled style="opacity: 0.58; cursor: not-allowed;">
+                    只读共享
+                </button>
+                {% endif %}
+                <button class="btn btn-outline btn-sm" onclick='openPaperPreview({{ paper.id|tojson }})'>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path></svg>
+                    查看
+                </button>
+                <button class="btn btn-primary btn-sm" onclick='openAssignModal({{ paper.id|tojson }}, {{ paper.title|tojson }})'>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    分配
+                </button>
+                {% if paper.can_manage %}
+                <button class="btn btn-ghost btn-sm" style="flex: 0 0 auto; padding: 0 8px; color: #6366f1;" onclick="openTagPopover('{{ paper.id }}', this)" title="管理标签">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                </button>
+                <button class="btn btn-ghost btn-sm text-danger" style="flex: 0 0 auto; padding: 0 8px;" onclick='deletePaper({{ paper.id|tojson }}, {{ paper.title|tojson }})' title="删除试卷">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+        </div>
+    </section>
+
+<!-- No Results Message -->
+    <div class="no-results card" id="noResults">
+    <div class="card-body text-center" style="padding: var(--spacing-8) var(--spacing-6);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-3"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        <h3 style="font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin-bottom: var(--spacing-2);">没有匹配的试卷</h3>
+        <p class="text-muted" style="font-size: 0.875rem; margin-bottom: var(--spacing-4);">尝试调整搜索条件或筛选条件</p>
+        <button class="btn btn-outline btn-sm" onclick="clearAllFilters()">清除所有筛选</button>
+    </div>
+    </div>
+</div>

@@ -1,0 +1,1494 @@
+{# 试卷页分区 partial（P4 拆分自 manage/exams.html，仅搬移不改逻辑） #}
+<script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
+<script type="module" src="{{ asset_url('js/assessment_kind_controls.js') }}"></script>
+<script>
+    // ===== Paper data for client-side filtering =====
+    const papersData = [
+        {% for paper in papers %}
+        {
+            id: "{{ paper.id }}",
+            title: {{ paper.title | tojson }},
+            description: {{ (paper.description or '') | tojson }},
+            tags: {{ (paper.tags_json or []) | tojson }},
+            questionTypes: {{ (paper.question_types or []) | tojson }},
+            questionTypeCounts: {{ (paper.question_type_counts or {}) | tojson }},
+            assignedCount: {{ paper.assigned_count | int }},
+            aiStatus: "{{ paper.ai_gen_status or '' }}",
+            status: "{{ paper.status or '' }}",
+            sourceType: "{{ paper.source_type or 'manual' }}",
+            scopeLevel: "{{ paper.scope_level or 'private' }}",
+            scopeLabel: {{ (paper.scope_label or '私有') | tojson }},
+            schoolName: {{ (paper.school_name or '') | tojson }},
+            department: {{ (paper.department or '') | tojson }},
+            isOwned: {{ 'true' if paper.is_owned else 'false' }},
+            questionProfile: "{{ paper.question_profile or 'empty' }}",
+            pageCount: {{ paper.page_count | default(0) | int }},
+            questionCount: {{ paper.question_count | default(0) | int }},
+            totalPoints: {{ paper.total_points | default(0) }},
+            createdAt: "{{ paper.created_at or '' }}",
+            updatedAt: "{{ paper.updated_at or '' }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    // ===== Constants =====
+    const QT_LABELS = {
+        'radio': '单选题',
+        'checkbox': '多选题',
+        'text': '填空题',
+        'textarea': '简答题'
+    };
+    const STATUS_LABELS = {
+        draft: '草稿',
+        ready: '可用',
+        published: '已发布',
+        generating: 'AI 生成中',
+        failed: '生成失败'
+    };
+    const SOURCE_LABELS = {
+        manual: '手动 / 导入',
+        ai: 'AI 生成'
+    };
+    const PROFILE_LABELS = {
+        objective: '客观题',
+        subjective: '主观题',
+        mixed: '混合题型',
+        empty: '未设置题目'
+    };
+    const SCOPE_LABELS = {
+        private: '私有',
+        department: '本系部开放',
+        school: '全校开放',
+        owned: '我管理的',
+        shared: '共享给我的'
+    };
+    const SORT_LABELS = {
+        'updated-desc': '最近更新',
+        'created-desc': '最新创建',
+        'title-asc': '名称 A-Z',
+        'assigned-desc': '分配次数多',
+        'questions-desc': '题量多',
+        'pages-desc': '页数多'
+    };
+    const GROUP_LABELS = {
+        none: '不归集',
+        status: '按状态',
+        tag: '按首个标签',
+        structure: '按题型结构',
+        source: '按来源'
+    };
+    const MAX_VISIBLE_TAGS = 3;
+    const COLLAPSED_GROUP_STORAGE_KEY = 'manage:exams:collapsed-groups:v1';
+
+    // ===== Filter State =====
+    let searchQuery = '';
+    let activeFilters = new Set();
+    let selectedFilterTags = new Set();
+    let statusFilter = 'all';
+    let assignmentFilter = 'all';
+    let sourceFilter = 'all';
+    let structureFilter = 'all';
+    let scopeFilter = 'all';
+    let schoolFilter = 'all';
+    let departmentFilter = 'all';
+    let sortMode = 'updated-desc';
+    let groupMode = 'none';
+    let collapsedExamGroups = loadCollapsedExamGroups();
+
+    // ===== Tag Popover State =====
+    let currentTagPaperId = null;
+
+    // ===== Material Reverse State =====
+    const MATERIAL_REVERSE_TARGETS = {
+        assessment_plan: {
+            title: '反推考核计划表',
+            listTitle: '选择用于生成考核计划表的试卷',
+            buttonText: '生成考核计划表',
+            emptyText: '暂无可反推的试卷，请先完成试卷题目和分值设置。'
+        },
+        grading_rubric: {
+            title: '反推评分细则表',
+            listTitle: '选择用于生成评分细则表的试卷',
+            buttonText: '生成评分细则表',
+            emptyText: '暂无可反推的试卷，请先补齐试卷每题分值、标准答案、评分指导和扣分点。'
+        }
+    };
+    let materialReverseTargetType = '';
+    let materialReverseSelectedPaperId = '';
+
+    // ===== Computed: all unique tags & available question types =====
+    function collectTagsByRecentPapers() {
+        const seen = new Set();
+        const timeValue = value => {
+            const parsed = Date.parse(value || '');
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+        return [...papersData]
+            .sort((a, b) => (timeValue(b.updatedAt || b.createdAt) - timeValue(a.updatedAt || a.createdAt)))
+            .flatMap(p => p.tags || [])
+            .filter(tag => {
+                if (!tag || seen.has(tag)) return false;
+                seen.add(tag);
+                return true;
+            });
+    }
+    const allTags = collectTagsByRecentPapers();
+    const allSchools = [...new Set(papersData.map(p => p.schoolName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    const allDepartments = [...new Set(papersData.map(p => p.department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    const availableTypes = new Set();
+    papersData.forEach(p => p.questionTypes.forEach(t => availableTypes.add(t)));
+    papersData.forEach(refreshPaperDerivedFields);
+
+    function loadCollapsedExamGroups() {
+        try {
+            return new Set(JSON.parse(localStorage.getItem(COLLAPSED_GROUP_STORAGE_KEY) || '[]'));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    function saveCollapsedExamGroups() {
+        try {
+            localStorage.setItem(COLLAPSED_GROUP_STORAGE_KEY, JSON.stringify([...collapsedExamGroups]));
+        } catch (e) {
+            // Ignore storage errors in private browsing or restricted contexts.
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch]));
+    }
+
+    function refreshPaperDerivedFields(paper) {
+        paper.tags = Array.isArray(paper.tags) ? paper.tags : [];
+        paper.questionTypes = Array.isArray(paper.questionTypes) ? paper.questionTypes : [];
+        paper.primaryTag = paper.tags[0] || '';
+        paper.tagText = paper.tags.join(' ');
+        paper.statusKey = resolveStatusKey(paper);
+        paper.statusLabel = STATUS_LABELS[paper.statusKey] || paper.status || '未知状态';
+        paper.sourceLabel = SOURCE_LABELS[paper.sourceType] || '手动 / 导入';
+        paper.scopeLabel = paper.scopeLabel || SCOPE_LABELS[paper.scopeLevel] || '私有';
+        paper.profileLabel = PROFILE_LABELS[paper.questionProfile] || '未设置题目';
+        paper.questionTypeText = paper.questionTypes.map(t => QT_LABELS[t] || t).join(' ');
+    }
+
+    function resolveStatusKey(paper) {
+        if (paper.aiStatus === 'pending' || paper.aiStatus === 'running') return 'generating';
+        if (paper.aiStatus === 'failed') return 'failed';
+        if (paper.status === 'published') return 'published';
+        if (paper.status === 'ready' || paper.aiStatus === 'completed') return 'ready';
+        return 'draft';
+    }
+
+    // ===== Init: build filter chips =====
+    function buildFilterChips() {
+        const container = document.getElementById('filterChips');
+        if (!container) return;
+
+        let html = '';
+        html += `<button class="filter-chip" data-filter="unassigned" onclick="toggleFilter('unassigned', this)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+            未分配
+        </button>`;
+
+        const typeOrder = ['radio', 'checkbox', 'text', 'textarea'];
+        for (const qt of typeOrder) {
+            if (availableTypes.has(qt)) {
+                html += `<button class="filter-chip" data-filter="${qt}" onclick="toggleFilter('${qt}', this)">${QT_LABELS[qt] || qt}</button>`;
+            }
+        }
+
+        container.innerHTML = html;
+    }
+
+    // ===== Init: build tag filter dropdown =====
+    function buildTagDropdown() {
+        const menu = document.getElementById('tagDropdownMenu');
+        if (!menu) return;
+
+        if (allTags.length === 0) {
+            menu.innerHTML = '<div class="tag-dropdown-empty">暂无标签，请在试卷卡片上添加</div>';
+            return;
+        }
+
+        menu.innerHTML = allTags.map((tag, index) =>
+            `<label class="tag-option">
+                <input type="checkbox" data-tag-index="${index}" ${selectedFilterTags.has(tag) ? 'checked' : ''}>
+                <span>${escapeHtml(tag)}</span>
+            </label>`
+        ).join('');
+        menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const tag = allTags[Number(cb.dataset.tagIndex)];
+                toggleFilterTag(tag, cb.checked);
+            });
+        });
+    }
+
+    function buildTagFilterStrip() {
+        const strip = document.getElementById('tagFilterStrip');
+        if (!strip) return;
+        if (allTags.length === 0) {
+            strip.innerHTML = '';
+            return;
+        }
+        strip.innerHTML = allTags.map((tag, index) => `
+            <button type="button" class="exam-tag-filter-btn ${selectedFilterTags.has(tag) ? 'is-active' : ''}" onclick="toggleFilterTagByIndex(${index})">
+                # ${escapeHtml(tag)}
+            </button>
+        `).join('');
+    }
+
+    function toggleFilterTagByIndex(index) {
+        const tag = allTags[Number(index)];
+        if (!tag) return;
+        toggleFilterTag(tag, !selectedFilterTags.has(tag));
+    }
+
+    function buildOrgFilterOptions() {
+        const schoolSelect = document.getElementById('schoolFilter');
+        const departmentSelect = document.getElementById('departmentFilter');
+        if (schoolSelect) {
+            schoolSelect.innerHTML = '<option value="all">全部学校</option>' + allSchools.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+        }
+        if (departmentSelect) {
+            departmentSelect.innerHTML = '<option value="all">全部系部</option>' + allDepartments.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+        }
+    }
+
+    // ===== Search =====
+    function onSearchInput(el) {
+        searchQuery = el.value.trim().toLowerCase();
+        const clear = document.getElementById('searchClear');
+        if (clear) clear.style.display = searchQuery ? 'block' : 'none';
+        applyFilters();
+    }
+
+    function clearSearch(shouldApply = true) {
+        const input = document.getElementById('searchInput');
+        if (input) input.value = '';
+        searchQuery = '';
+        const clear = document.getElementById('searchClear');
+        if (clear) clear.style.display = 'none';
+        if (shouldApply) applyFilters();
+    }
+
+    function readFilterControls() {
+        statusFilter = document.getElementById('statusFilter')?.value || 'all';
+        assignmentFilter = document.getElementById('assignmentFilter')?.value || 'all';
+        sourceFilter = document.getElementById('sourceFilter')?.value || 'all';
+        structureFilter = document.getElementById('structureFilter')?.value || 'all';
+        scopeFilter = document.getElementById('scopeFilter')?.value || 'all';
+        schoolFilter = document.getElementById('schoolFilter')?.value || 'all';
+        departmentFilter = document.getElementById('departmentFilter')?.value || 'all';
+        sortMode = document.getElementById('sortSelect')?.value || 'updated-desc';
+        groupMode = document.getElementById('groupModeSelect')?.value || 'none';
+    }
+
+    function onFilterControlChange() {
+        readFilterControls();
+        applyFilters();
+    }
+
+    function onSortChange() {
+        readFilterControls();
+        applyFilters();
+    }
+
+    function onGroupModeChange() {
+        readFilterControls();
+        applyFilters();
+    }
+
+    // ===== Filter Chips =====
+    function toggleFilter(filterKey, btnEl) {
+        if (activeFilters.has(filterKey)) {
+            activeFilters.delete(filterKey);
+            btnEl.classList.remove('active');
+        } else {
+            activeFilters.add(filterKey);
+            btnEl.classList.add('active');
+        }
+        applyFilters();
+    }
+
+    // ===== Tag Filter Dropdown =====
+    function toggleTagDropdown(e) {
+        e.stopPropagation();
+        const menu = document.getElementById('tagDropdownMenu');
+        if (menu) menu.classList.toggle('open');
+    }
+
+    function toggleFilterTag(tag, checked) {
+        if (checked) {
+            selectedFilterTags.add(tag);
+        } else {
+            selectedFilterTags.delete(tag);
+        }
+        updateTagDropdownUI();
+        buildTagFilterStrip();
+        applyFilters();
+    }
+
+    function updateTagDropdownUI() {
+        const count = selectedFilterTags.size;
+        const countEl = document.getElementById('tagDropdownCount');
+        const btnEl = document.querySelector('.tag-dropdown-btn');
+
+        if (count > 0) {
+            if (countEl) {
+                countEl.textContent = count;
+                countEl.style.display = 'inline-flex';
+            }
+            if (btnEl) btnEl.classList.add('has-selection');
+        } else {
+            if (countEl) countEl.style.display = 'none';
+            if (btnEl) btnEl.classList.remove('has-selection');
+        }
+    }
+
+    // ===== Clear All Filters =====
+    function clearAllFilters() {
+        clearSearch(false);
+
+        activeFilters.clear();
+        document.querySelectorAll('.filter-chip').forEach(chip => chip.classList.remove('active'));
+
+        selectedFilterTags.clear();
+        document.querySelectorAll('#tagDropdownMenu input[type="checkbox"]').forEach(cb => cb.checked = false);
+        updateTagDropdownUI();
+        buildTagFilterStrip();
+
+        ['statusFilter', 'assignmentFilter', 'sourceFilter', 'structureFilter', 'scopeFilter', 'schoolFilter', 'departmentFilter'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = 'all';
+        });
+        readFilterControls();
+        applyFilters();
+    }
+
+    // ===== Apply Filters =====
+    function applyFilters() {
+        readFilterControls();
+        const grid = document.getElementById('examsGrid');
+        if (!grid) return;
+
+        const visiblePapers = sortPapers(papersData.filter(matchesPaper));
+        renderExamCards(visiblePapers);
+        renderFilterSummary(visiblePapers.length);
+        renderActiveFilterPills();
+
+        const noResults = document.getElementById('noResults');
+        if (noResults) {
+            noResults.classList.toggle('visible', visiblePapers.length === 0);
+        }
+
+        const clearBtn = document.getElementById('clearFiltersBtn');
+        if (clearBtn) {
+            clearBtn.classList.toggle('visible', hasActiveFilterState());
+        }
+    }
+
+    function matchesPaper(paper) {
+        if (searchQuery) {
+            const haystack = [
+                paper.title,
+                paper.description,
+                paper.tagText,
+                paper.statusLabel,
+                paper.sourceLabel,
+                paper.scopeLabel,
+                paper.schoolName,
+                paper.department,
+                paper.profileLabel,
+                paper.questionTypeText
+            ].join(' ').toLowerCase();
+            if (!haystack.includes(searchQuery)) return false;
+        }
+
+        if (statusFilter !== 'all' && paper.statusKey !== statusFilter) return false;
+        if (assignmentFilter === 'assigned' && paper.assignedCount <= 0) return false;
+        if (assignmentFilter === 'unassigned' && paper.assignedCount > 0) return false;
+        if (sourceFilter !== 'all' && paper.sourceType !== sourceFilter) return false;
+        if (structureFilter !== 'all' && paper.questionProfile !== structureFilter) return false;
+        if (scopeFilter === 'owned' && !paper.isOwned) return false;
+        if (scopeFilter === 'shared' && paper.isOwned) return false;
+        if (['private', 'department', 'school'].includes(scopeFilter) && paper.scopeLevel !== scopeFilter) return false;
+        if (schoolFilter !== 'all' && paper.schoolName !== schoolFilter) return false;
+        if (departmentFilter !== 'all' && paper.department !== departmentFilter) return false;
+
+        for (const filter of activeFilters) {
+            if (filter === 'unassigned') {
+                if (paper.assignedCount > 0) return false;
+            } else if (!paper.questionTypes.includes(filter)) {
+                return false;
+            }
+        }
+
+        if (selectedFilterTags.size > 0) {
+            return [...selectedFilterTags].some(tag => paper.tags.includes(tag));
+        }
+        return true;
+    }
+
+    function sortPapers(papers) {
+        const sorted = [...papers];
+        const timeValue = value => {
+            const parsed = Date.parse(value || '');
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const compareTitle = (a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN');
+        sorted.sort((a, b) => {
+            let result = 0;
+            if (sortMode === 'created-desc') {
+                result = timeValue(b.createdAt) - timeValue(a.createdAt);
+            } else if (sortMode === 'title-asc') {
+                result = compareTitle(a, b);
+            } else if (sortMode === 'assigned-desc') {
+                result = b.assignedCount - a.assignedCount;
+            } else if (sortMode === 'questions-desc') {
+                result = b.questionCount - a.questionCount;
+            } else if (sortMode === 'pages-desc') {
+                result = b.pageCount - a.pageCount;
+            } else {
+                result = timeValue(b.updatedAt) - timeValue(a.updatedAt);
+            }
+            return result || compareTitle(a, b);
+        });
+        return sorted;
+    }
+
+    function getCardForPaper(paperId) {
+        return document.getElementById(`exam-card-${paperId}`);
+    }
+
+    function getCardParking(grid) {
+        let parking = document.getElementById('examCardParking');
+        if (!parking) {
+            parking = document.createElement('div');
+            parking.id = 'examCardParking';
+            parking.hidden = true;
+            grid.appendChild(parking);
+        }
+        return parking;
+    }
+
+    function renderExamCards(visiblePapers) {
+        const grid = document.getElementById('examsGrid');
+        if (!grid) return;
+
+        const parking = getCardParking(grid);
+        grid.querySelectorAll('.exam-card').forEach(card => {
+            card.hidden = true;
+            parking.appendChild(card);
+        });
+        grid.querySelectorAll('.exam-group-section').forEach(section => section.remove());
+
+        grid.classList.toggle('is-grouped', groupMode !== 'none');
+        if (groupMode === 'none') {
+            visiblePapers.forEach(paper => {
+                const card = getCardForPaper(paper.id);
+                if (card) {
+                    card.hidden = false;
+                    grid.appendChild(card);
+                }
+            });
+            grid.appendChild(parking);
+            return;
+        }
+
+        const groups = buildExamGroups(visiblePapers);
+        groups.forEach(group => {
+            const section = document.createElement('section');
+            section.className = 'exam-group-section';
+            section.dataset.collapseKey = group.collapseKey;
+            const collapsed = collapsedExamGroups.has(group.collapseKey);
+            section.classList.toggle('is-collapsed', collapsed);
+            section.innerHTML = `
+                <button type="button" class="exam-group-toggle" aria-expanded="${collapsed ? 'false' : 'true'}" onclick="toggleExamGroup(this)">
+                    <span class="exam-group-caret">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+                    </span>
+                    <span class="exam-group-title">${escapeHtml(group.label)}</span>
+                    <span class="exam-group-meta">${group.items.length} 份试卷</span>
+                    <span class="exam-group-meta">${escapeHtml(group.meta)}</span>
+                </button>
+                <div class="exam-group-body" style="max-height:${collapsed ? '0px' : 'none'};">
+                    <div class="exam-group-grid"></div>
+                </div>
+            `;
+            const groupGrid = section.querySelector('.exam-group-grid');
+            group.items.forEach(paper => {
+                const card = getCardForPaper(paper.id);
+                if (card) {
+                    card.hidden = false;
+                    groupGrid.appendChild(card);
+                }
+            });
+            grid.appendChild(section);
+        });
+        grid.appendChild(parking);
+    }
+
+    function buildExamGroups(papers) {
+        const groupMap = new Map();
+        papers.forEach(paper => {
+            const group = getGroupInfo(paper);
+            if (!groupMap.has(group.key)) {
+                groupMap.set(group.key, {
+                    ...group,
+                    collapseKey: `${groupMode}:${group.key}`,
+                    items: []
+                });
+            }
+            groupMap.get(group.key).items.push(paper);
+        });
+        return [...groupMap.values()].sort((a, b) => (a.order - b.order) || a.label.localeCompare(b.label, 'zh-Hans-CN'));
+    }
+
+    function getGroupInfo(paper) {
+        if (groupMode === 'status') {
+            const order = { generating: 0, failed: 1, ready: 2, published: 3, draft: 4 };
+            return { key: paper.statusKey, label: paper.statusLabel, order: order[paper.statusKey] ?? 10, meta: paper.sourceLabel };
+        }
+        if (groupMode === 'tag') {
+            const tag = paper.primaryTag || '未标记';
+            return { key: paper.primaryTag || '__untagged', label: paper.primaryTag ? `# ${paper.primaryTag}` : '未标记', order: paper.primaryTag ? 0 : 99, meta: paper.profileLabel };
+        }
+        if (groupMode === 'structure') {
+            const order = { mixed: 0, objective: 1, subjective: 2, empty: 3 };
+            return { key: paper.questionProfile, label: paper.profileLabel, order: order[paper.questionProfile] ?? 10, meta: `${paper.questionCount} 题` };
+        }
+        if (groupMode === 'source') {
+            const order = { ai: 0, manual: 1 };
+            return { key: paper.sourceType, label: paper.sourceLabel, order: order[paper.sourceType] ?? 10, meta: paper.statusLabel };
+        }
+        return { key: 'all', label: '全部试卷', order: 0, meta: '' };
+    }
+
+    function toggleExamGroup(btn) {
+        const section = btn.closest('.exam-group-section');
+        const body = section?.querySelector('.exam-group-body');
+        if (!section || !body) return;
+
+        const willCollapse = !section.classList.contains('is-collapsed');
+        if (willCollapse) {
+            body.style.maxHeight = `${body.scrollHeight}px`;
+            requestAnimationFrame(() => {
+                section.classList.add('is-collapsed');
+                body.style.maxHeight = '0px';
+                btn.setAttribute('aria-expanded', 'false');
+            });
+            collapsedExamGroups.add(section.dataset.collapseKey);
+        } else {
+            section.classList.remove('is-collapsed');
+            body.style.maxHeight = `${body.scrollHeight}px`;
+            btn.setAttribute('aria-expanded', 'true');
+            setTimeout(() => {
+                if (!section.classList.contains('is-collapsed')) body.style.maxHeight = 'none';
+            }, 260);
+            collapsedExamGroups.delete(section.dataset.collapseKey);
+        }
+        saveCollapsedExamGroups();
+    }
+
+    function renderFilterSummary(visibleCount) {
+        const summary = document.getElementById('examResultSummary');
+        if (!summary) return;
+        const groupText = groupMode === 'none' ? '未归集' : GROUP_LABELS[groupMode];
+        summary.textContent = `当前显示 ${visibleCount} / ${papersData.length} 份试卷 · ${SORT_LABELS[sortMode] || '最近更新'} · ${groupText}`;
+    }
+
+    function renderActiveFilterPills() {
+        const container = document.getElementById('activeFilterPills');
+        if (!container) return;
+        const pills = [];
+        if (searchQuery) pills.push(`搜索：${searchQuery}`);
+        if (statusFilter !== 'all') pills.push(`状态：${STATUS_LABELS[statusFilter] || statusFilter}`);
+        if (assignmentFilter !== 'all') pills.push(`分配：${assignmentFilter === 'assigned' ? '已分配' : '未分配'}`);
+        if (sourceFilter !== 'all') pills.push(`来源：${SOURCE_LABELS[sourceFilter] || sourceFilter}`);
+        if (structureFilter !== 'all') pills.push(`结构：${PROFILE_LABELS[structureFilter] || structureFilter}`);
+        if (scopeFilter !== 'all') pills.push(`开放：${SCOPE_LABELS[scopeFilter] || scopeFilter}`);
+        if (schoolFilter !== 'all') pills.push(`学校：${schoolFilter}`);
+        if (departmentFilter !== 'all') pills.push(`系部：${departmentFilter}`);
+        activeFilters.forEach(filter => pills.push(filter === 'unassigned' ? '快速：未分配' : `题型：${QT_LABELS[filter] || filter}`));
+        selectedFilterTags.forEach(tag => pills.push(`标签：${tag}`));
+        if (sortMode !== 'updated-desc') pills.push(`排序：${SORT_LABELS[sortMode] || sortMode}`);
+        if (groupMode !== 'none') pills.push(`归集：${GROUP_LABELS[groupMode] || groupMode}`);
+
+        container.innerHTML = pills.map(text => `<span class="exam-active-pill">${escapeHtml(text)}</span>`).join('');
+    }
+
+    function hasActiveFilterState() {
+        return Boolean(
+            searchQuery ||
+            activeFilters.size > 0 ||
+            selectedFilterTags.size > 0 ||
+            statusFilter !== 'all' ||
+            assignmentFilter !== 'all' ||
+            sourceFilter !== 'all' ||
+            structureFilter !== 'all' ||
+            scopeFilter !== 'all' ||
+            schoolFilter !== 'all' ||
+            departmentFilter !== 'all'
+        );
+    }
+
+    // ===== Tag Popover =====
+    function openTagPopover(paperId, btnEl) {
+        closeTagPopover(); // close any existing
+
+        currentTagPaperId = paperId;
+        const popover = document.getElementById('tagPopover');
+        const rect = btnEl.getBoundingClientRect();
+
+        // Position popover
+        const popWidth = 300;
+        let top = rect.bottom + 8;
+        let left = rect.right - popWidth;
+
+        // Keep within viewport
+        if (left < 8) left = 8;
+        if (left + popWidth > window.innerWidth - 8) left = window.innerWidth - popWidth - 8;
+        if (top + 260 > window.innerHeight) {
+            top = rect.top - 260;
+        }
+
+        popover.style.top = top + 'px';
+        popover.style.left = left + 'px';
+
+        renderTagPopoverContent();
+        popover.classList.add('active');
+
+        // Focus input
+        setTimeout(() => {
+            const input = document.getElementById('tagPopoverInput');
+            if (input) input.focus();
+        }, 50);
+    }
+
+    function closeTagPopover() {
+        const popover = document.getElementById('tagPopover');
+        if (popover) popover.classList.remove('active');
+        currentTagPaperId = null;
+    }
+
+    function renderTagPopoverContent() {
+        const container = document.getElementById('tagPopoverTags');
+        const paper = papersData.find(p => p.id === currentTagPaperId);
+        if (!container || !paper) return;
+
+        if (paper.tags.length === 0) {
+            container.innerHTML = '<div class="tag-popover-empty">暂无标签</div>';
+        } else {
+            container.innerHTML = paper.tags.map((tag, i) =>
+                `<span class="tag-popover-tag">
+                    ${escapeHtml(tag)}
+                    <span class="tag-remove" onclick="removeTagFromPopover(${i})" title="删除标签">&times;</span>
+                </span>`
+            ).join('');
+        }
+
+        // Reset input
+        const input = document.getElementById('tagPopoverInput');
+        if (input) input.value = '';
+    }
+
+    function onTagInputKeydown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addTagFromPopover();
+        } else if (e.key === 'Escape') {
+            closeTagPopover();
+        }
+    }
+
+    async function addTagFromPopover() {
+        const input = document.getElementById('tagPopoverInput');
+        const newTag = (input.value || '').trim();
+
+        if (!newTag) return;
+        if (newTag.length > 10) {
+            if (window.showMessage) window.showMessage('标签长度不能超过 10 个字', 'warning');
+            return;
+        }
+
+        const paper = papersData.find(p => p.id === currentTagPaperId);
+        if (!paper) return;
+
+        if (paper.tags.includes(newTag)) {
+            if (window.showMessage) window.showMessage('该标签已存在', 'warning');
+            return;
+        }
+
+        if (paper.tags.length >= 20) {
+            if (window.showMessage) window.showMessage('标签数量不能超过 20 个', 'warning');
+            return;
+        }
+
+        const updatedTags = [...paper.tags, newTag];
+        await saveTagsToBackend(currentTagPaperId, updatedTags);
+    }
+
+    async function removeTagFromPopover(index) {
+        const paper = papersData.find(p => p.id === currentTagPaperId);
+        if (!paper) return;
+
+        const updatedTags = paper.tags.filter((_, i) => i !== index);
+        await saveTagsToBackend(currentTagPaperId, updatedTags);
+    }
+
+    async function saveTagsToBackend(paperId, tags) {
+        try {
+            await window.apiFetch(`/api/exam-papers/${paperId}/tags`, {
+                method: 'PUT',
+                body: JSON.stringify({ tags }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            // Update local data
+            const paper = papersData.find(p => p.id === paperId);
+            if (paper) {
+                paper.tags = tags;
+                refreshPaperDerivedFields(paper);
+                const card = getCardForPaper(paperId);
+                if (card) {
+                    card.dataset.primaryTag = paper.primaryTag;
+                }
+            }
+
+            // Rebuild allTags
+            allTags.length = 0;
+            allTags.push(...collectTagsByRecentPapers());
+            selectedFilterTags = new Set([...selectedFilterTags].filter(tag => allTags.includes(tag)));
+            buildTagDropdown();
+            buildTagFilterStrip();
+            updateTagDropdownUI();
+
+            // Update card tag display
+            updateCardTagDisplay(paperId, tags);
+
+            // Re-render popover content
+            if (currentTagPaperId === paperId) {
+                renderTagPopoverContent();
+            }
+
+            // Re-apply filters (tag changes might affect visibility)
+            applyFilters();
+
+        } catch (e) {
+            if (window.showMessage) window.showMessage(e.message || '保存标签失败', 'error');
+        }
+    }
+
+    function updateCardTagDisplay(paperId, tags) {
+        const card = document.getElementById(`exam-card-${paperId}`);
+        if (!card) return;
+
+        // Find or create the tags container
+        let tagsContainer = card.querySelector('.exam-tags');
+        const descEl = card.querySelector('.exam-desc');
+        if (!descEl) return;
+
+        if (tags.length === 0) {
+            if (tagsContainer) tagsContainer.remove();
+            return;
+        }
+
+        if (!tagsContainer) {
+            tagsContainer = document.createElement('div');
+            tagsContainer.className = 'exam-tags';
+            descEl.insertAdjacentElement('afterend', tagsContainer);
+        }
+
+        let html = '';
+        tags.slice(0, MAX_VISIBLE_TAGS).forEach(tag => {
+            html += `<span class="exam-tag-pill">${escapeHtml(tag)}</span>`;
+        });
+        if (tags.length > MAX_VISIBLE_TAGS) {
+            html += `<span class="exam-tag-pill exam-tag-more" title="${escapeHtml(tags.slice(MAX_VISIBLE_TAGS).join(', '))}">+${tags.length - MAX_VISIBLE_TAGS}</span>`;
+        }
+        tagsContainer.innerHTML = html;
+    }
+
+    // ===== Material Reverse =====
+    function toggleMaterialReverseMenu(event) {
+        event?.stopPropagation();
+        const dropdown = document.getElementById('materialReverseDropdown');
+        const button = document.getElementById('materialReverseMenuButton');
+        if (!dropdown) return;
+        const willOpen = !dropdown.classList.contains('open');
+        dropdown.classList.toggle('open', willOpen);
+        if (button) button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
+
+    function closeMaterialReverseMenu() {
+        const dropdown = document.getElementById('materialReverseDropdown');
+        const button = document.getElementById('materialReverseMenuButton');
+        if (dropdown) dropdown.classList.remove('open');
+        if (button) button.setAttribute('aria-expanded', 'false');
+    }
+
+    function openMaterialReverseModal(targetType) {
+        const config = MATERIAL_REVERSE_TARGETS[targetType];
+        if (!config) return;
+        closeMaterialReverseMenu();
+        materialReverseTargetType = targetType;
+        materialReverseSelectedPaperId = '';
+        const modal = document.getElementById('materialReverseModal');
+        const title = document.getElementById('materialReverseModalTitle');
+        const listTitle = document.getElementById('materialReverseListTitle');
+        const prompt = document.getElementById('material-reverse-prompt');
+        const button = document.getElementById('material-reverse-confirm-btn');
+        if (title) title.textContent = config.title;
+        if (listTitle) listTitle.textContent = config.listTitle;
+        if (prompt) prompt.value = '';
+        if (button) {
+            button.disabled = false;
+            button.textContent = config.buttonText;
+        }
+        renderMaterialReversePaperList();
+        modal?.classList.add('active');
+        setTimeout(() => prompt?.focus(), 40);
+    }
+
+    function closeMaterialReverseModal() {
+        document.getElementById('materialReverseModal')?.classList.remove('active');
+        materialReverseTargetType = '';
+        materialReverseSelectedPaperId = '';
+    }
+
+    function getPaperMetric(paper, metric, dataKey) {
+        const direct = Number(paper?.[metric] || 0);
+        if (Number.isFinite(direct) && direct > 0) return direct;
+        const card = getCardForPaper(paper?.id);
+        const fromCard = Number(card?.dataset?.[dataKey] || 0);
+        return Number.isFinite(fromCard) ? fromCard : 0;
+    }
+
+    function getMaterialReverseEligiblePapers() {
+        return sortPapers(papersData.filter(paper => {
+            const questionCount = getPaperMetric(paper, 'questionCount', 'questionCount');
+            const totalPoints = getPaperMetric(paper, 'totalPoints', 'totalPoints');
+            if (questionCount <= 0 || totalPoints <= 0) return false;
+            return !['generating', 'failed'].includes(resolveStatusKey(paper));
+        }));
+    }
+
+    function renderMaterialReversePaperList() {
+        const list = document.getElementById('materialReversePaperList');
+        if (!list) return;
+        const config = MATERIAL_REVERSE_TARGETS[materialReverseTargetType] || MATERIAL_REVERSE_TARGETS.assessment_plan;
+        const papers = getMaterialReverseEligiblePapers();
+        if (!papers.length) {
+            list.innerHTML = `<div class="exam-reverse-empty">${escapeHtml(config.emptyText)}</div>`;
+            return;
+        }
+        list.innerHTML = papers.map(paper => {
+            const questionCount = getPaperMetric(paper, 'questionCount', 'questionCount');
+            const pageCount = getPaperMetric(paper, 'pageCount', 'pageCount');
+            const totalPoints = getPaperMetric(paper, 'totalPoints', 'totalPoints');
+            const tags = (paper.tags || []).slice(0, 3).map(tag => `<span># ${escapeHtml(tag)}</span>`).join('');
+            return `
+                <label class="exam-reverse-paper-option">
+                    <input type="radio" name="material_reverse_paper" value="${escapeHtml(paper.id)}" onchange="selectMaterialReversePaper('${escapeHtml(paper.id)}')">
+                    <span class="exam-reverse-paper-main">
+                        <span class="exam-reverse-paper-title">${escapeHtml(paper.title || '未命名试卷')}</span>
+                        <span class="exam-reverse-paper-desc">${escapeHtml(paper.description || '暂无描述')}</span>
+                        <span class="exam-reverse-paper-meta">
+                            <span>${questionCount} 题</span>
+                            <span>${pageCount || 1} 页</span>
+                            <span>${totalPoints || 0} 分</span>
+                            <span>${escapeHtml(paper.statusLabel || '试卷')}</span>
+                            ${tags}
+                        </span>
+                    </span>
+                </label>
+            `;
+        }).join('');
+    }
+
+    function selectMaterialReversePaper(paperId) {
+        materialReverseSelectedPaperId = String(paperId || '').trim();
+    }
+
+    async function confirmMaterialReverse() {
+        const config = MATERIAL_REVERSE_TARGETS[materialReverseTargetType];
+        if (!config) return;
+        const checked = document.querySelector('input[name="material_reverse_paper"]:checked');
+        const paperId = materialReverseSelectedPaperId || String(checked?.value || '').trim();
+        if (!paperId) {
+            window.showMessage?.('请选择一份试卷', 'warning');
+            return;
+        }
+        const button = document.getElementById('material-reverse-confirm-btn');
+        const originalText = button?.textContent || config.buttonText;
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 生成中...';
+        }
+        try {
+            const result = await window.apiFetch('/api/exam-papers/material-reverse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    target_type: materialReverseTargetType,
+                    paper_id: paperId,
+                    prompt: document.getElementById('material-reverse-prompt')?.value || ''
+                })
+            });
+            window.showMessage?.(result.message || '已开始生成', 'success');
+            await window.PromptPool?.recordPromptForInput(
+                document.getElementById('material-reverse-prompt'),
+                document.getElementById('material-reverse-prompt')?.value || ''
+            );
+            const redirectUrl = result.redirect_url || '/manage/library/materials';
+            setTimeout(() => {
+                window.location.href = redirectUrl;
+            }, 450);
+        } catch (error) {
+            console.error('Material reverse failed:', error);
+            window.showMessage?.(error.message || '材料反推启动失败', 'error');
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    }
+
+    // ===== Close popups on outside click =====
+    document.addEventListener('click', function(e) {
+        const reverseTopbar = document.getElementById('materialReverseTopbar');
+        const reverseMenu = document.getElementById('materialReverseDropdown');
+        if (reverseMenu && reverseMenu.classList.contains('open') && reverseTopbar && !reverseTopbar.contains(e.target)) {
+            closeMaterialReverseMenu();
+        }
+
+        // Close tag dropdown
+        const tagDropdown = document.getElementById('tagDropdown');
+        const tagMenu = document.getElementById('tagDropdownMenu');
+        if (tagMenu && tagMenu.classList.contains('open') && !tagDropdown.contains(e.target)) {
+            tagMenu.classList.remove('open');
+        }
+
+        // Close tag popover
+        const tagPopover = document.getElementById('tagPopover');
+        if (tagPopover && tagPopover.classList.contains('active') && !tagPopover.contains(e.target)) {
+            // Check if click was on a tag button (to prevent closing immediately)
+            const isTagBtn = e.target.closest('[onclick*="openTagPopover"]');
+            if (!isTagBtn) {
+                closeTagPopover();
+            }
+        }
+    });
+
+    // ===== Existing functionality preserved below =====
+    let currentExamId = null;
+    let pollingInterval = null;
+    let progressSimulators = {};
+    const DEFAULT_ASSIGN_MODE = 'permanent';
+
+    function syncAssignScheduleFields() {
+        const mode = (document.getElementById('assign-availability-mode')?.value || DEFAULT_ASSIGN_MODE).trim();
+        const deadlineGroup = document.getElementById('assign-deadline-group');
+        const countdownGroup = document.getElementById('assign-countdown-group');
+        if (deadlineGroup) {
+            deadlineGroup.style.display = mode === 'deadline' ? '' : 'none';
+        }
+        if (countdownGroup) {
+            countdownGroup.style.display = mode === 'countdown' ? '' : 'none';
+        }
+    }
+
+    function resetAssignScheduleFields() {
+        const modeEl = document.getElementById('assign-availability-mode');
+        const dueEl = document.getElementById('assign-due-at');
+        const durationEl = document.getElementById('assign-duration-minutes');
+        const startsEl = document.getElementById('assign-starts-at');
+        const stageEl = document.getElementById('assign-learning-stage-key');
+        if (modeEl) modeEl.value = DEFAULT_ASSIGN_MODE;
+        if (dueEl) dueEl.value = '';
+        if (durationEl) durationEl.value = '';
+        if (startsEl) startsEl.value = '';
+        if (stageEl) stageEl.value = '';
+        syncAssignScheduleFields();
+    }
+
+    function buildAssignSchedulePayload() {
+        const mode = (document.getElementById('assign-availability-mode')?.value || DEFAULT_ASSIGN_MODE).trim().toLowerCase();
+        const dueAt = (document.getElementById('assign-due-at')?.value || '').trim();
+        const durationText = (document.getElementById('assign-duration-minutes')?.value || '').trim();
+        const startsAt = (document.getElementById('assign-starts-at')?.value || '').trim();
+
+        if (mode === 'deadline') {
+            if (!dueAt) {
+                throw new Error('请设置截止时间');
+            }
+            return {
+                availability_mode: mode,
+                due_at: dueAt,
+                duration_minutes: null,
+                starts_at: null,
+            };
+        }
+
+        if (mode === 'countdown') {
+            if (!durationText) {
+                throw new Error('请设置倒计时分钟数');
+            }
+            const duration = Number(durationText);
+            if (!Number.isFinite(duration) || duration <= 0) {
+                throw new Error('倒计时分钟数必须大于 0');
+            }
+            return {
+                availability_mode: mode,
+                due_at: null,
+                duration_minutes: Math.floor(duration),
+                starts_at: startsAt || null,
+            };
+        }
+
+        return {
+            availability_mode: DEFAULT_ASSIGN_MODE,
+            due_at: null,
+            duration_minutes: null,
+            starts_at: null,
+        };
+    }
+
+    // Helper: get all cards that are currently in AI generation state
+    function getActiveAICards() {
+        return document.querySelectorAll('[data-ai-gen-status="pending"], [data-ai-gen-status="running"]');
+    }
+
+    // Start polling for AI generation status
+    function startPolling() {
+        const cards = getActiveAICards();
+        if (cards.length === 0) return;
+
+        // Start progress simulation for each active card
+        cards.forEach(card => {
+            const paperId = card.dataset.paperId;
+            const status = card.dataset.aiGenStatus;
+            startProgressSimulation(paperId, status);
+        });
+
+        // Poll every 3 seconds
+        pollingInterval = setInterval(pollGeneratingStatus, 3000);
+    }
+
+    // Animate progress bar
+    function startProgressSimulation(paperId, initialStatus) {
+        if (progressSimulators[paperId]) return;
+
+        let progress = initialStatus === 'pending' ? 10 : 25;
+        const progressFill = document.getElementById(`progress-fill-${paperId}`);
+        const statusText = document.getElementById(`status-text-${paperId}`);
+
+        if (!progressFill) return;
+
+        progressSimulators[paperId] = setInterval(() => {
+            if (progress < 90) {
+                progress += Math.random() * 2;
+                progressFill.style.width = Math.min(progress, 90) + '%';
+            }
+
+            if (statusText && Math.random() > 0.7) {
+                const messages = [
+                    'AI正在分析知识点...',
+                    'AI正在生成题目...',
+                    'AI正在整理答案与解析...',
+                    'AI正在优化试卷结构...',
+                    'AI正在生成试卷，请稍候...'
+                ];
+                statusText.textContent = messages[Math.floor(Math.random() * messages.length)];
+            }
+        }, 2500);
+    }
+
+    function stopProgressSimulation(paperId) {
+        if (progressSimulators[paperId]) {
+            clearInterval(progressSimulators[paperId]);
+            delete progressSimulators[paperId];
+        }
+    }
+
+    // Poll the backend for generating paper statuses
+    async function pollGeneratingStatus() {
+        try {
+            const resp = await fetch('/api/ai/exam/papers/generating');
+            const data = await resp.json();
+
+            if (data.status !== 'success') return;
+
+            const generatingPapers = data.papers || [];
+            const paperMap = {};
+            generatingPapers.forEach(p => { paperMap[p.id] = p; });
+
+            // Check each active card on the page
+            getActiveAICards().forEach(card => {
+                const paperId = card.dataset.paperId;
+                const paperStatus = paperMap[paperId];
+
+                if (!paperStatus) {
+                    checkSinglePaperStatus(paperId, card);
+                    return;
+                }
+
+                card.dataset.aiGenStatus = paperStatus.ai_gen_status;
+
+                if (paperStatus.ai_gen_status === 'completed') {
+                    onGenerationComplete(paperId, card);
+                } else if (paperStatus.ai_gen_status === 'failed') {
+                    onGenerationFailed(paperId, paperStatus.ai_gen_error, card);
+                } else if (paperStatus.ai_gen_status === 'running') {
+                    const statusText = document.getElementById(`status-text-${paperId}`);
+                    if (statusText && statusText.textContent.includes('排队')) {
+                        statusText.textContent = 'AI正在生成试卷，请稍候...';
+                    }
+                }
+            });
+
+            const stillActive = generatingPapers.filter(p => p.ai_gen_status === 'pending' || p.ai_gen_status === 'running');
+            if (stillActive.length === 0 && getActiveAICards().length === 0) {
+                stopPolling();
+            }
+        } catch (e) {
+            console.error('Polling failed:', e);
+        }
+    }
+
+    // Check individual paper status when it's not in the generating list
+    async function checkSinglePaperStatus(paperId, card) {
+        try {
+            const resp = await fetch(`/api/ai/exam/paper/${paperId}/status`);
+            const data = await resp.json();
+            if (data.status === 'success' && data.paper) {
+                const p = data.paper;
+                if (p.ai_gen_status === 'completed') {
+                    onGenerationComplete(paperId, card);
+                } else if (p.ai_gen_status === 'failed') {
+                    onGenerationFailed(paperId, p.ai_gen_error, card);
+                }
+            }
+        } catch (e) {
+            // Ignore individual check errors
+        }
+    }
+
+    function onGenerationComplete(paperId, card) {
+        stopProgressSimulation(paperId);
+
+        const fill = document.getElementById(`progress-fill-${paperId}`);
+        if (fill) {
+            fill.style.width = '100%';
+            fill.classList.add('complete');
+        }
+
+        const statusText = document.getElementById(`status-text-${paperId}`);
+        if (statusText) {
+            statusText.innerHTML = '生成完成！正在刷新...';
+            const spinner = statusText.querySelector('.spinner');
+            if (spinner) spinner.style.display = 'none';
+        }
+
+        card.classList.remove('is-generating');
+        card.classList.add('is-completed');
+
+        if (window.showMessage) {
+            window.showMessage('试卷生成完成！', 'success');
+        }
+        setTimeout(() => location.reload(), 1200);
+    }
+
+    function onGenerationFailed(paperId, error, card) {
+        stopProgressSimulation(paperId);
+
+        card.classList.remove('is-generating');
+        card.classList.add('is-failed');
+
+        if (window.showMessage) {
+            window.showMessage('试卷生成失败: ' + (error || '未知错误'), 'error');
+        }
+        setTimeout(() => location.reload(), 1500);
+    }
+
+    function stopPolling() {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+        Object.keys(progressSimulators).forEach(paperId => stopProgressSimulation(paperId));
+    }
+
+    // Cancel AI generation
+    async function cancelAIGeneration(paperId, taskId) {
+        if (!confirm('确定要取消AI生成吗？试卷将被删除。')) return;
+
+        try {
+            await window.apiFetch(`/api/ai/exam/task/${taskId}/cancel`, { method: 'POST' });
+            if (window.showMessage) window.showMessage('已取消AI生成', 'success');
+            stopProgressSimulation(paperId);
+
+            const card = document.getElementById(`exam-card-${paperId}`);
+            if (card) {
+                card.style.transition = 'opacity 0.3s, transform 0.3s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.95)';
+            }
+            setTimeout(() => location.reload(), 500);
+        } catch (e) {
+            if (window.showMessage) window.showMessage('取消失败: ' + (e.message || '未知错误'), 'error');
+        }
+    }
+
+    // Assignment modal
+    async function openAssignModal(examId, examTitle) {
+        currentExamId = examId;
+        document.getElementById('assign-exam-name').textContent = examTitle;
+        document.getElementById('assign-assessment-kind').value = '';
+        const listDiv = document.getElementById('offering-list');
+        resetAssignScheduleFields();
+
+        try {
+            document.getElementById('assignModal').classList.add('active');
+
+            const resp = await fetch('/api/manage/offerings/list');
+            const data = await resp.json();
+
+            if (data.status === 'success' && data.offerings && data.offerings.length > 0) {
+                listDiv.innerHTML = data.offerings.map(o => `
+                    <label class="offering-option">
+                        <input type="checkbox" value="${o.id}" name="offering_ids">
+                        <div style="flex:1;">
+                            <div class="font-medium">${o.course_name}</div>
+                            <div class="text-xs text-muted">${o.class_name}${o.semester ? ' · ' + o.semester : ''}</div>
+                        </div>
+                    </label>
+                `).join('');
+            } else {
+                listDiv.innerHTML = `
+                    <div class="text-center p-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        <p class="text-muted text-sm">暂无可用的课堂</p>
+                        <a href="/manage/teaching/offerings" class="btn btn-outline btn-sm mt-2">前往开设课堂</a>
+                    </div>`;
+            }
+        } catch(e) {
+            listDiv.innerHTML = `<div class="text-danger text-center p-3">加载课堂列表失败: ${e.message}</div>`;
+        }
+    }
+
+    function closeAssignModal() {
+        document.getElementById('assignModal').classList.remove('active');
+        currentExamId = null;
+    }
+
+    async function confirmAssign() {
+        if (!currentExamId) return;
+        const checkboxes = document.querySelectorAll('input[name="offering_ids"]:checked');
+
+        if (checkboxes.length === 0) {
+            window.showMessage('请至少选择一个目标课堂', 'warning');
+            return;
+        }
+
+        let schedulePayload;
+        const assessmentKind = document.getElementById('assign-assessment-kind').value;
+        if (!['homework', 'midterm', 'final'].includes(assessmentKind)) {
+            window.showMessage('请选择本次任务分类', 'warning');
+            return;
+        }
+        try {
+            schedulePayload = buildAssignSchedulePayload();
+        } catch (e) {
+            window.showMessage(e.message || '请检查时间策略设置', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('confirm-assign-btn');
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin-right:8px;"></span> 分配中...';
+
+        let success = 0, fail = 0;
+
+        for (const cb of checkboxes) {
+            try {
+                await window.apiFetch(`/api/exam-papers/${currentExamId}/assign`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        class_offering_id: parseInt(cb.value),
+                        assessment_kind: assessmentKind,
+                        learning_stage_key: (document.getElementById('assign-learning-stage-key')?.value || '').trim(),
+                        ...schedulePayload
+                    }),
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                success++;
+            } catch(e) {
+                console.error("Assign failed:", e);
+                fail++;
+            }
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+
+        if (success > 0 && fail === 0) {
+            window.showMessage(`成功分配到 ${success} 个课堂！`, 'success');
+            closeAssignModal();
+        } else if (success > 0 && fail > 0) {
+            window.showMessage(`部分成功: 成功 ${success} 个，失败 ${fail} 个。`, 'warning');
+            closeAssignModal();
+        } else {
+            window.showMessage('分配失败，请重试', 'error');
+        }
+
+        if (success > 0) {
+            setTimeout(() => location.reload(), 1500);
+        }
+    }
+
+    async function deletePaper(paperId, paperTitle) {
+        if (!confirm(`确定要删除试卷 "${paperTitle}" 吗？\n注意：此操作不可恢复。如果试卷已分配给学生，可能会影响学生查看成绩。`)) return;
+
+        try {
+            const data = await window.apiFetch(`/api/exam-papers/${paperId}`, { method: 'DELETE' });
+            window.showMessage(data.message || '删除成功！', 'success');
+
+            const card = document.getElementById(`exam-card-${paperId}`);
+            if (card) {
+                card.style.transition = 'opacity 0.3s, transform 0.3s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.95)';
+            }
+            setTimeout(() => location.reload(), 600);
+        } catch(e) {
+            window.showMessage(e.message || '删除失败', 'error');
+        }
+    }
+
+    // ===== Initialize =====
+    document.addEventListener('DOMContentLoaded', function() {
+        // Build filter UI
+        buildFilterChips();
+        buildTagDropdown();
+        buildTagFilterStrip();
+        buildOrgFilterOptions();
+        readFilterControls();
+        applyFilters();
+
+        // AI polling
+        startPolling();
+
+        // Assign modal schedule fields
+        const modeEl = document.getElementById('assign-availability-mode');
+        if (modeEl) {
+            modeEl.addEventListener('change', syncAssignScheduleFields);
+        }
+        syncAssignScheduleFields();
+
+        document.getElementById('materialReverseModal')?.addEventListener('click', function(event) {
+            if (event.target === event.currentTarget) {
+                closeMaterialReverseModal();
+            }
+        });
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeMaterialReverseMenu();
+            if (document.getElementById('materialReverseModal')?.classList.contains('active')) {
+                closeMaterialReverseModal();
+            }
+        }
+    });
+
+    window.addEventListener('beforeunload', function() {
+        stopPolling();
+    });
+</script>
+<script type="module">
+    import { apiFetch } from '{{ asset_url("js/api.js") }}';
+    import { showMessage } from '{{ asset_url("js/ui.js") }}';
+    import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
+    import { enhancePromptPoolInput } from '{{ asset_url("js/prompt_pool.js") }}';
+
+    const paperPreviewCache = new Map();
+    enhancePromptPoolInput(document.getElementById('material-reverse-prompt'));
+
+    function setPaperPreviewOpen(isOpen) {
+        const modal = document.getElementById('paperPreviewModal');
+        if (!modal) return;
+        if (isOpen) {
+            modal.style.display = 'flex';
+            requestAnimationFrame(() => modal.classList.add('is-open'));
+            document.body.style.overflow = 'hidden';
+            return;
+        }
+        modal.classList.remove('is-open');
+        setTimeout(() => {
+            if (!modal.classList.contains('is-open')) {
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        }, 180);
+    }
+
+    window.openPaperPreview = async function(paperId) {
+        const id = String(paperId || '').trim();
+        if (!id) return;
+        const body = document.getElementById('paperPreviewBody');
+        const title = document.getElementById('paperPreviewTitle');
+        if (!body) return;
+        body.innerHTML = '<div class="spinner mx-auto"></div>';
+        if (title) title.textContent = '试卷预览';
+        setPaperPreviewOpen(true);
+
+        try {
+            let paper = paperPreviewCache.get(id);
+            if (!paper) {
+                const data = await apiFetch(`/api/exam-papers/${encodeURIComponent(id)}`, { silent: true });
+                paper = data?.paper || {};
+                paperPreviewCache.set(id, paper);
+            }
+            if (title) title.textContent = paper.title || '试卷预览';
+            renderExamPaperPreview(body, {
+                paper: paper.questions_json || paper,
+                title: paper.title || '试卷预览',
+                description: paper.description || '',
+                badgeText: '学生视角试卷预览',
+            });
+        } catch (error) {
+            console.error('Failed to preview exam paper:', error);
+            body.innerHTML = '<div class="exam-paper-preview__empty">试卷加载失败，请稍后重试。</div>';
+            showMessage(error?.message || '试卷加载失败', 'error');
+        }
+    };
+
+    window.closePaperPreview = function() {
+        setPaperPreviewOpen(false);
+    };
+
+    document.getElementById('paperPreviewModal')?.addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) {
+            setPaperPreviewOpen(false);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            const modal = document.getElementById('paperPreviewModal');
+            if (modal?.classList.contains('is-open')) {
+                setPaperPreviewOpen(false);
+            }
+        }
+    });
+</script>

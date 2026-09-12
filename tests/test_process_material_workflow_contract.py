@@ -1035,7 +1035,11 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
 
     def test_assessment_category_is_shared_by_teacher_views_with_legacy_source_compatibility(self):
         classroom_template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
-        exam_template = Path("templates/manage/exams.html").read_text(encoding="utf-8")
+        # 试卷页已拆成分区 partial（P4），契约按整页（主模板 + partials）校验。
+        exam_template = chr(10).join(
+            path.read_text(encoding="utf-8")
+            for path in [Path("templates/manage/exams.html"), *sorted(Path("templates/partials/exams").glob("*.html"))]
+        )
         controls = Path("static/js/assessment_kind_controls.js").read_text(encoding="utf-8")
         partial = Path("templates/partials/assessment_kind_control.html").read_text(encoding="utf-8")
         service = Path("classroom_app/services/ordinary_grade_record_service.py").read_text(encoding="utf-8")
