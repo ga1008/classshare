@@ -537,7 +537,7 @@ if (root) {
         if (!semesterCalendarRoot) return;
         if (!calendarStatus) {
             calendarStatus = document.createElement('p');
-            calendarStatus.className = 'dw-error';
+            calendarStatus.className = 'ls-error';
             calendarStatus.setAttribute('role', 'status');
             semesterCalendarRoot.prepend(calendarStatus);
         }
@@ -619,7 +619,9 @@ if (root) {
     }
     async function openDashboardCalendar() {
         if (!semesterCalendarRoot) return;
-        if (!semesterCalendarLoading) semesterCalendarLoading = import('/static/js/semester_calendar.js?v=semester-band-20260825');
+        if (!semesterCalendarLoading) semesterCalendarLoading = import('/static/js/semester_calendar.js?v=semester-band-20260913');
+        // Re-shown calendar: hold the selected week before the refresh lands.
+        semesterCalendarController?.holdViewport?.();
         try {
             // Keep the authorized SSR calendar usable when a refresh fails;
             // refreshDashboardCalendar leaves a visible stale-state message.
@@ -643,9 +645,9 @@ if (root) {
     }
     window.addEventListener('lanshare:dashboard-calendar-open', openDashboardCalendar);
     window.addEventListener('lanshare:dashboard-calendar-invalidate', () => {
-        if (semesterCalendarController && !semesterCalendarRoot.closest('[data-dw-calendar-storage]')) void refreshDashboardCalendar().catch(() => {});
+        if (semesterCalendarController && !semesterCalendarRoot.closest('[data-ls-calendar-storage]')) void refreshDashboardCalendar().catch(() => {});
     });
-    if (semesterCalendarRoot && !semesterCalendarRoot.closest('[data-dw-calendar-storage]')) void openDashboardCalendar();
+    if (semesterCalendarRoot && !semesterCalendarRoot.closest('[data-ls-calendar-storage]')) void openDashboardCalendar();
 
     function getScheduleDeckPanel() {
         if (!scheduleDeckPanel) {
@@ -792,7 +794,7 @@ if (root) {
         }
 
         offeringList.replaceChildren();
-        offeringList.className = 'dw-course-list';
+        offeringList.className = 'ls-course-list';
         offeringList.removeAttribute('aria-label');
 
         if (groupModeButtons.length && activeGroupMode === 'schedule3d') {
@@ -1275,7 +1277,7 @@ if (root) {
     }
 
     function cardSummaryHtml(overview) {
-        return `<span data-academic-evaluation-summary><button type="button" class="dw-link" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">教学评价 ${escapeHtml(overview?.score_display || scoreText(overview?.score))}</button></span>`;
+        return `<span data-academic-evaluation-summary><button type="button" class="ls-link" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">教学评价 ${escapeHtml(overview?.score_display || scoreText(overview?.score))}</button></span>`;
     }
 
     function updateOfferingCards(overviews) {
@@ -1284,7 +1286,7 @@ if (root) {
             if (!card || !overview?.available) return;
             const enriched = { ...overview, offering_id: offeringId };
             const current = card.querySelector('[data-academic-evaluation-summary]');
-            const state = card.querySelector('.dw-course-state');
+            const state = card.querySelector('.ls-course-state');
             if (current) {
                 current.outerHTML = cardSummaryHtml(enriched);
             } else if (state) {

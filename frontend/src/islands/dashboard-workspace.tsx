@@ -55,9 +55,9 @@ function needsAgendaDetail(item: DashboardItem) {
 
 function ItemCopy({ item }: { item: DashboardItem }) {
   return <>
-    <span className="dw-item-kind">{item.type_label || dashboardKindLabels[item.kind] || '事项'}</span>
-    <span className="dw-item-copy"><strong>{item.title}</strong>{item.subtitle ? <small>{item.offering_id ? <a href={`/classroom/${item.offering_id}`} aria-label={`进入课堂：${item.subtitle}`}>{item.subtitle}</a> : item.subtitle}</small> : null}</span>
-    <span className="dw-item-time">{item.status_label ? <span className={item.date_bucket === 'overdue' ? 'dw-status-warn' : ''}>{item.status_label}</span> : null}<span>{item.date_label || '无日期'}{item.time_label ? ` · ${item.time_label}` : ''}</span></span>
+    <span className="ls-item-kind">{item.type_label || dashboardKindLabels[item.kind] || '事项'}</span>
+    <span className="ls-item-copy"><strong>{item.title}</strong>{item.subtitle ? <small>{item.offering_id ? <a href={`/classroom/${item.offering_id}`} aria-label={`进入课堂：${item.subtitle}`}>{item.subtitle}</a> : item.subtitle}</small> : null}</span>
+    <span className="ls-item-time">{item.status_label ? <span className={item.date_bucket === 'overdue' ? 'ls-status-warn' : ''}>{item.status_label}</span> : null}<span>{item.date_label || '无日期'}{item.time_label ? ` · ${item.time_label}` : ''}</span></span>
   </>;
 }
 
@@ -65,7 +65,7 @@ function ItemCopy({ item }: { item: DashboardItem }) {
 function CalendarHost() {
   const host = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const storage = document.querySelector<HTMLElement>('[data-dw-calendar-storage]');
+    const storage = document.querySelector<HTMLElement>('[data-ls-calendar-storage]');
     const calendar = storage?.querySelector<HTMLElement>('[data-semester-calendar-root]');
     if (!host.current || !calendar) return;
     host.current.append(calendar);
@@ -73,7 +73,7 @@ function CalendarHost() {
     requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     return () => { storage?.append(calendar); };
   }, []);
-  return <div className="dw-calendar-host" ref={host} />;
+  return <div className="ls-calendar-host" ref={host} />;
 }
 
 function DashboardWorkspace({ initial }: { initial: Workspace }) {
@@ -107,9 +107,9 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
 
   useEffect(() => {
     const handleOpen = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-dw-open]') : null;
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-ls-open]') : null;
       if (!target) return;
-      event.preventDefault(); setItemKey(''); show(target.dataset.dwOpen === 'calendar' ? 'calendar' : 'items', target);
+      event.preventDefault(); setItemKey(''); show(target.dataset.lsOpen === 'calendar' ? 'calendar' : 'items', target);
     };
     const handleRequestedOpen = (event: Event) => { const detail = (event as CustomEvent<{ view: string; trigger?: HTMLElement; actionable?: boolean }>).detail; setItemKey(''); if (detail.actionable) setFilters(current => ({ ...current, state: isStudent ? 'attention' : 'actionable' })); show(detail.view === 'calendar' ? 'calendar' : 'items', detail.trigger || undefined); };
     const handleTodoChanged = (event: Event) => setTodoNotice((event as CustomEvent).detail);
@@ -231,48 +231,48 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
     const run = () => window.dispatchEvent(new CustomEvent(`lanshare:todo-${action}`, { detail: { data: dashboardAgendaDataset(item), anchor: action === 'edit' && open ? allButton.current : anchor, afterClose: action === 'edit' && open ? () => { handoff.current = false; setOpen(true); } : undefined } }));
     if (action === 'edit' && open) closeAndRun(run); else run();
   };
-  const manualControls = (item: DashboardItem) => item.agenda_data.is_manual ? <span className="dw-manual-actions"><button type="button" className="dw-link" onClick={event => todoAction(item, 'edit', event.currentTarget)}>编辑</button><button type="button" className="dw-button" onClick={event => todoAction(item, 'toggle', event.currentTarget)}>{item.is_completed ? '恢复待办' : '完成'}</button></span> : null;
+  const manualControls = (item: DashboardItem) => item.agenda_data.is_manual ? <span className="ls-manual-actions"><button type="button" className="ls-link" onClick={event => todoAction(item, 'edit', event.currentTarget)}>编辑</button><button type="button" className="ls-button" onClick={event => todoAction(item, 'toggle', event.currentTarget)}>{item.is_completed ? '恢复待办' : '完成'}</button></span> : null;
 
   return <>
-    {immediate ? <div className="dw-mobile-urgent"><span><strong>现在有事需要留意</strong><small>{immediate.title}</small></span>{needsAgendaDetail(immediate) ? <button type="button" className="dw-button dw-button-primary" data-agenda-item {...agendaAttributes(immediate)} aria-haspopup="dialog">查看</button> : <a className="dw-button dw-button-primary" href={immediate.href}>去处理</a>}</div> : null}
-    <section className={`dw-focus${isStudent ? ' dw-focus--student' : ''}`} aria-labelledby="dw-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
-      <div className="dw-section-head"><div><span className="dw-eyebrow">{isStudent ? '一步一步，完成今天' : '教学工作'}</span><h2 id="dw-focus-title">需要处理</h2></div><button type="button" className="dw-button" data-agenda-add-todo aria-haspopup="dialog">＋ 新增待办</button></div>
-      {isStudent ? <div className="dw-action-summary" aria-label="待处理概况"><button type="button" onClick={() => openAttention('today')}><strong>{workspace.action_summary.today}</strong><span>今日截止</span></button><button type="button" onClick={() => openAttention('overdue')}><strong>{workspace.action_summary.overdue}</strong><span>逾期可处理</span></button><button type="button" onClick={() => openAttention()}><strong>{pending}</strong><span>全部待处理</span></button></div> : null}
-      {todoNotice ? <div className="dw-todo-notice" role="status"><span>{todoNotice.message}</span>{!todoNotice.deleted && todoNotice.todoId ? <button type="button" className="dw-link" onClick={() => { setFilters(initialFilters); setScope(null); setItemKey(`manual:${todoNotice.todoId}:${todoNotice.classOfferingId}`); setPage(0); show('items'); }}>查看此待办</button> : null}<button type="button" className="dw-link" aria-label="关闭待办提示" onClick={() => setTodoNotice(null)}>×</button></div> : null}
-      {focusItems.length ? <ul className="dw-focus-list">{focusItems.map((item, index) => <li key={item.key} className={`dw-focus-item${index === 0 ? ' is-primary' : ''}`}>
+    {immediate ? <div className="ls-mobile-urgent"><span><strong>现在有事需要留意</strong><small>{immediate.title}</small></span>{needsAgendaDetail(immediate) ? <button type="button" className="ls-button ls-button-primary" data-agenda-item {...agendaAttributes(immediate)} aria-haspopup="dialog">查看</button> : <a className="ls-button ls-button-primary" href={immediate.href}>去处理</a>}</div> : null}
+    <section className={`ls-focus${isStudent ? ' ls-focus--student' : ''}`} aria-labelledby="ls-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
+      <div className="ls-section-head"><div><span className="ls-eyebrow">{isStudent ? '一步一步，完成今天' : '教学工作'}</span><h2 id="ls-focus-title">需要处理</h2></div><button type="button" className="ls-button" data-agenda-add-todo aria-haspopup="dialog">＋ 新增待办</button></div>
+      {isStudent ? <div className="ls-action-summary" aria-label="待处理概况"><button type="button" onClick={() => openAttention('today')}><strong>{workspace.action_summary.today}</strong><span>今日截止</span></button><button type="button" onClick={() => openAttention('overdue')}><strong>{workspace.action_summary.overdue}</strong><span>逾期可处理</span></button><button type="button" onClick={() => openAttention()}><strong>{pending}</strong><span>全部待处理</span></button></div> : null}
+      {todoNotice ? <div className="ls-todo-notice" role="status"><span>{todoNotice.message}</span>{!todoNotice.deleted && todoNotice.todoId ? <button type="button" className="ls-link" onClick={() => { setFilters(initialFilters); setScope(null); setItemKey(`manual:${todoNotice.todoId}:${todoNotice.classOfferingId}`); setPage(0); show('items'); }}>查看此待办</button> : null}<button type="button" className="ls-link" aria-label="关闭待办提示" onClick={() => setTodoNotice(null)}>×</button></div> : null}
+      {focusItems.length ? <ul className="ls-focus-list">{focusItems.map((item, index) => <li key={item.key} className={`ls-focus-item${index === 0 ? ' is-primary' : ''}`}>
         <ItemCopy item={item} />
-        <span className="dw-item-actions">{needsAgendaDetail(item) ? <button type="button" className={index === 0 ? 'dw-button dw-button-primary' : 'dw-button'} data-agenda-item {...agendaAttributes(item)} aria-haspopup="dialog">{item.action_label || '查看详情'}</button> : <a className={index === 0 ? 'dw-button dw-button-primary' : 'dw-button'} href={item.href}>{item.action_label || (item.kind === 'class' ? '进入课堂' : '查看任务')}</a>}{manualControls(item)}</span>
-      </li>)}</ul> : <p className="dw-empty-inline">暂无需要处理的事项。</p>}
-      <div className="dw-focus-footer"><button type="button" className="dw-link" onClick={() => openAttention()}>全部待处理（{pending}） →</button><button type="button" className="dw-link" ref={allButton} onClick={() => { setItemKey(''); setFilters(initialFilters); show('items', allButton.current || undefined); }}>全部事项与历史</button></div>
-      {!open && error ? <p className="dw-error" role="status">{error}<button className="dw-link" type="button" onClick={() => window.dispatchEvent(new Event('lanshare:dashboard-workspace-refresh'))}>重试</button></p> : null}
+        <span className="ls-item-actions">{needsAgendaDetail(item) ? <button type="button" className={index === 0 ? 'ls-button ls-button-primary' : 'ls-button'} data-agenda-item {...agendaAttributes(item)} aria-haspopup="dialog">{item.action_label || '查看详情'}</button> : <a className={index === 0 ? 'ls-button ls-button-primary' : 'ls-button'} href={item.href}>{item.action_label || (item.kind === 'class' ? '进入课堂' : '查看任务')}</a>}{manualControls(item)}</span>
+      </li>)}</ul> : <p className="ls-empty-inline">暂无需要处理的事项。</p>}
+      <div className="ls-focus-footer"><button type="button" className="ls-link" onClick={() => openAttention()}>全部待处理（{pending}） →</button><button type="button" className="ls-link" ref={allButton} onClick={() => { setItemKey(''); setFilters(initialFilters); show('items', allButton.current || undefined); }}>全部事项与历史</button></div>
+      {!open && error ? <p className="ls-error" role="status">{error}<button className="ls-link" type="button" onClick={() => window.dispatchEvent(new Event('lanshare:dashboard-workspace-refresh'))}>重试</button></p> : null}
     </section>
     <Dialog open={open} onOpenChange={(next) => { if (!next) scrollPosition.current = scroll.current?.scrollTop || 0; setOpen(next); }}>
-      <DialogContent className={`dw-dialog${view === 'calendar' ? ' dw-dialog--calendar' : ''}`} aria-modal="true" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); const callback = handoffCallback.current; handoffCallback.current = null; if (callback) window.setTimeout(callback, 0); else if (!handoff.current) (returnFocus.current || allButton.current)?.focus({ preventScroll: true }); }} onClickCapture={(event) => {
+      <DialogContent className={`ls-dialog${view === 'calendar' ? ' ls-dialog--calendar' : ''}`} aria-modal="true" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); const callback = handoffCallback.current; handoffCallback.current = null; if (callback) window.setTimeout(callback, 0); else if (!handoff.current) (returnFocus.current || allButton.current)?.focus({ preventScroll: true }); }} onClickCapture={(event) => {
         const trigger = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[data-semester-todo-add]') : null;
         if (!trigger) return;
         event.preventDefault(); event.stopPropagation();
         launchTool('data-agenda-add-todo');
       }}>
-        <DialogHeader className="dw-dialog-head"><DialogTitle>日程与事项</DialogTitle></DialogHeader>
-        <div className="dw-dialog-toolbar"><div className="dw-view-switch" role="group" aria-label="日程视图"><button type="button" aria-pressed={view === 'items'} onClick={() => setView('items')}>全部事项</button><button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')}>学期日历</button></div><div className="dw-dialog-tools"><button type="button" className="dw-link" onClick={() => launchTool('data-agenda-add-todo')}>新增待办</button><button type="button" className="dw-link" onClick={() => launchTool('data-agenda-calendar-feed')}>订阅日历</button></div></div>
-        <div className="dw-dialog-body" ref={(node) => { scroll.current = node; if (node) node.scrollTop = scrollPosition.current; }} onScroll={(event) => { scrollPosition.current = event.currentTarget.scrollTop; }}>
+        <DialogHeader className="ls-dialog-head"><DialogTitle>日程与事项</DialogTitle></DialogHeader>
+        <div className="ls-dialog-toolbar"><div className="ls-view-switch" role="group" aria-label="日程视图"><button type="button" aria-pressed={view === 'items'} onClick={() => setView('items')}>全部事项</button><button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')}>学期日历</button></div><div className="ls-dialog-tools"><button type="button" className="ls-link" onClick={() => launchTool('data-agenda-add-todo')}>新增待办</button><button type="button" className="ls-link" onClick={() => launchTool('data-agenda-calendar-feed')}>订阅日历</button></div></div>
+        <div className="ls-dialog-body" ref={(node) => { scroll.current = node; if (node) node.scrollTop = scrollPosition.current; }} onScroll={(event) => { scrollPosition.current = event.currentTarget.scrollTop; }}>
           {view === 'calendar' ? <CalendarHost /> : <>
-            {scope ? <p className="dw-scope-note">沿用首页课堂筛选 · {scope.length} 个课堂<button type="button" className="dw-link" onClick={() => { setScope(null); setPage(0); }}>查看全部范围</button></p> : null}
-            <div className="dw-item-filters">
-              <label className="dw-search-filter"><span>搜索事项</span><input type="search" value={filters.query} placeholder="标题或课堂" onChange={(event) => setFilter('query', event.target.value)} /></label>
+            {scope ? <p className="ls-scope-note">沿用首页课堂筛选 · {scope.length} 个课堂<button type="button" className="ls-link" onClick={() => { setScope(null); setPage(0); }}>查看全部范围</button></p> : null}
+            <div className="ls-item-filters">
+              <label className="ls-search-filter"><span>搜索事项</span><input type="search" value={filters.query} placeholder="标题或课堂" onChange={(event) => setFilter('query', event.target.value)} /></label>
               <label><span>课堂</span><select value={filters.offering} onChange={(event) => setFilter('offering', event.target.value)}><option value="">全部课堂</option>{workspace.offering_options.filter((option) => !scope || scope.includes(option.id)).map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>
               <label><span>类型</span><select value={filters.kind} onChange={(event) => setFilter('kind', event.target.value)}><option value="">全部类型</option>{Object.entries(dashboardKindLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
               <label><span>日期</span><select value={filters.date} onChange={(event) => setFilter('date', event.target.value)}><option value="">全部日期</option><option value="today">今天</option><option value="this_week">本周</option><option value="next_seven_days">未来 7 天</option><option value="upcoming">未来</option><option value="overdue">逾期</option><option value="undated">无日期</option><option value="history">过去</option></select></label>
               <label><span>状态</span><select value={filters.state} onChange={(event) => setFilter('state', event.target.value)}><option value="">全部状态</option><option value={isStudent ? 'attention' : 'actionable'}>待处理</option><option value="completed">已完成</option></select></label>
             </div>
-            <div className="dw-list-summary" role="status">{loading ? '正在加载…' : `${itemKey ? '已定位此待办 · ' : ''}共 ${result.total} 项${result.total ? ` · 显示 ${page * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE + result.items.length, result.total)}` : ''}`}{hasFilters ? <button type="button" className="dw-link" onClick={() => { setFilters(initialFilters); setItemKey(''); setPage(0); }}>清除筛选</button> : null}</div>
-            {notice ? <p className="dw-scope-note" role="status">{notice}</p> : null}
-            {error ? <p className="dw-error" role="alert">{error}<button type="button" className="dw-link" onClick={() => setRetry((value) => value + 1)}>重试</button></p> : null}
-            {!error && !loading && !result.items.length ? <p className="dw-empty-inline">没有符合条件的事项。</p> : null}
-            {!error ? <ul className="dw-all-items" aria-busy={loading}>{result.items.map((item) => <li className={`dw-agenda-row${itemKey ? ' is-located' : ''}`} key={item.key}><ItemCopy item={item} /><span className="dw-item-actions">{needsAgendaDetail(item) ? <button type="button" className="dw-button" onClick={() => showAgenda(item)}>{item.agenda_data.is_manual ? '查看待办' : '查看详情'}</button> : <a href={item.href} className="dw-button">{item.action_label || '查看'}</a>}{manualControls(item)}</span></li>)}</ul> : null}
+            <div className="ls-list-summary" role="status">{loading ? '正在加载…' : `${itemKey ? '已定位此待办 · ' : ''}共 ${result.total} 项${result.total ? ` · 显示 ${page * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE + result.items.length, result.total)}` : ''}`}{hasFilters ? <button type="button" className="ls-link" onClick={() => { setFilters(initialFilters); setItemKey(''); setPage(0); }}>清除筛选</button> : null}</div>
+            {notice ? <p className="ls-scope-note" role="status">{notice}</p> : null}
+            {error ? <p className="ls-error" role="alert">{error}<button type="button" className="ls-link" onClick={() => setRetry((value) => value + 1)}>重试</button></p> : null}
+            {!error && !loading && !result.items.length ? <p className="ls-empty-inline">没有符合条件的事项。</p> : null}
+            {!error ? <ul className="ls-all-items" aria-busy={loading}>{result.items.map((item) => <li className={`ls-agenda-row${itemKey ? ' is-located' : ''}`} key={item.key}><ItemCopy item={item} /><span className="ls-item-actions">{needsAgendaDetail(item) ? <button type="button" className="ls-button" onClick={() => showAgenda(item)}>{item.agenda_data.is_manual ? '查看待办' : '查看详情'}</button> : <a href={item.href} className="ls-button">{item.action_label || '查看'}</a>}{manualControls(item)}</span></li>)}</ul> : null}
           </>}
         </div>
-        {view === 'items' && result.total > PAGE_SIZE ? <nav className="dw-pagination" aria-label="事项分页"><button type="button" className="dw-button" disabled={loading || page === 0} onClick={() => { setPage((value) => value - 1); scrollPosition.current = 0; }}>上一页</button><span>第 {page + 1} / {Math.ceil(result.total / PAGE_SIZE)} 页</span><button type="button" className="dw-button" disabled={loading || (page + 1) * PAGE_SIZE >= result.total} onClick={() => { setPage((value) => value + 1); scrollPosition.current = 0; }}>下一页</button></nav> : null}
+        {view === 'items' && result.total > PAGE_SIZE ? <nav className="ls-pagination" aria-label="事项分页"><button type="button" className="ls-button" disabled={loading || page === 0} onClick={() => { setPage((value) => value - 1); scrollPosition.current = 0; }}>上一页</button><span>第 {page + 1} / {Math.ceil(result.total / PAGE_SIZE)} 页</span><button type="button" className="ls-button" disabled={loading || (page + 1) * PAGE_SIZE >= result.total} onClick={() => { setPage((value) => value + 1); scrollPosition.current = 0; }}>下一页</button></nav> : null}
       </DialogContent>
     </Dialog>
   </>;

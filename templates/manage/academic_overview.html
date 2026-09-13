@@ -20,7 +20,7 @@
             <a class="btn btn-outline btn-sm" href="?week={{ home.prev_week }}" aria-label="上一周">‹</a>
             <strong>{{ home.week_label }}</strong>
             <a class="btn btn-outline btn-sm" href="?week={{ home.next_week }}" aria-label="下一周">›</a>
-            {% if not home.is_current_week %}<a class="dw-link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
+            {% if not home.is_current_week %}<a class="ls-link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
         </nav>
     {% endcall %}
 
@@ -41,7 +41,7 @@
                         <article class="ah-event ah-event--{{ event.kind }}" data-ah-event data-kind="{{ event.kind }}">
                             <span class="ah-event__time">{{ event.hour_label }}</span>
                             <span class="ah-event__copy"><span class="ah-event__kind">{{ event.kind_label }}</span><strong>{{ event.title }}</strong>{% if event.subtitle %}<small>{{ event.subtitle }}</small>{% endif %}</span>
-                            {% if event.can_email_reminder %}<button type="button" class="dw-link" data-agenda-item data-kind="{{ event.kind }}" data-status="{{ event.status }}" data-kind-label="{{ event.kind_label }}" data-title="{{ event.title }}" data-subtitle="{{ event.subtitle }}" data-when="{{ event.date_label }} {{ event.hour_label }}" data-href="{{ event.href }}" data-event-id="{{ event.event_id|default('') }}" data-can-reminder="1" data-start-at="{{ event.starts_at }}" aria-haspopup="dialog">详情 / 邮件提醒</button>{% elif event.href and event.href != '#' %}<a class="dw-link" href="{{ event.href }}">查看</a>{% endif %}
+                            {% if event.can_email_reminder %}<button type="button" class="ls-link" data-agenda-item data-kind="{{ event.kind }}" data-status="{{ event.status }}" data-kind-label="{{ event.kind_label }}" data-title="{{ event.title }}" data-subtitle="{{ event.subtitle }}" data-when="{{ event.date_label }} {{ event.hour_label }}" data-href="{{ event.href }}" data-event-id="{{ event.event_id|default('') }}" data-can-reminder="1" data-start-at="{{ event.starts_at }}" aria-haspopup="dialog">详情 / 邮件提醒</button>{% elif event.href and event.href != '#' %}<a class="ls-link" href="{{ event.href }}">查看</a>{% endif %}
                         </article>
                         {% else %}
                         <span class="ah-day__none">无安排</span>
@@ -77,9 +77,9 @@
             {% endif %}
             <section class="ah-card ah-card--links">
                 <h3>教务入口</h3>
-                <a class="dw-link" href="{{ manage_nav.hrefs.course_schedule }}">课时统计与 3D 课表</a>
-                <a class="dw-link" href="{{ manage_nav.hrefs.classrooms }}">教室查询</a>
-                <a class="dw-link" href="{{ manage_nav.hrefs.gongwen }}">公文列表</a>
+                <a class="ls-link" href="{{ manage_nav.hrefs.course_schedule }}">课时统计与 3D 课表</a>
+                <a class="ls-link" href="{{ manage_nav.hrefs.classrooms }}">教室查询</a>
+                <a class="ls-link" href="{{ manage_nav.hrefs.gongwen }}">公文列表</a>
             </section>
         </aside>
     </div>

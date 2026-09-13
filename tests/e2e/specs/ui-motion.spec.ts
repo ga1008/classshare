@@ -72,7 +72,7 @@ test('a dialog reverses from its current frame and restores fixed positioning at
     const trigger = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '全部事项与历史')!;
     trigger.click();
     await wait(75);
-    const dialog = document.querySelector<HTMLElement>('.dw-dialog')!;
+    const dialog = document.querySelector<HTMLElement>('.ls-dialog')!;
     const beforeClose = Number(getComputedStyle(dialog).opacity);
     dialog.querySelector<HTMLButtonElement>('.ui-dialog-close')!.click();
     await nextFrame();
@@ -83,7 +83,7 @@ test('a dialog reverses from its current frame and restores fixed positioning at
     await nextFrame();
     const afterReopen = Number(getComputedStyle(dialog).opacity);
     await wait(350);
-    return { beforeClose, afterClose, beforeReopen, afterReopen, sameNode: dialog === document.querySelector('.dw-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
+    return { beforeClose, afterClose, beforeReopen, afterReopen, sameNode: dialog === document.querySelector('.ls-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
   });
   expect(result.beforeClose).toBeGreaterThan(.03);
   expect(result.beforeClose).toBeLessThan(.97);
@@ -98,13 +98,13 @@ test('a dialog reverses from its current frame and restores fixed positioning at
 test('dashboard dialogs, todo and help retain intermediate opening and closing frames', async ({ page }, testInfo) => {
   await loginStudent(page, fixture());
   const history = page.getByRole('button', { name: '全部事项与历史', exact: true });
-  const entering = await framesAfterClick(page, history, '.dw-dialog');
+  const entering = await framesAfterClick(page, history, '.ls-dialog');
   expect(hasIntermediate(entering), JSON.stringify(entering.map(f => ({opacity:f.opacity,height:f.height})))).toBe(true);
-  const leaving = await framesAfterClick(page, page.locator('.dw-dialog .ui-dialog-close'), '.dw-dialog');
+  const leaving = await framesAfterClick(page, page.locator('.ls-dialog .ui-dialog-close'), '.ls-dialog');
   expect(hasIntermediate(leaving)).toBe(true);
-  await expect(page.locator('.dw-dialog')).toHaveCount(0);
+  await expect(page.locator('.ls-dialog')).toHaveCount(0);
   await expect(history).toBeFocused();
-  const add = page.locator('.dw-focus [data-agenda-add-todo]');
+  const add = page.locator('.ls-focus [data-agenda-add-todo]');
   const todo = page.locator('.agenda-todo-modal').filter({ has: page.locator('#agendaTodoForm') });
   const todoIn = await framesAfterClick(page, add, '.agenda-todo-modal__card');
   expect(hasIntermediate(todoIn)).toBe(true);
@@ -116,7 +116,7 @@ test('dashboard dialogs, todo and help retain intermediate opening and closing f
   // Shared help also lives inside owning dialog focus scopes.
   await page.evaluate(async () => {
     const module = await import('/static/js/ui_explanation.js');
-    module.openExplanation(document.querySelector('.dw-focus [data-agenda-add-todo]'), { title: '待办说明', text: '帮助提示双向过渡验证' });
+    module.openExplanation(document.querySelector('.ls-focus [data-agenda-add-todo]'), { title: '待办说明', text: '帮助提示双向过渡验证' });
   });
   await expect(page.locator('.ui-explain-popover')).toHaveCSS('opacity', '1');
   const helpOut = await framesAfterClick(page, page.locator('.ui-explain-popover__close'), '.ui-explain-popover');
@@ -186,9 +186,9 @@ test('reduced motion keeps dialogs and activity navigation functional without an
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await loginStudent(page, fixture());
   await page.getByRole('button', { name: '全部事项与历史', exact: true }).click();
-  await expect(page.locator('.dw-dialog')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('.ls-dialog')).toHaveCSS('animation-name', 'none');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.dw-dialog')).toHaveCount(0);
+  await expect(page.locator('.ls-dialog')).toHaveCount(0);
   await page.goto(`/classroom/${fixture().classOfferingId}`);
   await page.locator('#classroom-activity-tab-polls').click();
   await expect(page.locator('.classroom-activity-panels')).not.toHaveClass(/is-switching/);

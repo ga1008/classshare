@@ -3160,7 +3160,7 @@ function initOpenContextHooks() {
 let aiWorkspaceWidgetInitialized = false;
 
 function initScopedModelessKeyboard() {
-    if (!document.body.matches('.dw-page, .classroom-workspace-v2')) return;
+    if (!document.body.matches('.ls-page, .classroom-workspace-v2')) return;
     const modal = $('#ai-chat-modal');
     const container = $('.ai-chat-container', modal || document);
     const fab = $('#ai-chat-fab');

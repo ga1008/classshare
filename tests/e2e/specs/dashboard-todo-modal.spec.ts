@@ -74,10 +74,10 @@ test.describe('teacher dashboard todo modal', () => {
     const findTodo = async (offeringId: number) => {
       const collection = page.getByRole('dialog', { name: '日程与事项', exact: true });
       if (!await collection.isVisible()) {
-        await page.locator('.dw-focus').getByRole('button', { name: /^全部事项/ }).click();
+        await page.locator('.ls-focus').getByRole('button', { name: /^全部事项/ }).click();
       }
       await collection.getByRole('searchbox', { name: '搜索事项' }).fill(todoTitle);
-      const row = collection.locator('.dw-agenda-row').filter({ hasText: todoTitle });
+      const row = collection.locator('.ls-agenda-row').filter({ hasText: todoTitle });
       await expect(row).toHaveCount(1);
       const response = await page.request.get(`/api/dashboard/workspace?q=${encodeURIComponent(todoTitle)}&kind=manual`);
       const payload = await response.json();

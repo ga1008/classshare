@@ -1,10 +1,10 @@
 // Keep SSR available while secondary controllers wait for the first paint.
-const selectors = '[data-dw-open], [data-agenda-add-todo], [data-agenda-item], [data-agenda-calendar-feed], [data-agenda-sync], [data-group-mode], [data-student-schedule-mode], [data-student-week-prev], [data-student-week-next], [data-student-week-today], [data-student-schedule-expand], #ai-chat-fab';
+const selectors = '[data-ls-open], [data-agenda-add-todo], [data-agenda-item], [data-agenda-calendar-feed], [data-agenda-sync], [data-group-mode], [data-student-schedule-mode], [data-student-week-prev], [data-student-week-next], [data-student-week-today], [data-student-schedule-expand], #ai-chat-fab';
 let ready = false;
 let loading: Promise<void> | null = null;
 let pending: HTMLElement | null = null;
 const notices = new Map<string, HTMLParagraphElement>();
-const aiAssetPayload = document.getElementById('dw-deferred-ai-assets')?.textContent;
+const aiAssetPayload = document.getElementById('ls-deferred-ai-assets')?.textContent;
 let aiReady = !aiAssetPayload;
 let aiLoading: Promise<void> | null = null;
 let aiRequested = false;
@@ -14,16 +14,16 @@ function clearNotice(kind = 'workspace') { notices.get(kind)?.remove(); notices.
 function announce(message: string, retry = false, kind = 'workspace') {
   clearNotice(kind);
   const notice = document.createElement('p');
-  notice.className = retry ? 'dw-error' : 'dw-empty-inline';
+  notice.className = retry ? 'ls-error' : 'ls-empty-inline';
   notice.setAttribute('role', retry ? 'alert' : 'status');
   notice.append(message);
   if (retry) {
     const button = document.createElement('button');
-    button.type = 'button'; button.className = 'dw-link'; button.textContent = '刷新重试';
+    button.type = 'button'; button.className = 'ls-link'; button.textContent = '刷新重试';
     button.addEventListener('click', () => window.location.reload());
     notice.append(button);
   }
-  document.querySelector('.dw-page-head')?.after(notice);
+  document.querySelector('.ls-page-head')?.after(notice);
   notices.set(kind, notice);
 }
 function detachWhenReady() { if (ready && aiReady) document.removeEventListener('click', capture, true); }
@@ -54,13 +54,13 @@ function startAi() {
 }
 
 function replay(target: HTMLElement) {
-  if (target.dataset.dwOpen) {
+  if (target.dataset.lsOpen) {
     window.dispatchEvent(new CustomEvent('lanshare:dashboard-open', { detail: {
-      view: target.dataset.dwOpen, trigger: target.isConnected ? target : null,
-      actionable: target.classList.contains('dw-overflow-link'),
+      view: target.dataset.lsOpen, trigger: target.isConnected ? target : null,
+      actionable: target.classList.contains('ls-overflow-link'),
     } }));
   } else if (target.hasAttribute('data-agenda-item')) {
-    const anchor = target.isConnected ? target : document.querySelector<HTMLElement>('.dw-focus .dw-button');
+    const anchor = target.isConnected ? target : document.querySelector<HTMLElement>('.ls-focus .ls-button');
     window.dispatchEvent(new CustomEvent('lanshare:agenda-detail', { detail: { data: { ...target.dataset }, anchor } }));
   } else if (target.hasAttribute('data-agenda-add-todo')) {
     (target.isConnected ? target : document.querySelector<HTMLElement>('[data-dashboard-root] [data-agenda-add-todo]'))?.click();

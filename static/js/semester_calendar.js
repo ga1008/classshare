@@ -665,6 +665,23 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         }
     }
 
+    function holdViewport(previousScrollLeft = null) {
+        // Keep the user's week when the calendar is re-shown or refreshed: suppress
+        // scroll snapping while the container settles, then re-centre the active week
+        // (column widths may have changed) instead of trusting a raw scrollLeft.
+        suppressSnapUntil = performance.now() + 600;
+        window.clearTimeout(snapTimer);
+        window.requestAnimationFrame(() => {
+            if (!elements.scroll) return;
+            if (activeWeekKey && elements.board?.querySelector(`[data-week-key="${activeWeekKey}"]`)) {
+                scrollToWeekKey(activeWeekKey, 'auto');
+            } else if (previousScrollLeft !== null) {
+                elements.scroll.scrollLeft = previousScrollLeft;
+            }
+            suppressSnapUntil = performance.now() + 600;
+        });
+    }
+
     function getNearestWeekKey() {
         if (!elements.scroll || !elements.board) return activeWeekKey;
         const weekHeaders = Array.from(elements.board.querySelectorAll('.semester-header-cell[data-week-key]'));
@@ -1878,6 +1895,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         elements.scroll.addEventListener('pointerleave', releaseDrag);
         elements.scroll.addEventListener('scroll', () => {
             if (dragState || performance.now() < suppressSnapUntil) return;
+            // Moving the calendar node between hosts resets scrollLeft to 0 while it is
+            // unrendered; that is not a user scroll and must not re-snap the week.
+            if (!elements.scroll.isConnected || !elements.scroll.clientWidth) return;
             scheduleSnapToNearest(170);
         }, { passive: true });
     }
@@ -1902,7 +1922,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         renderSelect();
         renderCalendar();
         if (preserveViewport && elements.scroll) {
-            window.requestAnimationFrame(() => { elements.scroll.scrollLeft = previousScrollLeft; });
+            holdViewport(previousScrollLeft);
         }
         if (onChange) {
             onChange(getActiveSemester());
@@ -2047,6 +2067,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         getSemesters: () => [...state.semesters],
         setActiveSemester,
         setSemesters,
+        holdViewport,
         render: renderCalendar,
         scrollToToday,
     };

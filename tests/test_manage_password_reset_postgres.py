@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from classroom_app.routers.ui_parts import manage_pages
+from classroom_app.routers.ui_parts import manage_pages_shared as manage_pages
 
 
 class ManagePasswordResetPostgresTests(unittest.TestCase):

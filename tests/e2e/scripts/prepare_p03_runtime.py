@@ -664,6 +664,12 @@ def prepare(runtime_root: Path) -> dict[str, Any]:
         json.dumps(baseline_counts, ensure_ascii=True, indent=2),
         encoding="utf-8",
     )
+    # Every fresh runtime gets the current term and a dated timetable so the
+    # calendar, 3D schedule and classroom timeline specs do not depend on the
+    # order in which other specs happened to seed them.
+    from prepare_schedule_fixture import seed_current_semester
+
+    seed_current_semester(runtime_root)
     return fixture
 
 

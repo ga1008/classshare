@@ -19,7 +19,7 @@ async function mountCalendar(page: Page) {
         <link rel="stylesheet" href="/shared.css"><link rel="stylesheet" href="/dashboard.css">
         <style>body{margin:0}#host{width:960px;max-width:calc(100vw - 48px);margin:24px;padding:0}
         #host .semester-calendar-panel{padding:0;border:0;box-shadow:none}</style>
-        <div class="dw-shell" id="host"><section class="semester-calendar-panel" data-semester-calendar-root>
+        <div class="ls-shell" id="host"><section class="semester-calendar-panel" data-semester-calendar-root>
           <select data-semester-calendar-select aria-label="学期"></select>
           <div class="semester-calendar-scroll" data-semester-calendar-scroll>
             <div class="semester-calendar-board" data-semester-calendar-board></div>

@@ -1,7 +1,7 @@
 # 管理端改进方案：首页与管理中心一体化（2026-09-11）
 
 > 状态：**执行中**（分支 `feat/manage-center-unification`）。代码基线 `dev @ fae155fe`。
-> 进度（2026-09-12 晚）：P0–P3 ✅；P4 ✅ 完成：页面宏 `macros/manage_page.html`（page_head/empty_state/filter_bar）已覆盖**全部**顶层管理页与 5 个平台页（feedback/password_resets/super_admin/diagnostics/blog_crawler），`manage-pagehead`/`*-hero` 旧页头标记清零（仅 `student_detail` 身份 hero 与 8 个带侧卡/汇总条的平台页 hero 保留）；40 个管理模板内联 `<style>` 清零；`exams.html` → `partials/exams/*`，`materials.html`（1115 行）→ `partials/materials/{library_card,modals_generate,modals_repository,modals_library}`（主模板 ~200 行）；P5 ✅ 首批清扫：删除 51 个死 CSS 块（`.manage-pagehead__intro/actions/lead`、`.wi-head`、`.ah-head`、`.workflow-hero*`、`.fb/pr/sa/dg/bc-hero*`、`.gwlist-hero`、`.manage-life-tips__intro`，-274 行）、`dashboard_workspace.css` 并入 `ui-system.src.css` pages layer（两处 `<link>` 与组件 spec 已同步）、删除死模板 `manage/system.html`。P5 第二批（2026-09-13）：7 个平台页（users/organizations/agent_keys/ai_usage + 教务/公文/智慧课堂对接）hero 全部换 `page_head`（侧卡与指标/芯片保留在原网格里，组织概览统计条进 aside `data-page-head-wide`），再删 11 个死 CSS 块；监控大屏保留独立深色版式。剩：pages layer 色值令牌化、`dw-*` 改名、`.workflow-*` 步骤 CSS（向导页保留为「开课向导」菜单项，故不删）。
+> 进度（2026-09-12 晚）：P0–P3 ✅；P4 ✅ 完成：页面宏 `macros/manage_page.html`（page_head/empty_state/filter_bar）已覆盖**全部**顶层管理页与 5 个平台页（feedback/password_resets/super_admin/diagnostics/blog_crawler），`manage-pagehead`/`*-hero` 旧页头标记清零（仅 `student_detail` 身份 hero 与 8 个带侧卡/汇总条的平台页 hero 保留）；40 个管理模板内联 `<style>` 清零；`exams.html` → `partials/exams/*`，`materials.html`（1115 行）→ `partials/materials/{library_card,modals_generate,modals_repository,modals_library}`（主模板 ~200 行）；P5 ✅ 首批清扫：删除 51 个死 CSS 块（`.manage-pagehead__intro/actions/lead`、`.wi-head`、`.ah-head`、`.workflow-hero*`、`.fb/pr/sa/dg/bc-hero*`、`.gwlist-hero`、`.manage-life-tips__intro`，-274 行）、`dashboard_workspace.css` 并入 `ui-system.src.css` pages layer（两处 `<link>` 与组件 spec 已同步）、删除死模板 `manage/system.html`。P5 第二批（2026-09-13）：7 个平台页（users/organizations/agent_keys/ai_usage + 教务/公文/智慧课堂对接）hero 全部换 `page_head`（侧卡与指标/芯片保留在原网格里，组织概览统计条进 aside `data-page-head-wide`），再删 11 个死 CSS 块；监控大屏保留独立深色版式。P5 收尾（2026-09-13 下午）：① pages layer 色值令牌化完成——864 条声明改为 `hsl(var(--ls-c-<family>-<step>) / α)`，86 个调色板令牌集中定义在 pages layer 顶部的 `:root`（数值取 Tailwind 调色板，容差 ≤6 保证像素不变），仅监控大屏 16 个深色自定义值保留；② 首页 `dw-*` 全部改 `ls-*`（872 处，含 `data-ls-open`/`dataset.lsOpen`/`--ls-schedule-stage-height`/`--ls-card-domain-accent`）；③ 试卷页筛选区改「搜索 + 状态/分配/来源 chips + 更多筛选折叠」，select id 契约不变；④ 删除 17 个被 301 遮蔽的旧 `/manage/*` 路由装饰器、硬编码旧 URL 全部改规范路径；⑤ 测试基线全绿：sqlite 夹具补锁表、合并注册表登记考勤来源表、考勤名单改 membership join、路由快照重生成、4 个 e2e（课表×2/待办弹窗/签名点）修复，其中待办弹窗暴露并修掉一个真实缺陷（首页课堂范围过滤误隐藏私人待办）；⑥ 本地陈旧 worktree 全部清理。`.workflow-*` 步骤卡 CSS 随向导页保留（已令牌化）。
 > 范围：教师登录后的全部工作面——`/dashboard` 教师分支、`/manage/*` 四域管理中心、`/profile`、`/message-center`，以及它们之间的跳转与数据共享。学生端零改动。
 > 写法面向"其他 AI 直接执行"：每条改进给出 为什么 / 怎么改（含文件） / 验收 / 测试 / 偏差处理。执行顺序见第 8 节。
 > 前置阅读：`docs/frontend-redesign-2026-08.md`（令牌与 shadcn 铁律）、`docs/ux-overhaul-2026-08.md`（少即是多验收标准）、`docs/teacher-portal-three-domain-restructure-goals.md`（上一轮三域重构，本方案是它的第二版，已落地的 A1/A2/A4/B3/C4/D3/E2 不再重复）。
@@ -509,6 +509,21 @@
 | 教学域主色从靛蓝改青绿引起"变淡"观感 | 域身份用 3px 竖线与页头强调线表达，不靠大面积底色；资源库接手靛蓝，视觉总量不变 |
 
 ---
+
+---
+
+## 12. 实施结果与偏差记录（2026-09-13 收口）
+
+| 计划项 | 结果 | 偏差与原因 |
+|---|---|---|
+| S1 顶栏合一 / S2 壳子令牌化 / S3 首页进壳 | ✅ 上线 | 壳仍是 `manage/layout.html`（未另建 `app_shell.html`）；学生首页零改动 |
+| N1 六域注册表 / N2 canonical 路由 | ✅ 上线 | `manage_pages.py` 已按域拆为 `manage_pages_{teaching,library,academic,me,admin}.py` + `manage_pages_shared.py`，聚合器保持 `from .ui_parts.manage_pages import *` 不变；教学域文件 443 行（班级页单个处理函数约 200 行，未再切） |
+| I1 统一收件箱 / I2 审批深链 | ✅ 上线 | — |
+| H1 学期阶段条 / H2 归档流水线 / H3 教务日程 / H4 教师「我的」进壳 | ✅ 上线 | 「我的」复用 `profile.html` 条件 extends，未抽 `profile_sections/*` partial；开课向导页**保留**为菜单项（`.workflow-*` 步骤卡 CSS 随之保留并已令牌化），而非删除 |
+| P4 页面宏 / 内联样式清零 / 大模板拆分 | ✅ 上线 | `courses.html` 428 行未超限，不拆；监控大屏与学生身份卡保留各自版式 |
+| P5 清扫 | ✅ 上线 | `tailwind-app.css` 体积由 1.14MB 升至 1.38MB：约 8,500 行原内联页面样式并入共享包（HTML 每页减少同等体积，样式改为可缓存），因此 §9.3 "体积下降" 的预期不成立，改为"页面 HTML 体积下降、CSS 一次缓存" |
+| 测试基线 | ✅ 全绿 | 修复过程中发现并修掉两个真实缺陷：首页课堂范围过滤误隐藏私人待办；学期日历在弹窗内切换视图后丢失所选周（节点搬移触发 scroll 归零→吸附到第 1 周） |
+| e2e 夹具 | ✅ | P03 基础夹具现在自带当前学期与带日期课次（`prepare_schedule_fixture.seed_current_semester`），spec 不再依赖运行顺序；`home-classroom-workspace`/`ui-motion`/`home-classroom-ui-v3` 属 ui-v3 独立合成环境（`.claude/launch.json` 的 `ui-v3` 配置 + `P03_RUNTIME_ROOT` 指向其 runtime） |
 
 ## 附录 A：影响文件一览
 

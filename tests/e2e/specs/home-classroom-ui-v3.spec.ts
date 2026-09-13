@@ -163,14 +163,14 @@ test('home keeps one 3D deck and complete course access across views and filters
   await expect(schedule.locator('[data-student-schedule-agenda]')).toBeVisible();
   await expect(schedule.locator('[data-student-week-label]')).toHaveText(selectedWeek!);
   await schedule.locator('[data-student-schedule-mode="courses"]').click();
-  const cards = schedule.locator('.dw-schedule-course');
+  const cards = schedule.locator('.ls-schedule-course');
   await expect(cards).toHaveCount(3);
   await expect(cards.filter({ hasText: '学术写作' })).toBeVisible();
   await expect(cards.filter({ hasText: '高等数学（往期）' })).toBeVisible();
-  const attention = await page.locator('.dw-focus').textContent();
+  const attention = await page.locator('.ls-focus').textContent();
   await schedule.locator('[data-student-course-state]').selectOption('history');
   await expect(cards).toHaveCount(1);
-  expect(await page.locator('.dw-focus').textContent()).toBe(attention);
+  expect(await page.locator('.ls-focus').textContent()).toBe(attention);
   await schedule.locator('[data-student-course-search]').fill('不存在的课程');
   await expect(schedule.getByText('没有匹配的课程', { exact: true })).toBeVisible();
   await schedule.getByRole('button', { name: '清除集合筛选', exact: true }).click();
@@ -215,7 +215,7 @@ test('custom todo create edit complete and restore refresh locally and locate th
   let navigations = 0;
   page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
   const title = `第三版自定义待办 ${Date.now()}`;
-  await page.locator('.dw-focus [data-agenda-add-todo]').click();
+  await page.locator('.ls-focus [data-agenda-add-todo]').click();
   const editor = page.locator('.agenda-todo-modal').filter({ has: page.locator('#agendaTodoForm') });
   await expect(editor).toBeVisible();
   await editor.locator('[name="title"]').fill(title);
@@ -225,9 +225,9 @@ test('custom todo create edit complete and restore refresh locally and locate th
   expect((await saved).status()).toBe(200);
   await expect(editor).toBeHidden();
   await page.getByRole('button', { name: '查看此待办', exact: true }).click();
-  const row = page.locator('.dw-agenda-row').filter({ hasText: title });
+  const row = page.locator('.ls-agenda-row').filter({ hasText: title });
   await expect(row).toBeVisible();
-  await expect(page.locator('.dw-agenda-row')).toHaveCount(1);
+  await expect(page.locator('.ls-agenda-row')).toHaveCount(1);
   await row.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(editor).toBeVisible();
   await editor.locator('[name="title"]').fill(`${title} 已编辑`);

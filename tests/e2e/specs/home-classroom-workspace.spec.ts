@@ -7,29 +7,29 @@ test('homepage complete items retain paging and show a usable empty filter', asy
   const response = await page.request.get('/api/dashboard/workspace?limit=20');
   expect(response.status()).toBe(200);
   const { workspace } = await response.json();
-  const opener = page.locator('.dw-focus').getByRole('button', { name: /^全部事项/ });
+  const opener = page.locator('.ls-focus').getByRole('button', { name: /^全部事项/ });
   await opener.click();
   const dialog = page.getByRole('dialog', { name: '日程与事项' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator('.dw-all-items')).toHaveAttribute('aria-busy', 'false');
-  await expect(dialog.locator('.dw-agenda-row')).toHaveCount(Math.min(workspace.filtered_total, 20));
+  await expect(dialog.locator('.ls-all-items')).toHaveAttribute('aria-busy', 'false');
+  await expect(dialog.locator('.ls-agenda-row')).toHaveCount(Math.min(workspace.filtered_total, 20));
   if (workspace.filtered_total > 20) {
     await dialog.getByRole('button', { name: '下一页' }).click();
-    await expect(dialog.locator('.dw-pagination')).toContainText('第 2 /');
-    await expect(dialog.locator('.dw-all-items')).toHaveAttribute('aria-busy', 'false');
-    const titles = await dialog.locator('.dw-item-copy strong').allTextContents();
+    await expect(dialog.locator('.ls-pagination')).toContainText('第 2 /');
+    await expect(dialog.locator('.ls-all-items')).toHaveAttribute('aria-busy', 'false');
+    const titles = await dialog.locator('.ls-item-copy strong').allTextContents();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
     await opener.click();
-    await expect(dialog.locator('.dw-pagination')).toContainText('第 2 /');
-    await expect(dialog.locator('.dw-item-copy strong')).toHaveText(titles);
+    await expect(dialog.locator('.ls-pagination')).toContainText('第 2 /');
+    await expect(dialog.locator('.ls-item-copy strong')).toHaveText(titles);
   }
   await dialog.getByLabel('搜索事项').fill('QA-no-such-item-unique-876543');
-  await expect(dialog.locator('.dw-list-summary')).toContainText('共 0 项');
-  await expect(dialog.locator('.dw-agenda-row')).toHaveCount(0);
+  await expect(dialog.locator('.ls-list-summary')).toContainText('共 0 项');
+  await expect(dialog.locator('.ls-agenda-row')).toHaveCount(0);
   await dialog.getByRole('button', { name: '清除筛选' }).click();
-  await expect(dialog.locator('.dw-list-summary')).toContainText(`共 ${workspace.filtered_total} 项`);
+  await expect(dialog.locator('.ls-list-summary')).toContainText(`共 ${workspace.filtered_total} 项`);
 });
 
 test('classroom reopens one task surface without multiplying listeners or sockets and restores task navigation', async ({ page, context }) => {

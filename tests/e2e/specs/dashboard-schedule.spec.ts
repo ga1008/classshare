@@ -23,8 +23,8 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   await expect(page.locator('.cs-lesson--mini').first()).toBeAttached();
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 980 });
-    const search = await page.locator('.dw-course-search').boundingBox();
-    const options = await page.locator('.dw-course-options').boundingBox();
+    const search = await page.locator('.ls-course-search').boundingBox();
+    const options = await page.locator('.ls-course-options').boundingBox();
     expect(Math.abs(search!.x - options!.x)).toBeLessThan(2);
     expect(options!.y).toBeGreaterThanOrEqual(search!.y + search!.height);
     expect(options!.x + options!.width).toBeLessThanOrEqual(width);
@@ -37,7 +37,7 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   await page.reload();
   await expect(page.locator('[data-filter-value="all"]')).toHaveAttribute('aria-current', 'true');
   // All closes its disclosure on reload; choices remain active inside it.
-  await page.locator('.dw-course-options summary').click();
+  await page.locator('.ls-course-options summary').click();
   await expect(page.locator('[data-group-mode="flat"]')).toHaveAttribute('aria-pressed', 'true');
   if (await page.locator('[data-semester-filter]').count()) await expect(page.locator('[data-semester-filter]')).toHaveValue('');
   expect(errors).toEqual([]);
@@ -224,7 +224,7 @@ test('a delayed real todo save cannot close or overwrite a newer unsaved draft',
     await route.fulfill({ response });
   });
   const modal = page.locator('.agenda-todo-modal').filter({ has: page.locator('[data-todo-form]') });
-  const add = page.locator('.dw-focus [data-agenda-add-todo]');
+  const add = page.locator('.ls-focus [data-agenda-add-todo]');
   try {
     await add.click();
     await expect(modal).toBeVisible();
@@ -248,7 +248,7 @@ test('a delayed real todo save cannot close or overwrite a newer unsaved draft',
 
     const refreshed = page.waitForResponse(response => response.url().includes('/api/dashboard/workspace?') && response.request().method() === 'GET');
     releaseResponse();
-    await expect(page.locator('.dw-todo-notice')).toContainText('待办已添加');
+    await expect(page.locator('.ls-todo-notice')).toContainText('待办已添加');
     expect((await refreshed).ok()).toBe(true);
     await expect(modal).toBeVisible();
     await expect(modal.locator('input[name="title"]')).toHaveValue(titleB);

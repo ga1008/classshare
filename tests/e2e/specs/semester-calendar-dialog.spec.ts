@@ -10,7 +10,7 @@ const scrollSelector = '[data-semester-calendar-scroll]';
 const boardSelector = '[data-semester-calendar-board]';
 
 async function openCalendar(page: Page) {
-  const opener = page.locator('.dw-page-head [data-dw-open="calendar"]');
+  const opener = page.locator('.ls-page-head [data-ls-open="calendar"]');
   await opener.click();
   const dialog = page.getByRole('dialog', { name: '日程与事项', exact: true });
   await expect(dialog).toBeVisible();
@@ -167,7 +167,7 @@ test('today, semester overview and the selected week survive switching views wit
   await expect(activeWeek).toHaveAttribute('data-week-key', selectedWeek!);
   const semester = await calendar.locator('[data-semester-calendar-select]').inputValue();
   await dialog.getByRole('button', { name: '全部事项', exact: true }).click();
-  await expect(dialog.locator('.dw-all-items')).toHaveAttribute('aria-busy', 'false');
+  await expect(dialog.locator('.ls-all-items')).toHaveAttribute('aria-busy', 'false');
   await expect(page.locator(calendarSelector)).toHaveCount(1);
   await dialog.getByRole('button', { name: '学期日历', exact: true }).click();
   await expect(calendar).toBeVisible();
@@ -205,7 +205,7 @@ test('calendar tools hand off to the existing todo and subscription dialogs on a
   // A real subscription GET can issue a token; it must run only in the isolated fixture.
   await expectHealthUsesRuntimeDb(page, fixture);
   const { dialog } = await openCalendar(page);
-  await dialog.locator('.dw-dialog-tools').getByRole('button', { name: '新增待办', exact: true }).click();
+  await dialog.locator('.ls-dialog-tools').getByRole('button', { name: '新增待办', exact: true }).click();
   const todo = page.locator('.agenda-todo-modal:has([data-todo-form])');
   await expect(dialog).toBeHidden();
   await expect(todo).toBeVisible();
@@ -215,7 +215,7 @@ test('calendar tools hand off to the existing todo and subscription dialogs on a
 
   await openCalendar(page);
   const feedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/calendar-feed');
-  await dialog.locator('.dw-dialog-tools').getByRole('button', { name: '订阅日历', exact: true }).click();
+  await dialog.locator('.ls-dialog-tools').getByRole('button', { name: '订阅日历', exact: true }).click();
   expect((await feedResponse).ok()).toBe(true);
   const feed = page.getByRole('dialog', { name: '订阅到手机日历', exact: true });
   await expect(dialog).toBeHidden();
