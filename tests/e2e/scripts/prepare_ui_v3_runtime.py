@@ -57,6 +57,11 @@ def prepare(runtime: Path) -> None:
     with closing(sqlite3.connect(fixture['databasePath'])) as conn:
         conn.row_factory = sqlite3.Row
         ensure_session_learning_materials_schema(conn)
+        # The base P03 seed now ships its own current term and timetable; this
+        # synthetic runtime owns the schedule, so drop that seed before re-seeding.
+        conn.execute('DELETE FROM class_offering_sessions WHERE class_offering_id=?', (offering,))
+        conn.execute('UPDATE class_offerings SET semester_id=NULL WHERE id=?', (offering,))
+        conn.execute('DELETE FROM academic_semesters WHERE teacher_id=? AND name=?', (teacher, term_name))
         seed._update(conn, 'students', student, {'name': '张三'})
         seed._update(conn, 'teachers', teacher, {'name': '林老师'})
         seed._update(conn, 'classes', fixture['classId'], {'name': '计算机科学2606班（专升本）'})

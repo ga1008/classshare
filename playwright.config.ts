@@ -9,6 +9,9 @@ const browserChannel = process.env.P03_BROWSER_CHANNEL
 
 export default defineConfig({
   testDir: './tests/e2e/specs',
+  // These specs assert the ui-v3 synthetic runtime (tests/e2e/ui-v3.playwright.config.ts)
+  // and must not run against the P03 fixture.
+  testIgnore: ['**/ui-motion.spec.ts', '**/home-classroom-ui-v3.spec.ts', '**/home-classroom-workspace.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

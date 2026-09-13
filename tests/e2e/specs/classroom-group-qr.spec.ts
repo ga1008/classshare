@@ -110,7 +110,10 @@ async function exerciseClassroomActions(page: Page) {
     await expect(page.locator('#course-info-popover')).not.toHaveClass(/popover-open/);
     await expect(page.locator('#course-info-popover .course-popover-card')).toHaveCSS('opacity', '0');
   }
-  const members = (await openClassroomMore(page)).locator('[data-learning-modal-open]');
+  // Teachers open 成员 from the 更多 menu; students have the 本课修为 topbar
+  // button instead, so fall back to the first entry on the page.
+  const menuEntry = (await openClassroomMore(page)).locator('[data-learning-modal-open]');
+  const members = (await menuEntry.count()) ? menuEntry : page.locator('[data-learning-modal-open]').first();
   await expect(members).toBeVisible();
   await members.click();
   await expect(page.locator('#learning-progress-modal')).toBeVisible();
@@ -139,7 +142,8 @@ test.describe.serial('Classroom group QR full-page acceptance', () => {
     await page.goto(`/classroom/${fixture.classOfferingId}`);
     await expect(page.locator('[data-lanshare-island="classroom-page"]')).toBeAttached();
     await expect(page.locator('#assignment-panel')).toBeVisible();
-    await expect(page.locator('#materials-panel')).toBeVisible();
+    // Course resources now live in the 课堂资源 activity tab (hidden until selected).
+    await expect(page.locator('#resources-panel')).toBeAttached();
     await expect(page.locator('#discussion-room')).toBeAttached();
     await exerciseClassroomActions(page);
 
