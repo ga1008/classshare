@@ -523,6 +523,7 @@
 | P4 页面宏 / 内联样式清零 / 大模板拆分 | ✅ 上线 | `courses.html` 428 行未超限，不拆；监控大屏与学生身份卡保留各自版式 |
 | P5 清扫 | ✅ 上线 | `tailwind-app.css` 体积由 1.14MB 升至 1.38MB：约 8,500 行原内联页面样式并入共享包（HTML 每页减少同等体积，样式改为可缓存），因此 §9.3 "体积下降" 的预期不成立，改为"页面 HTML 体积下降、CSS 一次缓存" |
 | 测试基线 | ✅ 全绿 | 修复过程中发现并修掉两个真实缺陷：首页课堂范围过滤误隐藏私人待办；学期日历在弹窗内切换视图后丢失所选周（节点搬移触发 scroll 归零→吸附到第 1 周） |
+| e2e 时序型用例 | ✅ | `ui-motion`（弹窗快速反向、活动面板淡入淡出）与 `semester-calendar-dialog`（390px 拖拽）本质是动画时序断言：已把固定延时改为「等淡入真正开始 / 等几何稳定」，容差随实际帧间隔计算；ui-v3 环境每次全量跑必须新建 runtime（测试会改库，复用会连锁失败） |
 | e2e 夹具 | ✅ | P03 基础夹具现在自带当前学期与带日期课次（`prepare_schedule_fixture.seed_current_semester`），spec 不再依赖运行顺序；`home-classroom-workspace`/`ui-motion`/`home-classroom-ui-v3` 属 ui-v3 独立合成环境（`.claude/launch.json` 的 `ui-v3` 配置 + `P03_RUNTIME_ROOT` 指向其 runtime） |
 
 ## 附录 A：影响文件一览
