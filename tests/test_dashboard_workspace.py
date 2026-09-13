@@ -64,6 +64,14 @@ class DashboardWorkspaceSemanticsTests(unittest.TestCase):
         self.assertEqual("manual:500:1", result["all_items"][0]["key"])
         self.assertEqual(0, self.workspace(iter(sources), item_key="manual:500:2")["filtered_total"])
 
+    def test_classroom_scope_keeps_personal_todos_visible(self):
+        sources = [todo(1, class_offering_id=0), todo(2, class_offering_id=1), todo(3, class_offering_id=2)]
+        result = self.workspace(iter(sources), offering_ids={1})
+        self.assertEqual({"manual:1:0", "manual:2:1"}, {item["key"] for item in result["all_items"]})
+        # An explicit single-classroom filter still means that classroom only.
+        only = self.workspace(iter(sources), offering_id=1)
+        self.assertEqual({"manual:2:1"}, {item["key"] for item in only["all_items"]})
+
     def test_p02_streaming_page_reuses_each_source_order_key(self):
         from classroom_app.services import dashboard_workspace_service as service
         sources = [todo(index, due_at="2026-09-05T10:20:00") for index in range(1000)]

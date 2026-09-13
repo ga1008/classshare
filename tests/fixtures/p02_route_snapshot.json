@@ -896,6 +896,175 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/attendance-reports",
+    "methods": [
+      "GET"
+    ],
+    "name": "reports",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/exports",
+    "methods": [
+      "POST"
+    ],
+    "name": "export_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/jobs/{job_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "job_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/jobs/{job_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "cancel_job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/options",
+    "methods": [
+      "GET"
+    ],
+    "name": "report_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/source-bindings",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_binding",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/source-bindings/{binding_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_binding",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/source-bindings/{binding_id}/grade-source",
+    "methods": [
+      "POST"
+    ],
+    "name": "select_grade_source",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/source-options",
+    "methods": [
+      "GET"
+    ],
+    "name": "source_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/source-options/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "refresh_source_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "report_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/restore",
+    "methods": [
+      "POST"
+    ],
+    "name": "restore_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/cells",
+    "methods": [
+      "GET"
+    ],
+    "name": "run_cells",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/confirm",
+    "methods": [
+      "POST"
+    ],
+    "name": "confirm_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/review",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "review_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/reviews",
+    "methods": [
+      "GET"
+    ],
+    "name": "run_reviews",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/sessions",
+    "methods": [
+      "GET"
+    ],
+    "name": "run_sessions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/runs/{run_id}/students",
+    "methods": [
+      "GET"
+    ],
+    "name": "run_students",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/versions/{version_id}/parse-runs",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_parse",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/attendance-reports/{report_id}/versions/{version_id}/source.pdf",
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "name": "source_pdf",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/bookmarks",
     "methods": [
       "GET"
@@ -1773,6 +1942,22 @@
       "GET"
     ],
     "name": "get_classroom_materials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/member-panels/{panel_key}",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_member_panel",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/members",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_members",
     "include_in_schema": true
   },
   {
@@ -6404,14 +6589,6 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_ai_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/ai",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_ai",
     "include_in_schema": false
   },
@@ -6445,6 +6622,22 @@
       "GET"
     ],
     "name": "manage_assessment_plans_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/attendance-reports",
+    "methods": [
+      "GET"
+    ],
+    "name": "attendance_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/archive/attendance-reports/{report_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "attendance_page",
     "include_in_schema": true
   },
   {
@@ -6500,24 +6693,8 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_assessment_plans_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/assessment-plans",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_assessment_plans",
     "include_in_schema": false
-  },
-  {
-    "path": "/manage/classes",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_classes_page",
-    "include_in_schema": true
   },
   {
     "path": "/manage/classes",
@@ -6532,24 +6709,8 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_classrooms_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/classrooms",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_classrooms",
     "include_in_schema": false
-  },
-  {
-    "path": "/manage/courses",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_courses_page",
-    "include_in_schema": true
   },
   {
     "path": "/manage/courses",
@@ -6564,14 +6725,6 @@
     "methods": [
       "GET"
     ],
-    "name": "manage_exams_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/exams",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_exams",
     "include_in_schema": false
   },
@@ -6580,24 +6733,8 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_gongwen_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/gongwen",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_gongwen",
     "include_in_schema": false
-  },
-  {
-    "path": "/manage/lesson-plans",
-    "methods": [
-      "GET"
-    ],
-    "name": "manage_lesson_plans_page",
-    "include_in_schema": true
   },
   {
     "path": "/manage/lesson-plans",
@@ -6661,14 +6798,6 @@
       "GET"
     ],
     "name": "get_manage_textbooks_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/materials",
-    "methods": [
-      "GET"
-    ],
-    "name": "manage_materials_page",
     "include_in_schema": true
   },
   {
@@ -6772,24 +6901,8 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_offerings_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/offerings",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_offerings",
     "include_in_schema": false
-  },
-  {
-    "path": "/manage/polls",
-    "methods": [
-      "GET"
-    ],
-    "name": "manage_polls_page",
-    "include_in_schema": true
   },
   {
     "path": "/manage/polls",
@@ -6804,24 +6917,8 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_semesters_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/semesters",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_semesters",
     "include_in_schema": false
-  },
-  {
-    "path": "/manage/signatures",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_signatures_page",
-    "include_in_schema": true
   },
   {
     "path": "/manage/signatures",
@@ -6845,14 +6942,6 @@
       "GET"
     ],
     "name": "get_manage_system_redirect",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/system/academic-integrations",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_system_academic_integrations_page",
     "include_in_schema": true
   },
   {
@@ -6908,14 +6997,6 @@
     "methods": [
       "GET"
     ],
-    "name": "get_manage_system_gongwen_integrations_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/system/gongwen-integrations",
-    "methods": [
-      "GET"
-    ],
     "name": "redirect_manage_legacy_system_gongwen_integrations",
     "include_in_schema": false
   },
@@ -6941,14 +7022,6 @@
       "GET"
     ],
     "name": "get_manage_system_organizations_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/system/password-resets",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_system_password_resets_page",
     "include_in_schema": true
   },
   {
@@ -7205,14 +7278,6 @@
       "GET"
     ],
     "name": "manage_workflow_page",
-    "include_in_schema": true
-  },
-  {
-    "path": "/manage/textbooks",
-    "methods": [
-      "GET"
-    ],
-    "name": "get_manage_textbooks_page",
     "include_in_schema": true
   },
   {

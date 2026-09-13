@@ -23,14 +23,14 @@ MAX_REQUEST_BYTES = 2 * 1024 * 1024 + 4096
 def _return_path(value):
     value = str(value or "")
     if not value.startswith("/") or value.startswith("//"):
-        return "/manage/materials"
+        return "/manage/library/materials"
     parts = urlsplit(value)
     if parts.scheme or parts.netloc or "\\" in value or any(ord(c) < 32 for c in value):
-        return "/manage/materials"
-    allowed = ("/manage/materials", "/manage/library/materials", "/manage/library/courses", "/materials/render-view/", "/materials/view/", "/classroom/")
+        return "/manage/library/materials"
+    allowed = ("/manage/library/materials", "/manage/library/courses", "/materials/render-view/", "/materials/view/", "/classroom/")
     if any(parts.path == p or (p.endswith("/") and parts.path.startswith(p)) for p in allowed):
         return value
-    return "/manage/materials"
+    return "/manage/library/materials"
 
 
 @page_router.get("/{pack_id}", response_class=HTMLResponse)
@@ -51,7 +51,7 @@ def get_editor_page(request: Request, pack_id: int, lesson: int = Query(0, ge=0,
         return templates.TemplateResponse(request, "lessondoc_editor.html", {"request": request, "user_info": user, "editor_config": config},
                                           headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
     except editor.EditorError as exc:
-        return HTMLResponse(f'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>无法编辑</title><body><p>{escape(str(exc))}</p><a href="/manage/materials">返回材料库</a></body></html>',
+        return HTMLResponse(f'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>无法编辑</title><body><p>{escape(str(exc))}</p><a href="/manage/library/materials">返回材料库</a></body></html>',
                             status_code=exc.status, headers={"Cache-Control": "private, no-store"})
 
 

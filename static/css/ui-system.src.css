@@ -57991,12 +57991,49 @@ body.manage-embedded-page { background: transparent; }
 }
 
 .exam-control-row.primary {
-    grid-template-columns: minmax(260px, 1.4fr) repeat(5, minmax(140px, 1fr));
+    grid-template-columns: minmax(260px, 1fr) auto;
 }
 
 .exam-control-row.secondary {
-    grid-template-columns: repeat(4, minmax(150px, 0.8fr)) minmax(0, 1fr) auto auto;
+    grid-template-columns: repeat(6, minmax(140px, 1fr));
+    align-items: end;
+}
+
+.exam-control-row.tertiary {
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
+    margin-top: 12px;
+}
+
+/* 三组主筛选 chips（状态/分配/来源），隐藏 select 是状态真源 */
+.exam-chip-groups { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.exam-chip-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.exam-chip-group__label { margin-right: 4px; color: var(--exam-muted); font-size: 0.76rem; font-weight: 700; }
+.exam-chip {
+    min-height: 32px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--exam-line); background: #fff; color: var(--exam-ink);
+    font-size: 0.84rem; font-weight: 600; cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.exam-chip:hover { border-color: rgba(15, 118, 110, 0.55); }
+.exam-chip[aria-pressed="true"] { background: #0f766e; border-color: #0f766e; color: #fff; }
+.exam-chip:focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.18); }
+
+/* 「更多筛选」折叠区 */
+.exam-more-filters { border-top: 1px dashed var(--exam-line); padding-top: 10px; }
+.exam-more-filters > summary {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    color: var(--exam-ink); font-size: 0.86rem; font-weight: 700;
+}
+.exam-more-filters > summary::-webkit-details-marker { display: none; }
+.exam-more-filters > summary::before { content: "▸"; font-size: 0.8em; color: var(--exam-muted); transition: transform 0.15s ease; }
+.exam-more-filters[open] > summary::before { transform: rotate(90deg); }
+.exam-more-filters > summary + * { margin-top: 12px; }
+.exam-more-filters__count[hidden] { display: none; }
+.exam-more-filters__count {
+    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+    background: #0f766e; color: #fff; font-size: 0.72rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
 }
 
 .exam-filter-field {
@@ -58334,12 +58371,10 @@ body.manage-embedded-page { background: transparent; }
 }
 
 @media (max-width: 1480px) {
-    .exam-control-row.primary,
     .exam-control-row.secondary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .exam-control-row.primary .search-box,
     .exam-control-row.secondary .filter-chips {
         grid-column: 1 / -1;
     }

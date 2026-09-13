@@ -251,7 +251,10 @@ class LearningProgressSnapshotTests(unittest.TestCase):
 
         self.assertEqual([], overview["alert_summary"]["items"])
         self.assertEqual({"L1": 0, "L2": 0, "L3": 0}, overview["alert_summary"]["counts"])
-        template = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
+        template = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [Path("templates/classroom_main_v4.html"), *sorted(Path("templates/partials/classroom_members").glob("*.html"))]
+        )
         self.assertIn("alert_items = alerts.get('items', [])", template)
         self.assertNotIn("alerts['items']", template)
 

@@ -17,6 +17,8 @@ class SignatureVisibilityMigrationTests(unittest.TestCase):
             subject_role TEXT DEFAULT 'teacher', subject_id INTEGER DEFAULT 1,
             identity_category TEXT DEFAULT '', identity_verified INTEGER DEFAULT 0,
             status TEXT DEFAULT 'active', deleted_at TEXT, updated_at TEXT DEFAULT 'original')""")
+        self.conn.execute("CREATE TABLE teachers (id INTEGER PRIMARY KEY)")
+        self.conn.execute("INSERT INTO teachers (id) VALUES (1)")
         self.addCleanup(self.conn.close)
 
     def test_legacy_scopes_change_once_and_future_missing_fields_do_not_expand(self):

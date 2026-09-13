@@ -149,7 +149,6 @@ async def manage_me_credentials_page(request: Request, user: dict = Depends(requ
 
 
 @router.get("/manage/teaching/classes", response_class=HTMLResponse)
-@router.get("/manage/classes", response_class=HTMLResponse)
 async def get_manage_classes_page(request: Request, user: dict = Depends(get_current_teacher)):
     """显示班级管理页面 (列表和新建)"""
     with get_db_connection() as conn:
@@ -381,7 +380,6 @@ async def get_manage_student_detail_page(
 
 
 @router.get("/manage/academic/classrooms", response_class=HTMLResponse)
-@router.get("/manage/classrooms", response_class=HTMLResponse)
 async def get_manage_classrooms_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教学场地与空闲教室查询页面。"""
     initial_page_size = 10
@@ -419,7 +417,6 @@ async def get_manage_classrooms_page(request: Request, user: dict = Depends(get_
 
 
 @router.get("/manage/library/courses", response_class=HTMLResponse)
-@router.get("/manage/courses", response_class=HTMLResponse)
 async def get_manage_courses_page(request: Request, user: dict = Depends(get_current_teacher)):
     """显示课程管理页面 (列表和新建)"""
     with get_db_connection() as conn:
@@ -473,7 +470,6 @@ async def get_manage_courses_page(request: Request, user: dict = Depends(get_cur
 
 
 @router.get("/manage/teaching/semesters", response_class=HTMLResponse)
-@router.get("/manage/semesters", response_class=HTMLResponse)
 async def get_manage_semesters_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         semester_calendar = build_semester_calendar_payload(
@@ -501,7 +497,6 @@ async def get_manage_semesters_page(request: Request, user: dict = Depends(get_c
 
 
 @router.get("/manage/library/textbooks", response_class=HTMLResponse)
-@router.get("/manage/textbooks", response_class=HTMLResponse)
 async def get_manage_textbooks_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
@@ -537,7 +532,6 @@ async def get_manage_signature_workflows_page(request: Request, user: dict = Dep
 
 
 @router.get("/manage/me/signatures", response_class=HTMLResponse)
-@router.get("/manage/signatures", response_class=HTMLResponse)
 async def get_manage_signatures_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         signature_context = build_signature_dashboard_context(conn, user)
@@ -556,7 +550,6 @@ async def get_manage_signatures_page(request: Request, user: dict = Depends(get_
 
 
 @router.get("/manage/teaching/offerings", response_class=HTMLResponse)
-@router.get("/manage/offerings", response_class=HTMLResponse)
 async def get_manage_offerings_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         school_codes = _teacher_school_codes(conn, int(user["id"]))
@@ -685,7 +678,6 @@ async def get_manage_offering_merge_page(request: Request, user: dict = Depends(
 
 
 @router.get("/manage/teaching/ai", response_class=HTMLResponse)
-@router.get("/manage/ai", response_class=HTMLResponse)
 async def get_manage_ai_page(request: Request, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         my_offerings = _load_teacher_offering_rows(conn, int(user["id"]))
@@ -720,7 +712,6 @@ async def get_manage_system_redirect(request: Request, user: dict = Depends(get_
 
 
 @router.get("/manage/academic/integrations", response_class=HTMLResponse)
-@router.get("/manage/system/academic-integrations", response_class=HTMLResponse)
 async def get_manage_system_academic_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师个人教务系统账号与适配器管理页面。"""
     profiles = list_academic_system_profiles()
@@ -795,7 +786,6 @@ async def get_manage_course_schedule_page(request: Request, user: dict = Depends
 
 
 @router.get("/manage/academic/gongwen-sync", response_class=HTMLResponse)
-@router.get("/manage/system/gongwen-integrations", response_class=HTMLResponse)
 async def get_manage_system_gongwen_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师个人校园公文通账号与公文同步管理页面。"""
     profiles = list_gongwen_system_profiles()
@@ -819,7 +809,6 @@ async def get_manage_system_gongwen_integrations_page(request: Request, user: di
 
 
 @router.get("/manage/academic/gongwen", response_class=HTMLResponse)
-@router.get("/manage/gongwen", response_class=HTMLResponse)
 async def get_manage_gongwen_page(request: Request, user: dict = Depends(get_current_teacher)):
     """公文材料列表页（基础资源）。"""
     with get_db_connection() as conn:
@@ -1070,7 +1059,6 @@ async def get_manage_system_blog_crawler_page(request: Request, user: dict = Dep
 
 
 @router.get("/manage/me/password-resets", response_class=HTMLResponse)
-@router.get("/manage/system/password-resets", response_class=HTMLResponse)
 async def get_manage_system_password_resets_page(request: Request, user: dict = Depends(get_current_teacher)):
     """学生找回密码申请审核页面。"""
     with get_db_connection() as conn:

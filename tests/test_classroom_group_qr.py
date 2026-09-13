@@ -95,6 +95,8 @@ class ClassroomGroupQRTests(unittest.TestCase):
                     material_path TEXT, name TEXT, node_type TEXT, file_hash TEXT, updated_at TEXT);
                 CREATE TABLE course_files (
                     id INTEGER PRIMARY KEY, course_id INTEGER, file_name TEXT, file_hash TEXT);
+                CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY);
+                INSERT OR IGNORE INTO teachers (id) VALUES (1);
             ''')
         return saved, file_hash
 

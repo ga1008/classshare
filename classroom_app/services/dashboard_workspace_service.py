@@ -296,7 +296,9 @@ def build_dashboard_workspace(*, user: dict[str, Any], offerings: list[dict[str,
             return False
         if offering_id and item["offering_id"] != offering_id:
             return False
-        if offering_ids is not None and item["offering_id"] not in offering_ids:
+        # A classroom scope narrows classroom-bound facts only; personal todos
+        # (offering_id 0) are never hidden by the homepage classroom filter.
+        if offering_ids is not None and item["offering_id"] and item["offering_id"] not in offering_ids:
             return False
         if kind != "all" and item["kind"] != kind:
             return False

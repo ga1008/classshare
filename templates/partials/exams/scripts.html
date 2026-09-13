@@ -296,6 +296,36 @@
         applyFilters();
     }
 
+    // ===== Primary chip groups (状态/分配/来源) — visual proxies of the hidden selects =====
+    const PRIMARY_CHIP_FILTERS = ['statusFilter', 'assignmentFilter', 'sourceFilter'];
+    const SECONDARY_FILTERS = ['structureFilter', 'scopeFilter', 'schoolFilter', 'departmentFilter'];
+
+    function setFilterControl(selectId, value) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        select.value = value;
+        onFilterControlChange();
+    }
+
+    function syncFilterChipGroups() {
+        PRIMARY_CHIP_FILTERS.forEach(id => {
+            const select = document.getElementById(id);
+            const current = select ? select.value : 'all';
+            document.querySelectorAll(`[data-filter-chips="${id}"] .exam-chip`).forEach(chip => {
+                chip.setAttribute('aria-pressed', chip.dataset.value === current ? 'true' : 'false');
+            });
+        });
+        const badge = document.getElementById('examMoreFiltersCount');
+        if (badge) {
+            let active = SECONDARY_FILTERS.filter(id => (document.getElementById(id)?.value || 'all') !== 'all').length;
+            active += activeFilters.size + selectedFilterTags.size;
+                        badge.hidden = active === 0;
+            badge.textContent = active ? String(active) : '';
+            const details = document.getElementById('examMoreFilters');
+            if (details && active && !details.open && !details.dataset.userToggled) details.open = true;
+        }
+    }
+
     function onSortChange() {
         readFilterControls();
         applyFilters();
@@ -376,6 +406,7 @@
     // ===== Apply Filters =====
     function applyFilters() {
         readFilterControls();
+        syncFilterChipGroups();
         const grid = document.getElementById('examsGrid');
         if (!grid) return;
 
@@ -1378,6 +1409,7 @@
     // ===== Initialize =====
     document.addEventListener('DOMContentLoaded', function() {
         // Build filter UI
+        document.getElementById('examMoreFilters')?.addEventListener('toggle', function() { this.dataset.userToggled = '1'; });
         buildFilterChips();
         buildTagDropdown();
         buildTagFilterStrip();

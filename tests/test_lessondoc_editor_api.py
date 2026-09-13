@@ -89,7 +89,7 @@ class TestEditorApi(_PackFixture):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn('id="lessondoc-editor-config"', response.text)
         self.assertNotIn('https://example.invalid/', response.text)
-        self.assertIn('"returnUrl": "/manage/materials"', response.text)
+        self.assertIn('"returnUrl": "/manage/library/materials"', response.text)
         self.assertEqual(response.headers['cache-control'], 'private, no-store')
         self.user = {"role": "teacher", "id": 10}
         self.assertEqual(self.client.get(f"/materials/lessondoc-editor/{self.pack['id']}", follow_redirects=False).status_code, 403)

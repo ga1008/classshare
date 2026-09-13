@@ -384,9 +384,16 @@ class _PackFixture(unittest.TestCase):
                 completed_at TEXT,
                 updated_at TEXT
             );
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                teacher_id INTEGER NOT NULL,
+                name TEXT DEFAULT ''
+            );
+            INSERT INTO courses (id, teacher_id, name) VALUES (42, 9, 'LessonDoc 课程');
             CREATE TABLE class_offerings (
                 id INTEGER PRIMARY KEY,
                 teacher_id INTEGER NOT NULL,
+                course_id INTEGER NOT NULL DEFAULT 42,
                 home_learning_material_id INTEGER
             );
             CREATE TABLE class_offering_sessions (

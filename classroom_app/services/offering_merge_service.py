@@ -75,6 +75,9 @@ def _rules() -> dict[str, MergeRule]:
         "cultivation_weekly_snapshots": ("student_id", "week_start"),
         "cultivation_score_event_archives": ("student_id", "archive_month", "event_type", "component"),
         "classroom_retake_students": ("student_id",),
+        # 智慧课堂考勤来源 ↔ 课堂链接：同一考勤来源同时挂在两个课堂上要人工收口，
+        # 否则 UNIQUE(binding_id, class_offering_id) 会在改指时撞键。
+        "smart_attendance_source_offerings": ("binding_id",),
     }
     # 聚合缓存/统计类：教师行两边必然重复（如行为状态、表情统计），
     # 保留主课堂侧、source 冲突行随快照归档后去重，不阻断合并。
@@ -152,6 +155,7 @@ MERGE_TABLE_LABELS = {
     "grade_publications": "成绩公布历史", "ai_review_reservations": "AI复核计费预约", "class_offering_sessions": "课堂课次",
     "class_offering_class_links": "合班名单", "class_offering_learning_materials": "课次材料绑定",
     "session_material_generation_tasks": "课时文档生成任务", "blog_posts": "课堂定向博客", "polls": "课堂发起投票",
+    "smart_attendance_source_offerings": "智慧课堂考勤来源",
 }
 
 # 自身/合并机制表——不参与迁移
@@ -196,6 +200,26 @@ def _offering_column_tables(conn: Any) -> dict[str, str]:
                 if str(col["name"]) in ("class_offering_id", "offering_id", "visible_class_offering_id", "origin_class_offering_id"):
                     found[table] = str(col["name"])
     return found
+
+
+def _active_grade_source_conflicts(conn: Any, target_id: int, source_ids: list[int]) -> int:
+    """每个课堂只能有一个生效的成绩考勤来源（部分唯一索引）；两边都有则算冲突。"""
+    if not source_ids:
+        return 0
+    placeholders = ",".join("?" for _ in source_ids)
+    target_active = conn.execute(
+        "SELECT COUNT(*) AS n FROM smart_attendance_source_offerings "
+        "WHERE class_offering_id = ? AND link_state = 'active' AND is_grade_source = 1",
+        (int(target_id),),
+    ).fetchone()
+    if not target_active or not int(target_active["n"] or 0):
+        return 0
+    source_active = conn.execute(
+        f"SELECT COUNT(*) AS n FROM smart_attendance_source_offerings "
+        f"WHERE class_offering_id IN ({placeholders}) AND link_state = 'active' AND is_grade_source = 1",
+        tuple(int(value) for value in source_ids),
+    ).fetchone()
+    return int(source_active["n"] or 0) if source_active else 0
 
 
 def find_unregistered_offering_tables(conn: Any) -> list[str]:
@@ -446,6 +470,8 @@ def build_merge_preview(
                 conn, table, rule.offering_column, rule.conflict_key,
                 int(target["id"]), source_ids,
             )
+            if table == "smart_attendance_source_offerings":
+                conflicts += _active_grade_source_conflicts(conn, int(target["id"]), source_ids)
             entry["conflicts"] = conflicts
             if conflicts:
                 blockers.append(

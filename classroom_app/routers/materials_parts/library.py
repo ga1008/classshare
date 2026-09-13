@@ -347,7 +347,6 @@ def _render_manage_materials_page(
 
 
 @router.get("/manage/library/materials", response_class=HTMLResponse)
-@router.get("/manage/materials", response_class=HTMLResponse)
 async def manage_materials_page(request: Request, user: dict = Depends(get_current_teacher)):
     # 内容资产 → 材料：只保留上课使用的学习文档；课后材料在过程材料的「课后材料」页。
     return _render_manage_materials_page(

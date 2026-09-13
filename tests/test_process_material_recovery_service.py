@@ -48,6 +48,11 @@ def _make_conn() -> sqlite3.Connection:
         "INSERT INTO teachers (id, name, username, email, college, department) "
         "VALUES (2, '李老师', 'li', 'li@example.edu', '信息工程学院', '软件工程系')"
     )
+    conn.execute("CREATE TABLE courses (id INTEGER PRIMARY KEY, teacher_id INTEGER NOT NULL, name TEXT DEFAULT '')")
+    conn.execute("INSERT INTO courses (id, teacher_id, name) VALUES (1, 1, '测试课程')")
+    conn.execute("CREATE TABLE class_offerings (id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL, teacher_id INTEGER NOT NULL, class_id INTEGER)")
+    for offering_id in (12, 18, 21):
+        conn.execute("INSERT INTO class_offerings (id, course_id, teacher_id, class_id) VALUES (?, 1, 1, ?)", (offering_id, offering_id))
     ensure_assessment_plan_schema(conn)
     ensure_lesson_plan_schema(conn)
     ensure_teacher_evaluation_schema(conn)

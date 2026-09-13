@@ -22,6 +22,7 @@ from .. import config
 from ..db.connection import get_configured_db_engine
 from ..time_utils import local_iso
 from .ai_durable_job_service import create_ai_job, cancel_ai_job_by_id
+from .offering_membership_service import offering_student_where
 from .file_service import bind_global_file_references, resolve_global_file_path
 from .semester_identity_service import identity_from_year_term
 
@@ -384,8 +385,12 @@ def _local_maps(conn, run: dict) -> tuple[dict, list]:
     offering_id = run.get("mapped_offering_id")
     if not offering_id:
         return {}, []
-    rows = conn.execute("SELECT s.id,s.student_id_number FROM students s JOIN class_offerings o ON "
-                        "(s.class_id=o.class_id OR EXISTS(SELECT 1 FROM class_offering_class_links l WHERE l.offering_id=o.id AND l.class_id=s.class_id)) WHERE o.id=?", (offering_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT s.id,s.student_id_number FROM students s JOIN class_offerings o ON "
+        + offering_student_where(offering_alias="o", student_alias="s")
+        + " WHERE o.id=?",
+        (offering_id,),
+    ).fetchall()
     numbers = {}
     for row in rows:
         numbers.setdefault(_norm(row["student_id_number"]), []).append(int(row["id"]))

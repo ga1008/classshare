@@ -159,9 +159,20 @@ class PlatformRequestFixture(unittest.TestCase):
         delegated=self.dispatch(role,key,**kwargs)
         self.assertEqual(normal.status_code,delegated['result']['http_status'])
         if normal.status_code==200:
-            self.assertEqual(normal.json(),delegated['result']['data'])
+            # Both transports write their own server timestamps; a second
+            # boundary between the two calls is not a parity failure.
+            self.assertEqual(_without_clock(normal.json()),_without_clock(delegated['result']['data']))
             self.assertEqual('observed_http_result',delegated['status'])
         return delegated
+
+
+def _without_clock(value):
+    """Drop server-side *_at timestamps so parity compares business fields only."""
+    if isinstance(value,dict):
+        return {k:_without_clock(v) for k,v in value.items() if not (isinstance(k,str) and k.endswith('_at'))}
+    if isinstance(value,list):
+        return [_without_clock(item) for item in value]
+    return value
 
 
 class AgentPlatformRequestsTests(PlatformRequestFixture):

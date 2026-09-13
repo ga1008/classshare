@@ -46,7 +46,7 @@ def execute_material_action(conn, *, actor, action: str, params: dict[str, Any])
         row = update_material_attributes(conn, material_id=params["material_id"], teacher_id=actor.id,
                                          payload=changes, expected_updated_at=params["expected_updated_at"])
         attributes = {key: dict(row).get(key) for key in ("id", "parent_id", "root_id", "name", "material_path", "scope_level", "updated_at")}
-        return {"ref_id": int(row["id"]), "url": "/manage/materials", "label": "已保存材料属性", "attributes": attributes}
+        return {"ref_id": int(row["id"]), "url": "/manage/library/materials", "label": "已保存材料属性", "attributes": attributes}
     if action not in {"bind_learning_material", "unbind_learning_material"}:
         raise HTTPException(400, "未知材料动作。")
     from . import session_learning_materials_service as service

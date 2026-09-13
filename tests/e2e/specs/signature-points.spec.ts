@@ -152,18 +152,21 @@ test.describe('material-scoped signature points', () => {
       await expect(points.getByRole('button', { name: '申请签名' })).toHaveCount(2);
 
       const examiner = page.locator('[data-ap-signature-point="examiner"]');
-      const examinerSelect = examiner.locator('[data-spw-available]');
-      // 选中即加入：change 事件直接把签名加进已选列表；此时进入“待确认”
+      // 签名选择器：点开候选弹层，点选即加入已选列表；此时进入“待确认”
       // 状态（橙框），页面保存/刷新按钮被门控禁用。
-      await examinerSelect.selectOption('11');
-      await expect(examiner.locator('[data-spw-selected="11"]')).toBeVisible();
-      await examiner.locator('[data-spw-available]').selectOption('12');
-      await expect(examiner.locator('[data-spw-selected="12"]')).toBeVisible();
+      const examinerPicker = examiner.locator('[data-spw-picker]');
+      await examinerPicker.locator('[data-spm-open]').click();
+      await examinerPicker.locator('[data-spm-option="11"]').click();
+      await expect(examinerPicker.locator('[data-spm-option="11"]')).toHaveAttribute('aria-selected', 'true');
+      await examinerPicker.locator('[data-spm-option="12"]').click();
+      await expect(examinerPicker.locator('[data-spm-option="12"]')).toHaveAttribute('aria-selected', 'true');
       await expect(examiner.locator('[data-spw-area]')).toHaveClass(/is-dirty/);
       await expect(page.locator('#ap-save')).toBeDisabled();
-      await examiner.locator('[data-spw-selected="12"] [data-spw-move="up"]').click();
-      await expect(examiner.locator('[data-spw-selected]').nth(0)).toContainText('命题教师乙');
-      await expect(examiner.locator('[data-spw-selected]').nth(1)).toContainText('命题教师甲');
+      await examinerPicker.locator('[data-spm-tab="selected"]').click();
+      await examinerPicker.locator('[data-spm-id="12"] [data-spm-move="-1"]').click();
+      await expect(examinerPicker.locator('[data-spm-id]').nth(0)).toContainText('命题教师乙');
+      await expect(examinerPicker.locator('[data-spm-id]').nth(1)).toContainText('命题教师甲');
+      await examinerPicker.locator('[data-spm-done]').click();
       // 排序调整不落库；点击“确认并更新文档”才 PUT 绑定并转为已生效（绿框）。
       expect(boundByPoint[examinerPoint]).toEqual([]);
       const bindingResponse = page.waitForResponse((response) => (
@@ -186,17 +189,20 @@ test.describe('material-scoped signature points', () => {
       await reviewer.locator('[data-spw-apply]').click();
       const dialog = page.locator('dialog.spw-dialog[open]');
       await expect(dialog.getByRole('heading', { name: labels[reviewerPoint] })).toBeVisible();
-      await expect(dialog).toContainText('新建签名申请');
-      await dialog.locator('input[value="22"]').check();
-      await dialog.locator('input[value="21"]').check();
-      await expect(dialog.locator('input[value="22"] + .spw-candidate-order')).toHaveText('1');
-      await expect(dialog.locator('input[value="21"] + .spw-candidate-order')).toHaveText('2');
+      await expect(dialog).toContainText('申请使用签名');
+      const requestPicker = dialog.locator('[data-spw-request-picker]');
+      await requestPicker.locator('[data-spm-open]').click();
+      await requestPicker.locator('[data-spm-option="22"]').click();
+      await requestPicker.locator('[data-spm-option="21"]').click();
+      await expect(requestPicker.locator('[data-spm-option="22"] .spm-check')).toHaveText('1');
+      await expect(requestPicker.locator('[data-spm-option="21"] .spm-check')).toHaveText('2');
+      await requestPicker.locator('[data-spm-done]').click();
       await dialog.locator('[data-spw-create]').click();
       await expect(dialog).toContainText('签名申请流程');
       await expect(dialog).toContainText('审批人1 · 待审批');
       expect(createdRequestOrder).toEqual([22, 21]);
       await dialog.locator('[data-spw-end]').click();
-      await expect(dialog).toContainText('新建签名申请');
+      await expect(dialog).toContainText('申请使用签名');
       await expect(dialog.locator('[data-spw-create]')).toBeVisible();
 
       const artifactDir = path.join(process.cwd(), '.codex-temp', 'signature-workflow-qa');

@@ -39,7 +39,6 @@ def _list_teacher_offerings(conn, teacher_id: int) -> list[dict]:
 
 
 @router.get("/manage/archive/assessment-plans", response_class=HTMLResponse)
-@router.get("/manage/assessment-plans", response_class=HTMLResponse)
 async def manage_assessment_plans_page(request: Request, user: dict = Depends(get_current_teacher)):
     """考核计划表库管理页面（过程材料 → 考核计划表）。"""
     with get_db_connection() as conn:

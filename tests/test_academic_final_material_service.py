@@ -531,7 +531,7 @@ class AcademicFinalMaterialServiceTests(unittest.TestCase):
         }
         self.assertIn("教务归档", groups)
         keys = {item["key"] for item in groups["教务归档"]["items"]}
-        self.assertEqual({"academic_grade_registers", "academic_exam_analyses", "teacher_evaluations"}, keys)
+        self.assertEqual({"academic_grade_registers", "academic_exam_analyses", "teacher_evaluations", "attendance_reports"}, keys)
 
     def test_schema_is_idempotent_and_enforces_one_batch_per_class(self) -> None:
         schema_academic_final_materials._SCHEMA_READY = False
