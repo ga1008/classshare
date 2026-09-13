@@ -13,12 +13,6 @@
       ]
     },
     {
-      "file": "biye-empty-dorm05-fc98e912.webp",
-      "categories": [
-        "毕业条件"
-      ]
-    },
-    {
       "file": "biye-foggy-footbridge07-dfd02249.webp",
       "categories": [
         "毕业条件"
@@ -49,12 +43,6 @@
       ]
     },
     {
-      "file": "biye-night-laundry11-be0cd9c5.webp",
-      "categories": [
-        "毕业条件"
-      ]
-    },
-    {
       "file": "biye-rain-colonnade13-2943355d.webp",
       "categories": [
         "毕业条件"
@@ -74,12 +62,6 @@
     },
     {
       "file": "biye-rooftop-dawn08-bdf52114.webp",
-      "categories": [
-        "毕业条件"
-      ]
-    },
-    {
-      "file": "biye-snowy-busstop12-1e4ec295.webp",
       "categories": [
         "毕业条件"
       ]
@@ -176,18 +158,6 @@
     },
     {
       "file": "chengshi-fog-river05-497c9c02.webp",
-      "categories": [
-        "行业城市"
-      ]
-    },
-    {
-      "file": "chengshi-neon-rain06-2353d43d.webp",
-      "categories": [
-        "行业城市"
-      ]
-    },
-    {
-      "file": "chengshi-overpass-storm14-4e64260f.webp",
       "categories": [
         "行业城市"
       ]
@@ -349,12 +319,6 @@
       ]
     },
     {
-      "file": "hetong-midnight-negotiation02-bee12f36.webp",
-      "categories": [
-        "合同五险"
-      ]
-    },
-    {
       "file": "hetong-rain-accord-handoff09-381e7a20.webp",
       "categories": [
         "合同五险"
@@ -362,18 +326,6 @@
     },
     {
       "file": "hetong-snow-office-grid05-9e8bf1e3.webp",
-      "categories": [
-        "合同五险"
-      ]
-    },
-    {
-      "file": "hetong-snow-union-hall11-ad434fad.webp",
-      "categories": [
-        "合同五险"
-      ]
-    },
-    {
-      "file": "hetong-storm-insurance12-8b7f3470.webp",
       "categories": [
         "合同五险"
       ]
@@ -637,12 +589,6 @@
       ]
     },
     {
-      "file": "jianli-parking-mirror09-7e8b4e53.webp",
-      "categories": [
-        "简历面试"
-      ]
-    },
-    {
       "file": "jianli-pen-bokeh05-704dbe7a.webp",
       "categories": [
         "简历面试"
@@ -668,12 +614,6 @@
     },
     {
       "file": "jianli-revolving-dusk04-22393b4f.webp",
-      "categories": [
-        "简历面试"
-      ]
-    },
-    {
-      "file": "jianli-shoe-shine08-aaf1f756.webp",
       "categories": [
         "简历面试"
       ]
@@ -751,12 +691,6 @@
       ]
     },
     {
-      "file": "jianli-washroom-pause11-3f3d4812.webp",
-      "categories": [
-        "简历面试"
-      ]
-    },
-    {
       "file": "kaogong-archive-beams05-66a8b1ce.webp",
       "categories": [
         "考公考编"
@@ -764,12 +698,6 @@
     },
     {
       "file": "kaogong-building01-540ade3a.webp",
-      "categories": [
-        "考公考编"
-      ]
-    },
-    {
-      "file": "kaogong-command-room13-1f3531a7.webp",
       "categories": [
         "考公考编"
       ]
@@ -1774,6 +1702,25 @@
       ]
     },
     {
+      "file": "xueye-sunny-learning-commons-202609-21cb288c.webp",
+      "categories": [
+        "学业规则",
+        "论文写作",
+        "简历面试",
+        "教学相长"
+      ],
+      "tags": [
+        "AI",
+        "来源",
+        "核验",
+        "笔记",
+        "学习",
+        "反馈",
+        "作品",
+        "提问"
+      ]
+    },
+    {
       "file": "xueye-sunny-rainwashed-court06-a3e78c08.webp",
       "categories": [
         "学业规则"
@@ -1815,6 +1762,26 @@
         "职业路径",
         "教学相长",
         "职称科研"
+      ]
+    },
+    {
+      "file": "zhichang-bluehour-collaboration-202609-816486ba.webp",
+      "categories": [
+        "教学相长",
+        "职称科研",
+        "职业路径",
+        "论文写作",
+        "学业规则"
+      ],
+      "tags": [
+        "AI",
+        "课堂",
+        "教学",
+        "反馈",
+        "研究",
+        "复盘",
+        "协作",
+        "数据"
       ]
     },
     {

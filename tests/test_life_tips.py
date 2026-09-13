@@ -84,28 +84,77 @@ class LifeTipRuntimeTests(unittest.TestCase):
         self.assertEqual(len(other_school_pool), base)  # global only
 
     def test_seed_sync_retires_stale_seed_rows(self) -> None:
-        # 模拟一条"旧版本文案"的种子句：不在当前包里 → 重播种时自动下架。
-        self.conn.execute(
-            "INSERT INTO life_tips (scope, category, audience, tip_text, source_kind, status, content_hash) "
-            "VALUES ('global', '学业规则', 'student', '旧版恐吓句-已被修订替换', 'seed', 'active', 'stale-hash-001')"
-        )
+        stale_ids = []
+        for audience in ("student", "teacher"):
+            text = f"旧版 {audience} 提示，不在新种子包内。"
+            service.insert_life_tip(
+                self.conn, scope="global", category="学业规则",
+                audience=audience, tip_text=text, source_kind="seed",
+            )
+            tip_id = self.conn.execute(
+                "SELECT id FROM life_tips WHERE content_hash = ?",
+                (service.tip_content_hash(text),),
+            ).fetchone()["id"]
+            stale_ids.append(tip_id)
+            service.record_tip_feedback(
+                self.conn, tip_id=tip_id, user_role=audience, user_pk=7, verdict=1,
+            )
+        # 种子同步只治理 seed，不改动手工与公文生成的内容。
+        for source_kind in ("manual", "ai_gongwen"):
+            service.insert_life_tip(
+                self.conn, scope="school", school_code="gxufl",
+                category="学业规则", tip_text=f"{source_kind} 内容保留自身的治理状态。",
+                source_kind=source_kind,
+            )
         service._seeded = False
         service.ensure_life_tip_runtime(self.conn)
-        row = self.conn.execute(
-            "SELECT status FROM life_tips WHERE content_hash = 'stale-hash-001'"
-        ).fetchone()
-        self.assertEqual(row["status"], "retired")
-        # 手工录入的句子（source_kind != seed）不受同步影响。
-        service.insert_life_tip(
-            self.conn, scope="school", school_code="gxufl",
-            category="学业规则", tip_text="手工句不会被种子同步下架的验证语句。",
+        for audience, tip_id in zip(("student", "teacher"), stale_ids):
+            with self.subTest(audience=audience):
+                row = self.conn.execute(
+                    "SELECT status FROM life_tips WHERE id = ?", (tip_id,),
+                ).fetchone()
+                self.assertEqual(row["status"], "retired")
+                pool = service._load_pool_from_db(
+                    self.conn, school_code="gxufl", department="", audience_role=audience,
+                )
+                self.assertNotIn(tip_id, [tip["id"] for tip in pool])
+                feedback = self.conn.execute(
+                    "SELECT verdict FROM life_tip_feedback WHERE tip_id = ?", (tip_id,),
+                ).fetchone()
+                self.assertEqual(feedback["verdict"], 1)
+        retained = self.conn.execute(
+            "SELECT status FROM life_tips WHERE source_kind IN ('manual', 'ai_gongwen')"
+        ).fetchall()
+        self.assertEqual([row["status"] for row in retained], ["active", "active"])
+
+    def test_seed_sync_preserves_existing_moderation_and_feedback(self) -> None:
+        teacher_tip = self.conn.execute(
+            "SELECT id FROM life_tips WHERE audience = 'teacher' LIMIT 1"
+        ).fetchone()["id"]
+        student_tip = self.conn.execute(
+            "SELECT id FROM life_tips WHERE audience = 'student' LIMIT 1"
+        ).fetchone()["id"]
+        service.set_life_tip_status(self.conn, tip_id=teacher_tip, status="retired")
+        service.record_tip_feedback(
+            self.conn, tip_id=student_tip, user_role="student", user_pk=3, verdict=-1,
         )
+
         service._seeded = False
         service.ensure_life_tip_runtime(self.conn)
-        manual = self.conn.execute(
-            "SELECT status FROM life_tips WHERE source_kind = 'manual'"
+
+        teacher = self.conn.execute(
+            "SELECT status FROM life_tips WHERE id = ?", (teacher_tip,),
         ).fetchone()
-        self.assertEqual(manual["status"], "active")
+        self.assertEqual(teacher["status"], "retired")
+        student = self.conn.execute(
+            "SELECT weight FROM life_tips WHERE id = ?", (student_tip,),
+        ).fetchone()
+        self.assertEqual(student["weight"], 0)
+        for audience in ("student", "teacher"):
+            pool = service._load_pool_from_db(
+                self.conn, school_code="gxufl", department="", audience_role=audience,
+            )
+            self.assertTrue({teacher_tip, student_tip}.isdisjoint(tip["id"] for tip in pool))
 
     def test_pick_image_prefers_tag_matches(self) -> None:
         from unittest.mock import patch
@@ -137,14 +186,23 @@ class LifeTipRuntimeTests(unittest.TestCase):
             self.assertTrue(tip["text"])
 
     def test_teacher_audience_gets_teacher_pool(self) -> None:
-        pool = service._load_pool_from_db(
-            self.conn, school_code="gxufl", department="", audience_role="teacher",
-        )
-        self.assertEqual(len(pool), len(TEACHER_TIP_SEED_PACK))
-        payload = service.build_login_tip_payload(
-            self.conn, school_code="gxufl", department="", role="teacher",
-        )
-        self.assertIsNotNone(payload)
+        # 在同一学校交替获取，覆盖按角色缓存与全局 content_hash 去重的边界。
+        for audience, pack in (
+            ("teacher", TEACHER_TIP_SEED_PACK),
+            ("student", LIFE_TIP_SEED_PACK),
+            ("teacher", TEACHER_TIP_SEED_PACK),
+        ):
+            with self.subTest(audience=audience):
+                pool = service._get_pool(
+                    self.conn, school_code="gxufl", department="", audience_role=audience,
+                )
+                expected_texts = {text for _, text in pack}
+                self.assertEqual({tip["text"] for tip in pool}, expected_texts)
+                payload = service.build_login_tip_payload(
+                    self.conn, school_code="gxufl", department="", role=audience,
+                )
+                self.assertIsNotNone(payload)
+                self.assertTrue({tip["text"] for tip in payload["tips"]} <= expected_texts)
 
     def test_feedback_updates_weight_and_zero_weight_leaves_pool(self) -> None:
         tip_id = self.conn.execute("SELECT id FROM life_tips LIMIT 1").fetchone()["id"]
