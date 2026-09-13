@@ -1,0 +1,45 @@
+{% if classroom_members_workspace_enabled | default(true) %}
+<div class="learning-modal-backdrop member-workspace" id="learning-progress-modal" data-member-workspace data-class-offering-id="{{ classroom.id }}" hidden aria-hidden="true">
+    <div class="learning-modal-shell" role="dialog" aria-modal="true" aria-labelledby="learning-modal-title" tabindex="-1" data-ui-overlay-surface>
+        <header class="learning-modal-header">
+            <div><h3 id="learning-modal-title">班级成员</h3><p class="member-workspace-context">{{ classroom.course_name }} · {{ classroom.class_name }}</p></div>
+            <button class="learning-modal-close" id="learning-modal-close" type="button" aria-label="关闭班级成员">×</button>
+        </header>
+        <nav class="member-tabs" role="tablist" aria-label="成员工作区" data-member-tabs>
+            {% for key, label in [('members', '成员'), ('overview', '学情概览'), ('alerts', '预警与支持'), ('attendance', '签到统计'), ('exams', '考试名单'), ('settings', '课堂设置')] %}
+            <button type="button" role="tab" id="member-tab-{{ key }}" aria-controls="member-panel-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ '0' if loop.first else '-1' }}" data-member-tab="{{ key }}">{{ label }}{% if key == 'alerts' %}<span data-member-alert-count hidden></span>{% endif %}</button>
+            {% endfor %}
+        </nav>
+        <div class="member-panels" data-member-panels>
+            <section id="member-panel-members" class="member-tab-panel" role="tabpanel" aria-labelledby="member-tab-members" data-member-panel="members" tabindex="0">
+                <div class="member-roster-toolbar">
+                    <div class="member-roster-summary" data-member-roster-summary aria-live="polite">正在读取成员名单…</div>
+                    <div class="member-roster-filters">
+                        <label>姓名或学号<input type="search" data-learning-roster-search maxlength="100" placeholder="搜索成员" autocomplete="off"></label>
+                        <label>行政班<select data-member-class-filter><option value="">全部班级</option></select></label>
+                        <label>状态<select data-member-state-filter><option value="">全部成员</option><option value="attention">有学习预警</option></select></label>
+                        <button type="button" class="btn btn-ghost btn-sm" data-member-roster-refresh>刷新</button>
+                    </div>
+                </div>
+                <div data-learning-roster-list class="member-roster-list" aria-busy="false"></div>
+                <p class="learning-roster-empty" data-learning-roster-empty hidden></p>
+                <div class="member-pagination"><button type="button" class="btn btn-outline btn-sm" data-member-previous disabled>上一页</button><span data-member-page aria-live="polite"></span><button type="button" class="btn btn-outline btn-sm" data-member-next disabled>下一页</button></div>
+            </section>
+            {% for key, label in [('overview', '学情概览'), ('alerts', '预警与支持'), ('attendance', '签到统计'), ('exams', '考试名单'), ('settings', '课堂设置')] %}
+            <section id="member-panel-{{ key }}" class="member-tab-panel" role="tabpanel" aria-labelledby="member-tab-{{ key }}" data-member-panel="{{ key }}" tabindex="0" hidden inert>
+                {% if key == 'attendance' %}<div data-attendance-classroom-panel data-class-offering-id="{{ classroom.id }}"></div>{% endif %}
+            </section>
+            {% endfor %}
+        </div>
+        <section class="member-detail" data-member-detail hidden inert>
+            <div class="member-detail-toolbar"><button type="button" class="btn btn-outline btn-sm" data-member-detail-back>← 返回成员</button><strong data-member-detail-title>成员详情</strong><a data-member-detail-link target="_blank" rel="noopener" class="btn btn-ghost btn-sm">独立打开</a></div>
+            <p data-student-insight-loading role="status">正在加载成员详情…</p>
+            <iframe data-student-insight-frame class="member-detail-frame" title="成员详情统计"></iframe>
+        </section>
+        <section class="member-draft-prompt" data-member-draft-prompt hidden role="region" aria-label="未保存修改" tabindex="-1">
+            <strong>有尚未保存的修改</strong><p>返回对应页签保存，或放弃这次修改后关闭。</p>
+            <div><button type="button" class="btn btn-primary btn-sm" data-member-draft-edit>继续编辑</button><button type="button" class="btn btn-outline btn-sm" data-member-draft-discard>放弃修改并关闭</button></div>
+        </section>
+    </div>
+</div>
+{% endif %}

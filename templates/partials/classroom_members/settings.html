@@ -1,0 +1,49 @@
+            {% set ws = weight_settings %}
+            {% if ws %}
+            <div class="learning-weight-panel" data-cultivation-weight-settings data-class-offering-id="{{ classroom.id }}" data-weight-revision="{{ ws.revision }}" data-can-update="{{ '1' if ws.can_update else '0' }}" aria-label="修为权重设置">
+                <div class="learning-weight-panel__head">
+                    <div>
+                        <span>Score Weights</span>
+                        <strong>修为权重</strong>
+                        <small data-weight-version>{{ ws.version }}{% if ws.source == 'default' %} · 默认{% elif ws.updated_at %} · {{ ws.updated_at }}{% endif %}</small>
+                    </div>
+                    <div class="learning-weight-total" data-weight-total-state="ok">
+                        <span data-weight-total>{{ ws.weights.material + ws.weights.task + ws.weights.interaction + ws.weights.consistency }}</span>
+                        <small>合计</small>
+                    </div>
+                </div>
+                <div class="learning-weight-presets" aria-label="修为权重预设">
+                    {% for preset in ws.presets %}
+                    <button type="button" class="btn btn-ghost btn-sm" data-weight-preset data-weight-material="{{ preset.weights.material }}" data-weight-task="{{ preset.weights.task }}" data-weight-interaction="{{ preset.weights.interaction }}" data-weight-consistency="{{ preset.weights.consistency }}">{{ preset.label }}</button>
+                    {% endfor %}
+                </div>
+                <div class="learning-weight-controls">
+                    {% for weight in ws.rules %}
+                    <label class="learning-weight-control" data-weight-key="{{ weight.key }}">
+                        <span>{{ weight.label }}</span>
+                        <input type="range" min="0" max="100" step="1" name="{{ weight.key }}" value="{{ weight.weight }}" data-weight-slider>
+                        <input type="number" min="0" max="100" step="1" name="{{ weight.key }}_number" value="{{ weight.weight }}" data-weight-number aria-label="{{ weight.label }}权重">
+                    </label>
+                    {% endfor %}
+                </div>
+                <div class="learning-weight-preview" data-weight-preview hidden></div>
+                <div class="learning-weight-actions">
+                    <span class="learning-weight-cooldown" data-weight-status aria-live="polite">{% if not ws.can_update %}冷却中 · {{ ws.cooldown_remaining_days }} 天{% endif %}</span>
+                    <button type="button" class="btn btn-outline btn-sm" data-weight-preview-button>预览变化</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-weight-cancel>取消修改</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-weight-save {% if not ws.can_update %}disabled{% endif %}>保存权重</button>
+                </div>
+            </div>
+            {% endif %}
+            <div class="classroom-retake-panel" data-retake-panel data-class-offering-id="{{ classroom.id }}" aria-label="重修插班生管理">
+                <div class="classroom-retake-panel__head">
+                    <div>
+                        <strong>重修 / 插班生管理</strong>
+                        <p data-retake-summary>AI 可按学号前缀识别疑似插班/重修学生；仅教师确认后生效：未参加的作业按默认平时分补记、考勤豁免、期末材料自动按默认分核对，插班生默认不参与投票与分组。</p>
+                    </div>
+                    <div class="classroom-retake-panel__actions">
+                        <button type="button" class="btn btn-outline btn-sm" data-retake-detect>AI 识别插班生</button>
+                    </div>
+                </div>
+                <div class="classroom-retake-panel__list" data-retake-list hidden></div>
+            </div>

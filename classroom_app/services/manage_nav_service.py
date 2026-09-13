@@ -83,6 +83,7 @@ MATERIAL_HUB_CATEGORIES: tuple[dict[str, str], ...] = (
     {"key": "teacher_evaluations", "label": "教师评学表", "hint": "教师评学表（10 项指标）"},
     {"key": "academic_grade_registers", "label": "成绩登记表", "hint": "教务期末成绩登记表"},
     {"key": "academic_exam_analyses", "label": "试卷分析表", "hint": "教务试卷分析表"},
+    {"key": "attendance_reports", "label": "签到统计表", "hint": "本人智慧课堂点名原件、解析结果与核对记录"},
     {"key": "exam_papers", "label": "试卷", "hint": "教师试卷库"},
     {"key": "textbooks", "label": "教材", "hint": "课程教材与参考书"},
     {"key": "gongwen", "label": "公文", "hint": "校园公文通同步的公文"},
@@ -104,7 +105,7 @@ class ManageNavItem:
     nav_badge: str = ""
     required_flag: str = ""
     legacy_hrefs: tuple[str, ...] = ()
-    # 成绩与归档域的流程步号（1..9），供页头「第 k/9 步」与侧栏排序使用。
+    # 成绩与归档域流程步号；总数由注册项计算。
     step: int = 0
 
 
@@ -280,8 +281,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         label="归档流水线",
         icon="workflow",
         href="/manage/archive",
-        search_text="成绩与归档 流水线 九步 总览 archive pipeline",
-        ai_hint="归档流水线：成绩与归档域首页——九步一览（命题与考核 → 成绩链 → 教务归档 → 课后材料），显示每步已有材料数并直达对应页。",
+        search_text="成绩与归档 流水线 总览 archive pipeline",
+        ai_hint="归档流水线：成绩与归档域首页，按命题与考核、成绩链、教务归档、课后材料显示已有材料并直达对应页；签到统计表为可选归档。",
     ),
     ManageNavItem(
         key="assessment_plans",
@@ -396,6 +397,19 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         step=8,
     ),
     ManageNavItem(
+        key="attendance_reports",
+        domain=MANAGE_ARCHIVE_DOMAIN,
+        group="教务归档",
+        label="签到统计表",
+        icon="clipboard-list",
+        href="/manage/archive/attendance-reports",
+        search_text="签到统计表 出勤统计 点名记录 智慧课堂 PDF 原件 考勤 attendance",
+        ai_hint="签到统计表：按明确学年学期和教学班导出智慧课堂全部点名原始 PDF，在线保留原件，AI 解析后核对逐次签到，支持历史版本、筛选搜索与受控下载。",
+        nav_note="可选归档 · 原件、解析与核对",
+        nav_badge="PDF",
+        step=9,
+    ),
+    ManageNavItem(
         key="postclass_materials",
         domain=MANAGE_ARCHIVE_DOMAIN,
         group="课后归档",
@@ -406,7 +420,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         ai_hint="课后材料：集中查看课堂结束后生成的材料与上传解析（AI解析/导入）的材料包，与上课用的学习文档分开管理。",
         nav_note="课堂生成 + 上传解析归档",
         legacy_hrefs=("/manage/teaching/postclass-materials",),
-        step=9,
+        step=10,
     ),
     # ── 教务 ─────────────────────────────────────────────────────────
     ManageNavItem(
@@ -726,7 +740,7 @@ def canonical_manage_href(key: str, fallback: str = "/manage/teaching/classroom-
 
 
 def iter_archive_steps() -> list[ManageNavItem]:
-    """成绩与归档域的九步，按流程顺序。"""
+    """成绩与归档域的步骤，按流程顺序。"""
     return sorted((item for item in MANAGE_NAV_ITEMS if item.domain == MANAGE_ARCHIVE_DOMAIN and item.step), key=lambda item: item.step)
 
 

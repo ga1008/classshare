@@ -1,0 +1,111 @@
+<section class="member-overview-content">
+            <div class="learning-progress-head">
+                <div>
+                    <p class="workspace-kicker">Class Growth</p>
+                    <h2>班级成员概览</h2>
+                    <p>当前课堂 {{ lo.student_count }} 名学生，活跃 {{ lo.active_student_count }} 人，待关注 {{ lo.need_attention_count }} 人，{{ lo.teacher_note_count }} 名学生已有教师共享说明。个人试炼只进入班级汇总，不进入作业与考试明细。</p>
+                </div>
+                <div class="learning-progress-score">
+                    <span>待关注</span>
+                    <strong>{{ lo.need_attention_count }}</strong>
+                    <small>人</small>
+                </div>
+            </div>
+            <div class="learning-distribution">
+                {% for item in lo.distribution %}
+                <div class="learning-distribution-item">
+                    <span>{{ item.name }}</span>
+                    <div class="learning-score-bar"><span style="width: {{ item.percent }}%"></span></div>
+                    <strong>{{ item.count }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="learning-overview-meta" aria-label="班级成员统计">
+                {% for item in lo.summary_cards %}
+                <div>
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}{{ item.suffix }}</strong>
+                    <small>{{ item.note }}</small>
+                </div>
+                {% endfor %}
+                {% if lo.personal_stage_exam_stats and lo.personal_stage_exam_stats.total_count %}
+                <div>
+                    <span>个人试炼</span>
+                    <strong>{{ lo.personal_stage_exam_stats.active_count }}</strong>
+                    <small>{{ lo.personal_stage_exam_stats.total_count }} 次，{{ lo.personal_stage_exam_stats.student_count }} 人发起</small>
+                </div>
+                <div>
+                    <span>试炼通过</span>
+                    <strong>{{ lo.personal_stage_exam_stats.passed_count }}</strong>
+                    <small>仅显示班级总量</small>
+                </div>
+                {% endif %}
+            </div>
+            {% if lo.peer_help_leaders %}
+            <div class="learning-peer-help-board" aria-label="传功榜">
+                <div class="learning-peer-help-board__head">
+                    <span>Peer Help</span>
+                    <strong>传功榜</strong>
+                    <small>被同学或教师标记有用的回答</small>
+                </div>
+                <div class="learning-peer-help-board__list">
+                    {% for item in lo.peer_help_leaders %}
+                    <a href="/manage/students/{{ item.id }}" data-student-insight-open data-student-insight-url="/manage/students/{{ item.id }}?embed=1" data-student-name="{{ item.name }}">
+                        <span>{{ loop.index }}</span>
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ item.peer_help_count }} 次 · {{ item.current_level.level_name if item.current_level else '修为积累中' }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% set trend = lo.trend_summary if lo.trend_summary is defined else none %}
+            {% if trend %}
+            <div class="learning-trend-panel" aria-label="班级修为趋势">
+                <div class="learning-trend-panel__main">
+                    <div class="learning-trend-panel__head">
+                        <div>
+                            <span>趋势</span>
+                            <strong>{% if trend.has_enough_data %}平均修为 {{ trend.average_delta_label }}{% else %}趋势积累中{% endif %}</strong>
+                        </div>
+                        <small>{{ trend.weeks }} 周数据</small>
+                    </div>
+                    {% if trend.sparkline and trend.sparkline.points %}
+                    <svg class="learning-trend-panel__chart" viewBox="{{ trend.sparkline.view_box }}" role="img" aria-label="班级平均修为 8 周折线">
+                        {% if trend.sparkline.area_points %}
+                        <polygon class="learning-trend-panel__area" points="{{ trend.sparkline.area_points }}" fill="rgba(20, 184, 166, 0.12)"></polygon>
+                        {% endif %}
+                        <polyline class="learning-trend-panel__line" points="{{ trend.sparkline.points }}" fill="none" stroke="#0f766e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                    </svg>
+                    {% else %}
+                    <p class="learning-trend-panel__empty">周快照正在积累，满 2 周后显示环比趋势。</p>
+                    {% endif %}
+                </div>
+                <div class="learning-trend-components" aria-label="四分量环比">
+                    {% for component in trend.component_deltas %}
+                    <div class="learning-trend-component is-{{ component.direction }}">
+                        <span>{{ component.label }}</span>
+                        <strong>{{ component.value }}</strong>
+                        <small>{{ component.delta_label }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="learning-trend-stalled" aria-label="掉速学生">
+                    <div class="learning-trend-stalled__head">
+                        <span>掉速信号</span>
+                        <strong>{{ trend.stalled_students | length }}</strong>
+                    </div>
+                    {% if trend.stalled_students %}
+                    <div class="learning-trend-stalled__list">
+                        {% for item in trend.stalled_students[:4] %}
+                        <span>{{ item.name }} <small>{{ item.current_score }} / {{ item.current_delta }}</small></span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p>暂无连续掉速的强信号。</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+</section>

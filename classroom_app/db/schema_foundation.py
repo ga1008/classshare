@@ -1416,6 +1416,7 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         "ALTER TABLE class_offerings ADD COLUMN academic_schedule_sync_message TEXT DEFAULT ''",
         "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_json TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_version TEXT NOT NULL DEFAULT 'default-v1'",
+        "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_revision INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_updated_at TEXT",
         "ALTER TABLE class_offerings ADD COLUMN cultivation_weights_updated_by_teacher_id INTEGER",
         "ALTER TABLE class_offerings ADD COLUMN ai_weekly_budget_json TEXT NOT NULL DEFAULT ''",

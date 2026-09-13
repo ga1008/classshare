@@ -318,3 +318,14 @@ def ensure_cultivation_progress_schema(conn: Any, *, engine: str | None = None) 
         "CREATE INDEX IF NOT EXISTS idx_ai_usage_log_priority_created "
         "ON ai_usage_log (priority, created_at DESC, id DESC)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cultivation_alert_action_receipts (
+            receipt_key TEXT PRIMARY KEY,
+            alert_id INTEGER NOT NULL REFERENCES cultivation_alerts(id) ON DELETE CASCADE,
+            actor_teacher_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            response_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cultivation_alert_action_receipts_alert ON cultivation_alert_action_receipts(alert_id)")

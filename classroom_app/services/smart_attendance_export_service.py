@@ -150,11 +150,8 @@ def _build_title(semester_name: str) -> str:
 
 
 def _score_for_statuses(statuses: Iterable[str]) -> float | None:
-    normalized = [_normalize_status(status) for status in statuses if _normalize_status(status)]
-    if not normalized:
-        return None
-    checked = sum(1 for status in normalized if status == _CHECKED_STATUS)
-    return round(checked * 100.0 / len(normalized), 2)
+    from .attendance_fact_service import summarize_attendance
+    return summarize_attendance([{"status": _normalize_status(status)} for status in statuses])["attendance_rate"]
 
 
 def _score_display(score: float | None) -> str:
@@ -341,6 +338,23 @@ def _build_student_rows(
 
 def _build_dataset(conn, *, class_offering_id: int, teacher_id: int) -> dict[str, Any]:
     context = _load_export_context(conn, class_offering_id=class_offering_id, teacher_id=teacher_id)
+    from .attendance_fact_service import load_confirmed_attendance_facts
+    facts = load_confirmed_attendance_facts(conn, class_offering_id=class_offering_id, teacher_id=teacher_id)
+    if facts is not None:
+        if not facts["available"]:
+            raise ValueError(facts["message"])
+        sessions = sorted([{**s, "checkin_time": s["source_datetime"], "session_id": s["local_session_id"]} for s in facts["sessions"]], key=_session_sort_key)
+        if not sessions:
+            raise ValueError("已确认原件没有适用的课堂点名记录。")
+        by_cell = {(int(row["student_row_id"]), int(row["session_column_id"])): row["normalized_status"] for row in conn.execute("SELECT student_row_id,session_column_id,normalized_status FROM attendance_report_cells WHERE parse_run_id=?", (facts["parse_run_id"],)).fetchall()}
+        students = []
+        for student in facts["students"]:
+            statuses = [by_cell.get((student["id"], session["id"]), "UNKNOWN") for session in sessions]
+            score = student["summary"]["attendance_rate"]
+            students.append({"student_id": student["local_student_id"], "student_number": student["student_number"], "student_name": student["source_name"],
+                             "class_name": student["source_class_name"], "college": context.get("class_college", ""), "remote_only": not student["local_student_id"],
+                             "ordered_statuses": statuses, "statuses": {s["id"]: status for s, status in zip(sessions, statuses)}, "score": score, "ordinary_score": score})
+        return {"context": context, "sessions": sessions, "students": students, "source": {"kind": "confirmed_pdf", "report_id": facts["report_id"], "parse_run_id": facts["parse_run_id"]}}
     sessions = _load_latest_sessions(conn, class_offering_id=class_offering_id, teacher_id=teacher_id)
     if not sessions:
         raise ValueError("当前课堂还没有可导出的智慧课堂点名记录，请先同步点名。")

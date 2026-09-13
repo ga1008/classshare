@@ -43,6 +43,10 @@ class CultivationWeightValidationError(ValueError):
     """Raised when a teacher-submitted cultivation weight payload is invalid."""
 
 
+class CultivationWeightConflictError(CultivationWeightValidationError):
+    """A newer committed weight configuration superseded the submitted snapshot."""
+
+
 def _json_loads(value: Any, fallback: Any) -> Any:
     if value is None:
         return fallback
@@ -124,6 +128,7 @@ def _default_config() -> dict[str, Any]:
     config = {
         "weights": dict(DEFAULT_CULTIVATION_WEIGHTS),
         "version": CULTIVATION_WEIGHT_VERSION_DEFAULT,
+        "revision": 0,
         "source": "default",
         "updated_at": None,
         "updated_by_teacher_id": None,
@@ -136,10 +141,7 @@ def load_cultivation_weight_config(conn, class_offering_id: int) -> dict[str, An
     try:
         row = conn.execute(
             """
-            SELECT cultivation_weights_json,
-                   cultivation_weights_version,
-                   cultivation_weights_updated_at,
-                   cultivation_weights_updated_by_teacher_id
+            SELECT *
             FROM class_offerings
             WHERE id = ?
             LIMIT 1
@@ -168,6 +170,7 @@ def load_cultivation_weight_config(conn, class_offering_id: int) -> dict[str, An
     config = {
         "weights": weights,
         "version": version,
+        "revision": int(item.get("cultivation_weights_revision") or 0),
         "source": source,
         "updated_at": item.get("cultivation_weights_updated_at"),
         "updated_by_teacher_id": item.get("cultivation_weights_updated_by_teacher_id"),
@@ -192,6 +195,7 @@ def build_weight_settings_payload(config: dict[str, Any], *, now: str | None = N
         "weights": dict(config.get("weights") or DEFAULT_CULTIVATION_WEIGHTS),
         "rules": list(config.get("rules") or weight_rules_from_weights(DEFAULT_CULTIVATION_WEIGHTS)),
         "version": str(config.get("version") or CULTIVATION_WEIGHT_VERSION_DEFAULT),
+        "revision": int(config.get("revision") or 0),
         "source": str(config.get("source") or "default"),
         "updated_at": config.get("updated_at"),
         "can_update": can_update,
@@ -221,15 +225,17 @@ def save_cultivation_weight_config(
     timestamp: str | None = None,
 ) -> dict[str, Any]:
     timestamp = timestamp or _now_iso()
-    version = generate_cultivation_weight_version(timestamp)
-    conn.execute(
+    revision = int((previous_config or {}).get("revision") or 0)
+    version = f"{generate_cultivation_weight_version(timestamp)}-r{revision + 1}"
+    updated = conn.execute(
         """
         UPDATE class_offerings
         SET cultivation_weights_json = ?,
             cultivation_weights_version = ?,
+            cultivation_weights_revision = cultivation_weights_revision + 1,
             cultivation_weights_updated_at = ?,
             cultivation_weights_updated_by_teacher_id = ?
-        WHERE id = ?
+        WHERE id = ? AND cultivation_weights_revision = ?
         """,
         (
             serialize_cultivation_weights(weights),
@@ -237,11 +243,15 @@ def save_cultivation_weight_config(
             timestamp,
             int(teacher_id),
             int(class_offering_id),
+            revision,
         ),
     )
+    if updated.rowcount != 1:
+        raise CultivationWeightConflictError("修为权重已被其他会话修改，请核对最新设置后重试")
     config = {
         "weights": dict(weights),
         "version": version,
+        "revision": revision + 1,
         "source": "custom",
         "updated_at": timestamp,
         "updated_by_teacher_id": int(teacher_id),

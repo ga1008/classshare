@@ -656,6 +656,8 @@ app.include_router(document_renderer.router)
 app.include_router(prompt_pool.router)
 app.include_router(academic_evaluations.router)
 app.include_router(smart_classroom.router)
+from .routers import attendance_reports
+app.include_router(attendance_reports.router)
 app.include_router(signatures.router)
 app.include_router(approval_workflow_router.router)
 app.include_router(manage_router.router)

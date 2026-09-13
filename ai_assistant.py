@@ -1450,7 +1450,7 @@ def _log_ai_usage(
         event["cost_estimate"] = cost_estimate
     event["cost_known"] = cost_estimate is not None
     if error:
-        event["error"] = _truncate_for_log(error)
+        event["error"] = "attendance_provider_request_failed" if str(task_label or "").startswith("attendance:") else _truncate_for_log(error)
     if extra:
         event["extra"] = extra
     _write_ai_usage_log(event)
@@ -4171,7 +4171,10 @@ async def _do_provider_call(
                 raise HTTPException(500, f"不支持的平台类型: {platform_type}")
 
             print(f"[AI WORKER] {platform_name} 调用成功。")
-            print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
+            if str(task_label or "").startswith("attendance:"):
+                print(f"[AI WORKER] attendance response received ({len(response_content or '')} characters); content omitted")
+            else:
+                print(f"[AI WORKER] 原始响应内容: >>>\n{response_content}\n<<<")
 
             usage_extra = {
                 "require_json_output": require_json_output,

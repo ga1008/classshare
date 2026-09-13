@@ -1,0 +1,505 @@
+{
+  "kind": "classroom_attendance_production_release",
+  "verified_at": "2026-09-13T00:27:49.970532+00:00",
+  "status": "deployed_and_verified_with_stated_limits",
+  "release_id": "20260913-081814-27a3d6ff7be7",
+  "source_commit": "a98914c36dc1a684b21bb852b6afe804bd0fb9ff",
+  "feature_commit": "d3518a443478af96d82a3dbc760fd1f28a443d7e",
+  "branch": "codex/classroom-attendance-archive",
+  "native_migration": {
+    "status": "ok",
+    "blockers": [],
+    "source_export": {
+      "method": "Existing PG custom export; independent remote/local SHA256 and bytes verified",
+      "sha256": "be2e28e337245f160330f9a84f3b5c454b196de7a30dbf91ac732554c8da30bb",
+      "bytes": 33357231,
+      "remote_local_hash_equal": true,
+      "unchanged_after_rehearsal": true
+    },
+    "migration_source_file_count": 65,
+    "incremental_preservation": true,
+    "incremental_idempotency_differences": [],
+    "full_startup_preservation": true,
+    "full_startup_idempotency_differences": [],
+    "full_startup_runs": [
+      {
+        "status": "ok",
+        "required_table_count": 168,
+        "present_required_table_count": 168,
+        "runtime_tables": {
+          "created_tables": [
+            "smart_attendance_source_bindings",
+            "smart_attendance_source_offerings",
+            "attendance_reports",
+            "attendance_report_versions",
+            "attendance_parse_runs",
+            "attendance_report_students",
+            "attendance_report_sessions",
+            "attendance_report_cells",
+            "attendance_report_reviews"
+          ],
+          "schema_writes_executed": true
+        },
+        "runtime_columns": {
+          "added_columns": {
+            "class_offerings": [
+              "cultivation_weights_revision"
+            ]
+          },
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": true
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 280,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "d0d872078878bbff4f8d16e725308a89856d5460bd0b76c1b4c9027749e24b4c"
+      },
+      {
+        "status": "ok",
+        "required_table_count": 168,
+        "present_required_table_count": 168,
+        "runtime_tables": {
+          "created_tables": [],
+          "schema_writes_executed": false
+        },
+        "runtime_columns": {
+          "added_columns": {},
+          "skipped_tables": [],
+          "legacy_material_mastery_repaired": true,
+          "schema_writes_executed": false
+        },
+        "runtime_constraints": {
+          "created_indexes": [],
+          "skipped_indexes": [],
+          "classroom_todo_scope_repaired": false,
+          "signature_requester_repaired": false,
+          "schema_writes_executed": false
+        },
+        "index_created_or_already_present": 280,
+        "index_failed": 0,
+        "skipped_step_count": 0,
+        "captured_log_sha256": "d0d872078878bbff4f8d16e725308a89856d5460bd0b76c1b4c9027749e24b4c"
+      }
+    ],
+    "added_tables": [
+      "attendance_parse_runs",
+      "attendance_report_cells",
+      "attendance_report_reviews",
+      "attendance_report_sessions",
+      "attendance_report_students",
+      "attendance_report_versions",
+      "attendance_reports",
+      "cultivation_alert_action_receipts",
+      "smart_attendance_source_bindings",
+      "smart_attendance_source_offerings"
+    ],
+    "added_columns": {
+      "class_offerings": [
+        "cultivation_weights_revision"
+      ]
+    },
+    "isolation": {
+      "dedicated_new_cluster": true,
+      "dedicated_new_database": true,
+      "production_tables_modified": false,
+      "app_or_workers_started": false,
+      "listener": "127.0.0.1",
+      "port": 55447,
+      "cluster_stopped": true
+    }
+  },
+  "deployment": {
+    "entrypoint": "deployment/deploy_remote.ps1",
+    "dry_run_passed": true,
+    "quiesced_migration": true,
+    "deploy_done": true,
+    "schema_migration": {
+      "required_table_count": 168,
+      "present_required_table_count": 168,
+      "index_failed": 0,
+      "skipped_step_count": 0
+    },
+    "code_backup": "/tmp/lanshare-deploy-backups/code-20260913-081825.tgz",
+    "code_backup_bytes": 3000504623,
+    "cutover_database_backup": "/tmp/lanshare-deploy-backups/db-cutover-20260913-081825.sql.gz",
+    "cutover_database_backup_bytes": 32567054,
+    "cutover_database_gzip_valid": true,
+    "backup_mode": "0600",
+    "running_services": [
+      "app",
+      "ai",
+      "agent-worker",
+      "blog-crawler",
+      "mailer",
+      "nginx",
+      "postgres",
+      "scheduler"
+    ],
+    "services_with_healthchecks_all_healthy": true,
+    "main_health": "ok",
+    "ai_health": "ok",
+    "ai_grading_queue_present": true,
+    "recent_error_logs": false,
+    "durable_process_worker_startup_count": 1
+  },
+  "production_postflight": {
+    "kind": "attendance_production_postflight",
+    "ok": true,
+    "checks": {
+      "source_parity": true,
+      "attendance_schema": true,
+      "warning_receipts_schema": true,
+      "weight_revision_schema": true,
+      "attendance_worker_types": true,
+      "flags_enabled": true,
+      "main_health": true,
+      "anonymous_protected": true
+    },
+    "source_file_count": 917,
+    "source_mismatches": [],
+    "schema_table_count": 9,
+    "report_count": 0,
+    "attendance_jobs": [],
+    "flags": {
+      "CLASSROOM_MEMBERS_WORKSPACE_ENABLED": true,
+      "ATTENDANCE_ARCHIVE_ENABLED": true,
+      "ATTENDANCE_PARSE_ENABLED": true,
+      "ATTENDANCE_CONFIRMED_FACTS_ENABLED": true
+    },
+    "pymupdf": "1.27.2.2",
+    "release_id": "20260913-081814-27a3d6ff7be7",
+    "release_header": "20260913-081814-27a3d6ff7be7",
+    "background_ok": false,
+    "background_items": [
+      {
+        "task_type": "attendance_export",
+        "display_name": "签到原件导出",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "attendance_parse",
+        "display_name": "签到 AI 解析",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "ai_grading",
+        "display_name": "AI 批改",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 28,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "material_ai_import",
+        "display_name": "材料 AI 导入",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 1,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "session_material_generation",
+        "display_name": "课堂材料生成",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "private_message_ai_reply",
+        "display_name": "消息中心 AI 回复",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "email_outbox",
+        "display_name": "邮件发送",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 456,
+        "stale_count": 0,
+        "active_worker_count": 1,
+        "status": "ok"
+      },
+      {
+        "task_type": "blog_news_crawler",
+        "display_name": "博客爬虫",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 8,
+        "stale_count": 0,
+        "active_worker_count": 1,
+        "status": "ok"
+      },
+      {
+        "task_type": "agent_task",
+        "display_name": "Agent worker",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 2,
+        "stale_count": 0,
+        "active_worker_count": 0,
+        "status": "ok"
+      },
+      {
+        "task_type": "scheduled_task",
+        "display_name": "定时任务调度",
+        "queue_depth": 22,
+        "running_count": 0,
+        "failed_count": 16,
+        "stale_count": 0,
+        "active_worker_count": 1,
+        "status": "ok"
+      },
+      {
+        "task_type": "behavior_write_pipeline",
+        "display_name": "行为写入管线",
+        "queue_depth": 0,
+        "running_count": 0,
+        "failed_count": 0,
+        "stale_count": 0,
+        "active_worker_count": 1,
+        "status": "ok"
+      }
+    ],
+    "anonymous_routes": [
+      {
+        "path": "/api/attendance-reports",
+        "status": 401,
+        "archive_content_exposed": false
+      },
+      {
+        "path": "/manage/archive/attendance-reports",
+        "status": 200,
+        "final_path": "/teacher/login",
+        "bytes": 7073,
+        "archive_content_exposed": false
+      }
+    ],
+    "source_or_ai_calls": 0,
+    "business_writes": 0
+  },
+  "production_routes": {
+    "kind": "production_readonly_asgi_route_probe",
+    "ok": true,
+    "checks": [
+      {
+        "name": "existing_membership_schema_and_backfill_ready",
+        "ok": true,
+        "expected_indexes_present": true,
+        "pending_primary_link_backfills": 0
+      },
+      {
+        "name": "real_member_shell_six_tabs",
+        "ok": true,
+        "tabs": [
+          "members",
+          "overview",
+          "alerts",
+          "attendance",
+          "exams",
+          "settings"
+        ]
+      },
+      {
+        "name": "member_shell_aria_panels",
+        "ok": true
+      },
+      {
+        "name": "real_member_panel_overview",
+        "ok": true,
+        "status": 200,
+        "bytes": 8403
+      },
+      {
+        "name": "real_member_panel_alerts",
+        "ok": true,
+        "status": 200,
+        "bytes": 974
+      },
+      {
+        "name": "real_member_panel_settings",
+        "ok": true,
+        "status": 200,
+        "bytes": 5114
+      },
+      {
+        "name": "real_member_panel_exams",
+        "ok": true,
+        "status": 200,
+        "bytes": 4221
+      },
+      {
+        "name": "real_member_roster_pagination",
+        "ok": true,
+        "status": 200,
+        "total": 37
+      },
+      {
+        "name": "member_search_no_false_results",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "archive_page_ssr_and_menu",
+        "ok": true,
+        "status": 200,
+        "bytes": 147717
+      },
+      {
+        "name": "owner_facets_safe_get",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "saved_source_cache_only_get",
+        "ok": true,
+        "status": 200,
+        "saved_bindings": 0
+      },
+      {
+        "name": "owner_report_list",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "other_teacher_offering_source_rejected",
+        "ok": true,
+        "status": 403
+      },
+      {
+        "name": "other_teacher_roster_rejected",
+        "ok": true,
+        "status": 403
+      },
+      {
+        "name": "same_numeric_id_student_archive_rejected",
+        "ok": true,
+        "status": 403
+      },
+      {
+        "name": "same_numeric_id_student_members_rejected",
+        "ok": true,
+        "status": 403
+      },
+      {
+        "name": "same_numeric_id_student_member_panel_rejected",
+        "ok": true,
+        "status": 403
+      },
+      {
+        "name": "anonymous_archive_rejected",
+        "ok": true,
+        "status": 401
+      }
+    ],
+    "gaps": [
+      "No archive yet: existing PDF/parse detail and report-specific cross-owner checks require a real archive; no fixture or export was created"
+    ],
+    "request_scope": "GET/HEAD only; real production database in READ ONLY transactions",
+    "authentication_scope": "Injected existing principals; public login/session middleware not exercised",
+    "overview_scope": "Real cached learning state only; legacy lazy snapshot recalculation disabled in this probe",
+    "membership_schema_scope": "Validated existing table/columns/indexes and no pending primary-link backfill; marked schema ready only in this no-lifespan probe process to avoid redundant lazy DDL",
+    "public_classroom_get_called": false,
+    "lifespan_started": false,
+    "source_or_ai_calls": 0,
+    "database_writes": 0
+  },
+  "route_target": {
+    "class_offering_id": 6,
+    "student_count": 37,
+    "page_size": 2
+  },
+  "public_https": {
+    "kind": "public_https_release_probe",
+    "assets": [
+      {
+        "path": "static/js/classroom_members.js",
+        "status": 200,
+        "hash_match": true
+      },
+      {
+        "path": "static/js/attendance_reports.js",
+        "status": 200,
+        "hash_match": true
+      },
+      {
+        "path": "static/css/classroom_members.css",
+        "status": 200,
+        "hash_match": true
+      },
+      {
+        "path": "static/css/attendance_reports.css",
+        "status": 200,
+        "hash_match": true
+      }
+    ],
+    "health_status": 200,
+    "health": "ok",
+    "release_id": "20260913-081814-27a3d6ff7be7",
+    "release_header": "20260913-081814-27a3d6ff7be7",
+    "anonymous_api_status": 401,
+    "anonymous_page_final_path": "/teacher/login",
+    "ok": true,
+    "source_or_ai_calls": 0
+  },
+  "cache_invalidation": {
+    "first_status": 200,
+    "second_status": 200,
+    "first_clear_site_data": "\"cache\"",
+    "second_clear_site_data": null,
+    "release": "20260913-081814-27a3d6ff7be7",
+    "ok": true
+  },
+  "runtime_files": {
+    "sample_count": 3,
+    "same_before_after": true,
+    "sample_hashes_valid": true,
+    "scope": "Three existing protected global files; not a complete attachment restore exercise"
+  },
+  "schema_gate_regression": {
+    "tests": 67,
+    "passed": 67,
+    "skipped": 0,
+    "changed_file": "tests/test_db_postgres_schema.py",
+    "runtime_schema_changed_for_gate_fix": false
+  },
+  "validation_model_calls": 0,
+  "validation_source_calls": 0,
+  "validation_business_writes": 0,
+  "limits": [
+    "No production archive exists yet: production PDF HEAD/Range, parse publication and archive-specific cross-owner checks were not exercised with a newly created archive.",
+    "Production authenticated route probe used injected existing principals and READ ONLY database transactions, not a logged-in browser session.",
+    "The no-lifespan route probe verified existing schema/backfill and marked its process-local schema cache ready; legacy learning snapshot recalculation was disabled.",
+    "No full P03 write-flow suite or production mixed-load benchmark was run.",
+    "Historical background task failures remain; every current task item is ok and total stale count is zero."
+  ]
+}

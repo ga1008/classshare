@@ -62,6 +62,9 @@ class FakePostgresConnection:
         if "information_schema.columns" in normalized:
             rows = []
             for table, columns in REQUIRED_POSTGRES_COLUMNS.items():
+                # Runtime Agent key migration asks for one table's columns.
+                if "table_name = 'agent_runtime_api_keys'" in normalized and table != "agent_runtime_api_keys":
+                    continue
                 if table in self.missing_tables:
                     continue
                 missing = set(self.missing_columns.get(table, ()))
@@ -93,6 +96,16 @@ class FakePostgresConnection:
                 self.missing_columns[table] = missing
             return FakeCursor([])
         if normalized.startswith("UPDATE learning_material_progress"):
+            return FakeCursor([])
+        if normalized in {
+            "UPDATE agent_tasks SET actor_id=teacher_id WHERE actor_id IS NULL AND actor_role='teacher'",
+            "UPDATE agent_task_composers SET actor_id=teacher_id WHERE actor_id IS NULL AND actor_role='teacher'",
+            "INSERT INTO agent_model_configuration_lock (id, revision) VALUES (1, 0) ON CONFLICT (id) DO NOTHING",
+            "UPDATE agent_model_configuration_lock SET revision = revision WHERE id = 1",
+            "UPDATE agent_runtime_api_keys SET is_active = 0 WHERE id IN ( SELECT id FROM ( "
+            "SELECT id, ROW_NUMBER() OVER ( PARTITION BY provider ORDER BY enabled DESC, updated_at DESC, id DESC "
+            ") AS selected_rank FROM agent_runtime_api_keys WHERE is_active = 1 ) ranked WHERE selected_rank > 1 )",
+        }:
             return FakeCursor([])
         raise AssertionError(f"unexpected sql: {sql}")
 
@@ -154,6 +167,22 @@ class FakePostgresConstraintConnection(FakePostgresConnection):
 
 
 class PostgresSchemaValidationTests(unittest.TestCase):
+    # These additive Agent tables are installed after the base preflight, on
+    # both database startup paths. Requiring them before startup would prevent
+    # an existing database from reaching its own upgrade. The startup test below
+    # verifies that exempting the modules does not hide a missing ensure call.
+    AGENT_RUNTIME_TABLES_BY_MODULE = {
+        "schema_agent_authority.py": {
+            "agent_task_attempts", "agent_persistent_authorizations",
+            "agent_task_delegations", "agent_action_executions",
+        },
+        "schema_agent_model.py": {"agent_model_configuration_lock", "agent_model_requests"},
+        "schema_agent_request_budget.py": {"agent_request_buckets", "agent_request_budget_leases"},
+        "schema_agent_interactions.py": {"agent_task_questions"},
+        "schema_agent_children.py": {"agent_task_children"},
+        "schema_agent_platform_requests.py": {"agent_platform_requests"},
+    }
+
     def test_build_report_passes_without_writing_schema(self):
         conn = FakePostgresConnection()
 
@@ -330,6 +359,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
     # REQUIRED_POSTGRES_TABLES or be added here explicitly.
     RUNTIME_ENSURED_SCHEMA_MODULES = frozenset(
         {
+            *AGENT_RUNTIME_TABLES_BY_MODULE,
             "schema_academic_evaluations.py",
             "schema_academic_final_materials.py",
             "schema_assessment_plans.py",
@@ -366,17 +396,20 @@ class PostgresSchemaValidationTests(unittest.TestCase):
 
         schema_tables: set[str] = set()
         for path in db_dir.glob("schema*.py"):
-            if path.name in self.RUNTIME_ENSURED_SCHEMA_MODULES:
-                continue
             text = path.read_text(encoding="utf-8")
-            schema_tables.update(
+            declared_tables = {
                 match.group(1)
                 for match in re.finditer(
                     r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)",
                     text,
                     re.IGNORECASE,
                 )
-            )
+            }
+            if path.name in self.AGENT_RUNTIME_TABLES_BY_MODULE:
+                self.assertEqual(self.AGENT_RUNTIME_TABLES_BY_MODULE[path.name], declared_tables)
+            if path.name in self.RUNTIME_ENSURED_SCHEMA_MODULES:
+                continue
+            schema_tables.update(declared_tables)
 
         self.assertTrue(schema_tables)
         self.assertEqual(set(), schema_tables - set(REQUIRED_POSTGRES_TABLES))
@@ -793,7 +826,9 @@ class PostgresSchemaValidationTests(unittest.TestCase):
                 "classroom_app.db.schema.ensure_career_path_schema"
             ) as career_schema, patch(
                 "classroom_app.db.schema.ensure_resume_schema"
-            ) as resume_schema:
+            ) as resume_schema, patch(
+                "classroom_app.db.schema_agent_ext._SCHEMA_READY", False
+            ):
                 report = database.init_database()
         finally:
             config.DB_ENGINE = original_engine
@@ -806,6 +841,23 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         career_schema.assert_called_once_with(conn)
         resume_schema.assert_called_once_with(conn)
         sqlite_initializer.assert_not_called()
+        executed = [" ".join(sql.split()) for sql, _ in conn.executed_sql]
+        created_tables = {
+            match.group(1)
+            for sql in executed
+            if (match := re.match(r"CREATE TABLE IF NOT EXISTS ([A-Za-z_][A-Za-z0-9_]*)", sql))
+        }
+        expected_agent_tables = set().union(*self.AGENT_RUNTIME_TABLES_BY_MODULE.values())
+        self.assertTrue(expected_agent_tables.issubset(created_tables))
+        for table in ("agent_tasks", "agent_task_composers"):
+            self.assertIn(
+                f"UPDATE {table} SET actor_id=teacher_id WHERE actor_id IS NULL AND actor_role='teacher'",
+                executed,
+            )
+        self.assertIn(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_composers_actor ON agent_task_composers(actor_role, actor_id)",
+            executed,
+        )
 
 
 if __name__ == "__main__":

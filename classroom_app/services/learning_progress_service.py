@@ -1582,9 +1582,13 @@ def update_class_cultivation_weights(
     *,
     teacher_id: int,
     weights_payload: Any,
+    expected_revision: int | None = None,
 ) -> dict[str, Any]:
+    from .cultivation_weight_service import CultivationWeightConflictError
     weights = normalize_cultivation_weights(weights_payload)
     current_config = load_cultivation_weight_config(conn, int(class_offering_id))
+    if expected_revision is not None and int(expected_revision) != int(current_config.get("revision") or 0):
+        raise CultivationWeightConflictError("修为权重已被其他会话修改，请核对最新设置后重试")
     timestamp = now_iso()
     settings = build_weight_settings_payload(current_config, now=timestamp)
     if weights == current_config.get("weights"):

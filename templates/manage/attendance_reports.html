@@ -1,0 +1,68 @@
+{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
+{% block title %}签到统计表{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
+{% endblock %}
+{% block content %}
+<section class="att" data-attendance-root data-report-id="{{ report_id|default('', true) }}" data-class-offering-id="{{ class_offering_id|default('', true) }}" data-archive-enabled="{{ 'true' if attendance_archive_enabled|default(true) else 'false' }}" data-parse-enabled="{{ 'true' if attendance_parse_enabled|default(true) else 'false' }}">
+    {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档') }}
+    <div class="att-notice" data-att-notice role="status" aria-live="polite" hidden></div>
+    <div data-att-list-view>
+        <div class="att-toolbar">
+            <button class="att-btn att-btn--primary" type="button" data-att-action="open-source">从智慧课堂导出</button>
+            <span class="att-muted">后台处理，离开页面后继续运行</span>
+        </div>
+        <form class="att-filters" data-att-filters role="search">
+            <label>学年<select name="year" aria-label="学年"><option value="">全部学年</option></select></label>
+            <label>学期<select name="term" aria-label="学期"><option value="">全部学期</option><option value="1">第一学期</option><option value="2">第二学期</option></select></label>
+            <label>课程<select name="course" aria-label="课程"><option value="">全部课程</option></select></label>
+            <label>教学班<select name="teaching_class" aria-label="教学班"><option value="">全部教学班</option></select></label>
+            <label>状态<select name="status" aria-label="档案状态"><option value="">全部状态</option><option value="cached">原件已缓存</option><option value="processing">处理中</option><option value="needs_review">待核对</option><option value="validated">待确认</option><option value="confirmed">已确认</option><option value="failed">失败</option></select></label>
+            <label class="att-search">搜索<input type="search" name="q" placeholder="课程、课程代码、教学班" maxlength="120" autocomplete="off"></label>
+            <label>显示范围<select name="deleted" aria-label="显示范围"><option value="0">当前档案</option><option value="1">已删除档案</option></select></label>
+            <button class="att-btn" type="reset">重置</button>
+        </form>
+        <div class="att-list-head"><p data-att-count role="status">正在读取档案…</p><label class="att-sort">排序<select name="sort" data-att-sort aria-label="排序"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="course_asc">课程名称</option></select></label></div>
+        <div data-att-chips class="att-chips" aria-label="已选筛选条件"></div>
+        <div data-att-reports></div>
+        <nav class="att-pagination" data-att-list-pagination aria-label="档案分页"></nav>
+    </div>
+    <div data-att-detail-view hidden>
+        <a class="att-back" href="/manage/archive/attendance-reports" data-att-back>← 返回签到统计表</a>
+        <div data-att-detail-head></div>
+        <div class="att-tabs" role="tablist" aria-label="签到档案详情">
+            <button type="button" role="tab" aria-selected="true" aria-controls="att-overview" id="att-tab-overview" data-att-tab="overview">概览</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="att-matrix" id="att-tab-matrix" tabindex="-1" data-att-tab="matrix">逐次签到</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="att-students" id="att-tab-students" tabindex="-1" data-att-tab="students">学生汇总</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="att-review" id="att-tab-review" tabindex="-1" data-att-tab="review">核对记录</button>
+        </div>
+        <div id="att-overview" role="tabpanel" aria-labelledby="att-tab-overview" data-att-panel="overview"></div>
+        <div id="att-matrix" role="tabpanel" aria-labelledby="att-tab-matrix" data-att-panel="matrix" hidden>
+            <div class="att-toolbar"><label>筛选学生<input type="search" data-att-matrix-query placeholder="姓名或学号" autocomplete="off"></label><label>状态<select data-att-matrix-quality><option value="">全部记录</option><option value="unknown">待核实</option><option value="conflict">来源冲突</option></select></label><p class="att-muted">仅筛选显示，完整统计口径保持不变</p></div>
+            <div class="att-legend" data-att-legend></div><div data-att-matrix-content></div>
+            <nav class="att-pagination" data-att-matrix-pagination aria-label="签到矩阵学生分页"></nav>
+            <nav class="att-pagination" data-att-column-pagination aria-label="点名列分页"></nav>
+        </div>
+        <div id="att-students" role="tabpanel" aria-labelledby="att-tab-students" data-att-panel="students" hidden>
+            <div class="att-toolbar"><label class="att-search">搜索学生<input type="search" data-att-student-query placeholder="姓名或学号" autocomplete="off"></label></div>
+            <div data-att-students-content></div><nav class="att-pagination" data-att-students-pagination aria-label="学生汇总分页"></nav>
+        </div>
+        <div id="att-review" role="tabpanel" aria-labelledby="att-tab-review" data-att-panel="review" hidden><div data-att-review-content></div></div>
+    </div>
+    <section class="att-source-box" data-att-source-box hidden aria-label="从智慧课堂导出"><div class="att-toolbar"><h3>选择点名来源</h3><button class="att-btn" type="button" data-att-action="close-source">收起</button></div><div data-att-source-content></div></section>
+    <dialog class="att-dialog" data-att-evidence-dialog aria-labelledby="att-evidence-title">
+        <header class="att-toolbar"><div><h3 id="att-evidence-title">原件与核对</h3><p class="att-muted" data-att-evidence-label></p></div><button class="att-btn" type="button" data-att-action="close-evidence" aria-label="关闭原件核对">关闭</button></header>
+        <div class="att-evidence-layout"><div class="att-evidence-preview"><a data-att-evidence-link target="_blank" rel="noopener">在新窗口查看原件</a><iframe title="签到原始 PDF 对应页" data-att-evidence-frame loading="lazy"></iframe></div><form class="att-review-form" data-att-review-form>
+            <p data-att-cell-source></p><div data-att-cell-review-fields><label>核对后的状态<select name="normalized_status"><option value="CHECKED">出勤</option><option value="UNCHECKED">缺课</option><option value="SICK_LEAVE">病假</option><option value="PERSONAL_LEAVE">事假</option><option value="LATE_OR_EARLY">迟到或早退</option><option value="UNKNOWN">待核实</option><option value="NOT_APPLICABLE">不适用（需证据）</option></select></label>
+            <label data-att-conflict-resolution hidden>来源差异处理<select name="quality_state"><option value="conflict">尚未解决差异</option><option value="resolved_historical_difference">确认 PDF 导出时的记录，保留 API 当前差异</option></select></label>
+            <label data-att-applicability hidden>不适用证据<textarea name="applicability_evidence" rows="3" maxlength="1200" placeholder="说明名册、转入时间或其他适用范围证据"></textarea></label></div>
+            <div data-att-identity-review-fields hidden></div>
+            <label>核对说明<textarea name="reason" rows="4" maxlength="1200" placeholder="说明原件对应文字、差异原因或适用性证据" required></textarea></label>
+            <div class="att-notice" data-att-review-message role="status" hidden></div><div class="att-toolbar"><button class="att-btn att-btn--primary" type="submit" data-att-save-review>保存核对</button><button class="att-btn" type="button" data-att-action="cancel-review">取消修改</button></div>
+        </form></div>
+    </dialog>
+    <dialog class="att-dialog att-dialog--small" data-att-confirm-dialog aria-labelledby="att-confirm-title"><form method="dialog"><h3 id="att-confirm-title">确认操作</h3><p data-att-confirm-copy></p><div class="att-toolbar"><button class="att-btn att-btn--primary" value="confirm">确认</button><button class="att-btn" value="cancel">取消</button></div></form></dialog>
+</section>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/attendance_reports.js') }}"></script>{% endblock %}

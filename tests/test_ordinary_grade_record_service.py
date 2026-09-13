@@ -547,17 +547,21 @@ class OrdinaryGradeRecordServiceTests(unittest.TestCase):
             "INSERT INTO smart_classroom_checkin_students VALUES (?, ?, ?, ?)",
             (405, 301, 103, "CHECKED"),
         )
-        payload = build_ordinary_grade_record_payload(
-            self.conn,
-            class_offering_id=30,
-            teacher_id=1,
-            homework_assignment_ids=[201, 202, 203],
-            assessment_assignment_id=204,
-        )
-        student = payload["structured"]["students"][2]
-        self.assertEqual(50.0, student["attendance_raw_score"])
-        self.assertFalse(student["score_floor_adjustment"]["eligible"])
-        self.assertFalse(student["score_floor_adjustment"]["applied"])
+        with self.assertRaisesRegex(ValueError, "签到明细不完整"):
+            build_ordinary_grade_record_payload(
+                self.conn, class_offering_id=30, teacher_id=1,
+                homework_assignment_ids=[201, 202, 203], assessment_assignment_id=204,
+            )
+
+    def test_confirmed_pdf_missing_current_member_blocks_grade_instead_of_zero(self):
+        from unittest.mock import patch
+        from classroom_app.services.attendance_fact_service import ReviewedAttendanceScores
+        with patch("classroom_app.services.ordinary_grade_record_service._load_attendance_scores", return_value=ReviewedAttendanceScores({101: 100, 102: 50})):
+            with self.assertRaisesRegex(ValueError, "不在已确认签到原件"):
+                build_ordinary_grade_record_payload(
+                    self.conn, class_offering_id=30, teacher_id=1,
+                    homework_assignment_ids=[201, 202, 203], assessment_assignment_id=204,
+                )
 
     def test_payload_adjusts_only_eligible_task_scores_and_exports_hidden_audit(self):
         self.conn.executemany(

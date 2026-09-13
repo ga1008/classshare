@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from .schema_ai_jobs import AI_JOB_REQUIRED_POSTGRES_COLUMNS
 from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
+from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
+    **ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     "teachers": ("id", "name"),
     "system_settings": ("key", "value", "updated_at"),
     "teacher_onboarding_state": (
@@ -155,6 +157,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "home_learning_material_id",
         "cultivation_weights_json",
         "cultivation_weights_version",
+        "cultivation_weights_revision",
         "cultivation_weights_updated_at",
         "cultivation_weights_updated_by_teacher_id",
         "ai_weekly_budget_json",
@@ -2199,6 +2202,9 @@ REQUIRED_POSTGRES_COLUMNS = {
         "snapshot_source",
         "created_at",
         "metadata_json",
+    ),
+    "cultivation_alert_action_receipts": (
+        "receipt_key", "alert_id", "actor_teacher_id", "action", "response_json", "created_at",
     ),
     "cultivation_alerts": (
         "id",

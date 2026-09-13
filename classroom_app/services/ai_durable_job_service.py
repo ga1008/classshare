@@ -53,6 +53,9 @@ TASK_POLICIES: dict[str, AIDurableTaskPolicy] = {
     "exam_generation": AIDurableTaskPolicy("exam_generation", 20, 6, 900, JOB_REVIEW_REQUIRED),
     "document_import": AIDurableTaskPolicy("document_import", 40, 5, 600, JOB_DEAD_LETTER),
     "document_generation": AIDurableTaskPolicy("document_generation", 30, 6, 900, JOB_REVIEW_REQUIRED),
+    "attendance_export": AIDurableTaskPolicy("attendance_export", 45, 3, 900, JOB_REVIEW_REQUIRED),
+    # A failed AI interpretation retains its candidate; retry is a new explicit run.
+    "attendance_parse": AIDurableTaskPolicy("attendance_parse", 50, 1, 900, JOB_REVIEW_REQUIRED),
 }
 DEFAULT_TASK_POLICY = AIDurableTaskPolicy("generic", 100, 5, 600, JOB_DEAD_LETTER)
 
@@ -844,13 +847,15 @@ def store_ai_job_result(
         return result_row
 
 
-def reschedule_ai_job(job: dict[str, Any], *, error_code: str, error_message: str, terminal: bool = False) -> str:
+def reschedule_ai_job(job: dict[str, Any], *, error_code: str, error_message: str, terminal: bool = False, retry_after_seconds: int | None = None) -> str:
     attempt_count = int(job.get("attempt_count") or 1)
     max_attempts = int(job.get("max_attempts") or durable_task_policy(str(job.get("task_type"))).max_attempts)
     policy = durable_task_policy(str(job.get("task_type") or ""))
     terminal = terminal or attempt_count >= max_attempts
     status = policy.failure_terminal if terminal else JOB_RETRY_WAIT
     backoff = BACKOFF_SECONDS[min(max(attempt_count - 1, 0), len(BACKOFF_SECONDS) - 1)]
+    if retry_after_seconds is not None:
+        backoff = max(backoff, min(3600, max(0, int(retry_after_seconds))))
     jitter = int(job.get("id") or 0) % 7
     available_at = _iso(_now() + timedelta(seconds=backoff + jitter))
     now = _iso()
