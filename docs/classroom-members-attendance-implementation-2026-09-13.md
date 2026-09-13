@@ -6,6 +6,8 @@
 
 开发基线：`2ac3c9fba54b81cbcd5c49e6d9dd2970e730e35e`
 
+后续状态：已于 2026-09-13 部署；生产版本、备份与有限范围验收见[发布记录](classroom-attendance-release-2026-09-13.md)。下文保留本地实施阶段的验证范围。
+
 本次按[改进计划](classroom-members-attendance-archive-plan-2026-09-13.md)完成本地功能开发及下述验证。本记录覆盖本地开发验收，不是生产部署报告；验证未在生产业务库中创建测试档案或修改成绩。这里的“通过”限定于各项证据明确覆盖的范围，不代表全库测试、生产环境或所有学校数据格式均已通过。
 
 ## 1. 最终行为与使用入口
@@ -191,6 +193,8 @@ node --test tests/frontend/attendance_reports_browser.test.cjs
 4. **既有数据库测试问题**：`tests.test_db_postgres_schema` 27 项中 25 项通过、1 failure、1 error；在上述原始基线的独立源码副本中复现相同两项，未归因于本次改动。具体为 Agent 的 11 张已有表未列入 required-table registry，以及 FakePostgresConnection 不支持已有 Agent identity 回填 SQL。当前签到新增 schema 已通过单独原生 PostgreSQL 测试，但全库门禁不能据此称为全绿。
 
 这两项既有问题的当前/基线日志分别为本地 `postgres-schema-tests.log` 与 `baseline-postgres-schema-tests.log`，均位于 `.codex-temp/attendance-plan/`。本次未扩大范围修改 Agent 子系统；实际发布前应在独立修复或基线问题处置后重新执行全库门禁。
+
+发布前更新：两项失败已在 `a98914c3` 中通过精确修复测试注册和替身 SQL 支持解决，相关 67 项通过；生产 Agent schema 未改动。发布还通过了真实数据库恢复及两次启动预演，见上述发布记录。
 
 ## 9. 交付状态
 
