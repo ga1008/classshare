@@ -71,24 +71,38 @@ test('a dialog reverses from its current frame and restores fixed positioning at
     const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
     const trigger = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '全部事项与历史')!;
     trigger.click();
-    await wait(75);
-    const dialog = document.querySelector<HTMLElement>('.ls-dialog')!;
+    // Sample once the fade-in has actually started (mount + first transition
+    // frame can take longer than a fixed delay on a busy machine).
+    const openStart = performance.now();
+    let dialog = document.querySelector<HTMLElement>('.ls-dialog');
+    while (performance.now() - openStart < 600 && !(dialog && Number(getComputedStyle(dialog).opacity) > 0.03)) {
+      await nextFrame();
+      dialog = document.querySelector<HTMLElement>('.ls-dialog');
+    }
+    dialog = dialog!;
+    const closeStart = performance.now();
     const beforeClose = Number(getComputedStyle(dialog).opacity);
     dialog.querySelector<HTMLButtonElement>('.ui-dialog-close')!.click();
     await nextFrame();
     const afterClose = Number(getComputedStyle(dialog).opacity);
+    const closeGapMs = performance.now() - closeStart;
     await wait(55);
+    const reopenStart = performance.now();
     const beforeReopen = Number(getComputedStyle(dialog).opacity);
     trigger.click();
     await nextFrame();
     const afterReopen = Number(getComputedStyle(dialog).opacity);
+    const reopenGapMs = performance.now() - reopenStart;
     await wait(350);
-    return { beforeClose, afterClose, beforeReopen, afterReopen, sameNode: dialog === document.querySelector('.ls-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
+    return { beforeClose, afterClose, beforeReopen, afterReopen, closeGapMs, reopenGapMs, sameNode: dialog === document.querySelector('.ls-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
   });
+  // The presence transition runs over 280ms, so a reversal may legitimately move
+  // opacity by (elapsed / 280) between the two samples; anything beyond that is a jump.
+  const allowed = (gapMs: number) => 0.1 + gapMs / 280;
   expect(result.beforeClose).toBeGreaterThan(.03);
   expect(result.beforeClose).toBeLessThan(.97);
-  expect(Math.abs(result.afterClose - result.beforeClose)).toBeLessThan(.2);
-  expect(Math.abs(result.afterReopen - result.beforeReopen)).toBeLessThan(.2);
+  expect(Math.abs(result.afterClose - result.beforeClose)).toBeLessThan(allowed(result.closeGapMs));
+  expect(Math.abs(result.afterReopen - result.beforeReopen)).toBeLessThan(allowed(result.reopenGapMs));
   expect(result.sameNode).toBe(true);
   expect(result.scale).toBe('none');
   expect(result.opacity).toBe('1');

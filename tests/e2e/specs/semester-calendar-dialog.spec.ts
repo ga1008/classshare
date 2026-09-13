@@ -75,6 +75,15 @@ for (const role of ['teacher', 'student'] as const) {
           await weekday.scrollIntoViewIfNeeded();
           await expect(weekday).toBeInViewport();
         }).toPass({ timeout: 10_000, intervals: [100, 250] });
+        // The debounced resize re-render can be mid-flight; wait until the scroll
+        // viewport minus the sticky column is a usable drag width and stays put.
+        await expect.poll(async () => {
+          const first = await inspectCanvas(calendar);
+          await page.waitForTimeout(120);
+          const second = await inspectCanvas(calendar);
+          const usable = second.viewportWidth - second.stickyWidth;
+          return first.viewportWidth === second.viewportWidth && usable > 68 ? usable : 0;
+        }, { timeout: 10_000, intervals: [150, 250] }).toBeGreaterThan(68);
         const scroll = calendar.locator(scrollSelector);
         await scroll.evaluate(node => {
           const maximum = node.scrollWidth - node.clientWidth;
