@@ -30,7 +30,11 @@ from typing import Any, Optional
 
 from ..db.connection import get_configured_db_engine
 from ..db.schema_life_tips import ensure_life_tip_schema
-from .life_tip_seed_data import LIFE_TIP_SEED_PACK, TEACHER_TIP_SEED_PACK
+from .life_tip_seed_data import (
+    LIFE_TIP_SEED_PACK,
+    LIFE_TIP_SEED_SOURCE_REFS,
+    TEACHER_TIP_SEED_PACK,
+)
 
 POOL_CACHE_TTL_SECONDS = 600
 TIP_CANDIDATE_COUNT = 3
@@ -92,7 +96,7 @@ def _seed_life_tips(conn: Any) -> None:
             statement_sql,
             (
                 "global", "", "", category, "student",
-                tip_text, "seed", "", "active", 1,
+                tip_text, "seed", LIFE_TIP_SEED_SOURCE_REFS.get(("student", tip_text), ""), "active", 1,
                 tip_content_hash(tip_text),
             ),
         )
@@ -101,7 +105,7 @@ def _seed_life_tips(conn: Any) -> None:
             statement_sql,
             (
                 "global", "", "", category, "teacher",
-                tip_text, "seed", "", "active", 1,
+                tip_text, "seed", LIFE_TIP_SEED_SOURCE_REFS.get(("teacher", tip_text), ""), "active", 1,
                 tip_content_hash(tip_text),
             ),
         )

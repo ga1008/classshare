@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from .life_tip_weekly_seed_data import WEEKLY_LIFE_TIP_SEEDS, weekly_tip_source_ref
+
 LIFE_TIP_SEED_PACK: tuple[tuple[str, str], ...] = (
     # ── 学业规则 ──────────────────────────────────────────────
     ("学业规则", "绩点从大一第一学期就开始累计——越早留心越省力。起步晚了也别慌，后面的高学分课一样能把它拉回来。"),
@@ -195,3 +197,19 @@ TEACHER_TIP_SEED_PACK: tuple[tuple[str, str], ...] = (
     ("身心权益", "给课程消息约定一个回复时段，并说明紧急事项的联系渠道；清楚的边界，让师生都更从容。"),
     ("身心权益", "工具更新很快，今天只试一个能解决教学问题的小功能；用后的效果值得复盘，自己的休息也值得安排。"),
 )
+
+# 原有常青池保持不变；有出处的周更内容仍向调用方提供二元 tuple。
+LIFE_TIP_SEED_PACK += tuple(
+    (tip["category"], tip["text"])
+    for tip in WEEKLY_LIFE_TIP_SEEDS
+    if tip["role"] == "student"
+)
+TEACHER_TIP_SEED_PACK += tuple(
+    (tip["category"], tip["text"])
+    for tip in WEEKLY_LIFE_TIP_SEEDS
+    if tip["role"] == "teacher"
+)
+LIFE_TIP_SEED_SOURCE_REFS: dict[tuple[str, str], str] = {
+    (tip["role"], tip["text"]): weekly_tip_source_ref(tip)
+    for tip in WEEKLY_LIFE_TIP_SEEDS
+}

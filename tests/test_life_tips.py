@@ -6,6 +6,7 @@ import unittest
 from classroom_app.services import life_tip_service as service
 from classroom_app.services.life_tip_generation_service import _validated_tips
 from classroom_app.services.life_tip_seed_data import LIFE_TIP_SEED_PACK, TEACHER_TIP_SEED_PACK
+from classroom_app.services.life_tip_weekly_seed_data import WEEKLY_LIFE_TIP_SEEDS
 
 
 def _fresh_conn() -> sqlite3.Connection:
@@ -58,6 +59,84 @@ class LifeTipRuntimeTests(unittest.TestCase):
             tip_text="补考报名截止在 开学第二周 周五。",
         )
         self.assertFalse(duplicated)
+
+    def test_weekly_seed_sources_are_inserted_and_delivered(self) -> None:
+        from datetime import date
+        from urllib.parse import urlparse
+
+        self.assertTrue(WEEKLY_LIFE_TIP_SEEDS)
+        for tip in WEEKLY_LIFE_TIP_SEEDS:
+            with self.subTest(role=tip["role"], text=tip["text"]):
+                self.assertTrue(tip["source_title"])
+                self.assertTrue(tip["source_label"])
+                self.assertTrue(tip["fact_boundary"])
+                self.assertIn(tip["content_kind"], {
+                    "official_fact_and_advice", "editorial_practice", "source_informed_practice",
+                })
+                if tip["content_kind"] == "editorial_practice":
+                    # 原创实践如实标注，不为满足来源校验而冒用外部页面。
+                    self.assertFalse(tip["source_url"])
+                    self.assertIsNone(tip["published_at"])
+                else:
+                    source_url = urlparse(tip["source_url"])
+                    self.assertEqual(source_url.scheme, "https")
+                    self.assertTrue(source_url.netloc)
+                verified_date = date.fromisoformat(tip["verified_at"])
+                self.assertLessEqual(date.fromisoformat(tip["batch_date"]), verified_date)
+                if tip["published_at"]:
+                    self.assertLessEqual(date.fromisoformat(tip["published_at"]), verified_date)
+                self.assertTrue(tip["evergreen"])
+                self.assertIsNone(tip["valid_until"])
+                self.assertLessEqual(len(tip["text"]), 70)
+
+                row = self.conn.execute(
+                    "SELECT id, audience, category, source_ref FROM life_tips WHERE content_hash = ?",
+                    (service.tip_content_hash(tip["text"]),),
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["audience"], tip["role"])
+                self.assertEqual(row["category"], tip["category"])
+                self.assertIn(tip["source_label"], row["source_ref"])
+                self.assertIn(tip["published_at"] or tip["verified_at"], row["source_ref"])
+                self.assertNotIn("https://", row["source_ref"])
+                self.assertLessEqual(len(row["source_ref"]), 36)
+                pool = service._get_pool(
+                    self.conn, school_code="gxufl", department="", audience_role=tip["role"],
+                )
+                delivered = next(item for item in pool if item["id"] == row["id"])
+                self.assertEqual(delivered["source_ref"], row["source_ref"])
+
+    def test_weekly_reseed_keeps_ids_sources_feedback_and_retired_status(self) -> None:
+        ids = []
+        for audience in ("student", "teacher"):
+            tip = next(item for item in WEEKLY_LIFE_TIP_SEEDS if item["role"] == audience)
+            row = self.conn.execute(
+                "SELECT id FROM life_tips WHERE content_hash = ?",
+                (service.tip_content_hash(tip["text"]),),
+            ).fetchone()
+            ids.append(row["id"])
+            service.record_tip_feedback(
+                self.conn, tip_id=row["id"], user_role=audience, user_pk=11, verdict=-1,
+            )
+        service.set_life_tip_status(self.conn, tip_id=ids[1], status="retired")
+        before = [dict(row) for row in self.conn.execute(
+            "SELECT id, source_ref, status, weight FROM life_tips WHERE id IN (?, ?) ORDER BY id",
+            tuple(ids),
+        ).fetchall()]
+
+        service._seeded = False
+        service.ensure_life_tip_runtime(self.conn)
+
+        after = [dict(row) for row in self.conn.execute(
+            "SELECT id, source_ref, status, weight FROM life_tips WHERE id IN (?, ?) ORDER BY id",
+            tuple(ids),
+        ).fetchall()]
+        self.assertEqual(after, before)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM life_tip_feedback WHERE tip_id IN (?, ?)", tuple(ids),
+        ).fetchone()[0], 2)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM life_tips").fetchone()[0],
+                         len(LIFE_TIP_SEED_PACK) + len(TEACHER_TIP_SEED_PACK))
 
     def test_scope_resolution_layers(self) -> None:
         service.insert_life_tip(
