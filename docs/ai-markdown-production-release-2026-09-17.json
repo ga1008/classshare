@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-17",
+  "feature_commit": "d1716219b2ed2a5cd8a770e885d9554d60b6189b",
+  "release_id": "20260917-002937-4c8dba1a0dd7",
+  "deployment_completed": true,
+  "dry_run_passed": true,
+  "cutover_database_backup": "/tmp/lanshare-deploy-backups/db-cutover-20260917-002946.sql.gz",
+  "runtime_data_directories_preserved": true,
+  "database_schema_changed_by_feature": false,
+  "chat_history_rewritten": false,
+  "validation_model_calls": 0,
+  "local_validation": {
+    "browser_scenarios_passed": 18,
+    "asset_cache_and_deployment_tests_passed": 23,
+    "viewports": [1440, 390],
+    "window_and_fullscreen_visually_inspected": true,
+    "css_build_passed": true,
+    "javascript_syntax_checks_passed": true
+  },
+  "native_migration_gate": {
+    "status": "ok",
+    "rehearsal_date": "2026-09-16",
+    "unchanged_migration_source_files_verified": 66,
+    "matching_dump_sha256": "4bbce1723a2566d39408530b6ae10db263c303acb4f07b5001cba239069b57ea",
+    "matching_dump_bytes": 35650527,
+    "production_required_tables_present": 170,
+    "production_required_tables_total": 170,
+    "production_index_failures": 0,
+    "production_skipped_steps": 0
+  },
+  "production_postflight": {
+    "container_checks_passed": 41,
+    "public_checks_passed": 24,
+    "source_files_checked": 8,
+    "public_assets_checked": 6,
+    "built_css_matches_local": true,
+    "services_running": 8,
+    "app_and_ai_health": "ok",
+    "release_parity_verified": true,
+    "recent_error_logs": false,
+    "synthetic_teacher_and_student_templates_verified": true,
+    "template_probe_database_access": false,
+    "probe_business_data_modified": false,
+    "real_user_sessions_used": false,
+    "public_asset_browser_verification": {
+      "viewports": [1440, 390],
+      "assertion_groups_passed": 14,
+      "static_get_requests_per_viewport": 5,
+      "api_or_model_requests": 0,
+      "page_errors": 0,
+      "screenshots_visually_inspected": true,
+      "scope": "Production-rendered synthetic template and public static assets; no authenticated business session."
+    },
+    "background_task_summary": {
+      "failed_records": 689,
+      "running": 0,
+      "stale": 0,
+      "note": "Existing failure records keep background_tasks.ok false; this release does not clear or rewrite task history."
+    }
+  },
+  "evidence_directory": "E:/CodexTemp/lanshare-ai-markdown-release-20260917"
+}
