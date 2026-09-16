@@ -5,7 +5,7 @@
  * 7. 消息/代码块复制
  *
  * 依赖:
- * - safeMarkedParse() (来自 tools.js)
+ * - marked + MarkdownRuntime (来自 partials/markdown_assets.html)
  * - showMessage() (来自 classroom_main_v4.html 或 tools.js)
  */
 const AI_CHAT_DEFAULT_WIDTH = 720;
@@ -45,54 +45,15 @@ function renderAIChatMarkdown(content, fallback = '') {
 }
 
 function normalizeAIChatMarkdown(content) {
-    const raw = String(content ?? '').replace(/\r\n?/g, '\n');
-    if (!raw.trim()) {
-        return '';
-    }
-
-    const segments = raw.split(/(```[\s\S]*?(?:```|$))/g);
-    return segments.map((segment) => {
-        if (segment.startsWith('```')) {
-            return segment;
-        }
-        return normalizeAIChatMarkdownText(segment);
-    }).join('').replace(/\n{4,}/g, '\n\n\n').trim();
-}
-
-function normalizeAIChatMarkdownText(text) {
-    let normalized = String(text || '');
-    normalized = normalized
-        // 全角符号写成的 Markdown 标记
-        .replace(/＊＊/g, '**')
-        // 粗体/斜体标记内侧多余空格导致不解析：** 文本 ** -> **文本**
-        .replace(/\*\*[ \t]+([^*\n]+?)[ \t]*\*\*/g, '**$1**')
-        .replace(/\*\*[ \t]*([^*\n]+?)[ \t]+\*\*/g, '**$1**')
-        // 标题、分隔线被挤在同一行
-        .replace(/([^\n])\s*(---|\*\*\*|___)\s*(#{1,6})\s*/g, '$1\n\n$2\n\n$3 ')
-        .replace(/([。！？；;：:])\s*(#{1,6})\s*(?=[^\s#])/g, '$1\n\n$2 ')
-        .replace(/(^|\n)(#{1,6})(?=[^\s#])/g, '$1$2 ')
-        .replace(/([^\n])\s*(#{2,6})\s*(?=[^\s#])/g, '$1\n\n$2 ')
-        // 中文句末直接接列表项
-        .replace(/([。！？；;])\s+((?:[-*+]|\d+[.)])\s+)/g, '$1\n$2')
-        // 行首列表符后缺空格：-条目 / 1.条目 / 1、条目
-        .replace(/(^|\n)([-*+])(?=[一-鿿A-Za-z【《"'（(])/g, '$1$2 ')
-        .replace(/(^|\n)(\d{1,2})[.、](?=[一-鿿A-Za-z【《"'（(])/g, '$1$2. ')
-        // 有序列表紧跟普通段落（CommonMark 中 2. 起始的列表无法中断段落）
-        .replace(/(^|\n)(?![ \t]*(?:[-*+]|\d{1,2}[.)])\s)([^\n]+)\n(?=[ \t]*\d{1,2}\. )/g, '$1$2\n\n')
-        // 表格各行被挤在一起
-        .replace(/\n(\|[^\n]*\|)\n(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)/g, '\n\n$1\n$2')
-        .replace(/(\|[^\n]*\|)\s+(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)/g, '$1\n$2')
-        .replace(/(\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?)\s+(\|)/g, '$1\n$2')
-        .replace(/\n{3,}(\|[^\n]*\|)/g, '\n\n$1')
-        // 表格前缺空行（上一行是普通文本时表格不解析）
-        .replace(/(^|\n)(?!\|)([^\n|]+)\n(?=\|[^\n]*\|\n\|?\s*:?-{3,})/g, '$1$2\n\n')
-        // 表格后缺空行（GFM 会把紧跟的普通文本吞成表格行）
-        .replace(/(\n\|[^\n]*\|)\n(?![ \t]*\||[ \t]*\n)/g, '$1\n\n');
-
-    return normalized;
+    // Markdown whitespace and delimiters carry meaning, including inside code
+    // and link destinations. Let the parser handle the original syntax; regex
+    // "repairs" can silently change both rendered examples and copied code.
+    return String(content ?? '').replace(/\r\n?/g, '\n');
 }
 
 window.normalizeAIChatMarkdown = normalizeAIChatMarkdown;
+// The classroom loads this file via import(), other pages use a classic script.
+window.renderAIChatMarkdown = renderAIChatMarkdown;
 
 class AIChatComponent {
     constructor(options) {

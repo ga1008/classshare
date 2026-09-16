@@ -68,6 +68,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% include "partials/markdown_assets.html" %}
 <script type="module" src="{{ asset_url('js/material_render_shell.js') }}"></script>
 <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
 <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

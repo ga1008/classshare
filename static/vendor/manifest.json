@@ -12,7 +12,7 @@
   },
   "markdown_runtime": {
     "path": "js/markdown_runtime.js",
-    "version": "1.1.0-ai-chat-breaks-20260611",
+    "version": "1.2.0-ai-markdown-20260917",
     "type": "script"
   },
   "collaboration": {
@@ -26,6 +26,7 @@
   },
   "tailwind_app": {
     "path": "css/tailwind-app.css",
+    "version": "ai-markdown-20260917",
     "type": "style"
   }
 }

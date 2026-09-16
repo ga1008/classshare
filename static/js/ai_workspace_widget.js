@@ -81,12 +81,15 @@ function normalizeWorkspaceMarkdown(value) {
     if (typeof window.normalizeAIChatMarkdown === 'function') {
         return window.normalizeAIChatMarkdown(value);
     }
-    return String(value ?? '').replace(/\r\n?/g, '\n').trim();
+    return String(value ?? '').replace(/\r\n?/g, '\n');
 }
 
 function renderWorkspaceMarkdown(value, fallback = '') {
+    if (typeof window.renderAIChatMarkdown === 'function') {
+        return window.renderAIChatMarkdown(value, fallback);
+    }
     const normalized = normalizeWorkspaceMarkdown(value);
-    if (!normalized) {
+    if (!normalized.trim()) {
         return fallback;
     }
     if (typeof window.safeMarkedParse === 'function') {
@@ -1139,7 +1142,7 @@ function renderDetailList(items = []) {
 
 function renderBusinessResult(detail = {}) {
     const metrics = Array.isArray(detail.metrics) ? detail.metrics.slice(0, 8) : [];
-    const markdown = String(detail.markdown || detail.summary || '').trim();
+    const markdown = String(detail.markdown || detail.summary || '');
     const links = Array.isArray(detail.links) ? detail.links.filter(Boolean).slice(0, 4) : [];
     const nextActions = Array.isArray(detail.next_actions) ? detail.next_actions.slice(0, 8) : [];
     const safety = Array.isArray(detail.safety) ? detail.safety.slice(0, 6) : [];
@@ -1154,7 +1157,7 @@ function renderBusinessResult(detail = {}) {
                     `).join('')}
                 </dl>
             ` : ''}
-            ${markdown ? `<div class="ai-task-business-markdown md-content">${renderWorkspaceMarkdown(markdown)}</div>` : ''}
+            ${markdown.trim() ? `<div class="ai-task-business-markdown md-content">${renderWorkspaceMarkdown(markdown)}</div>` : ''}
             ${renderDetailList(detail.items || [])}
             ${nextActions.length ? `
                 <div class="ai-task-runtime-section">
@@ -1181,8 +1184,8 @@ function renderBusinessResult(detail = {}) {
 }
 
 function renderDeliverable(detail = {}) {
-    const markdown = typeof detail.deliverable_markdown === 'string' ? detail.deliverable_markdown.trim() : '';
-    if (!markdown) {
+    const markdown = typeof detail.deliverable_markdown === 'string' ? detail.deliverable_markdown : '';
+    if (!markdown.trim()) {
         return '';
     }
     return `

@@ -153,7 +153,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 2. **可信事实进 business_context，不进提示词**：档位、题量、课堂 ID 等由服务端字段传递，提示词只承载任务说明。
 3. **禁止**把密钥、内部路径、数据库 ID、文件 URL 写进提示词或让模型输出到可见文档。
 4. 非聊天类的教师自由输入使用**提示词池**（`docs/prompt-pool-guidelines.md`）：`data-prompt-pool-key` 按功能分区、默认勾选共享、只在成功后记录、不存身份。
-5. 聊天 Markdown 输出经 `normalizeAIChatMarkdownText` 归一化；改 `markdown_runtime` / `tailwind_app` 必须 bump `static/vendor/manifest.json` 版本。
+5. AI 助手入口必须先加载 `partials/markdown_assets.html`，聊天与 Agent 输出复用 `renderAIChatMarkdown`。`normalizeAIChatMarkdown` 只归一换行，不用正则重写 Markdown 标记、代码、缩进或链接；HTML 统一经 `MarkdownRuntime` 清理。改 `markdown_runtime` / `tailwind_app` 必须 bump `static/vendor/manifest.json` 版本。
 6. 批改系统提示的规则条目（例如"答题框空只给截图分"）是**评分政策**，改动需在 `docs/grading-model-routing-plan-*.md` 类实施记录中说明并跑回放脚本验证。
 
 ### 3.8 多模态与附件

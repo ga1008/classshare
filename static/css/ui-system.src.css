@@ -6407,6 +6407,7 @@ body.ai-chat-fullscreen-active {
     margin-top: 0.28em;
 }
 .final-answer table,
+.ai-task-deliverable table,
 .ai-task-business-markdown table,
 .ai-task-runtime-output table {
     display: block;
@@ -6419,6 +6420,8 @@ body.ai-chat-fullscreen-active {
 }
 .final-answer th,
 .final-answer td,
+.ai-task-deliverable th,
+.ai-task-deliverable td,
 .ai-task-business-markdown th,
 .ai-task-business-markdown td,
 .ai-task-runtime-output th,
@@ -6429,11 +6432,24 @@ body.ai-chat-fullscreen-active {
     vertical-align: top;
 }
 .final-answer th,
+.ai-task-deliverable th,
 .ai-task-business-markdown th,
 .ai-task-runtime-output th {
     background: rgba(241, 245, 249, 0.92);
     color: var(--gray-700);
     font-weight: 760;
+}
+.final-answer :is(th, td)[align="center"],
+.ai-task-deliverable :is(th, td)[align="center"],
+.ai-task-business-markdown :is(th, td)[align="center"],
+.ai-task-runtime-output :is(th, td)[align="center"] {
+    text-align: center;
+}
+.final-answer :is(th, td)[align="right"],
+.ai-task-deliverable :is(th, td)[align="right"],
+.ai-task-business-markdown :is(th, td)[align="right"],
+.ai-task-runtime-output :is(th, td)[align="right"] {
+    text-align: right;
 }
 .final-answer blockquote {
     border-left: 3px solid hsl(var(--ls-info) / 0.55);

@@ -115,13 +115,14 @@
     }
 
     function unwrapElement(element) {
-        const childNodes = Array.from(element.childNodes);
-        childNodes.forEach((childNode) => sanitizeNode(childNode));
+        Array.from(element.childNodes).forEach((childNode) => sanitizeNode(childNode));
 
         const fragment = document.createDocumentFragment();
-        childNodes.forEach((childNode) => {
-            fragment.appendChild(childNode);
-        });
+        // Sanitizing can remove or unwrap children. Move only surviving nodes;
+        // a snapshot taken before sanitizing would resurrect rejected markup.
+        while (element.firstChild) {
+            fragment.appendChild(element.firstChild);
+        }
         element.replaceWith(fragment);
     }
 
@@ -282,8 +283,8 @@
             return emptyHtml;
         }
 
-        const normalized = normalizeContent(content).trim();
-        if (!normalized) {
+        const normalized = normalizeContent(content);
+        if (!normalized.trim()) {
             return emptyHtml;
         }
 
