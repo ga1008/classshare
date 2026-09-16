@@ -1,87 +1,28 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
-
 {% block title %}问题反馈{% endblock %}
-
 {% block header_actions %}{% endblock %}
-
-
 {% block content %}
-{{ page_head('问题反馈', description='查看用户提交的 Bug 修复、新功能建议和举报信息。只有超管教师可以查看完整图文内容。') }}
-
+{{ page_head('问题反馈', description='与用户逐条沟通，跟进问题处理。处理完成后由超管关闭，历史消息和截图会完整保留。') }}
 {% if current_teacher_is_super_admin %}
-    {% if feedback_items %}
-    <div class="fb-stats-row">
-        <span class="fb-stat-chip">共 {{ feedback_items|length }} 条反馈</span>
-        {% set bug_count = feedback_items | selectattr('feedback_type', 'equalto', 'bug') | list | length %}
-        {% set feature_count = feedback_items | selectattr('feedback_type', 'equalto', 'feature') | list | length %}
-        {% set report_count = feedback_items | selectattr('feedback_type', 'equalto', 'report') | list | length %}
-        {% if bug_count %}<span class="fb-stat-chip">Bug {{ bug_count }}</span>{% endif %}
-        {% if feature_count %}<span class="fb-stat-chip">建议 {{ feature_count }}</span>{% endif %}
-        {% if report_count %}<span class="fb-stat-chip">举报 {{ report_count }}</span>{% endif %}
-    </div>
-    <div class="fb-list">
-        {% for feedback in feedback_items %}
-        {% set type_label = {'bug': 'Bug 修复', 'feature': '新功能反馈', 'report': '举报'}.get(feedback.feedback_type, '问题反馈') %}
-        <article class="fb-card">
-            <div class="fb-card__header">
-                <div class="fb-card__title">
-                    <div class="fb-card__badges">
-                        {% if feedback.feedback_type == 'report' %}
-                        <span class="badge badge-danger">{{ type_label }}</span>
-                        {% elif feedback.feedback_type == 'feature' %}
-                        <span class="badge badge-primary">{{ type_label }}</span>
-                        {% else %}
-                        <span class="badge badge-warning">{{ type_label }}</span>
-                        {% endif %}
-                        <span class="badge badge-secondary">{{ feedback.status }}</span>
-                    </div>
-                    <h3>{{ feedback.title }}</h3>
-                </div>
-                <div class="fb-card__meta">
-                    <span>{{ feedback.created_at }}</span>
-                    {% if feedback.attachment_count %}<span>{{ feedback.attachment_count }} 张截图</span>{% endif %}
-                </div>
-            </div>
-            <div class="fb-card__source">
-                <span>提交人：{{ feedback.user_name or '未知用户' }}（{{ '教师' if feedback.user_role == 'teacher' else '学生' }}）</span>
-                {% if feedback.section %}<span>板块：{{ feedback.section }}</span>{% endif %}
-            </div>
-            <div class="fb-card__body">{{ feedback.description }}</div>
-            {% if feedback.page_url %}
-            <div class="fb-card__meta" style="margin-top: var(--spacing-sm);">
-                <span>页面：{{ feedback.page_url }}</span>
-            </div>
-            {% endif %}
-            {% set attachments = feedback_attachments.get(feedback.id, []) %}
-            {% if attachments %}
-            <div class="fb-card__attachments">
-                {% for attachment in attachments %}
-                <a href="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" target="_blank" rel="noopener noreferrer" title="{{ attachment.original_filename }}">
-                    <img src="/api/feedback/{{ feedback.id }}/attachment/{{ attachment.file_hash }}" alt="{{ attachment.original_filename }}" loading="lazy">
-                </a>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </article>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="fb-empty-state">
-        <div class="fb-empty-state__icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+<section class="fb-admin" data-feedback-admin aria-label="反馈工作台">
+    <div class="fb-admin-toolbar">
+        <div class="fb-admin-filters" aria-label="反馈状态筛选">
+            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="all">全部反馈</button>
+            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="open">待跟进</button>
+            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="closed">已关闭</button>
         </div>
-        <h3>暂无问题反馈</h3>
-        <p>用户提交 Bug 修复反馈、新功能反馈或举报后，会显示在这里。</p>
+        <button type="button" class="fb-thread-button" data-feedback-refresh>刷新列表</button>
     </div>
-    {% endif %}
+    <p class="fb-admin-count" data-feedback-count aria-live="polite">正在加载反馈…</p>
+    <p class="fb-thread-notice" data-feedback-notice role="status" hidden></p>
+    <div class="fb-list" data-feedback-list></div>
+    <button type="button" class="fb-thread-button fb-admin-more" data-feedback-more hidden>加载更多反馈</button>
+    <noscript><p>请启用 JavaScript，以查看反馈、发送回复和管理处理状态。</p></noscript>
+</section>
+{% if feedback_page is defined %}<script type="application/json" id="feedback-initial-page">{{ feedback_page | tojson }}</script>{% endif %}
 {% else %}
-<div class="fb-empty-state">
-    <div class="fb-empty-state__icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-    </div>
-    <h3>仅超管教师可查看</h3>
-    <p>问题反馈内容和举报信息只向超管教师开放。如需查看，请联系超管教师进行设置。</p>
-</div>
+<div class="fb-empty-state"><h3>仅超管教师可查看</h3><p>问题反馈内容和举报信息仅向提交人及超管教师开放。</p></div>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/feedback_admin.js') }}"></script>{% endblock %}

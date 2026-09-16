@@ -170,6 +170,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_BLOG_COMMENT,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_BLOG_CAREER,
+        MESSAGE_CATEGORY_APP_FEEDBACK,
         MESSAGE_CATEGORY_TODO,
         MESSAGE_CATEGORY_AGENT_TASK,
         MESSAGE_CATEGORY_COLLABORATION,
@@ -2793,7 +2794,7 @@ def create_app_feedback_notifications(conn, feedback_id: int | str) -> int:
             actor_role=actor_role if actor_role in {"student", "teacher"} else "",
             actor_user_pk=actor_user_pk,
             actor_display_name=actor_display_name,
-            link_url="/manage/system/feedback",
+            link_url=f"/manage/system/feedback?feedback_id={feedback['id']}",
             ref_type=MESSAGE_CATEGORY_APP_FEEDBACK,
             ref_id=str(feedback["id"]),
             metadata={
@@ -2808,6 +2809,35 @@ def create_app_feedback_notifications(conn, feedback_id: int | str) -> int:
         )
         inserted_count += 1 if _insert_notification_if_allowed(conn, payload) else 0
     return inserted_count
+
+
+def create_feedback_conversation_notifications(conn, feedback: dict, message: dict) -> int:
+    """Notify each participant once, in the same transaction as the conversation event."""
+    sender = (message["sender_role"], str(message["sender_id"]))
+    owner = (feedback["user_role"], str(feedback["user_id"]))
+    recipients = {("teacher", str(row["id"])) for row in list_super_admin_teachers(conn)}
+    recipients.add(owner)
+    event_label = {"reply": "回复了反馈", "closed": "关闭了反馈", "reopened": "重新开启了反馈"}[message["event_type"]]
+    actor_name = str(message["sender_name"] or "") or build_actor_display_name("", message["sender_role"])
+    inserted = 0
+    for role, user_id in sorted(recipients - {sender}):
+        if role not in {"student", "teacher"} or _safe_int(user_id) is None:
+            continue
+        # An author who is also a super admin can use the management view.
+        management = role == "teacher" and is_super_admin_teacher(conn, user_id)
+        target = "/manage/system/feedback" if management else "/dashboard"
+        payload = _build_notification_payload(
+            recipient_role=role, recipient_user_pk=int(user_id), category=MESSAGE_CATEGORY_APP_FEEDBACK,
+            title=f"{actor_name}{event_label}",
+            body_preview=_truncate_text(f"{feedback['title']} | {message['content'] or event_label}", 160),
+            actor_role=message["sender_role"], actor_user_pk=_safe_int(message["sender_id"]),
+            actor_display_name=actor_name, link_url=f"{target}?feedback_id={feedback['id']}",
+            ref_type="app_feedback_message", ref_id=str(message["id"]),
+            metadata={"feedback_id": int(feedback["id"]), "message_id": int(message["id"]), "event_type": message["event_type"]},
+            created_at=message["created_at"],
+        )
+        inserted += bool(_insert_notification_if_allowed(conn, payload))
+    return inserted
 
 
 def create_password_reset_request_notification(conn, request_id: int | str) -> int:

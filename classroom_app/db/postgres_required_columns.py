@@ -10,10 +10,12 @@ from __future__ import annotations
 from .schema_ai_jobs import AI_JOB_REQUIRED_POSTGRES_COLUMNS
 from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
+from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     **ATTENDANCE_REPORT_REQUIRED_COLUMNS,
+    **FEEDBACK_CONVERSATION_REQUIRED_COLUMNS,
     "teachers": ("id", "name"),
     "system_settings": ("key", "value", "updated_at"),
     "teacher_onboarding_state": (

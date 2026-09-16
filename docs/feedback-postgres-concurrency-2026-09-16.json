@@ -1,0 +1,50 @@
+{
+  "kind": "feedback_native_concurrency",
+  "ok": true,
+  "checks": {
+    "reply_wins_stale_close_409": {
+      "ok": true,
+      "native_lock_wait_observed": true
+    },
+    "close_wins_reply_409": {
+      "ok": true,
+      "native_lock_wait_observed": true
+    },
+    "six_concurrent_retries_one_message": {
+      "ok": true,
+      "attempts": 6,
+      "messages": 1,
+      "deduplicated": 5,
+      "notification_count": 2
+    },
+    "concurrent_and_delayed_read_cursor_monotonic": {
+      "ok": true,
+      "attempts": 7,
+      "unread_count": 0
+    },
+    "same_numeric_id_other_role_rejected": {
+      "ok": true
+    },
+    "event_status_notification_rollback_atomic": {
+      "ok": true
+    }
+  },
+  "source_sha256": {
+    "classroom_app/services/feedback_conversation_service.py": "c50656c0228139d6c78d3354c892fc47ec9b08c34665ac35229216dc393acefc",
+    "classroom_app/services/message_center_service.py": "906eaa420dff3435ba329406ddcc23504e744780219d220ed8e3952b41ffa73c",
+    "classroom_app/db/schema_feedback_conversations.py": "d928965a61476aab2058d3ff7f013ab656ec3016173c5535ee60c48af95f8dc9"
+  },
+  "isolation": {
+    "dedicated_new_cluster": true,
+    "dedicated_synthetic_database": true,
+    "listener": "127.0.0.1",
+    "port": 55446,
+    "production_data_modified": false,
+    "cluster_stopped": true,
+    "cluster_removed": true,
+    "email_enqueue_stubbed": true,
+    "notification_insertion_stubbed": false
+  },
+  "evidence_date": "2026-09-16",
+  "evidence_scope": "Original task-local native probe; database lifecycle wrapper subsequently extracted into tools/feedback_postgres_probe.py without rerunning the already verified six scenarios."
+}

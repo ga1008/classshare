@@ -735,13 +735,13 @@ def iter_teacher_inbox_sources(conn, *, user: dict[str, Any], offering_ids: list
         from .message_center_service import is_super_admin_teacher
         if not is_super_admin_teacher(conn, teacher_id):
             return
-        row = conn.execute("SELECT COUNT(*) AS n FROM app_feedback WHERE status = 'pending'").fetchone()
+        row = conn.execute("SELECT COUNT(*) AS n FROM app_feedback WHERE status NOT IN ('closed', 'resolved')").fetchone()
         count = _integer(row["n"] if hasattr(row, "keys") else row[0]) if row else 0
         if count:
             yield {
                 "source_type": "feedback", "source_id": "pending", "kind": "teacher_work", "type_label": "用户反馈",
                 "is_actionable": True, "title": f"{count} 条用户反馈待处理", "subtitle": "平台管理 · 问题反馈",
-                "href": "/manage/system/feedback", "action_label": "去处理",
+                "href": "/manage/system/feedback?status=open", "action_label": "去处理",
             }
 
     for name, producer in (("approval", approvals), ("signature_request", signature_requests), ("offering_gap", offering_gaps), ("feedback", feedback)):

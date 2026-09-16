@@ -13,6 +13,7 @@ from .schema_ai_jobs import (
 )
 from .schema_grade_publications import GRADE_PUBLICATION_POSTGRES_TABLES, GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
+from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -405,6 +406,7 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
     **GRADE_PUBLICATION_POSTGRES_TABLES,
     **ATTENDANCE_REPORT_POSTGRES_TABLES,
+    **FEEDBACK_CONVERSATION_POSTGRES_TABLES,
     "assignment_classification_revisions": """
         CREATE TABLE IF NOT EXISTS assignment_classification_revisions (
             id SERIAL PRIMARY KEY,
@@ -766,6 +768,7 @@ REQUIRED_POSTGRES_TABLES = (
     *AI_JOB_REQUIRED_POSTGRES_COLUMNS,
     *GRADE_PUBLICATION_REQUIRED_COLUMNS,
     *ATTENDANCE_REPORT_REQUIRED_COLUMNS,
+    *FEEDBACK_CONVERSATION_POSTGRES_TABLES,
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",

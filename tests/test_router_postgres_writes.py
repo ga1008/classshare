@@ -38,8 +38,8 @@ class FakeConnection:
     def execute(self, sql, params=()):
         normalized = " ".join(sql.split())
         self.execute_calls.append((normalized, tuple(params)))
-        if normalized.startswith("SELECT id, user_id FROM app_feedback"):
-            return FakeCursor(FakeRow({"id": params[0], "user_id": "3"}))
+        if normalized.startswith("SELECT * FROM app_feedback"):
+            return FakeCursor(FakeRow({"id": params[0], "user_id": "3", "user_role": "teacher", "status": "pending"}))
         if normalized.startswith("SELECT COUNT(*) AS cnt FROM app_feedback_attachments"):
             return FakeCursor(FakeRow({"cnt": 0}))
         if "FROM custom_emojis" in normalized and "file_hash" in normalized:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..database import get_db_connection
@@ -6,6 +6,7 @@ from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_current_user
 from ..services.file_service import global_file_write_path, resolve_global_file_path
 from ..services.message_center_service import create_app_feedback_notifications, is_super_admin_teacher
+from ..services import feedback_conversation_service as conversations
 
 router = APIRouter()
 
@@ -106,31 +107,12 @@ async def upload_feedback_attachment(
     user: dict = Depends(get_current_user),
 ):
     """Upload an attachment (screenshot/image) for a feedback submission."""
-    with get_db_connection() as conn:
-        feedback = conn.execute(
-            "SELECT id, user_id FROM app_feedback WHERE id = ?",
-            (feedback_id,),
-        ).fetchone()
-
-    if not feedback:
-        raise HTTPException(404, "反馈记录不存在。")
-    if str(feedback["user_id"]) != str(user["id"]):
-        raise HTTPException(403, "无权为此反馈上传附件。")
-
     if not file.filename:
         raise HTTPException(400, "请选择文件。")
 
     content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
     if content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(400, "仅支持 PNG、JPEG、GIF、WebP、BMP 格式的图片。")
-
-    with get_db_connection() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM app_feedback_attachments WHERE feedback_id = ?",
-            (feedback_id,),
-        ).fetchone()
-        if count and count["cnt"] >= MAX_FEEDBACK_ATTACHMENTS:
-            raise HTTPException(400, f"每个反馈最多上传 {MAX_FEEDBACK_ATTACHMENTS} 个附件。")
 
     content = await file.read(MAX_ATTACHMENT_SIZE_BYTES + 1)
     if not content:
@@ -146,11 +128,19 @@ async def upload_feedback_attachment(
     file_size = len(content)
     original_filename = _normalize_upload_filename(file.filename)
 
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    if not file_path.exists():
-        file_path.write_bytes(content)
-
     with get_db_connection() as conn:
+        feedback, _ = conversations.load_feedback(conn, feedback_id, user, lock=True, owner_only=True)
+        if feedback["status"] in conversations.CLOSED_STATUSES:
+            raise HTTPException(409, "反馈已关闭，不能继续上传附件。")
+        count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM app_feedback_attachments WHERE feedback_id = ?",
+            (feedback_id,),
+        ).fetchone()
+        if count and count["cnt"] >= MAX_FEEDBACK_ATTACHMENTS:
+            raise HTTPException(400, f"每个反馈最多上传 {MAX_FEEDBACK_ATTACHMENTS} 个附件。")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        if not file_path.exists():
+            file_path.write_bytes(content)
         attachment_id = execute_insert_returning_id(
             conn,
             """
@@ -198,7 +188,7 @@ async def serve_feedback_attachment(
             (feedback_id, file_hash),
         ).fetchone()
         can_view = bool(attachment) and (
-            str(attachment["user_id"]) == str(user["id"])
+            conversations.is_feedback_owner(attachment, user)
             or (
                 user.get("role") == "teacher"
                 and is_super_admin_teacher(conn, user.get("id"))
@@ -221,107 +211,77 @@ async def serve_feedback_attachment(
 
 
 @router.get("/api/feedback/my")
-async def list_my_feedback(request: Request, user: dict = Depends(get_current_user)):
-    """List the current user's own feedback submissions."""
+async def list_my_feedback(request: Request, user: dict = Depends(get_current_user),
+                           before_id: int | None = Query(None, ge=1), limit: int = Query(60, ge=1, le=100)):
     with get_db_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT f.id, f.feedback_type, f.section, f.title, f.description,
-                   f.page_url, f.status, f.created_at, f.updated_at,
-                   (SELECT COUNT(*) FROM app_feedback_attachments a WHERE a.feedback_id = f.id) AS attachment_count
-            FROM app_feedback f
-            WHERE f.user_id = ?
-            ORDER BY f.created_at DESC, f.id DESC
-            LIMIT ?
-            """,
-            (str(user["id"]), MY_FEEDBACK_LIMIT),
-        ).fetchall()
+        result = conversations.list_feedback(conn, user, before_id=before_id, limit=limit)
+    return JSONResponse({"success": True, **result})
 
-        items = []
-        for row in rows:
-            items.append({
-                "id": row["id"],
-                "feedback_type": row["feedback_type"],
-                "section": row["section"],
-                "title": row["title"],
-                "description": row["description"],
-                "page_url": row["page_url"],
-                "status": row["status"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-                "attachment_count": row["attachment_count"],
-            })
 
-    return JSONResponse({"success": True, "items": items})
+@router.get("/api/feedback/admin")
+async def list_admin_feedback(user: dict = Depends(get_current_user), status: str = "all",
+                             before_id: int | None = Query(None, ge=1), limit: int = Query(40, ge=1, le=100)):
+    with get_db_connection() as conn:
+        result = conversations.list_feedback(conn, user, admin=True, status=status, before_id=before_id, limit=limit)
+    return JSONResponse({"success": True, **result})
 
 
 @router.get("/api/feedback/{feedback_id}/detail")
 async def get_feedback_detail(feedback_id: int, user: dict = Depends(get_current_user)):
-    """Get a single feedback with its attachments (owner only)."""
     with get_db_connection() as conn:
-        feedback = conn.execute(
-            "SELECT id, user_id, feedback_type, section, title, description, "
-            "page_url, status, created_at, updated_at "
-            "FROM app_feedback WHERE id = ?",
-            (feedback_id,),
-        ).fetchone()
+        result = conversations.get_feedback_detail(conn, feedback_id, user)
+    return JSONResponse({"success": True, **result})
 
-        if not feedback:
-            raise HTTPException(404, "反馈记录不存在。")
-        if str(feedback["user_id"]) != str(user["id"]):
-            raise HTTPException(403, "无权查看此反馈。")
 
-        attachments = conn.execute(
-            "SELECT id, file_hash, original_filename, file_size, mime_type, created_at "
-            "FROM app_feedback_attachments WHERE feedback_id = ? ORDER BY id ASC",
-            (feedback_id,),
-        ).fetchall()
+@router.get("/api/feedback/{feedback_id}/messages")
+async def get_feedback_messages(feedback_id: int, user: dict = Depends(get_current_user),
+                                before_id: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100)):
+    with get_db_connection() as conn:
+        conversations.load_feedback(conn, feedback_id, user)
+        result = conversations.list_messages(conn, feedback_id, before_id=before_id, limit=limit)
+    return JSONResponse({"success": True, **result})
 
-    return JSONResponse({
-        "success": True,
-        "feedback": {
-            "id": feedback["id"],
-            "feedback_type": feedback["feedback_type"],
-            "section": feedback["section"],
-            "title": feedback["title"],
-            "description": feedback["description"],
-            "page_url": feedback["page_url"],
-            "status": feedback["status"],
-            "created_at": feedback["created_at"],
-            "updated_at": feedback["updated_at"],
-        },
-        "attachments": [
-            {
-                "id": a["id"],
-                "file_hash": a["file_hash"],
-                "original_filename": a["original_filename"],
-                "file_size": a["file_size"],
-                "mime_type": a["mime_type"],
-                "created_at": a["created_at"],
-            }
-            for a in attachments
-        ],
-    })
+
+async def _request_body(request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "无法解析请求体。")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "请求体格式无效。")
+    return body
+
+
+@router.post("/api/feedback/{feedback_id}/messages")
+async def reply_to_feedback(feedback_id: int, request: Request, user: dict = Depends(get_current_user)):
+    body = await _request_body(request)
+    with get_db_connection() as conn:
+        result = conversations.reply_to_feedback(conn, feedback_id, user, body)
+        conn.commit()
+    return JSONResponse({"success": True, **result}, status_code=200 if result["deduplicated"] else 201)
+
+
+@router.post("/api/feedback/{feedback_id}/status")
+async def change_feedback_status(feedback_id: int, request: Request, user: dict = Depends(get_current_user)):
+    body = await _request_body(request)
+    with get_db_connection() as conn:
+        result = conversations.change_feedback_status(conn, feedback_id, user, body)
+        conn.commit()
+    return JSONResponse({"success": True, **result})
+
+
+@router.post("/api/feedback/{feedback_id}/read")
+async def mark_feedback_read(feedback_id: int, request: Request, user: dict = Depends(get_current_user)):
+    body = await _request_body(request)
+    with get_db_connection() as conn:
+        result = conversations.mark_feedback_read(conn, feedback_id, user, body.get("last_message_id"))
+        conn.commit()
+    return JSONResponse({"success": True, **result})
 
 
 @router.delete("/api/feedback/{feedback_id}")
 async def withdraw_feedback(feedback_id: int, user: dict = Depends(get_current_user)):
-    """Withdraw (delete) own feedback at any time regardless of status."""
     with get_db_connection() as conn:
-        feedback = conn.execute(
-            "SELECT id, user_id, feedback_type, title FROM app_feedback WHERE id = ?",
-            (feedback_id,),
-        ).fetchone()
-
-        if not feedback:
-            raise HTTPException(404, "反馈记录不存在。")
-        if str(feedback["user_id"]) != str(user["id"]):
-            raise HTTPException(403, "无权撤回此反馈。")
-
-        conn.execute("DELETE FROM app_feedback WHERE id = ?", (feedback_id,))
+        conversations.withdraw_feedback(conn, feedback_id, user)
         conn.commit()
-
-    return JSONResponse({
-        "success": True,
-        "message": "反馈已撤回。",
-    })
+    return JSONResponse({"success": True, "message": "反馈已撤回。"})

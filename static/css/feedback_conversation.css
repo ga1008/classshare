@@ -1,0 +1,70 @@
+.fb-thread [hidden], .fb-admin [hidden], .fb-my-panel [hidden] { display: none !important; }
+/* Keep the dialog above the student navigation (z-index: 4000), and let only
+   its body scroll so the close and submit controls stay inside the viewport. */
+.feedback-modal { box-sizing: border-box; width: 100%; height: 100dvh; z-index: 4100; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); overflow: hidden; }
+.feedback-modal .modal { display: flex; flex-direction: column; margin: 0; max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))); }
+.feedback-modal .modal-header, .feedback-modal .modal-footer { flex: 0 0 auto; }
+.feedback-modal .modal-body { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+.fb-thread { color: var(--text-primary); font-size: .9rem; padding-top: 16px; min-width: 0; }
+.fb-thread-toolbar, .fb-thread-compose-actions, .fb-thread-admin-actions, .fb-admin-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fb-thread-button { border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 14px; min-height: 40px; background: var(--surface-color, #fff); color: var(--text-primary); cursor: pointer; font: inherit; font-weight: 600; }
+.fb-thread-button:hover { border-color: var(--primary-color); }
+.fb-thread-button--primary { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+.fb-thread button:disabled { opacity: .6; cursor: wait; }
+.fb-thread button:focus-visible, .fb-thread textarea:focus-visible, .fb-admin button:focus-visible, .fb-my-card-summary:focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }
+.fb-thread-status, .fb-thread-unread { display: inline-flex; border-radius: 99px; padding: 4px 10px; font-size: .78rem; font-weight: 650; color: var(--primary-color); background: var(--primary-light, #e6f5f2); }
+.fb-thread-status.is-closed { color: var(--text-secondary); background: var(--bg-color, #f1f5f9); }
+.fb-thread-unread { color: #fff; background: var(--primary-color); }
+.fb-thread-original { padding: 14px 16px; margin-top: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-color, #f8fafc); }
+.fb-thread-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 6px 0 0; }
+.fb-thread-context, .fb-thread-message-meta { font-size: .78rem; color: var(--text-muted); overflow-wrap: anywhere; line-height: 1.6; margin: 0; }
+.fb-thread-original .fb-thread-context { margin-top: 8px; }
+.fb-thread-attachments { display: flex; flex-wrap: wrap; gap: 8px; }
+.fb-thread-attachments:not(:empty) { margin-top: 12px; }
+.fb-thread-attachments img { display: block; width: 80px; height: 80px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border-color); }
+.fb-thread-history { display: flex; flex-direction: column; gap: 14px; max-height: 440px; overflow-y: auto; overscroll-behavior: contain; padding: 18px 2px; scrollbar-gutter: stable; }
+.fb-thread-message { align-self: flex-start; width: fit-content; max-width: 90%; border: 1px solid var(--border-color); background: var(--surface-color, #fff); border-radius: 3px 14px 14px; padding: 12px 16px; }
+.fb-thread-message.is-admin { align-self: flex-end; background: var(--primary-light, #e6f5f2); border-color: var(--primary-light, #cee8e1); border-radius: 14px 3px 14px 14px; }
+.fb-thread-event { align-self: center; text-align: center; font-size: .82rem; background: var(--bg-color, #f8fafc); padding: 10px 16px; border-radius: 12px; max-width: 90%; }
+.fb-thread-event strong { display: block; margin-top: 4px; }
+.fb-thread-start { text-align: center; padding: 8px; }
+.fb-thread-notice { padding: 10px 12px; background: var(--bg-color, #f8fafc); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-wrap: anywhere; }
+.fb-thread-composer { display: grid; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 16px; }
+.fb-thread-composer label { font-size: .85rem; font-weight: 600; }
+.fb-thread textarea { box-sizing: border-box; display: block; width: 100%; min-height: 85px; resize: vertical; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-color, #fff); color: var(--text-primary); font: inherit; line-height: 1.6; }
+.fb-thread-closed { padding: 12px 16px; background: var(--bg-color, #f8fafc); color: var(--text-secondary); border-radius: 12px; line-height: 1.7; }
+.fb-thread-admin-actions { border-top: 1px solid var(--border-color); margin-top: 18px; padding-top: 14px; }
+.fb-thread-confirm { margin-top: 12px; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-color, #f8fafc); }
+.fb-thread-confirm p { margin: 6px 0 12px; color: var(--text-secondary); line-height: 1.7; }
+.fb-thread-confirm .fb-thread-compose-actions { justify-content: flex-end; margin-top: 12px; }
+.fb-thread > .fb-withdraw-btn { margin-top: 16px; }
+.feedback-modal .fb-my-list { max-height: none; overflow: visible; }
+.feedback-modal .fb-my-card-summary { width: 100%; border: 0; text-align: left; background: transparent; font: inherit; flex-wrap: wrap; }
+.feedback-modal .fb-my-card-meta { flex-wrap: wrap; }
+.feedback-modal .fb-my-card-title { white-space: normal; overflow-wrap: anywhere; }
+.feedback-modal .fb-my-card-detail { padding: 0 16px 16px; }
+.fb-my-refresh { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 14px; color: var(--text-muted); font-size: .8rem; }
+.fb-admin-toolbar { margin-bottom: 20px; }
+.fb-admin-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.fb-admin-filter.is-active { border-color: var(--primary-color); color: var(--primary-color); background: var(--primary-light, #e6f5f2); }
+.fb-admin-count { font-size: .85rem; color: var(--text-muted); }
+.fb-admin .fb-card { padding: 24px; }
+.fb-admin .fb-card:hover { transform: none; }
+.fb-admin .fb-card__title { min-width: 0; }
+.fb-admin .fb-card__title h3 { overflow-wrap: anywhere; }
+.fb-admin .fb-card__source { margin-bottom: 12px; }
+.fb-admin-preview { color: var(--text-secondary); overflow-wrap: anywhere; line-height: 1.7; margin: 0 0 16px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fb-admin-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fb-admin-more { display: block; margin: 20px auto; }
+@media (max-width: 600px) {
+    .fb-admin .fb-card { padding: 16px; }
+    .fb-admin .fb-card__header { flex-direction: column; gap: 8px; }
+    .fb-thread-message { max-width: 96%; padding: 10px 12px; }
+    .fb-thread-history { max-height: 360px; }
+    .fb-thread-button { min-height: 44px; }
+    .feedback-modal .fb-my-panel { padding: 14px; }
+    .feedback-modal .fb-my-card-summary { gap: 8px; padding: 12px; }
+    .feedback-modal .fb-my-card-meta { flex-basis: 100%; }
+    .feedback-modal .fb-my-card-detail { padding: 0 10px 12px; }
+    .fb-thread-admin-actions { align-items: flex-start; }
+}

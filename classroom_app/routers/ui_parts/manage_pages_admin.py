@@ -6,6 +6,7 @@ from ...dependencies import require_teacher_domain
 from ...services.ai_usage_budget_service import build_ai_usage_dashboard
 from ...services.offering_hub_service import build_offering_hub_context
 from ...services.profile_service import build_profile_page_context
+from ...services.feedback_conversation_service import list_feedback
 from .manage_pages_shared import _table_has_column, _password_reset_login_summary_sql, _academic_event_label
 
 
@@ -85,36 +86,12 @@ async def get_manage_system_feedback_page(request: Request, user: dict = Depends
         _ensure_manage_super_admin(conn, user)
         current_teacher_is_super_admin = is_super_admin_teacher(conn, user["id"])
 
-        feedback_items = []
-        feedback_attachments = {}
+        feedback_page = {"items": [], "has_more": False, "next_before_id": None}
+        feedback_status = request.query_params.get("status", "all")
+        if feedback_status not in {"open", "closed", "all"}:
+            feedback_status = "all"
         if current_teacher_is_super_admin:
-            feedback_items = conn.execute(
-                """
-                SELECT f.id, f.user_id, f.user_role, f.user_name, f.feedback_type,
-                       f.section, f.title, f.description, f.page_url, f.status,
-                       f.created_at, f.updated_at,
-                       COUNT(a.id) AS attachment_count
-                FROM app_feedback f
-                LEFT JOIN app_feedback_attachments a ON a.feedback_id = f.id
-                GROUP BY f.id
-                ORDER BY f.created_at DESC, f.id DESC
-                LIMIT 120
-                """
-            ).fetchall()
-            feedback_ids = [int(row["id"]) for row in feedback_items]
-            if feedback_ids:
-                placeholders = ",".join("?" for _ in feedback_ids)
-                attachment_rows = conn.execute(
-                    f"""
-                    SELECT id, feedback_id, file_hash, original_filename, file_size, mime_type, created_at
-                    FROM app_feedback_attachments
-                    WHERE feedback_id IN ({placeholders})
-                    ORDER BY feedback_id DESC, id ASC
-                    """,
-                    tuple(feedback_ids),
-                ).fetchall()
-                for attachment in attachment_rows:
-                    feedback_attachments.setdefault(int(attachment["feedback_id"]), []).append(dict(attachment))
+            feedback_page = list_feedback(conn, user, admin=True, status=feedback_status, limit=40)
 
     return templates.TemplateResponse(
         request,
@@ -126,8 +103,8 @@ async def get_manage_system_feedback_page(request: Request, user: dict = Depends
             active_page="system_feedback",
             extra={
                 "current_teacher_is_super_admin": current_teacher_is_super_admin,
-                "feedback_items": feedback_items,
-                "feedback_attachments": feedback_attachments,
+                "feedback_page": feedback_page,
+                "feedback_status": feedback_status,
             },
         ),
     )

@@ -1,3 +1,4 @@
+<link rel="stylesheet" href="{{ asset_url('css/feedback_conversation.css') }}">
 <!-- Feedback Modal -->
 <div class="modal-backdrop feedback-modal" id="feedback-modal" data-type="bug" data-feedback-managed hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
     <div class="modal modal-lg">
@@ -57,8 +58,9 @@
                     <polyline points="22 4 12 14.01 9 11.01"></polyline>
                 </svg>
                 <h3>感谢您的反馈！</h3>
-                <p id="feedback-success-message">您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。</p>
+                <p id="feedback-success-message">反馈已提交。您可以在“我的反馈”继续补充、查看超管回复，处理完成后由超管关闭。</p>
                 <div class="fb-success-actions">
+                    <button type="button" class="fb-success-btn" id="fb-open-submitted-btn">查看反馈对话</button>
                     <button type="button" class="fb-success-btn" id="fb-submit-another-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>

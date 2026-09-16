@@ -6,6 +6,7 @@
 import { API, apiFetch } from './api.js';
 import { showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
+import { FeedbackConversation, FEEDBACK_TYPES, feedbackStatus, feedbackTime, node, button } from './feedback_conversation.js';
 
 const MAX_FEEDBACK_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
@@ -53,8 +54,6 @@ function guessSectionFromPath() {
     return '';
 }
 
-const TYPE_LABEL_MAP = { bug: 'Bug 修复', feature: '新功能反馈', report: '举报' };
-
 class FeedbackModal {
     constructor() {
         this.modalBackdrop = document.getElementById('feedback-modal');
@@ -94,6 +93,8 @@ class FeedbackModal {
         this.myFeedbackData = null;
         this.myPanelVisible = false;
         this.closeTimer = null;
+        this.conversations = new Map();
+        this.myCards = new Map();
 
         this._init();
     }
@@ -110,6 +111,11 @@ class FeedbackModal {
         this._bindEvents();
         this._autoDetectSection();
         this._applyTypeAccent('bug');
+        const linkedId = Number(new URLSearchParams(location.search).get('feedback_id'));
+        if (Number.isSafeInteger(linkedId) && linkedId > 0 && !document.querySelector('[data-feedback-admin]')) {
+            this.open();
+            this._openMyFeedback(linkedId);
+        }
     }
 
     _bindEvents() {
@@ -163,6 +169,8 @@ class FeedbackModal {
         if (this.myBackBtn) {
             this.myBackBtn.addEventListener('click', () => this._closeMyFeedback());
         }
+
+        document.getElementById('fb-open-submitted-btn')?.addEventListener('click', () => this._openMyFeedback(this.feedbackId));
 
         // Submit another button (in success state)
         if (this.submitAnotherBtn) {
@@ -432,10 +440,10 @@ class FeedbackModal {
             if (this.successMessage) {
                 if (failedUploads > 0) {
                     this.successMessage.textContent =
-                        `反馈已提交；${failedUploads} 张截图上传失败，可稍后重新提交截图说明。`;
+                        `反馈已提交；${failedUploads} 张截图上传失败。您可在“我的反馈”继续补充文字说明。`;
                 } else {
                     this.successMessage.textContent =
-                        '您的反馈已成功提交，我们会尽快处理。每一份意见都让平台变得更好。';
+                        '反馈已提交。您可以在“我的反馈”继续补充、查看超管回复，处理完成后由超管关闭。';
                 }
             }
 
@@ -505,32 +513,39 @@ class FeedbackModal {
     /* ============================================================
      * My Feedback panel
      * ============================================================ */
-    async _openMyFeedback() {
-        if (this.myPanelVisible) return;
-
-        // Hide form/success, show my-panel
+    async _openMyFeedback(linkedId = null) {
+        if (this.submitting) return;
         if (this.formPanel) this.formPanel.style.display = 'none';
         if (this.successPanel) this.successPanel.setAttribute('hidden', '');
         if (this.footerEl) this.footerEl.style.display = 'none';
-        if (this.myPanel) this.myPanel.style.display = '';
+        if (this.myPanel) this.myPanel.style.display = 'block';
         this.myPanelVisible = true;
+        await this._loadMyFeedback(linkedId);
+    }
 
-        // Show loading
-        if (this.myContent) {
-            this.myContent.innerHTML = '<div class="fb-my-spinner"><div class="spinner"></div></div>';
-        }
-
+    async _loadMyFeedback(linkedId = null, append = false) {
+        if (this.myLoading) return;
+        this.myLoading = true;
+        this.conversations.forEach((conversation) => conversation.destroy());
+        this.conversations.clear();
+        this.myContent.replaceChildren(node('p', 'fb-my-empty', '正在加载反馈…'));
         try {
-            const data = await API.get('/api/feedback/my');
-            this.myFeedbackData = data.items || [];
-            this._renderMyFeedback();
-        } catch (err) {
-            console.error('Failed to load my feedback:', err);
-            if (this.myContent) {
-                this.myContent.innerHTML =
-                    '<div class="fb-my-empty"><p>加载失败，请稍后重试</p></div>';
+            const params = new URLSearchParams({ limit: '60' });
+            if (append && this.myNextBeforeId) params.set('before_id', this.myNextBeforeId);
+            const data = await apiFetch(`/api/feedback/my?${params}`, { silent: true });
+            const items = append ? [...(this.myFeedbackData || []), ...(data.items || [])] : data.items || [];
+            this.myFeedbackData = [...new Map(items.map((item) => [item.id, item])).values()];
+            this.myHasMore = Boolean(data.has_more);
+            this.myNextBeforeId = data.next_before_id;
+            if (linkedId && !this.myFeedbackData.some((item) => Number(item.id) === Number(linkedId))) {
+                const detail = await apiFetch(`/api/feedback/${Number(linkedId)}/detail`, { silent: true });
+                this.myFeedbackData.unshift(detail.feedback);
             }
-        }
+            this._renderMyFeedback();
+            if (linkedId) this._toggleCard(Number(linkedId));
+        } catch (error) {
+            this.myContent.replaceChildren(node('p', 'fb-my-empty', `加载失败：${error.message}`), button('重试', () => this._loadMyFeedback(linkedId, append)));
+        } finally { this.myLoading = false; }
     }
 
     _closeMyFeedback() {
@@ -542,102 +557,65 @@ class FeedbackModal {
 
     _renderMyFeedback() {
         if (!this.myContent) return;
-
+        this.myCards.clear();
+        this.myContent.replaceChildren();
+        const toolbar = node('div', 'fb-my-refresh');
+        toolbar.append(node('span', '', '在这里查看回复、继续沟通；由超管决定关闭时间。'), button('刷新列表', () => this._loadMyFeedback()));
+        this.myContent.append(toolbar);
         const items = this.myFeedbackData || [];
-
-        if (items.length === 0) {
-            this.myContent.innerHTML = `
-                <div class="fb-my-empty">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                    </svg>
-                    <p>尚未提交反馈</p>
-                    <p class="fb-my-empty-sub">提交 Bug 反馈、新功能建议或举报内容，帮助平台变得更好</p>
-                </div>`;
+        if (!items.length) {
+            this.myContent.append(node('p', 'fb-my-empty', '尚未提交反馈。提交后可在这里与超管沟通。'));
             return;
         }
-
-        let html = '<div class="fb-my-list">';
-        items.forEach((item) => {
-            const typeLabel = TYPE_LABEL_MAP[item.feedback_type] || item.feedback_type;
-            const isViewed = item.status === 'viewed';
-            const statusLabel = isViewed ? '已查看' : '待处理';
-            const statusCls = isViewed ? 's-viewed' : 's-pending';
-            const timeStr = this._formatTime(item.created_at);
-
-            html += `
-            <div class="fb-my-card" id="fb-card-${item.id}">
-                <div class="fb-my-card-summary" onclick="window.__fbModal._toggleCard(${item.id})">
-                    <span class="fb-my-card-type-badge t-${item.feedback_type}">${typeLabel}</span>
-                    <span class="fb-my-card-title">${this._escapeHtml(item.title)}</span>
-                    <span class="fb-my-card-meta">
-                        <span class="fb-my-card-status ${statusCls}">${statusLabel}</span>
-                        <span>${timeStr}</span>
-                    </span>
-                    <svg class="fb-my-card-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </div>
-                <div class="fb-my-card-detail">
-                    <div class="fb-my-card-detail-meta">
-                        <span>${item.section ? '板块: ' + this._escapeHtml(item.section) : ''}</span>
-                        <span>${item.attachment_count > 0 ? '附件: ' + item.attachment_count + ' 张' : ''}</span>
-                    </div>
-                    <div class="fb-my-card-desc">${this._escapeHtml(item.description)}</div>
-                    <div id="fb-card-att-${item.id}" class="fb-my-card-attachments"></div>
-                    <button type="button" class="fb-withdraw-btn" onclick="event.stopPropagation(); window.__fbModal._withdrawFeedback(${item.id})">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                        撤回此反馈
-                    </button>
-                </div>
-            </div>`;
-        });
-        html += '</div>';
-        this.myContent.innerHTML = html;
+        const list = node('div', 'fb-my-list');
+        for (const item of items) {
+            const card = node('article', 'fb-my-card');
+            card.id = `fb-card-${item.id}`;
+            const toggle = button('', () => this._toggleCard(item.id), 'fb-my-card-summary');
+            toggle.setAttribute('aria-expanded', 'false');
+            const type = ['bug', 'feature', 'report'].includes(item.feedback_type) ? item.feedback_type : 'bug';
+            toggle.append(node('span', `fb-my-card-type-badge t-${type}`, FEEDBACK_TYPES[type]), node('span', 'fb-my-card-title', item.title));
+            const meta = node('span', 'fb-my-card-meta');
+            const status = node('span', 'fb-thread-status', feedbackStatus(item));
+            const unread = node('span', 'fb-thread-unread', `${item.unread_count || 0} 条未读`);
+            unread.hidden = !item.unread_count;
+            meta.append(status, unread, node('span', '', feedbackTime(item.created_at)));
+            toggle.append(meta);
+            const body = node('div', 'fb-my-card-detail');
+            body.id = `fb-card-detail-${item.id}`;
+            toggle.setAttribute('aria-controls', body.id);
+            card.append(toggle, body);
+            list.append(card);
+            this.myCards.set(Number(item.id), { card, toggle, status, unread, body });
+        }
+        this.myContent.append(list);
+        if (this.myHasMore) this.myContent.append(button('加载更多反馈', () => this._loadMyFeedback(null, true), 'fb-thread-button fb-admin-more'));
     }
 
-    async _toggleCard(feedbackId) {
-        const card = document.getElementById(`fb-card-${feedbackId}`);
-        if (!card) return;
-
-        const isExpanded = card.classList.contains('is-expanded');
-
-        if (isExpanded) {
-            card.classList.remove('is-expanded');
-            return;
-        }
-
-        // Load detail (attachments) if not already loaded
-        const attContainer = document.getElementById(`fb-card-att-${feedbackId}`);
-        if (attContainer && attContainer.children.length === 0 && !attContainer.dataset.loaded) {
-            attContainer.dataset.loaded = '1';
-            try {
-                const data = await API.get(`/api/feedback/${feedbackId}/detail`);
-                if (data.attachments && data.attachments.length > 0) {
-                    attContainer.innerHTML = data.attachments.map(a =>
-                        `<img class="fb-my-card-att-thumb"
-                             src="/api/feedback/${feedbackId}/attachment/${a.file_hash}"
-                             alt="${this._escapeHtml(a.original_filename)}"
-                             loading="lazy"
-                             onclick="event.stopPropagation(); window.open('/api/feedback/${feedbackId}/attachment/${a.file_hash}')"
-                             title="${this._escapeHtml(a.original_filename)}">`
-                    ).join('');
-                }
-            } catch (err) {
-                console.error('Failed to load feedback detail:', err);
-                attContainer.innerHTML = '';
-            }
-        }
-
-        card.classList.add('is-expanded');
+    _toggleCard(feedbackId) {
+        feedbackId = Number(feedbackId);
+        const target = this.myCards.get(feedbackId);
+        if (!target) return;
+        const opening = !target.card.classList.contains('is-expanded');
+        target.card.classList.toggle('is-expanded', opening);
+        target.toggle.setAttribute('aria-expanded', String(opening));
+        if (!opening) return;
+        if (this.conversations.has(feedbackId)) { this.conversations.get(feedbackId).load(); return; }
+        this.conversations.set(feedbackId, new FeedbackConversation(target.body, feedbackId, {
+            onChange: (item) => {
+                target.status.textContent = feedbackStatus(item);
+                target.status.classList.toggle('is-closed', item.status === 'closed');
+                target.unread.textContent = `${item.unread_count || 0} 条未读`;
+                target.unread.hidden = !item.unread_count;
+            },
+            onWithdraw: (id) => this._withdrawFeedback(id),
+        }));
     }
 
     async _withdrawFeedback(feedbackId) {
-        if (!confirm('确定要撤回此反馈吗？撤回后无法恢复。')) return;
+        if (this.withdrawing) return;
+        if (!confirm('确定撤回这条尚未沟通的反馈吗？撤回后无法恢复。')) return;
+        this.withdrawing = true;
 
         try {
             await API.delete(`/api/feedback/${feedbackId}`);
@@ -645,39 +623,15 @@ class FeedbackModal {
 
             // Remove from local data and re-render
             this.myFeedbackData = (this.myFeedbackData || []).filter(item => item.id !== feedbackId);
-            this._renderMyFeedback();
+            this.conversations.get(feedbackId)?.destroy();
+            this.conversations.delete(feedbackId);
+            await this._loadMyFeedback();
         } catch (err) {
             showToast(`撤回失败: ${err.message}`, 'error');
-        }
+            this.conversations.get(feedbackId)?.load();
+        } finally { this.withdrawing = false; }
     }
 
-    /* ============================================================
-     * Helpers
-     * ============================================================ */
-    _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text || '';
-        return div.innerHTML;
-    }
-
-    _formatTime(isoString) {
-        if (!isoString) return '';
-        try {
-            const d = new Date(isoString);
-            const now = new Date();
-            const diffMs = now - d;
-            const diffMin = Math.floor(diffMs / 60000);
-            if (diffMin < 1) return '刚刚';
-            if (diffMin < 60) return `${diffMin} 分钟前`;
-            const diffHours = Math.floor(diffMin / 60);
-            if (diffHours < 24) return `${diffHours} 小时前`;
-            const diffDays = Math.floor(diffHours / 24);
-            if (diffDays < 7) return `${diffDays} 天前`;
-            return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-        } catch {
-            return isoString.slice(0, 10);
-        }
-    }
 }
 
 /* ============================================================
@@ -686,7 +640,7 @@ class FeedbackModal {
 function initFeedback() {
     if (document.getElementById('feedback-modal')) {
         const modal = new FeedbackModal();
-        // Expose on window so HTML onclick handlers can call methods
+        // Retain the existing integration hook used by other page scripts.
         window.__fbModal = modal;
     }
 }
