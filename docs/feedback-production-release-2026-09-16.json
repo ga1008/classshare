@@ -1,0 +1,163 @@
+{
+  "date": "2026-09-16",
+  "feature_commit": "8a2a01a966d131e564460777478b2607905b09c1",
+  "release_id": "20260916-195311-045ccb9f7763",
+  "deployment_completed": true,
+  "cutover_database_backup": "/tmp/lanshare-deploy-backups/db-cutover-20260916-195319.sql.gz",
+  "runtime_data_directories_preserved": true,
+  "local_validation": {
+    "unit_and_regression_tests_passed": 108,
+    "browser_end_to_end_scenarios_passed": 2,
+    "native_postgres_concurrency_scenarios_passed": 6,
+    "browser_viewports": [
+      "1440x980",
+      "390x844"
+    ]
+  },
+  "native_migration": {
+    "status": "ok",
+    "paths": [
+      "incremental",
+      "full-startup"
+    ],
+    "passes_per_path": 2,
+    "old_data_field_sequence_differences": [],
+    "idempotency_differences": [],
+    "added_tables": [],
+    "required_tables_present": 170,
+    "required_tables_total": 170,
+    "index_failures": 0,
+    "skipped_steps": 0,
+    "offline_cluster_stopped_and_removed": true
+  },
+  "production_postflight": {
+    "production_data_modified": false,
+    "checks": {
+      "source:classroom_app/db/postgres_required_columns.py": true,
+      "source:classroom_app/db/postgres_schema.py": true,
+      "source:classroom_app/db/schema.py": true,
+      "source:classroom_app/db/schema_feedback_conversations.py": true,
+      "source:classroom_app/routers/feedback.py": true,
+      "source:classroom_app/routers/ui_parts/manage_pages_admin.py": true,
+      "source:classroom_app/services/dashboard_workspace_service.py": true,
+      "source:classroom_app/services/email_notification_service.py": true,
+      "source:classroom_app/services/feedback_conversation_service.py": true,
+      "source:classroom_app/services/message_center_service.py": true,
+      "source:static/css/feedback_conversation.css": true,
+      "source:static/js/feedback.js": true,
+      "source:static/js/feedback_admin.js": true,
+      "source:static/js/feedback_conversation.js": true,
+      "source:templates/manage/system/feedback.html": true,
+      "source:templates/partials/feedback_modal.html": true,
+      "app_feedback:old_rows_unchanged": true,
+      "app_feedback_attachments:old_rows_unchanged": true,
+      "app_feedback_messages:present": true,
+      "app_feedback_reads:present": true,
+      "conversation_indexes": true,
+      "manager_list": true,
+      "manager_permissions": true,
+      "owner_can_view": true,
+      "history_body_retained": true,
+      "outsider_rejected": true
+    },
+    "tables": {
+      "app_feedback": {
+        "before": 1,
+        "after": 1
+      },
+      "app_feedback_attachments": {
+        "before": 0,
+        "after": 0
+      },
+      "app_feedback_messages": {
+        "count": 0
+      },
+      "app_feedback_reads": {
+        "count": 0
+      }
+    },
+    "ok": true
+  },
+  "public_postflight": {
+    "release_id": "20260916-195311-045ccb9f7763",
+    "checks": {
+      "static/css/feedback_conversation.css": true,
+      "static/js/feedback.js": true,
+      "static/js/feedback_admin.js": true,
+      "static/js/feedback_conversation.js": true,
+      "public_release_header": true
+    },
+    "ok": true
+  },
+  "services": [
+    {
+      "name": "lanshare-agent-worker-1",
+      "state": "running",
+      "status": "Up About a minute"
+    },
+    {
+      "name": "lanshare-scheduler-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    },
+    {
+      "name": "lanshare-blog-crawler-1",
+      "state": "running",
+      "status": "Up About a minute"
+    },
+    {
+      "name": "lanshare-app-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    },
+    {
+      "name": "lanshare-mailer-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    },
+    {
+      "name": "lanshare-ai-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    },
+    {
+      "name": "lanshare-postgres-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    },
+    {
+      "name": "lanshare-nginx-1",
+      "state": "running",
+      "status": "Up About a minute (healthy)"
+    }
+  ],
+  "main_health": {
+    "status": "ok",
+    "release_id": "20260916-195311-045ccb9f7763",
+    "timezone": "Asia/Shanghai",
+    "background_summary": {
+      "task_type_count": 11,
+      "total_queue_depth": 24,
+      "total_running_count": 0,
+      "total_failed_count": 689,
+      "total_stale_count": 0,
+      "active_worker_count": 4,
+      "problem_task_types": [
+        "ai_grading",
+        "material_ai_import",
+        "email_outbox",
+        "blog_news_crawler",
+        "agent_task",
+        "scheduled_task"
+      ]
+    },
+    "background_items_all_status_ok": true
+  },
+  "recent_application_error_logs": false,
+  "scope_notes": [
+    "Production acceptance is read-only; no test replies or notifications were sent to real users.",
+    "No historical feedback attachments exist. New screenshot upload and display were validated in the isolated browser fixture.",
+    "Existing background failure counters remain visible; item states are ok and stale task count is zero. Future scheduled tasks remain queued.",
+    "Automatic approval review blocked deleting task-owned local browser fixture/artifact directories; they were retained."
+  ]
+}
