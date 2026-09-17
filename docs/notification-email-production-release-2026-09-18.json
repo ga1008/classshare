@@ -1,0 +1,52 @@
+{
+  "date": "2026-09-18",
+  "feature_commit": "0dadce81040f8555b925007c2ec03a257a64782e",
+  "release_id": "20260918-020128-0cc4402659d7",
+  "deployment_completed": true,
+  "dry_run_passed": true,
+  "code_backup": "/tmp/lanshare-deploy-backups/code-20260918-020157.tgz",
+  "cutover_database_backup": "/tmp/lanshare-deploy-backups/db-cutover-20260918-020157.sql.gz",
+  "runtime_data_directories_preserved": true,
+  "database_schema_changed_by_feature": false,
+  "local_validation": {
+    "test_modules": 13,
+    "tests_passed": 164,
+    "new_notification_policy_tests": 27,
+    "python_compile_passed": true,
+    "diff_check_passed": true,
+    "real_email_sends": 0,
+    "model_calls": 0
+  },
+  "native_migration_gate": {
+    "status": "ok",
+    "rehearsal_date": "2026-09-16",
+    "unchanged_migration_source_files_verified": 66,
+    "matching_dump_sha256": "4bbce1723a2566d39408530b6ae10db263c303acb4f07b5001cba239069b57ea",
+    "matching_dump_bytes": 35650527,
+    "production_required_tables_present": 170,
+    "production_required_tables_total": 170,
+    "production_index_failures": 0,
+    "production_skipped_steps": 0
+  },
+  "production_postflight": {
+    "ok": true,
+    "source_files_checked": 4,
+    "source_hashes_match": true,
+    "container_checks_passed": 84,
+    "notification_policy_scenarios_passed": 72,
+    "services_running": 8,
+    "app_ai_and_mailer_health": "ok",
+    "public_release_parity_verified": true,
+    "recent_error_logs": false,
+    "probe_business_data_modified": false,
+    "personal_notification_contents_read": false,
+    "probe_messages_sent": 0,
+    "model_calls": 0
+  },
+  "evidence_directory": "E:/CodexTemp/lanshare-notification-policy-20260918",
+  "notes": [
+    "SMTP is mocked in local worker tests; the deployed policy probe forbids database, SMTP and model connections.",
+    "Normal notification emails already queued are checked again before delivery and skipped while preserving inbox messages.",
+    "Existing sent mail and unrelated user files were not rewritten."
+  ]
+}
