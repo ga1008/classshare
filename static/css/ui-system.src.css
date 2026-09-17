@@ -63688,3 +63688,63 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .ls-page.role-student [data-student-week-today] { grid-column: 3; grid-row: 2; text-align: center; }
     .ls-page.role-student [data-student-schedule-expand] { grid-column: 4; grid-row: 2; text-align: center; }
 }
+
+/* ============ 课件渲染壳页：悬浮入口右侧竖排停靠（2026-09-17） ============
+   课件 iframe 自带右上角概念标签与右下角 HUD（页码 / 比例 / 总览 / 外观）。
+   讲课白板与 AI 助手两个悬浮按钮默认分别压在这两处，因此在壳页里把它们
+   收成右下角一列并整体抬到 HUD 之上，同时缩小一档，让出课件的两个角。
+   白板按钮若被教师拖动过，会由 JS 写入 inline left/top，本组规则自动让位。 */
+body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab {
+    width: 52px;
+    height: 52px;
+    right: max(14px, calc(env(safe-area-inset-right) + 8px));
+    bottom: max(70px, calc(env(safe-area-inset-bottom) + 64px));
+    border-radius: var(--radius-lg);
+}
+body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab .ai-workspace-fab__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-md);
+}
+body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab .ai-workspace-fab__icon svg {
+    width: 21px;
+    height: 21px;
+}
+body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab .ai-workspace-fab__badge {
+    top: -6px;
+    right: -5px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+}
+body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab .ai-workspace-fab__light {
+    right: 3px;
+    bottom: 3px;
+    width: 11px;
+    height: 11px;
+}
+body.ls-render-shell-page .teacher-whiteboard-fab {
+    top: auto;
+    right: max(14px, calc(env(safe-area-inset-right) + 8px));
+    bottom: max(134px, calc(env(safe-area-inset-bottom) + 128px));
+    width: 52px;
+    height: 52px;
+}
+body.ls-render-shell-page .teacher-whiteboard-fab svg {
+    width: 23px;
+    height: 23px;
+}
+@media (max-width: 560px) {
+    body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab {
+        width: 46px;
+        height: 46px;
+        right: max(10px, calc(env(safe-area-inset-right) + 6px));
+        bottom: max(94px, calc(env(safe-area-inset-bottom) + 88px));
+    }
+    body.ls-render-shell-page .teacher-whiteboard-fab {
+        width: 46px;
+        height: 46px;
+        right: max(10px, calc(env(safe-area-inset-right) + 6px));
+        bottom: max(148px, calc(env(safe-area-inset-bottom) + 142px));
+    }
+}
