@@ -23,34 +23,46 @@ export async function prefetchSubscribeConfig(): Promise<void> {
   }
 }
 
+export type SubscribeOutcome = "asked" | "no_config" | "no_template" | "unsupported";
+
 /**
- * 在用户手势内调用。弹微信授权框，把允许的模板上报服务端。
- * 静默失败（用户拒绝/勾了不再询问/平台不支持都不打扰主流程）。
+ * 在用户手势内调用（同步发起）。弹微信授权框，把允许的模板上报服务端。
+ * 用户拒绝/勾了不再询问/平台不支持都不打扰主流程。
+ *
+ * 配置未预取时不再静默放弃：先拉配置再弹框（可能已脱离手势，微信会
+ * 拒绝，但比"永远不问"好），返回 Promise 供页面与测试判断走了哪条路。
  */
-export function requestSubscribe(keys: TemplateKey[]): void {
-  const config = templateConfig;
-  if (!config) {
-    void prefetchSubscribeConfig();
-    return;
-  }
+export function requestSubscribe(keys: TemplateKey[]): Promise<SubscribeOutcome> {
+  if (templateConfig) return Promise.resolve(askWithConfig(templateConfig, keys));
+  return prefetchSubscribeConfig().then(() =>
+    templateConfig ? askWithConfig(templateConfig, keys) : "no_config",
+  );
+}
+
+function askWithConfig(config: Record<string, string>, keys: TemplateKey[]): SubscribeOutcome {
   const ids = keys.map((key) => config[key]).filter(Boolean);
-  if (!ids.length) return;
-  uni.requestSubscribeMessage({
-    tmplIds: ids,
-    success: (res) => {
-      const results = res as unknown as Record<string, string>;
-      const accepted = keys.filter((key) => results[config[key]] === "accept");
-      if (!accepted.length) return;
-      void request({
-        path: "/api/mp/subscribe/report",
-        method: "POST",
-        data: { accepted },
-      }).catch(() => {
-        /* 上报失败下次授权补记 */
-      });
-    },
-    fail: () => {
-      /* 用户环境不支持或拒绝，静默 */
-    },
-  });
+  if (!ids.length) return "no_template";
+  try {
+    uni.requestSubscribeMessage({
+      tmplIds: ids,
+      success: (res) => {
+        const results = res as unknown as Record<string, string>;
+        const accepted = keys.filter((key) => results[config[key]] === "accept");
+        if (!accepted.length) return;
+        void request({
+          path: "/api/mp/subscribe/report",
+          method: "POST",
+          data: { accepted },
+        }).catch(() => {
+          /* 上报失败下次授权补记 */
+        });
+      },
+      fail: () => {
+        /* 用户环境不支持或拒绝，静默 */
+      },
+    });
+  } catch {
+    return "unsupported";
+  }
+  return "asked";
 }

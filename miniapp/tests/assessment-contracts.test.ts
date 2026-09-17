@@ -57,5 +57,10 @@ describe("miniapp assessment and submission contracts", () => {
     expect(assessmentNotificationTarget("/report-card")).toBe("/pages/report-card/index");
     expect(assessmentNotificationTarget("/submission/9")).toBeNull();
     expect(assessmentNotificationTarget("https://unrelated.test/assignment/8")).toBeNull();
+    // 审批流通知复用作业链接；反馈对话通知本端暂无落点。
+    expect(assessmentNotificationTarget("/assignment/8?approval_request=3", { request_type: "submission_withdraw" })).toBe("/pages/task-detail/index?id=8");
+    expect(assessmentNotificationTarget("/assignment/8?approval_request=3", {}, true)).toBe("/pages/teacher-task/index?id=8");
+    expect(assessmentNotificationTarget("/dashboard?feedback_id=5")).toBeNull();
+    expect(assessmentNotificationTarget("/manage/system/feedback?feedback_id=5", {}, true)).toBeNull();
   });
 });

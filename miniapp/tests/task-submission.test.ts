@@ -31,6 +31,7 @@ function harness() {
   const hooks: Record<string, Function> = {};
   const request = vi.fn(async (options: { path: string }) => options.path.endsWith("/draft") ? {} : detail());
   const uploadFile = vi.fn(async () => ({ files_by_question: {} }));
+  const requestSubscribe = vi.fn(async () => "asked");
   const uni = { getStorageSync: (key: string) => store.get(key), setStorageSync: (key: string, value: unknown) => store.set(key, value),
     removeStorageSync: (key: string) => store.delete(key), showToast: vi.fn(),
     showModal: vi.fn((options: { success?: Function }) => options.success?.({ confirm: true })) };
@@ -43,12 +44,12 @@ function harness() {
     "../../config": { API_BASE: "https://api.test" }, "../../stores/auth": { useAuthStore: () => auth },
     "../../utils/session": { ensurePageSession: async () => true, redirectToLogin: vi.fn() },
     "../../utils/api": { request, uploadFile }, "../../utils/preview": { previewProtectedFile: vi.fn() },
-    "../../utils/subscribe": { requestSubscribe: vi.fn() }, "../../utils/assessment": assessment, "../../utils/task-submission": flow,
+    "../../utils/subscribe": { requestSubscribe }, "../../utils/assessment": assessment, "../../utils/task-submission": flow,
   };
   const module = { exports: {} as { testPage: any } };
   new Function("require", "exports", "module", "uni", code)((name: string) => imports[name], module.exports, module, uni);
   module.exports.testPage.assignmentId.value = "42";
-  return { page: module.exports.testPage, request, uploadFile, store, auth, uni, hooks };
+  return { page: module.exports.testPage, request, uploadFile, store, auth, uni, hooks, requestSubscribe };
 }
 
 afterEach(() => { vi.useRealTimers(); });
@@ -145,6 +146,20 @@ describe("task writes and account-bound drafts", () => {
     expect(page.pendingSubmissionVersion.value).toBeNull();
     expect(postCount()).toBe(1);
     expect(store.has(page.localDraftKey.value)).toBe(false);
+  });
+
+  it("asks for subscribe permission in the tap gesture before any await and never without content", async () => {
+    const { page, request, uni, requestSubscribe } = harness();
+    await page.loadDetail();
+    await page.submit();
+    expect(requestSubscribe).not.toHaveBeenCalled();
+    page.plainAnswer.value = "answer";
+    const order: string[] = [];
+    requestSubscribe.mockImplementation(async () => { order.push("subscribe"); return "asked"; });
+    uni.showModal.mockImplementation((options: { success?: Function }) => { order.push("modal"); options.success?.({ confirm: false }); });
+    await page.submit();
+    expect(order).toEqual(["subscribe", "modal"]);
+    expect(request.mock.calls.some(([options]) => options.path.endsWith("/submit"))).toBe(false);
   });
 
   it("uses the personal reopen permission even when the global assignment is closed", () => {

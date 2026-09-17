@@ -62,15 +62,20 @@ async function loadItems(): Promise<void> {
 
 async function openItem(item: MessageItem): Promise<void> {
   if (item.is_unread) {
-    item.is_unread = false;
+    // 服务端确认后才翻转本地状态：已读失败不能伪装成"已保存"。
     try {
       await request({
         path: "/api/message-center/read",
         method: "POST",
         data: { notification_ids: [item.id] },
       });
-    } catch {
-      /* 标记失败不打断阅读，下次刷新校正 */
+      item.is_unread = false;
+    } catch (error: unknown) {
+      if ((error as { statusCode?: number }).statusCode === 401) {
+        redirectToLogin();
+        return;
+      }
+      uni.showToast({ title: "标记已读失败，稍后重试", icon: "none" });
     }
   }
   // 作业/考试相关通知深链到作答页；其余仅展开阅读（正文即预览）

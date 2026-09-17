@@ -434,6 +434,29 @@ def build_submission_review(
     }
 
 
+def _ensure_teacher_owns_submission(conn, submission_id: int, teacher_id: int) -> None:
+    """提交级归属预检：提交必须属于该教师任教课堂的任务（排除破境试炼）。
+
+    不存在 → 404；存在但不是本教师课堂 → 403。逐文件校验仍由
+    ensure_submission_file_access 兜底，这里只是让越权请求不再拿到空数组。
+    """
+    row = conn.execute(
+        """
+        SELECT o.teacher_id
+        FROM submissions s
+        JOIN assignments a ON a.id = s.assignment_id
+        JOIN class_offerings o ON o.id = a.class_offering_id
+        WHERE s.id = ?
+          AND NOT EXISTS (SELECT 1 FROM learning_stage_exam_attempts lsea WHERE lsea.assignment_id = a.id)
+        """,
+        (int(submission_id),),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="提交不存在")
+    if int(row["teacher_id"] or 0) != int(teacher_id):
+        raise HTTPException(status_code=403, detail="无权查看该提交")
+
+
 def _get_teacher_assignment(conn, assignment_id: int, teacher_id: int) -> dict:
     row = conn.execute(
         """
@@ -677,17 +700,13 @@ def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_tea
     teacher_id = int(user["id"])
     with get_db_connection() as conn:
         assignment = _get_teacher_assignment(conn, assignment_id, teacher_id)
+        # 与进度/批阅名单同一成员口径（主班 + 挂链班，仅在读成员）。
         rows = conn.execute(
-            """
+            f"""
             SELECT s.id
             FROM students s
-            WHERE (
-                s.class_id = ?
-                OR EXISTS (
-                    SELECT 1 FROM class_offering_class_links cocl
-                    WHERE cocl.offering_id = ? AND cocl.class_id = s.class_id
-                )
-            )
+            JOIN class_offerings o ON o.id = ?
+            WHERE {offering_student_where()}
               AND COALESCE(s.enrollment_status, 'active') = 'active'
               AND NOT EXISTS (
                   SELECT 1 FROM submissions sub
@@ -695,8 +714,9 @@ def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_tea
                     AND sub.student_pk_id = s.id
                     AND COALESCE(sub.is_absence_score, 0) = 0
               )
+            ORDER BY s.student_id_number, s.id
             """,
-            (assignment["class_id"], assignment["offering_id"], str(assignment_id)),
+            (assignment["offering_id"], str(assignment_id)),
         ).fetchall()
 
         values = build_nudge_values(
@@ -831,7 +851,9 @@ def mp_teacher_submission_files(
 ):
     """批阅面板的附件清单。逐文件复用 ensure_submission_file_access
     （教师需对该作业有管理权），下载走既有 /submissions/download/{id}。"""
+    teacher_id = int(user["id"])
     with get_db_connection() as conn:
+        _ensure_teacher_owns_submission(conn, int(submission_id), teacher_id)
         rows = conn.execute(
             "SELECT id FROM submission_files WHERE submission_id = ? ORDER BY id",
             (int(submission_id),),

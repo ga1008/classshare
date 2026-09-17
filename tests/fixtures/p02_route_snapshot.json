@@ -2561,6 +2561,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/feedback/admin",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_admin_feedback",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/feedback/my",
     "methods": [
       "GET"
@@ -2590,6 +2598,38 @@
       "GET"
     ],
     "name": "get_feedback_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/messages",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_feedback_messages",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/messages",
+    "methods": [
+      "POST"
+    ],
+    "name": "reply_to_feedback",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/read",
+    "methods": [
+      "POST"
+    ],
+    "name": "mark_feedback_read",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/feedback/{feedback_id}/status",
+    "methods": [
+      "POST"
+    ],
+    "name": "change_feedback_status",
     "include_in_schema": true
   },
   {

@@ -254,9 +254,18 @@ function isChoice(q: Question): boolean {
   return q.type === "radio" || q.type === "checkbox";
 }
 
-function isAttachmentQuestion(q: Question): boolean {
-  return !["radio", "checkbox", "text", "textarea"].includes(q.type);
+/** 本端能作答的题型；其余（含未来新增）显式提示去网页端，不再静默退化成文本框。 */
+const SUPPORTED_QUESTION_TYPES = new Set(["radio", "checkbox", "text", "textarea", "attachment"]);
+
+function isSupportedQuestion(q: Question): boolean {
+  return SUPPORTED_QUESTION_TYPES.has(q.type);
 }
+
+function isAttachmentQuestion(q: Question): boolean {
+  return q.type === "attachment";
+}
+
+const unsupportedQuestions = computed<Question[]>(() => allQuestions.value.filter((q) => !isSupportedQuestion(q)));
 
 function checkboxSelected(q: Question, option: string): boolean {
   return (answers[q.id] || "").split(CHECKBOX_SEP).includes(option);
@@ -738,6 +747,12 @@ async function reconcileSubmission(): Promise<boolean> {
   } finally { checkingResult.value = false; }
 }
 
+function hasVisibleContent(): boolean {
+  if (!detail.value) return false;
+  const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
+  return detail.value.paper ? answeredCount.value > 0 || hasAnyFiles : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
+}
+
 async function submit(): Promise<void> {
   if (submitting.value || checkingResult.value || !detail.value || !ownsPage()) return;
   if (uploadingQid.value || selectingFiles.value) {
@@ -749,22 +764,22 @@ async function submit(): Promise<void> {
     return;
   }
   if (!isAnswerMode.value) return;
+  // 微信要求订阅授权在点击手势的同步阶段发起：放在任何 await 之前。本地已有
+  // 可见作答才问（草稿待核对/恢复的罕见路径不问）；用户随后取消提交也无妨。
+  if (hasVisibleContent()) void requestSubscribe(["graded", "deadline", "nudge"]);
   submitting.value = true;
   let attempted = false;
   try {
     await writes.idle();
     if (!ownsPage()) return;
     if (pendingDraftCheck.value && !await verifyDraftFiles()) return;
-    const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
-    const hasContent = detail.value.paper ? answeredCount.value > 0 || hasAnyFiles : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
-    if (!hasContent) { uni.showToast({ title: "还没有填写任何作答内容", icon: "none" }); return; }
+    if (!hasVisibleContent()) { uni.showToast({ title: "还没有填写任何作答内容", icon: "none" }); return; }
     const unanswered = detail.value.paper ? allQuestions.value.length - answeredCount.value : 0;
     const confirmed = await new Promise<boolean>((resolve) => {
       uni.showModal({ title: "确认提交", content: unanswered > 0 ? `还有 ${unanswered} 题未作答，确定提交吗？` : "提交后将不能再修改，确定提交吗？",
         success: (res) => resolve(Boolean(res.confirm)), fail: () => resolve(false) });
     });
     if (!confirmed || !ownsPage()) return;
-    requestSubscribe(["graded", "deadline", "nudge"]);
     const version = detail.value.assignment.submission_version;
     const key = localDraftKey.value;
     pendingSubmissionVersion.value = version;
@@ -881,6 +896,9 @@ onUnload(() => {
         <text v-if="detail.assignment.requirements_md" class="head-card__req">
           {{ detail.assignment.requirements_md }}
         </text>
+        <text v-if="isAnswerMode && unsupportedQuestions.length" class="head-card__warn">
+          ⚠️ 本试卷有 {{ unsupportedQuestions.length }} 题本端暂不支持作答，请到网页端完成这些题目
+        </text>
       </view>
 
       <view v-if="detail.submission?.is_returned" class="return-card glass-card">
@@ -975,6 +993,11 @@ onUnload(() => {
               >
                 <text>{{ option }}</text>
               </view>
+            </view>
+
+            <view v-else-if="!isSupportedQuestion(q)" class="unsupported-card">
+              <text class="unsupported-card__title">本题题型（{{ q.type }}）本端暂不支持作答</text>
+              <text class="unsupported-card__hint">请到网页端完成本题；本端提交不会包含本题作答。</text>
             </view>
 
             <input
@@ -1195,6 +1218,33 @@ onUnload(() => {
   line-height: 1.4;
 }
 
+.head-card__warn {
+  display: block;
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 16rpx;
+  background: rgba(176, 138, 46, 0.12);
+  color: #8a6a1c;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+.unsupported-card {
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: rgba(176, 138, 46, 0.1);
+}
+.unsupported-card__title {
+  display: block;
+  color: #8a6a1c;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.unsupported-card__hint {
+  display: block;
+  margin-top: 8rpx;
+  color: #66718f;
+  font-size: 24rpx;
+}
 .head-card__req {
   font-size: 26rpx;
   color: #64748b;

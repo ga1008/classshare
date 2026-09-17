@@ -170,7 +170,7 @@ async function zeroUnsubmitted(): Promise<void> {
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
       title: "缺交记零",
-      content: `为 ${count} 名未提交学生记 0 分（占位记录，可撤销）？`,
+      content: `为 ${count} 名未提交学生记 0 分？记零为占位记录；如需更正，请到网页端逐份改分。`,
       success: (res) => resolve(Boolean(res.confirm)),
       fail: () => resolve(false),
     });

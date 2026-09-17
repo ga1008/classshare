@@ -19,6 +19,7 @@ import { onHide, onLoad, onPullDownRefresh, onShow, onUnload } from "@dcloudio/u
 import { computed, reactive, ref } from "vue";
 
 import { request } from "../../utils/api";
+import { buildQuizOptions } from "../../utils/live-composer";
 import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { useAuthStore } from "../../stores/auth";
 
@@ -248,12 +249,12 @@ async function submitComposer(): Promise<void> {
   }
   const payload: Record<string, unknown> = { kind: composer.kind, prompt };
   if (composer.kind === "quiz") {
-    const options = composer.options.map((label) => label.trim()).filter(Boolean);
-    if (options.length < 2) {
-      uni.showToast({ title: "至少两个选项", icon: "none" });
+    const built = buildQuizOptions(composer.options, composer.correct);
+    if (!built.ok) {
+      uni.showToast({ title: built.error, icon: "none" });
       return;
     }
-    payload.options = options.map((label, index) => ({ label, is_correct: index === composer.correct }));
+    payload.options = built.options;
   }
   const ok = await act(
     `/api/classroom-interactions/classrooms/${offeringId.value}/activities`,

@@ -59,6 +59,9 @@ export function classroomGradeKey(value: { course_id: number; class_offering_id?
 
 export function assessmentNotificationTarget(link: string, metadata: Record<string, unknown> = {}, teacher = false): string | null {
   if (/^\/report-card(?:[?#]|$)/.test(link)) return teacher ? null : "/pages/report-card/index";
+  // 审批流（作业撤回重做申请）通知：链接是 /assignment/{id}[?approval_request=]，
+  // 学生落作答结果页、教师落进度页；反馈对话通知（/dashboard?feedback_id=）本端暂无页面。
+  if (/^\/(?:dashboard|manage\/system\/feedback)(?:[?#]|$)/.test(link)) return null;
   const task = /^\/(?:assignment|exam\/take)\/(\d+)(?:[/?#]|$)/.exec(link);
   const submission = /^\/submission\/(\d+)(?:[/?#]|$)/.exec(link);
   const assignmentId = task?.[1] || (submission && /^\d+$/.test(String(metadata.assignment_id)) ? String(metadata.assignment_id) : "");

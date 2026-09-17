@@ -236,6 +236,34 @@ class ManualGradeSafetyTests(unittest.TestCase):
             self.assertEqual(value, task[key])
             self.assertEqual(value, result["stats"][key])
 
+    def test_nudge_targets_use_the_same_membership_scope_as_the_roster(self):
+        sent = []
+
+        def fake_send(conn, **kwargs):
+            sent.append(kwargs["user_pk"])
+            return "sent"
+
+        with patch("classroom_app.services.wechat_mp_subscribe_service.send_subscribe_message", fake_send):
+            stats = teacher.mp_teacher_nudge(1, user={"id": 10})["data"]
+        # Absence placeholders count as unsubmitted; paused / other-class students never do.
+        self.assertEqual([5], sent)
+        self.assertEqual({"total_unsubmitted": 1, "pushed": 1, "no_grant": 0, "skipped": 0}, stats)
+
+    def test_submission_files_reject_other_teachers_before_listing(self):
+        with self.connection() as conn:
+            conn.execute("INSERT INTO submission_files(id,submission_id,original_filename,relative_path,mime_type,file_size)"
+                         " VALUES(1,2,'a.png','x/a.png','image/png',10)")
+        with self.assertRaises(HTTPException) as denied:
+            teacher.mp_teacher_submission_files(2, user={"id": 99, "role": "teacher"})
+        self.assertEqual(403, denied.exception.status_code)
+        with self.assertRaises(HTTPException) as missing:
+            teacher.mp_teacher_submission_files(404, user={"id": 10, "role": "teacher"})
+        self.assertEqual(404, missing.exception.status_code)
+        with patch.object(teacher, "ensure_submission_file_access",
+                          return_value={"id": 1, "original_filename": "a.png", "mime_type": "image/png", "file_size": 10}):
+            files = teacher.mp_teacher_submission_files(2, user={"id": 10, "role": "teacher"})["data"]["files"]
+        self.assertEqual([1], [item["id"] for item in files])
+
     def test_empty_active_roster_does_not_reintroduce_inactive_or_other_class_submissions(self):
         with self.connection() as conn:
             conn.execute("UPDATE students SET enrollment_status='suspended' WHERE class_id IN (1,2)")
