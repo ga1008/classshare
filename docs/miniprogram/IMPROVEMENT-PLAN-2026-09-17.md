@@ -207,7 +207,9 @@
 **测试**：`live` 页新增 vitest（选项映射、空槽校验）；`messages` 新增 vitest（已读失败回滚）；后端 `test_wechat_mp_teacher_grading` 加 files 越权 403。
 **出口**：C10 关闭、阶段 1 出口勾选、部署 + 体验版 v0.14.0、路由快照绿。
 
-**执行记录（2026-09-17，本地实现完成，未部署/未上传）**
+**执行记录（2026-09-17 本地实现；2026-09-18 发布）**
+
+发布登记：commit `bb879180`（dev，已推 origin）；后端生产 release `20260918-003532-27685c99991a`（CRLF 冻结检出 + 复用 09-16 原生演练报告，gate ok，QuiesceForMigration，NO_RECENT_ERROR_LOGS，根盘 53%）；生产无身份探测 `/api/mp/teacher/submission/1/files`、`POST …/nudge`、`/api/mp/auth/me`、`/api/feedback/my` 均 401；**体验版 v0.14.0 已上传**（miniprogram-ci，包 379 KB）。日志在 `E:/CodexTemp/lanshare-miniapp-batchA-20260918/{dry-run,deploy}.log`。
 
 - [x] A1 `utils/live-composer.ts` `buildQuizOptions`（槽位 id 映射 + 空槽/少于 2 项拒绝）；`pages/live` 改用；`tests/live-composer.test.ts` 4 例。
 - [x] A2 `pages/messages` 已读改为服务端确认后翻转，401 回登录，其余 toast；`tests/messages-page.test.ts` 3 例（真实页面脚本）。
@@ -218,7 +220,7 @@
 - [x] A7 催交名单改用 `offering_student_where()`；`test_mp_grade_safety` 新增"催交对象与名单同口径"1 例（缺交零分占位视为未交，停用/他班不催）。
 - [x] A8 `assessmentNotificationTarget` 对 `/dashboard`、`/manage/system/feedback` 显式返回 null；审批流链接 `/assignment/{id}?approval_request=` 已由原正则覆盖，补 4 条断言。
 - [x] A9 审查 5 条 `/api/feedback/*` 路由（均 `get_current_user`，属已发布的反馈对话功能）后重生成 `p02_route_snapshot.json`。
-- [ ] A10 真机清单 S1-01～S1-08 + F4 手势验证（需部署后端与上传体验版后执行）。
+- [ ] A10 真机清单 S1-01～S1-08 + F4 手势验证（后端与体验版均已就绪，待用户在 iOS/Android 微信真机执行）。
 - 代码审查（code-reviewer）：APPROVE，0 CRITICAL/HIGH。1 条 MEDIUM 为既有情况：后端 `exam_json_service.VALID_QUESTION_TYPES` 只有 radio/checkbox/text/textarea，试卷题从不带 `attachment` 类型，`task-detail` 逐题上传区（`isAttachmentQuestion`）在本批前后都不可达；普通作业的整卷上传（`PLAIN_FILE_QID`）不受影响。→ 纳入批次 F 候选：为 textarea 题开放逐题拍照上传（对应 Web 端画板附件），或删除死代码。
 
 验证：`miniapp` `npm run type-check` 通过、`npm test` 9 文件 55/55、`npm run build:mp-weixin` 通过；后端 `test_architecture_route_snapshot + test_wechat_mp_* + test_mp_grade_safety + test_architecture_import_compatibility` 119 通过（29 个为无 DSN 跳过的 PG 层用例）。
