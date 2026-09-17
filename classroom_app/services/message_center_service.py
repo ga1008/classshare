@@ -1786,6 +1786,8 @@ def _create_private_message_notification(
             recipient_role=message_row["recipient_role"],
             recipient_user_pk=int(message_row["recipient_user_pk"]),
             category=MESSAGE_CATEGORY_PRIVATE,
+            severity=("important" if message_row["sender_role"] == "teacher"
+                      and message_row["recipient_role"] == "student" else "normal"),
             title=f"来自 {message_row['sender_display_name']} 的私信",
             body_preview=_private_message_preview(message_row["content"], attachment_count, 90),
             actor_role=message_row["sender_role"],
@@ -4074,7 +4076,7 @@ def create_teacher_grading_issue_notification(
         recipient_role="teacher",
         recipient_user_pk=teacher_id,
         category=MESSAGE_CATEGORY_AI_FEEDBACK,
-        severity="system",
+        severity="normal" if ref_suffix == "grading_review_required" else "system",
         title=f"批改需要处理：{submission['student_name']} 的{work_type}",
         body_preview=_teacher_submission_body_preview(submission, issue_detail=detail),
         actor_role=AI_ASSISTANT_ROLE,
@@ -4084,7 +4086,7 @@ def create_teacher_grading_issue_notification(
         class_offering_id=_safe_int(submission["class_offering_id"]),
         ref_type=MESSAGE_CATEGORY_AI_FEEDBACK,
         ref_id=f"{submission['id']}:{ref_suffix}:{submission.get('submitted_at') or ''}",
-        metadata=_teacher_submission_metadata(submission, issue_detail=detail),
+        metadata={**_teacher_submission_metadata(submission, issue_detail=detail), "grading_issue_type": ref_suffix},
         created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload) else 0
@@ -4135,6 +4137,7 @@ def create_student_grading_notification(
         recipient_role="student",
         recipient_user_pk=int(submission["student_pk_id"]),
         category=MESSAGE_CATEGORY_GRADING_RESULT,
+        severity="important" if submission["score"] is not None else "normal",
         title=f"{submission['assessment_kind_label']}已批改：{submission['assignment_title']}",
         body_preview=body_preview,
         actor_role=normalized_actor_role,
@@ -4308,6 +4311,7 @@ def create_agent_task_notification(
         recipient_role=str(recipient_role or "").strip().lower(),
         recipient_user_pk=int(recipient_user_pk),
         category=MESSAGE_CATEGORY_AGENT_TASK,
+        severity="system" if (metadata or {}).get("status") == "failed" else "normal",
         title=_truncate_text(title, 80),
         body_preview=_truncate_text(body_preview, 140),
         actor_role=str(actor_role or "").strip().lower(),
@@ -4320,7 +4324,6 @@ def create_agent_task_notification(
         metadata=metadata or {},
         created_at=timestamp,
     )
-    payload["email_notification_allowed"] = True
     return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
 
 
@@ -4433,6 +4436,7 @@ def create_collaboration_notification(
         recipient_role=str(recipient_role or "").strip().lower(),
         recipient_user_pk=int(recipient_user_pk),
         category=MESSAGE_CATEGORY_COLLABORATION,
+        severity="important" if (metadata or {}).get("event_type") == "group_grade_released" else "normal",
         title=_truncate_text(title, 80),
         body_preview=_truncate_text(body_preview, 140),
         actor_role=str(actor_role or "").strip().lower(),

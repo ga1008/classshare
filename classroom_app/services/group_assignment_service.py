@@ -823,6 +823,7 @@ def _notify_group_finalized(conn, assignment_id: str, class_offering_id: int, me
                 link_url=f"/assignment/{assignment_id}",
                 class_offering_id=int(class_offering_id),
                 ref_id=f"group-final:{assignment_id}:{int(member['student_id'])}",
+                metadata={"event_type": "group_grade_released", "assignment_id": assignment_id},
                 allow_duplicates=False,
             )
     except Exception as exc:  # best-effort; never block finalization

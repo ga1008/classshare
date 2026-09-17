@@ -180,13 +180,13 @@ class AgentTaskImprovementTests(unittest.TestCase):
 
             self.assertEqual(1, len(rows))
             self.assertEqual("agent_task", rows[0]["category"])
-            self.assertEqual("important", rows[0]["severity"])
+            self.assertEqual("normal", rows[0]["severity"])
             self.assertIn("Agent 任务完成", rows[0]["title"])
             self.assertEqual(f"/dashboard?agent_task={task_id}", rows[0]["link_url"])
             self.assertEqual("agent_task", rows[0]["ref_type"])
             self.assertEqual(f"agent-task:{task_id}:completed", rows[0]["ref_id"])
-            self.assertEqual("queued", rows[0]["email_status"])
-            self.assertIsNotNone(rows[0]["email_job_id"])
+            self.assertEqual("not_required", rows[0]["email_status"])
+            self.assertIsNone(rows[0]["email_job_id"])
             self.assertEqual(
                 {"agent_task_id": task_id, "status": agent_task_service.TASK_STATUS_COMPLETED},
                 json.loads(rows[0]["metadata_json"]),
@@ -201,18 +201,23 @@ class AgentTaskImprovementTests(unittest.TestCase):
                     """
                 ).fetchall()
             ]
-            self.assertEqual(
-                [
-                    {
-                        "notification_id": rows[0]["id"],
-                        "category": "agent_task",
-                        "severity": "important",
-                        "recipient_email": "teacher@example.test",
-                        "status": "queued",
-                    }
-                ],
-                email_rows,
+            self.assertEqual([], email_rows)
+
+            failed_id = self._insert_agent_task_row(conn, status=agent_task_service.TASK_STATUS_RUNNING)
+            agent_task_service.finish_agent_task(
+                conn, failed_id, status=agent_task_service.TASK_STATUS_FAILED,
+                error_message="The model service is temporarily unavailable.",
             )
+            failed_notice = conn.execute(
+                "SELECT id, severity, email_status FROM message_center_notifications WHERE ref_id = ?",
+                (f"agent-task:{failed_id}:failed",),
+            ).fetchone()
+            self.assertEqual("system", failed_notice["severity"])
+            self.assertEqual("queued", failed_notice["email_status"])
+            failed_mail = conn.execute("SELECT notification_id, status FROM email_outbox").fetchall()
+            self.assertEqual(1, len(failed_mail))
+            self.assertEqual(failed_notice["id"], failed_mail[0]["notification_id"])
+            self.assertEqual("queued", failed_mail[0]["status"])
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

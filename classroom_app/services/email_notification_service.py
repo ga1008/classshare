@@ -48,14 +48,10 @@ IMPORTANT_NOTIFICATION_CATEGORIES = {
     "signature_workflow",
     "approval_workflow",
     "assignment",
-    "discussion_mention",
-    "submission",
     "grading_result",
-    "learning_progress",
     "attendance_alert",
     "academic_exam",
     "gongwen_follow",
-    "agent_task",
     "poll",
 }
 
@@ -69,17 +65,23 @@ EMAIL_ELIGIBLE_CATEGORIES = {
     "signature_workflow",
     "approval_workflow",
     "assignment",
-    "discussion_mention",
-    "submission",
     "grading_result",
-    "learning_progress",
     "academic_exam",
     "gongwen_follow",
     "agent_task",
     "ai_feedback",
     "app_feedback",
     "password_reset_request",
+    "private_message",
+    "collaboration",
 }
+
+GRADING_FAILURE_NOTIFICATION_TYPES = frozenset({
+    "grading_failed",
+    "grading_stale",
+    "grading_queue_failed",
+    "grading_regrade_failed_preserved",
+})
 
 SECURITY_VALUES = {"ssl", "starttls", "none"}
 EMAIL_STATUS_NOT_REQUIRED = "not_required"
@@ -214,6 +216,8 @@ EMAIL_PROVIDER_PRESETS = {
 }
 
 EMAIL_CATEGORY_ACTION_LABELS = {
+    "private_message": "查看教师私信",
+    "collaboration": "查看小组成绩",
     "assignment": "查看作业",
     "discussion_mention": "回到课堂讨论",
     "submission": "查看学生提交",
@@ -226,6 +230,8 @@ EMAIL_CATEGORY_ACTION_LABELS = {
 }
 
 EMAIL_CATEGORY_COPY = {
+    "private_message": "老师给你发来了私信，可以查看消息并继续沟通。",
+    "collaboration": "小组作业成绩已公布，可以查看综合表现分和反馈。",
     "assignment": "老师发布了新的学习任务，建议尽早查看要求和截止安排。",
     "discussion_mention": "课堂讨论中有人提到了你，点开即可回到相关课堂继续查看。",
     "submission": "学生已有新的作业提交，点开即可查看详情或继续批改。",
@@ -341,11 +347,65 @@ def notification_severity_for_category(category: Any) -> str:
     return NOTIFICATION_SEVERITY_NORMAL
 
 
-def notification_email_required(category: Any, severity: Any = "") -> bool:
+def notification_email_required(
+    category: Any, severity: Any = "", *, payload: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Decide email delivery by event, independently of the inbox's labels.
+
+    Use the same persisted event context when enqueueing and sending so a
+    policy change also silences ordinary notifications already in the queue.
+    """
     normalized_category = str(category or "").strip().lower()
     normalized_severity = str(severity or notification_severity_for_category(normalized_category)).strip().lower()
     if normalized_category not in EMAIL_ELIGIBLE_CATEGORIES:
         return False
+    payload = payload or {}
+    if payload.get("email_notification_allowed") is False:
+        return False
+    try:
+        metadata = json.loads(payload.get("metadata_json") or "{}")
+    except (TypeError, ValueError):
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    recipient_role = str(payload.get("recipient_role") or "").strip().lower()
+    actor_role = str(payload.get("actor_role") or "").strip().lower()
+    ref_type = str(payload.get("ref_type") or "")
+    ref_id = str(payload.get("ref_id") or "")
+    if normalized_category == "ai_feedback":
+        # Older queued notifications predate explicit issue metadata.
+        parts = ref_id.split(":", 2)
+        issue_type = metadata.get("grading_issue_type") or (parts[1] if len(parts) > 1 else "")
+        return (
+            recipient_role == "teacher" and isinstance(issue_type, str)
+            and issue_type in GRADING_FAILURE_NOTIFICATION_TYPES
+        )
+    if normalized_category == "grading_result":
+        score = metadata.get("score")
+        display_state = metadata.get("grade_display_state")
+        return (
+            recipient_role == "student"
+            and isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score)
+            and ("score_visible" not in metadata or metadata["score_visible"] is True or metadata["score_visible"] == 1)
+            and (display_state is None or (
+                isinstance(display_state, str) and display_state in {"graded", "regrading", "absence_zero"}
+            ))
+        )
+    if normalized_category == "private_message":
+        return recipient_role == "student" and actor_role == "teacher"
+    if normalized_category == "assignment":
+        return ref_type == "assignment" and metadata.get("send_email_notification") is True
+    if normalized_category == "app_feedback":
+        return (
+            ref_type == "app_feedback_message" and actor_role == "teacher"
+            and metadata.get("event_type") == "reply"
+        )
+    if normalized_category == "agent_task":
+        return metadata.get("status") == "failed"
+    if normalized_category == "collaboration":
+        return recipient_role == "student" and (
+            metadata.get("event_type") == "group_grade_released" or ref_id.startswith("group-final:")
+        )
     return normalized_severity in {NOTIFICATION_SEVERITY_IMPORTANT, NOTIFICATION_SEVERITY_SYSTEM}
 
 
@@ -1119,13 +1179,9 @@ def _insert_email_outbox_job_if_absent(
 
 
 def queue_notification_email_if_applicable(conn, *, notification_id: int, payload: dict[str, Any]) -> bool:
-    if payload.get("email_notification_allowed") is False:
-        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_REQUIRED)
-        return False
-
     category = str(payload.get("category") or "").strip().lower()
     severity = str(payload.get("severity") or notification_severity_for_category(category)).strip().lower()
-    if not notification_email_required(category, severity):
+    if not notification_email_required(category, severity, payload=payload):
         _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_REQUIRED)
         return False
 
@@ -1465,6 +1521,25 @@ def _send_outbox_message(config, job: dict[str, Any]) -> None:
 def process_email_job(job: dict[str, Any]) -> str:
     now = _now_iso()
     with get_db_connection() as conn:
+        if job.get("notification_id") or str(job.get("dedupe_key") or "").startswith("notification:"):
+            row = conn.execute(
+                "SELECT * FROM message_center_notifications WHERE id = ? LIMIT 1",
+                (job.get("notification_id"),),
+            ).fetchone()
+            payload = dict(row) if row else {}
+            if not row or not notification_email_required(
+                payload.get("category"), payload.get("severity"), payload=payload,
+            ):
+                conn.execute(
+                    """UPDATE email_outbox SET status = 'skipped', locked_at = NULL,
+                       next_attempt_at = NULL, last_error = '', updated_at = ?
+                       WHERE id = ? AND status IN ('queued', 'sending')""",
+                    (now, int(job["id"])),
+                )
+                if row:
+                    _mark_notification_email_status(conn, int(row["id"]), EMAIL_STATUS_NOT_REQUIRED)
+                conn.commit()
+                return "skipped"
         config = None
         if job.get("config_id"):
             config = conn.execute(

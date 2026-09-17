@@ -13,6 +13,7 @@ from classroom_app.services.dashboard_workspace_service import assignment_worksp
 from classroom_app.services.dashboard_calendar_service import calendar_item
 from classroom_app.services.global_search_service import _search_assignments
 from classroom_app.services import todo_service, calendar_feed_service
+from classroom_app.services.email_notification_service import notification_email_required
 
 
 class AssessmentSecondarySurfacesTests(unittest.TestCase):
@@ -147,6 +148,9 @@ class AssessmentSecondarySurfacesTests(unittest.TestCase):
         self.assertNotIn("90", captured[0]["body_preview"])
         self.assertNotIn("旧评语", json.dumps(captured, ensure_ascii=False))
         self.assertIn("期末测验", captured[0]["title"])
+        self.assertFalse(notification_email_required(
+            captured[0]["category"], captured[0]["severity"], payload=captured[0],
+        ))
         wechat.assert_not_called()
 
     def test_legacy_todo_and_ical_keep_classification_semester_and_absence_pending(self):
