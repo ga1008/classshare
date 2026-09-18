@@ -365,8 +365,8 @@ if (app) {
         return getChatImageAttachmentDisplayMeta(item, formatBytes);
     }
 
-    function openAttachmentPreview(item) {
-        imagePreviewController.open(normalizeAttachmentPayload(item));
+    function openAttachmentPreview(item, siblings = []) {
+        imagePreviewController.open(normalizeAttachmentPayload(item), siblings);
     }
 
     function revokeAttachmentPreview(attachment) {
@@ -1589,7 +1589,10 @@ if (app) {
         const imageButton = event.target.closest('[data-private-image-preview-key]');
         if (imageButton) {
             event.preventDefault();
-            openAttachmentPreview(state.attachmentPreviewItems.get(imageButton.dataset.privateImagePreviewKey));
+            const siblings = Array.from(imageButton.parentElement?.querySelectorAll('[data-private-image-preview-key]') || [])
+                .map((node) => state.attachmentPreviewItems.get(node.dataset.privateImagePreviewKey))
+                .filter(Boolean);
+            openAttachmentPreview(state.attachmentPreviewItems.get(imageButton.dataset.privateImagePreviewKey), siblings);
             return;
         }
 

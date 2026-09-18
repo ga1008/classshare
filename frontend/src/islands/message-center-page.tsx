@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 
-const LEGACY_MESSAGE_CENTER_CONTROLLER_URL = '/static/js/message_center.js?v=ux-dedup-20260804';
+const LEGACY_MESSAGE_CENTER_CONTROLLER_URL = '/static/js/message_center.js?v=lightbox-20260918';
 
 function loadMessageCenterController() {
   if (window.__LANSHARE_MESSAGE_CENTER_PAGE_CONTROLLER__) {

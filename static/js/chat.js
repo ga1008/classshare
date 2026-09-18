@@ -2276,7 +2276,7 @@ export class ClassroomChat {
             link.type = 'button';
             link.className = `chat-message-attachment-link${options.quote ? ' chat-quote-attachment-link' : ''}`;
             link.title = '\u9884\u89c8\u56fe\u7247';
-            link.addEventListener('click', () => this.openAttachmentPreview(attachment));
+            link.addEventListener('click', () => this.openAttachmentPreview(attachment, items));
 
             const image = document.createElement('img');
             image.className = 'chat-message-attachment-image';
@@ -2305,8 +2305,11 @@ export class ClassroomChat {
         return this.imagePreviewController.isOpen();
     }
 
-    openAttachmentPreview(item) {
-        this.imagePreviewController.open(this.normalizeAttachmentPayload(item));
+    openAttachmentPreview(item, siblings = []) {
+        this.imagePreviewController.open(
+            this.normalizeAttachmentPayload(item),
+            (siblings || []).map((entry) => this.normalizeAttachmentPayload(entry)).filter(Boolean),
+        );
     }
 
     closeAttachmentPreview() {

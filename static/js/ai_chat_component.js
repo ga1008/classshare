@@ -98,6 +98,20 @@ class AIChatComponent {
         this.messagesBox?.addEventListener('scroll', () => {
             this.autoFollowScroll = this.isNearBottom();
         }, { passive: true });
+        // Images in any bubble (user uploads or Markdown replies) open in the
+        // shared liquid-glass lightbox; prev/next stays within that bubble.
+        this.messagesBox?.addEventListener('click', (event) => {
+            const img = event.target.closest('.bubble img');
+            if (!img || !(img.currentSrc || img.src)) return;
+            event.preventDefault();
+            const bubble = img.closest('.bubble');
+            const images = Array.from(bubble ? bubble.querySelectorAll('img') : [img]).filter((node) => node.currentSrc || node.src);
+            const items = images.map((node) => ({ src: node.currentSrc || node.src, title: node.alt || '图片' }));
+            const index = Math.max(0, images.indexOf(img));
+            import('/static/js/ls_image_lightbox.js')
+                .then((mod) => mod.openImageLightbox({ items, index, groupLabel: 'AI 对话图片' }))
+                .catch((error) => console.warn('[ai-chat] lightbox unavailable', error));
+        });
         this.textarea = document.getElementById('ai-chat-textarea');
         this.sendBtn = document.getElementById('ai-chat-btn-send');
         this.attachBtn = document.getElementById('ai-chat-btn-attach');

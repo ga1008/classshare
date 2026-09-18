@@ -216,7 +216,11 @@ export class ClassroomPrivateMessages {
             }
             event.preventDefault();
             const attachment = this.attachmentPreviewItems.get(trigger.dataset.privateImagePreviewKey);
-            this.openAttachmentPreview(attachment);
+            // Sibling images of the same message feed the lightbox's prev/next.
+            const siblings = Array.from(trigger.parentElement?.querySelectorAll('[data-private-image-preview-key]') || [])
+                .map((node) => this.attachmentPreviewItems.get(node.dataset.privateImagePreviewKey))
+                .filter(Boolean);
+            this.openAttachmentPreview(attachment, siblings);
         });
         this.input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -599,8 +603,8 @@ export class ClassroomPrivateMessages {
         return getChatImageAttachmentDisplayMeta(item, formatBytes);
     }
 
-    openAttachmentPreview(item) {
-        this.imagePreviewController.open(this.normalizeAttachmentPayload(item));
+    openAttachmentPreview(item, siblings = []) {
+        this.imagePreviewController.open(this.normalizeAttachmentPayload(item), siblings);
     }
 
     renderMessageAttachments(attachments) {

@@ -6,16 +6,16 @@ import { ClassroomWorkspace } from './classroom-workspace';
 
 const LEGACY_MODULES = {
   ui: '/static/js/ui.js',
-  chat: '/static/js/chat.js?v=classroom-workspace-20260905',
-  privateMessages: '/static/js/classroom_private_messages.js?v=classroom-workspace-20260905',
-  files: '/static/js/app_files.js?v=classroom-workspace-20260905',
-  materials: '/static/js/classroom_materials.js?v=classroom-workspace-20260905',
+  chat: '/static/js/chat.js?v=classroom-workspace-20260918',
+  privateMessages: '/static/js/classroom_private_messages.js?v=classroom-workspace-20260918',
+  files: '/static/js/app_files.js?v=classroom-workspace-20260918',
+  materials: '/static/js/classroom_materials.js?v=classroom-workspace-20260918',
   exams: '/static/js/app_exams.js',
-  classroomPage: '/static/js/classroom_page.js?v=classroom-workspace-20260905',
+  classroomPage: '/static/js/classroom_page.js?v=classroom-workspace-20260918',
   learningProgress: '/static/js/learning_progress.js?v=classroom-members-20260913',
   interactions: '/static/js/classroom_interactions.js?v=quiz-leaderboard-20260714',
   collaboration: '/static/js/collaboration.js?v=group-remove-redistribute-20260624',
-  polls: '/static/js/classroom_polls.js?v=classroom-workspace-20260905',
+  polls: '/static/js/classroom_polls.js?v=classroom-workspace-20260918',
 } as const;
 
 type LegacyModule = Record<string, unknown>;
