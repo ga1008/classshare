@@ -22,7 +22,7 @@ async function mount(page: Page) {
   await page.locator('.cs-expand__card').evaluate(async card => { await Promise.allSettled(card.getAnimations().map(animation => animation.finished)); });
 }
 
-test('pending cards keep a true 4px transparent gap and only the proposed background is 50%', async ({ page }) => {
+test('pending cards keep a 4px transparent gap and proposed previews use an opaque readable tint', async ({ page }, testInfo) => {
   await mount(page);
   const old = page.locator('.cs-expand [data-event-key="old-A"]');
   const metrics = await old.evaluate(node => {
@@ -35,8 +35,23 @@ test('pending cards keep a true 4px transparent gap and only the proposed backgr
   await old.getByRole('button').click();
   const target = page.locator('.cs-expand [data-event-key="new-A"]');
   await expect(target).toHaveClass(/is-counterpart-focus/);
-  const colors = await target.evaluate(node => ({ opacity: getComputedStyle(node).opacity, background: getComputedStyle(node.querySelector('.cs-lesson__surface')!).backgroundColor }));
-  expect(colors.opacity).toBe('1'); expect(colors.background).toMatch(/0\.5|50%/);
+  await target.locator('.cs-lesson__main').hover();
+  await expect(target).toHaveClass(/is-preview/);
+  const colors = await target.evaluate(node => {
+    const surface = getComputedStyle(node.querySelector('.cs-lesson__surface')!);
+    const text = getComputedStyle(node.querySelector('.cs-lesson__main span')!);
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d')!;
+    const rgba = (color: string) => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return Array.from(context.getImageData(0, 0, 1, 1).data); };
+    const background = rgba(surface.backgroundColor), foreground = rgba(text.color);
+    const luminance = (rgb: number[]) => rgb.slice(0, 3).map(value => { const v = value / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+    return { opacity: getComputedStyle(node).opacity, textOpacity: text.opacity, background, contrast: (luminance(background) + .05) / (luminance(foreground) + .05) };
+  });
+  expect(colors.opacity).toBe('1'); expect(colors.textOpacity).toBe('1');
+  expect(colors.background[3]).toBe(255);
+  expect(Math.min(...colors.background.slice(0, 3))).toBeGreaterThan(190);
+  expect(colors.contrast).toBeGreaterThanOrEqual(7);
+  await page.screenshot({ path: testInfo.outputPath('pending-tint-desktop.png') });
   await expect(page.locator('[data-csd-expand-sub]')).toContainText('1 节安排 · 2 课时');
 });
 

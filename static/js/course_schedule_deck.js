@@ -330,10 +330,13 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson.cs-lesson--pending { background: transparent; border: 2px dashed var(--cs-accent); padding: 4px; box-shadow: none; gap: 0; position: relative; overflow: visible; }
 .cs-lesson--cell.cs-lesson--pending { position: absolute; }
 .cs-lesson__surface { background: var(--cs-accent); border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
-.cs-lesson--proposed .cs-lesson__surface { background: color-mix(in srgb, var(--cs-accent) 50%, transparent); }
+/* Opaque white tint keeps the course hue distinct without showing the grid or
+   other lesson text through an expanded preview. */
+.cs-lesson--proposed .cs-lesson__surface { background: color-mix(in srgb, var(--cs-accent) 25%, #fff 75%); }
 .cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited { display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .cs-lesson--pending.cs-lesson--proposed { color: #172554; }
 .cs-lesson--pending strong, .cs-lesson--pending span { color: inherit; }
+.cs-lesson--proposed span { opacity: 1; }
 .cs-adjustment-label { flex: 0 0 auto; align-self: flex-start; max-width: 100%; border: 1px solid currentColor; border-radius: 4px; background: rgba(255,255,255,.2); color: inherit; font-size: .65rem; font-weight: 800; padding: 2px 4px; cursor: pointer; white-space: normal; line-height: 1.35; text-align: left; }
 .cs-lesson--mini .cs-lesson__surface { padding: 3px 4px; gap: 2px; }
 .cs-lesson--mini .cs-adjustment-label { font-size: .58rem; padding: 1px 3px; }
