@@ -58,7 +58,9 @@ test('student schedule defaults to 3D and collection filtering preserves its ind
   expect(payload.status).toBe('success');
   expect(payload.overview.weeks.flatMap((week: any) => week.lessons).length).toBeGreaterThan(0);
   for (const week of payload.overview.weeks) for (const lesson of week.lessons) {
-    expect(lesson.classroom_url).toBe(`/classroom/${lesson.class_offering_id}`);
+    const link = new URL(lesson.classroom_url, 'http://fixture.test');
+    expect(link.pathname).toBe(`/classroom/${lesson.class_offering_id}`);
+    if (lesson.session_id) expect(link.searchParams.get('session_id')).toBe(String(lesson.session_id));
     expect(lesson.create_url || '').toBe('');
   }
   const activeWeek = await page.locator('.cs-card.is-active .cs-card__bar strong').textContent();
@@ -88,7 +90,7 @@ test('latest semester response wins and retry keeps the selected semester', asyn
     const year = new URL(route.request().url()).searchParams.get('year') || '';
     if (year === '2024-2025') { delayed = route; return; }
     if (year === '2025-2026' && fail) { await route.fulfill({ status: 503, body: '{}' }); return; }
-    await route.fulfill({ json: { overview: overview(year) } });
+    await route.fulfill({ json: { status: 'success', overview: overview(year) } });
   });
   const semester = page.locator('[data-semester-filter]');
   await semester.evaluate((select: HTMLSelectElement) => {
@@ -101,7 +103,7 @@ test('latest semester response wins and retry keeps the selected semester', asyn
   fail = false;
   await page.locator('[data-schedule3d-retry]').click();
   await expect(page.locator('.cs-card.is-active .cs-card__bar strong')).toHaveText('2025-2026');
-  await delayed.fulfill({ json: { overview: overview('2024-2025') } }).catch(() => undefined);
+  await delayed.fulfill({ json: { status: 'success', overview: overview('2024-2025') } }).catch(() => undefined);
   await expect(page.locator('.cs-card.is-active .cs-card__bar strong')).toHaveText('2025-2026');
 });
 
@@ -128,7 +130,7 @@ test('teacher third semester is requested explicitly and free-text terms do not 
   const requests: URL[] = [];
   await page.route('**/api/manage/academic/course-schedule/overview?**', async route => {
     requests.push(new URL(route.request().url()));
-    await route.fulfill({ json: { overview: { terms: [], weeks: [] } } });
+    await route.fulfill({ json: { status: 'success', overview: { terms: [], weeks: [] } } });
   });
   const semester = page.locator('[data-semester-filter]');
   await semester.evaluate((select: HTMLSelectElement) => {
@@ -142,6 +144,90 @@ test('teacher third semester is requested explicitly and free-text terms do not 
   await semester.selectOption('raw:短学期');
   await expect(page.locator('.cs-empty')).toContainText('该学期暂无可用的3D课表');
   expect(requests.length).toBe(1);
+});
+
+test('teacher academic sync preserves the selected week and search on failure and success', async ({ page }) => {
+  await loginTeacher(page, readFixture());
+  await expect(page.locator('.cs-card.is-active')).toHaveCount(1);
+  const selectedValue = await page.locator('[data-csd-term]').inputValue();
+  const [year, term] = selectedValue.split('|');
+  const payload = await (await page.request.get(`/api/manage/academic/course-schedule/overview?${new URLSearchParams({ year, term })}`)).json();
+  await page.locator('[data-csd-slider]').fill('2');
+  const week = await page.locator('.cs-card.is-active .cs-card__bar strong').textContent();
+  await page.locator('[data-dashboard-search]').fill('课程');
+  const requests: any[] = []; let success = false;
+  await page.route('**/api/manage/academic/course-schedule/academic-sync', async route => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ json: success ? { status: 'success', message: '同步完成', overview: payload.overview } : { status: 'failed', message: '教务暂时不可用' } });
+  });
+  for (const complete of [false, true]) {
+    success = complete;
+    await page.locator('[data-academic-schedule-sync]').click();
+    await page.getByRole('button', { name: '开始同步' }).click();
+    await expect(page.locator('.cs-sync-feedback')).toContainText(complete ? '同步完成' : '原有课表已保留');
+    await expect(page.locator('.cs-card.is-active .cs-card__bar strong')).toHaveText(week!);
+    await expect(page.locator('[data-dashboard-search]')).toHaveValue('课程');
+    await expect(page.locator('[data-csd-term]')).toHaveValue(selectedValue);
+  }
+  expect(requests).toEqual([{ year, term }, { year, term }]);
+});
+
+test('student schedule deep link selects the exact authorized session over an older workspace memory', async ({ page }) => {
+  const fixture = readFixture(); await loginStudent(page, fixture);
+  const payload = await (await page.request.get('/api/dashboard/course-schedule/overview')).json();
+  const lesson = payload.overview.weeks.flatMap((week: any) => week.lessons).find((item: any) => Number(item.session_id) > 0);
+  expect(lesson).toBeTruthy();
+  await page.goto(`/classroom/${lesson.class_offering_id}`);
+  const target = await page.evaluate((id: number) => {
+    const config = (window as any).APP_CONFIG;
+    const entries = config.teachingPlan.timeline_entries || config.teachingPlan.sessions;
+    return entries.find((entry: any) => Number(entry.id) === id);
+  }, Number(lesson.session_id));
+  expect(target).toBeTruthy();
+  await page.evaluate(({ offering, student, order }) => sessionStorage.setItem(`classroom-workspace:student:${offering}:${student}`, JSON.stringify({ sessionOrder: Number(order) + 1, restore: true, panel: 'tasks' })), { offering: lesson.class_offering_id, student: fixture.student.id, order: target.order_index });
+  await page.goto(lesson.classroom_url);
+  await expect(page.locator(`[data-session-order="${target.order_index}"]`).first()).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.cw-dialog')).toBeVisible();
+  await expect(page.locator('#teachingSessionModalTitle')).toContainText(target.detail_title || target.title);
+});
+
+test('teacher without classrooms can discover the academic semester from the real homepage', async ({ page }) => {
+  const fixture = readFixture();
+  await page.route('**/api/manage/academic/course-schedule/overview?*', route => route.fulfill({ json: { status: 'success', overview: { terms: [], weeks: [], selected_term: null, filters: {} } } }));
+  await loginTeacher(page, fixture, fixture.superTeacher);
+  await expect(page.locator('[data-offering-card]')).toHaveCount(0);
+  await expect(page.locator('[data-academic-schedule-sync]')).toBeEnabled();
+  await page.locator('[data-academic-schedule-sync]').click();
+  await expect(page.getByLabel('同步范围')).toHaveValue('current');
+  await expect(page.getByRole('button', { name: '开始同步' })).toBeEnabled();
+});
+
+test('management sync retains course filters and week and visibly reports successful warnings', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await loginTeacher(page, readFixture());
+  await page.goto('/manage/academic/course-schedule');
+  await expect(page.locator('[data-cs-deck] .cs-card.is-active')).toHaveCount(1);
+  const course = await page.locator('[data-cs-course] option').nth(1).getAttribute('value');
+  expect(course).toBeTruthy();
+  await page.locator('[data-cs-course]').selectOption(course!);
+  await expect(page.locator('[data-cs-courses] .cs-course-card.is-active')).toHaveCount(1);
+  await page.locator('[data-csd-slider]').fill('2');
+  const week = await page.locator('.cs-card.is-active').getAttribute('data-week-index');
+  const selectedTerm = await page.locator('[data-cs-term]').inputValue();
+  await page.route('**/api/manage/academic/course-schedule/academic-sync', async route => {
+    const target = route.request().postDataJSON();
+    const response = await page.request.get(`/api/manage/academic/course-schedule/overview?${new URLSearchParams(target)}`);
+    const data = await response.json();
+    data.overview.message = '有1次课需要核对关联';
+    await route.fulfill({ json: { ...data, message: '同步完成' } });
+  });
+  await page.locator('[data-academic-schedule-sync]').click();
+  await page.getByRole('button', { name: '开始同步' }).click();
+  await expect(page.locator('.cs-sync-feedback')).toContainText('有1次课需要核对关联');
+  await expect(page.locator('[data-cs-course]')).toHaveValue(course!);
+  await expect(page.locator('[data-cs-term]')).toHaveValue(selectedTerm);
+  await expect(page.locator('.cs-card.is-active')).toHaveAttribute('data-week-index', week!);
+  expect(errors).toEqual([]);
 });
 
 test('student last-week inertia stays in the deck and a new boundary gesture scrolls the page', async ({ page }) => {

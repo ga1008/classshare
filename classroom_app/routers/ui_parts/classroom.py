@@ -139,6 +139,10 @@ def classroom_main(
                 except Exception:
                     pass
 
+        if 'session_id' in request.query_params:
+            from ...services.classroom_session_link_service import resolve_requested_classroom_session
+            resolve_requested_classroom_session(conn, int(class_offering_id), request.query_params['session_id'])
+
         if user['role'] == 'teacher':
             files_cursor = conn.execute(
                 "SELECT * FROM course_files WHERE course_id = ?",

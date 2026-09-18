@@ -1,6 +1,7 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
-import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js';
+import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260919';
+import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
+import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 
 const root = document.querySelector('[data-dashboard-root]');
 initStudentDashboardSchedule(root);
@@ -516,6 +517,32 @@ if (root) {
     let scheduleDeckSelectedTerm = null;
     let scheduleDeckUnsupportedTerm = false;
 
+    const currentScheduleTerm = () => scheduleDeckSelectedTerm || semesterKeyToTerm(activeSemesterKey) || scheduleDeckOverview?.selected_term || {};
+    const scheduleContext = () => { const value = currentScheduleTerm(); return `${value.year || ''}|${value.term || ''}`; };
+    if (dashboardRole === 'teacher') createAcademicScheduleSync({
+        button: root.querySelector('[data-academic-schedule-sync]'), getTerm: currentScheduleTerm, getContext: scheduleContext,
+        onStart: () => { scheduleDeckRequest?.abort(); scheduleDeckRequest = null; scheduleDeckLoading = false; },
+        onSuccess: (data, { context }) => {
+            if (scheduleContext() !== context) { showMessage('教务同步完成，已保留你当前切换后的学期。', 'info'); return; }
+            scheduleDeckRequest?.abort(); scheduleDeckRequest = null;
+            const previous = scheduleContext(), selected = data.overview.selected_term;
+            if (selected) {
+                scheduleDeckSelectedTerm = { year: selected.year, term: selected.term };
+                const semesterKey = `${selected.year}-${selected.term}`;
+                activeSemesterKey = semesterOptionValues.has(semesterKey) ? semesterKey : '';
+                if (semesterSelect) semesterSelect.value = activeSemesterKey;
+            }
+            scheduleDeckOverview = data.overview; scheduleDeckLoaded = true; scheduleDeckLoading = false;
+            scheduleDeckTermKey = scheduleContext(); scheduleDeckUnsupportedTerm = false;
+            getScheduleDeckPanel();
+            setScheduleDeckStatus('');
+            updateScheduleDeckScope({ keepWeek: previous === scheduleContext() });
+            applyFilters({ syncUrl: false });
+            window.dispatchEvent(new CustomEvent('lanshare:dashboard-calendar-invalidate'));
+        },
+        onMessage: (message, tone) => showMessage(message, tone),
+    });
+
     syncSearchForm();
     updateFilterUi();
     updateGroupModeUi();
@@ -724,14 +751,15 @@ if (root) {
         if (!scheduleDeck || !scheduleDeckOverview) return;
         const keyword = normalizeText(searchInput?.value);
         const visibleIds = new Set(cards.filter(card => cardState.get(card)?.visible).map(card => Number(card.dataset.offeringId)));
+        const knownIds = new Set(cards.map(card => Number(card.dataset.offeringId)));
         const weeks = (scheduleDeckOverview.weeks || []).map(week => {
             const lessons = (week.lessons || []).filter(lesson => {
-                if (lesson.class_offering_id) return visibleIds.has(Number(lesson.class_offering_id));
+                if (lesson.class_offering_id && knownIds.has(Number(lesson.class_offering_id))) return visibleIds.has(Number(lesson.class_offering_id));
                 // Teachers can still find and create classrooms for unlinked schedules under “全部”.
-                return dashboardRole === 'teacher' && activeFilter === 'all'
+                return dashboardRole === 'teacher' && (activeFilter === 'all' || !cards.length)
                     && (!keyword || normalizeText(`${lesson.course_name} ${lesson.class_label} ${lesson.classroom}`).includes(keyword));
             });
-            return { ...week, lessons, lesson_count: lessons.length, total_hours: lessons.reduce((sum, lesson) => sum + toNumber(lesson.hours || lesson.sections?.length), 0) };
+            return { ...week, lessons, ...countScheduleLessons(lessons) };
         });
         scheduleDeck.setOverview({ ...scheduleDeckOverview, weeks }, { keepWeek });
     }
@@ -744,7 +772,7 @@ if (root) {
         scheduleDeckStatus.innerHTML = html || '';
     }
 
-    async function loadScheduleOverview({ year = '', term = '' } = {}) {
+    async function loadScheduleOverview({ year = '', term = '' } = {}, { keepWeek = false } = {}) {
         if (!scheduleDeck) return;
         scheduleDeckRequest?.abort();
         const request = new AbortController();
@@ -752,8 +780,9 @@ if (root) {
         scheduleDeckTermKey = `${year}|${term}`;
         scheduleDeckLoaded = false;
         scheduleDeckLoading = true;
-        scheduleDeckOverview = null;
-        scheduleDeck.setOverview(null);
+        const previousOverview = scheduleDeckOverview;
+        const sameTerm = previousOverview?.selected_term?.year === year && String(previousOverview?.selected_term?.term) === String(term);
+        if (!sameTerm) { scheduleDeckOverview = null; scheduleDeck.setOverview(null); }
         setScheduleDeckStatus('正在加载课表…');
         try {
             const params = new URLSearchParams({ year, term });
@@ -761,20 +790,22 @@ if (root) {
             const response = await fetch(`${endpoint}?${params.toString()}`, {
                 credentials: 'same-origin',
                 signal: request.signal,
+                cache: 'no-store', headers: { Accept: 'application/json' },
             });
             if (!response.ok) {
                 throw new Error(`课表加载失败（${response.status}）`);
             }
             const data = await response.json();
             if (request !== scheduleDeckRequest) return;
+            if (data.status !== 'success' || !data.overview) throw new Error(data.message || '课表数据暂时不可用。');
             scheduleDeckLoaded = true;
             setScheduleDeckStatus('');
             scheduleDeckOverview = data.overview;
-            if (dashboardRole === 'student' && data.overview?.message) {
+            if (data.overview?.message) {
                 scheduleDeckStatus.hidden = false;
                 scheduleDeckStatus.textContent = data.overview.message;
             }
-            updateScheduleDeckScope({ keepWeek: false });
+            updateScheduleDeckScope({ keepWeek: sameTerm && keepWeek });
         } catch (error) {
             if (request.signal.aborted || request !== scheduleDeckRequest) return;
             const message = error instanceof Error ? error.message : '课表加载失败。';

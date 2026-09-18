@@ -94,7 +94,9 @@ class StudentCourseScheduleTests(unittest.TestCase):
         lessons = [lesson for week in result["weeks"] for lesson in week["lessons"]]
         self.assertEqual([1, 3], [lesson["id"] for lesson in lessons])
         self.assertEqual({1}, {lesson["class_offering_id"] for lesson in lessons})
-        self.assertEqual({"/classroom/1"}, {lesson["classroom_url"] for lesson in lessons})
+        self.assertEqual({"/classroom/1?session_id=1", "/classroom/1?session_id=3"},
+                         {lesson["classroom_url"] for lesson in lessons})
+        self.assertEqual({1, 3}, {lesson["session_id"] for lesson in lessons})
         self.assertTrue(all(not lesson["create_url"] for lesson in lessons))
         self.assertEqual((2, 6), (result["weeks"][1]["week_index"], result["weeks"][1]["lessons"][0]["weekday"]))
         self.assertEqual([6, 7], result["weeks"][1]["lessons"][0]["sections"])
@@ -181,7 +183,9 @@ class StudentCourseScheduleTests(unittest.TestCase):
         self.conn.set_trace_callback(statements.append)
         result = build_student_course_schedule_overview(self.conn, 7, now=datetime(2026, 9, 5, 10))
         self.conn.set_trace_callback(None)
-        self.assertEqual(4, len(statements), statements)
+        # One constant metadata query checks whether snapshot storage is present;
+        # adding classrooms must never add one query per classroom.
+        self.assertEqual(5, len(statements), statements)
         self.assertTrue(all(query.lstrip().upper().startswith("SELECT") for query in statements))
         lessons = [lesson for week in result["weeks"] for lesson in week["lessons"]]
         self.assertEqual({1, *range(10, 30)}, {lesson["class_offering_id"] for lesson in lessons})

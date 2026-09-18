@@ -6,6 +6,7 @@
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('同步智慧课堂', '课堂工具', 'refresh', variant='primary', tone='indigo', attrs='data-cs-sync') }}
+{{ topbar_action('同步教务课表', '课表与调停课申请', 'refresh', variant='outline', tone='indigo', attrs='data-academic-schedule-sync') }}
 {{ topbar_action('智慧课堂对接', '账号与凭据', 'bar-chart', href='/manage/academic/smart-classroom', variant='outline', tone='slate') }}
 {% endblock %}
 
@@ -32,7 +33,7 @@
             <div class="cs-toolbar__spacer"></div>
             <div class="cs-toolbar__meta">
                 <strong data-cs-sync-time>尚未同步</strong>
-                <span>数据来源：广外智慧课堂 · 每次同步替换本地学期课表</span>
+                <span data-cs-source>课程安排与调停课申请按最近有效同步结果展示</span>
             </div>
         </div>
         <div class="cs-summary" data-cs-summary></div>

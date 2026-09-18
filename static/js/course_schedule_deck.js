@@ -38,6 +38,45 @@ const COURSE_PALETTE = [
 
 const BAND_LABELS = { dawn: '早读', am: '上午', pm: '下午', eve: '晚上' };
 
+export function pendingScheduleChange(lesson) {
+    const change = lesson?.adjustment;
+    return change?.phase === 'pending' && ['move', 'cancel', 'room'].includes(change.kind)
+        && ['original', 'proposed'].includes(change.endpoint) ? change : null;
+}
+
+export function countScheduleLessons(lessons = []) {
+    const official = lessons.filter(lesson => lesson.counts_towards_total !== false
+        && pendingScheduleChange(lesson)?.endpoint !== 'proposed');
+    return { lesson_count: official.length, total_hours: official.reduce((sum, lesson) => sum + Number(lesson.hours || lesson.sections?.length || 0), 0),
+        proposed_count: lessons.filter(lesson => pendingScheduleChange(lesson)?.endpoint === 'proposed').length };
+}
+
+/** Separate overlapping intervals without changing their actual grid positions. */
+export function scheduleLessonLanes(lessons = []) {
+    const result = new Map();
+    for (let day = 1; day <= 7; day += 1) {
+        const rows = lessons.map((lesson, index) => ({ lesson, index, start: Number(lesson.sections?.[0] || 1), end: Number(lesson.sections?.at(-1) || 1) }))
+            .filter(row => Number(row.lesson.weekday) === day).sort((a, b) => a.start - b.start || a.end - b.end || a.index - b.index);
+        let cluster = [], clusterEnd = 0;
+        const flush = () => {
+            const ends = [];
+            cluster.forEach(row => { let lane = ends.findIndex(end => end < row.start); if (lane < 0) lane = ends.length; ends[lane] = row.end; row.lane = lane; });
+            cluster.forEach(row => result.set(row.index, { lane: row.lane, count: ends.length }));
+            cluster = [];
+        };
+        rows.forEach(row => { if (cluster.length && row.start > clusterEnd) flush(); cluster.push(row); clusterEnd = Math.max(cluster.length === 1 ? 0 : clusterEnd, row.end); });
+        flush();
+    }
+    return result;
+}
+
+export function scheduleChangeLabel(lesson) {
+    const change = pendingScheduleChange(lesson);
+    if (!change) return '';
+    if (change.endpoint === 'proposed') return '正在申请变更';
+    return ({ move: '调课待审', cancel: '停课待审', room: '更换教室待审' })[change.kind];
+}
+
 const DECK_CSS = `
 .cs-deck { display: grid; gap: 12px; }
 /* 头部悬于后排堆叠卡片之上，避免被 Flip3D 上浮的卡片遮住 */
@@ -285,6 +324,33 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson--cell.is-preview-closing { pointer-events: none; }
 .cs-lesson--cell:focus-visible { outline: 3px solid #312e81; outline-offset: 3px; }
 
+/* The dashed frame, four transparent CSS pixels and colored surface are separate
+   boxes. No white cover-up and no alpha on text or controls. Kept within the slot
+   so adjacent periods and the clipped 3D canvas cannot cut off the outer frame. */
+.cs-lesson.cs-lesson--pending { background: transparent; border: 2px dashed var(--cs-accent); padding: 4px; box-shadow: none; gap: 0; position: relative; overflow: visible; }
+.cs-lesson--cell.cs-lesson--pending { position: absolute; }
+.cs-lesson__surface { background: var(--cs-accent); border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.cs-lesson--proposed .cs-lesson__surface { background: color-mix(in srgb, var(--cs-accent) 50%, transparent); }
+.cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited { display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+.cs-lesson--pending.cs-lesson--proposed { color: #172554; }
+.cs-lesson--pending strong, .cs-lesson--pending span { color: inherit; }
+.cs-adjustment-label { flex: 0 0 auto; align-self: flex-start; max-width: 100%; border: 1px solid currentColor; border-radius: 4px; background: rgba(255,255,255,.2); color: inherit; font-size: .65rem; font-weight: 800; padding: 2px 4px; cursor: pointer; white-space: normal; line-height: 1.35; text-align: left; }
+.cs-lesson--mini .cs-lesson__surface { padding: 3px 4px; gap: 2px; }
+.cs-lesson--mini .cs-adjustment-label { font-size: .58rem; padding: 1px 3px; }
+.cs-lesson--mini .cs-lesson__main span { font-size: .58rem; }
+.cs-lesson--pending:is(.is-preview,.is-preview-closing) { padding: 4px; }
+.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 11px 13px; overflow: visible; }
+.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__main { flex: 0 0 auto; overflow: visible; }
+.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__main > * { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+.cs-adjustment-details { font-size: .75rem; line-height: 1.6; padding-top: 4px; border-top: 1px solid currentColor; }
+.cs-adjustment-details[hidden] { display: none; }
+.cs-lesson.is-counterpart-focus { outline: 3px solid #f59e0b; outline-offset: 1px; }
+.cs-lesson.is-counterpart-focus::after { content: '已定位'; position: absolute; right: 0; top: -18px; background: #713f12; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 10px; pointer-events: none; }
+.cs-deck-feedback { font-size: .8rem; color: var(--text-muted,#64748b); line-height: 1.6; }
+.cs-deck-feedback:empty { display: none; }
+.cs-lesson__main:focus-visible,.cs-adjustment-label:focus-visible { outline: 3px solid #fbbf24; outline-offset: 1px; }
+.cs-lesson-slot[data-cs-lanes] { padding-right: 2px; }
+
 /* ---- 放大视图 ---- */
 .cs-expand {
     position: fixed;
@@ -354,6 +420,9 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     .cs-stage { height: 400px; }
     .cs-card { height: 330px; }
     .cs-deck-slider { width: 110px; }
+    .cs-expand__body { overflow: auto; overscroll-behavior: contain; }
+    .cs-grid--expanded { min-width: 850px; }
+    .cs-grid--expanded.cs-grid--overlaps { min-width: 1100px; }
 }
 `;
 
@@ -394,7 +463,7 @@ function todayRemoteWeekday() {
 }
 
 function weekEmptyMarkHtml(week) {
-    return week && !week.lesson_count ? '<div class="cs-week-empty-mark">本周无排课</div>' : '';
+    return week && !(week.lessons || []).length ? '<div class="cs-week-empty-mark">本周无排课</div>' : '';
 }
 
 export function createScheduleDeck(container, options = {}) {
@@ -423,6 +492,7 @@ export function createScheduleDeck(container, options = {}) {
     let expandMotionGeneration = 0;
     let expandedTrigger = null;
     let renderedExpandedWeek = null;
+    let highlightTimer = null;
 
     container.classList.add('cs-deck');
     container.innerHTML = `
@@ -441,7 +511,7 @@ export function createScheduleDeck(container, options = {}) {
         </div>
         <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮、方向键或左右拖拽切换周次">
             <div class="cs-stage__hint">滚轮/拖拽切换周次 · 点击卡片放大</div>
-        </div>`;
+        </div><div class="cs-deck-feedback" data-csd-feedback role="status"></div>`;
 
     const expand = document.createElement('div');
     expand.className = 'cs-expand';
@@ -454,6 +524,7 @@ export function createScheduleDeck(container, options = {}) {
             <div class="cs-expand__bar">
                 <strong data-csd-expand-title>第1周</strong>
                 <span data-csd-expand-sub></span>
+                <span data-csd-expand-feedback role="status"></span>
                 <div class="cs-expand__nav">
                     <button type="button" data-csd-expand-prev>‹ 上一周</button>
                     <button type="button" data-csd-expand-next>下一周 ›</button>
@@ -471,9 +542,11 @@ export function createScheduleDeck(container, options = {}) {
         prevBtn: container.querySelector('[data-csd-prev]'),
         nextBtn: container.querySelector('[data-csd-next]'),
         slider: container.querySelector('[data-csd-slider]'),
+        feedback: container.querySelector('[data-csd-feedback]'),
         expand,
         expandTitle: expand.querySelector('[data-csd-expand-title]'),
         expandSub: expand.querySelector('[data-csd-expand-sub]'),
+        expandFeedback: expand.querySelector('[data-csd-expand-feedback]'),
         expandBody: expand.querySelector('[data-csd-expand-body]'),
         expandPrev: expand.querySelector('[data-csd-expand-prev]'),
         expandNext: expand.querySelector('[data-csd-expand-next]'),
@@ -493,7 +566,7 @@ export function createScheduleDeck(container, options = {}) {
      * - 悬停 / 聚焦 / 触屏首次轻点：仍展开同一链接，宽高由内容决定，
      *   尽量围绕格子展开并向课表内部避让；只有超出可用高度才内部滚动。
      */
-    function lessonHtml(lesson, { expanded, minSection, maxSection, columnBase }) {
+    function lessonHtml(lesson, { expanded, minSection, maxSection, columnBase, lane = { lane: 0, count: 1 }, eventKey = '' }) {
         const sections = lesson.sections || [];
         const start = Math.max(minSection, sections[0] || minSection);
         const end = Math.min(maxSection, sections[sections.length - 1] || start);
@@ -501,14 +574,31 @@ export function createScheduleDeck(container, options = {}) {
         const rowSpan = Math.max(1, end - start + 1);
         const column = Math.min(7, Math.max(1, lesson.weekday || 1)) + columnBase - 1;
         const accent = courseAccentFor(state.overview, lesson.course_name);
-        const gridPos = `grid-column:${column};grid-row:${rowStart} / span ${rowSpan};`;
+        const laneStyle = lane.count > 1 ? `width:calc(100% / ${lane.count} - 2px);margin-left:calc(100% / ${lane.count} * ${lane.lane});` : '';
+        const gridPos = `grid-column:${column};grid-row:${rowStart} / span ${rowSpan};${laneStyle}`;
         const roomText = escapeHtml(lesson.classroom_short || lesson.classroom || '教室待定');
+        const change = pendingScheduleChange(lesson);
+        const linkHint = !lesson.classroom_url && lesson.class_offering_id ? '课次尚未精确关联，请同步教务课表核对' : !lesson.classroom_url && lesson.create_url ? '尚无对应课堂 · 点击创建；创建后请再次同步关联课次' : '';
+        const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
+        if (change) {
+            const href = String(lesson.classroom_url || lesson.create_url || '');
+            const proposed = change.endpoint === 'proposed';
+            const counterpart = change.kind === 'move' && change.counterpart_event_key;
+            const jump = counterpart ? ` ${proposed ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
+            const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
+            const detail = `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`;
+            const main = `<${href ? 'a' : 'div'} class="cs-lesson__main"${href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"'}><strong>${escapeHtml(lesson.course_name)}</strong><span>${expanded ? '教室 ' : ''}${expanded ? escapeHtml(lesson.classroom || lesson.classroom_short || '教室待定') : roomText}</span><span>${expanded ? '班级 ' : ''}${escapeHtml(lesson.class_label || '')}</span>${expanded && lesson.actual_date ? `<span>${escapeHtml(lesson.actual_date)} · ${escapeHtml(lesson.section_label || '')}</span>` : ''}${expanded && lesson.session_no ? `<span>第${escapeHtml(lesson.session_no)}次课${lesson.session_total ? `（共${escapeHtml(lesson.session_total)}次）` : ''}</span>` : ''}</${href ? 'a' : 'div'}>`;
+            const body = `<div class="cs-lesson__surface">${main}${linkHint ? `<span class="cs-lesson__link-hint">${escapeHtml(linkHint)}</span>` : ''}<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-label="${escapeHtml(scheduleChangeLabel(lesson) + jump)}">${escapeHtml(scheduleChangeLabel(lesson) + jump)}</button><div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div></div>`;
+            const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'} cs-lesson--pending${proposed ? ' cs-lesson--proposed' : ''}`;
+            if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(detail)}">${body}</div>`;
+            return `<div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}"><div class="${classes}"${keyAttr} style="--cs-accent:${accent}">${body}</div></div>`;
+        }
 
         if (!expanded) {
             // 形式一：3D 缩略卡片（最简、无交互）。
             return `
-            <div class="cs-lesson cs-lesson--mini" style="--cs-accent:${accent};${gridPos}"
-                 title="${escapeHtml(`${lesson.course_name} ${roomText} ${lesson.class_label || ''}`)}">
+            <div class="cs-lesson cs-lesson--mini"${keyAttr} style="--cs-accent:${accent};${gridPos}"
+                 title="${escapeHtml(`${lesson.course_name} ${roomText} ${lesson.class_label || ''} ${linkHint}`)}">
                 <strong>${escapeHtml(lesson.course_name)}</strong>
                 <span>${roomText}</span>
                 <span>${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>
@@ -525,20 +615,21 @@ export function createScheduleDeck(container, options = {}) {
         const sessionText = lesson.session_no
             ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}`
             : '';
-        const hintText = href ? (isCreate ? '尚无对应课堂 · 点击创建 +' : '点击进入课堂 →') : '';
+        const hintText = linkHint || (href ? '点击进入课堂 →' : '');
         const tag = href ? 'a' : 'div';
         const hrefAttr = href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"';
         // 始终渲染完整内容行，顶对齐；格子放得下就全显示，放不下由 overflow
         // 裁切 + 逐行省略号；展开时取消省略并测量自然尺寸。
         const detailLines = [
+            lesson.actual_date ? `<span>${escapeHtml(lesson.actual_date)} · ${escapeHtml(lesson.section_label || '')}</span>` : '',
             `<span>教室 ${escapeHtml(lesson.classroom || lesson.classroom_short || '教室待定')}</span>`,
             `<span>班级 ${escapeHtml(lesson.class_label || '')}${studentText}</span>`,
             sessionText ? `<span>${escapeHtml(sessionText)}${sdLabel}</span>` : '',
             hintText ? `<span class="cs-lesson__link-hint">${hintText}</span>` : '',
         ].filter(Boolean).join('');
         return `
-        <div class="cs-lesson-slot" style="${gridPos}">
-            <${tag} class="cs-lesson cs-lesson--cell${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr}
+        <div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}">
+            <${tag} class="cs-lesson cs-lesson--cell${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr}${keyAttr}
                  style="--cs-accent:${accent};">
                 <strong>${escapeHtml(lesson.course_name)}</strong>
                 ${detailLines}
@@ -636,15 +727,16 @@ export function createScheduleDeck(container, options = {}) {
             bandBlocks = blocks.join('');
         }
 
+        const laneMap = scheduleLessonLanes(week?.lessons || []);
         const lessons = (week?.lessons || [])
-            .map((lesson) => lessonHtml(lesson, { expanded, minSection, maxSection, columnBase }))
+            .map((lesson, index) => lessonHtml(lesson, { expanded, minSection, maxSection, columnBase, lane: laneMap.get(index), eventKey: lesson.event_key || `${week.week_index}:${lesson.id || index}:${index}` }))
             .join('');
         const corner = expanded
             ? '<div class="cs-grid__corner" style="grid-column:1 / span 2;grid-row:1;">节</div>'
             : '<div class="cs-grid__corner" style="grid-column:1;grid-row:1;">节</div>';
 
         return `
-        <div class="cs-grid ${expanded ? 'cs-grid--expanded' : ''}"
+        <div class="cs-grid ${expanded ? 'cs-grid--expanded' : ''} ${[...laneMap.values()].some(value => value.count > 1) ? 'cs-grid--overlaps' : ''}"
              style="grid-template-columns:${columnsTemplate};grid-template-rows:${headerRow} ${rowSizes};">
             ${corner}
             ${dayHeads}
@@ -758,6 +850,60 @@ export function createScheduleDeck(container, options = {}) {
         if (next === state.activeWeekIndex) return;
         state.activeWeekIndex = next;
         layoutDeck();
+    }
+
+    function announce(message) {
+        refs.feedback.textContent = message;
+        refs.expandFeedback.textContent = message;
+    }
+
+    function focusLesson(eventKey, weekIndex) {
+        const weeks = state.overview?.weeks || [];
+        const index = weeks.findIndex(week => (!weekIndex || Number(week.week_index) === Number(weekIndex))
+            && week.lessons?.some(lesson => lesson.event_key === eventKey));
+        if (index < 0) { announce('对应课程未在当前筛选结果中显示，请核对筛选条件；已保留当前学期和筛选。'); return false; }
+        goToWeek(index);
+        const surface = state.expanded ? refs.expandBody : refs.stage.querySelector('.cs-card.is-active');
+        const card = [...(surface?.querySelectorAll('[data-event-key]') || [])].find(node => node.dataset.eventKey === eventKey);
+        if (!card) return false;
+        if (state.expanded) card.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
+        container.querySelectorAll('.is-counterpart-focus').forEach(node => node.classList.remove('is-counterpart-focus'));
+        refs.expand.querySelectorAll('.is-counterpart-focus').forEach(node => node.classList.remove('is-counterpart-focus'));
+        card.classList.add('is-counterpart-focus');
+        (card.querySelector('.cs-adjustment-label') || card.querySelector('a, [tabindex]') || card).focus({ preventScroll: true });
+        announce(`已定位 ${weeks[index].label} 的对应课程。`);
+        window.clearTimeout(highlightTimer);
+        highlightTimer = window.setTimeout(() => card.classList.remove('is-counterpart-focus'), 3000);
+        return true;
+    }
+
+    function handleChangeClick(event) {
+        const button = event.target.closest('[data-csd-change]');
+        if (!button) return false;
+        event.preventDefault(); event.stopPropagation(); pendingTouchPreview = null;
+        const key = button.dataset.csdChange;
+        activateChange(key);
+        return true;
+    }
+
+    function activateChange(key) {
+        const lesson = state.overview?.weeks?.flatMap(week => week.lessons || []).find(item => item.event_key === key);
+        const change = pendingScheduleChange(lesson);
+        if (!change) return true;
+        if (change.kind === 'move' && change.counterpart_event_key) {
+            focusLesson(change.counterpart_event_key, change.counterpart_week_index);
+        } else {
+            if (!state.expanded) openExpanded();
+            const cell = [...refs.expandBody.querySelectorAll('[data-event-key]')].find(node => node.dataset.eventKey === key);
+            const detail = cell?.querySelector('.cs-adjustment-details');
+            if (detail) {
+                detail.hidden = false;
+                cell.querySelector('.cs-adjustment-label')?.setAttribute('aria-expanded', 'true');
+                openLessonPreview(cell); positionLessonPreview();
+                cell.querySelector('.cs-adjustment-label')?.focus({ preventScroll: true });
+            }
+        }
+        return true;
     }
 
     /* ---------------- 放大视图 ---------------- */
@@ -999,6 +1145,14 @@ export function createScheduleDeck(container, options = {}) {
 
     function onStageClick(event) {
         if (dragMoved) return;
+        if (handleChangeClick(event)) return;
+        const link = event.target.closest('a.cs-lesson__main');
+        if (link) {
+            if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+                event.preventDefault(); config.onNavigate(link.getAttribute('href'));
+            }
+            return;
+        }
         const card = event.target.closest('.cs-card');
         if (card && card.classList.contains('is-active')) openExpanded();
     }
@@ -1009,6 +1163,7 @@ export function createScheduleDeck(container, options = {}) {
     let dragMoved = false;
 
     function onStagePointerDown(event) {
+        if (event.target.closest('a,button,input,select')) return;
         if (!state.overview?.weeks?.length || event.button > 0) return;
         dragState = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, consumedSteps: 0 };
         dragMoved = false;
@@ -1050,6 +1205,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onExpandBodyClick(event) {
+        if (handleChangeClick(event)) return;
         const cell = event.target.closest('.cs-lesson--cell');
         const touch = pendingTouchPreview;
         pendingTouchPreview = null;
@@ -1058,7 +1214,7 @@ export function createScheduleDeck(container, options = {}) {
             openLessonPreview(cell);
             return;
         }
-        const link = cell?.closest('a.cs-lesson');
+        const link = event.target.closest('a.cs-lesson__main') || cell?.closest('a.cs-lesson') || cell?.querySelector('a.cs-lesson__main');
         if (!link) return;
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
@@ -1067,6 +1223,7 @@ export function createScheduleDeck(container, options = {}) {
 
     function onLessonPointerOver(event) {
         if (event.pointerType === 'touch') return;
+        if (event.target.closest('[data-csd-change]')) return;
         const cell = event.target.closest('.cs-lesson--cell')
             || event.target.closest('.cs-lesson-slot')?.querySelector('.cs-lesson--cell');
         if (cell && !cell.contains(event.relatedTarget)) openLessonPreview(cell);
@@ -1081,6 +1238,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onLessonPointerDown(event) {
+        if (event.target.closest('[data-csd-change]')) { pendingTouchPreview = null; return; }
         const cell = event.target.closest('.cs-lesson--cell');
         pendingTouchPreview = event.pointerType === 'touch' && cell
             ? { cell, wasOpen: previewCell === cell } : null;
@@ -1088,6 +1246,8 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onLessonFocusIn(event) {
+        // A tag's first tap/Enter must execute its command at a stable location.
+        if (event.target.closest('[data-csd-change]')) return;
         openLessonPreview(event.target.closest('.cs-lesson--cell'));
     }
 
@@ -1151,10 +1311,20 @@ export function createScheduleDeck(container, options = {}) {
 
     return {
         goToWeek,
+        focusLesson,
+        showAdjustment(eventKey) { if (!state.expanded) openExpanded(); return activateChange(eventKey); },
         openExpanded,
         setOverview(overview, { keepWeek = false } = {}) {
             const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
             state.overview = overview || null;
+            if (state.overview) {
+                state.overview = { ...state.overview, weeks: (state.overview.weeks || []).map(week => ({ ...week, ...countScheduleLessons(week.lessons || []) })) };
+                const sync = state.overview.sync_state;
+                const when = sync?.last_success_at || state.overview.selected_term?.synced_at;
+                const pending = state.overview.weeks.reduce((sum, week) => sum + week.proposed_count, 0);
+                const warnings = state.overview.warnings || sync?.warnings || [];
+                announce([...new Set([state.overview.message, when ? `最近成功同步：${when}` : '', pending ? `${pending} 项待审预测不计入正式课时` : '', Array.isArray(warnings) ? warnings.map(item => typeof item === 'string' ? item : item.message || '').filter(Boolean).join('；') : ''].filter(Boolean))].join(' · '));
+            } else announce('');
             const weeks = state.overview?.weeks || [];
             // 打开定位：后端 focus_week（本周 / 假期→上学期最后教学周 / 未开学→第1周）
             // 优先，其次"本周"标记。
@@ -1177,6 +1347,7 @@ export function createScheduleDeck(container, options = {}) {
             return state.activeWeekIndex;
         },
         destroy() {
+            window.clearTimeout(highlightTimer);
             expandMotionGeneration += 1;
             clearLessonPreviews();
             previewResizeObserver?.disconnect();

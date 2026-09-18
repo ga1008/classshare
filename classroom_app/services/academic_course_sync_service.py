@@ -1999,6 +1999,12 @@ def _generate_course_lessons_from_academic_schedule(
     generated_count = 0
     warnings: list[str] = []
     for course_id in course_ids:
+        if conn.execute('''SELECT 1 FROM class_offering_sessions s
+                           JOIN class_offerings o ON o.id=s.class_offering_id
+                           WHERE o.course_id=? LIMIT 1''', (course_id,)).fetchone():
+            # Once a template has real session identities, refreshing calendar
+            # order must not replace its teaching contents underneath them.
+            continue
         existing_lessons = lesson_map.get(course_id, [])
         if existing_lessons and not _course_lessons_are_replaceable(existing_lessons):
             continue
@@ -2072,12 +2078,24 @@ def _sync_existing_offering_academic_sessions(
         return 0, []
 
     lesson_map = load_course_lessons_by_course_id(conn, normalized_course_ids)
+    from .academic_schedule_prediction_service import load_teacher_prediction_snapshot
+    prediction = load_teacher_prediction_snapshot(conn, teacher_id, int(semester['id']))
+    protected_offerings = set(prediction.get('covered_offering_ids') or []) if prediction else set()
     updated_count = 0
     warnings: list[str] = []
     semester_start_date = parse_date_input(semester.get("start_date"))
 
     for row in rows:
         offering = dict(row)
+        if int(offering['id']) in protected_offerings:
+            # The complete timetable + application snapshot is authoritative.
+            # An independently cached roster feed cannot restore a cancellation
+            # or undo a confirmed room/date change.
+            warnings.append(
+                f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："
+                "课次已按教务课表及调停课申请关联；请使用“同步教务课表”更新日程。"
+            )
+            continue
         if int(offering["id"]) in (skip_offering_ids or set()):
             warnings.append(
                 f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："
@@ -2120,12 +2138,16 @@ def _sync_existing_offering_academic_sessions(
             course_name=str(offering.get("course_name") or ""),
             teaching_class_name=selected_class,
         )
-        replace_result = replace_offering_sessions(
-            conn,
-            offering_id=int(offering["id"]),
-            sessions=plan["sessions"],
-            preserve_removed=True,
-        )
+        has_sessions = conn.execute('SELECT 1 FROM class_offering_sessions WHERE class_offering_id=? LIMIT 1',
+                                    (int(offering['id']),)).fetchone()
+        if has_sessions:
+            from .academic_session_identity_service import reconcile_existing_academic_sessions
+            replace_result = reconcile_existing_academic_sessions(conn, offering=offering, occurrences=occurrences)
+            warnings.extend(replace_result.get('warnings') or [])
+        else:
+            replace_result = replace_offering_sessions(
+                conn, offering_id=int(offering["id"]), sessions=plan["sessions"], preserve_removed=True,
+            )
         if int(replace_result.get("preserved_count") or 0):
             warnings.append(
                 f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："

@@ -66,11 +66,11 @@
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}
     <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title">
         <div class="ls-section-head"><h2 id="ls-courses-title">我的课堂</h2>{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a class="ls-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
-        {% if class_offerings %}
         <div class="ls-course-toolbar">
             <form method="get" action="/dashboard" class="ls-course-search" data-dashboard-search-form>
                 <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
                 <label class="sr-only" for="dashboard-search">搜索课堂</label><input id="dashboard-search" type="search" name="q" class="ls-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button type="submit" class="ls-button">搜索</button>
+                <button type="button" class="ls-button" data-academic-schedule-sync>同步教务课表</button>
             </form>
             <details class="ls-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
                 <summary>筛选与显示</summary><div class="ls-course-options-body">
@@ -94,7 +94,7 @@
         {% endfor %}
         </div>
         <div class="ls-empty" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}><h3>没有匹配的课堂</h3><div data-empty-search-chips aria-label="当前筛选"></div><div data-empty-search-suggestions></div></div>
-        {% else %}
+        {% if not class_offerings %}
         <div class="ls-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a href="{{ dashboard_empty_state.action_href }}" class="ls-button ls-button-primary">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="ls-empty-help"><summary>如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
         {% endif %}
         {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}

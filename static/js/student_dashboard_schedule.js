@@ -1,4 +1,4 @@
-import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
+import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260919';
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const termKey = (term) => term?.year ? `${term.year}|${term.term}` : '';
@@ -43,7 +43,11 @@ export function initStudentDashboardSchedule(root) {
   };
   const renderAgenda = (week) => {
     const lessons = week?.lessons || [];
-    panes.agenda.innerHTML = lessons.length ? `<ol class="ls-week-lessons">${lessons.map(lesson => `<li><div class="ls-lesson-time"><strong>${escapeHtml(lesson.weekday_label)}</strong><span>${escapeHtml(lesson.section_label)}</span></div><div><h3><a href="/classroom/${Number(lesson.class_offering_id)}">${escapeHtml(lesson.course_name)}</a></h3><p>${escapeHtml(lesson.class_label)}${lesson.session_no ? ` · 第 ${Number(lesson.session_no)} 次课` : ''}</p><small>${escapeHtml(lesson.classroom || '地点待定')}</small></div><a class="ls-button" href="/classroom/${Number(lesson.class_offering_id)}">进入课堂</a></li>`).join('')}</ol>`
+    panes.agenda.innerHTML = lessons.length ? `<ol class="ls-week-lessons">${lessons.map(lesson => {
+      const href = String(lesson.classroom_url || (!Object.hasOwn(lesson, 'classroom_url') && lesson.class_offering_id ? `/classroom/${Number(lesson.class_offering_id)}` : ''));
+      const change = pendingScheduleChange(lesson);
+      return `<li><div class="ls-lesson-time"><strong>${escapeHtml(lesson.weekday_label)}</strong><span>${escapeHtml(lesson.actual_date || '')}</span><span>${escapeHtml(lesson.section_label)}</span></div><div><h3>${href ? `<a href="${escapeHtml(href)}">${escapeHtml(lesson.course_name)}</a>` : escapeHtml(lesson.course_name)}</h3><p>${escapeHtml(lesson.class_label)}${lesson.session_no ? ` · 第 ${Number(lesson.session_no)} 次课` : ''}</p><small>${escapeHtml(lesson.classroom || '地点待定')}</small>${change ? `<p><button type="button" class="ls-button" data-student-change="${escapeHtml(lesson.event_key)}">${escapeHtml(scheduleChangeLabel(lesson))} · ${change.kind === 'move' ? '定位对应安排' : '查看对照'}</button></p>` : ''}</div>${href ? `<a class="ls-button" href="${escapeHtml(href)}">进入课堂</a>` : '<span>课次尚未精确关联，请同步教务课表核对</span>'}</li>`;
+    }).join('')}</ol>`
       : `<div class="ls-schedule-empty"><strong>${courses.length ? '这一周没有已排定课程' : '还没有加入课堂'}</strong><p>${courses.length ? '未排定、本周无课和往期课堂都在“全部课程”中。' : '加入课堂后即可查看课程安排。'}</p><button class="ls-button" type="button" data-student-show-courses>查看全部课程</button></div>`;
   };
   const updateWeek = (week, index) => {
@@ -99,7 +103,7 @@ export function initStudentDashboardSchedule(root) {
     try {
       const [year, term] = selected.split('|');
       const query = new URLSearchParams(year ? { year, term: term || '' } : {});
-      const response = await fetch(`/api/dashboard/course-schedule/overview?${query}`, { signal: request.signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      const response = await fetch(`/api/dashboard/course-schedule/overview?${query}`, { signal: request.signal, credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
       if (ticket !== sequence) return;
       if (!response.ok || data.status !== 'success') {
@@ -140,6 +144,8 @@ export function initStudentDashboardSchedule(root) {
   find('course-term').addEventListener('change', renderCourses);
   find('course-state').addEventListener('change', renderCourses);
   panel.addEventListener('click', event => {
+    const change = event.target.closest('[data-student-change]');
+    if (change) { event.preventDefault(); event.stopPropagation(); deck.showAdjustment(change.dataset.studentChange); return; }
     if (event.target.closest('[data-student-show-courses]')) applyMode('courses');
     if (event.target.closest('[data-student-course-reset]')) { ['course-search', 'course-term', 'course-state'].forEach(name => { find(name).value = ''; }); renderCourses(); }
   });

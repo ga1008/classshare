@@ -4,7 +4,7 @@ import { initSessionMaterialAiAssistant } from '/static/js/session_material_ai_a
 import { initAssignmentClocks } from '/static/js/assignment_time.js?v=task-cards-20260909';
 import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
-import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope } from '/static/js/classroom_workspace.js';
+import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope, resolveClassroomSessionLink } from '/static/js/classroom_workspace.js';
 import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
@@ -973,7 +973,9 @@ function initTeachingTimeline() {
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
-    let selectedOrder = String(
+    const explicitSession = resolveClassroomSessionLink(window.location.search, sessions);
+    let selectedOrder = explicitSession.kind === 'invalid' ? '' : String(
+        explicitSession.session?.order_index ??
         (sessions.some(session => String(session.order_index) === String(window.APP_CONFIG?.workspaceSelectedOrder)) ? window.APP_CONFIG.workspaceSelectedOrder : null)
         ?? sessions.find((session) => session.is_anchor)?.order_index
         ?? sessions[0]?.order_index
@@ -2175,6 +2177,14 @@ function initTeachingTimeline() {
     if (isTeacher) loadLessonDocPack();
 
     window.requestAnimationFrame(() => {
+        if (explicitSession.kind === 'invalid') {
+            showToast('指定课次无效或不属于当前课堂，请从课次列表重新选择。', 'error');
+            const notice = document.createElement('p'); notice.className = 'ls-error'; notice.setAttribute('role', 'alert');
+            notice.textContent = '指定课次无法访问，未自动改选其他课次。请从当前课堂的课次列表重新选择。';
+            scrollEl.insertAdjacentElement('beforebegin', notice);
+            sessionButtons.forEach(button => { button.classList.remove('is-selected'); button.setAttribute('aria-pressed', 'false'); });
+            return;
+        }
         setActiveSession(selectedOrder, {
             center: true,
             behavior: 'auto',
@@ -2183,6 +2193,7 @@ function initTeachingTimeline() {
         const selectedSession = getSessionByOrder(selectedOrder);
         sessionMaterialAssistant?.syncSelectedSession((isHomeEntry(selectedSession) || isAcademicExamEntry(selectedSession)) ? null : selectedSession);
         sessionMaterialAssistant?.startPolling();
+        if (explicitSession.kind === 'valid' && !compactWorkspace) openSessionModal(selectedSession);
         window.requestAnimationFrame(scheduleProjectionSync);
     });
 }

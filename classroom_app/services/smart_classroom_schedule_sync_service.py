@@ -1013,6 +1013,10 @@ def _build_week_deck(
                 "single_or_double_label": item["single_or_double_label"],
                 "student_count": item["student_count"],
                 "hours": item["hours_per_meeting"],
+                **{key: item[key] for key in (
+                    'event_key', 'session_id', 'actual_date', 'adjustment', 'counts_towards_total',
+                    'binding_status', 'session_no', 'session_total',
+                ) if key in item},
             }
             for item in items
             if week_index in item["weeks"]
@@ -1031,8 +1035,9 @@ def _build_week_deck(
                     if monday and sunday
                     else ""
                 ),
-                "lesson_count": len(lessons),
-                "total_hours": sum(lesson["hours"] for lesson in lessons),
+                "lesson_count": sum(lesson.get('counts_towards_total', True) for lesson in lessons),
+                "prediction_count": sum(not lesson.get('counts_towards_total', True) for lesson in lessons),
+                "total_hours": sum(lesson["hours"] for lesson in lessons if lesson.get('counts_towards_total', True)),
                 "lessons": lessons,
             }
         )
@@ -1387,6 +1392,10 @@ def build_teacher_course_schedule_overview(
     - 默认选中学期：日期落在其教学周范围内的"进行中"学期；假期（无进行
       中学期）选最近结束的学期并定位其最后一个教学周（focus_week）。
     """
+    from .academic_schedule_overview_service import build_academic_prediction_overview
+    academic = build_academic_prediction_overview(conn, int(teacher_id), year=year, term=term, course=course, class_label=class_label)
+    if academic is not None:
+        return academic
     ensure_course_schedule_schema(conn)
     today = _today_local()
     meta_rows = _load_meta_rows(conn, int(teacher_id))
@@ -1438,6 +1447,11 @@ def build_teacher_course_schedule_overview(
         (entry for entry in terms if entry["year"] == year and entry["term"] == term),
         None,
     )
+    if (year or term) and selected is None:
+        return {'status': 'empty', 'has_data': False, 'message': '所选学期暂无课表。',
+                'terms': [{k: v for k, v in t.items() if k != '_anchor'} for t in terms],
+                'selected_term': None, 'filters': {'course': '', 'class_label': '', 'course_options': [], 'class_options': []},
+                'summary': {}, 'courses': [], 'weeks': [], 'section_range': {'min': 1, 'max': 11}}
     if selected is None:
         selected = next((entry for entry in terms if entry["status"] == "current"), None)
     if selected is None:

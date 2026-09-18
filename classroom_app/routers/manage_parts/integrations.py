@@ -279,7 +279,38 @@ async def api_course_schedule_overview(
             class_label=str(class_label or "").strip(),
         )
         conn.commit()
-    return {"status": "success", "overview": overview}
+    return JSONResponse({"status": "success", "overview": overview}, headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/academic/course-schedule/academic-sync", response_class=JSONResponse)
+async def api_sync_academic_course_schedule(request: Request, user: dict = Depends(get_current_teacher)):
+    """Sync the explicitly selected JWXT term and its adjustment applications."""
+    from ...services.academic_schedule_sync_service import sync_teacher_academic_schedule
+
+    payload = await _parse_json_request(request)
+    raw_id = payload.get('semester_id')
+    semester_id = None
+    if raw_id is not None:
+        id_text = str(raw_id)
+        if (isinstance(raw_id, bool) or not id_text.isascii() or not id_text.isdigit()
+                or len(id_text) > 19):
+            raise HTTPException(status_code=400, detail='学期编号无效。')
+        semester_id = int(id_text)
+        if not 0 < semester_id <= 9223372036854775807:
+            raise HTTPException(status_code=400, detail='学期编号无效。')
+    result = await sync_teacher_academic_schedule(
+        int(user['id']), year=str(payload.get('year') or '').strip(),
+        term=str(payload.get('term') or '').strip(), semester_id=semester_id,
+    )
+    overview = None
+    if result.get('status') == 'success':
+        with get_db_connection() as conn:
+            overview = build_teacher_course_schedule_overview(
+                conn, int(user['id']), year=str(result['year']), term=str(result['term']),
+                course=str(payload.get('course') or '').strip(), class_label=str(payload.get('class_label') or '').strip(),
+            )
+    return JSONResponse({'status': result['status'], 'message': result['message'],
+                         'result': result, 'overview': overview}, headers={'Cache-Control': 'private, no-store'})
 
 
 @router.post("/academic/course-schedule/sync", response_class=JSONResponse)

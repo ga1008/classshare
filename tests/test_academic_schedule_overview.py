@@ -1,0 +1,158 @@
+"""Published snapshot -> teacher/student deck, using real scoped SQLite reads."""
+from __future__ import annotations
+
+import sqlite3
+import unittest
+from datetime import datetime
+from unittest.mock import patch
+
+from classroom_app import config
+from classroom_app.db.schema_academic_schedule_predictions import ensure_academic_schedule_prediction_schema
+from classroom_app.services.academic_schedule_overview_service import build_academic_prediction_overview
+from classroom_app.services.academic_schedule_prediction_service import (
+    claim_schedule_sync, reconcile_and_publish_snapshot, release_schedule_sync,
+)
+from classroom_app.services.student_course_schedule_service import build_student_course_schedule_overview
+from tests.test_academic_schedule_predictions import SCHEMA, base_snapshot, request, official, slot
+
+
+EXTRA_SCHEMA = """
+ALTER TABLE teachers ADD COLUMN school_name TEXT DEFAULT '';
+ALTER TABLE teachers ADD COLUMN college TEXT DEFAULT '';
+ALTER TABLE teachers ADD COLUMN department TEXT DEFAULT '';
+ALTER TABLE teachers ADD COLUMN is_active INTEGER DEFAULT 1;
+ALTER TABLE academic_semesters ADD COLUMN school_name TEXT DEFAULT '';
+ALTER TABLE academic_semesters ADD COLUMN calendar_sync_status TEXT DEFAULT '';
+ALTER TABLE academic_semesters ADD COLUMN calendar_sync_at TEXT DEFAULT '';
+ALTER TABLE academic_semesters ADD COLUMN calendar_sync_message TEXT DEFAULT '';
+ALTER TABLE academic_semesters ADD COLUMN calendar_source_summary_json TEXT DEFAULT '[]';
+ALTER TABLE academic_semesters ADD COLUMN created_at TEXT DEFAULT '';
+ALTER TABLE academic_semesters ADD COLUMN updated_at TEXT DEFAULT '';
+CREATE TABLE academic_semester_calendar_days(semester_id INTEGER,date TEXT,week_index INTEGER,weekday INTEGER,
+ day_type TEXT,label TEXT,source TEXT,source_url TEXT,confidence REAL,metadata_json TEXT);
+CREATE TABLE classes(id INTEGER PRIMARY KEY,name TEXT,description TEXT);
+INSERT INTO classes VALUES(1,'甲班',''),(2,'乙班',''),(3,'其他班','');
+CREATE TABLE students(id INTEGER PRIMARY KEY,class_id INTEGER,enrollment_status TEXT);
+INSERT INTO students VALUES(1,1,'active'),(2,2,'active'),(3,3,'active');
+CREATE TABLE class_offering_class_links(offering_id INTEGER,class_id INTEGER);
+INSERT INTO class_offering_class_links VALUES(10,2);
+ALTER TABLE courses ADD COLUMN description TEXT DEFAULT '';
+ALTER TABLE courses ADD COLUMN credits INTEGER DEFAULT 2;
+ALTER TABLE class_offerings ADD COLUMN class_id INTEGER DEFAULT 1;
+ALTER TABLE class_offerings ADD COLUMN semester TEXT DEFAULT '2026-2027第一学期';
+ALTER TABLE class_offerings ADD COLUMN combined_class_names TEXT DEFAULT '甲班、乙班';
+ALTER TABLE class_offerings ADD COLUMN schedule_info TEXT DEFAULT '';
+ALTER TABLE class_offerings ADD COLUMN created_at TEXT DEFAULT '';
+UPDATE class_offerings SET class_id=3,combined_class_names='其他班' WHERE id=20;
+ALTER TABLE class_offering_sessions ADD COLUMN schedule_metadata_json TEXT DEFAULT '{}';
+"""
+
+
+class AcademicScheduleOverviewTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(':memory:')
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA + EXTRA_SCHEMA)
+        ensure_academic_schedule_prediction_schema(self.conn)
+        self.conn.commit()
+        self.addCleanup(self.conn.close)
+        engine = patch.object(config, 'DB_ENGINE', 'sqlite')
+        engine.start()
+        self.addCleanup(engine.stop)
+        clock = patch('classroom_app.services.academic_schedule_overview_service.china_now',
+                      return_value=datetime(2026, 9, 19))
+        clock.start()
+        self.addCleanup(clock.stop)
+
+    def publish(self, snapshot):
+        lease = claim_schedule_sync(self.conn, 1)
+        self.conn.commit()
+        reconcile_and_publish_snapshot(self.conn, 1, 1, snapshot, lease['token'])
+        release_schedule_sync(self.conn, 1, lease['token'])
+        self.conn.commit()
+
+    def teacher(self, **filters):
+        return build_academic_prediction_overview(self.conn, 1, year='2026-2027', term='1', **filters)
+
+    @staticmethod
+    def lessons(overview):
+        return [lesson for week in overview['weeks'] for lesson in week['lessons']]
+
+    def test_teacher_pending_counts_dates_stable_number_and_both_links(self):
+        self.publish(base_snapshot([request()]))
+        result = self.teacher()
+        self.assertEqual((3, 6, 1), tuple(result['summary'][k] for k in ('slot_count', 'total_hours', 'prediction_count')))
+        pair = [lesson for lesson in self.lessons(result) if lesson.get('adjustment')]
+        self.assertEqual({'2026-09-20', '2026-10-11'}, {item['actual_date'] for item in pair})
+        self.assertEqual({'/classroom/10?session_id=101'}, {item['classroom_url'] for item in pair})
+        self.assertEqual({1}, {item['session_no'] for item in pair})
+        self.assertEqual({3}, {item['session_total'] for item in pair})
+        self.assertEqual(6, sum(week['total_hours'] for week in result['weeks']))
+        self.assertEqual(19, len(result['weeks']))
+
+    def test_equivalent_shared_semester_does_not_hide_published_teacher_term(self):
+        self.publish(base_snapshot())
+        self.conn.execute("INSERT INTO academic_semesters(id,teacher_id,school_code,name,start_date,end_date,week_count) VALUES(99,2,'school','2026-2027学年第1学期','2026-08-31','2027-01-10',19)")
+        self.assertEqual(1, self.teacher()['selected_term']['semester_id'])
+
+    def test_approved_lag_warning_is_readable_then_ordinary_card_keeps_number(self):
+        snapshot = base_snapshot([request(status='approved')])
+        self.publish(snapshot)
+        result = self.teacher()
+        self.assertIn('申请已通过', result['message'])
+        self.assertNotIn("{'code'", result['message'])
+        self.assertFalse(any(item.get('adjustment') for item in self.lessons(result)))
+        snapshot['official'][0] = official('2026-10-11')
+        self.publish(snapshot)
+        moved = next(item for item in self.lessons(self.teacher()) if item['session_id'] == 101)
+        self.assertEqual(('2026-10-11', 1), (moved['actual_date'], moved['session_no']))
+        self.assertNotIn('adjustment', moved)
+
+    def test_teacher_filters_and_read_only_snapshot(self):
+        self.publish(base_snapshot([request()]))
+        self.conn.execute('PRAGMA query_only=ON')
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        result = self.teacher(course='网络', class_label='甲班、乙班')
+        self.conn.set_trace_callback(None)
+        self.assertEqual(4, len(self.lessons(result)))
+        self.assertTrue(all(sql.lstrip().upper().startswith('SELECT') for sql in statements), statements)
+        self.assertEqual([], self.lessons(self.teacher(course='不存在')))
+
+    def test_first_snapshot_without_offering_has_create_link_and_no_fabricated_session(self):
+        self.conn.execute('DELETE FROM session_materials')
+        self.conn.execute('DELETE FROM class_offering_sessions WHERE class_offering_id=10')
+        self.conn.execute('DELETE FROM class_offering_class_links WHERE offering_id=10')
+        self.conn.execute('DELETE FROM class_offerings WHERE id=10')
+        self.publish(base_snapshot([request()]))
+        result = self.teacher()
+        lessons = self.lessons(result)
+        self.assertEqual(4, len(lessons))
+        self.assertTrue(all(item['create_url'].startswith('/manage/') for item in lessons))
+        self.assertTrue(all(not item['classroom_url'] and item['session_id'] is None for item in lessons))
+        self.assertIn('尚未精确关联课堂', result['message'])
+
+    def test_student_projection_counts_and_revocation(self):
+        self.publish(base_snapshot([request()]))
+        result = build_student_course_schedule_overview(self.conn, 2, now=datetime(2026, 9, 19))
+        pair = [lesson for lesson in self.lessons(result) if lesson.get('adjustment')]
+        self.assertEqual(2, len(pair))
+        self.assertEqual({101}, {lesson['session_id'] for lesson in pair})
+        self.assertEqual((6, 1), (result['summary']['total_hours'], result['summary']['prediction_count']))
+        self.assertNotIn('秘密', str(result))
+        self.conn.execute('DELETE FROM class_offering_class_links WHERE offering_id=10 AND class_id=2')
+        self.assertEqual([], build_student_course_schedule_overview(self.conn, 2)['weeks'])
+
+    def test_room_only_and_empty_complete_snapshot_do_not_leave_old_student_cards(self):
+        self.publish(base_snapshot([request(proposed=slot('2026-09-20', room='C108'))]))
+        result = build_student_course_schedule_overview(self.conn, 1, now=datetime(2026, 9, 19))
+        self.assertEqual(3, len(self.lessons(result)))
+        self.assertEqual('room', self.lessons(result)[0]['adjustment']['kind'])
+        self.publish({'official': [], 'requests': []})
+        result = build_student_course_schedule_overview(self.conn, 1, now=datetime(2026, 9, 19))
+        self.assertEqual([], self.lessons(result))
+        self.assertEqual(0, result['summary']['total_hours'])
+
+
+if __name__ == '__main__':
+    unittest.main()

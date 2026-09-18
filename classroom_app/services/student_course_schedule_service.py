@@ -180,12 +180,22 @@ def build_student_course_schedule_overview(
             "course_name": str(offering.get("course_name") or ""), "course_code": "",
             "classroom": room, "classroom_short": _short_classroom(room),
             "class_label": class_label, "class_is_fallback": False, "class_offering_id": offering_id,
-            "classroom_url": f"/classroom/{offering_id}", "single_or_double": "NONE",
+            "classroom_url": f"/classroom/{offering_id}?session_id={int(row['id'])}", "single_or_double": "NONE",
+            "event_key": f"session:{int(row['id'])}", "session_id": int(row['id']), 'actual_date': on_date.isoformat(),
             "single_or_double_label": "", "student_count": 0,
             "hours_per_meeting": len(sections), "total_hours": len(sections),
         }
         items.append(item)
         session_map[(item["id"], week)] = (int(row["order_index"] or 0), totals[offering_id])
+    from .academic_schedule_prediction_service import load_authorized_prediction_lessons
+    from .academic_schedule_overview_service import prediction_lesson_items
+    projection = load_authorized_prediction_lessons(conn, sorted(selected_offerings),
+                                                    academic_year=selected['year'], term=selected['term'])
+    covered = set(projection.get('covered_offering_ids') or []) & set(selected_offerings)
+    if covered:
+        items = [i for i in items if i['class_offering_id'] not in covered]
+        items.extend(prediction_lesson_items([i for i in projection['lessons'] if i['class_offering_id'] in covered]))
+    official_items = [i for i in items if i.get('counts_towards_total', True)]
     max_week = min(104, max(selected["max_week"], max((item["weeks"][0] for item in items), default=0)))
     live_week = ((today - monday).days // 7 + 1) if monday and selected["status"] == "current" else 0
     weeks = _build_week_deck(items, max_week=max_week, cur_week=live_week, week1_monday=monday, session_no_map=session_map)
@@ -199,10 +209,12 @@ def build_student_course_schedule_overview(
         "terms": terms, "selected_term": selected,
         "filters": {"course": "", "class_label": "", "course_options": sorted({i["course_name"] for i in items}),
                     "class_options": sorted({i["class_label"] for i in items})},
-        "summary": {"course_count": len({i["course_name"] for i in items}), "slot_count": len(items),
-                    "total_hours": sum(i["total_hours"] for i in items), "cur_week": live_week,
+        "sync_states": projection.get('sync_states') or [], "warnings": projection.get('warnings') or [],
+        "summary": {"course_count": len({i["course_name"] for i in official_items}), "slot_count": len(official_items),
+                    "total_hours": sum(i["total_hours"] for i in official_items), "cur_week": live_week,
+                    "prediction_count": len(items) - len(official_items),
                     "max_week": max_week, "term_status": selected["status"], "unpositioned_count": unpositioned_count},
-        "courses": _build_course_stats(items), "weeks": weeks,
+        "courses": _build_course_stats(official_items), "weeks": weeks,
         "authorized_courses": authorized_courses,
         "section_range": {"min": 1, "max": max(11, max((max(i["sections"]) for i in items), default=11))},
     }

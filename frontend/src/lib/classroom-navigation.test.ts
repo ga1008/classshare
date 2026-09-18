@@ -1,7 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 // The legacy classroom controller also imports these native browser helpers.
 // @ts-expect-error Native JavaScript module ships outside the Vite declaration graph.
-import { bindClassroomLessonRail, materialEntryDecision, materialOpenUrl, sessionMaterialScope } from '../../../static/js/classroom_workspace.js';
+import { bindClassroomLessonRail, materialEntryDecision, materialOpenUrl, sessionMaterialScope, resolveClassroomSessionLink } from '../../../static/js/classroom_workspace.js';
+
+describe('explicit classroom session navigation', () => {
+  const sessions = [{ id: 81, order_index: 7 }, { id: 92, order_index: 2 }, { id: 300, order_index: 0, is_academic_exam: true }];
+  it('resolves a stable ID rather than its display position or current date', () => {
+    expect(resolveClassroomSessionLink('?session_id=81', sessions)).toEqual({ kind: 'valid', session: sessions[0] });
+    expect(resolveClassroomSessionLink('?session_id=92', sessions).session.order_index).toBe(2);
+    expect(resolveClassroomSessionLink('', sessions).kind).toBe('none');
+  });
+  it('rejects foreign, malformed, duplicated and non-session IDs without falling back', () => {
+    for (const query of ['?session_id=1', '?session_id=', '?session_id=0', '?session_id=-1', '?session_id=1e2', '?session_id=81&session_id=92', '?session_id=300', '?session_id=9007199254740992']) {
+      expect(resolveClassroomSessionLink(query, sessions)).toEqual({ kind: 'invalid', session: null });
+    }
+  });
+});
 
 describe('authorized session material navigation', () => {
   const origin = 'https://classroom.example';

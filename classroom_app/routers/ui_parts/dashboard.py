@@ -113,4 +113,4 @@ def dashboard_student_course_schedule(
         overview = build_student_course_schedule_overview(
             conn, int(user["id"]), year=year.strip(), term=term.strip(),
         )
-    return {"status": "success", "overview": overview}
+    return JSONResponse({"status": "success", "overview": overview}, headers={'Cache-Control': 'private, no-store'})

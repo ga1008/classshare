@@ -7,7 +7,8 @@
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
 
-import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260707';
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260919';
+import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};
@@ -17,6 +18,7 @@ const state = {
     hasCredential: Boolean(boot.has_credential),
     syncing: false,
     loading: false,
+    request: null,
 };
 
 const refs = {
@@ -35,9 +37,7 @@ const refs = {
 const deck = createScheduleDeck(refs.deckMount, {
     title: '周课程时间轴',
     description: '滚轮或方向键切换周次，点击周卡片放大；点击课程块进入课堂。',
-    emptyHtml: () => (state.hasCredential
-        ? '<strong>暂无课表数据</strong><p>点击右上角「同步智慧课堂」拉取本学期排课。</p>'
-        : '<strong>还未配置智慧课堂账号</strong><p>请先到 <a href="/manage/academic/smart-classroom">智慧课堂对接</a> 保存并验证账号，再回来同步课程表。</p>'),
+    emptyHtml: () => '<strong>暂无课表数据</strong><p>点击「同步教务课表」可发现并初始化教务当前学期；也可使用原有智慧课堂同步。</p>',
 });
 
 let toastTimer = null;
@@ -72,6 +72,7 @@ async function apiFetch(url, options = {}) {
     const response = await fetch(url, {
         headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
         credentials: 'same-origin',
+        cache: 'no-store',
         ...options,
     });
     if (!response.ok) {
@@ -116,8 +117,11 @@ function renderFilters() {
         .join('');
 
     if (refs.syncTime) {
-        refs.syncTime.textContent = selected?.synced_at ? `最近同步：${selected.synced_at}` : '尚未同步';
+        const when = overview.sync_state?.last_success_at || selected?.synced_at;
+        refs.syncTime.textContent = when ? `最近成功同步：${when}` : '尚未同步';
     }
+    const source = document.querySelector('[data-cs-source]');
+    if (source) source.textContent = overview.schedule_source === 'academic' ? '数据来源：教务正式课表与调停课申请；预测不计入正式课时' : '智慧课堂或平台排课；教务同步成功后使用其有效结果';
     if (refs.resetBtn) {
         refs.resetBtn.disabled = !(filters.course || filters.class_label);
     }
@@ -228,26 +232,31 @@ function applyOverview(overview, { keepWeek = false } = {}) {
 }
 
 async function reloadOverview({ keepWeek = true } = {}) {
-    if (state.loading) return;
+    state.request?.abort();
+    const request = new AbortController(); state.request = request;
     state.loading = true;
     try {
         const params = new URLSearchParams(currentFilters());
-        const data = await apiFetch(`/api/manage/academic/course-schedule/overview?${params.toString()}`);
+        const data = await apiFetch(`/api/manage/academic/course-schedule/overview?${params.toString()}`, { signal: request.signal });
+        if (request !== state.request) return;
+        if (data.status !== 'success' || !data.overview) throw new Error(data.message || '课表数据暂时不可用。');
         applyOverview(data.overview, { keepWeek });
     } catch (error) {
+        if (request.signal.aborted || request !== state.request) return;
         showToast(error.message || '课表数据加载失败。', 'error');
     } finally {
-        state.loading = false;
+        if (request === state.request) state.loading = false;
     }
 }
 
 async function runSync() {
-    if (state.syncing) return;
+    if (state.syncing || academicSync?.isBusy()) return;
     if (!state.hasCredential) {
         showToast('请先在「智慧课堂对接」页面保存并验证智慧课堂账号。', 'error');
         return;
     }
     state.syncing = true;
+    const requestedFilters = currentFilters();
     const syncLabel = refs.syncBtn?.querySelector('.app-topbar-action__text strong') || refs.syncBtn;
     const originalText = syncLabel?.textContent;
     if (syncLabel) syncLabel.textContent = '同步中…';
@@ -255,10 +264,10 @@ async function runSync() {
     try {
         const data = await apiFetch('/api/manage/academic/course-schedule/sync', {
             method: 'POST',
-            body: JSON.stringify(currentFilters()),
+            body: JSON.stringify(requestedFilters),
         });
-        applyOverview(data.overview, { keepWeek: false });
         const ok = ['success', 'partial_success'].includes(data.status);
+        if (ok && JSON.stringify(requestedFilters) === JSON.stringify(currentFilters())) applyOverview(data.overview, { keepWeek: true });
         showToast(data.message || '同步完成。', ok ? 'success' : (data.status === 'empty' ? 'info' : 'error'));
     } catch (error) {
         showToast(error.message || '同步失败，请稍后重试。', 'error');
@@ -268,6 +277,29 @@ async function runSync() {
         refs.syncBtn?.removeAttribute('disabled');
     }
 }
+
+const academicSync = createAcademicScheduleSync({
+    button: document.querySelector('[data-academic-schedule-sync]'),
+    getTerm: () => currentFilters(), getContext: () => `${currentFilters().year}|${currentFilters().term}`,
+    onStart: () => {
+        if (state.syncing) throw new Error('智慧课堂正在同步，请完成后再同步教务课表。');
+        state.request?.abort(); state.request = null; state.loading = false;
+    },
+    onSuccess: async (data, { context }) => {
+        if (`${currentFilters().year}|${currentFilters().term}` !== context) return;
+        const selected = data.overview.selected_term || {};
+        const filters = { ...currentFilters(), year: selected.year || '', term: selected.term || '' };
+        state.request?.abort();
+        const request = new AbortController(); state.request = request;
+        let scoped;
+        try { scoped = await apiFetch(`/api/manage/academic/course-schedule/overview?${new URLSearchParams(filters)}`, { signal: request.signal }); }
+        catch (error) { if (request.signal.aborted || request !== state.request) return; throw error; }
+        if (request !== state.request) return;
+        if (scoped.status !== 'success' || !scoped.overview) throw new Error('教务同步已完成，但页面刷新失败。');
+        applyOverview(scoped.overview, { keepWeek: `${filters.year}|${filters.term}` === context });
+    },
+    onMessage: (message, tone) => showToast(message, tone),
+});
 
 /* ------------------------------------------------------------------ *
  * 事件绑定

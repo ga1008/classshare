@@ -1,4 +1,18 @@
 // Shared navigation primitives for the classroom workspace. Browsing never selects.
+/** A URL may select only an actual session already authorized in this classroom.
+ * Invalid/duplicate IDs are explicit failures, never a request for today's lesson. */
+export function resolveClassroomSessionLink(search, sessions = []) {
+    const values = new URLSearchParams(search || '').getAll('session_id');
+    if (!values.length) return { kind: 'none', session: null };
+    if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return { kind: 'invalid', session: null };
+    const id = Number(values[0]);
+    if (!Number.isSafeInteger(id)) return { kind: 'invalid', session: null };
+    const matches = sessions.filter(session => Number(session.id) === id
+        && !session.is_home_entry && session.entry_type !== 'home'
+        && !session.is_academic_exam && session.entry_type !== 'academic_exam');
+    return matches.length === 1 ? { kind: 'valid', session: matches[0] } : { kind: 'invalid', session: null };
+}
+
 export function sessionMaterialScope(session) {
     if (!session || session.entry_type === 'academic_exam' || session.is_academic_exam) return null;
     if (session.is_home_entry || session.entry_type === 'home') return 0;

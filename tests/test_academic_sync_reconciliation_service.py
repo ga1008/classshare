@@ -538,19 +538,71 @@ class AcademicSyncReconciliationTests(unittest.TestCase):
         self.assertEqual(len(lessons), 1)
         self.assertEqual(lessons[0]["title"], "教师自编第一课")
 
-    def test_resync_rebuilds_untouched_placeholder_lessons(self):
+    def test_resync_keeps_placeholder_identity_once_sessions_reference_it(self):
         first = self._run_course_upsert()
         self.assertEqual(first["lesson_generated_course_count"], 1)
+        with database.get_db_connection() as conn:
+            before = [tuple(row) for row in conn.execute(
+                "SELECT id, order_index, title, content FROM course_lessons WHERE course_id=? ORDER BY id",
+                (self.course_id,),
+            )]
+            session_refs = [tuple(row) for row in conn.execute(
+                "SELECT id, course_lesson_id FROM class_offering_sessions WHERE class_offering_id=? ORDER BY id",
+                (self.offering_id,),
+            )]
 
         second = self._run_course_upsert()
 
-        self.assertEqual(second["lesson_generated_course_count"], 1)
+        self.assertEqual(second["lesson_generated_course_count"], 0)
         with database.get_db_connection() as conn:
-            lesson_count = conn.execute(
-                "SELECT COUNT(*) AS n FROM course_lessons WHERE course_id = ?",
+            after = [tuple(row) for row in conn.execute(
+                "SELECT id, order_index, title, content FROM course_lessons WHERE course_id=? ORDER BY id",
                 (self.course_id,),
-            ).fetchone()["n"]
-        self.assertEqual(int(lesson_count), 3)
+            )]
+            self.assertEqual(session_refs, [tuple(row) for row in conn.execute(
+                "SELECT id, course_lesson_id FROM class_offering_sessions WHERE class_offering_id=? ORDER BY id",
+                (self.offering_id,),
+            )])
+        self.assertEqual(before, after)
+        self.assertEqual(len(after), 3)
+
+    def test_old_roster_cannot_restore_cancelled_session_after_official_snapshot(self):
+        from classroom_app.services.academic_schedule_prediction_service import (
+            claim_schedule_sync, reconcile_and_publish_snapshot, release_schedule_sync,
+        )
+        self._run_course_upsert()
+        with database.get_db_connection() as conn:
+            offering = dict(conn.execute('SELECT * FROM class_offerings WHERE id=?', (self.offering_id,)).fetchone())
+            sessions = [dict(row) for row in conn.execute(
+                'SELECT * FROM class_offering_sessions WHERE class_offering_id=? ORDER BY order_index',
+                (self.offering_id,),
+            )]
+            identity = {'teaching_class_id': offering['academic_teaching_class_id'],
+                        'teaching_class_name': offering['academic_teaching_class_name'],
+                        'course_code': 'E020185B3', 'course_name': '服务器配置与管理', 'class_label': '软工2406班'}
+            def slot(row):
+                return {'date': row['session_date'], 'sections': [4, 5], 'room': row['academic_location']}
+            snapshot = {'official': [{**identity, **slot(row)} for index, row in enumerate(sessions) if index != 1],
+                        'requests': [{**identity, 'request_id': 'CANCEL-MIDDLE', 'status': 'approved', 'kind': 'cancel',
+                                      'details': [{'detail_id': 'CANCEL-MIDDLE-1', 'original': slot(sessions[1]), 'proposed': None}]}]}
+            claim = claim_schedule_sync(conn, self.teacher_id)
+            conn.commit()
+            reconcile_and_publish_snapshot(conn, self.teacher_id, self.semester_id, snapshot, claim['token'])
+            release_schedule_sync(conn, self.teacher_id, claim['token'])
+            conn.commit()
+            before = [tuple(row) for row in conn.execute(
+                'SELECT id,order_index,schedule_status,session_date,academic_location,course_lesson_id FROM class_offering_sessions WHERE class_offering_id=? ORDER BY id',
+                (self.offering_id,),
+            )]
+            self.assertEqual('cancelled', conn.execute('SELECT schedule_status FROM class_offering_sessions WHERE id=?',
+                                                     (sessions[1]['id'],)).fetchone()['schedule_status'])
+        self._run_course_upsert()  # old independent feed still contains all three original slots
+        with database.get_db_connection() as conn:
+            after = [tuple(row) for row in conn.execute(
+                'SELECT id,order_index,schedule_status,session_date,academic_location,course_lesson_id FROM class_offering_sessions WHERE class_offering_id=? ORDER BY id',
+                (self.offering_id,),
+            )]
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

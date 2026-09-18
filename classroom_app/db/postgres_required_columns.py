@@ -8,11 +8,13 @@ which re-exports ``REQUIRED_POSTGRES_COLUMNS``.
 from __future__ import annotations
 
 from .schema_ai_jobs import AI_JOB_REQUIRED_POSTGRES_COLUMNS
+from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS
 from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
+    **ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS,
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     **ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     **FEEDBACK_CONVERSATION_REQUIRED_COLUMNS,
