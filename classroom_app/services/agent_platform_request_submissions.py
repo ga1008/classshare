@@ -13,7 +13,7 @@ def build_capabilities(Capability, spec, _id):
             'homework_parts.drafts', 'get_assignment_draft', '349445997094dec0736f0de14a7000c2955d9ea57e02300f82b2db43578aca2c',
             {'path': {'assignment_id': assignment}}, response_contract='assignment_draft'),
         Capability('http.assignment.draft.save', '保存自己的作业草稿及任务附件，可分批保存后统一提交', 'POST', '/api/assignments/{assignment_id}/draft',
-            'homework_parts.drafts', 'save_assignment_draft', 'b2c9c93d87e1436cc3a77f6b01aea2d65f1e938f0cfc25185275428507a01745',
+            'homework_parts.drafts', 'save_assignment_draft', 'd4c8af9c4803c3d90ae8b66803c6bedd6838ef332f0c3fc1924c919c81355215',
             {'path': {'assignment_id': assignment}, 'body': {'answers_json': answers, 'manifest': manifest,
                 'current_page': spec('integer', minimum=0, maximum=10000),
                 'client_updated_at': spec('string', maxLength=100), 'replace_question_ids': spec('json', maxBytes=16384),

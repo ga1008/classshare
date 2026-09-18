@@ -541,16 +541,18 @@
         <div class="flex items-center gap-2 mb-2 flex-wrap">
             <button type="button" class="btn btn-outline btn-sm" id="pick-files-btn">选择文件</button>
             <button type="button" class="btn btn-outline btn-sm" id="pick-folder-btn">选择文件夹</button>
+            <button type="button" class="btn btn-outline btn-sm ls-paste-btn" id="paste-files-btn" title="从系统剪贴板粘贴截图或文件（也可在附件区域按 Ctrl+V）">粘贴</button>
             <span class="text-xs text-muted" id="upload-summary">未选择文件</span>
         </div>
         <div class="upload-dropzone" id="drop-zone">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-primary mx-auto mb-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处</p>
+            <p class="mb-1 text-primary font-medium">拖拽文件或文件夹到此处，或点击后按 Ctrl+V 粘贴截图</p>
             <p class="text-xs text-muted">
                 支持同时选择多个文件或文件夹，单文件不超过 {{ max_per_file_mb | int }}MB，总大小不超过 {{ max_total_mb | int }}MB，最多 {{ max_submission_file_count }} 个文件
                 {% if assignment.allowed_file_types %}
                 ，允许类型: {{ assignment.allowed_file_types_label }}
                 {% endif %}
+                。截图会做去重校验，与他人相同的截图无法上传。
             </p>
         </div>
         <input type="file" id="file-input" class="hidden" multiple>
@@ -755,13 +757,19 @@
                 {% endif %}
 
                 {% if submission_files %}
-                <div class="mt-lg">
+                <div class="mt-lg" data-ls-lightbox-label="作业附件">
                     <h3 class="text-base font-semibold mb-sm">附件</h3>
                     <div class="space-y-sm">
                         {% for file in submission_files %}
                         <div class="flex items-center justify-between p-sm rounded-md" style="background: var(--bg-color); border: 1px solid var(--border-color);">
                             <div class="flex items-center gap-2">
+                                {% if file.is_image and file.thumbnail_url %}
+                                <button type="button" class="ls-attachment-thumb" data-ls-lightbox data-ls-lightbox-group="submitted-files" data-ls-lightbox-src="{{ file.image_preview_url }}" data-ls-lightbox-original="{{ file.download_url }}" data-ls-lightbox-title="{{ file.display_name }}" title="点击查看大图">
+                                    <img src="{{ file.thumbnail_url }}" alt="{{ file.display_name }}" loading="lazy" decoding="async">
+                                </button>
+                                {% else %}
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                                {% endif %}
                                 <div>
                                     <div class="text-sm">{{ file.display_name }}</div>
                                     {% if file.file_size %}
@@ -875,6 +883,8 @@
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import { createDuplicateImageGuard } from '{{ asset_url("js/submission_image_guard.js") }}';
+    import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { initAssignmentClocks } from '{{ asset_url("js/assignment_time.js") }}';
     import { initReviewDocxExportButtons } from '{{ asset_url("js/review_docx_export.js") }}';
     import { mountLauncher } from '{{ asset_url("js/approval_workflow.js") }}';
@@ -1155,20 +1165,134 @@
         `;
     }
 
+    /* ------------------------------------------------------------
+     * Attachments are pushed to the server draft as soon as they are
+     * picked: the backend hashes them (duplicate-screenshot guard) and
+     * returns compressed thumbnails.  Anything that failed to sync is
+     * still sent along with the final submit, so nothing is lost.
+     * ------------------------------------------------------------ */
+    let draftSyncTimer = null;
+    let draftSyncChain = Promise.resolve();
+
+    function draftFileKey(file) {
+        return String(file?.relative_path || file?.file_name || '').replace(/\\/g, '/').toLowerCase();
+    }
+
+    async function loadDraftAttachments() {
+        if (!uploadManager) return;
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { headers: { Accept: 'application/json' } });
+            if (!response.ok) return;
+            const draft = await response.json();
+            if (draft?.submission_version && draft.submission_version !== SUBMISSION_VERSION) return;
+            const files = (draft?.files || []).filter((file) => !file.kind || file.kind === 'file' || file.kind === 'question_attachment');
+            if (files.length) {
+                uploadManager.addServerEntries(files, { silent: true });
+                publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
+                showToast(`已恢复 ${files.length} 个之前上传的附件。`, 'info');
+            }
+        } catch (error) {
+            console.warn('[assignment] draft attachments unavailable', error);
+        }
+    }
+
+    function scheduleDraftSync(delay = 400) {
+        clearTimeout(draftSyncTimer);
+        draftSyncTimer = setTimeout(() => {
+            draftSyncChain = draftSyncChain.catch(() => null).then(() => syncAttachmentsToDraft());
+        }, delay);
+    }
+
+    async function syncAttachmentsToDraft() {
+        if (!uploadManager) return null;
+        const pending = uploadManager.getUnsyncedEntries();
+        if (!pending.length) return null;
+        uploadManager.markSyncState('syncing', (entry) => pending.includes(entry));
+        const formData = new FormData();
+        const manifest = [];
+        pending.forEach((entry) => {
+            formData.append('files', entry.file, entry.file.name || 'upload.bin');
+            manifest.push({ relative_path: entry.relativePath, content_type: entry.file.type || '', kind: 'file', question_id: '' });
+        });
+        formData.append('manifest', JSON.stringify(manifest));
+        formData.append('answers_json', '');
+        formData.append('current_page', '0');
+        formData.append('client_updated_at', new Date().toISOString());
+        formData.append('replace_question_ids', '[]');
+        formData.append('expected_submission_version', SUBMISSION_VERSION);
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'POST', body: formData });
+            let payload = {};
+            try { payload = await response.json(); } catch {}
+            if (!response.ok) {
+                const detail = payload?.detail || {};
+                if (detail?.code === 'duplicate_image' && Array.isArray(detail.duplicate_files)) {
+                    const keys = new Set(detail.duplicate_files.map((item) => draftFileKey(item)));
+                    const removed = uploadManager.removeEntries((entry) => keys.has(entry.relativePath.toLowerCase()));
+                    const messages = detail.duplicate_files.map((item) => item.message).filter(Boolean);
+                    showToast(`${messages.slice(0, 3).join('；')}${removed.length ? '（已移除）' : ''}`, 'warning');
+                    uploadManager.markSyncState('failed', (entry) => entry.syncState === 'syncing');
+                    return null;
+                }
+                throw new Error(detail?.message || (typeof detail === 'string' ? detail : '') || `上传失败（${response.status}）`);
+            }
+            uploadManager.applyRemoteFiles(payload?.files || []);
+            uploadManager.markSyncState('failed', (entry) => entry.syncState === 'syncing');
+            publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
+            return payload;
+        } catch (error) {
+            uploadManager.markSyncState('failed', (entry) => entry.syncState === 'syncing');
+            showToast(`附件暂未上传到服务器：${error.message}。提交时会随作业一起上传。`, 'warning');
+            return null;
+        }
+    }
+
+    async function deleteDraftAttachment(entry) {
+        const fileId = entry?.remote?.id;
+        if (!fileId) return;
+        try {
+            const params = new URLSearchParams({ expected_submission_version: SUBMISSION_VERSION || '' });
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/draft-files/${fileId}?${params}`, { method: 'DELETE' });
+            if (!response.ok && response.status !== 404) {
+                let payload = {};
+                try { payload = await response.json(); } catch {}
+                throw new Error(payload?.detail?.message || payload?.detail || `删除失败（${response.status}）`);
+            }
+        } catch (error) {
+            showToast(`服务器上的附件未能删除：${error.message}`, 'warning');
+        }
+    }
+
     function initSubmissionUpload() {
+        if (!document.getElementById('drop-zone')) return;
         uploadManager = new SubmissionUploadManager({
             dropZoneId: 'drop-zone',
             fileInputId: 'file-input',
             folderInputId: 'folder-input',
             listId: 'file-chips',
             summaryId: 'upload-summary',
+            pasteButtonId: 'paste-files-btn',
+            pasteScope: '#answer-area',
+            label: '作业附件',
+            showSyncState: true,
             allowedFileTypes: ALLOWED_FILE_TYPES,
             maxBytes: MAX_SIZE,
             maxPerFileBytes: MAX_PER_FILE,
             maxFiles: MAX_FILES,
             notify: showToast,
+            beforeAdd: createDuplicateImageGuard({
+                assignmentId: ASSIGNMENT_ID,
+                questionId: () => '',
+                questionLabel: () => '本次作业',
+                replaceQuestionIds: () => [],
+                notify: showToast,
+            }),
+            onRemove: (entry) => {
+                if (entry?.remote?.id) deleteDraftAttachment(entry);
+            },
             onChange: (snapshot) => {
                 const uploadState = publishAssignmentUploadSnapshot(snapshot);
+                if (uploadManager?.getUnsyncedEntries().length) scheduleDraftSync();
                 window.behaviorTracker?.log('assignment_file_select', `选择 ${uploadState.count} 个作业文件`, {
                     file_count: uploadState.count
                 }, 'assignment_detail');
@@ -1178,6 +1302,7 @@
         publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
         document.getElementById('pick-files-btn')?.addEventListener('click', () => uploadManager.openFilePicker());
         document.getElementById('pick-folder-btn')?.addEventListener('click', () => uploadManager.openFolderPicker());
+        loadDraftAttachments();
     }
 
     window.submitAnswers = async function() {
@@ -1207,10 +1332,19 @@
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
 
+        // Let an in-flight attachment sync finish so the server draft is consistent.
+        clearTimeout(draftSyncTimer);
+        try { await draftSyncChain; } catch {}
+
+        // Files we still hold locally are sent directly (safest); attachments
+        // restored from the server draft (no local File) are pulled via
+        // use_server_draft — the server skips paths that are also uploaded.
         const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
+        const hasRemoteOnly = Boolean(uploadManager?.entries.some((entry) => !entry.file && entry.remote));
         formData.append('answers_json', JSON.stringify({ answers }));
         formData.append('started_at', ASSIGNMENT_STARTED_AT);
         formData.append('expected_submission_version', SUBMISSION_VERSION);
+        formData.append('use_server_draft', hasRemoteOnly ? '1' : '0');
 
         try {
             const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
@@ -1224,7 +1358,9 @@
             } catch {}
 
             if (!response.ok) {
-                throw new Error(payload.detail || 'Submit failed');
+                const detail = payload.detail;
+                const message = (detail && typeof detail === 'object') ? (detail.message || JSON.stringify(detail)) : (detail || 'Submit failed');
+                throw new Error(message);
             }
 
             const droppedCount = Number(payload.dropped_file_count || 0);

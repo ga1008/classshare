@@ -197,6 +197,8 @@ def serialize_submission_file_row(row, extra: dict | None = None) -> dict:
     item.update(profile)
     item["preview_url"] = f"/api/submission-files/{item['id']}/preview"
     item["raw_url"] = f"/submission-files/raw/{item['id']}" if item["is_image"] else ""
+    item["thumbnail_url"] = f"/submission-files/{item['id']}/image?variant=thumb" if item["is_image"] else ""
+    item["image_preview_url"] = f"/submission-files/{item['id']}/image?variant=preview" if item["is_image"] else ""
     item["download_url"] = f"/submissions/download/{item['id']}"
     if extra:
         item.update(extra)

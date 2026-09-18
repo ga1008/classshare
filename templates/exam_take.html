@@ -922,6 +922,35 @@
             background: #fff;
         }
 
+        .answer-attachment-card--image {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-2);
+        }
+
+        .answer-attachment-thumb {
+            display: block;
+            width: fit-content;
+            max-width: 100%;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            cursor: zoom-in;
+            border-radius: var(--radius-sm);
+        }
+
+        .answer-attachment-thumb img {
+            width: auto;
+            max-width: 100%;
+            max-height: 220px;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .answer-attachment-thumb:hover img {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(46, 74, 115, 0.16);
+        }
+
         .answer-attachment-meta {
             display: flex;
             flex-wrap: wrap;
@@ -1678,7 +1707,9 @@
 <script type="module">
     import { showMessage } from '/static/js/ui.js';
     import { apiFetch } from '/static/js/api.js';
-    import { SubmissionUploadManager } from '/static/js/submission_upload.js';
+    import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import { createDuplicateImageGuard } from '{{ asset_url("js/submission_image_guard.js") }}';
+    import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
     import { initAssignmentClocks } from '/static/js/assignment_time.js';
     import { initReviewDocxExportButtons } from '/static/js/review_docx_export.js';
@@ -2244,6 +2275,7 @@
             const resp = await serverDraftInFlight;
             lastServerDraftSignature = draftSignature;
             state.serverQuestionFiles = resp.files_by_question || {};
+            applyServerFilesToManagers();
             setSaveStatus('saved', '已保存到服务器');
             setTimeout(() => {
                 setSaveStatus('', '本地与服务器自动保存');
@@ -2329,8 +2361,7 @@
 
     function getQuestionAttachmentCount(q) {
         const localFiles = getQuestionFileEntries(q.id);
-        const serverFiles = localFiles.length ? [] : getServerQuestionFileEntries(q.id)
-            .filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
+        const serverFiles = localFiles.length ? [] : getServerQuestionRegularFiles(q.id);
         return localFiles.length + serverFiles.length + (hasDrawing(q.id) ? 1 : 0);
     }
 
@@ -2433,23 +2464,30 @@
     function renderSubmittedAttachments(attachments) {
         const answerAttachments = (attachments || []).filter(att => att && typeof att === 'object');
         if (!answerAttachments.length) return '';
+        const groupId = `submitted-${esc(String(answerAttachments[0]?.question_id || Math.random().toString(36).slice(2)))}`;
+        const questionNumber = getQuestionDisplayNumber(answerAttachments[0]?.question_id);
+        const groupLabel = questionNumber ? `第${questionNumber}题附件` : '题目附件';
         return `
-            <div class="readonly-answer-attachments">
+            <div class="readonly-answer-attachments" data-ls-lightbox-label="${groupLabel}">
                 ${answerAttachments.map((attachment) => {
                     const file = findSubmissionFileForAttachment(attachment);
                     const mimeType = String(attachment.mime_type || file?.mime_type || '').toLowerCase();
                     const isImage = Boolean(file?.is_image || file?.raw_url || mimeType.startsWith('image/') || (attachment.kind || attachment.type) === 'drawing');
                     const imageUrl = isImage ? (file?.raw_url || file?.download_url || '') : '';
+                    const thumbUrl = isImage ? (file?.thumbnail_url || imageUrl) : '';
+                    const previewUrl = isImage ? (file?.image_preview_url || imageUrl) : '';
                     const downloadUrl = file?.download_url || imageUrl || '#';
                     const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附件';
                     const actionText = isImage ? '查看附图' : '下载附件';
                     return `
-                        <div class="answer-attachment-card">
+                        <div class="answer-attachment-card${isImage ? ' answer-attachment-card--image' : ''}">
                             <div class="answer-attachment-meta">
                                 <span>${esc(name)}</span>
                                 ${downloadUrl !== '#' ? `<a href="${downloadUrl}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">${actionText}</a>` : ''}
                             </div>
-                            ${imageUrl ? `<img src="${imageUrl}" alt="${esc(name)}">` : `<div class="text-sm text-muted">该附件可在下方附件区预览或下载。</div>`}
+                            ${imageUrl
+                                ? `<button type="button" class="answer-attachment-thumb" data-ls-lightbox data-ls-lightbox-group="${groupId}" data-ls-lightbox-src="${esc(previewUrl)}" data-ls-lightbox-original="${esc(downloadUrl)}" data-ls-lightbox-title="${esc(name)}" title="点击查看大图"><img src="${esc(thumbUrl)}" alt="${esc(name)}" loading="lazy" decoding="async"></button>`
+                                : `<div class="text-sm text-muted">该附件可在下方附件区预览或下载。</div>`}
                         </div>
                     `;
                 }).join('')}
@@ -2457,23 +2495,89 @@
         `;
     }
 
-    function renderServerDraftFiles(qId) {
-        if (getQuestionFileEntries(qId).length > 0) return '';
-        const files = getServerQuestionFileEntries(qId)
-            .filter(file => !(file.kind === 'exam_drawing' || file.kind === 'drawing' || String(file.relative_path || '').startsWith('exam_drawings/')));
-        if (!files.length) return '';
-        return `
-            <div class="file-chips server-draft-files">
-                ${files.map(file => `
-                    <div class="file-chip server-draft">
-                        <span class="text-primary">服务器草稿</span>
-                        <span class="truncate" style="max-width:220px;" title="${esc(file.relative_path || file.file_name || '')}">${esc(file.file_name || file.original_filename || '题目附件')}</span>
-                        <span class="text-xs text-muted">${file.file_size ? formatFileSize(file.file_size) : ''}</span>
-                        <button type="button" class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto" style="flex-shrink:0;line-height:1;" data-remove-server-draft-question="${esc(qId)}" title="移除服务器草稿附件">&times;</button>
-                    </div>
-                `).join('')}
-            </div>
-        `;
+    function isDrawingFile(file) {
+        return file?.kind === 'exam_drawing' || file?.kind === 'drawing' || String(file?.relative_path || '').startsWith('exam_drawings/');
+    }
+
+    /** Server-draft attachments of a question, minus the drawing (which has its own preview). */
+    function getServerQuestionRegularFiles(qId) {
+        return getServerQuestionFileEntries(qId).filter((file) => !isDrawingFile(file));
+    }
+
+    /**
+     * Strip the `exam_question_files/{qid}/` prefix so a server-draft file
+     * maps back onto the relative path the upload manager uses locally.
+     */
+    function localRelativePathForServerFile(file) {
+        const raw = String(file?.relative_path || file?.file_name || '').replace(/\\/g, '/');
+        const parts = raw.split('/').filter(Boolean);
+        if (parts.length >= 3 && parts[0] === 'exam_question_files') return parts.slice(2).join('/');
+        return parts.join('/') || String(file?.file_name || 'upload.bin');
+    }
+
+    /**
+     * Seed a question manager with the files already saved in the server
+     * draft (after a reload) so they keep showing — with backend thumbnails —
+     * and are re-sent when the question's draft is next replaced, instead
+     * of silently disappearing once a new local file is added.
+     */
+    function seedManagerWithServerFiles(manager, qId) {
+        const files = getServerQuestionRegularFiles(qId);
+        if (!files.length) return;
+        manager.addServerEntries(files.map((file) => ({
+            ...file,
+            relative_path: localRelativePathForServerFile(file),
+        })), { silent: true });
+    }
+
+    /** Server-draft files of a question straight from state (ignores the pending-replace mask). */
+    function rawServerQuestionRegularFiles(qId) {
+        const files = Array.isArray(state.serverQuestionFiles?.[qId]) ? state.serverQuestionFiles[qId] : [];
+        return files.filter((file) => !isDrawingFile(file));
+    }
+
+    /** After a successful server save, attach thumbnails/URLs to local entries. */
+    function applyServerFilesToManagers() {
+        questionUploadManagers.forEach((manager, qId) => {
+            manager.applyRemoteFiles(rawServerQuestionRegularFiles(qId));
+        });
+    }
+
+    /** Hashes held by sibling questions (mounted managers + server draft), for the duplicate guard. */
+    function collectKnownImageHashes(excludeQId) {
+        const known = [];
+        questionUploadManagers.forEach((manager, qId) => {
+            if (String(qId) === String(excludeQId)) return;
+            const label = `第${getQuestionDisplayNumber(qId) || '?'}题`;
+            (manager.entries || []).forEach((entry) => {
+                if (entry?.hash) known.push({ hash: entry.hash, label, name: entry.relativePath?.split('/').pop() || '' });
+            });
+        });
+        Object.entries(state.serverQuestionFiles || {}).forEach(([qId, files]) => {
+            if (String(qId) === String(excludeQId) || questionUploadManagers.has(qId)) return;
+            const label = qId ? `第${getQuestionDisplayNumber(qId) || '?'}题` : '交卷附件';
+            (files || []).forEach((file) => {
+                if (file?.file_hash && !isDrawingFile(file)) known.push({ hash: file.file_hash, label, name: file.file_name || '' });
+            });
+        });
+        return known;
+    }
+
+    /** Server rejected some images as duplicates: drop them locally and explain. */
+    function handleDuplicateImageError(error, manager) {
+        const detail = error?.data?.detail || error?.data || {};
+        const duplicates = Array.isArray(detail?.duplicate_files) ? detail.duplicate_files : [];
+        if (!duplicates.length) return false;
+        const paths = new Set(duplicates.map((item) => String(item.relative_path || item.file_name || '').toLowerCase()));
+        const removed = manager ? manager.removeEntries((entry) => {
+            const rel = String(entry.relativePath || '').toLowerCase();
+            const name = rel.split('/').pop();
+            return Array.from(paths).some((path) => path === rel || path.endsWith(`/${rel}`) || path.split('/').pop() === name);
+        }) : [];
+        const messages = duplicates.map((item) => item.message).filter(Boolean);
+        const suffix = removed.length ? '（已从本题附件中移除）' : '';
+        showMessage(`${messages.slice(0, 3).join('；') || detail.message || '存在重复截图。'}${suffix}`, 'warning');
+        return true;
     }
 
     function getQuestionDisplayNumber(qId) {
@@ -2683,15 +2787,15 @@
                                 ` : ''}
                                 <div class="upload-actions mt-3">
                                     <button type="button" class="btn btn-outline btn-sm" id="questionPickFiles-${safeQId}">添加本题文件</button>
+                                    <button type="button" class="btn btn-outline btn-sm ls-paste-btn" id="questionPasteFiles-${safeQId}" title="从系统剪贴板粘贴截图或文件（也可在本题区域按 Ctrl+V）">粘贴</button>
                                     <span class="text-sm text-muted" id="questionUploadSummary-${safeQId}">未选择文件</span>
                                 </div>
                                 <div class="upload-dropzone question-upload-dropzone" id="question-drop-zone-${safeQId}">
-                                    <p class="mb-1 font-medium text-primary">拖拽本题附件到此处</p>
-                                    <p class="text-sm text-muted">截图、代码、报告等会绑定到第 ${esc(getQuestionDisplayLabel(q))} 题，AI 批改会按题号识别。</p>
+                                    <p class="mb-1 font-medium text-primary">拖拽本题附件到此处，或点击后按 Ctrl+V 粘贴截图</p>
+                                    <p class="text-sm text-muted">截图、代码、报告等会绑定到第 ${esc(getQuestionDisplayLabel(q))} 题，AI 批改会按题号识别。截图会做去重校验，与他人相同的截图无法上传。</p>
                                 </div>
                                 <input type="file" id="question-file-input-${safeQId}" class="hidden" multiple>
                                 <div class="file-chips" id="question-file-chips-${safeQId}"></div>
-                                ${renderServerDraftFiles(q.id)}
                             </div>
                         ` : ''}
                     </div>
@@ -2710,10 +2814,11 @@
                         <div class="upload-actions">
                             <button type="button" class="btn btn-outline btn-sm" id="examPickFilesBtn">选择文件</button>
                             <button type="button" class="btn btn-outline btn-sm" id="examPickFolderBtn">选择文件夹</button>
+                            <button type="button" class="btn btn-outline btn-sm ls-paste-btn" id="examPasteFilesBtn" title="从系统剪贴板粘贴截图或文件（也可在此区域按 Ctrl+V）">粘贴</button>
                             <span class="text-sm text-muted" id="examUploadSummary">未选择文件</span>
                         </div>
                         <div class="upload-dropzone" id="exam-drop-zone">
-                            <p class="mb-2 font-medium text-primary">拖拽文件或文件夹到此处</p>
+                            <p class="mb-2 font-medium text-primary">拖拽文件或文件夹到此处，或点击后按 Ctrl+V 粘贴</p>
                             <p class="text-sm text-muted">
                                 支持同时选择多个文件，单文件不超过 ${(MAX_PER_FILE_BYTES / 1024 / 1024).toFixed(0)}MB，总大小不超过 ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)}MB，最多 ${MAX_FILE_COUNT} 个文件
                                 ${ALLOWED_FILE_TYPES.length ? `，允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}` : ''}
@@ -2747,17 +2852,29 @@
 
     function mountUploadManager() {
         const preservedEntries = uploadManager?.entries ? [...uploadManager.entries] : [];
+        uploadManager?.destroy?.();
         uploadManager = new SubmissionUploadManager({
             dropZoneId: 'exam-drop-zone',
             fileInputId: 'exam-file-input',
             folderInputId: 'exam-folder-input',
             listId: 'exam-file-chips',
             summaryId: 'examUploadSummary',
+            pasteButtonId: 'examPasteFilesBtn',
+            pasteScope: '.submit-section .upload-panel',
+            label: '交卷附件',
             allowedFileTypes: ALLOWED_FILE_TYPES,
             maxBytes: MAX_UPLOAD_BYTES,
             maxPerFileBytes: MAX_PER_FILE_BYTES,
             maxFiles: MAX_FILE_COUNT,
             notify: showMessage,
+            beforeAdd: createDuplicateImageGuard({
+                assignmentId: ASSIGNMENT_ID,
+                questionId: () => '',
+                questionLabel: () => '交卷附件',
+                replaceQuestionIds: () => [],
+                knownHashes: () => collectKnownImageHashes(''),
+                notify: showMessage,
+            }),
             onChange: (entries) => {
                 window.behaviorTracker?.log('exam_file_select', `选择 ${entries.length} 个考试附件`, {
                     file_count: entries.length
@@ -2771,22 +2888,37 @@
     }
 
     function mountQuestionUploadManagers(questions) {
+        questionUploadManagers.forEach((manager) => manager.destroy?.());
         questionUploadManagers = new Map();
         (questions || []).forEach((q) => {
             const policy = getAttachmentPolicy(q);
             if (!policy.enabled) return;
             const safeQId = domIdSegment(q.id);
             const allowedTypes = combineAllowedFileTypes(policy.allowedFileTypes, ALLOWED_FILE_TYPES);
+            const questionLabel = `第${getQuestionDisplayLabel(q)}题`;
             const manager = new SubmissionUploadManager({
                 dropZoneId: `question-drop-zone-${safeQId}`,
                 fileInputId: `question-file-input-${safeQId}`,
                 listId: `question-file-chips-${safeQId}`,
                 summaryId: `questionUploadSummary-${safeQId}`,
+                pasteButtonId: `questionPasteFiles-${safeQId}`,
+                pasteScope: `#q-${CSS.escape(String(q.id))}`,
+                label: `${questionLabel}附件`,
+                lightboxLabel: `${questionLabel}附件`,
+                showSyncState: true,
                 allowedFileTypes: allowedTypes,
                 maxBytes: MAX_UPLOAD_BYTES,
                 maxPerFileBytes: MAX_PER_FILE_BYTES,
                 maxFiles: policy.maxCount || MAX_FILE_COUNT,
                 notify: showMessage,
+                beforeAdd: createDuplicateImageGuard({
+                    assignmentId: ASSIGNMENT_ID,
+                    questionId: () => String(q.id),
+                    questionLabel: () => questionLabel,
+                    replaceQuestionIds: () => [String(q.id)],
+                    knownHashes: () => collectKnownImageHashes(q.id),
+                    notify: showMessage,
+                }),
                 onChange: () => {
                     state.questionFiles[q.id] = manager.entries;
                     updateQuestionAttachmentStatus(q.id);
@@ -2802,6 +2934,14 @@
             manager.entries = [...getQuestionFileEntries(q.id)];
             manager.init();
             questionUploadManagers.set(q.id, manager);
+            if (!manager.entries.length) {
+                // Restore server-draft files (after a reload) into the same list.
+                const before = manager.entries.length;
+                seedManagerWithServerFiles(manager, q.id);
+                if (manager.entries.length !== before) state.questionFiles[q.id] = manager.entries;
+            } else {
+                manager.applyRemoteFiles(getServerQuestionRegularFiles(q.id));
+            }
             document.getElementById(`questionPickFiles-${safeQId}`)?.addEventListener('click', () => manager.openFilePicker());
         });
     }
@@ -3270,7 +3410,17 @@
         const uploadItems = [];
         const index = getQuestionIndex(q.id);
         for (const entry of getQuestionFileEntries(q.id)) {
-            const file = entry.file;
+            let file = entry.file;
+            if (!file && entry.remote?.download_url) {
+                // Server-draft file restored after a reload: re-send it so the
+                // question replacement keeps it instead of dropping it.
+                try {
+                    file = await sourceUrlToFile(entry.remote.download_url, entry.remote.file_name || entry.relativePath.split('/').pop() || 'upload.bin');
+                } catch (error) {
+                    console.warn('Failed to re-fetch server draft file for re-upload:', error);
+                    continue;
+                }
+            }
             if (!file) continue;
             const fileName = file.name || 'upload.bin';
             uploadItems.push({
@@ -3343,6 +3493,8 @@
         const dirtyVersion = markQuestionDraftDirty(question.id);
         clearTimeout(questionDraftUploadTimers.get(qId));
         const timer = setTimeout(async () => {
+            const manager = questionUploadManagers.get(question.id);
+            manager?.markSyncState('syncing', (entry) => entry.syncState !== 'synced');
             try {
                 const uploadItems = await buildQuestionDraftUploadItems(question);
                 const resp = await saveServerDraft({
@@ -3356,9 +3508,16 @@
                     );
                 }
                 markQuestionDraftClean(question.id, dirtyVersion);
+                manager?.applyRemoteFiles(rawServerQuestionRegularFiles(question.id));
+                manager?.markSyncState('failed', (entry) => entry.syncState === 'syncing');
                 updateQuestionAttachmentStatus(question.id);
                 renderSidebar();
             } catch (error) {
+                manager?.markSyncState('failed', (entry) => entry.syncState === 'syncing');
+                if (error?.data?.detail?.code === 'duplicate_image' || error?.data?.code === 'duplicate_image') {
+                    handleDuplicateImageError(error, manager);
+                    return;
+                }
                 showMessage(error.message || '题目附件保存到服务器失败，本地草稿仍可继续提交。', 'warning');
             }
         }, delay);

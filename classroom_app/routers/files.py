@@ -84,6 +84,11 @@ from ..services.submission_preview_service import (
     serialize_submission_file_row,
     _resolve_file_path,
 )
+from ..services.submission_image_variants import (
+    VARIANT_MIME_TYPE as IMAGE_VARIANT_MIME_TYPE,
+    normalize_variant as normalize_image_variant,
+    resolve_submission_image_variant,
+)
 from ..services.rate_limit_service import (
     RateLimitExceededError,
     build_rate_limit_window_start,
@@ -1577,6 +1582,32 @@ async def get_submission_file_raw(file_id: int, user: Optional[dict] = Depends(g
         raise HTTPException(404, "File not found on disk")
 
     return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream")
+
+
+@router.get("/submission-files/{file_id}/image", response_class=FileResponse)
+async def get_submission_file_image(
+    file_id: int,
+    variant: str = "thumb",
+    user: Optional[dict] = Depends(get_current_user),
+):
+    """Compressed thumbnail / preview of an image attachment (falls back to the original)."""
+    with get_db_connection() as conn:
+        file_info = ensure_submission_file_access(conn, file_id, user)
+
+    if not serialize_submission_file_row(file_info).get("is_image"):
+        raise HTTPException(400, "Only image files support image variants")
+
+    file_path = _resolve_file_path(str(file_info["stored_path"]))
+    if file_path is None:
+        raise HTTPException(404, "File not found on disk")
+
+    variant_path = await resolve_submission_image_variant(
+        Path(file_path), str(file_info.get("file_hash") or ""), normalize_image_variant(variant)
+    )
+    cache_headers = {"Cache-Control": "private, max-age=604800"}
+    if variant_path is None:
+        return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream", headers=cache_headers)
+    return FileResponse(variant_path, media_type=IMAGE_VARIANT_MIME_TYPE, headers=cache_headers)
 
 
 @router.get("/submissions/download/{file_id}", response_class=FileResponse)

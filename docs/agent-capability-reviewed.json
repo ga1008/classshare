@@ -15215,6 +15215,32 @@
         "capability_keys": [
           "publish_classroom_grades"
         ]
+      },
+      "classroom_app/routers/homework_parts/drafts.py": {
+        "before_sha256": "6fcc045d9a6dd47be46feb0d493f9cd0c365f12e68d9ced781f23de3cae16da8",
+        "after_sha256": "a2594d75abef65ec97001562c1b319828becb624b8176dd73e7558201730053e",
+        "review_group": "homework_parts",
+        "capability_keys": [
+          "http.assignment.draft.get",
+          "http.assignment.draft.save"
+        ],
+        "handler_source_sha256": {
+          "save_assignment_draft": {
+            "before": "b2c9c93d87e1436cc3a77f6b01aea2d65f1e938f0cfc25185275428507a01745",
+            "after": "d4c8af9c4803c3d90ae8b66803c6bedd6838ef332f0c3fc1924c919c81355215"
+          },
+          "get_assignment_draft": {
+            "unchanged": "349445997094dec0736f0de14a7000c2955d9ea57e02300f82b2db43578aca2c"
+          }
+        },
+        "change": "2026-09-18 学生附件截图哈希库：save_assignment_draft 在文件落盘后、移入草稿目录前增加 _raise_if_duplicate_images（按作业派生自 submission_files/submission_draft_files 的图片哈希冲突 → 400 duplicate_image，含他人/本人他题/同批次三类，排除 exam_drawings）。新增学生私有路由 attachment-hash-check（预检，仅 UX）、draft-files/{id} DELETE、draft-files/{id}/image（缩略图），均按 sd.student_pk_id=当前学生 限定，不进入 Agent 审核适配。",
+        "evidence": [
+          "tests/test_submission_image_guard.py",
+          "tests/test_agent_submission_requests.py",
+          "tests/test_agent_platform_requests.py",
+          "tests/test_architecture_route_snapshot.py（p02 快照 +4 路由）",
+          "code-reviewer 独立复核：新路由鉴权/路径/缓存键无阻断问题；补 assignment 级 pg 咨询锁堵跨学生 TOCTOU"
+        ]
       }
     },
     "verification": {

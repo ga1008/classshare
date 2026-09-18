@@ -14,7 +14,7 @@ from urllib.parse import quote
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, List
-from fastapi import APIRouter, Request, Form, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, Body, Request, Form, HTTPException, Depends, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 
 # 修复：移除这个错误的导入，COURSE_INFO 不再是 V4.0 的依赖
@@ -98,6 +98,22 @@ from ...services.submission_assets import (
     summarize_allowed_file_types,
 )
 from ...services.submission_file_alignment import resolve_submission_file_path
+from ...services.submission_image_guard_service import (
+    HashCandidate,
+    HashCheckOptions,
+    candidates_from_stored_files,
+    duplicate_image_error_detail,
+    find_image_hash_conflicts,
+    is_hash_guarded_attachment,
+    load_assignment_question_labels,
+    lock_assignment_image_guard,
+    parse_hash_check_items,
+)
+from ...services.submission_image_variants import (
+    VARIANT_MIME_TYPE as IMAGE_VARIANT_MIME_TYPE,
+    normalize_variant as normalize_image_variant,
+    resolve_submission_image_variant,
+)
 from ...services.submission_export_docx_service import (
     DOCX_MEDIA_TYPE,
     build_student_submission_export_docx,
@@ -635,22 +651,55 @@ def _serialize_draft_file(row: dict[str, Any], assignment_id: str) -> dict[str, 
     file_id = int(row["id"])
     mime_type = str(row.get("mime_type") or "")
     download_url = f"/api/assignments/{assignment_id}/draft-files/{file_id}"
+    relative_path = str(row.get("relative_path") or "")
+    is_image = mime_type.startswith("image/") or is_hash_guarded_attachment(relative_path, mime_type, row.get("kind"))
     return {
         "id": file_id,
         "question_id": str(row.get("question_id") or ""),
         "kind": str(row.get("kind") or "file"),
-        "file_name": row.get("original_filename") or PurePosixPath(str(row.get("relative_path") or "")).name,
+        "file_name": row.get("original_filename") or PurePosixPath(relative_path).name,
         "original_filename": row.get("original_filename") or "",
-        "relative_path": row.get("relative_path") or "",
+        "relative_path": relative_path,
         "mime_type": mime_type,
         "file_size": row.get("file_size"),
         "file_ext": row.get("file_ext") or "",
         "file_hash": row.get("file_hash") or "",
         "download_url": download_url,
-        "raw_url": download_url if mime_type.startswith("image/") else "",
-        "is_image": mime_type.startswith("image/"),
+        "raw_url": download_url if is_image else "",
+        "thumbnail_url": f"{download_url}/image?variant=thumb" if is_image else "",
+        "image_preview_url": f"{download_url}/image?variant=preview" if is_image else "",
+        "is_image": is_image,
         "server_draft": True,
     }
+
+
+def _raise_if_duplicate_images(
+    conn,
+    *,
+    assignment: dict[str, Any],
+    student_pk_id: int,
+    stored_files: list[StoredSubmissionFile],
+    question_ids: dict[str, str] | None,
+    options: HashCheckOptions,
+    action_label: str,
+) -> None:
+    """Refuse guarded images whose hash is already held for this assignment."""
+    candidates = candidates_from_stored_files(stored_files, question_ids)
+    if not candidates:
+        return
+    # Cross-student check must not race: hold the assignment-wide guard lock
+    # from here until this transaction commits the new file rows.
+    lock_assignment_image_guard(conn, str(assignment["id"]))
+    conflicts = find_image_hash_conflicts(
+        conn,
+        assignment_id=str(assignment["id"]),
+        student_pk_id=int(student_pk_id),
+        candidates=candidates,
+        question_labels=load_assignment_question_labels(conn, assignment),
+        options=options,
+    )
+    if conflicts:
+        raise HTTPException(400, detail=duplicate_image_error_detail(conflicts, action_label=action_label))
 
 
 def _serialize_submission_draft(conn, draft: dict[str, Any] | None, assignment_id: str) -> dict[str, Any]:
@@ -1370,6 +1419,20 @@ async def _save_submission_payload(
                     detail=_dropped_files_error_detail(storage_result.dropped_files, action_label="提交"),
                 )
         _validate_combined_stored_file_limits(storage_result.stored_files)
+        if actor_role == "student":
+            # Final gate of the per-assignment screenshot hash library: the
+            # whole batch (uploads + consumed draft files) is checked against
+            # every other student; the student's own old rows are being
+            # replaced by this submission, so they are not counted.
+            _raise_if_duplicate_images(
+                conn,
+                assignment=assignment,
+                student_pk_id=student_pk_id,
+                stored_files=storage_result.stored_files,
+                question_ids=None,
+                options=HashCheckOptions(include_own_draft=False),
+                action_label="提交",
+            )
     except Exception:
         conn.rollback()
         delete_storage_tree(staging_dir)

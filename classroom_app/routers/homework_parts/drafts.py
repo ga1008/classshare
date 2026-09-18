@@ -161,6 +161,27 @@ async def save_assignment_draft(
                         f"（当前 {next_size / 1024 / 1024:.1f}MB）",
                     )
             if storage_result.stored_files:
+                # Per-assignment screenshot hash library: refuse images that
+                # another student already holds, or that this student already
+                # placed under a different question of the same draft.
+                _raise_if_duplicate_images(
+                    conn,
+                    assignment=assignment,
+                    student_pk_id=int(user["id"]),
+                    stored_files=storage_result.stored_files,
+                    question_ids={
+                        path_key: str(item.get("question_id") or "").strip()
+                        for path_key, item in manifest_by_path.items()
+                    },
+                    options=HashCheckOptions(
+                        include_own_draft=True,
+                        replaced_question_ids=set(replace_ids),
+                        replaced_relative_paths={
+                            file_info.relative_path for file_info in storage_result.stored_files
+                        },
+                    ),
+                    action_label="保存到服务器草稿",
+                )
                 move_backup_dir = draft_dir.with_name(f"{draft_dir.name}.__replace_backup__{uuid.uuid4().hex}")
                 moved_draft_files = _move_stored_files_to_final_dir(
                     storage_result.stored_files,
@@ -286,3 +307,162 @@ async def download_assignment_draft_file(
         media_type=file_dict.get("mime_type") or "application/octet-stream",
         filename=file_dict.get("original_filename") or physical_path.name,
     )
+
+
+@router.post("/assignments/{assignment_id}/attachment-hash-check", response_class=JSONResponse)
+def check_assignment_attachment_hashes(
+    assignment_id: str,
+    payload: dict = Body(default={}),
+    user: dict = Depends(get_current_student),
+):
+    """Client pre-check against the per-assignment screenshot hash library.
+
+    The browser hashes each picked image (SHA-256) before uploading so the
+    student gets an immediate, specific reason instead of a failed upload.
+    The draft / submit routes re-check server-side, so this is advisory only.
+    """
+    items = parse_hash_check_items((payload or {}).get("items"))
+    replaced_question_ids = {
+        str(value or "").strip()
+        for value in ((payload or {}).get("replace_question_ids") or [])
+        if str(value or "").strip()
+    }
+    with get_db_connection() as conn:
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = dict(assignment)
+        if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
+            raise HTTPException(403, "该破境试炼只对指定学生开放")
+        if not items:
+            return {"status": "success", "results": [], "conflicts": []}
+        conflicts = find_image_hash_conflicts(
+            conn,
+            assignment_id=assignment_id,
+            student_pk_id=int(user["id"]),
+            candidates=items,
+            question_labels=load_assignment_question_labels(conn, assignment),
+            options=HashCheckOptions(include_own_draft=True, replaced_question_ids=replaced_question_ids),
+        )
+    conflict_by_hash = {conflict.file_hash: conflict.to_dict() for conflict in conflicts}
+    results = []
+    for item in items:
+        conflict = conflict_by_hash.get(item.file_hash)
+        results.append(
+            {
+                "hash": item.file_hash,
+                "question_id": item.question_id,
+                "file_name": item.file_name,
+                "status": f"duplicate_{conflict['kind']}" if conflict else "ok",
+                "conflict": conflict,
+                "message": conflict["message"] if conflict else "",
+            }
+        )
+    return {"status": "success", "results": results, "conflicts": list(conflict_by_hash.values())}
+
+
+@router.delete("/assignments/{assignment_id}/draft-files/{file_id}", response_class=JSONResponse)
+def delete_assignment_draft_file(
+    assignment_id: str,
+    file_id: int,
+    expected_submission_version: str = "",
+    user: dict = Depends(get_current_student),
+):
+    """Remove a single server-draft attachment (frees its hash claim)."""
+    retired_paths: list[tuple[Path, Path]] = []
+    with get_db_connection() as conn:
+        close_overdue_assignments(conn)
+        conn.commit()
+        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
+        if not assignment:
+            raise HTTPException(404, "Assignment not found")
+        assignment = enrich_assignment_runtime_view(assignment)
+        draft_submission = _ensure_student_can_save_assignment_draft(
+            conn,
+            assignment=assignment,
+            student_id=int(user["id"]),
+        )
+        try:
+            begin_immediate_transaction(conn)
+            lock_submission_writer(conn, assignment_id, int(user["id"]))
+            current_submission = _ensure_student_can_save_assignment_draft(
+                conn, assignment=assignment, student_id=int(user["id"]),
+            )
+            verify_submission_write(current_submission, draft_submission, actor_role="student",
+                                    client_version=expected_submission_version or "")
+            row = conn.execute(
+                """
+                SELECT sdf.id, sdf.draft_id, sdf.stored_path
+                FROM submission_draft_files sdf
+                JOIN submission_drafts sd ON sd.id = sdf.draft_id
+                WHERE sdf.id = ? AND sd.assignment_id = ? AND sd.student_pk_id = ?
+                LIMIT 1
+                """,
+                (int(file_id), assignment_id, int(user["id"])),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "草稿附件不存在")
+            row = dict(row)
+            conn.execute("DELETE FROM submission_draft_files WHERE id = ?", (int(row["id"]),))
+            conn.execute(
+                """
+                UPDATE submission_drafts
+                SET server_updated_at = ?, server_version = COALESCE(server_version, 0) + 1
+                WHERE id = ?
+                """,
+                (datetime.now().isoformat(), int(row["draft_id"])),
+            )
+            stored_path = str(row.get("stored_path") or "")
+            if stored_path:
+                retired_paths = _quarantine_submission_paths([stored_path])
+            conn.execute("SELECT 1")
+            conn.commit()
+        except Exception:
+            _restore_quarantined_submission_paths(retired_paths)
+            conn.rollback()
+            raise
+        _discard_quarantined_submission_paths(retired_paths)
+        draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+        payload = _serialize_submission_draft(conn, draft, assignment_id)
+    payload.update({"status": "success", "deleted_file_id": int(file_id)})
+    return payload
+
+
+@router.get("/assignments/{assignment_id}/draft-files/{file_id}/image")
+async def get_assignment_draft_file_image(
+    assignment_id: str,
+    file_id: int,
+    variant: str = "thumb",
+    user: dict = Depends(get_current_student),
+):
+    """Compressed thumbnail / preview of a server-draft image (falls back to the original)."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT sdf.*
+            FROM submission_draft_files sdf
+            JOIN submission_drafts sd ON sd.id = sdf.draft_id
+            WHERE sdf.id = ? AND sd.assignment_id = ? AND sd.student_pk_id = ?
+            LIMIT 1
+            """,
+            (int(file_id), assignment_id, int(user["id"])),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "草稿附件不存在")
+        file_dict = dict(row)
+    is_image = str(file_dict.get("mime_type") or "").startswith("image/") or is_hash_guarded_attachment(
+        str(file_dict.get("relative_path") or ""), file_dict.get("mime_type"), file_dict.get("kind"),
+    )
+    if not is_image:
+        raise HTTPException(400, "Only image files support image variants")
+    physical_path = resolve_submission_file_path(str(file_dict.get("stored_path") or "")) or str(file_dict.get("stored_path") or "")
+    physical_path = Path(physical_path)
+    if not physical_path.exists() or not physical_path.is_file():
+        raise HTTPException(404, "草稿附件文件不存在")
+    variant_path = await resolve_submission_image_variant(
+        physical_path, str(file_dict.get("file_hash") or ""), normalize_image_variant(variant)
+    )
+    cache_headers = {"Cache-Control": "private, max-age=604800"}
+    if variant_path is None:
+        return FileResponse(physical_path, media_type=file_dict.get("mime_type") or "application/octet-stream", headers=cache_headers)
+    return FileResponse(variant_path, media_type=IMAGE_VARIANT_MIME_TYPE, headers=cache_headers)

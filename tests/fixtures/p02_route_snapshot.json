@@ -712,6 +712,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/assignments/{assignment_id}/attachment-hash-check",
+    "methods": [
+      "POST"
+    ],
+    "name": "check_assignment_attachment_hashes",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/assignments/{assignment_id}/close",
     "methods": [
       "POST"
@@ -746,9 +754,25 @@
   {
     "path": "/api/assignments/{assignment_id}/draft-files/{file_id}",
     "methods": [
+      "DELETE"
+    ],
+    "name": "delete_assignment_draft_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/draft-files/{file_id}",
+    "methods": [
       "GET"
     ],
     "name": "download_assignment_draft_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/assignments/{assignment_id}/draft-files/{file_id}/image",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_assignment_draft_file_image",
     "include_in_schema": true
   },
   {
@@ -7510,6 +7534,14 @@
       "GET"
     ],
     "name": "get_submission_file_raw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/submission-files/{file_id}/image",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_submission_file_image",
     "include_in_schema": true
   },
   {
