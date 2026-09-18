@@ -460,6 +460,26 @@
         border: 1px solid var(--border-color);
         background: #fff;
     }
+    .answer-attachment-thumb {
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: zoom-in;
+        border-radius: var(--radius-sm);
+    }
+    .answer-attachment-thumb img {
+        width: auto;
+        max-width: 100%;
+        max-height: 260px;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .answer-attachment-thumb:hover img {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(46, 74, 115, 0.16);
+    }
 
     /* File list */
     .file-list { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
@@ -1106,6 +1126,7 @@
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { renderFilePreview } from '{{ asset_url("js/file_preview.js") }}';
     import { showToast, escapeHtml } from '{{ asset_url("js/ui.js") }}';
+    import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import {
         findQuestionFeedback,
@@ -1472,20 +1493,25 @@
     function renderAnswerAttachments(value) {
         const attachments = extractAnswerAttachments(value).filter(item => item && typeof item === 'object');
         if (!attachments.length) return '';
-        return `<div class="answer-attachments">
+        const groupId = `answer-${Math.random().toString(36).slice(2, 10)}`;
+        return `<div class="answer-attachments" data-ls-lightbox-label="学生附图">
             ${attachments.map((attachment) => {
                 const file = findSubmissionFileForAttachment(attachment);
                 const isImage = isImageAttachment(attachment, file);
                 const imageUrl = isImage ? (file?.raw_url || file?.download_url || '') : '';
+                const thumbUrl = isImage ? (file?.thumbnail_url || imageUrl) : '';
+                const previewUrl = isImage ? (file?.image_preview_url || imageUrl) : '';
                 const downloadUrl = file?.download_url || imageUrl || '#';
                 const name = attachment.file_name || file?.display_name || file?.original_filename || '题目附件';
                 const actionText = isImage ? '查看附图' : '下载附件';
-                return `<div class="answer-attachment-card">
+                return `<div class="answer-attachment-card${isImage ? ' answer-attachment-card--image' : ''}">
                     <div class="answer-attachment-meta">
                         <span>${escapeHtml(name)}</span>
                         ${downloadUrl !== '#' ? `<a class="btn btn-outline btn-sm" href="${downloadUrl}" target="_blank" rel="noopener">${actionText}</a>` : ''}
                     </div>
-                    ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(name)}">` : '<div class="text-muted text-sm">该附件可在下方附件区预览或下载。</div>'}
+                    ${imageUrl
+                        ? `<button type="button" class="answer-attachment-thumb" data-ls-lightbox data-ls-lightbox-group="${groupId}" data-ls-lightbox-src="${escapeHtml(previewUrl)}" data-ls-lightbox-original="${escapeHtml(downloadUrl)}" data-ls-lightbox-title="${escapeHtml(name)}" title="点击查看大图"><img src="${escapeHtml(thumbUrl)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async"></button>`
+                        : '<div class="text-muted text-sm">该附件可在下方附件区预览或下载。</div>'}
                 </div>`;
             }).join('')}
         </div>`;

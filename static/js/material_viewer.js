@@ -1,6 +1,7 @@
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
+import { openImageLightbox as openSharedImageLightbox } from './ls_image_lightbox.js';
 import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
 
 const material = window.MATERIAL_VIEWER || {};
@@ -10,15 +11,6 @@ const viewerAssets = window.MATERIAL_VIEWER_ASSETS || {};
 const contentEl = document.getElementById('viewer-content');
 const tocEl = document.getElementById('viewer-toc');
 const tocCountEl = document.getElementById('viewer-toc-count');
-const lightboxEl = document.getElementById('viewer-image-lightbox');
-const lightboxStageEl = document.getElementById('viewer-image-lightbox-stage');
-const lightboxImgEl = document.getElementById('viewer-image-lightbox-img');
-const lightboxTitleEl = document.getElementById('viewer-image-lightbox-title');
-const lightboxScaleEl = document.getElementById('viewer-image-lightbox-scale');
-const zoomOutBtn = document.getElementById('viewer-image-zoom-out-btn');
-const zoomInBtn = document.getElementById('viewer-image-zoom-in-btn');
-const fullscreenBtn = document.getElementById('viewer-image-fullscreen-btn');
-const closeBtn = document.getElementById('viewer-image-close-btn');
 const editSourceBtn = document.getElementById('viewer-edit-source-btn');
 const editorBackdropEl = document.getElementById('viewer-source-editor');
 const editorEncodingEl = document.getElementById('viewer-editor-encoding');
@@ -26,33 +18,7 @@ const editorTextareaEl = document.getElementById('viewer-editor-textarea');
 const editorSaveBtn = document.getElementById('viewer-editor-save-btn');
 const editorCancelBtn = document.getElementById('viewer-editor-cancel-btn');
 
-const LIGHTBOX_ZOOM_FACTOR = 1.2;
-const LIGHTBOX_EPSILON = 0.01;
 const MASTERY_SKIP_STORAGE_PREFIX = 'material-mastery-check-skipped';
-
-const lightboxState = {
-    scale: 1,
-    fitScale: 1,
-    maxScale: 4,
-    src: '',
-    title: '',
-    naturalWidth: 0,
-    naturalHeight: 0,
-    stageWidth: 0,
-    stageHeight: 0,
-    left: 0,
-    top: 0,
-    loaded: false,
-    clickZoomEnabled: false,
-    dragging: false,
-    dragMoved: false,
-    dragPointerId: null,
-    dragStartX: 0,
-    dragStartY: 0,
-    dragLeft: 0,
-    dragTop: 0,
-    suppressClick: false,
-};
 
 const masteryCheckState = {
     check: normalizeMasteryCheck(material.mastery_check),
@@ -64,8 +30,6 @@ const masteryCheckState = {
     returnFocusEl: null,
 };
 
-let lightboxSyncFrame = null;
-let stageResizeObserver = null;
 let editorLoadingPromise = null;
 let editorLoaded = false;
 let editorEncoding = material.content_encoding || 'utf-8';
@@ -558,19 +522,6 @@ function slugify(text) {
         .replace(/^-+|-+$/g, '') || 'section';
 }
 
-function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-}
-
-function nearlyEqual(a, b, epsilon = LIGHTBOX_EPSILON) {
-    return Math.abs(a - b) <= epsilon;
-}
-
-function updateFullscreenButton() {
-    if (!fullscreenBtn) return;
-    fullscreenBtn.textContent = document.fullscreenElement ? '\u9000\u51fa\u5168\u5c4f' : '\u5168\u5c4f';
-}
-
 function getImageTitle(source, fallbackTitle = '\u56fe\u7247\u9884\u89c8') {
     if (!source) return fallbackTitle;
     try {
@@ -579,428 +530,6 @@ function getImageTitle(source, fallbackTitle = '\u56fe\u7247\u9884\u89c8') {
         return fileName || fallbackTitle;
     } catch {
         return fallbackTitle;
-    }
-}
-
-function getStageMetrics() {
-    if (!lightboxStageEl) {
-        return { width: 0, height: 0 };
-    }
-
-    return {
-        width: lightboxStageEl.clientWidth,
-        height: lightboxStageEl.clientHeight,
-    };
-}
-
-function getRenderedWidth(scale = lightboxState.scale) {
-    return lightboxState.naturalWidth * scale;
-}
-
-function getRenderedHeight(scale = lightboxState.scale) {
-    return lightboxState.naturalHeight * scale;
-}
-
-function getCenteredOffsets(scale = lightboxState.scale) {
-    return {
-        left: (lightboxState.stageWidth - getRenderedWidth(scale)) / 2,
-        top: (lightboxState.stageHeight - getRenderedHeight(scale)) / 2,
-    };
-}
-
-function clampLightboxOffsets(left, top, scale = lightboxState.scale) {
-    const renderedWidth = getRenderedWidth(scale);
-    const renderedHeight = getRenderedHeight(scale);
-
-    if (renderedWidth <= lightboxState.stageWidth + LIGHTBOX_EPSILON) {
-        left = (lightboxState.stageWidth - renderedWidth) / 2;
-    } else {
-        left = clamp(left, lightboxState.stageWidth - renderedWidth, 0);
-    }
-
-    if (renderedHeight <= lightboxState.stageHeight + LIGHTBOX_EPSILON) {
-        top = (lightboxState.stageHeight - renderedHeight) / 2;
-    } else {
-        top = clamp(top, lightboxState.stageHeight - renderedHeight, 0);
-    }
-
-    return { left, top };
-}
-
-function isStageReady() {
-    return Boolean(
-        lightboxState.loaded
-        && lightboxState.naturalWidth
-        && lightboxState.naturalHeight
-        && lightboxState.stageWidth
-        && lightboxState.stageHeight
-    );
-}
-
-function isPannable(scale = lightboxState.scale) {
-    return (
-        getRenderedWidth(scale) > lightboxState.stageWidth + LIGHTBOX_EPSILON
-        || getRenderedHeight(scale) > lightboxState.stageHeight + LIGHTBOX_EPSILON
-    );
-}
-
-function isAtFitView() {
-    if (!isStageReady()) return true;
-    const centered = getCenteredOffsets(lightboxState.fitScale);
-    return (
-        nearlyEqual(lightboxState.scale, lightboxState.fitScale)
-        && nearlyEqual(lightboxState.left, centered.left, 0.5)
-        && nearlyEqual(lightboxState.top, centered.top, 0.5)
-    );
-}
-
-function updateLightboxScaleLabel() {
-    if (!lightboxScaleEl) return;
-    lightboxScaleEl.textContent = `${Math.round(lightboxState.scale * 100)}%`;
-}
-
-function updateLightboxButtons() {
-    if (zoomOutBtn) {
-        zoomOutBtn.disabled = !isStageReady() || lightboxState.scale <= lightboxState.fitScale + LIGHTBOX_EPSILON;
-    }
-    if (zoomInBtn) {
-        zoomInBtn.disabled = !isStageReady() || lightboxState.scale >= lightboxState.maxScale - LIGHTBOX_EPSILON;
-    }
-}
-
-function updateLightboxStageState() {
-    if (!lightboxStageEl) return;
-
-    lightboxStageEl.classList.toggle('is-pannable', isPannable());
-    lightboxStageEl.classList.toggle('is-zoomable', lightboxState.clickZoomEnabled && isAtFitView());
-    lightboxStageEl.classList.toggle('is-zoomed', lightboxState.clickZoomEnabled && !isAtFitView());
-    lightboxStageEl.classList.toggle('is-dragging', lightboxState.dragging);
-}
-
-function renderLightboxImage() {
-    if (!lightboxImgEl || !isStageReady()) {
-        updateLightboxScaleLabel();
-        updateLightboxButtons();
-        updateLightboxStageState();
-        return;
-    }
-
-    const clampedOffsets = clampLightboxOffsets(lightboxState.left, lightboxState.top, lightboxState.scale);
-    lightboxState.left = clampedOffsets.left;
-    lightboxState.top = clampedOffsets.top;
-
-    lightboxImgEl.style.width = `${lightboxState.naturalWidth}px`;
-    lightboxImgEl.style.height = `${lightboxState.naturalHeight}px`;
-    lightboxImgEl.style.transform = `translate3d(${lightboxState.left}px, ${lightboxState.top}px, 0) scale(${lightboxState.scale})`;
-
-    updateLightboxScaleLabel();
-    updateLightboxButtons();
-    updateLightboxStageState();
-}
-
-function resetLightboxView() {
-    if (!isStageReady()) return;
-    const centered = getCenteredOffsets(lightboxState.fitScale);
-    lightboxState.scale = lightboxState.fitScale;
-    lightboxState.left = centered.left;
-    lightboxState.top = centered.top;
-    renderLightboxImage();
-}
-
-function setLightboxView(nextScale, options = {}) {
-    if (!isStageReady()) return;
-
-    const targetScale = clamp(nextScale, lightboxState.fitScale, lightboxState.maxScale);
-    let nextLeft = options.left;
-    let nextTop = options.top;
-
-    if (typeof options.clientX === 'number' && typeof options.clientY === 'number') {
-        const stageRect = lightboxStageEl.getBoundingClientRect();
-        const focalX = clamp(options.clientX - stageRect.left, 0, lightboxState.stageWidth);
-        const focalY = clamp(options.clientY - stageRect.top, 0, lightboxState.stageHeight);
-        const naturalX = (focalX - lightboxState.left) / lightboxState.scale;
-        const naturalY = (focalY - lightboxState.top) / lightboxState.scale;
-        nextLeft = focalX - (naturalX * targetScale);
-        nextTop = focalY - (naturalY * targetScale);
-    } else if (typeof nextLeft !== 'number' || typeof nextTop !== 'number') {
-        const centerNaturalX = (lightboxState.stageWidth / 2 - lightboxState.left) / lightboxState.scale;
-        const centerNaturalY = (lightboxState.stageHeight / 2 - lightboxState.top) / lightboxState.scale;
-        nextLeft = lightboxState.stageWidth / 2 - (centerNaturalX * targetScale);
-        nextTop = lightboxState.stageHeight / 2 - (centerNaturalY * targetScale);
-    }
-
-    lightboxState.scale = targetScale;
-    lightboxState.left = nextLeft;
-    lightboxState.top = nextTop;
-    renderLightboxImage();
-}
-
-function zoomLightboxByFactor(factor, options = {}) {
-    setLightboxView(lightboxState.scale * factor, options);
-}
-
-function zoomLightboxToActualSize(event) {
-    if (!lightboxState.clickZoomEnabled || !isStageReady() || !lightboxImgEl) return;
-
-    if (!isAtFitView()) {
-        resetLightboxView();
-        return;
-    }
-
-    const imageRect = lightboxImgEl.getBoundingClientRect();
-    if (!imageRect.width || !imageRect.height) return;
-
-    const relativeX = clamp((event.clientX - imageRect.left) / imageRect.width, 0, 1);
-    const relativeY = clamp((event.clientY - imageRect.top) / imageRect.height, 0, 1);
-    const targetScale = clamp(1, lightboxState.fitScale, lightboxState.maxScale);
-
-    setLightboxView(targetScale, {
-        left: lightboxState.stageWidth / 2 - (relativeX * lightboxState.naturalWidth * targetScale),
-        top: lightboxState.stageHeight / 2 - (relativeY * lightboxState.naturalHeight * targetScale),
-    });
-}
-
-function clearLightboxDragState() {
-    lightboxState.dragging = false;
-    lightboxState.dragMoved = false;
-    lightboxState.dragPointerId = null;
-    updateLightboxStageState();
-}
-
-function finishLightboxDrag(event) {
-    if (lightboxState.dragPointerId !== null && event?.pointerId !== lightboxState.dragPointerId) {
-        return;
-    }
-
-    if (lightboxState.dragMoved) {
-        lightboxState.suppressClick = true;
-    }
-
-    try {
-        if (event && lightboxImgEl?.hasPointerCapture?.(event.pointerId)) {
-            lightboxImgEl.releasePointerCapture(event.pointerId);
-        }
-    } catch {
-        // Ignore pointer capture release errors.
-    }
-
-    clearLightboxDragState();
-}
-
-function handleLightboxPointerDown(event) {
-    if (event.button !== 0 || !isPannable() || !lightboxImgEl) return;
-
-    lightboxState.dragging = true;
-    lightboxState.dragMoved = false;
-    lightboxState.dragPointerId = event.pointerId;
-    lightboxState.dragStartX = event.clientX;
-    lightboxState.dragStartY = event.clientY;
-    lightboxState.dragLeft = lightboxState.left;
-    lightboxState.dragTop = lightboxState.top;
-
-    try {
-        lightboxImgEl.setPointerCapture(event.pointerId);
-    } catch {
-        // Pointer capture is optional.
-    }
-
-    updateLightboxStageState();
-    event.preventDefault();
-}
-
-function handleLightboxPointerMove(event) {
-    if (!lightboxState.dragging || event.pointerId !== lightboxState.dragPointerId) return;
-
-    const deltaX = event.clientX - lightboxState.dragStartX;
-    const deltaY = event.clientY - lightboxState.dragStartY;
-
-    if (!lightboxState.dragMoved && Math.hypot(deltaX, deltaY) > 4) {
-        lightboxState.dragMoved = true;
-    }
-
-    const clampedOffsets = clampLightboxOffsets(
-        lightboxState.dragLeft + deltaX,
-        lightboxState.dragTop + deltaY,
-        lightboxState.scale
-    );
-    lightboxState.left = clampedOffsets.left;
-    lightboxState.top = clampedOffsets.top;
-    renderLightboxImage();
-    event.preventDefault();
-}
-
-function handleLightboxPointerUp(event) {
-    finishLightboxDrag(event);
-}
-
-function computeFitScale(stageWidth, stageHeight) {
-    if (!stageWidth || !stageHeight || !lightboxState.naturalWidth || !lightboxState.naturalHeight) {
-        return 1;
-    }
-
-    const scale = Math.min(stageWidth / lightboxState.naturalWidth, stageHeight / lightboxState.naturalHeight);
-    return Number.isFinite(scale) && scale > 0 ? scale : 1;
-}
-
-function syncLightboxLayout() {
-    if (lightboxEl?.hidden || !lightboxState.loaded) return;
-
-    const previousStageWidth = lightboxState.stageWidth;
-    const previousStageHeight = lightboxState.stageHeight;
-    const previousScale = lightboxState.scale;
-    const previousFitScale = lightboxState.fitScale;
-    const previousLeft = lightboxState.left;
-    const previousTop = lightboxState.top;
-
-    const metrics = getStageMetrics();
-    lightboxState.stageWidth = metrics.width;
-    lightboxState.stageHeight = metrics.height;
-
-    if (!lightboxState.stageWidth || !lightboxState.stageHeight) return;
-
-    lightboxState.fitScale = computeFitScale(lightboxState.stageWidth, lightboxState.stageHeight);
-    lightboxState.maxScale = Math.max(4, lightboxState.fitScale * 2, 1);
-    lightboxState.clickZoomEnabled = lightboxState.fitScale < 1 - LIGHTBOX_EPSILON;
-
-    if (!previousStageWidth || !previousStageHeight || nearlyEqual(previousScale, previousFitScale)) {
-        resetLightboxView();
-        return;
-    }
-
-    const targetScale = clamp(previousScale, lightboxState.fitScale, lightboxState.maxScale);
-    const centerNaturalX = (previousStageWidth / 2 - previousLeft) / previousScale;
-    const centerNaturalY = (previousStageHeight / 2 - previousTop) / previousScale;
-
-    lightboxState.scale = targetScale;
-    lightboxState.left = lightboxState.stageWidth / 2 - (centerNaturalX * targetScale);
-    lightboxState.top = lightboxState.stageHeight / 2 - (centerNaturalY * targetScale);
-    renderLightboxImage();
-}
-
-function queueLightboxLayoutSync() {
-    if (lightboxSyncFrame !== null) return;
-
-    lightboxSyncFrame = window.requestAnimationFrame(() => {
-        lightboxSyncFrame = null;
-        syncLightboxLayout();
-    });
-}
-
-function handleLightboxImageLoaded(expectedSource) {
-    if (!lightboxImgEl || lightboxState.src !== expectedSource) return;
-
-    lightboxState.loaded = true;
-    lightboxState.naturalWidth = lightboxImgEl.naturalWidth || 1;
-    lightboxState.naturalHeight = lightboxImgEl.naturalHeight || 1;
-    queueLightboxLayoutSync();
-}
-
-function openImageLightbox(source, title = '\u56fe\u7247\u9884\u89c8') {
-    if (!lightboxEl || !lightboxImgEl || !source) return;
-
-    lightboxState.src = source;
-    lightboxState.title = title || getImageTitle(source);
-    lightboxState.loaded = false;
-    lightboxState.naturalWidth = 0;
-    lightboxState.naturalHeight = 0;
-    lightboxState.stageWidth = 0;
-    lightboxState.stageHeight = 0;
-    lightboxState.scale = 1;
-    lightboxState.fitScale = 1;
-    lightboxState.maxScale = 4;
-    lightboxState.left = 0;
-    lightboxState.top = 0;
-    lightboxState.clickZoomEnabled = false;
-    lightboxState.suppressClick = false;
-    clearLightboxDragState();
-
-    if (lightboxTitleEl) {
-        lightboxTitleEl.textContent = lightboxState.title;
-    }
-
-    lightboxImgEl.alt = lightboxState.title;
-    lightboxImgEl.draggable = false;
-    lightboxImgEl.style.transform = '';
-    lightboxImgEl.style.width = '';
-    lightboxImgEl.style.height = '';
-
-    lightboxEl.hidden = false;
-    lightboxEl.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
-    updateLightboxScaleLabel();
-    updateLightboxButtons();
-    updateLightboxStageState();
-    updateFullscreenButton();
-
-    const onLoad = () => {
-        if (lightboxState.loaded && lightboxState.src === source) return;
-        handleLightboxImageLoaded(source);
-    };
-
-    lightboxImgEl.addEventListener('load', onLoad, { once: true });
-    lightboxImgEl.src = source;
-
-    if (lightboxImgEl.complete && lightboxImgEl.naturalWidth) {
-        window.requestAnimationFrame(onLoad);
-    }
-
-    closeBtn?.focus();
-}
-
-function closeImageLightbox() {
-    if (!lightboxEl || !lightboxImgEl) return;
-
-    if (lightboxSyncFrame !== null) {
-        window.cancelAnimationFrame(lightboxSyncFrame);
-        lightboxSyncFrame = null;
-    }
-
-    if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-    }
-
-    clearLightboxDragState();
-    lightboxEl.hidden = true;
-    lightboxEl.setAttribute('aria-hidden', 'true');
-    lightboxImgEl.removeAttribute('src');
-    lightboxImgEl.style.transform = '';
-    lightboxImgEl.style.width = '';
-    lightboxImgEl.style.height = '';
-    document.body.style.overflow = '';
-
-    lightboxState.src = '';
-    lightboxState.title = '';
-    lightboxState.loaded = false;
-    lightboxState.naturalWidth = 0;
-    lightboxState.naturalHeight = 0;
-    lightboxState.stageWidth = 0;
-    lightboxState.stageHeight = 0;
-    lightboxState.scale = 1;
-    lightboxState.fitScale = 1;
-    lightboxState.maxScale = 4;
-    lightboxState.left = 0;
-    lightboxState.top = 0;
-    lightboxState.clickZoomEnabled = false;
-    lightboxState.suppressClick = false;
-
-    updateLightboxScaleLabel();
-    updateLightboxButtons();
-    updateLightboxStageState();
-}
-
-async function toggleImageFullscreen() {
-    if (!lightboxEl) return;
-    try {
-        if (document.fullscreenElement) {
-            await document.exitFullscreen();
-        } else {
-            await lightboxEl.requestFullscreen();
-        }
-    } catch (error) {
-        console.error('Fullscreen toggle failed:', error);
-    } finally {
-        updateFullscreenButton();
-        queueLightboxLayoutSync();
     }
 }
 
@@ -1162,9 +691,33 @@ function decorateCodeBlocks() {
     });
 }
 
-function bindImageLightbox() {
-    if (!contentEl || !lightboxEl || !lightboxStageEl || !lightboxImgEl) return;
+/* ---------- image lightbox: delegated to the shared liquid-glass module ---------- */
 
+function lightboxItemFromImage(image) {
+    const parentAnchor = image.closest('a[href]');
+    const source = parentAnchor && isImageUrl(parentAnchor.href) ? parentAnchor.href : (image.currentSrc || image.src);
+    return {
+        src: source,
+        originalSrc: source,
+        title: image.dataset.lightboxTitle || image.alt || getImageTitle(source),
+    };
+}
+
+/** Open the shared lightbox with every lightbox image of the current document as the prev/next group. */
+function openImageLightbox(source, title = '图片预览', clickedImage = null) {
+    if (!source) return;
+    const images = contentEl ? Array.from(contentEl.querySelectorAll('img[data-lightbox-image="true"]')) : [];
+    const items = images.map(lightboxItemFromImage);
+    let index = clickedImage ? images.indexOf(clickedImage) : items.findIndex((item) => item.src === source);
+    if (index < 0) {
+        items.unshift({ src: source, originalSrc: source, title: title || getImageTitle(source) });
+        index = 0;
+    }
+    openSharedImageLightbox({ items, index, groupLabel: material?.name || '' });
+}
+
+function bindImageLightbox() {
+    if (!contentEl) return;
     contentEl.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
         if (anchor && isImageUrl(anchor.href)) {
@@ -1175,108 +728,20 @@ function bindImageLightbox() {
                 || linkedImage?.alt
                 || anchor.textContent.trim()
                 || getImageTitle(anchor.href);
-            openImageLightbox(anchor.href, title);
+            openImageLightbox(anchor.href, title, linkedImage);
             return;
         }
 
         const image = event.target.closest('img[data-lightbox-image="true"]');
         if (!image) return;
+        // Declarative hooks (data-ls-lightbox) are handled by the shared module's own delegation.
+        if (image.hasAttribute('data-ls-lightbox')) return;
         event.preventDefault();
         const parentAnchor = image.closest('a[href]');
         const source = parentAnchor && isImageUrl(parentAnchor.href) ? parentAnchor.href : (image.currentSrc || image.src);
         const title = image.dataset.lightboxTitle || image.alt || getImageTitle(source);
-        openImageLightbox(source, title);
+        openImageLightbox(source, title, image);
     });
-
-    zoomOutBtn?.addEventListener('click', () => zoomLightboxByFactor(1 / LIGHTBOX_ZOOM_FACTOR));
-    zoomInBtn?.addEventListener('click', () => zoomLightboxByFactor(LIGHTBOX_ZOOM_FACTOR));
-    fullscreenBtn?.addEventListener('click', () => toggleImageFullscreen());
-    closeBtn?.addEventListener('click', () => closeImageLightbox());
-
-    lightboxEl.addEventListener('click', (event) => {
-        if (event.target === lightboxEl) {
-            closeImageLightbox();
-        }
-    });
-
-    lightboxStageEl.addEventListener('click', (event) => {
-        if (lightboxState.suppressClick) {
-            lightboxState.suppressClick = false;
-            event.preventDefault();
-            return;
-        }
-
-        if (event.target === lightboxStageEl && lightboxState.clickZoomEnabled && !isAtFitView()) {
-            event.preventDefault();
-            resetLightboxView();
-        }
-    });
-
-    lightboxImgEl.addEventListener('click', (event) => {
-        if (lightboxEl.hidden) return;
-
-        if (lightboxState.suppressClick) {
-            lightboxState.suppressClick = false;
-            event.preventDefault();
-            return;
-        }
-
-        if (!lightboxState.clickZoomEnabled) return;
-
-        event.preventDefault();
-        zoomLightboxToActualSize(event);
-    });
-
-    lightboxImgEl.addEventListener('pointerdown', handleLightboxPointerDown);
-    lightboxImgEl.addEventListener('pointermove', handleLightboxPointerMove);
-    lightboxImgEl.addEventListener('pointerup', handleLightboxPointerUp);
-    lightboxImgEl.addEventListener('pointercancel', handleLightboxPointerUp);
-    lightboxImgEl.addEventListener('dragstart', (event) => event.preventDefault());
-
-    lightboxStageEl.addEventListener('wheel', (event) => {
-        if (lightboxEl.hidden || !lightboxState.loaded) return;
-        event.preventDefault();
-        const factor = event.deltaY > 0 ? (1 / LIGHTBOX_ZOOM_FACTOR) : LIGHTBOX_ZOOM_FACTOR;
-        zoomLightboxByFactor(factor, { clientX: event.clientX, clientY: event.clientY });
-    }, { passive: false });
-
-    document.addEventListener('keydown', (event) => {
-        if (lightboxEl.hidden) return;
-
-        if (event.key === 'Escape') {
-            closeImageLightbox();
-            return;
-        }
-
-        if (event.key === '+' || event.key === '=' || event.key === 'Add') {
-            event.preventDefault();
-            zoomLightboxByFactor(LIGHTBOX_ZOOM_FACTOR);
-            return;
-        }
-
-        if (event.key === '-' || event.key === '_' || event.key === 'Subtract') {
-            event.preventDefault();
-            zoomLightboxByFactor(1 / LIGHTBOX_ZOOM_FACTOR);
-            return;
-        }
-
-        if (event.key === '0') {
-            event.preventDefault();
-            resetLightboxView();
-        }
-    });
-
-    document.addEventListener('fullscreenchange', () => {
-        updateFullscreenButton();
-        queueLightboxLayoutSync();
-    });
-
-    window.addEventListener('resize', () => queueLightboxLayoutSync());
-
-    if (window.ResizeObserver && !stageResizeObserver) {
-        stageResizeObserver = new ResizeObserver(() => queueLightboxLayoutSync());
-        stageResizeObserver.observe(lightboxStageEl);
-    }
 }
 
 async function renderMermaidBlocks() {

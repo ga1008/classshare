@@ -313,7 +313,7 @@ export async function renderFilePreview({
     if (currentFile.is_image) {
         contentEl.innerHTML = `
             <div class="materials-image-preview">
-                <img src="${escapeHtml(currentFile.raw_url || '')}" alt="${escapeHtml(currentFile.name || currentFile.display_name || 'image')}" data-lightbox-image="true" data-lightbox-title="${escapeHtml(currentFile.name || currentFile.display_name || '')}">
+                <img src="${escapeHtml(currentFile.raw_url || '')}" alt="${escapeHtml(currentFile.name || currentFile.display_name || 'image')}" data-lightbox-image="true" data-lightbox-title="${escapeHtml(currentFile.name || currentFile.display_name || '')}" data-ls-lightbox data-ls-lightbox-src="${escapeHtml(currentFile.image_preview_url || currentFile.raw_url || '')}" data-ls-lightbox-original="${escapeHtml(currentFile.download_url || currentFile.raw_url || '')}" data-ls-lightbox-title="${escapeHtml(currentFile.name || currentFile.display_name || '')}" style="cursor: zoom-in;">
             </div>
         `;
         setTocEmpty(tocEl, tocCountEl, '图片材料没有标题目录。');

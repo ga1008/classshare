@@ -717,6 +717,23 @@ class BlogCenter {
             return;
         }
 
+        // Pictures inside a post body or a comment open in the shared lightbox;
+        // prev/next stays within that post / comment. Covers, avatars and custom
+        // emoji are excluded.
+        const contentImage = event.target.closest('.blog-detail__body img, .blog-comment__content img, .blog-comment-media-chip--image img');
+        if (contentImage && !contentImage.closest('a[href]') && (contentImage.currentSrc || contentImage.src)) {
+            event.preventDefault();
+            const scope = contentImage.closest('.blog-detail__body, .blog-comment__body, .blog-comment') || contentImage.parentElement;
+            const images = Array.from(scope.querySelectorAll('.blog-detail__body img, .blog-comment__content img, .blog-comment-media-chip--image img'))
+                .filter((node) => node.currentSrc || node.src);
+            const items = images.map((node) => ({ src: node.currentSrc || node.src, title: node.alt || '图片' }));
+            const index = Math.max(0, images.indexOf(contentImage));
+            import('./ls_image_lightbox.js')
+                .then((mod) => mod.openImageLightbox({ items, index, groupLabel: contentImage.closest('.blog-detail__body') ? '文章图片' : '评论图片' }))
+                .catch((error) => console.warn('[blog] lightbox unavailable', error));
+            return;
+        }
+
         const internalPostLink = event.target.closest('.blog-detail__body a[href]');
         if (internalPostLink) {
             const targetUrl = new URL(internalPostLink.href, window.location.origin);
