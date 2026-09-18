@@ -363,6 +363,20 @@
         color: #dc2626;
         background: rgba(254, 226, 226, 0.9);
     }
+    .answer-autosave-status {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        background: rgba(148, 163, 184, 0.14);
+        color: var(--text-muted);
+        transition: background 0.2s, color 0.2s;
+    }
+    .answer-autosave-status[data-tone="saved"] { background: rgba(16, 185, 129, 0.14); color: #047857; }
+    .answer-autosave-status[data-tone="syncing"] { background: rgba(59, 130, 246, 0.14); color: #1d4ed8; }
+    .answer-autosave-status[data-tone="warning"] { background: rgba(245, 158, 11, 0.16); color: #b45309; }
     .submit-action-bar {
         background: var(--bg-color);
         padding: var(--spacing-md) var(--spacing-lg);
@@ -560,7 +574,7 @@
         <div class="file-chips" id="file-chips"></div>
     </div>
     <div class="submit-action-bar">
-        <span class="text-sm text-muted">{{ action_hint }}</span>
+        <span class="text-sm text-muted">{{ action_hint }} <span id="answer-autosave-status" class="answer-autosave-status" aria-live="polite" data-tone="">作答自动保存，换设备可继续</span></span>
         <button class="btn btn-primary btn-lg" id="submit-btn" data-testid="p03-submit-assignment" onclick="submitAnswers()">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             {{ button_text }}
@@ -1045,6 +1059,229 @@
                 </div>
             `;
         }
+        initAnswerAutosave();
+    }
+
+    /* ------------------------------------------------------------
+     * Text answers are saved automatically: to localStorage on every
+     * keystroke (debounced) and to the server draft a few seconds later,
+     * so a student can leave the classroom and continue on any device.
+     * ------------------------------------------------------------ */
+    const LOCAL_ANSWER_DRAFT_KEY = `assignment_draft_${ASSIGNMENT_ID}_${SUBMISSION_VERSION}`;
+    const ANSWER_LOCAL_SAVE_DELAY_MS = 300;
+    const ANSWER_SERVER_SAVE_DELAY_MS = 5000;
+    let answerLocalTimer = null;
+    let answerServerTimer = null;
+    let answerLocalSavedAt = '';
+    let lastServerAnswersSignature = '';
+    let answerAutosaveBound = false;
+
+    function collectAnswers() {
+        return Array.from(document.querySelectorAll('.answer-textarea')).map((ta) => ({
+            question: ta.dataset.question || 'Answer',
+            answer: ta.value.trim(),
+        }));
+    }
+
+    function answersJsonString(list) {
+        return JSON.stringify({ answers: list || collectAnswers() });
+    }
+
+    function answersHaveContent(list) {
+        return (list || []).some((item) => String(item?.answer || '').trim());
+    }
+
+    function formatClock(iso) {
+        const date = iso ? new Date(iso) : new Date();
+        if (Number.isNaN(date.getTime())) return '';
+        return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function setAutosaveStatus(text, tone = '') {
+        const el = document.getElementById('answer-autosave-status');
+        if (!el) return;
+        el.textContent = text;
+        el.dataset.tone = tone;
+    }
+
+    function parseDraftAnswers(raw) {
+        if (!raw) return [];
+        try {
+            const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            const list = Array.isArray(data) ? data : (Array.isArray(data?.answers) ? data.answers : []);
+            return list
+                .filter((item) => item && typeof item === 'object')
+                .map((item) => ({ question: String(item.question ?? item.question_id ?? ''), answer: String(item.answer ?? item.content ?? item.text ?? '') }));
+        } catch {
+            return [];
+        }
+    }
+
+    /** Fill the textareas from a saved answer list (match by question text, fall back to position). */
+    function applyDraftAnswers(list) {
+        const textareas = Array.from(document.querySelectorAll('.answer-textarea'));
+        if (!textareas.length || !list?.length) return 0;
+        let applied = 0;
+        const byQuestion = new Map(list.map((item) => [item.question, item.answer]));
+        textareas.forEach((ta, index) => {
+            let value = byQuestion.get(ta.dataset.question || '');
+            if (value === undefined && list.length === textareas.length) value = list[index]?.answer;
+            if (value === undefined || value === ta.value) return;
+            ta.value = value;
+            applied += 1;
+        });
+        return applied;
+    }
+
+    function saveLocalAnswerDraft() {
+        const answers = collectAnswers();
+        const savedAt = new Date().toISOString();
+        try {
+            if (answersHaveContent(answers)) {
+                localStorage.setItem(LOCAL_ANSWER_DRAFT_KEY, JSON.stringify({ answers, savedAt }));
+            } else {
+                localStorage.removeItem(LOCAL_ANSWER_DRAFT_KEY);
+            }
+        } catch (error) {
+            console.warn('[assignment] local draft unavailable', error);
+        }
+        answerLocalSavedAt = savedAt;
+        setAutosaveStatus(`已自动保存 ${formatClock(savedAt)}，正在同步到服务器…`, 'syncing');
+    }
+
+    function readLocalAnswerDraft() {
+        try {
+            const raw = localStorage.getItem(LOCAL_ANSWER_DRAFT_KEY);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            const answers = parseDraftAnswers(data?.answers ? { answers: data.answers } : data);
+            return answersHaveContent(answers) ? { answers, savedAt: String(data?.savedAt || '') } : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function clearLocalAnswerDraft() {
+        try { localStorage.removeItem(LOCAL_ANSWER_DRAFT_KEY); } catch {}
+    }
+
+    function scheduleAnswerServerSave(delay = ANSWER_SERVER_SAVE_DELAY_MS) {
+        clearTimeout(answerServerTimer);
+        answerServerTimer = setTimeout(() => {
+            draftSyncChain = draftSyncChain.catch(() => null).then(() => saveAnswersToServer());
+        }, delay);
+    }
+
+    function buildAnswerDraftFormData(answersJson) {
+        const formData = new FormData();
+        formData.append('manifest', '[]');
+        formData.append('answers_json', answersJson);
+        formData.append('current_page', '0');
+        formData.append('client_updated_at', answerLocalSavedAt || new Date().toISOString());
+        formData.append('replace_question_ids', '[]');
+        formData.append('expected_submission_version', SUBMISSION_VERSION);
+        return formData;
+    }
+
+    async function saveAnswersToServer() {
+        if (!document.querySelector('.answer-textarea')) return null;
+        const answersJson = answersJsonString();
+        if (answersJson === lastServerAnswersSignature) {
+            setAutosaveStatus(`已同步到服务器 ${formatClock(answerLocalSavedAt)}`, 'saved');
+            return null;
+        }
+        try {
+            const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'POST', body: buildAnswerDraftFormData(answersJson) });
+            if (!response.ok) {
+                let payload = {};
+                try { payload = await response.json(); } catch {}
+                const detail = payload?.detail;
+                const message = (detail && typeof detail === 'object') ? detail.message : detail;
+                if (response.status === 409) {
+                    setAutosaveStatus('提交状态已变化，本机草稿仍在，请刷新页面核对', 'warning');
+                } else {
+                    setAutosaveStatus(`服务器同步失败（${message || response.status}），本机草稿仍在`, 'warning');
+                }
+                return null;
+            }
+            lastServerAnswersSignature = answersJson;
+            setAutosaveStatus(`已同步到服务器 ${formatClock()}`, 'saved');
+            return true;
+        } catch (error) {
+            setAutosaveStatus('网络异常，服务器同步失败，本机草稿仍在', 'warning');
+            return null;
+        }
+    }
+
+    /** Best-effort flush when the tab is being hidden or closed. */
+    function flushAnswerDraftOnLeave() {
+        if (!document.querySelector('.answer-textarea')) return;
+        clearTimeout(answerLocalTimer);
+        saveLocalAnswerDraft();
+        const answersJson = answersJsonString();
+        if (answersJson === lastServerAnswersSignature) return;
+        clearTimeout(answerServerTimer);
+        if (navigator.sendBeacon) {
+            try {
+                if (navigator.sendBeacon(`/api/assignments/${ASSIGNMENT_ID}/draft`, buildAnswerDraftFormData(answersJson))) {
+                    lastServerAnswersSignature = answersJson;
+                }
+            } catch {}
+        }
+    }
+
+    function initAnswerAutosave() {
+        const area = document.getElementById('answer-area');
+        if (!area || answerAutosaveBound) return;
+        answerAutosaveBound = true;
+        area.addEventListener('input', (event) => {
+            if (!event.target.classList?.contains('answer-textarea')) return;
+            clearTimeout(answerLocalTimer);
+            answerLocalTimer = setTimeout(saveLocalAnswerDraft, ANSWER_LOCAL_SAVE_DELAY_MS);
+            scheduleAnswerServerSave();
+        });
+        window.addEventListener('pagehide', flushAnswerDraftOnLeave);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushAnswerDraftOnLeave();
+        });
+        const local = readLocalAnswerDraft();
+        if (local) {
+            const applied = applyDraftAnswers(local.answers);
+            answerLocalSavedAt = local.savedAt;
+            if (applied) setAutosaveStatus(`已恢复本机草稿（${formatClock(local.savedAt)}）`, 'saved');
+        }
+    }
+
+    /** Server draft (answers + attachments) wins when it is newer than the local copy. */
+    function restoreServerAnswers(draft) {
+        if (!draft?.exists) {
+            if (readLocalAnswerDraft()) scheduleAnswerServerSave(1200);
+            return;
+        }
+        const serverAnswers = parseDraftAnswers(draft.answers_json);
+        const serverTime = Date.parse(draft.server_updated_at || '') || 0;
+        const localTime = Date.parse(answerLocalSavedAt || '') || 0;
+        if (answersHaveContent(serverAnswers) && serverTime >= localTime) {
+            const applied = applyDraftAnswers(serverAnswers);
+            lastServerAnswersSignature = answersJsonString(collectAnswers());
+            saveLocalAnswerDraftSilently();
+            if (applied) {
+                showToast('已恢复服务器自动保存的作答，可以继续作答。', 'success');
+            }
+            setAutosaveStatus(`已同步到服务器 ${formatClock(draft.server_updated_at)}`, 'saved');
+        } else if (answersHaveContent(collectAnswers())) {
+            // Local copy is newer: push it up.
+            scheduleAnswerServerSave(1200);
+        }
+    }
+
+    function saveLocalAnswerDraftSilently() {
+        const answers = collectAnswers();
+        try {
+            if (answersHaveContent(answers)) {
+                localStorage.setItem(LOCAL_ANSWER_DRAFT_KEY, JSON.stringify({ answers, savedAt: new Date().toISOString() }));
+            }
+        } catch {}
     }
 
     function extractQuestions(md) {
@@ -1184,13 +1421,17 @@
             const response = await fetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { headers: { Accept: 'application/json' } });
             if (!response.ok) return;
             const draft = await response.json();
-            if (draft?.submission_version && draft.submission_version !== SUBMISSION_VERSION) return;
+            if (draft?.submission_version && draft.submission_version !== SUBMISSION_VERSION) {
+                setAutosaveStatus('提交状态已变化，请刷新页面后继续', 'warning');
+                return;
+            }
             const files = (draft?.files || []).filter((file) => !file.kind || file.kind === 'file' || file.kind === 'question_attachment');
             if (files.length) {
                 uploadManager.addServerEntries(files, { silent: true });
                 publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
                 showToast(`已恢复 ${files.length} 个之前上传的附件。`, 'info');
             }
+            restoreServerAnswers(draft);
         } catch (error) {
             console.warn('[assignment] draft attachments unavailable', error);
         }
@@ -1215,7 +1456,9 @@
             manifest.push({ relative_path: entry.relativePath, content_type: entry.file.type || '', kind: 'file', question_id: '' });
         });
         formData.append('manifest', JSON.stringify(manifest));
-        formData.append('answers_json', '');
+        // Carry the current answers so a file upload never wipes the text draft.
+        const answersJson = answersJsonString();
+        formData.append('answers_json', answersJson);
         formData.append('current_page', '0');
         formData.append('client_updated_at', new Date().toISOString());
         formData.append('replace_question_ids', '[]');
@@ -1239,6 +1482,7 @@
             uploadManager.applyRemoteFiles(payload?.files || []);
             uploadManager.markSyncState('failed', (entry) => entry.syncState === 'syncing');
             publishAssignmentUploadSnapshot(uploadManager.getSnapshot());
+            lastServerAnswersSignature = answersJson;
             return payload;
         } catch (error) {
             uploadManager.markSyncState('failed', (entry) => entry.syncState === 'syncing');
@@ -1334,6 +1578,7 @@
 
         // Let an in-flight attachment sync finish so the server draft is consistent.
         clearTimeout(draftSyncTimer);
+        clearTimeout(answerServerTimer);
         try { await draftSyncChain; } catch {}
 
         // Files we still hold locally are sent directly (safest); attachments
@@ -1368,6 +1613,7 @@
                 ? `${droppedCount} filtered file(s) were ignored during submission.`
                 : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : '提交成功。');
             showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
+            clearLocalAnswerDraft();
             // Group assignment: prompt the teammate peer-evaluation before reload.
             if (window.openGroupPeerEval) {
                 try { await window.openGroupPeerEval(ASSIGNMENT_ID); } catch (err) {}
