@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { routeScheduleChanges, type ScheduleRouteObstacle, type ScheduleRoutePoint } from '../../../static/js/course_schedule_change_routes.js';
+import { roundedScheduleRoute, routeScheduleChanges, type ScheduleRouteObstacle, type ScheduleRoutePoint } from '../../../static/js/course_schedule_change_routes.js';
 
 type Point = ScheduleRoutePoint;
 type Rect = ScheduleRouteObstacle;
@@ -18,7 +18,14 @@ function expectSafe(points: Point[], obstacles: Rect[], width = 600, height = 40
     const a = points[i];
     expect(a.x === b.x || a.y === b.y).toBe(true);
     obstacles.forEach(box => expect(hits(a, b, box), `segment ${JSON.stringify([a, b])} crosses ${box.key}`).toBe(false));
+    expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y)).toBeGreaterThan(0.01);
+    if (i > 0) {
+      const before = points[i - 1];
+      expect((a.x - before.x) * (b.x - a.x) + (a.y - before.y) * (b.y - a.y)).toBeGreaterThanOrEqual(0);
+    }
   });
+  expect(Math.abs(points[0].x - points[1].x) + Math.abs(points[0].y - points[1].y)).toBeGreaterThanOrEqual(19.99);
+  expect(Math.abs(points.at(-1)!.x - points.at(-2)!.x) + Math.abs(points.at(-1)!.y - points.at(-2)!.y)).toBeGreaterThanOrEqual(19.99);
 }
 function shareSegment(a: Point[], b: Point[]) {
   return a.slice(1).some((a2, i) => b.slice(1).some((b2, j) => {
@@ -61,23 +68,12 @@ describe('orthogonal academic change routes', () => {
     expect(shareSegment(routes[0].points, routes[1].points)).toBe(false);
     expect(routes.map(route => route.key)).toEqual(['one', 'two']);
   });
-  it('uses an exterior upper-to-lower U route for a room change on one time card', () => {
+  it('does not invent a time destination for room-only changes on one time card', () => {
     const a = rect('same-time', 220, 100, 350, 280);
     const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a], connections: [{ key: 'room', sourceKey: a.key, targetKey: a.key, label: '教室更改' }] });
-    expectSafe(route.points, [a]);
-    expect(route.points.length).toBeGreaterThanOrEqual(4);
-    expect(onBoundary(route.points[0], a)).toBe(true);
-    expect(onBoundary(route.points.at(-1)!, a)).toBe(true);
-    expect(route.points[0].y).toBeLessThan(route.points.at(-1)!.y);
-    expect(route.sourceKey).toBe(route.targetKey);
-    expect(route.labelPlacement).toMatchObject({ vertical: true, width: 22 });
-  });
-  it('keeps the room-change caption on the exterior loop of a compact two-period card', () => {
-    const a = rect('room', 80, 150, 210, 245);
-    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a], connections: [{ key: 'room', sourceKey: a.key, targetKey: a.key, label: '教室更改' }] });
-    expectSafe(route.points, [a]);
-    expect(route.labelPlacement).not.toBeNull();
-    expect(route.points[0].y).toBeLessThan(route.points.at(-1)!.y);
+    expect(route.points).toEqual([]);
+    expect(route.reason).toBe('same_time');
+    expect(route.labelPlacement).toBeNull();
   });
   it.each(['outgoing', 'incoming'] as const)('reserves an exterior caption detour for a short %s boundary connection', direction => {
     const a = rect('near-right', 420, 80, 552, 175);
@@ -96,10 +92,12 @@ describe('orthogonal academic change routes', () => {
     const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a, b, wall], connections: [{ key: 'blocked', sourceKey: 'a', targetKey: 'b', label: '时间更改' }] });
     expect(route.points).toEqual([]);
     expect(route.labelPlacement).toBeNull();
+    expect(route.reason).toBe('no_safe_path');
   });
   it('never guesses a missing endpoint, even when another card has the same coordinates', () => {
     const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [rect('a', 80, 80, 180, 180), rect('unrelated', 360, 80, 460, 180)], connections: [{ key: 'missing', sourceKey: 'a', targetKey: 'missing', label: '时间更改' }] });
     expect(route.points).toEqual([]);
+    expect(route.reason).toBe('missing_endpoint');
   });
   it('places a full label in open space without covering a lesson, another label or another connection', () => {
     const obstacles = [rect('a', 60, 80, 150, 170), rect('b', 450, 80, 540, 170), rect('c', 60, 250, 150, 340), rect('d', 450, 250, 540, 340)];
@@ -128,5 +126,128 @@ describe('orthogonal academic change routes', () => {
     route.points.slice(1).forEach((b, i) => expect(route.points[i].x === b.x || route.points[i].y === b.y).toBe(true));
     expect(JSON.stringify(options)).toBe(snapshot);
     expect(routeScheduleChanges(options)).toEqual([route]);
+  });
+  it('prefers four edge midpoints and keeps enough straight space for arrowheads', () => {
+    const a = rect('a', 80, 80, 180, 180), b = rect('b', 410, 230, 510, 330);
+    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a, b], connections: [{ key: 'midpoints', sourceKey: 'a', targetKey: 'b', label: '时间更改' }] });
+    expectSafe(route.points, [a, b]);
+    function midpoint(point: Point, box: Rect) {
+      return ((point.x === box.left || point.x === box.right) && point.y === (box.top + box.bottom) / 2) || ((point.y === box.top || point.y === box.bottom) && point.x === (box.left + box.right) / 2);
+    }
+    expect(midpoint(route.points[0], a)).toBe(true);
+    expect(midpoint(route.points.at(-1)!, b)).toBe(true);
+  });
+  it('enters a bottom-edge destination from its top instead of hiding a reversed arrow below it', () => {
+    const a = rect('a', 390, 50, 510, 150), b = rect('b', 390, 280, 510, 396);
+    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a, b], connections: [{ key: 'bottom', sourceKey: 'a', targetKey: 'b', label: '时间更改' }] });
+    expectSafe(route.points, [a, b]);
+    expect(route.points.at(-1)).toEqual({ x: 450, y: b.top });
+    expect(route.points.at(-2)!.y).toBeLessThan(b.top);
+    expect(route.points.some(point => point.y > b.bottom)).toBe(false);
+  });
+  it('aligns a boundary entry directly with the top stub instead of adding a short reverse stair', () => {
+    const target = rect('bottom', 380, 280, 520, 396), leftNeighbor = rect('left-neighbor', 0, 280, 375, 400), rightNeighbor = rect('right-neighbor', 525, 280, 600, 400);
+    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [target, leftNeighbor, rightNeighbor], connections: [{ key: 'incoming', sourceKey: null, targetKey: 'bottom', direction: 'incoming', edge: 'left', label: '时间更改 · 来自第3周' }] });
+    expectSafe(route.points, [target, leftNeighbor, rightNeighbor]);
+    expect(route.points).toEqual([{ x: 8, y: 260 }, { x: 450, y: 260 }, { x: 450, y: 280 }]);
+  });
+  it('safely reuses unchanged paths but replans around a growing obstacle and follows changing endpoint bounds', () => {
+    const a = rect('a', 60, 80, 160, 160), b = rect('b', 420, 80, 520, 160), small = rect('animated', 250, 240, 330, 330);
+    const connection = { key: 'live', sourceKey: 'a', targetKey: 'b', label: '时间更改' };
+    const options = { width: 600, height: 400, obstacles: [a, b, small], connections: [connection] };
+    const original = routeScheduleChanges(options);
+    const stable = routeScheduleChanges({ ...options, previousRoutes: original });
+    expect(stable[0].reused).toBe(true);
+    expect(stable[0].points).toEqual(original[0].points);
+    const expanded = rect('animated', 210, 90, 390, 250);
+    const moved = routeScheduleChanges({ ...options, obstacles: [a, b, expanded], previousRoutes: stable });
+    expect(moved[0].reused).toBe(false);
+    expectSafe(moved[0].points, [a, b, expanded]);
+    expect(moved[0].points).not.toEqual(original[0].points);
+    const largerTarget = rect('b', 350, 40, 550, 260);
+    const targetGrows = routeScheduleChanges({ ...options, obstacles: [a, largerTarget, small], previousRoutes: original });
+    expect(targetGrows[0].reused).toBe(false);
+    expectSafe(targetGrows[0].points, [a, largerTarget, small]);
+    expect(onBoundary(targetGrows[0].points.at(-1)!, largerTarget)).toBe(true);
+    const shrunk = routeScheduleChanges({ ...options, previousRoutes: targetGrows });
+    expect(shrunk[0].reused).toBe(false);
+    expectSafe(shrunk[0].points, options.obstacles);
+    expect(onBoundary(shrunk[0].points.at(-1)!, b)).toBe(true);
+  });
+  it('reports a completely covered endpoint instead of drawing through the expanded foreground card', () => {
+    const a = rect('a', 60, 80, 160, 160), b = rect('b', 420, 80, 520, 160), cover = rect('expanded-other-card', 390, 50, 560, 220);
+    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a, b, cover], connections: [{ key: 'hidden', sourceKey: 'a', targetKey: 'b', label: '时间更改' }] });
+    expect(route.points).toEqual([]);
+    expect(route.reason).toBe('endpoint_occluded');
+  });
+  it.each([
+    ['opening', 534.953125, 796.859375, 403.1514601089842, 546.1104213656959],
+    ['closing', 535.5, 796.296875, 403.1827182179285, 546.0791632567516],
+  ] as const)('retains the %s animation-frame route when neighboring channels differ by 0.01px', (_phase, left, right, top, bottom) => {
+    // Minimal captured geometry only: the old 0.01px topology epsilon removed
+    // an actual grid step and made the final arrow stub diagonal, hiding it.
+    const obstacles = [
+      rect('original', 745.703125, 110.02854348390187, 881.140625, 246.251382263119),
+      rect('moving-target', left, top, right, bottom),
+      rect('neighbor-1', 1040.5625, 110.02854348390187, 1176, 246.251382263119),
+      rect('neighbor-2', 156, 618.7542665522266, 291.421875, 754.9927343859159),
+      rect('neighbor-3', 303.421875, 618.7542665522266, 438.84375, 754.9927343859159),
+      rect('neighbor-4', 450.84375, 618.7542665522266, 586.28125, 754.9927343859159),
+      rect('neighbor-5', 156, 406.4960777660233, 291.421875, 542.7345455997125),
+      rect('neighbor-6', 450.84375, 110.02854348390187, 586.28125, 246.251382263119),
+      rect('neighbor-7', 598.28125, 258.2544960977265, 733.703125, 394.4929639314158),
+      rect('neighbor-8', 893.140625, 406.4960777660233, 1028.5625, 542.7345455997125),
+    ];
+    const [route] = routeScheduleChanges({ width: 1224, height: 783, obstacles, connections: [{ key: 'live-time-change', sourceKey: 'original', targetKey: 'moving-target', direction: 'local', edge: null, label: '时间更改' }] });
+    const quantized = obstacles.map(box => Object.fromEntries(Object.entries(box).map(([key, value]) => [key, typeof value === 'number' ? Math.round(value * 100) / 100 : value])) as Rect);
+    expect(route.reason).toBeNull();
+    expectSafe(route.points, quantized, 1224, 783);
+    expect(roundedScheduleRoute(route.points, obstacles)).toContain(' Q ');
+    route.points.slice(1).forEach((point, index) => expect(Math.abs(point.x - route.points[index].x) + Math.abs(point.y - route.points[index].y)).toBeGreaterThanOrEqual(12));
+    expect(onBoundary(route.points.at(-1)!, quantized[1])).toBe(true);
+  });
+});
+
+function parsePath(d: string) {
+  const commands = [...d.matchAll(/([MLQ])\s+([^MLQ]+)/g)];
+  return commands.map(match => ({ command: match[1], values: match[2].trim().split(/\s+/).map(Number) }));
+}
+
+describe('real rounded timetable paths', () => {
+  it('emits safe Q curves while preserving endpoints, arrow direction and 12px terminal straights', () => {
+    const obstacles = [rect('corner-obstacle', 130, 80, 190, 140)];
+    const points = [{ x: 60, y: 78 }, { x: 192, y: 78 }, { x: 192, y: 170 }, { x: 260, y: 170 }];
+    const d = roundedScheduleRoute(points, obstacles, 8);
+    expect(d).toContain(' Q ');
+    const commands = parsePath(d);
+    expect(commands[0]).toEqual({ command: 'M', values: [60, 78] });
+    expect(commands.at(-1)).toEqual({ command: 'L', values: [260, 170] });
+    let current = points[0];
+    for (const item of commands.slice(1)) {
+      const end = item.command === 'Q' ? { x: item.values[2], y: item.values[3] } : { x: item.values[0], y: item.values[1] };
+      expect(Math.abs(end.x - current.x) + Math.abs(end.y - current.y)).toBeGreaterThan(0.01);
+      for (let step = 0; step <= 200; step++) {
+        const t = step / 200, s = 1 - t;
+        const p = item.command === 'Q' ? { x: s * s * current.x + 2 * s * t * item.values[0] + t * t * end.x, y: s * s * current.y + 2 * s * t * item.values[1] + t * t * end.y } : { x: current.x + (end.x - current.x) * t, y: current.y + (end.y - current.y) * t };
+        for (const box of obstacles) expect(p.x > box.left + 0.01 && p.x < box.right - 0.01 && p.y > box.top + 0.01 && p.y < box.bottom - 0.01).toBe(false);
+      }
+      current = end;
+    }
+    const firstLine = commands[1].values;
+    expect(Math.abs(firstLine[0] - points[0].x) + Math.abs(firstLine[1] - points[0].y)).toBeGreaterThanOrEqual(12);
+    const previous = commands.at(-2)!.values;
+    expect(260 - previous.at(-2)!).toBeGreaterThanOrEqual(12);
+  });
+  it('keeps a full arrow shaft when a corner follows a 20px endpoint stub', () => {
+    const d = roundedScheduleRoute([{ x: 80, y: 80 }, { x: 100, y: 80 }, { x: 100, y: 180 }, { x: 120, y: 180 }]);
+    const commands = parsePath(d);
+    expect(commands[1]).toEqual({ command: 'L', values: [92, 80] });
+    expect(commands.at(-2)).toEqual({ command: 'Q', values: [100, 180, 108, 180] });
+    expect(commands.at(-1)).toEqual({ command: 'L', values: [120, 180] });
+  });
+  it('rejects stale obstructed or backtracking polylines instead of rounding them into a misleading path', () => {
+    expect(roundedScheduleRoute([{ x: 20, y: 100 }, { x: 180, y: 100 }], [rect('moving', 80, 80, 130, 130)])).toBe('');
+    expect(roundedScheduleRoute([{ x: 20, y: 100 }, { x: 50, y: 100 }, { x: 30, y: 100 }])).toBe('');
+    expect(roundedScheduleRoute([])).toBe('');
   });
 });

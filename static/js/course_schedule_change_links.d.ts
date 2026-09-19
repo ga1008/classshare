@@ -4,9 +4,9 @@ export type ScheduleConnection = {
   key: string;
   sourceKey: string | null;
   targetKey: string | null;
-  direction: 'local' | 'room' | 'outgoing' | 'incoming';
+  direction: 'local' | 'outgoing' | 'incoming';
   edge: 'left' | 'right' | null;
-  label: '时间更改' | '教室更改' | '时间更改 · 教室更改';
+  label: '时间更改' | '时间更改 · 教室更改';
   boundaryLabel: string;
   title: string;
   jumpKey: string;
@@ -18,3 +18,7 @@ export function scheduleChangeConnections(
   overview: { weeks?: ScheduleConnectionWeek[] } | null | undefined,
   week: ScheduleConnectionWeek | null | undefined,
 ): ScheduleConnection[];
+export function scheduleChangeColors(
+  overview: { weeks?: ScheduleConnectionWeek[] } | null | undefined,
+  previous?: ReadonlyMap<string, string>,
+): Map<string, string>;

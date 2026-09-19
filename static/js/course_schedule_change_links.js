@@ -36,7 +36,8 @@ function weekMatches(value, week) {
 /**
  * Each move is directed from its original time to its proposed time, even when
  * that means travelling to an earlier day/week. A filtered-out counterpart is
- * not a page boundary. Room-only requests retain one actual lesson card.
+ * not a page boundary. Room-only requests retain their card comparison but do
+ * not produce an arrow, because no lesson moves to another time.
  */
 export function scheduleChangeConnections(overview, week) {
     const currentWeek = positiveInteger(week?.week_index);
@@ -68,21 +69,7 @@ export function scheduleChangeConnections(overview, week) {
         const entry = byKey.get(visibleKey);
         if (!entry || entry.weekIndex !== currentWeek) continue;
         const change = pending(entry.lesson);
-        if (!change || !['move', 'room'].includes(change.kind)) continue;
-
-        if (change.kind === 'room') {
-            const original = slot(change.original), proposed = slot(change.proposed);
-            if (change.endpoint !== 'original' || change.counterpart_event_key || !original || !proposed
-                || !sameTime(original, proposed) || !original.room || !proposed.room || original.room === proposed.room) continue;
-            connections.push({
-                key: JSON.stringify([text(change.request_id), visibleKey]),
-                sourceKey: visibleKey, targetKey: visibleKey, direction: 'room', edge: null,
-                label: '教室更改', boundaryLabel: '',
-                title: `${slotText(original)} → ${slotText(proposed)}`,
-                jumpKey: visibleKey, jumpWeek: currentWeek, courseName: text(entry.lesson.course_name),
-            });
-            continue;
-        }
+        if (!change || change.kind !== 'move') continue;
 
         const counterpartKey = text(change.counterpart_event_key);
         const other = byKey.get(counterpartKey);
@@ -127,4 +114,67 @@ export function scheduleChangeConnections(overview, week) {
         emitted.add(connectionKey);
     }
     return connections;
+}
+
+// Independent line colors: neither course-card hues nor request hashes select
+// these colors. The first changes get separated, dark colors on a white canvas.
+const CHANGE_COLORS = [
+    '#b91c1c', '#047857', '#a16207', '#a21caf', '#0e7490',
+    '#4338ca', '#9a3412', '#be185d', '#4d7c0f', '#0369a1',
+    '#7e22ce', '#115e59', '#92400e', '#9f1239', '#1d4ed8',
+    '#3f6212', '#86198f', '#0f766e', '#7f1d1d', '#334155',
+];
+
+function generatedColor(index) {
+    // Golden-angle stepping separates consecutive hues. Saturation/lightness
+    // bands add more choices once a busy semester exceeds the initial palette.
+    const hue = (index * 137.508) % 360;
+    const saturation = (64 + Math.floor(index / 12) % 4 * 7) / 100;
+    const lightness = (30 + Math.floor(index / 48) % 4 * 4) / 100;
+    const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    const x = chroma * (1 - Math.abs(hue / 60 % 2 - 1));
+    const base = lightness - chroma / 2;
+    const channels = hue < 60 ? [chroma, x, 0] : hue < 120 ? [x, chroma, 0]
+        : hue < 180 ? [0, chroma, x] : hue < 240 ? [0, x, chroma]
+            : hue < 300 ? [x, 0, chroma] : [chroma, 0, x];
+    return `#${channels.map(channel => Math.round((channel + base) * 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function whiteContrast(color) {
+    const channels = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16) / 255)
+        .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+    return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05);
+}
+
+/**
+ * Allocate one distinct color per complete pending move across all supplied
+ * weeks. Supply the semester's prior map on refresh/filtering; old assignments
+ * are retained so removing/reordering a pair cannot recolor another one. The
+ * caller owns that semester-scoped cache; this function never mutates it.
+ */
+export function scheduleChangeColors(overview, previous = new Map()) {
+    const colors = new Map();
+    const occupied = new Set();
+    const byKey = ([a], [b]) => a < b ? -1 : a > b ? 1 : 0;
+    for (const [key, candidate] of [...previous].sort(byKey)) {
+        const color = text(candidate).toLowerCase();
+        if (!text(key) || !/^#[\da-f]{6}$/.test(color) || occupied.has(color)) continue;
+        colors.set(key, color);
+        occupied.add(color);
+    }
+    const keys = new Set();
+    for (const week of overview?.weeks || []) {
+        for (const connection of scheduleChangeConnections(overview, week)) keys.add(connection.key);
+    }
+    let paletteIndex = 0, generatedIndex = 0;
+    for (const key of [...keys].sort()) {
+        if (colors.has(key)) continue;
+        let color;
+        do {
+            color = paletteIndex < CHANGE_COLORS.length ? CHANGE_COLORS[paletteIndex++] : generatedColor(generatedIndex++);
+        } while (occupied.has(color) || whiteContrast(color) < 4.5);
+        colors.set(key, color);
+        occupied.add(color);
+    }
+    return colors;
 }

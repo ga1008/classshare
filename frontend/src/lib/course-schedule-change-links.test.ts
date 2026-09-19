@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scheduleChangeConnections } from '../../../static/js/course_schedule_change_links.js';
+import { scheduleChangeConnections, scheduleChangeColors } from '../../../static/js/course_schedule_change_links.js';
 
 function pair(sourceWeek = 4, targetWeek = 4) {
   const change = {
@@ -45,14 +45,12 @@ describe('explicit academic change connections', () => {
     expect(scheduleChangeConnections(data.overview, data.source)[0].label).toBe('时间更改');
   });
 
-  it('retains a room-only request on one card with no fictitious time displacement', () => {
+  it('does not draw an arrow for room-only changes that retain the same time', () => {
     const data = pair();
     Object.assign(data.original.adjustment, { kind: 'room', counterpart_event_key: null, counterpart_week_index: null, proposed: { ...data.original.adjustment.original, room: 'B210' } });
     data.source.lessons = [data.original];
-    expect(scheduleChangeConnections(data.overview, data.source)).toEqual([expect.objectContaining({
-      sourceKey: 'source', targetKey: 'source', direction: 'room', edge: null, label: '教室更改',
-      title: '2026-09-25 第2、3节 · B310 → 2026-09-25 第2、3节 · B210',
-    })]);
+    expect(scheduleChangeConnections(data.overview, data.source)).toEqual([]);
+    expect(scheduleChangeColors(data.overview).size).toBe(0);
   });
 
   it('ignores cancellations, approved requests, and malformed room-only requests', () => {
@@ -117,5 +115,75 @@ describe('explicit academic change connections', () => {
     data.original.adjustment.proposed = structuredClone(data.original.adjustment.original);
     data.proposed.adjustment.proposed = structuredClone(data.original.adjustment.original);
     expect(scheduleChangeConnections(data.overview, data.source)).toEqual([]);
+  });
+});
+
+function manyPairs(count: number) {
+  const overview = { weeks: [4, 6].map(week_index => ({ week_index, lessons: [] as ReturnType<typeof pair>['source']['lessons'] })) };
+  for (let index = 0; index < count; index += 1) {
+    const data = pair(4, 6), suffix = String(index).padStart(4, '0');
+    data.original.event_key = `source-${suffix}`; data.proposed.event_key = `target-${suffix}`;
+    data.original.adjustment.request_id = data.proposed.adjustment.request_id = `request-${suffix}`;
+    data.original.adjustment.counterpart_event_key = data.proposed.event_key;
+    data.proposed.adjustment.counterpart_event_key = data.original.event_key;
+    overview.weeks[0].lessons.push(data.original); overview.weeks[1].lessons.push(data.proposed);
+  }
+  return overview;
+}
+
+describe('independent stable change-line colors', () => {
+  it('gives every complete pair a distinct color and shares it between both pages', () => {
+    const overview = manyPairs(12), colors = scheduleChangeColors(overview);
+    expect(colors.size).toBe(12);
+    expect(new Set(colors.values()).size).toBe(12);
+    const source = scheduleChangeConnections(overview, overview.weeks[0]);
+    const target = scheduleChangeConnections(overview, overview.weeks[1]);
+    expect(source.map(row => colors.get(row.key))).toEqual(target.map(row => colors.get(row.key)));
+    expect([...colors.values()].slice(0, 4)).toEqual(['#b91c1c', '#047857', '#a16207', '#a21caf']);
+  });
+
+  it('is deterministic when weeks and lessons arrive in a different order', () => {
+    const overview = manyPairs(30), expected = scheduleChangeColors(overview);
+    overview.weeks.reverse(); overview.weeks.forEach(week => week.lessons.reverse());
+    expect(scheduleChangeColors(overview)).toEqual(expected);
+  });
+
+  it('retains assignments after filtering and reopening the complete semester', () => {
+    const overview = manyPairs(25), cached = scheduleChangeColors(overview), snapshot = new Map(cached);
+    const filtered = structuredClone(overview);
+    filtered.weeks.forEach(week => { week.lessons = week.lessons.slice(6, 10); });
+    const filteredColors = scheduleChangeColors(filtered, cached);
+    expect(filteredColors).toEqual(cached);
+    expect(scheduleChangeColors(overview, filteredColors)).toEqual(cached);
+    expect(cached).toEqual(snapshot);
+  });
+
+  it('does not recolor existing pairs when an earlier key is added later', () => {
+    const overview = manyPairs(5), all = structuredClone(overview);
+    overview.weeks.forEach(week => week.lessons.shift());
+    const before = scheduleChangeColors(overview), after = scheduleChangeColors(all, before);
+    for (const [key, color] of before) expect(after.get(key)).toBe(color);
+    expect(after.size).toBe(5);
+    expect(new Set(after.values()).size).toBe(5);
+  });
+
+  it('supports a semester much larger than the palette without collisions or pale white-background lines', () => {
+    const colors = scheduleChangeColors(manyPairs(250));
+    expect(colors.size).toBe(250);
+    expect(new Set(colors.values()).size).toBe(250);
+    for (const color of colors.values()) {
+      expect(color).toMatch(/^#[\da-f]{6}$/);
+      const values = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16) / 255)
+        .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+      const luminance = 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+      expect(1.05 / (luminance + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('does not allocate a color for an incomplete or invalid pair', () => {
+    const overview = manyPairs(3);
+    overview.weeks[1].lessons[1].adjustment.request_id = 'mismatched';
+    overview.weeks[1].lessons.pop();
+    expect(scheduleChangeColors(overview).size).toBe(1);
   });
 });

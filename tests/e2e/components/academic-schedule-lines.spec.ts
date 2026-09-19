@@ -24,7 +24,9 @@ function fixture() {
   };
   move('same', '同周向前调整', 4, 4, oldPosition('2026-09-25', [2, 3]), oldPosition('2026-09-24', [6, 7]), 101);
   move('later', '调至下一周', 4, 5, oldPosition('2026-09-27', [2, 3]), oldPosition('2026-09-29', [4, 5]), 102);
-  move('earlier', '从下一周提前并换教室', 5, 4, oldPosition('2026-09-29', [6, 7]), oldPosition('2026-09-22', [10, 11], 'B210'), 103);
+  move('earlier', '从下一周提前并换教室', 5, 4, oldPosition('2026-09-29', [6, 7]), oldPosition('2026-09-21', [10, 11], 'B210'), 103);
+  move('bottom-a', '底部网络课程', 3, 4, oldPosition('2026-09-19', [8, 9]), oldPosition('2026-09-22', [10, 11]), 108);
+  move('bottom-b', '底部网络课程', 3, 4, oldPosition('2026-09-20', [2, 3]), oldPosition('2026-09-23', [10, 11]), 109);
   const roomFrom = oldPosition('2026-09-21', [6, 7], 'B310');
   add(4, lesson('room-only', '只换教室', roomFrom, 104, { request_id: 'room', kind: 'room', phase: 'pending', endpoint: 'original', original: roomFrom, proposed: { ...roomFrom, room: 'B312' }, counterpart_event_key: null, counterpart_week_index: null }));
   const cancelFrom = oldPosition('2026-09-23', [2, 3]);
@@ -65,7 +67,7 @@ function change(page: Page, source: string) {
 
 async function geometry(page: Page) {
   return page.locator('.cs-expand .cs-change-map').evaluate(map => {
-    const cards = [...map.querySelectorAll<HTMLElement>('.cs-lesson-slot')].map(card => ({ key: card.querySelector<HTMLElement>('[data-event-key]')!.dataset.eventKey, box: card.getBoundingClientRect() }));
+    const cards = [...map.querySelectorAll<HTMLElement>('.cs-lesson-slot > [data-event-key]')].map(card => ({ key: card.dataset.eventKey, box: card.getBoundingClientRect() }));
     const inside = (point: { x: number; y: number }, box: DOMRect) => point.x > box.left + 1 && point.x < box.right - 1 && point.y > box.top + 1 && point.y < box.bottom - 1;
     const collisions: string[] = [], paths: any[] = [];
     for (const line of map.querySelectorAll<SVGPathElement>('.cs-change-line')) {
@@ -77,14 +79,28 @@ async function geometry(page: Page) {
         samples.push({ x: point.x, y: point.y });
         for (const card of cards) if (inside(point, card.box)) collisions.push(`${line.parentElement?.getAttribute('data-source-key')} crosses ${card.key}`);
       }
-      paths.push({ source: JSON.parse(line.parentElement!.getAttribute('data-change-key')!)[1], start: samples[0], end: samples.at(-1), dash: getComputedStyle(line).strokeDasharray, marker: line.getAttribute('marker-end') });
+      const pointAt = (distance: number) => { const point = line.getPointAtLength(distance); const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix); return { x: screen.x, y: screen.y }; };
+      paths.push({ source: JSON.parse(line.parentElement!.getAttribute('data-change-key')!)[1], sourceKey: line.parentElement!.getAttribute('data-source-key'), targetKey: line.parentElement!.getAttribute('data-target-key'), start: pointAt(0), startStub: pointAt(Math.min(10, length)), end: pointAt(length), endStub: pointAt(Math.max(0, length - 10)), dash: getComputedStyle(line).strokeDasharray, color: getComputedStyle(line).stroke, d: line.getAttribute('d'), marker: line.getAttribute('marker-end') });
     }
     for (const label of map.querySelectorAll<SVGGElement>('.cs-change-line-label')) {
       const box = label.getBoundingClientRect();
       for (const card of cards) if (box.left < card.box.right - 1 && box.right > card.box.left + 1 && box.top < card.box.bottom - 1 && box.bottom > card.box.top + 1) collisions.push(`label ${label.textContent} covers ${card.key}`);
     }
-    return { collisions: [...new Set(collisions)], paths, bounds: { left: map.getBoundingClientRect().left, right: map.getBoundingClientRect().right }, cards: cards.map(card => ({ key: card.key, x: card.box.x, y: card.box.y, width: card.box.width, height: card.box.height })) };
+    return { collisions: [...new Set(collisions)], paths, bounds: { left: map.getBoundingClientRect().left, right: map.getBoundingClientRect().right, top: map.getBoundingClientRect().top, bottom: map.getBoundingClientRect().bottom }, cards: cards.map(card => ({ key: card.key, x: card.box.x, y: card.box.y, width: card.box.width, height: card.box.height })) };
   });
+}
+
+function expectVisiblePorts(metrics: Awaited<ReturnType<typeof geometry>>) {
+  for (const route of metrics.paths) for (const [key, point, stub] of [[route.sourceKey, route.start, route.startStub], [route.targetKey, route.end, route.endStub]] as const) {
+    if (!key) continue;
+    const card = metrics.cards.find(item => item.key === key)!;
+    expect(card, `visible endpoint ${key}`).toBeTruthy();
+    const { x, y, width, height } = card;
+    const ports = [[x + width / 2, y], [x + width, y + height / 2], [x + width / 2, y + height], [x, y + height / 2], [x, y], [x + width, y], [x, y + height], [x + width, y + height]];
+    expect(Math.min(...ports.map(([px, py]) => Math.hypot(point.x - px, point.y - py))), `endpoint ${key} attaches to its actual card midpoint or corner`).toBeLessThan(2);
+    expect(Math.hypot(point.x - stub.x, point.y - stub.y), `endpoint ${key} retains a visible straight arrow shaft`).toBeGreaterThan(9.5);
+    expect(Math.min(Math.abs(point.x - stub.x), Math.abs(point.y - stub.y)), `endpoint ${key} has no turn inside its first 10px`).toBeLessThan(.5);
+  }
 }
 
 test('same-week arrows point from the original time to the earlier new time with the exact pair', async ({ page }, testInfo) => {
@@ -104,8 +120,131 @@ test('same-week arrows point from the original time to the earlier new time with
   expect(distanceToCard(route.start, 'same-old')).toBeLessThan(12);
   expect(distanceToCard(route.end, 'same-new')).toBeLessThan(12);
   expect(route.marker).toMatch(/url\(/);
-  expect(route.dash).not.toBe('none');
+  expect(route.dash).toBe('none');
+  expect(route.d).toContain('Q');
+  expectVisiblePorts(measured);
   await page.screenshot({ path: testInfo.outputPath('change-lines-desktop.png') });
+});
+
+test('solid connections have distinct colors even for the same course and retain that color across pages', async ({ page }) => {
+  await mount(page);
+  const before = await geometry(page);
+  expect(before.paths.length).toBeGreaterThanOrEqual(5);
+  expect(new Set(before.paths.map(route => route.color)).size).toBe(before.paths.length);
+  expect(before.paths.every(route => route.dash === 'none')).toBe(true);
+  const colors = new Map(before.paths.map(route => [route.source, route.color]));
+  await page.evaluate(() => (window as any).deck.goToWeek(0));
+  await settle(page);
+  const previous = await geometry(page);
+  expect(previous.paths).toHaveLength(2);
+  for (const route of previous.paths) expect(route.color).toBe(colors.get(route.source));
+  await page.evaluate(() => (window as any).deck.goToWeek(2));
+  await settle(page);
+  for (const route of (await geometry(page)).paths) expect(route.color).toBe(colors.get(route.source));
+});
+
+test('opening and closing previews keep the endpoint attached throughout the visible animation', async ({ page }, testInfo) => {
+  await mount(page);
+  const result = await page.evaluate(async () => {
+    const cell = document.querySelector<HTMLElement>('.cs-expand [data-event-key="same-new"]')!;
+    const beforeWidth = cell.getBoundingClientRect().width;
+    const takeSamples = async () => {
+      const samples: { width: number; error: number; pathPresent: boolean; animated: boolean; collisionCount: number }[] = [];
+      for (let frame = 0; frame < 40; frame++) {
+        await new Promise(requestAnimationFrame);
+        const card = cell.getBoundingClientRect();
+        const group = [...document.querySelectorAll('.cs-expand .cs-change-lines > g')].find(node => node.getAttribute('data-change-key') === '["same","same-old"]');
+        const line = group?.querySelector<SVGPathElement>('.cs-change-line');
+        let error = Infinity;
+        if (line) {
+          const point = line.getPointAtLength(line.getTotalLength());
+          const screen = new DOMPoint(point.x, point.y).matrixTransform(line.getScreenCTM()!);
+          const ports = [[card.left + card.width / 2, card.top], [card.right, card.top + card.height / 2], [card.left + card.width / 2, card.bottom], [card.left, card.top + card.height / 2], [card.left, card.top], [card.right, card.top], [card.left, card.bottom], [card.right, card.bottom]];
+          error = Math.min(...ports.map(([x, y]) => Math.hypot(screen.x - x, screen.y - y)));
+        }
+        const animated = cell.getAnimations().some(animation => animation.playState === 'running');
+        const boxes = [...document.querySelectorAll('.cs-expand .cs-lesson-slot > [data-event-key]')].map(node => node.getBoundingClientRect());
+        let collisionCount = 0;
+        for (const path of document.querySelectorAll<SVGPathElement>('.cs-expand .cs-change-line')) {
+          const matrix = path.getScreenCTM()!, length = path.getTotalLength();
+          for (let step = 0; step <= length; step += 3) {
+            const p = path.getPointAtLength(step), point = new DOMPoint(p.x, p.y).matrixTransform(matrix);
+            if (boxes.some(box => point.x > box.left + 1 && point.x < box.right - 1 && point.y > box.top + 1 && point.y < box.bottom - 1)) collisionCount++;
+          }
+        }
+        samples.push({ width: card.width, error, pathPresent: !!line, animated, collisionCount });
+        if (!animated && frame > 2) break;
+      }
+      return samples;
+    };
+    cell.querySelector<HTMLElement>('.cs-lesson__main')!.focus();
+    const opening = await takeSamples();
+    const expandedWidth = cell.getBoundingClientRect().width;
+    document.querySelector<HTMLElement>('[data-csd-expand-close]')!.focus();
+    const closing = await takeSamples();
+    return { beforeWidth, expandedWidth, opening, closing };
+  });
+  await testInfo.attach('live-endpoint-animation', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+  expect(result.expandedWidth).toBeGreaterThan(result.beforeWidth + 30);
+  for (const [name, samples] of [['opening', result.opening], ['closing', result.closing]] as const) {
+    const middle = samples.filter(sample => sample.width > result.beforeWidth + 4 && sample.width < result.expandedWidth - 4);
+    expect(middle.length, `${name} includes actual intermediate animation frames`).toBeGreaterThan(0);
+    expect(samples.every(sample => sample.pathPresent), `${name} does not lose an unobstructed connection`).toBe(true);
+    expect(Math.max(...samples.map(sample => sample.error)), `${name} follows the currently visible rectangle instead of the old slot`).toBeLessThan(2);
+    expect(samples.every(sample => sample.collisionCount === 0), `${name} avoids visible cards at intermediate animation frames`).toBe(true);
+  }
+});
+
+test('an unrelated enlarged lesson becomes an obstacle and any covered endpoint never receives a line through it', async ({ page }) => {
+  await mount(page);
+  const other = page.locator('.cs-expand [data-event-key="unaffected-one"]');
+  await other.focus();
+  await expect(other).toHaveClass(/is-preview/);
+  await settle(page);
+  const measured = await geometry(page);
+  expect(measured.collisions).toEqual([]);
+  expectVisiblePorts(measured);
+  await page.locator('[data-csd-expand-close]').focus();
+  await settle(page);
+  await expect(change(page, 'same-old')).toHaveCount(1);
+  expectVisiblePorts(await geometry(page));
+});
+
+test('the two bottom incoming cards keep visible arrow shafts and avoid routing under a cramped lower edge', async ({ page }) => {
+  await mount(page);
+  await page.addStyleTag({ content: '.cs-change-map > .cs-grid { bottom: 4px !important; }' });
+  await page.setViewportSize({ width: 1420, height: 900 });
+  await settle(page);
+  const measured = await geometry(page);
+  expect(measured.collisions).toEqual([]);
+  expectVisiblePorts(measured);
+  for (const key of ['bottom-a-old', 'bottom-b-old']) {
+    const route = measured.paths.find(item => item.source === key);
+    expect(route, `incoming bottom route ${key} remains available`).toBeTruthy();
+    const card = measured.cards.find(item => item.key === route.targetKey)!;
+    expect(route.end.y).toBeLessThan(card.y + card.height - 4);
+    expect(route.endStub.y).toBeLessThan(measured.bounds.bottom - 8);
+  }
+});
+
+test('mobile internal scrolling and reduced motion retain geometry, keyboard jumps and destruction cleanup', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mount(page);
+  await page.locator('.cs-expand__body').evaluate(body => { body.scrollLeft = body.scrollWidth - body.clientWidth; body.scrollTop = body.scrollHeight - body.clientHeight; });
+  await settle(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await geometry(page)).collisions).toEqual([]);
+  expectVisiblePorts(await geometry(page));
+  const label = change(page, 'later-old').locator('.cs-change-line-label');
+  await label.focus(); await page.keyboard.press('Enter');
+  await expect(page.locator('[data-csd-expand-title]')).toContainText('第5周');
+  await settle(page);
+  expect((await geometry(page)).collisions).toEqual([]);
+  expect(await page.evaluate(() => (window as any).navigations)).toEqual([]);
+  await page.evaluate(() => (window as any).deck.destroy());
+  await page.setViewportSize({ width: 700, height: 800 });
+  await expect(page.locator('.cs-change-lines')).toHaveCount(0);
 });
 
 test('cross-week arrows reach the boundary and emerge from it on the correct destination page', async ({ page }) => {
@@ -155,13 +294,12 @@ test('moving from a later week to an earlier week retains original-to-new direct
   expect(await page.evaluate(() => (window as any).navigations)).toEqual([]);
 });
 
-test('room-only changes use a single course card and a room comparison; cancellations have no false destination', async ({ page }) => {
+test('room-only changes retain the comparison button without drawing a false time route', async ({ page }) => {
   await mount(page);
   await expect(page.locator('.cs-expand [data-event-key="room-only"]')).toHaveCount(1);
   const room = change(page, 'room-only');
-  await expect(room).toContainText('教室更改');
-  await expect(room).not.toContainText('时间更改');
-  await room.locator('[data-csd-line-detail="room-only"]').click();
+  await expect(room).toHaveCount(0);
+  await page.locator('.cs-expand [data-event-key="room-only"] .cs-adjustment-label').click();
   await expect(page.locator('.cs-expand [data-event-key="room-only"] .cs-adjustment-details')).toContainText('B312');
   await expect(change(page, 'cancel-only')).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).navigations)).toEqual([]);
@@ -184,7 +322,7 @@ test('counterparts missing from the visible data do not produce guessed arrows o
   });
   await settle(page);
   for (const key of ['same-old', 'later-old', 'earlier-old']) await expect(change(page, key)).toHaveCount(0);
-  await expect(change(page, 'room-only')).toHaveCount(1);
+  await expect(change(page, 'room-only')).toHaveCount(0);
 });
 
 test('viewport resize recalculates routes while narrow screens keep scrolling inside the timetable', async ({ page }, testInfo) => {
@@ -205,7 +343,7 @@ test('viewport resize recalculates routes while narrow screens keep scrolling in
   }
 });
 
-test('hover previews stay above the dashed lines and retain readable interactive text', async ({ page }) => {
+test('hover previews retain readable interactive text while paths avoid the actual enlarged card', async ({ page }) => {
   await mount(page);
   const target = page.locator('.cs-expand [data-event-key="same-new"]');
   await target.locator('.cs-lesson__main').hover();
@@ -223,6 +361,7 @@ test('hover previews stay above the dashed lines and retain readable interactive
   expect(visibleText.opacity).toBe('1');
   expect(visibleText.color).not.toBe('rgb(255, 255, 255)');
   expect(visibleText.background).not.toContain('0.5');
+  expect((await geometry(page)).collisions).toEqual([]);
 });
 
 test('approved replacement data and destruction clear obsolete lines and observers', async ({ page }) => {
@@ -241,4 +380,28 @@ test('approved replacement data and destruction clear obsolete lines and observe
   await page.setViewportSize({ width: 900, height: 700 });
   await expect(page.locator('.cs-change-lines')).toHaveCount(0);
   await expect(page.locator('.cs-expand')).toHaveCount(0);
+});
+
+test('an empty overview closes and clears the expanded map, then a restored overview opens fresh routes', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await mount(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.deck.setOverview({ ...w.fixture, weeks: [] });
+  });
+  await expect(page.locator('.cs-expand')).toHaveAttribute('hidden', '');
+  await expect(page.locator('.cs-expand .cs-change-line')).toHaveCount(0);
+  await expect(page.locator('.cs-expand [data-event-key]')).toHaveCount(0);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.deck.setOverview(w.fixture); w.deck.goToWeek(1); w.deck.openExpanded();
+  });
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await settle(page);
+  const measured = await geometry(page);
+  expect(measured.paths).toHaveLength(5);
+  expect(measured.collisions).toEqual([]);
+  expectVisiblePorts(measured);
+  expect(errors).toEqual([]);
 });
