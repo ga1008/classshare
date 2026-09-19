@@ -1,4 +1,4 @@
-import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260919';
+import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-density';
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const termKey = (term) => term?.year ? `${term.year}|${term.term}` : '';
