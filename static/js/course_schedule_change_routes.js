@@ -228,28 +228,83 @@ function findRoute(width, height, obstacles, occupied, sourcePorts, targetPorts,
 
 function rectanglesOverlap(a, b) { return a.left < b.right + EPS && a.right > b.left - EPS && a.top < b.bottom + EPS && a.bottom > b.top - EPS; }
 function labelLength(label) { return Math.ceil([...String(label)].reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12 : 7), 12)); }
-function labelFor(route, routes, obstacles, labels, width, height) {
+function labelFor(route, routes, obstacles, labels, width, height, excluded = new Set()) {
     if (!route.label || route.points.length < 2) return null;
-    // A 12px label with an opaque 6px inset on each end. x/y are its centre.
     const length = labelLength(route.label);
-    const candidates = segments(route.points).map(([a, b]) => ({ a, b, vertical: Math.abs(a.x - b.x) < EPS, length: Math.abs(a.x - b.x) + Math.abs(a.y - b.y) })).filter(item => item.length >= length + 10).sort((a, b) => Number(a.vertical) - Number(b.vertical) || b.length - a.length);
-    for (const segment of candidates) {
-        const boxWidth = segment.vertical ? 22 : length, boxHeight = segment.vertical ? length : 22;
-        const start = segment.vertical ? Math.min(segment.a.y, segment.b.y) : Math.min(segment.a.x, segment.b.x);
-        const end = segment.vertical ? Math.max(segment.a.y, segment.b.y) : Math.max(segment.a.x, segment.b.x);
-        const inset = length / 2 + 5;
-        const positions = unique([(start + end) / 2, start + inset, end - inset, start + (end - start) * 0.25, start + (end - start) * 0.75], start + inset, end - inset);
+    function place(x, y, vertical) {
+        if (excluded.has(`${x}|${y}|${vertical}`)) return null;
+        const boxWidth = vertical ? 22 : length, boxHeight = vertical ? length : 22;
+        const box = { left: x - boxWidth / 2, right: x + boxWidth / 2, top: y - boxHeight / 2, bottom: y + boxHeight / 2 };
+        if (box.left < 1 || box.right > width - 1 || box.top < 1 || box.bottom > height - 1 || obstacles.some(rect => rectanglesOverlap(box, inflate(rect, 2))) || labels.some(rect => rectanglesOverlap(box, inflate(rect, 3)))) return null;
+        if (routes.some(other => other !== route && segments(other.points).some(([a, b]) => segmentHitsRect(a, b, inflate(box, 2))))) return null;
+        labels.push(box);
+        return { x, y, vertical, width: boxWidth, height: boxHeight };
+    }
+    const parts = segments(route.points).map(([a, b]) => ({ a, b, vertical: Math.abs(a.x - b.x) < STRUCTURE_EPS, length: lengthOf(a, b) }));
+    const ordered = [...parts].sort((a, b) => Number(a.vertical) - Number(b.vertical) || b.length - a.length);
+    const padding = point => samePoint(point, route.points.at(-1)) ? ARROW_STRAIGHT : samePoint(point, route.points[0]) ? 5 : 8;
+    for (const segment of ordered) {
+        const axis = segment.vertical ? 'y' : 'x';
+        const low = segment.a[axis] < segment.b[axis] ? segment.a : segment.b;
+        const high = low === segment.a ? segment.b : segment.a;
+        const start = low[axis], end = high[axis];
+        const min = start + length / 2 + padding(low), max = end - length / 2 - padding(high);
+        if (max < min) continue;
+        const positions = unique([(start + end) / 2, min, max, start + (end - start) * .25, start + (end - start) * .75], min, max);
         positions.sort((a, b) => Math.abs(a - (start + end) / 2) - Math.abs(b - (start + end) / 2));
         for (const position of positions) {
-            const x = segment.vertical ? segment.a.x : position, y = segment.vertical ? position : segment.a.y;
-            const box = { left: x - boxWidth / 2, right: x + boxWidth / 2, top: y - boxHeight / 2, bottom: y + boxHeight / 2 };
-            if (box.left < 1 || box.right > width - 1 || box.top < 1 || box.bottom > height - 1 || obstacles.some(rect => rectanglesOverlap(box, inflate(rect, 2))) || labels.some(rect => rectanglesOverlap(box, inflate(rect, 3)))) continue;
-            if (routes.some(other => other !== route && segments(other.points).some(([a, b]) => segmentHitsRect(a, b, inflate(box, 2))))) continue;
-            labels.push(box);
-            return { x, y, vertical: segment.vertical, width: boxWidth, height: boxHeight };
+            const placement = place(segment.vertical ? segment.a.x : position, segment.vertical ? position : segment.a.y, segment.vertical);
+            if (placement) return placement;
+        }
+    }
+    // A 40px boundary line remains a straight 40px line. A narrow caption can
+    // attach across it in the existing gutter; text never introduces waypoints.
+    for (const segment of ordered) {
+        const axis = segment.vertical ? 'y' : 'x', crossAxis = segment.vertical ? 'x' : 'y';
+        const low = segment.a[axis] < segment.b[axis] ? segment.a : segment.b;
+        const high = low === segment.a ? segment.b : segment.a;
+        const min = low[axis] + 11 + padding(low), max = high[axis] - 11 - padding(high);
+        if (max < min) continue;
+        const anchors = unique([(min + max) / 2, min, max], min, max);
+        const centre = segment.a[crossAxis], reach = length / 2 - 8;
+        const shifts = unique([centre, centre - reach / 2, centre + reach / 2, centre - reach, centre + reach,
+            ...labels.flatMap(box => segment.vertical ? [box.left - length / 2 - 4, box.right + length / 2 + 4] : [box.top - length / 2 - 4, box.bottom + length / 2 + 4])], centre - reach, centre + reach);
+        shifts.sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre));
+        for (const anchor of anchors) for (const shift of shifts) {
+            const placement = place(segment.vertical ? shift : anchor, segment.vertical ? anchor : shift, !segment.vertical);
+            if (placement) return placement;
         }
     }
     return null;
+}
+
+function placeRouteLabels(routes, obstacles, width, height) {
+    const labels = [];
+    for (const route of routes) route.labelPlacement = labelFor(route, routes, obstacles, labels, width, height);
+    const active = routes.filter(route => route.label && route.points.length > 1);
+    if (active.every(route => route.labelPlacement)) return;
+    // Nearby short boundary captions share one narrow gutter. If greedy
+    // placement leaves one out, move an earlier caption rather than the line.
+    // Hardest (shortest) paths go first; the bounded search never runs at idle.
+    const ordered = [...active].sort((a, b) => Math.max(...segments(a.points).map(([x, y]) => lengthOf(x, y))) - Math.max(...segments(b.points).map(([x, y]) => lengthOf(x, y))));
+    const trialLabels = [], chosen = new Map();
+    let attempts = 256;
+    function placeNext(index) {
+        if (index === ordered.length) return true;
+        if (attempts <= 0) return false;
+        const route = ordered[index], excluded = new Set();
+        for (let candidate = 0; candidate < 24 && attempts-- > 0; candidate++) {
+            const placement = labelFor(route, routes, obstacles, trialLabels, width, height, excluded);
+            if (!placement) return false;
+            chosen.set(route.key, placement);
+            if (placeNext(index + 1)) return true;
+            trialLabels.pop();
+            chosen.delete(route.key);
+            excluded.add(`${placement.x}|${placement.y}|${placement.vertical}`);
+        }
+        return false;
+    }
+    if (placeNext(0)) for (const route of active) route.labelPlacement = chosen.get(route.key);
 }
 
 function routePorts(connection, width, height, byKey, obstacles, occupied, corners = false) {
@@ -260,70 +315,49 @@ function routePorts(connection, width, height, byKey, obstacles, occupied, corne
     };
 }
 
-/** A short boundary connector may not fit its caption. Reserve a real clear
- * caption segment and route via it, rather than stamping text over a lesson.
- * Only used when the shortest safe route has no label; the bounded candidate
- * search favors nearby margins and keeps the normal routing path inexpensive.
- */
-function routeWithCaption(route, routes, obstacles, labels, width, height, byKey) {
-    const occupied = routes.filter(other => other !== route).flatMap(other => segments(other.points));
-    const length = labelLength(route.label), span = length + 12;
-    const routingObstacles = [...obstacles, ...labels.map((box, index) => ({ ...inflate(box, 3), key: `__caption-${index}` }))];
-    const endpoints = [route.points[0], route.points[route.points.length - 1]];
-    const candidates = [];
-    for (const vertical of [true, false]) {
-        const extent = vertical ? height : width;
-        const tracks = unique([22, (vertical ? width : height) - 22, ...obstacles.flatMap(box => vertical ? [box.left - 16, box.right + 16] : [box.top - 16, box.bottom + 16]), ...endpoints.map(point => vertical ? point.x : point.y)], 14, (vertical ? width : height) - 14);
-        for (const track of tracks) {
-            // Project expanded lesson/label boxes onto this text-width channel.
-            const blocked = routingObstacles.filter(box => vertical ? track + 13 > box.left && track - 13 < box.right : track + 13 > box.top && track - 13 < box.bottom).map(box => vertical ? [box.top - 4, box.bottom + 4] : [box.left - 4, box.right + 4]).sort((a, b) => a[0] - b[0]);
-            let cursor = 14;
-            const intervals = [];
-            for (const [start, end] of blocked) {
-                if (start > cursor) intervals.push([cursor, Math.min(start, extent - 14)]);
-                cursor = Math.max(cursor, end);
-            }
-            if (cursor < extent - 14) intervals.push([cursor, extent - 14]);
-            for (const [start, end] of intervals) {
-                if (end - start < span) continue;
-                const positions = unique([start, end - span, ...endpoints.flatMap(point => {
-                    const axis = vertical ? point.y : point.x;
-                    return [Math.max(start, Math.min(end - span, axis)), Math.max(start, Math.min(end - span, axis - span))];
-                })], start, end - span);
-                for (const position of positions) {
-                    const a = vertical ? { x: track, y: position } : { x: position, y: track };
-                    const b = vertical ? { x: track, y: position + span } : { x: position + span, y: track };
-                    const box = { left: vertical ? track - 11 : position + 6, right: vertical ? track + 11 : position + span - 6, top: vertical ? position + 6 : track - 11, bottom: vertical ? position + span - 6 : track + 11, key: '__reserved-caption' };
-                    if (occupied.some(([c, d]) => segmentHitsRect(c, d, inflate(box, 2))) || routingObstacles.some(obstacle => rectanglesOverlap(box, inflate(obstacle, 2)))) continue;
-                    const distance = (p, q) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y);
-                    for (const [from, to] of [[a, b], [b, a]]) candidates.push({ from, to, box, axis: vertical ? 1 : 0, cost: distance(endpoints[0], from) + span + distance(to, endpoints[1]) });
-                }
-            }
-        }
+/** Compare actual simplified paths, not the number of grid-search steps.
+ * Avoid crossings first, then unnecessary bends, then excess distance. */
+function routeQuality(points, occupied) {
+    return [segments(points).reduce((sum, [a, b]) => sum + trackCost(a, b, occupied), 0),
+        Math.max(0, points.length - 2), segments(points).reduce((sum, [a, b]) => sum + lengthOf(a, b), 0)];
+}
+function betterQuality(a, b) {
+    return !b || a.some((value, index) => a.slice(0, index).every((item, i) => Math.abs(item - b[i]) < EPS) && value < b[index] - EPS);
+}
+
+/** Try straight, L and Z shapes before a full visibility-grid search. Every
+ * candidate uses the same real ports, clearances and arrow stubs as A*. */
+function simpleRoute(width, height, obstacles, occupied, sourcePorts, targetPorts, sourceKey, targetKey) {
+    const expanded = obstacles.map(rect => inflate(rect, CLEARANCE));
+    const sources = sourcePorts.filter(port => legalPort(port, sourceKey, width, height, expanded, occupied));
+    const targets = targetPorts.filter(port => legalPort(port, targetKey, width, height, expanded, occupied));
+    let best = [], quality = null;
+    function consider(source, target, middle) {
+        const points = simplify([source.anchor, source.point, ...middle, target.point, target.anchor]);
+        if (points.length < 2 || !fitsEndpoint(points, [source], true) || !fitsEndpoint(points, [target], false)) return;
+        const score = routeQuality(points, occupied);
+        if (!betterQuality(score, quality) || !safePolyline(points, obstacles, width, height, occupied)) return;
+        if (segments(points).some(([a, b], i) => expanded.some(rect => !((i === 0 && rect.key === sourceKey) || (i === points.length - 2 && rect.key === targetKey)) && segmentHitsRect(a, b, rect)))) return;
+        // A tiny intermediate stair is never preferable to the A* fallback.
+        if (segments(points).slice(1, -1).some(([a, b]) => lengthOf(a, b) < ARROW_STRAIGHT - EPS)) return;
+        best = points; quality = score;
     }
-    candidates.sort((a, b) => a.cost - b.cost);
-    const { sources, targets } = routePorts(route, width, height, byKey, obstacles, occupied);
-    // The eight nearest clear spans are enough to cover both sides of a card
-    // and both edge directions without searching all timetable intersections.
-    for (const candidate of candidates.slice(0, 8)) {
-        const forced = [candidate.from, candidate.to];
-        if (!Number.isFinite(trackCost(...forced, occupied))) continue;
-        const reserved = [...routingObstacles, candidate.box];
-        const forcedDirection = direction(candidate.from, candidate.to);
-        const makePort = (point, outDirection) => ({ anchor: point, point, outDirection, preference: 0 });
-        const first = findRoute(width, height, reserved, [...occupied, forced], sources, [makePort(candidate.from, (forcedDirection + 2) % 4)], route.sourceKey, undefined);
-        if (!first.length) continue;
-        const last = findRoute(width, height, reserved, [...occupied, forced, ...segments(first)], [makePort(candidate.to, forcedDirection)], targets, undefined, route.targetKey);
-        if (!last.length) continue;
-        const points = simplify([...first, candidate.to, ...last]);
-        if (!safePolyline(points, routingObstacles, width, height, occupied)) continue;
-        const previous = route.points;
-        route.points = points;
-        const placement = labelFor(route, routes, obstacles, labels, width, height);
-        if (placement) { route.reused = false; return placement; }
-        route.points = previous;
+    for (const source of sources) for (const target of targets) {
+        const a = source.point, b = target.point;
+        if (Math.abs(a.x - b.x) < STRUCTURE_EPS || Math.abs(a.y - b.y) < STRUCTURE_EPS) consider(source, target, []);
+        consider(source, target, [{ x: a.x, y: b.y }]);
+        consider(source, target, [{ x: b.x, y: a.y }]);
     }
-    return null;
+    // With no crossing and at most one bend, another channel cannot improve it.
+    if (quality && quality[0] === 0 && quality[1] <= 1) return best;
+    const xs = unique(expanded.flatMap(rect => [rect.left, rect.right]), BOUNDARY, width - BOUNDARY);
+    const ys = unique(expanded.flatMap(rect => [rect.top, rect.bottom]), BOUNDARY, height - BOUNDARY);
+    for (const source of sources) for (const target of targets) {
+        const a = source.point, b = target.point;
+        for (const x of unique([pixel((a.x + b.x) / 2), ...xs], BOUNDARY, width - BOUNDARY)) consider(source, target, [{ x, y: a.y }, { x, y: b.y }]);
+        for (const y of unique([pixel((a.y + b.y) / 2), ...ys], BOUNDARY, height - BOUNDARY)) consider(source, target, [{ x: a.x, y }, { x: b.x, y }]);
+    }
+    return best;
 }
 
 function fitsEndpoint(points, ports, atStart) {
@@ -455,8 +489,20 @@ export function routeScheduleChanges({ width, height, obstacles = [], connection
         if (source && target && source.key === target.key) { route.reason = 'same_time'; continue; }
         const { sources, targets } = routePorts(connection, width, height, byKey, validObstacles, occupied);
         const reusable = reusableRoute(priorByKey.get(route.key), connection, width, height, validObstacles, occupied, sources, targets);
-        route.reused = Boolean(reusable);
-        route.points = reusable || findRoute(width, height, validObstacles, occupied, sources, targets, source?.key, target?.key);
+        const simple = simpleRoute(width, height, validObstacles, occupied, sources, targets, source?.key, target?.key);
+        // Recheck cheap shapes even when the old detour is still safe: shrinking
+        // an obstacle must restore a straight/L route, not preserve old knots.
+        const previousQuality = reusable ? routeQuality(reusable, occupied) : null;
+        const simpleQuality = simple.length ? routeQuality(simple, occupied) : null;
+        const materiallySimpler = simpleQuality && (!previousQuality || simpleQuality[0] < previousQuality[0] || (simpleQuality[0] === previousQuality[0] && (simpleQuality[1] < previousQuality[1] || (simpleQuality[1] === previousQuality[1] && simpleQuality[2] < previousQuality[2] - 16))));
+        route.reused = Boolean(reusable && !materiallySimpler);
+        route.points = route.reused ? reusable : simple;
+        if (!route.points.length || routeQuality(route.points, occupied)[0] > 0) {
+            const searched = findRoute(width, height, validObstacles, occupied, sources, targets, source?.key, target?.key);
+            if (searched.length && (!route.points.length || betterQuality(routeQuality(searched, occupied), routeQuality(route.points, occupied)))) {
+                route.points = searched; route.reused = false;
+            }
+        }
         if (!route.points.length) {
             const fallback = routePorts(connection, width, height, byKey, validObstacles, occupied, true);
             route.points = findRoute(width, height, validObstacles, occupied, fallback.sources, fallback.targets, source?.key, target?.key);
@@ -467,10 +513,6 @@ export function routeScheduleChanges({ width, height, obstacles = [], connection
         }
         occupied.push(...segments(route.points));
     }
-    const labels = [];
-    for (const route of routes) {
-        route.labelPlacement = labelFor(route, routes, validObstacles, labels, width, height);
-        if (!route.labelPlacement && route.label && route.points.length > 1) route.labelPlacement = routeWithCaption(route, routes, validObstacles, labels, width, height, byKey);
-    }
+    placeRouteLabels(routes, validObstacles, width, height);
     return routes;
 }

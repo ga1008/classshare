@@ -21,7 +21,7 @@
  */
 
 import { scheduleChangeConnections, scheduleChangeColors } from './course_schedule_change_links.js?v=change-lines-live-20260920';
-import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-live-20260920';
+import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-simple-20260920';
 
 const STYLE_ID = 'course-schedule-deck-style';
 let changeMapSequence = 0;

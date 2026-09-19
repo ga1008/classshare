@@ -35,6 +35,9 @@ function shareSegment(a: Point[], b: Point[]) {
     return false;
   }));
 }
+function bendCount(points: Point[]) {
+  return points.slice(2).filter((point, index) => (points[index].x === points[index + 1].x) !== (points[index + 1].x === point.x)).length;
+}
 
 describe('orthogonal academic change routes', () => {
   it('points from the original time to the proposed time around a blocking lesson', () => {
@@ -75,17 +78,59 @@ describe('orthogonal academic change routes', () => {
     expect(route.reason).toBe('same_time');
     expect(route.labelPlacement).toBeNull();
   });
-  it.each(['outgoing', 'incoming'] as const)('reserves an exterior caption detour for a short %s boundary connection', direction => {
+  it.each(['outgoing', 'incoming'] as const)('keeps a 40px %s boundary connection straight while placing its long caption clear of the card and arrow', direction => {
     const a = rect('near-right', 420, 80, 552, 175);
     const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a], connections: [{ key: 'edge', sourceKey: direction === 'outgoing' ? a.key : null, targetKey: direction === 'incoming' ? a.key : null, edge: 'right', direction, label: '时间更改 · 教室更改 · 至第5周' }] });
     expectSafe(route.points, [a]);
     expect(route.labelPlacement).not.toBeNull();
-    expect(route.points.length).toBeGreaterThan(2);
+    expect(route.points).toEqual(direction === 'outgoing' ? [{ x: 552, y: 127.5 }, { x: 592, y: 127.5 }] : [{ x: 592, y: 127.5 }, { x: 552, y: 127.5 }]);
+    expect(bendCount(route.points)).toBe(0);
     expect((direction === 'outgoing' ? route.points.at(-1)! : route.points[0]).x).toBe(592);
     const label = route.labelPlacement!;
     expect(label.x + label.width / 2).toBeLessThan(600);
     const box = rect('caption', label.x - label.width / 2, label.y - label.height / 2, label.x + label.width / 2, label.y + label.height / 2);
     expect(box.left < a.right && box.right > a.left && box.top < a.bottom && box.bottom > a.top).toBe(false);
+    const end = route.points.at(-1)!, previous = route.points.at(-2)!;
+    const segmentLength = Math.abs(end.x - previous.x) + Math.abs(end.y - previous.y);
+    const arrowStart = { x: end.x + (previous.x - end.x) * 12 / segmentLength, y: end.y + (previous.y - end.y) * 12 / segmentLength };
+    expect(hits(arrowStart, end, box), 'caption must leave the final 12px arrow shaft uncovered').toBe(false);
+  });
+  it.each(['outgoing', 'incoming'] as const)('does not change the %s geometry when the caption is absent, short, or long', direction => {
+    const obstacle = rect('edge-card', 420, 80, 552, 175);
+    const connection = { key: 'caption-independent', sourceKey: direction === 'outgoing' ? obstacle.key : null, targetKey: direction === 'incoming' ? obstacle.key : null, direction, edge: 'right' as const };
+    const routes = ['', '时间更改', '时间更改 · 教室更改 · 来自第3周 · 至第15周'].map(label => routeScheduleChanges({ width: 600, height: 400, obstacles: [obstacle], connections: [{ ...connection, label }] })[0]);
+    routes.forEach(route => expectSafe(route.points, [obstacle]));
+    expect(routes[1].points).toEqual(routes[0].points);
+    expect(routes[2].points).toEqual(routes[0].points);
+    expect(bendCount(routes[0].points)).toBe(0);
+    expect(routes[0].labelPlacement).toBeNull();
+  });
+  it('uses a legal one-bend L for a same-week move instead of adding unnecessary turns for the label', () => {
+    const a = rect('a', 80, 80, 180, 180), b = rect('b', 410, 230, 510, 330);
+    const options = { width: 600, height: 400, obstacles: [a, b] };
+    const captions = ['', '时间更改', '时间更改 · 教室更改 · 同周调整'];
+    const routes = captions.map(label => routeScheduleChanges({ ...options, connections: [{ key: 'local-L', sourceKey: 'a', targetKey: 'b', label }] })[0]);
+    for (const route of routes) {
+      expectSafe(route.points, [a, b]);
+      expect(bendCount(route.points)).toBe(1);
+      expect(onBoundary(route.points[0], a)).toBe(true);
+      expect(onBoundary(route.points.at(-1)!, b)).toBe(true);
+      expect(route.points).toEqual(routes[0].points);
+    }
+  });
+  it('replaces a still-safe cached detour with the available straight route', () => {
+    const a = rect('a', 60, 80, 160, 160), b = rect('b', 420, 80, 520, 160);
+    const connection = { key: 'cached-route', sourceKey: 'a', targetKey: 'b', label: '时间更改' };
+    const oldPoints = [{ x: 160, y: 120 }, { x: 200, y: 120 }, { x: 200, y: 260 }, { x: 360, y: 260 }, { x: 360, y: 120 }, { x: 420, y: 120 }];
+    expectSafe(oldPoints, [a, b]);
+    const previous = { ...connection, points: oldPoints, labelPlacement: null, reason: null, reused: false };
+    const oldSnapshot = JSON.stringify(previous);
+    const [route] = routeScheduleChanges({ width: 600, height: 400, obstacles: [a, b], connections: [connection], previousRoutes: [previous] });
+    expectSafe(route.points, [a, b]);
+    expect(route.points).toEqual([{ x: 160, y: 120 }, { x: 420, y: 120 }]);
+    expect(bendCount(route.points)).toBe(0);
+    expect(route.reused).toBe(false);
+    expect(JSON.stringify(previous)).toBe(oldSnapshot);
   });
   it('returns an empty route when a wall leaves no legal passage, never cutting through the lesson', () => {
     const a = rect('a', 60, 60, 180, 140), b = rect('b', 380, 260, 500, 340), wall = rect('wall', 0, 180, 600, 220);

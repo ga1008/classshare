@@ -70,6 +70,31 @@ async function geometry(page: Page) {
     const cards = [...map.querySelectorAll<HTMLElement>('.cs-lesson-slot > [data-event-key]')].map(card => ({ key: card.dataset.eventKey, box: card.getBoundingClientRect() }));
     const inside = (point: { x: number; y: number }, box: DOMRect) => point.x > box.left + 1 && point.x < box.right - 1 && point.y > box.top + 1 && point.y < box.bottom - 1;
     const collisions: string[] = [], paths: any[] = [];
+    const routeShape = (d: string) => {
+      const points: { x: number; y: number }[] = [];
+      for (const command of d.matchAll(/([MLQ])([^MLQ]*)/g)) {
+        const values = (command[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+        for (let index = 0; index < values.length; index += 2) {
+          const point = { x: values[index], y: values[index + 1] };
+          if (points.length && Math.hypot(points.at(-1)!.x - point.x, points.at(-1)!.y - point.y) < .01) continue;
+          while (points.length >= 2) {
+            const a = points.at(-2)!, b = points.at(-1)!;
+            const cross = (b.x - a.x) * (point.y - b.y) - (b.y - a.y) * (point.x - b.x);
+            const dot = (b.x - a.x) * (point.x - b.x) + (b.y - a.y) * (point.y - b.y);
+            if (Math.abs(cross) > .05 || dot < 0) break;
+            points.pop();
+          }
+          points.push(point);
+        }
+      }
+      const segments = points.slice(1).map((point, index) => ({ dx: point.x - points[index].x, dy: point.y - points[index].y }));
+      let backtracks = 0;
+      for (const axis of ['dx', 'dy'] as const) {
+        const directions = segments.map(segment => Math.sign(segment[axis])).filter(Boolean);
+        backtracks += directions.slice(1).filter((direction, index) => direction !== directions[index]).length;
+      }
+      return { bends: Math.max(0, points.length - 2), backtracks, orthogonalLength: segments.reduce((sum, segment) => sum + Math.abs(segment.dx) + Math.abs(segment.dy), 0), directLength: Math.abs(points.at(-1)!.x - points[0].x) + Math.abs(points.at(-1)!.y - points[0].y) };
+    };
     for (const line of map.querySelectorAll<SVGPathElement>('.cs-change-line')) {
       const length = line.getTotalLength(), matrix = line.getScreenCTM()!;
       const samples = [];
@@ -80,7 +105,7 @@ async function geometry(page: Page) {
         for (const card of cards) if (inside(point, card.box)) collisions.push(`${line.parentElement?.getAttribute('data-source-key')} crosses ${card.key}`);
       }
       const pointAt = (distance: number) => { const point = line.getPointAtLength(distance); const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix); return { x: screen.x, y: screen.y }; };
-      paths.push({ source: JSON.parse(line.parentElement!.getAttribute('data-change-key')!)[1], sourceKey: line.parentElement!.getAttribute('data-source-key'), targetKey: line.parentElement!.getAttribute('data-target-key'), start: pointAt(0), startStub: pointAt(Math.min(10, length)), end: pointAt(length), endStub: pointAt(Math.max(0, length - 10)), dash: getComputedStyle(line).strokeDasharray, color: getComputedStyle(line).stroke, d: line.getAttribute('d'), marker: line.getAttribute('marker-end') });
+      paths.push({ source: JSON.parse(line.parentElement!.getAttribute('data-change-key')!)[1], sourceKey: line.parentElement!.getAttribute('data-source-key'), targetKey: line.parentElement!.getAttribute('data-target-key'), start: pointAt(0), startStub: pointAt(Math.min(10, length)), end: pointAt(length), endStub: pointAt(Math.max(0, length - 10)), dash: getComputedStyle(line).strokeDasharray, color: getComputedStyle(line).stroke, d: line.getAttribute('d'), marker: line.getAttribute('marker-end'), ...routeShape(line.getAttribute('d')!) });
     }
     for (const label of map.querySelectorAll<SVGGElement>('.cs-change-line-label')) {
       const box = label.getBoundingClientRect();
@@ -404,4 +429,85 @@ test('an empty overview closes and clears the expanded map, then a restored over
   expect(measured.collisions).toEqual([]);
   expectVisiblePorts(measured);
   expect(errors).toEqual([]);
+});
+
+test('a clear course-to-boundary corridor stays straight even when its caption is longer than the corridor', async ({ page }) => {
+  await mount(page);
+  for (const [width, height] of [[1182, 850], [1182, 650], [1440, 900]]) {
+    await page.setViewportSize({ width, height });
+    await settle(page);
+    const measured = await geometry(page);
+    const route = measured.paths.find(item => item.source === 'later-old');
+    expect(route).toBeTruthy();
+    expect(route.bends, `${width}x${height}: a caption must not turn the clear right-hand corridor into a loop`).toBe(0);
+    expect(route.backtracks, `${width}x${height}: the exit arrow must not curl back before reaching the edge`).toBe(0);
+    expect(route.orthogonalLength).toBeCloseTo(route.directLength, 1);
+    await expect(change(page, 'later-old').locator('.cs-change-line-label')).toContainText('第5周');
+    expect(measured.collisions).toEqual([]);
+    expectVisiblePorts(measured);
+  }
+});
+
+test('an unobstructed same-week L or Z route remains simple without caption-driven backtracking', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.weeks.forEach((week: any) => { week.lessons = week.lessons.filter((lesson: any) => ['same-old', 'same-new'].includes(lesson.event_key)); });
+    w.deck.setOverview(w.fixture, { keepWeek: true });
+  });
+  for (const width of [1182, 1440, 390]) {
+    await page.setViewportSize({ width, height: 850 });
+    await settle(page);
+    const measured = await geometry(page);
+    const route = measured.paths.find(item => item.source === 'same-old');
+    expect(route.bends).toBeLessThanOrEqual(2);
+    expect(route.backtracks).toBe(0);
+    expect(route.orthogonalLength).toBeCloseTo(route.directLength, 1);
+    expect(measured.collisions).toEqual([]);
+    expectVisiblePorts(measured);
+  }
+});
+
+test('adjacent short exits keep both readable captions without overlap or added route bends', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = structuredClone(w.fixture.weeks[1].lessons.find((lesson: any) => lesson.event_key === 'later-old'));
+    const proposed = structuredClone(w.fixture.weeks[2].lessons.find((lesson: any) => lesson.event_key === 'later-new'));
+    const oldSlot = { date: '2026-09-27', sections: [4, 5], room: 'B416-1' };
+    const newSlot = { date: '2026-09-30', sections: [4, 5], room: 'B416-1' };
+    Object.assign(original, { event_key: 'adjacent-old', sections: [4, 5], session_id: 110, classroom_url: '/classroom/11?session_id=110' });
+    Object.assign(proposed, { event_key: 'adjacent-new', weekday: 3, date: newSlot.date, sections: [4, 5], session_id: 110, classroom_url: '/classroom/11?session_id=110' });
+    Object.assign(original.adjustment, { request_id: 'adjacent', original: oldSlot, proposed: newSlot, counterpart_event_key: 'adjacent-new' });
+    Object.assign(proposed.adjustment, { request_id: 'adjacent', original: oldSlot, proposed: newSlot, counterpart_event_key: 'adjacent-old' });
+    w.fixture.weeks[1].lessons.push(original); w.fixture.weeks[2].lessons.push(proposed);
+    const side = w.fixture.weeks[1].lessons.find((lesson: any) => lesson.event_key === 'unaffected-two');
+    const sideOld = { date: '2026-09-26', sections: [6, 7], room: 'B416-1' };
+    const sideNew = { date: '2026-10-01', sections: [6, 7], room: 'B416-1' };
+    Object.assign(side, { event_key: 'side-old', adjustment: { request_id: 'side', kind: 'move', phase: 'pending', endpoint: 'original', original: sideOld, proposed: sideNew, counterpart_event_key: 'side-new', counterpart_week_index: 5 } });
+    const sideTarget = structuredClone(side);
+    Object.assign(sideTarget, { event_key: 'side-new', weekday: 4, date: sideNew.date, counts_towards_total: false });
+    Object.assign(sideTarget.adjustment, { endpoint: 'proposed', counterpart_event_key: 'side-old', counterpart_week_index: 4 });
+    w.fixture.weeks[2].lessons.push(sideTarget);
+    w.deck.setOverview(w.fixture, { keepWeek: true });
+  });
+  for (const [width, height] of [[1182, 850], [1366, 768], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await settle(page);
+    const measured = await geometry(page);
+    for (const key of ['later-old', 'adjacent-old']) {
+      await expect(change(page, key).locator('.cs-change-line-label')).toHaveCount(1);
+      expect(measured.paths.find(route => route.source === key).bends).toBe(0);
+    }
+    expect(measured.collisions).toEqual([]);
+    const labelOverlaps = await page.locator('.cs-expand .cs-change-line-label').evaluateAll(labels => {
+      const rectangles = labels.map(label => label.getBoundingClientRect());
+      let overlaps = 0;
+      rectangles.forEach((a, index) => rectangles.slice(index + 1).forEach(b => {
+        if (a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1) overlaps++;
+      }));
+      return overlaps;
+    });
+    expect(labelOverlaps).toBe(0);
+  }
 });
