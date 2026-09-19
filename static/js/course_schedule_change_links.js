@@ -1,4 +1,6 @@
 /** Pair only the explicit pending endpoints supplied by the academic snapshot. */
+import { classroomChangeState } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+
 const text = value => typeof value === 'string' ? value.trim() : '';
 const positiveInteger = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
     && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
@@ -97,7 +99,7 @@ export function scheduleChangeConnections(overview, week) {
         if (sameWeek && (!visible.has(originalKey) || !visible.has(proposedKey))) continue;
         const outgoing = entry.lesson === originalEntry.lesson;
         const remoteWeek = outgoing ? proposedEntry.weekIndex : originalEntry.weekIndex;
-        const roomChanged = original.room && proposed.room && original.room !== proposed.room;
+        const roomChanged = classroomChangeState(original.room, proposed.room) === true;
         connections.push({
             key: connectionKey,
             sourceKey: sameWeek || outgoing ? originalKey : null,

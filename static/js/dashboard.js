@@ -1,5 +1,5 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-density';
+import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 

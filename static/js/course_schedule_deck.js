@@ -20,8 +20,10 @@
  * 放大视图按节次给出早读(1)/上午(2-5)/下午(6-9)/晚上(10-11+)的背景分区。
  */
 
-import { scheduleChangeConnections, scheduleChangeColors } from './course_schedule_change_links.js?v=change-lines-live-20260920';
+import { scheduleChangeConnections, scheduleChangeColors } from './course_schedule_change_links.js?v=change-lines-glass-20260920';
 import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-simple-20260920';
+
+import { compactClassroomName, adjustmentActionText } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 
 const STYLE_ID = 'course-schedule-deck-style';
 let changeMapSequence = 0;
@@ -243,172 +245,168 @@ const DECK_CSS = `
 .cs-grid__band--am { background: rgba(14, 165, 233, 0.18); color: #075985; }
 .cs-grid__band--pm { background: rgba(99, 102, 241, 0.18); color: #3730a3; }
 .cs-grid__band--eve { background: rgba(51, 65, 85, 0.24); color: #f8fafc; }
+/* Glass is applied to the surface, never as opacity on its text. The proposed
+   arrangement retains an opaque white tint so underlying lessons cannot bleed. */
 .cs-lesson {
-    border-radius: 8px;
-    padding: 6px 8px;
-    color: #fff;
-    background: var(--cs-accent, #6366f1);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    overflow: hidden;
-    min-height: 0;
-    min-width: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-    text-decoration: none;
+    --cs-radius: 14px;
+    border-radius: var(--cs-radius); color: #fff; background: transparent;
+    min-width: 0; min-height: 0; padding: 0; box-sizing: border-box;
+    text-decoration: none; overflow: hidden;
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
 }
-.cs-lesson strong {
-    font-size: 0.76rem; line-height: 1.25; font-weight: 900;
-    flex: 0 0 auto;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.cs-lesson__surface {
+    position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto;
+    width: 100%; height: 100%; min-width: 0; min-height: 0; box-sizing: border-box;
+    border-radius: inherit; padding: 7px 8px; gap: 4px; overflow: hidden;
+    background-color: var(--cs-accent, #6366f1);
+    background-image: linear-gradient(145deg, rgba(255,255,255,.20), rgba(255,255,255,.03) 48%, rgba(255,255,255,.10));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 0 0 1px rgba(255,255,255,.22), 0 2px 6px rgba(15,23,42,.08);
 }
-.cs-lesson span { font-size: 0.64rem; opacity: 0.94; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cs-lesson__meta { flex: 0 0 auto; }
-.cs-lesson__link-hint { font-weight: 800; opacity: 0.95; }
-/* 卡片文字始终白色：cs-lesson--cell 是 a 标签，全局 a:link/:visited/:hover
-   的默认色（蓝/紫）特异性高于 .cs-lesson 的 color，会让悬停时文字变蓝，
-   这里用足够高特异性的选择器覆盖，任何状态都保持白字。 */
-a.cs-lesson, a.cs-lesson:link, a.cs-lesson:visited, a.cs-lesson:hover, a.cs-lesson:focus,
-a.cs-lesson strong, a.cs-lesson span { color: #fff; }
-
-/* 形式一：3D 缩略卡片（网格定位，最简、无悬停交互）。 */
-.cs-lesson--mini { justify-content: center; container: cs-lesson / size; }
-
-/* 放大视图：网格允许悬停放大的卡片溢出格子显示（其它情况仍裁切）。 */
+.cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited {
+    display: block; align-self: center; min-width: 0; min-height: 0;
+    color: inherit; text-decoration: none; overflow: hidden;
+}
+.cs-lesson__title {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    font-size: .86rem; line-height: 1.3; font-weight: 850; margin: 0;
+    min-width: 0; overflow: hidden; overflow-wrap: anywhere; white-space: normal;
+}
+.cs-lesson__details { display: none; opacity: 0; min-width: 0; }
+.cs-lesson__details > span { display: block; font-size: .82rem; line-height: 1.55; overflow-wrap: anywhere; }
+.cs-lesson__link-hint { font-weight: 750; }
+.cs-lesson__footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; min-width: 0; gap: 5px; }
+.cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0, 1fr) auto; }
+.cs-lesson__room {
+    display: block; min-width: 0; font-size: .68rem; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 1;
+}
+.cs-lesson__room-short, .cs-lesson__room-full { font: inherit; line-height: inherit; }
+.cs-lesson__room-full { display: none; }
+.cs-adjustment-label {
+    position: relative; justify-self: end; align-self: end; z-index: 2;
+    max-width: 100%; min-width: 0; min-height: 23px; box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.62); border-radius: 10px;
+    padding: 3px 6px; color: inherit; font: 750 .67rem/1.25 Arial,sans-serif;
+    background: linear-gradient(145deg, rgba(255,255,255,.32), rgba(255,255,255,.12));
+    backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 5px rgba(15,23,42,.12);
+    text-align: center; white-space: nowrap; cursor: pointer;
+}
+.cs-adjustment-label > span { font: inherit; line-height: inherit; }
+.cs-adjustment-label__full { display: none; }
+.cs-adjustment-label:is(:hover,:focus-visible) { background-color: rgba(255,255,255,.18); }
+.cs-adjustment-label:active { box-shadow: inset 0 1px 4px rgba(15,23,42,.2); }
+.cs-lesson--mini { container: cs-lesson / size; --cs-radius: 11px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.cs-lesson--mini .cs-lesson__surface { padding: 4px 5px; gap: 2px; }
+.cs-lesson--mini .cs-lesson__title { font-size: .76rem; }
+.cs-lesson--mini .cs-lesson__room { font-size: .64rem; }
+.cs-lesson--mini .cs-adjustment-label { min-height: 19px; padding: 2px 4px; font-size: .6rem; border-radius: 8px; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .cs-grid--expanded { overflow: visible; }
 .cs-grid--expanded .cs-grid__corner,
 .cs-grid--expanded .cs-grid__day,
-.cs-grid--expanded .cs-grid__section { font-size: 0.84rem; }
-
-/* 形式二：放大课表内的卡片。cs-lesson-slot 才是网格定位、作为**尺寸恒定
-   的稳定悬停锚点**；内层卡片绝对定位填满槽（基态占满格子）。卡片放大缩小
-   都不改变锚点尺寸。按槽位宽高精简信息，不挤压文字行高。 */
+.cs-grid--expanded .cs-grid__section { font-size: .84rem; }
 .cs-lesson-slot { position: relative; min-width: 0; min-height: 0; container: cs-lesson / size; }
-.cs-lesson--cell {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    transform: none;
-    justify-content: flex-start;
-    padding: 6px 9px;
-    box-sizing: border-box;
-    z-index: 1;
-}
-.cs-lesson--cell strong { font-size: 0.86rem; margin-bottom: 1px; }
-.cs-lesson--cell span { font-size: 0.72rem; }
+.cs-lesson--cell { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+a.cs-lesson, a.cs-lesson:link, a.cs-lesson:visited, a.cs-lesson:hover, a.cs-lesson:focus { color: #fff; }
 a.cs-lesson--cell { cursor: pointer; }
-/* 尚无对应课堂：虚线描边提示可创建 */
-a.cs-lesson--create {
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
-    background-image: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12));
-}
+a.cs-lesson--create .cs-lesson__surface { box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
-
-/* 形式三：保持同一个链接，测量自然尺寸后动画到该尺寸，不缩放文字。
-   缩回期间保留换行排版，结束后恢复省略；槽位始终不参与尺寸动画。 */
-.cs-lesson-slot.is-preview { z-index: 60; }
-.cs-lesson--cell:is(.is-preview, .is-preview-closing) {
-    top: var(--cs-preview-top, 0px); left: var(--cs-preview-left, 0px);
-    transform: none;
-    width: max-content; height: auto;
-    min-width: var(--cs-preview-min-width, 240px);
-    max-width: var(--cs-preview-max-width, 420px);
-    max-height: var(--cs-preview-max-height, 80vh);
-    padding: 11px 13px;
-    gap: 4px;
-    z-index: 60;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-    box-shadow: 0 22px 46px rgba(15, 23, 42, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.32);
-}
-.cs-lesson--cell:is(.is-preview, .is-preview-closing) > * { flex: 0 0 auto; overflow: visible; overflow-wrap: anywhere; white-space: normal; }
-.cs-lesson--cell:is(.is-preview, .is-preview-closing) strong { font-size: 1.02rem; line-height: 1.3; margin-bottom: 3px; }
-.cs-lesson--cell:is(.is-preview, .is-preview-closing) span { font-size: 0.86rem; line-height: 1.55; }
-.cs-lesson--cell.is-preview-closing { pointer-events: none; }
-.cs-lesson--cell:focus-visible { outline: 3px solid #312e81; outline-offset: 3px; }
-
-/* The dashed frame, four transparent CSS pixels and colored surface are separate
-   boxes. No white cover-up and no alpha on text or controls. Kept within the slot
-   so adjacent periods and the clipped 3D canvas cannot cut off the outer frame. */
-.cs-lesson.cs-lesson--pending { background: transparent; border: 2px dashed var(--cs-accent); padding: 4px; box-shadow: none; gap: 0; position: relative; overflow: visible; }
-.cs-lesson--cell.cs-lesson--pending { position: absolute; }
-.cs-lesson__surface { background: var(--cs-accent); border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
-/* Opaque white tint keeps the course hue distinct without showing the grid or
-   other lesson text through an expanded preview. */
-.cs-lesson--proposed .cs-lesson__surface { background: color-mix(in srgb, var(--cs-accent) 25%, #fff 75%); }
-.cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited { display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+/* Pending frames keep a 4px gap; extremely narrow/short lanes use 2px below
+   to retain readable title and action rows. */
+.cs-lesson.cs-lesson--pending { border: 2px dashed var(--cs-accent); padding: 4px; }
+.cs-lesson--pending .cs-lesson__surface { border-radius: max(6px, calc(var(--cs-radius) - 6px)); }
 .cs-lesson--pending.cs-lesson--proposed { color: #172554; }
-.cs-lesson--pending strong, .cs-lesson--pending span { color: inherit; }
-.cs-lesson--proposed span { opacity: 1; }
-.cs-adjustment-label { flex: 0 0 auto; align-self: flex-start; max-width: 100%; min-height: 24px; border: 1px solid currentColor; border-radius: 4px; background: rgba(255,255,255,.2); color: inherit; font-size: .72rem; font-weight: 800; padding: 2px 5px; cursor: pointer; white-space: nowrap; line-height: 1.35; text-align: left; }
-.cs-lesson--mini .cs-lesson__surface { padding: 1px 3px; gap: 1px; }
-.cs-lesson--mini .cs-adjustment-label { font-size: .64rem; min-height: 20px; padding: 1px 3px; }
-.cs-lesson--pending:is(.is-preview,.is-preview-closing) { padding: 4px; }
-.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 11px 13px; overflow: visible; }
-.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__main { flex: 0 0 auto; overflow: visible; }
-.cs-lesson--pending:is(.is-preview,.is-preview-closing) .cs-lesson__main > * { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
-/* Keep the same action and accessible name in every density. Only its visible
-   wording changes, so counterpart navigation and touch/focus state survive. */
-.cs-adjustment-label > .cs-adjustment-label__short,
-.cs-adjustment-label > .cs-adjustment-label__full { font: inherit; line-height: inherit; opacity: 1; }
-.cs-adjustment-label > .cs-adjustment-label__full { display: none; }
-.cs-lesson:is(.is-preview,.is-preview-closing) .cs-adjustment-label { white-space: normal; }
-.cs-lesson:is(.is-preview,.is-preview-closing) .cs-adjustment-label__short { display: none; }
-.cs-lesson:is(.is-preview,.is-preview-closing) .cs-adjustment-label__full { display: inline; white-space: normal; }
-
-/* A 3D thumbnail is an overview. The expanded week uses the actual stable slot
-   dimensions (including overlap lanes), not the viewport. A single-card preview
-   always restores all fields; its animation never resizes this query container. */
-.cs-lesson--mini .cs-lesson__meta { display: none; }
-.cs-lesson--mini .cs-lesson__main { flex: 0 0 auto; }
-.cs-lesson--mini .cs-lesson__surface { justify-content: center; }
-.cs-lesson--mini strong { white-space: nowrap; }
-@container cs-lesson (max-width: 220px) or (max-height: 160px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__meta { display: none; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__main { flex: 0 0 auto; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) strong {
-        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-        white-space: normal; overflow-wrap: anywhere; margin: 0;
-    }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) { justify-content: center; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { justify-content: center; gap: 4px; padding: 2px 4px; }
+.cs-lesson--proposed .cs-lesson__surface { background-color: color-mix(in srgb, var(--cs-accent) 25%, #fff 75%); }
+.cs-lesson--proposed .cs-adjustment-label { border-color: rgba(23,37,84,.3); background-color: rgba(255,255,255,.35); }
+/* Title gets the flexible space. The footer keeps the action at the right edge;
+   the lower-priority room yields its width instead of pushing the action away. */
+.cs-lesson__footer:has(.cs-adjustment-label) .cs-adjustment-label { max-width: var(--cs-compact-action-width, 96px); }
+@container cs-lesson (max-height: 92px) {
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 3px 5px; gap: 2px; }
 }
-@container cs-lesson (max-height: 79px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) strong {
-        display: block; white-space: nowrap; margin: 0;
-    }
-}
-@container cs-lesson (max-height: 68px) {
+@container cs-lesson (max-height: 72px) {
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__title { -webkit-line-clamp: 1; }
     .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 1px 4px; gap: 1px; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { min-height: 20px; padding: 1px 3px; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { min-height: 20px; padding: 2px 4px; font-size: .64rem; }
 }
-/* Only the shortest single-period cards need a shared row. Keep the full title
-   width for narrow overlap lanes whenever two readable rows can fit. */
+@container cs-lesson (max-width: 100px) {
+    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0, 1fr); }
+    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) .cs-lesson__room { grid-area: 1/1; }
+    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-adjustment-label { grid-area: 1/1; max-width: 100%; white-space: normal; }
+    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) .cs-lesson__room { visibility: hidden; }
+}
 @container cs-lesson (max-height: 52px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface {
-        display: grid; grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center; gap: 4px; padding: 1px 4px;
-    }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) strong {
-        display: block; white-space: nowrap; margin: 0;
-    }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { align-self: center; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); gap: 3px; }
+    .cs-lesson--cell.cs-lesson--pending:not(.is-preview,.is-preview-closing) .cs-lesson__room { display: none; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__room { max-width: 76px; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__title { -webkit-line-clamp: 1; }
+}
+@container cs-lesson (max-width: 80px) and (min-height: 53px) and (max-height: 72px) {
+    .cs-lesson--cell.cs-lesson--pending:not(.is-preview,.is-preview-closing) { padding: 2px; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 0 3px; gap: 1px; }
+    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { padding: 0 3px; line-height: 1.1; }
+}
+@container cs-lesson (max-height: 57px) {
+    .cs-lesson--mini .cs-lesson__surface { padding: 1px 3px; gap: 1px; }
+    .cs-lesson--mini.cs-lesson--pending .cs-lesson__title { -webkit-line-clamp: 1; }
 }
 @container cs-lesson (max-height: 39px) {
-    .cs-lesson--mini .cs-lesson__surface {
-        display: grid; grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center; gap: 3px;
-    }
-    .cs-lesson--mini .cs-adjustment-label { align-self: center; }
+    .cs-lesson--mini .cs-lesson__title { -webkit-line-clamp: 1; }
 }
-.cs-adjustment-details { font-size: .75rem; line-height: 1.6; padding-top: 4px; border-top: 1px solid currentColor; }
-.cs-adjustment-details[hidden] { display: none; }
-.cs-lesson:not(.is-preview,.is-preview-closing) .cs-adjustment-details { display: none; }
+@container cs-lesson (max-height: 30px) {
+    .cs-lesson--mini .cs-lesson__surface { grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); }
+    .cs-lesson--mini .cs-lesson__room { display: none; }
+}
+.cs-lesson-slot.is-preview { z-index: 60; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) {
+    --cs-radius: 22px;
+    top: var(--cs-preview-top, 0px); left: var(--cs-preview-left, 0px);
+    width: max-content; height: auto;
+    min-width: var(--cs-preview-min-width, 240px); max-width: var(--cs-preview-max-width, 420px);
+    max-height: var(--cs-preview-max-height, 80vh);
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    box-shadow: 0 18px 42px rgba(15,23,42,.32), 0 2px 8px rgba(15,23,42,.15);
+}
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__surface {
+    display: flex; flex-direction: column; width: auto; height: auto; min-height: 0;
+    padding: 13px 14px; gap: 10px; overflow: visible;
+}
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__main { align-self: stretch; overflow: visible; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__title {
+    display: block; font-size: 1.02rem; line-height: 1.3; overflow: visible; -webkit-line-clamp: unset;
+}
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__details { display: grid; gap: 3px; opacity: 1; padding-top: 8px; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__footer { flex: 0 0 auto; grid-template-columns: minmax(0,1fr); gap: 10px; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room { font-size: .8rem; line-height: 1.5; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room-short { display: none; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room-full { display: inline; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label { border-radius: 13px; font-size: .78rem; line-height: 1.4; padding: 6px 8px; max-width: 100%; text-align: left; white-space: normal; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label__short { display: none; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label__full { display: inline; }
+.cs-adjustment-details { font-size: .75rem; line-height: 1.6; padding-top: 6px; border-top: 1px solid currentColor; }
+.cs-adjustment-details[hidden], .cs-lesson:not(.is-preview,.is-preview-closing) .cs-adjustment-details { display: none; }
+/* During the 120ms transition, independent text boxes travel inside the moving
+   card. Their text is never scaled; anchors, buttons and event identities stay. */
+.cs-lesson.is-preview-moving .cs-lesson__surface { position: static; display: block; height: 100%; padding: 0; }
+.cs-lesson.is-preview-moving .cs-lesson__main, .cs-lesson.is-preview-moving .cs-lesson__footer { position: static; display: block; padding: 0; }
+.cs-lesson.is-preview-moving .cs-lesson__title { display: block; -webkit-line-clamp: unset; overflow: hidden; }
+.cs-lesson.is-preview-moving .cs-lesson__room-short, .cs-lesson.is-preview-moving .cs-lesson__room-full,
+.cs-lesson.is-preview-moving .cs-adjustment-label__short, .cs-lesson.is-preview-moving .cs-adjustment-label__full {
+    display: block; position: absolute; inset: 0; white-space: normal; overflow: hidden;
+}
+.cs-lesson.is-preview-moving .cs-adjustment-label > span { inset: 4px 6px; }
+.cs-lesson--cell.is-preview-closing { pointer-events: none; }
+.cs-lesson--cell:focus-visible, .cs-lesson__main:focus-visible, .cs-adjustment-label:focus-visible { outline: 2px solid #fbbf24; outline-offset: 1px; }
 .cs-lesson.is-counterpart-focus { outline: 3px solid #f59e0b; outline-offset: 1px; }
-.cs-lesson.is-counterpart-focus::after { content: '已定位'; position: absolute; right: 0; top: -18px; background: #713f12; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 10px; pointer-events: none; }
+.cs-lesson.is-counterpart-focus::after { content: '已定位'; position: absolute; right: 0; top: -18px; background: #713f12; color: #fff; padding: 1px 4px; border-radius: 6px; font-size: 10px; pointer-events: none; }
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .cs-lesson, .cs-adjustment-label { backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .cs-lesson__surface { background-image: none; }
+    .cs-adjustment-label { background: var(--cs-accent); color: #fff; border-color: currentColor; }
+    .cs-lesson--proposed .cs-adjustment-label { background: #fff; color: #172554; }
+}
 .cs-deck-feedback { font-size: .8rem; color: var(--text-muted,#64748b); line-height: 1.6; }
 .cs-deck-feedback:empty { display: none; }
 .cs-lesson__main:focus-visible,.cs-adjustment-label:focus-visible { outline: 3px solid #fbbf24; outline-offset: 1px; }
@@ -664,66 +662,43 @@ export function createScheduleDeck(container, options = {}) {
         const accent = courseAccentFor(state.overview, lesson.course_name);
         const laneStyle = lane.count > 1 ? `width:calc(100% / ${lane.count} - 2px);margin-left:calc(100% / ${lane.count} * ${lane.lane});` : '';
         const gridPos = `grid-column:${column};grid-row:${rowStart} / span ${rowSpan};${laneStyle}`;
-        const roomText = escapeHtml(lesson.classroom_short || lesson.classroom || '教室待定');
         const change = pendingScheduleChange(lesson);
-        const linkHint = !lesson.classroom_url && lesson.class_offering_id ? '课次尚未精确关联，请同步教务课表核对' : !lesson.classroom_url && lesson.create_url ? '尚无对应课堂 · 点击创建；创建后请再次同步关联课次' : '';
-        const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
+        const proposed = change?.endpoint === 'proposed';
+        const href = String(lesson.classroom_url || lesson.create_url || '');
+        const isCreate = Boolean(href) && !lesson.classroom_url;
+        const fullRoom = String(lesson.classroom || lesson.classroom_short || '教室待定');
+        const extractedRoom = compactClassroomName(fullRoom);
+        const shortRoom = extractedRoom === fullRoom && lesson.classroom_short ? compactClassroomName(lesson.classroom_short) : extractedRoom;
+        const linkHint = !lesson.classroom_url && lesson.class_offering_id ? '课次尚未精确关联，请同步教务课表核对'
+            : isCreate ? '尚无对应课堂 · 点击创建；创建后请再次同步关联课次' : href ? '点击进入课堂 →' : '';
+        const sessionText = lesson.session_no ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}` : '';
+        const weekday = lesson.weekday_label || `星期${['一','二','三','四','五','六','日'][Math.min(6, Math.max(0, Number(lesson.weekday || 1) - 1))]}`;
+        const details = [
+            lesson.actual_date ? `<span class="cs-lesson__meta">${escapeHtml(lesson.actual_date)} · ${escapeHtml(weekday)} · ${escapeHtml(lesson.section_label || '')}</span>` : '',
+            lesson.class_label ? `<span class="cs-lesson__meta">班级 ${escapeHtml(lesson.class_label)}${lesson.student_count ? ` · ${escapeHtml(lesson.student_count)}人` : ''}</span>` : '',
+            sessionText ? `<span class="cs-lesson__meta">${escapeHtml(sessionText)}${lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : ''}</span>` : '',
+            linkHint ? `<span class="cs-lesson__meta cs-lesson__link-hint">${escapeHtml(linkHint)}</span>` : '',
+        ].filter(Boolean).join('');
+        let button = '', comparison = '';
         if (change) {
-            const href = String(lesson.classroom_url || lesson.create_url || '');
-            const proposed = change.endpoint === 'proposed';
             const counterpart = change.kind === 'move' && change.counterpart_event_key;
             const jump = counterpart ? ` ${proposed ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
+            const actionLabel = scheduleChangeLabel(lesson) + jump;
+            const shortLabel = adjustmentActionText(lesson);
+            button = `<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
             const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
             const detail = `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`;
-            const main = `<${href ? 'a' : 'div'} class="cs-lesson__main"${href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"'}><strong>${escapeHtml(lesson.course_name)}</strong><span class="cs-lesson__meta">${expanded ? '教室 ' : ''}${expanded ? escapeHtml(lesson.classroom || lesson.classroom_short || '教室待定') : roomText}</span><span class="cs-lesson__meta">${expanded ? '班级 ' : ''}${escapeHtml(lesson.class_label || '')}</span>${expanded && lesson.actual_date ? `<span class="cs-lesson__meta">${escapeHtml(lesson.actual_date)} · ${escapeHtml(lesson.section_label || '')}</span>` : ''}${expanded && lesson.session_no ? `<span class="cs-lesson__meta">第${escapeHtml(lesson.session_no)}次课${lesson.session_total ? `（共${escapeHtml(lesson.session_total)}次）` : ''}</span>` : ''}</${href ? 'a' : 'div'}>`;
-            const actionLabel = scheduleChangeLabel(lesson) + jump;
-            const shortLabel = counterpart ? (proposed ? '原课' : '新课') : change.kind === 'room' ? '对照' : '说明';
-            const body = `<div class="cs-lesson__surface">${main}${linkHint ? `<span class="cs-lesson__meta cs-lesson__link-hint">${escapeHtml(linkHint)}</span>` : ''}<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel)}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button><div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div></div>`;
-            const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'} cs-lesson--pending${proposed ? ' cs-lesson--proposed' : ''}`;
-            if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(detail)}">${body}</div>`;
-            return `<div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}"><div class="${classes}"${keyAttr} style="--cs-accent:${accent}">${body}</div></div>`;
+            comparison = `<div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div>`;
         }
-
-        if (!expanded) {
-            // 形式一：3D 缩略卡片（最简、无交互）。
-            return `
-            <div class="cs-lesson cs-lesson--mini"${keyAttr} style="--cs-accent:${accent};${gridPos}"
-                 title="${escapeHtml(`${lesson.course_name} ${roomText} ${lesson.class_label || ''} ${linkHint}`)}">
-                <strong>${escapeHtml(lesson.course_name)}</strong>
-                <span class="cs-lesson__meta">${roomText}</span>
-                <span class="cs-lesson__meta">${escapeHtml(lesson.class_label || '')}${lesson.session_no ? ` · 第${lesson.session_no}次` : ''}</span>
-            </div>`;
-        }
-
-        // 形式二/三：放大课表内的卡片 + 悬停放大。
-        const classroomHref = String(lesson.classroom_url || '');
-        const createHref = String(lesson.create_url || '');
-        const href = classroomHref || createHref;
-        const isCreate = Boolean(href) && !classroomHref;
-        const sdLabel = lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : '';
-        const studentText = lesson.student_count ? ` · ${lesson.student_count}人` : '';
-        const sessionText = lesson.session_no
-            ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}`
-            : '';
-        const hintText = linkHint || (href ? '点击进入课堂 →' : '');
-        const tag = href ? 'a' : 'div';
-        const hrefAttr = href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"';
-        // 完整信息保留在同一 DOM；小槽位隐藏次要字段，单卡展开时恢复并测量自然尺寸。
-        const detailLines = [
-            lesson.actual_date ? `<span class="cs-lesson__meta">${escapeHtml(lesson.actual_date)} · ${escapeHtml(lesson.section_label || '')}</span>` : '',
-            `<span class="cs-lesson__meta">教室 ${escapeHtml(lesson.classroom || lesson.classroom_short || '教室待定')}</span>`,
-            `<span class="cs-lesson__meta">班级 ${escapeHtml(lesson.class_label || '')}${studentText}</span>`,
-            sessionText ? `<span class="cs-lesson__meta">${escapeHtml(sessionText)}${sdLabel}</span>` : '',
-            hintText ? `<span class="cs-lesson__meta cs-lesson__link-hint">${hintText}</span>` : '',
-        ].filter(Boolean).join('');
-        return `
-        <div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}">
-            <${tag} class="cs-lesson cs-lesson--cell${isCreate ? ' cs-lesson--create' : ''}"${hrefAttr}${keyAttr}
-                 style="--cs-accent:${accent};">
-                <strong>${escapeHtml(lesson.course_name)}</strong>
-                ${detailLines}
-            </${tag}>
-        </div>`;
+        const mainTag = change && href ? 'a' : 'div';
+        const mainAttrs = change ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
+        const content = `<div class="cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
+        const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${proposed ? ' cs-lesson--proposed' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
+        const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
+        if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(`${lesson.course_name} · ${fullRoom}`)}">${content}</div>`;
+        const tag = !change && href ? 'a' : 'div';
+        const outerAttrs = !change ? href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"' : '';
+        return `<div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}"><${tag} class="${classes}"${outerAttrs}${keyAttr} style="--cs-accent:${accent}">${content}</${tag}></div>`;
     }
 
     /**
@@ -1012,20 +987,31 @@ export function createScheduleDeck(container, options = {}) {
 
     function lessonFrame(cell) {
         const style = getComputedStyle(cell);
-        const properties = ['width', 'height', 'left', 'top', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'gap', 'boxShadow'];
-        return {
-            card: Object.fromEntries(properties.map((key) => [key, style[key]])),
-            text: [...cell.children].map((node) => {
-                const textStyle = getComputedStyle(node);
-                return { fontSize: textStyle.fontSize, lineHeight: textStyle.lineHeight, marginBottom: textStyle.marginBottom };
-            }),
-        };
+        const rect = cell.getBoundingClientRect();
+        const bodyRect = refs.expandBody.getBoundingClientRect();
+        const scaleX = bodyRect.width / refs.expandBody.offsetWidth || 1;
+        const scaleY = bodyRect.height / refs.expandBody.offsetHeight || 1;
+        const properties = ['width', 'height', 'left', 'top', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow'];
+        const parts = [...cell.querySelectorAll('.cs-lesson__title, .cs-lesson__details, .cs-lesson__room, .cs-adjustment-label, .cs-adjustment-details')].map(node => {
+            const css = getComputedStyle(node), box = node.getBoundingClientRect();
+            const visible = box.width > 0 && box.height > 0 && css.display !== 'none' && css.visibility !== 'hidden';
+            return { node, visible, box: { left: `${(box.left - rect.left) / scaleX - parseFloat(style.borderLeftWidth)}px`, top: `${(box.top - rect.top) / scaleY - parseFloat(style.borderTopWidth)}px`,
+                width: `${box.width / scaleX}px`, height: `${box.height / scaleY}px`, fontSize: css.fontSize, lineHeight: css.lineHeight },
+                opacity: visible ? Number(css.opacity) : 0 };
+        });
+        const labels = [...cell.querySelectorAll('.cs-lesson__room-short, .cs-lesson__room-full, .cs-adjustment-label__short, .cs-adjustment-label__full')].map(node => {
+            const css = getComputedStyle(node);
+            return { node, opacity: css.display === 'none' ? 0 : Number(css.opacity) };
+        });
+        return { card: Object.fromEntries(properties.map(key => [key, style[key]])), parts, labels,
+            surfaceRadius: getComputedStyle(cell.querySelector('.cs-lesson__surface')).borderRadius };
     }
 
     function cancelLessonMotion(cell) {
         const motion = previewMotions.get(cell);
         previewMotions.delete(cell);
-        motion?.animations.forEach((animation) => animation.cancel());
+        motion?.animations.forEach(animation => animation.cancel());
+        cell.classList.remove('is-preview-moving');
     }
 
     function clearLessonPreviews() {
@@ -1072,40 +1058,66 @@ export function createScheduleDeck(container, options = {}) {
 
     function animateLessonPreview(cell, opening) {
         if (!cell.isConnected) return;
-        // Read the currently displayed frame before cancelling: reversing or
-        // switching courses starts here, never at a stale endpoint.
+        // Snapshot the currently painted boxes before cancelling. Rapid reversal
+        // starts from these positions and opacity values, not either endpoint.
         const from = lessonFrame(cell);
+        const priorScroll = previewMotions.get(cell)?.openScroll;
+        const openScroll = priorScroll || { left: cell.scrollLeft, top: cell.scrollTop };
         cancelLessonMotion(cell);
         cell.classList.remove('is-preview-closing');
         cell.classList.toggle('is-preview', opening);
-        if (opening) measureLessonPreview(cell);
+        if (opening) {
+            measureLessonPreview(cell);
+            if (priorScroll) { cell.scrollLeft = priorScroll.left; cell.scrollTop = priorScroll.top; }
+        }
         const to = lessonFrame(cell);
+        const targetScroll = { left: cell.scrollLeft, top: cell.scrollTop };
         const finish = () => {
             cell.classList.remove('is-preview-closing');
+            cancelLessonMotion(cell);
+            cell.scrollLeft = previewCell === cell ? targetScroll.left : 0;
+            cell.scrollTop = previewCell === cell ? targetScroll.top : 0;
             cell.parentElement?.classList.toggle('is-preview', previewCell === cell);
             if (previewCell === cell) cell.dataset.previewState = 'open';
             else delete cell.dataset.previewState;
             scheduleChangeLines();
         };
-        if (reducedMotion.matches || typeof cell.animate !== 'function') {
-            finish();
-            return;
-        }
+        if (reducedMotion.matches || typeof cell.animate !== 'function') { finish(); return; }
         if (!opening) cell.classList.add('is-preview-closing');
+        cell.classList.add('is-preview-moving');
         cell.dataset.previewState = opening ? 'opening' : 'closing';
-        const timing = { duration: 240, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
-        // Natural min/max sizes must not clamp intermediate animation frames.
-        // Only the moving card clips its text; the stable grid slot is untouched.
+        const timing = { duration: 120, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
+        const fadeTiming = { duration: 80, easing: 'linear', fill: 'both' };
         const moving = { minWidth: '0px', maxWidth: 'none', minHeight: '0px', maxHeight: 'none', overflow: 'hidden' };
         const animations = [cell.animate([{ ...from.card, ...moving }, { ...to.card, ...moving }], timing)];
-        [...cell.children].forEach((node, index) => animations.push(node.animate([from.text[index], to.text[index]], timing)));
-        const motion = { animations };
+        const absolute = { position: 'absolute', margin: '0px', right: 'auto', bottom: 'auto', minWidth: '0px', maxWidth: 'none',
+            minHeight: '0px', maxHeight: 'none', boxSizing: 'border-box', overflow: 'hidden', visibility: 'visible' };
+        to.parts.forEach((target, index) => {
+            const source = from.parts[index];
+            if (!source.visible && !target.visible) return;
+            // A newly revealed detail fades in at its destination; a disappearing
+            // detail fades out in place. The title/room/button travel continuously.
+            const startBox = source.visible ? source.box : target.box;
+            const endBox = target.visible ? target.box : source.box;
+            animations.push(target.node.animate([{ ...startBox, ...absolute }, { ...endBox, ...absolute }], timing));
+            animations.push(target.node.animate([{ opacity: source.opacity }, { opacity: target.opacity }], fadeTiming));
+        });
+        to.labels.forEach((target, index) => animations.push(target.node.animate([
+            { opacity: from.labels[index].opacity }, { opacity: target.opacity },
+        ], fadeTiming)));
+        animations.push(cell.querySelector('.cs-lesson__surface').animate([
+            { borderRadius: from.surfaceRadius }, { borderRadius: to.surfaceRadius },
+        ], timing));
+        // DOMRect snapshots describe painted (scrolled) coordinates. Animate in
+        // a zero-scroll coordinate space, then restore the open target scroll.
+        // This also covers a resize while a long preview is already scrolled.
+        cell.scrollLeft = 0; cell.scrollTop = 0;
+        const motion = { animations, openScroll: opening ? targetScroll : openScroll };
         previewMotions.set(cell, motion);
         scheduleChangeLines();
-        Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+        Promise.allSettled(animations.map(animation => animation.finished)).then(() => {
             if (previewMotions.get(cell) !== motion) return;
             finish();
-            cancelLessonMotion(cell);
         });
     }
 
@@ -1125,7 +1137,7 @@ export function createScheduleDeck(container, options = {}) {
             closeLessonPreview();
             previewCell = cell;
             cell.parentElement.classList.add('is-preview');
-            cell.scrollTop = 0;
+            if (!previewMotions.has(cell)) { cell.scrollLeft = 0; cell.scrollTop = 0; }
             animateLessonPreview(cell, true);
         }
     }

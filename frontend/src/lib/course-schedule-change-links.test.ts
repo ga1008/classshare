@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { scheduleChangeConnections, scheduleChangeColors } from '../../../static/js/course_schedule_change_links.js';
+import { adjustmentActionText } from '../../../static/js/course_schedule_presentation.js';
 
 function pair(sourceWeek = 4, targetWeek = 4) {
   const change = {
@@ -140,6 +141,19 @@ describe('independent stable change-line colors', () => {
     const target = scheduleChangeConnections(overview, overview.weeks[1]);
     expect(source.map(row => colors.get(row.key))).toEqual(target.map(row => colors.get(row.key)));
     expect([...colors.values()].slice(0, 4)).toEqual(['#b91c1c', '#047857', '#a16207', '#a21caf']);
+  });
+
+  it('keeps line captions and action buttons consistent for room aliases and distinct buildings', () => {
+    const data = pair();
+    for (const item of [data.original, data.proposed]) {
+      item.adjustment.original.room = '（大成楼C108）AI数智财经创新中心';
+      item.adjustment.proposed.room = 'C108教室';
+    }
+    expect(scheduleChangeConnections(data.overview, data.source)[0].label).toBe('时间更改');
+    expect(adjustmentActionText(data.original)).toBe('改时间');
+    for (const item of [data.original, data.proposed]) item.adjustment.proposed.room = '知新楼C108教室';
+    expect(scheduleChangeConnections(data.overview, data.source)[0].label).toBe('时间更改 · 教室更改');
+    expect(adjustmentActionText(data.original)).toBe('教室+时间');
   });
 
   it('is deterministic when weeks and lessons arrive in a different order', () => {

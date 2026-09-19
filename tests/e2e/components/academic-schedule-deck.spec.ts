@@ -38,9 +38,10 @@ test('pending cards keep a 4px transparent gap and proposed previews use an opaq
   await expect(target).toHaveClass(/is-counterpart-focus/);
   await target.locator('.cs-lesson__main').hover();
   await expect(target).toHaveClass(/is-preview/);
+  await expect(target).toHaveAttribute('data-preview-state', 'open');
   const colors = await target.evaluate(node => {
     const surface = getComputedStyle(node.querySelector('.cs-lesson__surface')!);
-    const text = getComputedStyle(node.querySelector('.cs-lesson__main span')!);
+    const text = getComputedStyle(node.querySelector('.cs-lesson__title')!);
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d')!;
     const rgba = (color: string) => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return Array.from(context.getImageData(0, 0, 1, 1).data); };
