@@ -20,7 +20,11 @@
  * 放大视图按节次给出早读(1)/上午(2-5)/下午(6-9)/晚上(10-11+)的背景分区。
  */
 
+import { scheduleChangeConnections } from './course_schedule_change_links.js?v=change-lines-20260919';
+import { routeScheduleChanges } from './course_schedule_change_routes.js?v=change-lines-20260919';
+
 const STYLE_ID = 'course-schedule-deck-style';
+let changeMapSequence = 0;
 
 /** Normalize mouse/trackpad intent without trapping page scrolling or zoom. */
 export function scheduleWheelIntent({ deltaY = 0, deltaMode = 0, ctrlKey = false, metaKey = false, index = 0, length = 0, pending = 0 }) {
@@ -404,6 +408,19 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 }
 .cs-expand__nav button:hover { background: rgba(255, 255, 255, 0.28); }
 .cs-expand__body { padding: 16px 20px 20px; min-height: 0; position: relative; }
+/* Routing space belongs to the timetable's scrollable canvas. Paths use stable
+   lesson slots and sit below hover previews, never over their readable text. */
+.cs-expand__body:has(.cs-change-map) { overflow: auto; overscroll-behavior: contain; }
+.cs-change-map { position: absolute; inset: 0 8px; min-height: 580px; }
+.cs-change-map > .cs-grid { inset: 32px 48px 28px; gap: 12px; min-width: 0; }
+.cs-change-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 2; pointer-events: none; }
+.cs-change-line { fill: none; stroke-width: 1.8; stroke-dasharray: 5 5; stroke-linejoin: round; stroke-linecap: round; }
+.cs-change-line-label { pointer-events: all; cursor: pointer; outline: none; }
+.cs-change-line-label rect { fill: #fff; stroke: currentColor; stroke-width: 1; }
+.cs-change-line-label text { fill: #172554; font: 600 12px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+.cs-change-line-label:is(:hover,:focus-visible) rect { fill: #eef2ff; stroke-width: 2; }
+.cs-change-line-origin { fill: #fff; stroke-width: 1.7; }
+.cs-change-line-fallback { position: absolute; top: 3px; left: 100px; right: 48px; font-size: 11px; color: #475569; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
     .cs-card, .cs-expand, .cs-expand__card { transition: none; }
 }
@@ -426,6 +443,9 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     .cs-expand__body { overflow: auto; overscroll-behavior: contain; }
     .cs-grid--expanded { min-width: 850px; }
     .cs-grid--expanded.cs-grid--overlaps { min-width: 1100px; }
+    .cs-change-map { min-width: 960px; }
+    .cs-change-map.cs-change-map--overlaps { min-width: 1210px; }
+    .cs-change-map > .cs-grid--expanded { min-width: 0; }
 }
 `;
 
@@ -496,6 +516,9 @@ export function createScheduleDeck(container, options = {}) {
     let expandedTrigger = null;
     let renderedExpandedWeek = null;
     let highlightTimer = null;
+    let lineFrame = null;
+    let destroyed = false;
+    const changeMapId = `cs-change-map-${++changeMapSequence}`;
 
     container.classList.add('cs-deck');
     container.innerHTML = `
@@ -1014,6 +1037,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function positionLessonPreview() {
+        scheduleChangeLines();
         if (previewCell?.isConnected && state.expanded) animateLessonPreview(previewCell, true);
     }
 
@@ -1038,6 +1062,94 @@ export function createScheduleDeck(container, options = {}) {
         ? new ResizeObserver(positionLessonPreview) : null;
     previewResizeObserver?.observe(refs.expandBody);
 
+    function scheduleChangeLines() {
+        if (destroyed || lineFrame !== null || !state.expanded) return;
+        lineFrame = window.requestAnimationFrame(() => { lineFrame = null; renderChangeLines(); });
+    }
+
+    function renderChangeLines() {
+        if (destroyed || !state.expanded || refs.expand.hidden) return;
+        const map = refs.expandBody.querySelector('.cs-change-map');
+        const svg = map?.querySelector('.cs-change-lines');
+        if (!map || !svg || !map.offsetWidth || !map.offsetHeight) return;
+        const week = state.overview.weeks[state.activeWeekIndex];
+        const connections = scheduleChangeConnections(state.overview, week).map(connection => ({
+            ...connection,
+            label: [connection.label, connection.boundaryLabel].filter(Boolean).join(' · '),
+            color: courseAccentFor(state.overview, connection.courseName),
+        }));
+        const rect = map.getBoundingClientRect();
+        const scaleX = rect.width / map.offsetWidth, scaleY = rect.height / map.offsetHeight;
+        const obstacles = [...map.querySelectorAll('.cs-lesson-slot')].map(slot => {
+            const bounds = slot.getBoundingClientRect();
+            return { key: slot.querySelector('[data-event-key]')?.dataset.eventKey,
+                left: (bounds.left - rect.left) / scaleX, right: (bounds.right - rect.left) / scaleX,
+                top: (bounds.top - rect.top) / scaleY, bottom: (bounds.bottom - rect.top) / scaleY };
+        });
+        const routes = routeScheduleChanges({ width: map.offsetWidth, height: map.offsetHeight, obstacles, connections });
+        const focusedLine = svg.contains(document.activeElement)
+            ? document.activeElement.closest('[data-change-key]')?.getAttribute('data-change-key') : null;
+        const ns = 'http://www.w3.org/2000/svg';
+        const element = (tag, attrs = {}, text = '') => {
+            const node = document.createElementNS(ns, tag);
+            for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+            if (text) node.textContent = text;
+            return node;
+        };
+        const defs = element('defs');
+        const nodes = [defs];
+        const missing = [];
+        svg.setAttribute('viewBox', `0 0 ${map.offsetWidth} ${map.offsetHeight}`);
+        routes.forEach((route, index) => {
+            const connection = connections.find(item => item.key === route.key);
+            if (!connection) return;
+            if (route.points.length < 2) { missing.push(connection.label); return; }
+            const markerId = `${changeMapId}-arrow-${index}`;
+            const marker = element('marker', { id: markerId, markerWidth: 8, markerHeight: 8, refX: 7, refY: 4, orient: 'auto', markerUnits: 'userSpaceOnUse' });
+            marker.append(element('path', { d: 'M 1 1 L 7 4 L 1 7', fill: 'none', stroke: connection.color, 'stroke-width': 1.8 }));
+            defs.append(marker);
+            const group = element('g', { 'data-change-key': route.key, 'data-source-key': connection.sourceKey || '', 'data-target-key': connection.targetKey || '', 'data-boundary': ['incoming', 'outgoing'].includes(connection.direction) ? connection.direction : '', 'data-edge': connection.edge || '', 'aria-label': connection.title || connection.label });
+            group.append(element('title', {}, connection.title || connection.label));
+            group.append(element('path', { class: 'cs-change-line', d: route.points.map((point, i) => `${i ? 'L' : 'M'} ${point.x} ${point.y}`).join(' '), stroke: connection.color, 'marker-end': `url(#${markerId})` }));
+            group.append(element('circle', { class: 'cs-change-line-origin', cx: route.points[0].x, cy: route.points[0].y, r: 2.8, stroke: connection.color }));
+            const placement = route.labelPlacement;
+            if (placement) {
+                const label = element('g', { class: 'cs-change-line-label', role: 'button', tabindex: 0,
+                    transform: `translate(${placement.x} ${placement.y})${placement.vertical ? ' rotate(-90)' : ''}`,
+                    'aria-label': [connection.label, connection.title].filter(Boolean).join('，'), style: `color:${connection.color}`,
+                    ...(connection.jumpKey && connection.direction !== 'room' ? { 'data-csd-line-jump': connection.jumpKey, 'data-csd-line-week': connection.jumpWeek }
+                        : { 'data-csd-line-detail': connection.sourceKey }) });
+                const width = placement.vertical ? placement.height : placement.width;
+                const height = placement.vertical ? placement.width : placement.height;
+                label.append(element('rect', { x: -width / 2, y: -height / 2, width, height, rx: 6 }));
+                label.append(element('text', { x: 0, y: 0 }, connection.label));
+                group.append(label);
+            } else missing.push(connection.label);
+            nodes.push(group);
+        });
+        // Keep an explicit explanation when a packed layout has no safe label
+        // corridor; never draw through another lesson to force an annotation.
+        map.querySelector('.cs-change-line-fallback').textContent = missing.length
+            ? `部分连线空间有限：${[...new Set(missing)].join('；')}。可点卡片标签查看对应安排。` : '';
+        svg.replaceChildren(...nodes);
+        if (focusedLine) [...svg.querySelectorAll('[data-change-key]')]
+            .find(node => node.getAttribute('data-change-key') === focusedLine)
+            ?.querySelector('.cs-change-line-label')?.focus({ preventScroll: true });
+    }
+
+    function handleLineAction(event) {
+        const label = event.target.closest('[data-csd-line-jump], [data-csd-line-detail]');
+        if (!label) return false;
+        event.preventDefault();
+        if (label.dataset.csdLineJump) focusLesson(label.dataset.csdLineJump, Number(label.dataset.csdLineWeek));
+        else activateChange(label.dataset.csdLineDetail);
+        return true;
+    }
+
+    function onLineKeydown(event) {
+        if (event.key === 'Enter' || event.key === ' ') handleLineAction(event);
+    }
+
     function renderExpanded() {
         const weeks = state.overview?.weeks || [];
         const week = weeks[state.activeWeekIndex];
@@ -1051,7 +1163,12 @@ export function createScheduleDeck(container, options = {}) {
             const dateRange = week.date_range_label ? ` · ${week.date_range_label}` : '';
             refs.expandSub.textContent = `${termLabel}${dateRange} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
         }
-        refs.expandBody.innerHTML = renderWeekGrid(week, { expanded: true }) + weekEmptyMarkHtml(week);
+        const grid = renderWeekGrid(week, { expanded: true });
+        const connections = scheduleChangeConnections(state.overview, week);
+        refs.expandBody.innerHTML = connections.length
+            ? `<div class="cs-change-map${grid.includes('cs-grid--overlaps') ? ' cs-change-map--overlaps' : ''}">${grid}<svg class="cs-change-lines" aria-label="从原安排指向新安排的变更连线"></svg><div class="cs-change-line-fallback" role="status"></div></div>`
+            : grid + weekEmptyMarkHtml(week);
+        scheduleChangeLines();
     }
 
     function openExpanded() {
@@ -1067,6 +1184,7 @@ export function createScheduleDeck(container, options = {}) {
         // its current transform instead of reconstructing the course links.
         refs.expand.getBoundingClientRect();
         refs.expand.classList.add('is-open');
+        scheduleChangeLines();
         refs.expandClose.focus({ preventScroll: true });
     }
 
@@ -1208,6 +1326,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onExpandBodyClick(event) {
+        if (handleLineAction(event)) return;
         if (handleChangeClick(event)) return;
         const cell = event.target.closest('.cs-lesson--cell');
         const touch = pendingTouchPreview;
@@ -1299,6 +1418,7 @@ export function createScheduleDeck(container, options = {}) {
     refs.expand.addEventListener('click', onExpandBackdrop);
     refs.expand.addEventListener('wheel', onExpandWheel, { passive: false });
     refs.expandBody.addEventListener('click', onExpandBodyClick);
+    refs.expandBody.addEventListener('keydown', onLineKeydown);
     refs.expandBody.addEventListener('pointerover', onLessonPointerOver);
     refs.expandBody.addEventListener('pointerout', onLessonPointerOut);
     refs.expandBody.addEventListener('pointerdown', onLessonPointerDown);
@@ -1350,6 +1470,8 @@ export function createScheduleDeck(container, options = {}) {
             return state.activeWeekIndex;
         },
         destroy() {
+            destroyed = true;
+            window.cancelAnimationFrame(lineFrame);
             window.clearTimeout(highlightTimer);
             expandMotionGeneration += 1;
             clearLessonPreviews();

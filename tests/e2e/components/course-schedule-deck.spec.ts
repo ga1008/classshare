@@ -1,16 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import fs from 'node:fs';
-import path from 'node:path';
+import { serveScheduleModule } from './schedule-fixture-modules';
 
-const moduleSource = fs.readFileSync(path.resolve('static/js/course_schedule_deck.js'), 'utf8');
 const classes = Array.from({ length: 8 }, (_, index) => `人工智能260${index + 1}班（专升本）`).join(' · ');
 
 async function mountDeck(page: Page) {
   await page.route('http://schedule.test/**', async route => {
-    if (route.request().url().endsWith('/deck.js')) {
-      await route.fulfill({ contentType: 'text/javascript', body: moduleSource });
-      return;
-    }
+    if (await serveScheduleModule(route)) return;
     await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN">
       <meta charset="utf-8"><style>body{margin:24px;font-family:Arial,sans-serif}*{box-sizing:border-box}</style>
       <button id="before">页面入口</button><div id="deck"></div><script type="module">

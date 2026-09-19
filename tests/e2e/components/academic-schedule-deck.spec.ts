@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import fs from 'node:fs';
-import path from 'node:path';
+import { serveScheduleModule } from './schedule-fixture-modules';
 
-const source = fs.readFileSync(path.resolve('static/js/course_schedule_deck.js'), 'utf8');
 async function mount(page: Page) {
-  await page.route('http://academic-schedule.test/**', route => route.fulfill({ contentType: route.request().url().endsWith('/deck.js') ? 'text/javascript' : 'text/html', body: route.request().url().endsWith('/deck.js') ? source : `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:20px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
+  await page.route('http://academic-schedule.test/**', async route => {
+    if (await serveScheduleModule(route)) return;
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:20px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
     import { createScheduleDeck } from '/deck.js';
     window.navigations=[];
     const move={request_id:'R1',kind:'move',phase:'pending',endpoint:'original',counterpart_event_key:'new-A',counterpart_week_index:3,original:{date:'2026-08-31',sections:[2,3],room:'B416-1'},proposed:{date:'2026-09-17',sections:[6,7],room:'B210'}};
@@ -15,7 +15,8 @@ async function mount(page: Page) {
       {week_index:3,label:'第3周',lessons:[lesson('new-A','跨周课程',4,[6,7],101,{...move,endpoint:'proposed',counterpart_event_key:'old-A',counterpart_week_index:1}),lesson('official-B','同时段正式课',4,[6,7],104,null)]}
     ]};
     window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url)});window.deck.setOverview(window.fixture);
-  </script></html>` }));
+  </script></html>` });
+  });
   await page.goto('http://academic-schedule.test/');
   await page.locator('.cs-card.is-active .cs-card__bar').click();
   await expect(page.getByRole('dialog')).toBeVisible();
