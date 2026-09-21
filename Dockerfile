@@ -13,6 +13,9 @@ COPY frontend ./frontend
 COPY classroom_app ./classroom_app
 COPY static ./static
 COPY tools/build_static_assets.mjs ./tools/build_static_assets.mjs
+# build_static_assets.mjs imports this compiler; leaving it out breaks the
+# image build only, which is why a unit test now pins the import graph.
+COPY tools/ui/native_lq_print.mjs ./tools/ui/native_lq_print.mjs
 COPY templates ./templates
 
 RUN sh /usr/local/bin/lanshare-verify-dependencies frontend && npm run build

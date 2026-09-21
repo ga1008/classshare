@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -149,3 +150,31 @@ class DeploymentBrowserCacheTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DockerfileBuildInputsTests(unittest.TestCase):
+    """The frontend image copies an explicit file list, so a new relative import
+    in the asset build silently breaks the image build and nothing else. Walk the
+    real import graph and require every file it reaches to be copied."""
+
+    def test_every_module_the_asset_build_imports_is_copied_into_the_image(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+        copied = set(re.findall(r"^COPY\s+(\S+)\s", dockerfile, re.M))
+
+        seen: set[Path] = set()
+        pending = [root / "tools/build_static_assets.mjs"]
+        while pending:
+            module = pending.pop()
+            if module in seen or not module.is_file():
+                continue
+            seen.add(module)
+            for target in re.findall(r"""from\s+['"](\.[^'"]+)['"]""",
+                                     module.read_text(encoding="utf-8")):
+                pending.append((module.parent / target).resolve())
+
+        for module in sorted(seen):
+            relative = module.relative_to(root).as_posix()
+            covered = relative in copied or any(
+                relative.startswith(entry.rstrip("/") + "/") for entry in copied)
+            self.assertTrue(covered, f"{relative} is imported by the asset build but never COPYed")
