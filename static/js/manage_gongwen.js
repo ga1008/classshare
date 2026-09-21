@@ -517,8 +517,28 @@ function selectAttachment(index) {
     refs.attachView.scrollTop = 0;
 }
 
+// ---------------- bespoke-overlay focus bookkeeping ----------------
+// None of the five overlays on this page go through LQ.layer, so none of them
+// returned focus on close: dismissing one dropped the caret onto <body> and
+// sent a keyboard user back to the top of the document. Capturing whatever was
+// focused at open time fixes that without touching any existing call site.
+const overlayTriggers = new Map();
+
+function rememberOverlayTrigger(overlay) {
+    if (!overlay || !overlay.hidden) return;
+    const active = document.activeElement;
+    overlayTriggers.set(overlay, active instanceof HTMLElement && active !== document.body ? active : null);
+}
+
+function restoreOverlayTrigger(overlay) {
+    const trigger = overlayTriggers.get(overlay);
+    overlayTriggers.delete(overlay);
+    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+}
+
 function openAttachModal(index = 0) {
     if (!state.attachParts.length || !refs.attachModal) return;
+    rememberOverlayTrigger(refs.attachModal);
     refs.attachList.innerHTML = state.attachParts.map((part, i) => `
         <button type="button" class="gw-attach-item" data-attach-index="${i}">
             <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
@@ -529,7 +549,9 @@ function openAttachModal(index = 0) {
 }
 
 function closeAttachModal() {
-    if (refs.attachModal) refs.attachModal.hidden = true;
+    if (!refs.attachModal || refs.attachModal.hidden) return;
+    refs.attachModal.hidden = true;
+    restoreOverlayTrigger(refs.attachModal);
 }
 
 // ---------------- fullscreen part viewer + parsed-text editor ----------------
@@ -537,6 +559,7 @@ function closeAttachModal() {
 function openFullscreen(index) {
     const part = state.allParts.find((p) => p._idx === index);
     if (!part || !refs.fullModal) return;
+    rememberOverlayTrigger(refs.fullModal);
     state.fullIndex = index;
     refs.fullTitle.textContent = `${part.label || '内容'}：${part.name || ''}`;
     refs.fullContent.innerHTML = partNoteHtml(part) + partBodyHtml(part);
@@ -556,8 +579,10 @@ function openFullscreen(index) {
 }
 
 function closeFullscreen() {
-    if (refs.fullModal) refs.fullModal.hidden = true;
+    if (!refs.fullModal || refs.fullModal.hidden) return;
+    refs.fullModal.hidden = true;
     state.fullIndex = null;
+    restoreOverlayTrigger(refs.fullModal);
 }
 
 async function saveFullscreenText() {
@@ -590,6 +615,7 @@ async function openReader(id, refresh = false) {
     state.attachParts = [];
     closeFullscreen();
     closeAttachModal();
+    rememberOverlayTrigger(refs.reader);
     refs.reader.hidden = false;
     refs.readerSn.textContent = '';
     refs.readerTitle.textContent = '公文详情';
@@ -606,7 +632,9 @@ async function openReader(id, refresh = false) {
 function closeReader() {
     closeFullscreen();
     closeAttachModal();
+    if (refs.reader.hidden) return;
     refs.reader.hidden = true;
+    restoreOverlayTrigger(refs.reader);
     state.readerId = null;
     state.allParts = [];
     state.attachParts = [];
@@ -661,6 +689,9 @@ function addFollowKeyword(raw) {
 
 async function openFollowModal() {
     if (!refs.followModal) return;
+    // Capture the trigger before setBusy() disables it: disabling the focused
+    // button moves focus to <body>, which would lose the return target.
+    rememberOverlayTrigger(refs.followModal);
     setBusy(refs.followOpen, true, '加载中');
     try {
         const result = await apiFetch('/api/manage/gongwen/follow-settings');
@@ -681,7 +712,9 @@ async function openFollowModal() {
 }
 
 function closeFollowModal() {
-    if (refs.followModal) refs.followModal.hidden = true;
+    if (!refs.followModal || refs.followModal.hidden) return;
+    refs.followModal.hidden = true;
+    restoreOverlayTrigger(refs.followModal);
 }
 
 async function saveFollowSettings() {
@@ -757,12 +790,15 @@ async function openScopeEditor(doc) {
     refs.scopeDepartment.value = doc.attr_department || teacherOrg.department || '';
     applyLevelVisibility(level);
     fillOpennessOptions(level, doc.openness || 'school');
+    rememberOverlayTrigger(refs.scopeModal);
     refs.scopeModal.hidden = false;
 }
 
 function closeScopeEditor() {
+    if (!refs.scopeModal || refs.scopeModal.hidden) return;
     refs.scopeModal.hidden = true;
     state.editingId = null;
+    restoreOverlayTrigger(refs.scopeModal);
 }
 
 async function saveScope() {
@@ -906,8 +942,14 @@ refs.fullSave?.addEventListener('click', saveFullscreenText);
 refs.fullModal?.addEventListener('click', (event) => { if (event.target === refs.fullModal) closeFullscreen(); });
 document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
+    // A stacked LQ.layer dialog owns Escape first; closing one of our backdrops
+    // out from under it would destroy its return-focus target.
+    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
     if (refs.fullModal && !refs.fullModal.hidden) { closeFullscreen(); return; }
     if (refs.attachModal && !refs.attachModal.hidden) { closeAttachModal(); return; }
+    // The scope editor was missing from this chain entirely: it was the one
+    // overlay on the page that Escape could not dismiss.
+    if (refs.scopeModal && !refs.scopeModal.hidden) { closeScopeEditor(); return; }
     if (refs.followModal && !refs.followModal.hidden) { closeFollowModal(); return; }
     if (refs.reader && !refs.reader.hidden) closeReader();
 });

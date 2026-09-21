@@ -12,6 +12,11 @@
 
 {% block content %}
 {% from "macros/manage_insights.html" import insight_ring, insight_meter %}
+{# X 包 S5 结构迁移：新结构只在 manage-pages 页族开启时渲染；关闭分支与 baseline 逐字节一致。 #}
+{% set _cr_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
+{% from "macros/lq/content.html" import lq_empty %}
 {% set stats = classroom_dashboard or {} %}
 {% set options = stats.options or {} %}
 {% set _cr_active = stats.active_count or 0 %}
@@ -56,6 +61,32 @@
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                 <input id="classroomSearchInput" type="search" class="form-control" placeholder="搜索 B422、知新楼、实验室或校区">
             </label>
+            {% if _cr_lq_enabled %}
+            {% set _cr_campus_options = [{'value': '', 'label': '全部校区'}] %}
+            {% for item in options.campuses or [] %}{% if item.id %}{% set _ = _cr_campus_options.append({'value': item.id, 'label': item.name}) %}{% endif %}{% endfor %}
+            {% set _cr_building_options = [] %}
+            {% for item in options.buildings or [] %}{% set _ = _cr_building_options.append({'value': item.id, 'label': item.name}) %}{% endfor %}
+            {% set _cr_type_options = [] %}
+            {% for item in options.room_types or [] %}{% set _ = _cr_type_options.append({'value': item.id, 'label': item.name}) %}{% endfor %}
+            <div class="classroom-filter-fields lq-form">
+                {{ lq_field('classroomCampusFilter', '校区', control='select', options=_cr_campus_options, value='') }}
+                {{ lq_field('classroomBuildingFilter', '楼号', control='select', options=_cr_building_options,
+                    value=(_cr_building_options[0].value if _cr_building_options else '')) }}
+                {{ lq_field('classroomTypeFilter', '类别', control='select', options=_cr_type_options,
+                    value=(_cr_type_options[0].value if _cr_type_options else '')) }}
+                {{ lq_field('classroomAvailabilityFilter', '状态', control='select', value='', options=[
+                    {'value': '', 'label': '全部状态'}, {'value': 'schedulable', 'label': '可排课'},
+                    {'value': 'borrowable', 'label': '可借用'}, {'value': 'exam', 'label': '考试可用'}]) }}
+            </div>
+            <button type="button" class="btn btn-outline" id="classroomFilterResetBtn">清除筛选</button>
+        </div>
+        {# 真实控件 #classroomTypeFilter 完整保留在上面；这一行只是它的快捷代理。
+           manage_classrooms.js 仍按 [data-room-type] 找 chip；本轮给它补了 aria-pressed 同步
+           （lq 的选中态靠 aria-pressed，不是 is-active）。 #}
+        {% set _cr_chip_items = [{'label': '全部', 'kind': 'filter', 'pressed': true, 'attrs': {'data-room-type': ''}}] %}
+        {% for item in (options.room_types or [])[:8] %}{% if item.id %}{% set _ = _cr_chip_items.append({'label': item.name, 'kind': 'filter', 'attrs': {'data-room-type': item.id}}) %}{% endif %}{% endfor %}
+        {{ lq_chip_row('classroomQuickTypeChips', '场地类别快捷筛选', _cr_chip_items) }}
+        {% else %}
             <div class="classroom-filter-fields">
                 <label class="academic-filter-field" for="classroomCampusFilter">
                     <span>校区</span>
@@ -102,6 +133,7 @@
             {% endif %}
             {% endfor %}
         </div>
+        {% endif %}
     </section>
 
     <section class="classroom-workspace">
@@ -115,6 +147,10 @@
             </div>
             <div class="classroom-list-toolbar" aria-label="教学场地分页设置">
                 <span class="classroom-pagination-summary" id="classroomPaginationSummary">第 1 页</span>
+                {# 「每页」不迁 lq_field：lq-field 是块级字段（label 在控件上方），
+                   而 .classroom-list-toolbar 是一行内联 flex。截图比对确认迁移后
+                   该 select 会撑满整行、把分页摘要挤到上一行，属于可见的版式退化；
+                   要迁必须先有页面级 CSS（本包未获授权新增 lq/pages 样式）。 #}
                 <label class="classroom-page-size" for="classroomPageSizeSelect">
                     <span>每页</span>
                     <select id="classroomPageSizeSelect" class="form-control">
@@ -126,10 +162,18 @@
                 </label>
             </div>
             <div class="classroom-place-list" id="classroomPlaceList"></div>
+            {% if _cr_lq_enabled %}
+            {# manage_classrooms.js 对这个节点只写 .hidden（第 269 行），不写 innerHTML，
+               所以空态可以安全换成 lq_empty；id 与 hidden 留在外层壳上，JS 契约不变。 #}
+            <div id="classroomPlaceEmpty" hidden>
+                {{ lq_empty('no-results', variant='card', title='暂无匹配场地', description='调整关键词或筛选条件后再试。') }}
+            </div>
+            {% else %}
             <div class="classroom-empty" id="classroomPlaceEmpty" hidden>
                 <strong>暂无匹配场地</strong>
                 调整关键词或筛选条件后再试。
             </div>
+            {% endif %}
             <nav class="classroom-pagination" aria-label="教学场地分页">
                 <span class="classroom-page-indicator" id="classroomPageIndicator">1 / 1</span>
                 <span class="classroom-pagination-actions">
@@ -163,6 +207,17 @@
                             {% endfor %}
                         </select>
                     </label>
+                    {% if _cr_lq_enabled %}
+                    {% set _fr_campus_options = [] %}
+                    {% for item in options.campuses or [] %}{% if item.id %}{% set _ = _fr_campus_options.append({'value': item.id, 'label': item.name}) %}{% endif %}{% endfor %}
+                    {{ lq_field('freeRoomCampusSelect', '校区', control='select', options=_fr_campus_options,
+                        value=(_fr_campus_options[0].value if _fr_campus_options else '')) }}
+                    {{ lq_field('freeRoomBuildingSelect', '楼号', control='select', options=_cr_building_options,
+                        value=(_cr_building_options[0].value if _cr_building_options else '')) }}
+                    {{ lq_field('freeRoomTypeSelect', '类别', control='select', options=_cr_type_options,
+                        value=(_cr_type_options[0].value if _cr_type_options else '')) }}
+                    {{ lq_field('freeRoomNameInput', '教室', control_props={'type': 'search'}, placeholder='可填 B422') }}
+                    {% else %}
                     <label class="academic-filter-field" for="freeRoomCampusSelect">
                         <span>校区</span>
                         <select id="freeRoomCampusSelect" class="form-control">
@@ -191,6 +246,7 @@
                         <span>教室</span>
                         <input id="freeRoomNameInput" type="search" class="form-control" placeholder="可填 B422">
                     </label>
+                    {% endif %}
                 </div>
 
                 <div class="classroom-time-block">

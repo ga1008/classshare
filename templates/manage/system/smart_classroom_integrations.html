@@ -10,9 +10,45 @@
 
 
 {% block content %}
+{# X 包 S5 结构迁移：新结构只在 manage-pages 页族开启时渲染；关闭分支与 baseline 逐字节一致。 #}
+{% set _smart_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/content.html" import lq_card %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
+{% from "macros/lq/forms.html" import lq_field %}
 <section class="smart-classroom-shell">
     {{ page_head('广外智慧课堂对接', eyebrow='SMART CLASSROOM', description='保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。',
         actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+    {% if _smart_lq_enabled %}
+    <div class="smart-classroom-hero">
+        {% call(slot) lq_card('同步方式') %}
+            {% if slot == 'body' %}
+            {{ lq_chip_row('smart-sync-method-chips', '同步方式', [
+                {'label': '点名记录'}, {'label': '课次对齐'},
+                {'label': '顺序同步'}, {'label': '不写入智慧课堂'}]) }}
+            {% endif %}
+        {% endcall %}
+        {% call(slot) lq_card('当前适配器') %}
+            {% if slot == 'body' %}
+            <p id="smart-profile-note">正在读取平台对接方式。</p>
+            <div class="smart-classroom-profile-meta">
+                <div><span>平台</span><strong id="smart-profile-platform">-</strong></div>
+                <div><span>登录入口</span><strong id="smart-profile-login">-</strong></div>
+                <div><span>认证方式</span><strong id="smart-profile-method">-</strong></div>
+            </div>
+            {% endif %}
+        {% endcall %}
+    </div>
+
+    {% call(slot) lq_card('可同步功能', meta='点击卡片查看最近同步、接口、参数和安全说明。同步过程会顺序访问智慧课堂，避免高频并发。') %}
+        {% if slot == 'body' %}
+        {# 初始文案是"加载中"而非空态，且 manage_smart_classroom_integrations.js 会用同样的
+           .smart-classroom-empty 结构整体替换这块 innerHTML，故不改为 lq_empty。 #}
+        <div class="smart-classroom-sync-cards" id="smart-sync-capability-list">
+            <div class="smart-classroom-empty">正在读取可同步功能。</div>
+        </div>
+        {% endif %}
+    {% endcall %}
+    {% else %}
     <div class="smart-classroom-hero">
         <article class="smart-classroom-card smart-classroom-intro">
             <div>
@@ -48,6 +84,7 @@
             <div class="smart-classroom-empty">正在读取可同步功能。</div>
         </div>
     </section>
+    {% endif %}
 
     <div class="smart-classroom-modal-backdrop" id="smart-account-modal" hidden>
         <article class="smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-account-modal-title">
@@ -63,6 +100,23 @@
                     <section class="smart-classroom-account-form">
                         <h3>智慧课堂账号</h3>
                         <p class="smart-classroom-help">已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                        {% if _smart_lq_enabled %}
+                        {% set _smart_platform_options = [] %}
+                        {% for profile in smart_classroom_profiles %}{% set _ = _smart_platform_options.append({'value': profile.platform_code, 'label': profile.platform_name}) %}{% endfor %}
+                        <form id="smart-classroom-credential-form" autocomplete="off" class="lq-form">
+                            {{ lq_field('smart-platform-code', '平台', control='select', name='platform_code', required=true,
+                                options=_smart_platform_options,
+                                value=(smart_classroom_profiles[0].platform_code if smart_classroom_profiles else '')) }}
+                            {{ lq_field('smart-username', '智慧课堂账号', name='username', required=true,
+                                autocomplete='username', placeholder='请输入工号或统一账号') }}
+                            {{ lq_field('smart-password', '智慧课堂密码', control_props={'type': 'password'}, name='password', required=true,
+                                autocomplete='current-password', placeholder='重新验证时填写新密码') }}
+                            {# 保存按钮不迁 lq_btn：manage_smart_classroom_integrations.js 的 setBusy()
+                               直接写 button.textContent，会把 lq-btn 的 .lq-btn__label 结构抹掉。
+                               该 JS 不属于任何 S5 包，本轮不改，故模板侧保持原生按钮。 #}
+                            <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
+                        </form>
+                        {% else %}
                         <form id="smart-classroom-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="smart-platform-code">平台</label>
@@ -82,6 +136,7 @@
                             </div>
                             <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
                         </form>
+                        {% endif %}
                         <div class="smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
                             <h3 id="smart-auto-sync-title">智慧课堂自动同步</h3>
                             <p id="smart-auto-sync-message"></p>

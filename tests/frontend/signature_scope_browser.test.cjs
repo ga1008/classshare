@@ -17,6 +17,30 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 function block(template, name) { return template.match(new RegExp('{% block ' + name + ' %}([\\s\\S]*?){% endblock %}'))[1]; }
+function resolveFlagBranches(source) {
+    const open = /{%\s*if\s+_\w*lq_enabled\s*%}/;
+    for (let guard = 0; guard < 100; guard += 1) {
+        const opening = source.match(open);
+        if (!opening) return source;
+        const start = opening.index;
+        const token = /{%\s*(if|else|endif)\b[^%]*%}/g;
+        token.lastIndex = start + opening[0].length;
+        let depth = 1, legacyFrom = -1, endStart = -1, endStop = -1;
+        for (let match = token.exec(source); match; match = token.exec(source)) {
+            if (match[1] === 'if') depth += 1;
+            else if (match[1] === 'else' && depth === 1) legacyFrom = match.index + match[0].length;
+            else if (match[1] === 'endif') {
+                depth -= 1;
+                if (depth === 0) { endStart = match.index; endStop = match.index + match[0].length; break; }
+            }
+        }
+        if (endStop < 0) return source;
+        const legacy = legacyFrom < 0 ? '' : source.slice(legacyFrom, endStart);
+        source = source.slice(0, start) + legacy + source.slice(endStop);
+    }
+    return source;
+}
+
 function fixture(kind, admin) {
     let content, styles;
     if (kind === 'manage') {
@@ -25,11 +49,18 @@ function fixture(kind, admin) {
         content = content.replaceAll("{{ '1' if signature_actor.is_super_admin else '0' }}", admin ? '1' : '0')
             .replaceAll('{{ signature_actor.school_code }}', 'school-a').replaceAll('{{ signature_actor.school_name }}', '甲校');
         content = '<button id="signature-open-upload-btn">上传签名</button><button id="signature-refresh-btn">刷新</button>' + content;
-        styles = template.match(/<style>([\s\S]*?)<\/style>/)[1];
+        // The redesign extracted this page's inline styles into the built
+        // stylesheets already linked below, so there may be no <style> left.
+        styles = (template.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
     } else if (kind === 'profile') {
         content = '<section class="psig-shell" data-signature-app></section>';
         styles = read('templates/partials/profile/head.html').match(/<style>([\s\S]*?)<\/style>/)[1];
     } else { content = '<div id="point"></div>'; styles = ''; }
+    // Resolve the Liquid Glass feature-flag branches before stripping Jinja.
+    // Blindly deleting the tags would splice both branches into one document and
+    // duplicate every id, which no browser ever renders. These fixtures exercise
+    // the production modules, and the flag ships off, so keep the else branch.
+    content = resolveFlagBranches(content);
     content = content.replace(/{{[\s\S]*?}}/g, '').replace(/{%[\s\S]*?%}/g, '');
     const script = kind === 'point'
         ? `<script type="module">import { SignaturePointControl } from '/static/js/signature_point_workflow.js';window.point = new SignaturePointControl({root:document.querySelector('#point'),pointKey:'test.review',pointLabel:'审核签名',materialType:'test',materialId:1});await window.point.load();</script>`

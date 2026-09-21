@@ -1,18 +1,35 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% set _attendance_reports_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 {% block title %}签到统计表{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
 {% endblock %}
 {% block content %}
 <section class="att" data-attendance-root data-report-id="{{ report_id|default('', true) }}" data-class-offering-id="{{ class_offering_id|default('', true) }}" data-archive-enabled="{{ 'true' if attendance_archive_enabled|default(true) else 'false' }}" data-parse-enabled="{{ 'true' if attendance_parse_enabled|default(true) else 'false' }}">
-    {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+    {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档', lq_enabled=_attendance_reports_lq_enabled) }}
     <div class="att-notice" data-att-notice role="status" aria-live="polite" hidden></div>
     <div data-att-list-view>
         <div class="att-toolbar">
             <button class="att-btn att-btn--primary" type="button" data-att-action="open-source">从智慧课堂导出</button>
             <span class="att-muted">后台处理，离开页面后继续运行</span>
         </div>
+    {% if _attendance_reports_lq_enabled %}
+        <form class="att-filters" data-att-filters role="search">
+            {{ lq_field('attFilterYear', '学年', control='select', name='year', options=[{'value': '', 'label': '全部学年'}]) }}
+            {{ lq_field('attFilterTerm', '学期', control='select', name='term', options=[{'value': '', 'label': '全部学期'}, {'value': '1', 'label': '第一学期'}, {'value': '2', 'label': '第二学期'}]) }}
+            {{ lq_field('attFilterCourse', '课程', control='select', name='course', options=[{'value': '', 'label': '全部课程'}]) }}
+            {{ lq_field('attFilterClass', '教学班', control='select', name='teaching_class', options=[{'value': '', 'label': '全部教学班'}]) }}
+            {{ lq_field('attFilterStatus', '状态', control='select', name='status', options=[{'value': '', 'label': '全部状态'}, {'value': 'cached', 'label': '原件已缓存'}, {'value': 'processing', 'label': '处理中'}, {'value': 'needs_review', 'label': '待核对'}, {'value': 'validated', 'label': '待确认'}, {'value': 'confirmed', 'label': '已确认'}, {'value': 'failed', 'label': '失败'}]) }}
+            <div class="att-search">
+                {{ lq_field('attFilterQuery', '搜索', control='input', type='search', name='q',
+                            placeholder='课程、课程代码、教学班', maxlength=120, autocomplete='off') }}
+            </div>
+            {{ lq_field('attFilterDeleted', '显示范围', control='select', name='deleted', options=[{'value': '0', 'label': '当前档案'}, {'value': '1', 'label': '已删除档案'}], value='0') }}
+            <button class="att-btn" type="reset">重置</button>
+        </form>
+    {% else %}
         <form class="att-filters" data-att-filters role="search">
             <label>学年<select name="year" aria-label="学年"><option value="">全部学年</option></select></label>
             <label>学期<select name="term" aria-label="学期"><option value="">全部学期</option><option value="1">第一学期</option><option value="2">第二学期</option></select></label>
@@ -23,7 +40,16 @@
             <label>显示范围<select name="deleted" aria-label="显示范围"><option value="0">当前档案</option><option value="1">已删除档案</option></select></label>
             <button class="att-btn" type="reset">重置</button>
         </form>
+    {% endif %}
+        {% if _attendance_reports_lq_enabled %}
+        <div class="att-list-head"><p data-att-count role="status">正在读取档案…</p>
+            <div class="att-sort">
+                {{ lq_field('attSortSelect', '排序', control='select', name='sort', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'course_asc', 'label': '课程名称'}], value='updated_desc', attrs={'data-att-sort': ''}) }}
+            </div>
+        </div>
+        {% else %}
         <div class="att-list-head"><p data-att-count role="status">正在读取档案…</p><label class="att-sort">排序<select name="sort" data-att-sort aria-label="排序"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="course_asc">课程名称</option></select></label></div>
+        {% endif %}
         <div data-att-chips class="att-chips" aria-label="已选筛选条件"></div>
         <div data-att-reports></div>
         <nav class="att-pagination" data-att-list-pagination aria-label="档案分页"></nav>

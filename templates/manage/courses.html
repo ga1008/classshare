@@ -9,10 +9,14 @@
 {% endblock %}
 
 {% block content %}
+{% set _courses_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
+{% from "macros/lq/content.html" import lq_empty %}
+{% from "macros/lq/forms.html" import lq_field, lq_form_section %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 <div class="academic-shell course-page-shell">
     {% set _course_complete = my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length %}
-    {% call page_head('课程', lq_enabled=lq_pilot_enabled|default(false),
+    {% call page_head('课程', lq_enabled=_courses_lq_enabled,
         explain='沉淀可复用的课程模板；开课时直接继承课堂设置并生成排课时间轴。', explain_label='课程说明',
         actions=[
             {'label': '从教务系统同步', 'variant': 'outline', 'id': 'heroCourseAcademicSyncBtn'},
@@ -53,12 +57,24 @@
                 </label>
                 <div class="filter-group">
                     <span class="filter-group__label">状态筛选</span>
+                    {% if _courses_lq_enabled %}
+                    {# 计数烘进 chip 文案：冻结的 lq_chip 没有独立 count 插槽（classes.html 同款先例）。 #}
+                    <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
+                        {{ lq_chip_row('courseFilterChipRow', '课程状态筛选', [
+                            {'label': '全部（' ~ course_stats.course_count ~ '）', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'all'}},
+                            {'label': '已开课（' ~ course_stats.active_course_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'active'}},
+                            {'label': '结构完整（' ~ _course_complete ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'complete'}},
+                            {'label': '未开课（' ~ (course_stats.course_count - course_stats.active_course_count) ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'idle'}}
+                        ]) }}
+                    </div>
+                    {% else %}
                     <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
                         <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
                         <button type="button" class="filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
                         <button type="button" class="filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
                         <button type="button" class="filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
                     </div>
+                    {% endif %}
                     <select id="courseFilterSelect" class="filter-proxy-select" aria-hidden="true" tabindex="-1">
                         <option value="all">全部课程</option>
                         <option value="active">已开设课堂</option>
@@ -222,10 +238,16 @@
                     </div>
                 </article>
                 {% else %}
+                {% if _courses_lq_enabled %}
+                {{ lq_empty(reason='empty', variant='card', id='courseEmptyState',
+                            title='还没有创建课程模板',
+                            description='先新增课程，再补充课堂设置，后续开设课堂时就能直接生成排课时间轴。') }}
+                {% else %}
                 <div class="academic-empty" id="courseEmptyState">
                     <strong>还没有创建课程模板</strong>
                     先新增课程，再补充课堂设置，后续开设课堂时就能直接生成排课时间轴。
                 </div>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>
@@ -251,6 +273,29 @@
                             <h4 class="academic-card-title">基础信息</h4>
                             <p class="academic-card-subtitle">课程名称、学时和简介会被课堂开设、AI 拆课和学生端展示复用。</p>
                         </div>
+                        {% if _courses_lq_enabled %}
+                        {# 「所属系别」保持原生：它靠 list="courseDepartmentOptions" 绑定 <datalist>，
+                           而 lq_forms.py 的 attrs 白名单只放行 aria-*/data-*/id/name/form/title，
+                           迁过去就会丢掉联想输入，属于功能退化而不是迁移。 #}
+                        <div class="course-form-grid">
+                            {{ lq_field('courseNameInput', '课程名称', required=true, placeholder='例如：动态 Web 程序设计实验') }}
+                            <div class="form-group">
+                                <label class="form-label" for="courseDepartmentInput">所属系别</label>
+                                <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                                <datalist id="courseDepartmentOptions">
+                                    {% for department in department_options %}
+                                    <option value="{{ department }}"></option>
+                                    {% endfor %}
+                                </datalist>
+                            </div>
+                            {{ lq_field('courseCreditsInput', '学分', type='number', min=0, max=100, step=0.5, value='0') }}
+                            {{ lq_field('courseTotalHoursInput', '学时', type='number', min=0, max=512, step=1, value='0') }}
+                            {{ lq_field('courseSectNameInput', '宗门名称', maxlength=18, placeholder='例如：计网宗', help='留空时会按课程名自动生成。') }}
+                            <div class="full-span">
+                                {{ lq_field('courseDescriptionInput', '课程简介', control='textarea', rows=4, placeholder='补充课程定位、教学目标、授课环境和必要说明') }}
+                            </div>
+                        </div>
+                        {% else %}
                         <div class="course-form-grid">
                             <div class="form-group">
                                 <label class="form-label required" for="courseNameInput">课程名称</label>
@@ -283,6 +328,7 @@
                                 <textarea id="courseDescriptionInput" class="form-control" rows="4" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
                             </div>
                         </div>
+                        {% endif %}
                     </section>
 
                     <section class="course-lessons-section">
@@ -322,6 +368,16 @@
                         <button type="button" class="course-ai-dialog-close" id="courseAiCloseBtn" aria-label="关闭 AI 生成课堂设置">×</button>
                     </div>
                     <div class="course-ai-panel">
+                        {% if _courses_lq_enabled %}
+                        {% set _ai_tb_ns = namespace(options=[{'value': '', 'label': '请选择教材'}]) %}
+                        {% for textbook in textbooks_json %}
+                        {% set _ai_tb_ns.options = _ai_tb_ns.options + [{'value': textbook.id|string, 'label': textbook.title ~ ' · ' ~ textbook.author_display}] %}
+                        {% endfor %}
+                        <div class="course-ai-grid">
+                            {{ lq_field('courseAiTextbookSelect', '教材', control='select', options=_ai_tb_ns.options) }}
+                            {{ lq_field('courseAiSectionCountInput', '每次课小节数', type='number', min=1, max=12, step=1, value='2') }}
+                        </div>
+                        {% else %}
                         <div class="course-ai-grid">
                             <div class="form-group">
                                 <label class="form-label" for="courseAiTextbookSelect">教材</label>
@@ -337,6 +393,7 @@
                                 <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
                             </div>
                         </div>
+                        {% endif %}
                         <div class="course-ai-meta" id="courseAiMeta">
                             <span>预计生成 <strong id="courseAiSessionCount">0</strong> 次课</span>
                             <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>

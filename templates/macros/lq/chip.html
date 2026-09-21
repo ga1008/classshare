@@ -1,7 +1,7 @@
 {% from 'macros/lq/icons.generated.html' import lq_icon %}
 
-{% macro lq_chip(label, kind='status', tone='neutral', size='md', pressed=false, removable=false, remove_label=none, id=none, attrs={}, disabled=false) -%}
-{%- set p = lq_props('chip', label=label, kind=kind, tone=tone, size=size, pressed=pressed, removable=removable, remove_label=remove_label, id=id, attrs=attrs, disabled=disabled) -%}
+{% macro lq_chip(label, kind='status', tone='neutral', size='md', pressed=false, removable=false, remove_label=none, id=none, attrs={}, disabled=false, href=none) -%}
+{%- set p = lq_props('chip', label=label, kind=kind, tone=tone, size=size, pressed=pressed, removable=removable, remove_label=remove_label, id=id, attrs=attrs, disabled=disabled, href=href) -%}
 <{{ p.tag }} class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
   {%- if p.kind == 'status' %}<span class="lq-chip__dot" aria-hidden="true"></span>{% endif -%}
   <span class="lq-chip__label">{{ p.label|forceescape }}</span>

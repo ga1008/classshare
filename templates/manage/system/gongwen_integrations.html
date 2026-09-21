@@ -10,9 +10,45 @@
 
 
 {% block content %}
+{# X 包 S5 结构迁移：新结构只在 manage-pages 页族开启时渲染；关闭分支与 baseline 逐字节一致。 #}
+{% set _gw_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/content.html" import lq_card %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
+{% from "macros/lq/forms.html" import lq_field %}
 <section class="gw-shell">
     {{ page_head('校园公文通对接', eyebrow='OFFICIAL DOCUMENTS', description='保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后系统会同步收件箱公文，拆解文号、发文单位、分类与附件，供检索与后续提醒使用。之后每 6 小时按账号错峰自动增量同步（仅拉取新增、按公文编号匹配、分页限速），无需手动操作。',
         actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'gw-account-manage-btn'}, {'label': '立即同步', 'variant': 'primary', 'id': 'gw-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'gw-capability-refresh-btn'}, {'label': '查看公文材料', 'variant': 'ghost', 'href': '/manage/academic/gongwen'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+    {% if _gw_lq_enabled %}
+    <div class="gw-hero">
+        {% call(slot) lq_card('同步方式') %}
+            {% if slot == 'body' %}
+            {{ lq_chip_row('gw-sync-method-chips', '同步方式', [
+                {'label': '验证码识别'}, {'label': '增量同步'},
+                {'label': '每6小时自动'}, {'label': '限速·只读不回写'}]) }}
+            {% endif %}
+        {% endcall %}
+        {% call(slot) lq_card('当前适配器') %}
+            {% if slot == 'body' %}
+            <p id="gw-profile-note">正在读取平台对接方式。</p>
+            <div class="gw-profile-meta">
+                <div><span>系统</span><strong id="gw-profile-system">-</strong></div>
+                <div><span>登录入口</span><strong id="gw-profile-login">-</strong></div>
+                <div><span>认证方式</span><strong id="gw-profile-method">-</strong></div>
+            </div>
+            {% endif %}
+        {% endcall %}
+    </div>
+
+    {% call(slot) lq_card('可同步功能', meta='同步过程会顺序访问公文通，避免高频并发；仅读取公文与附件，不会回写、标记已读或反馈。') %}
+        {% if slot == 'body' %}
+        {# 这里的初始文案是"加载中"而非空态，且 JS 会用同样的 .gw-empty 结构整体替换，
+           故不改为 lq_empty（改了只会和 JS 产出的 DOM 不一致）。 #}
+        <div class="gw-sync-cards" id="gw-capability-list">
+            <div class="gw-empty">正在读取可同步功能。</div>
+        </div>
+        {% endif %}
+    {% endcall %}
+    {% else %}
     <div class="gw-hero">
         <article class="gw-card gw-intro">
             <div>
@@ -46,6 +82,7 @@
             <div class="gw-empty">正在读取可同步功能。</div>
         </div>
     </section>
+    {% endif %}
 
     <div class="gw-modal-backdrop" id="gw-account-modal" hidden>
         <article class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="gw-account-modal-title">
@@ -62,6 +99,22 @@
                         <h3>统一认证账号</h3>
                         <p class="gw-help">使用学校统一认证账号（学号/工号）。已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
                         <p class="gw-help">点击「验证并保存」后，系统会自动识别登录验证码并完成统一认证登录，通常需要 10～30 秒，请耐心等待。</p>
+                        {% if _gw_lq_enabled %}
+                        {% set _gw_system_options = [] %}
+                        {% for profile in gongwen_profiles %}{% set _ = _gw_system_options.append({'value': profile.system_code, 'label': profile.system_name}) %}{% endfor %}
+                        <form id="gw-credential-form" autocomplete="off" class="lq-form">
+                            {{ lq_field('gw-system-code', '系统', control='select', name='system_code', required=true,
+                                options=_gw_system_options,
+                                value=(gongwen_profiles[0].system_code if gongwen_profiles else '')) }}
+                            {{ lq_field('gw-username', '统一认证账号', name='username', required=true,
+                                autocomplete='username', placeholder='请输入学号 / 工号 / 统一账号') }}
+                            {{ lq_field('gw-password', '统一认证密码', control_props={'type': 'password'}, name='password', required=true,
+                                autocomplete='current-password', placeholder='重新验证时填写新密码') }}
+                            {# 保存按钮不迁 lq_btn：manage_gongwen_integrations.js 的 setBusy() 直接写
+                               button.textContent，会把 lq-btn 的 .lq-btn__label 结构一次性抹掉且无法还原。 #}
+                            <button type="submit" class="btn btn-primary" id="gw-save-btn">验证并保存</button>
+                        </form>
+                        {% else %}
                         <form id="gw-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="gw-system-code">系统</label>
@@ -81,6 +134,7 @@
                             </div>
                             <button type="submit" class="btn btn-primary" id="gw-save-btn">验证并保存</button>
                         </form>
+                        {% endif %}
                         <div class="gw-sync-panel" id="gw-auto-sync-panel" hidden>
                             <h3 id="gw-auto-sync-title">公文自动同步</h3>
                             <p id="gw-auto-sync-message"></p>

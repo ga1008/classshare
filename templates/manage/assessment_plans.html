@@ -1,6 +1,9 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
+{% from "macros/lq/content.html" import lq_filter_bar, lq_empty %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% set _assessment_plans_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 
 {% block title %}考核计划表{% endblock %}
 
@@ -17,8 +20,32 @@
 {% endblock %}
 {% block content %}
 <section class="manage-lp" data-ap-root>
-    {% call page_head('考核计划表库', explain='每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='考核计划表说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-lp__summary" data-ap-summary></div>{% endcall %}
+    {% call page_head('考核计划表库', explain='每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='考核计划表说明', lq_enabled=_assessment_plans_lq_enabled) %}<div class="manage-lp__summary" data-ap-summary></div>{% endcall %}
 
+    {% if _assessment_plans_lq_enabled %}
+    {% call(slot) lq_filter_bar(tag='div', label='考核计划表筛选',
+                                search_id='apFilterSearch', search_label='搜索',
+                                search_placeholder='搜索课程 / 标题 / 班级 / 标签…',
+                                search_attrs={'data-ap-search': '', 'data-lp-tip': '搜索会匹配标题、课程、班级、学院和标签。'}) %}
+        {% if slot == 'filters' %}
+            {{ lq_field('apFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],
+                        attrs={'data-ap-filter-scope': '', 'data-lp-tip': '按资源归属和公开范围收窄列表。'}) }}
+            {{ lq_field('apFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],
+                        attrs={'data-ap-filter-school': '', 'data-lp-tip': '只显示指定学校的考核计划表。'}) }}
+            {{ lq_field('apFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],
+                        attrs={'data-ap-filter-college': '', 'data-lp-tip': '按学院快速定位过程材料。'}) }}
+            {{ lq_field('apFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],
+                        attrs={'data-ap-filter-course': '', 'data-lp-tip': '按课程快速筛选。'}) }}
+            {{ lq_field('apFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],
+                        attrs={'data-ap-filter-class': '', 'data-lp-tip': '按教学班级快速筛选。'}) }}
+            {{ lq_field('apSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'score_desc', 'label': '分数高到低'}, {'value': 'score_asc', 'label': '分数低到高'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}], value='updated_desc',
+                        attrs={'data-ap-sort': '', 'data-lp-tip': '支持按分值合计、更新时间和名称排序。'}) }}
+        {% endif %}
+        {% if slot == 'actions' %}
+            <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-ap-clear-filters hidden>清空</button>
+        {% endif %}
+    {% endcall %}
+    {% else %}
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
             <input type="search" data-ap-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
@@ -74,15 +101,24 @@
             <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-ap-clear-filters hidden>清空</button>
         </div>
     </div>
+    {% endif %}
     <div class="manage-lp__quick-tags" data-ap-tags hidden></div>
     <div class="manage-lp__active-filters" data-ap-active-filters hidden></div>
 
     <div class="manage-lp__loading" data-ap-loading>正在加载考核计划表…</div>
     <div class="manage-lp__grid" data-ap-grid hidden></div>
+    {% if _assessment_plans_lq_enabled %}
+    <div data-ap-empty hidden>
+        {{ lq_empty(reason='empty', variant='card', id='apEmptyState',
+                    title='还没有考核计划表',
+                    description='点击右上角「空白新建」「按课堂生成」或「导入解析」开始。') }}
+    </div>
+    {% else %}
     <div class="manage-lp__empty" data-ap-empty hidden>
         <strong>还没有考核计划表</strong>
         <p>点击右上角「空白新建」「按课堂生成」或「导入解析」开始。</p>
     </div>
+    {% endif %}
 </section>
 
 <script id="assessment-plan-boot" type="application/json">

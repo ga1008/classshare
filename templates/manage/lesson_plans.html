@@ -1,5 +1,8 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/content.html" import lq_filter_bar, lq_empty %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% set _lesson_plans_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 
 {% block title %}教案管理{% endblock %}
 
@@ -12,8 +15,34 @@
 
 {% block content %}
 <section class="manage-lp" data-lp-root>
-    {% call page_head('教案库', lq_enabled=lq_pilot_enabled|default(false), explain='整门课一份教案（封面 + 每次课一张表）。可空白新建、按课堂一键生成整学期教案、或导入文件由 AI 解析；支持渲染预览、导出 Word/PDF/PNG、系部/院级/校级公开与一键继承他人公开教案。') %}<div class="manage-lp__summary" data-lp-summary></div>{% endcall %}
+    {% call page_head('教案库', lq_enabled=_lesson_plans_lq_enabled, explain='整门课一份教案（封面 + 每次课一张表）。可空白新建、按课堂一键生成整学期教案、或导入文件由 AI 解析；支持渲染预览、导出 Word/PDF/PNG、系部/院级/校级公开与一键继承他人公开教案。') %}<div class="manage-lp__summary" data-lp-summary></div>{% endcall %}
 
+    {% if _lesson_plans_lq_enabled %}
+    {# JS 契约全部是 data-lp-* 属性选择器，原封不动地由 lq_field 的 attrs 透传；
+       六个 <select> 仍是真实 select（选项由 manage_lesson_plans.js 运行时填充）。 #}
+    {% call(slot) lq_filter_bar(tag='div', label='教案筛选',
+                                search_id='lpFilterSearch', search_label='搜索',
+                                search_placeholder='搜索课程 / 标题 / 班级 / 标签…',
+                                search_attrs={'data-lp-search': '', 'data-lp-tip': '搜索会匹配标题、课程、班级、学院和标签。'}) %}
+        {% if slot == 'filters' %}
+            {{ lq_field('lpFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的教案'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],
+                        attrs={'data-lp-filter-scope': '', 'data-lp-tip': '按资源归属和公开范围收窄列表。'}) }}
+            {{ lq_field('lpFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],
+                        attrs={'data-lp-filter-school': '', 'data-lp-tip': '只显示指定学校的教案。'}) }}
+            {{ lq_field('lpFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],
+                        attrs={'data-lp-filter-college': '', 'data-lp-tip': '按学院快速定位过程材料。'}) }}
+            {{ lq_field('lpFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],
+                        attrs={'data-lp-filter-course': '', 'data-lp-tip': '按课程快速筛选。'}) }}
+            {{ lq_field('lpFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],
+                        attrs={'data-lp-filter-class': '', 'data-lp-tip': '按教学班级快速筛选。'}) }}
+            {{ lq_field('lpSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}, {'value': 'sessions_desc', 'label': '课次多到少'}, {'value': 'sessions_asc', 'label': '课次少到多'}], value='updated_desc',
+                        attrs={'data-lp-sort': '', 'data-lp-tip': '支持按更新时间、名称和课次数排序。'}) }}
+        {% endif %}
+        {% if slot == 'actions' %}
+            <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-lp-clear-filters hidden>清空</button>
+        {% endif %}
+    {% endcall %}
+    {% else %}
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
             <input type="search" data-lp-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
@@ -69,15 +98,24 @@
             <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-lp-clear-filters hidden>清空</button>
         </div>
     </div>
+    {% endif %}
     <div class="manage-lp__quick-tags" data-lp-tags hidden></div>
     <div class="manage-lp__active-filters" data-lp-active-filters hidden></div>
 
     <div class="manage-lp__loading" data-lp-loading>正在加载教案…</div>
     <div class="manage-lp__grid" data-lp-grid hidden></div>
+    {% if _lesson_plans_lq_enabled %}
+    <div data-lp-empty hidden>
+        {{ lq_empty(reason='empty', variant='card', id='lpEmptyState',
+                    title='还没有教案',
+                    description='点击右上角「空白新建」「按课堂生成」或「导入教案」开始。') }}
+    </div>
+    {% else %}
     <div class="manage-lp__empty" data-lp-empty hidden>
         <strong>还没有教案</strong>
         <p>点击右上角「空白新建」「按课堂生成」或「导入教案」开始。</p>
     </div>
+    {% endif %}
 </section>
 
 <script id="lesson-plan-boot" type="application/json">

@@ -333,7 +333,16 @@ const debouncedReloadPlaces = debounce(() => reloadPlacesFromFirstPage({ silent:
 
 function setActiveRoomTypeChip(value) {
     refs.typeChips?.querySelectorAll('[data-room-type]').forEach((chip) => {
-        chip.classList.toggle('is-active', chip.dataset.roomType === value);
+        const active = chip.dataset.roomType === value;
+        chip.classList.toggle('is-active', active);
+        // The LQ chip row renders these as `button.lq-chip--filter`, whose
+        // selected state is driven by aria-pressed (lq/components/chip.css),
+        // not by `is-active`. Syncing both leaves the legacy branch untouched
+        // while making the selection real -- and announced -- in the LQ branch.
+        if (chip.classList.contains('lq-chip--filter')) {
+            chip.setAttribute('aria-pressed', String(active));
+            chip.classList.toggle('is-selected', active);
+        }
     });
 }
 

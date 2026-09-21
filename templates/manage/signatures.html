@@ -9,6 +9,10 @@
 {% endblock %}
 
 {% block header_actions %}
+{# header_actions is its own Jinja block and cannot see the set/import made in
+   {% block content %}, so the edit modal below declares its own. #}
+{% set _sig_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/forms.html" import lq_field %}
 {% from "macros/app_topbar.html" import topbar_action %}
 <div class="materials-toolbar-group materials-header-actions">
     {{ topbar_action('上传签名', '新增签名', 'upload', button_id='signature-open-upload-btn', variant='solid', tone='teal') }}
@@ -36,10 +40,16 @@
                         <span>签名人</span>
                         <input type="text" class="form-control" id="signature-edit-subject-name-input" name="subject_name" maxlength="80">
                     </label>
+                    {% if _sig_lq_enabled %}
+                    {{ lq_field('signature-edit-subject-input', '签名者教师账号', control='input', control_props={
+                        'type': 'search', 'datalist': 'signature-owner-teacher-options',
+                        'autocomplete': 'off', 'placeholder': '用于本人审批与使用权识别'}) }}
+                    {% else %}
                     <label class="signature-field">
                         <span>签名者教师账号</span>
                         <input type="search" class="form-control" id="signature-edit-subject-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
+                    {% endif %}
                     <label class="signature-field">
                         <span>账号类型</span>
                         <select class="form-control" id="signature-edit-subject-role-input" name="subject_role">
@@ -66,11 +76,20 @@
                         </select>
                     </label>
                     <div class="signature-field--full" id="signature-edit-scope-fields"></div>
+                    {% if _sig_lq_enabled %}
+                    <div class="signature-field signature-field--lq">
+                        {{ lq_field('signature-edit-owner-input', '归属教师', control='input', control_props={
+                            'type': 'search', 'datalist': 'signature-owner-teacher-options',
+                            'autocomplete': 'off', 'placeholder': '输入姓名、邮箱、学院筛选'}) }}
+                        <datalist id="signature-owner-teacher-options"></datalist>
+                    </div>
+                    {% else %}
                     <label class="signature-field">
                         <span>归属教师</span>
                         <input type="search" class="form-control" id="signature-edit-owner-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="输入姓名、邮箱、学院筛选">
                         <datalist id="signature-owner-teacher-options"></datalist>
                     </label>
+                    {% endif %}
                     <label class="signature-field signature-field--full">
                         <span>备注</span>
                         <textarea class="form-control" id="signature-edit-description-input" name="description" rows="3" maxlength="300"></textarea>
@@ -88,6 +107,8 @@
 {% endblock %}
 
 {% block content %}
+{% set _sig_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/forms.html" import lq_field %}
 {% from "macros/manage_insights.html" import insight_ring, insight_meter %}
 <section
     class="signature-page"
@@ -105,7 +126,7 @@
     </div>
 
     {% call page_head('签名',
-        explain='本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。', explain_label='签名说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
+        explain='本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。', explain_label='签名说明', lq_enabled=_sig_lq_enabled) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">
@@ -126,15 +147,56 @@
     <div class="signature-shell">
         <section class="signature-panel signature-library-panel" aria-label="签名列表">
             <div class="signature-school-switcher" id="signature-school-switcher">
+                {% if _sig_lq_enabled %}
+                <div class="signature-field signature-field--lq" id="signature-school-field">
+                    {{ lq_field('signature-school-search-input', '学校', control='input', control_props={
+                        'type': 'search', 'datalist': 'signature-school-options',
+                        'placeholder': '全部学校；输入学校名称或代码筛选', 'autocomplete': 'off'}) }}
+                    <datalist id="signature-school-options"></datalist>
+                </div>
+                {% else %}
                 <label class="signature-field" id="signature-school-field">
                     <span>学校</span>
                     <input type="search" class="form-control" id="signature-school-search-input" list="signature-school-options" placeholder="全部学校；输入学校名称或代码筛选" autocomplete="off">
                     <datalist id="signature-school-options"></datalist>
                 </label>
+                {% endif %}
                 <div class="signature-school-note" id="signature-school-note">
                     当前学校：{{ signature_actor.school_name or '未记录' }}
                 </div>
             </div>
+            {% if _sig_lq_enabled %}
+            <div class="signature-toolbar signature-toolbar--lq">
+                {{ lq_field('signature-search-input', '搜索', control='input', control_props={
+                    'type': 'search', 'placeholder': '姓名、签名名、归属人或上传者', 'autocomplete': 'off'}) }}
+                {{ lq_field('signature-scope-filter', '范围', control='select', control_props={
+                    'options': [
+                        {'value': '', 'label': '全部可见'},
+                        {'value': 'mine', 'label': '我的签名（归属或本人）'},
+                        {'value': 'platform', 'label': '平台可见'},
+                        {'value': 'school', 'label': '学校可见'},
+                        {'value': 'college', 'label': '学院可见'},
+                        {'value': 'department', 'label': '系部可见'},
+                        {'value': 'personal', 'label': '个人可见'},
+                        {'value': 'system', 'label': '平台导入'}]}) }}
+                {{ lq_field('signature-identity-filter', '职务身份', control='select', control_props={
+                    'options': [
+                        {'value': '', 'label': '全部职务'},
+                        {'value': 'principal', 'label': '校长（含副）'},
+                        {'value': 'dean', 'label': '院长（含副）'},
+                        {'value': 'department_head', 'label': '系主任（含副）'},
+                        {'value': 'teacher', 'label': '教师'},
+                        {'value': 'academic_affairs', 'label': '教务老师'},
+                        {'value': 'counselor', 'label': '辅导员'},
+                        {'value': 'other', 'label': '其他'}]}) }}
+                {{ lq_field('signature-owner-filter', '归属人', control='select', control_props={
+                    'options': [
+                        {'value': '', 'label': '全部归属人'},
+                        {'value': 'teacher', 'label': '教师'},
+                        {'value': 'student', 'label': '学生'},
+                        {'value': 'system', 'label': '平台'}]}) }}
+            </div>
+            {% else %}
             <div class="signature-toolbar">
                 <label class="signature-field">
                     <span>搜索</span>
@@ -176,6 +238,7 @@
                     </select>
                 </label>
             </div>
+            {% endif %}
             <div class="signature-list-summary">
                 <span id="signature-result-summary">正在加载签名...</span>
                 <button type="button" class="btn btn-ghost btn-sm" id="signature-clear-filter-btn">清空筛选</button>
@@ -185,7 +248,7 @@
 
         <aside class="signature-panel signature-detail-panel" aria-label="签名详情">
             <div class="signature-detail-preview" id="signature-detail-preview">
-                <div class="signature-empty">选择签名后查看预览与调用信息。</div>
+                {% if _sig_lq_enabled %}{% from "macros/lq/content.html" import lq_empty %}{{ lq_empty('empty', title='未选择签名', description='选择签名后查看预览与调用信息。') }}{% else %}<div class="signature-empty">选择签名后查看预览与调用信息。</div>{% endif %}
             </div>
             <div>
                 <h3 class="signature-detail-title" id="signature-detail-title">未选择签名</h3>
@@ -267,10 +330,18 @@
                         <span>签名人</span>
                         <input type="text" class="form-control" id="signature-subject-name-input" name="subject_name" maxlength="80" placeholder="签名对应的姓名">
                     </label>
+                    {% if _sig_lq_enabled %}
+                    <div class="signature-field signature-field--lq" id="signature-subject-account-field">
+                        {{ lq_field('signature-subject-account-input', '签名者教师账号', control='input', control_props={
+                            'type': 'search', 'datalist': 'signature-owner-teacher-options',
+                            'autocomplete': 'off', 'placeholder': '用于本人审批与使用权识别'}) }}
+                    </div>
+                    {% else %}
                     <label class="signature-field" id="signature-subject-account-field">
                         <span>签名者教师账号</span>
                         <input type="search" class="form-control" id="signature-subject-account-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
+                    {% endif %}
                     <div class="signature-field--full" id="signature-upload-scope-fields"></div>
                     <label class="signature-field signature-field--full">
                         <span>备注</span>

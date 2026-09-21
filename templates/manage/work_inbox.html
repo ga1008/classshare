@@ -8,19 +8,79 @@
 {% endblock %}
 
 {% block content %}
+{% set _wi_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
 <section class="wi-page" data-work-inbox>
     {{ page_head('待我处理',
         description=('共 ' ~ inbox.total ~ ' 项等你处理。') if inbox.total else '目前没有需要处理的事项。',
         explain='首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。',
-        explain_label='待我处理说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+        explain_label='待我处理说明', lq_enabled=_wi_lq_enabled) }}
 
+    {% if _wi_lq_enabled %}
+    {% from "macros/lq/chip-row.html" import lq_chip_row %}
+    {# The source filter is server-side, so every chip is a real link: the frozen
+       filter chip's href form carries aria-current instead of aria-pressed, and
+       lq_chip_row supplies the role=group/aria-label wrapper (no bespoke <nav>).
+       `src.tone` cannot be passed straight through: work_inbox_service registers
+       `slate` and `rose`, which are outside lq_components.TONES, so any tone
+       outside the six legal values falls back to `neutral` instead of raising. #}
+    {% set _wi_tones = ['primary', 'success', 'warning', 'danger', 'info', 'neutral'] %}
+    {% set _wi_chips = namespace(items=[{
+        'label': '全部（' ~ inbox.total ~ '）', 'kind': 'filter', 'size': 'sm',
+        'href': '/manage/me/inbox', 'pressed': (not inbox.source)}]) %}
+    {% for src in inbox.sources %}{% if src.count %}
+    {% set _wi_chips.items = _wi_chips.items + [{
+        'label': src.label ~ '（' ~ src.count ~ '）', 'kind': 'filter', 'size': 'sm',
+        'tone': (src.tone if src.tone in _wi_tones else 'neutral'),
+        'href': '/manage/me/inbox?source=' ~ src.key,
+        'pressed': (inbox.source == src.key),
+        'attrs': {'data-explain': '', 'data-explain-title': src.label|string,
+                  'data-explain-text': src.description|string,
+                  'data-source-key': src.key|string}}] %}
+    {% endif %}{% endfor %}
+    <div class="wi-sources wi-sources--lq">
+        {{ lq_chip_row('workInboxSourceChips', '按来源筛选', _wi_chips.items) }}
+    </div>
+    {% else %}
     <nav class="wi-sources" aria-label="按来源筛选">
         <a href="/manage/me/inbox" class="wi-chip{% if not inbox.source %} is-active{% endif %}">全部 <b>{{ inbox.total }}</b></a>
         {% for src in inbox.sources %}{% if src.count %}
         <a href="/manage/me/inbox?source={{ src.key }}" class="wi-chip wi-chip--{{ src.tone }}{% if inbox.source == src.key %} is-active{% endif %}" data-explain data-explain-title="{{ src.label }}" data-explain-text="{{ src.description }}">{{ src.label }} <b>{{ src.count }}</b></a>
         {% endif %}{% endfor %}
     </nav>
+    {% endif %}
 
+    {% if _wi_lq_enabled %}
+    {% from "macros/lq/content.html" import lq_list, lq_row, lq_empty %}
+    {% from "macros/lq/chip.html" import lq_chip %}
+    {% from "macros/lq/button.html" import lq_btn %}
+    {% if inbox['items'] %}
+    <div class="wi-list wi-list--lq">
+        {% call(slot) lq_list('待我处理事项', items=[], id='workInboxList') %}{% if slot == 'items' %}
+        {% for item in inbox['items'] %}
+        {% set _urgent = item.date_bucket in ['overdue', 'today'] %}
+        {% set _tone = 'danger' if item.date_bucket == 'overdue' else ('warning' if item.date_bucket == 'today' else 'neutral') %}
+        {% set _meta_ns = namespace(parts=[]) %}
+        {% if item.status_label %}{% set _meta_ns.parts = _meta_ns.parts + [item.status_label] %}{% endif %}
+        {% if item.date_label %}{% set _meta_ns.parts = _meta_ns.parts + [item.date_label ~ (' ' ~ item.time_label if item.time_label else '')] %}{% endif %}
+        {% call(row_slot) lq_row(item.title, meta=(_meta_ns.parts | join(' · ')),
+            attrs={'data-work-inbox-item': '', 'data-date-bucket': item.date_bucket|string,
+                   'data-urgent': 'true' if _urgent else 'false'}) %}
+        {%- if row_slot == 'lead' -%}
+            {{ lq_chip(item.type_label, kind='status', tone=_tone, size='sm') }}
+        {%- elif row_slot == 'trail' -%}
+            {% if item.subtitle %}{% if item.offering_id %}<a class="wi-item__context" href="/classroom/{{ item.offering_id }}">{{ item.subtitle }}</a>{% else %}<span class="wi-item__context">{{ item.subtitle }}</span>{% endif %}{% endif %}
+            {{ lq_btn(item.action_label or '查看', variant='soft', size='sm', href=item.href) }}
+        {%- endif -%}
+        {% endcall %}
+        {% endfor %}
+        {% endif %}{% endcall %}
+    </div>
+    {% else %}
+    {{ lq_empty('empty', variant='page', title='没有需要处理的事项',
+        description=('换一个来源看看，或回到全部。' if inbox.source else '批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。'),
+        actions=[{'label': '回首页', 'href': '/dashboard', 'variant': 'prominent', 'size': 'sm'}]) }}
+    {% endif %}
+    {% else %}
     {% if inbox['items'] %}
     <ul class="wi-list">
         {% for item in inbox['items'] %}
@@ -44,6 +104,7 @@
         <p>{% if inbox.source %}换一个来源看看，或回到全部。{% else %}批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。{% endif %}</p>
         <a href="/dashboard" class="btn btn-primary btn-sm">回首页</a>
     </div>
+    {% endif %}
     {% endif %}
 </section>
 {% endblock %}

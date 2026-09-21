@@ -1,5 +1,6 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
 
 {% block title %}材料检索{% endblock %}
 
@@ -10,6 +11,7 @@
 
 
 {% block content %}
+{% set _mh_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
 <section class="mh-shell">
     {% call page_head('材料检索', explain='汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。勾选分类后模糊搜索或 AI 搜索。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<p class="mh-hero-count-wrap"><span class="mh-hero-count" id="mh-total"></span></p>{% endcall %}
 
@@ -36,6 +38,29 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                 <input type="search" id="mh-query" placeholder="搜索标题 / 内容 / 标签 / 归属人，或用自然语言描述需求…" autocomplete="off" maxlength="200">
             </div>
+            {% if _mh_lq_enabled %}
+            {# 真实 <select> 原样保留（material_hub.js 只读 #mh-scope 的 .value），只追加
+               既有的 .filter-proxy-select（display:none，courses.html 同款先例）把它变成代理载体；
+               可见的选择器换成 lq_chip_row，点击由 manage_filter_chips.js 写回真实 select 并派发 change。 #}
+            <select class="form-control mh-scope-select filter-proxy-select" id="mh-scope" aria-label="归属层级筛选" tabindex="-1">
+                <option value="all">全部范围</option>
+                <option value="private">本人</option>
+                <option value="department">本系部</option>
+                <option value="college">本院级</option>
+                <option value="school">本校</option>
+                <option value="public">完全公开</option>
+            </select>
+            <div class="mh-scope-chips" data-filter-chips data-filter-target="#mh-scope">
+                {{ lq_chip_row('mhScopeChipRow', '归属层级筛选', [
+                    {'label': '全部范围', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'all'}},
+                    {'label': '本人', 'kind': 'filter', 'attrs': {'data-value': 'private'}},
+                    {'label': '本系部', 'kind': 'filter', 'attrs': {'data-value': 'department'}},
+                    {'label': '本院级', 'kind': 'filter', 'attrs': {'data-value': 'college'}},
+                    {'label': '本校', 'kind': 'filter', 'attrs': {'data-value': 'school'}},
+                    {'label': '完全公开', 'kind': 'filter', 'attrs': {'data-value': 'public'}}
+                ]) }}
+            </div>
+            {% else %}
             <select class="form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
                 <option value="all">全部范围</option>
                 <option value="private">本人</option>
@@ -44,6 +69,7 @@
                 <option value="school">本校</option>
                 <option value="public">完全公开</option>
             </select>
+            {% endif %}
             <button type="button" class="mh-btn-search" id="mh-search-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                 搜索

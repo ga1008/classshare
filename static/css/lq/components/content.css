@@ -56,6 +56,10 @@
 .lq-filter-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ls-s-3); margin: 0; padding-block: var(--ls-s-3); }
 .lq-filter-bar__search { flex: 1 1 14rem; min-width: 0; }
 .lq-filter-bar__controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ls-s-3); min-width: 0; max-width: 100%; }
+/* Fields default to width:100% so they fill a form column. Inside the filter
+   bar they are flex items, where that width becomes the flex basis and pushes
+   every field onto its own line. Let them share the row and wrap on their own. */
+.lq-filter-bar__controls > .lq-field { width: auto; flex: 1 1 10rem; }
 .lq-prose { font-size: var(--ls-t-body); line-height: 1.7; overflow-wrap: anywhere; }
 .lq-prose :where(p, ul, ol, pre, blockquote, table) { margin-block: var(--ls-s-3); }
 .lq-prose :where(ul, ol) { padding-inline-start: var(--ls-s-6); }

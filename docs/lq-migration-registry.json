@@ -7620,7 +7620,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/courses.html",
-            "sha256": "b45bd9e1d3e76013d76bad1306c1a760510b4728254ce9528ccdb1c247bf9d69",
+            "sha256": "4e70988b0d3c4fbd6e9da01e8fdaf255f11b4e4dfeb5f38d773837d45889d4a6",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8293,7 +8293,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/lesson_plans.html",
-            "sha256": "7cabb15a1a91613d0df110704336d2f8507ac8983ccf895f98b8ecd0183b67b9",
+            "sha256": "11f5e5cddbcf9135c95d3b4065a704b54bc05e7ffc5f5757680a3dd526d5f9e6",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -9069,7 +9069,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/materials.html",
-            "sha256": "90ff7f83d1848023c84d5e60c8035d58f3d27e7e677d7cb250d6c45e7a31d16f",
+            "sha256": "69dbfd68a718aee8615b06dd3878000001a9e65e56901b14af43030bb377f885",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -13045,7 +13045,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/textbooks.html",
-            "sha256": "6122cc7e6086ead7c2a9bf2d356a6283edcd28532af180cbdb4973955fa4730b",
+            "sha256": "85744aed8ed81aa86a2e942a7bb1931b7264eba929b51fc0d023c1b189db92a6",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",

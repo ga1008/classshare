@@ -1,5 +1,7 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/content.html" import lq_empty %}
+{% set _afm_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
 {% set sync_links = [
     {'label': '教务账号', 'href': '/manage/me/credentials'},
@@ -36,7 +38,7 @@ data-afm-open-sync {{ explain_attrs(
     data-document-label="{{ document_type_label }}"
 >
     {% call page_head(document_type_label, eyebrow='期末材料 · 教务系统闭环',
-        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
+        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。', lq_enabled=_afm_lq_enabled) %}
             <div class="afm-hero__actions">
                 <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
                     '同步教务双表',
@@ -81,12 +83,22 @@ data-afm-open-sync {{ explain_attrs(
     </div>
 
     <div class="afm-grid" data-afm-grid hidden></div>
+    {% if _afm_lq_enabled %}
+    <div data-afm-empty hidden>
+        {{ lq_empty(reason='empty', variant='card', id='afmEmptyState',
+                    title='还没有' ~ document_type_label,
+                    description='从已有课堂发起同步；系统会同时准备两份期末材料。',
+                    actions=[{'label': '开始同步', 'variant': 'prominent', 'size': 'md',
+                              'attrs': {'data-afm-open-sync': ''}}]) }}
+    </div>
+    {% else %}
     <div class="afm-empty" data-afm-empty hidden>
         <div aria-hidden="true">期</div>
         <strong>还没有{{ document_type_label }}</strong>
         <p>从已有课堂发起同步；系统会同时准备两份期末材料。</p>
         <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync>开始同步</button>
     </div>
+    {% endif %}
 </section>
 
 <dialog class="afm-dialog afm-dialog--sync" data-afm-sync-dialog>

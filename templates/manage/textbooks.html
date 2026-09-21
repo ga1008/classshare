@@ -9,6 +9,10 @@
 {% endblock %}
 
 {% block content %}
+{% set _tb_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/content.html" import lq_card, lq_filter_bar, lq_empty %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% from "macros/lq/button.html" import lq_btn %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 {% set _tb_total = textbooks | length %}
 {% set _tb_attach = textbooks | selectattr('has_attachment') | list | length %}
@@ -21,7 +25,7 @@
 {% endif %}
 {% endfor %}
 <div class="academic-shell">
-    {% call page_head('教材', lq_enabled=lq_pilot_enabled|default(false),
+    {% call page_head('教材', lq_enabled=_tb_lq_enabled,
         explain='统一维护教材信息与附件，开设课堂时可直接引用；AI 可整理简介与目录。', explain_label='教材说明',
         actions=[
             {'label': '新建教材', 'variant': 'primary', 'id': 'heroTextbookCreateBtn'}
@@ -43,6 +47,34 @@
         </div>
     {% endcall %}
 
+    {% if _tb_lq_enabled %}
+    {# JS 契约原封不动：#textbookSearchInput / #textbookPublisherFilter / #textbookTagFilter /
+       #textbookAttachmentFilter / #textbookClearFiltersBtn / #textbookCardGrid / #textbookEmptyState
+       仍是同名同类型的真实控件，manage_textbooks.js 的 getElementById 一行未改。 #}
+    {% call(slot) lq_card('教材卡片库', meta='支持按关键词、出版社、标签和附件状态快速筛选。', attrs={'id': 'textbookLibraryCard'}) %}
+    {%- if slot == 'body' -%}
+        {% call(bar) lq_filter_bar('textbookSearchInput', '搜索教材名称、作者、出版社、简介、目录或标签', tag='div', label='教材筛选', search_label='搜索教材') %}
+        {%- if bar == 'filters' -%}
+            {{ lq_field('textbookPublisherFilter', '出版社', control='select', options=[{'value': '', 'label': '全部出版社'}]) }}
+            {{ lq_field('textbookTagFilter', '标签', control='select', options=[{'value': '', 'label': '全部标签'}]) }}
+            {{ lq_field('textbookAttachmentFilter', '附件状态', control='select', options=[
+                {'value': '', 'label': '全部'},
+                {'value': 'has', 'label': '仅看有附件'},
+                {'value': 'none', 'label': '仅看无附件'}
+            ]) }}
+        {%- elif bar == 'actions' -%}
+            {{ lq_btn('清空筛选', variant='soft', id='textbookClearFiltersBtn') }}
+        {%- endif -%}
+        {% endcall %}
+        <div class="academic-card-grid" id="textbookCardGrid"></div>
+        {# 容器承载 id 与 hidden：JS 直接写 #textbookEmptyState.hidden，而 lq_empty 的 attrs
+           白名单不放行 hidden，写在 lq_empty 身上会在首帧闪出空态。 #}
+        <div id="textbookEmptyState" hidden>
+            {{ lq_empty('no-results', title='没有匹配的教材', description='可以清空筛选条件，或者直接新建一本教材。') }}
+        </div>
+    {%- endif -%}
+    {% endcall %}
+    {% else %}
     <section class="academic-card">
         <div class="academic-card-header">
             <div>
@@ -87,6 +119,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 </div>
 
 <div class="academic-modal-backdrop" id="textbookModalBackdrop">
@@ -106,6 +139,10 @@
                 <input type="hidden" name="remove_attachment" id="textbookRemoveAttachmentInput" value="false">
 
                 <div class="academic-form-grid two-col">
+                    {% if _tb_lq_enabled %}
+                    {{ lq_field('textbookTitleInput', '教材名称', name='title', required=true, maxlength=120, placeholder='例如：Python 程序设计基础') }}
+                    {{ lq_field('textbookPublisherInput', '出版社', name='publisher', maxlength=80, placeholder='例如：高等教育出版社') }}
+                    {% else %}
                     <div class="academic-field">
                         <label for="textbookTitleInput">教材名称</label>
                         <input type="text" id="textbookTitleInput" name="title" class="form-control" required maxlength="120" placeholder="例如：Python 程序设计基础">
@@ -114,6 +151,7 @@
                         <label for="textbookPublisherInput">出版社</label>
                         <input type="text" id="textbookPublisherInput" name="publisher" class="form-control" maxlength="80" placeholder="例如：高等教育出版社">
                     </div>
+                    {% endif %}
                     <div class="academic-field" style="grid-column: 1 / -1;">
                         <label>作者（可多个）</label>
                         <div class="academic-chip-list" id="textbookAuthorChipList"></div>
@@ -122,11 +160,15 @@
                             <button type="button" class="btn btn-outline" id="textbookAuthorAddBtn">添加作者</button>
                         </div>
                     </div>
+                    {% if _tb_lq_enabled %}
+                    {{ lq_field('textbookPublicationDateInput', '出版年份 / 日期', type='date', name='publication_date', help='填写出版日期后，系统会自动提取年份。') }}
+                    {% else %}
                     <div class="academic-field">
                         <label for="textbookPublicationDateInput">出版年份 / 日期</label>
                         <input type="date" id="textbookPublicationDateInput" name="publication_date" class="form-control">
                         <div class="academic-hint">填写出版日期后，系统会自动提取年份。</div>
                     </div>
+                    {% endif %}
                     <div class="academic-field" style="grid-column: 1 / -1;">
                         <label>自定义标签</label>
                         <div class="academic-chip-list" id="textbookTagChipList"></div>
@@ -190,6 +232,13 @@
             <button type="button" class="academic-modal-close" id="textbookIntroCatalogCloseBtn" aria-label="关闭">&times;</button>
         </div>
         <div class="academic-modal-body">
+            {% if _tb_lq_enabled %}
+            <div class="academic-form-grid">
+                {{ lq_field('textbookRawIntroInput', '教材简介', control='textarea', rows=5, placeholder='粘贴或填写教材简介，支持任意格式。') }}
+                {{ lq_field('textbookRawCatalogInput', '教材目录', control='textarea', rows=12, placeholder='粘贴完整的教材目录，支持任意格式。内容不会丢失。') }}
+                {{ lq_field('textbookCustomRequirementsInput', '自定义要求（可选）', control='textarea', rows=3, placeholder='对 AI 整理的额外要求，如"保留原文风格"、"突出实践内容"等。') }}
+            </div>
+            {% else %}
             <div class="academic-form-grid">
                 <div class="academic-field">
                     <label for="textbookRawIntroInput">教材简介</label>
@@ -204,6 +253,7 @@
                     <textarea id="textbookCustomRequirementsInput" class="form-control" rows="3" placeholder="对 AI 整理的额外要求，如"保留原文风格"、"突出实践内容"等。"></textarea>
                 </div>
             </div>
+            {% endif %}
         </div>
         <div class="academic-modal-footer">
             <button type="button" class="btn btn-ghost" id="textbookIntroCatalogCancelBtn">取消</button>

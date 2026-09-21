@@ -3,7 +3,8 @@ import re
 from .lq_components import lq_props as presentation_props
 
 CHIP_ROW_KINDS = ("chip_row",)
-_ITEM_KEYS = {"label", "kind", "tone", "size", "pressed", "disabled", "removable", "removeLabel", "id", "attrs"}
+_ITEM_KEYS = {"label", "kind", "tone", "size", "pressed", "disabled", "removable", "removeLabel", "id", "attrs",
+              "href"}
 
 
 def lq_chip_row_props(kind, **props):

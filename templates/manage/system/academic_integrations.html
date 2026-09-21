@@ -13,8 +13,43 @@
 
 
 {% block content %}
+{# X 包 S5 结构迁移：新结构只在 manage-pages 页族开启时渲染；关闭分支与 baseline 逐字节一致。 #}
+{% set _edu_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% from "macros/lq/content.html" import lq_card %}
+{% from "macros/lq/chip-row.html" import lq_chip_row %}
+{% from "macros/lq/forms.html" import lq_field %}
 {{ page_head('教务系统对接', description='教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、班级学生、监考日历与待办提醒可以复用同一套访问方法。',
     actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'academic-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'academic-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'academic-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+{% if _edu_lq_enabled %}
+<section class="edu-hero">
+    {% call(slot) lq_card('对接方式') %}
+        {% if slot == 'body' %}
+        {{ lq_chip_row('academic-method-chips', '对接方式', [
+            {'label': '先验证后保存'}, {'label': '密码加密入库'}, {'label': '按教师隔离'}]) }}
+        {% endif %}
+    {% endcall %}
+    {% call(slot) lq_card('当前适配器') %}
+        {% if slot == 'body' %}
+        <p id="edu-profile-note">正在读取学校对接方式。</p>
+        <div class="edu-profile-meta">
+            <div><span>学校</span><strong id="edu-profile-school">-</strong></div>
+            <div><span>登录入口</span><strong id="edu-profile-login">-</strong></div>
+            <div><span>认证方式</span><strong id="edu-profile-method">-</strong></div>
+        </div>
+        {% endif %}
+    {% endcall %}
+</section>
+
+{% call(slot) lq_card('可同步功能', meta='点击卡片查看最近同步、是否同步过、接口与参数。单项同步会使用同一套已验证教务账号。') %}
+    {% if slot == 'body' %}
+    {# 初始文案是"加载中"而非空态，且 manage_academic_integrations.js 会用同样的 .edu-empty
+       结构整体替换这块 innerHTML，故不改为 lq_empty。 #}
+    <div class="edu-sync-cards" id="academic-sync-capability-list">
+        <div class="edu-empty">正在读取可同步功能。</div>
+    </div>
+    {% endif %}
+{% endcall %}
+{% else %}
 <section class="edu-hero">
     <div class="edu-hero-main">
         <div>
@@ -49,6 +84,7 @@
         <div class="edu-empty">正在读取可同步功能。</div>
     </div>
 </section>
+{% endif %}
 
 <div class="edu-sync-modal-backdrop" id="academic-account-modal" hidden>
     <article class="edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-account-modal-title">
@@ -64,6 +100,22 @@
                 <section class="edu-account-form">
                     <h3>教务账号</h3>
                     <p class="edu-form-help">已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                    {% if _edu_lq_enabled %}
+                    {% set _edu_school_options = [] %}
+                    {% for profile in academic_profiles %}{% set _ = _edu_school_options.append({'value': profile.school_code, 'label': profile.school_name}) %}{% endfor %}
+                    <form id="academic-credential-form" autocomplete="off" class="lq-form">
+                        {{ lq_field('academic-school-code', '学校', control='select', name='school_code', required=true,
+                            options=_edu_school_options,
+                            value=(academic_profiles[0].school_code if academic_profiles else '')) }}
+                        {{ lq_field('academic-username', '教务账号', name='username', required=true,
+                            autocomplete='username', placeholder='请输入教职工号或统一账号') }}
+                        {{ lq_field('academic-password', '教务密码', control_props={'type': 'password'}, name='password', required=true,
+                            autocomplete='current-password', placeholder='重新验证时填写新密码') }}
+                        {# 保存按钮不迁 lq_btn：manage_academic_integrations.js 的 setBusy() 直接写
+                           button.textContent，会把 lq-btn 的 .lq-btn__label 结构抹掉且无法还原。 #}
+                        <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
+                    </form>
+                    {% else %}
                     <form id="academic-credential-form" autocomplete="off">
                         <div class="form-group">
                             <label class="form-label" for="academic-school-code">学校</label>
@@ -83,6 +135,7 @@
                         </div>
                         <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
                     </form>
+                    {% endif %}
                     <div class="edu-auto-sync" id="academic-auto-sync-panel" hidden>
                         <h4 id="academic-auto-sync-title">教务数据自动同步</h4>
                         <p id="academic-auto-sync-message"></p>

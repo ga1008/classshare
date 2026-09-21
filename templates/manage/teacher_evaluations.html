@@ -1,6 +1,9 @@
 {% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
+{% from "macros/lq/content.html" import lq_filter_bar, lq_empty %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% set _teacher_evaluations_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 
 {% block title %}教师评学表{% endblock %}
 
@@ -13,8 +16,32 @@
 
 {% block content %}
 <section class="manage-lp" data-te-root>
-    {% call page_head('教师评学表库', explain='每门课每个教学班一份。支持空白新建、按班级生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='教师评学表说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-lp__summary" data-te-summary></div>{% endcall %}
+    {% call page_head('教师评学表库', explain='每门课每个教学班一份。支持空白新建、按班级生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='教师评学表说明', lq_enabled=_teacher_evaluations_lq_enabled) %}<div class="manage-lp__summary" data-te-summary></div>{% endcall %}
 
+    {% if _teacher_evaluations_lq_enabled %}
+    {% call(slot) lq_filter_bar(tag='div', label='教师评学表筛选',
+                                search_id='teFilterSearch', search_label='搜索',
+                                search_placeholder='搜索课程 / 标题 / 班级 / 标签…',
+                                search_attrs={'data-te-search': '', 'data-lp-tip': '搜索会匹配标题、课程、班级、学院和标签。'}) %}
+        {% if slot == 'filters' %}
+            {{ lq_field('teFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],
+                        attrs={'data-te-filter-scope': '', 'data-lp-tip': '按资源归属和公开范围收窄列表。'}) }}
+            {{ lq_field('teFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],
+                        attrs={'data-te-filter-school': '', 'data-lp-tip': '只显示指定学校的评学表。'}) }}
+            {{ lq_field('teFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],
+                        attrs={'data-te-filter-college': '', 'data-lp-tip': '按学院快速定位过程材料。'}) }}
+            {{ lq_field('teFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],
+                        attrs={'data-te-filter-course': '', 'data-lp-tip': '按课程快速筛选。'}) }}
+            {{ lq_field('teFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],
+                        attrs={'data-te-filter-class': '', 'data-lp-tip': '按教学班级快速筛选。'}) }}
+            {{ lq_field('teSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'score_desc', 'label': '分数高到低'}, {'value': 'score_asc', 'label': '分数低到高'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}], value='updated_desc',
+                        attrs={'data-te-sort': '', 'data-lp-tip': '支持按总分、更新时间和名称排序。'}) }}
+        {% endif %}
+        {% if slot == 'actions' %}
+            <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-te-clear-filters hidden>清空</button>
+        {% endif %}
+    {% endcall %}
+    {% else %}
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">
             <input type="search" data-te-search placeholder="搜索课程 / 标题 / 班级 / 标签…" />
@@ -70,15 +97,24 @@
             <button type="button" class="lp-btn lp-btn--ghost manage-lp__clear" data-te-clear-filters hidden>清空</button>
         </div>
     </div>
+    {% endif %}
     <div class="manage-lp__quick-tags" data-te-tags hidden></div>
     <div class="manage-lp__active-filters" data-te-active-filters hidden></div>
 
     <div class="manage-lp__loading" data-te-loading>正在加载教师评学表…</div>
     <div class="manage-lp__grid" data-te-grid hidden></div>
+    {% if _teacher_evaluations_lq_enabled %}
+    <div data-te-empty hidden>
+        {{ lq_empty(reason='empty', variant='card', id='teEmptyState',
+                    title='还没有教师评学表',
+                    description='点击右上角「空白新建」「按班级生成」或「导入解析」开始。') }}
+    </div>
+    {% else %}
     <div class="manage-lp__empty" data-te-empty hidden>
         <strong>还没有教师评学表</strong>
         <p>点击右上角「空白新建」「按班级生成」或「导入解析」开始。</p>
     </div>
+    {% endif %}
 </section>
 
 <script id="teacher-evaluation-boot" type="application/json">

@@ -45,6 +45,17 @@ class LqFormsTests(unittest.TestCase):
         self.assertIn('required', doc.first('input'))
         self.assertEqual(doc.first('label')['for'], 'name')
 
+    def test_input_may_reference_a_datalist_without_smuggling_the_attribute(self):
+        """The datalist lives outside the control, so the component owns `list`."""
+        doc = Parsed(self.render('input', id='owner', label='归属人', datalist='ownerOptions'))
+        self.assertEqual(doc.first('input')['list'], 'ownerOptions')
+
+    def test_datalist_rejects_bad_identifiers_and_controls_that_cannot_use_one(self):
+        for kind, token in (('input', 'bad id'), ('input', '1abc'), ('input', '<script>'),
+                            ('textarea', 'ownerOptions'), ('select', 'ownerOptions')):
+            with self.subTest(kind=kind, token=token), self.assertRaises(ValueError):
+                self.render(kind, id='x', label='y', datalist=token)
+
     def test_help_error_and_external_description_are_deduplicated_and_authoritative(self):
         doc = Parsed(self.render('input', id='name', label='姓名', help='说明', error='冲突',
                                  attrs={'aria-describedby': 'outside outside name--lq-spoof', 'aria-invalid': False, 'aria-label': '错误', 'aria-labelledby': 'other', 'aria-hidden': True}))

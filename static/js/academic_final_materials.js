@@ -822,8 +822,10 @@ function closeDialog(dialog) {
 $$('[data-afm-open-sync]').forEach((button) => button.addEventListener('click', () => openSync()));
 $$('[data-afm-close-sync]').forEach((button) => button.addEventListener('click', () => closeDialog(els.syncDialog)));
 $$('[data-afm-close-editor]').forEach((button) => button.addEventListener('click', () => closeDialog(els.editorDialog)));
-$('[data-afm-close-preview]')?.addEventListener('click', () => {
-    closeDialog(els.previewDialog);
+$('[data-afm-close-preview]')?.addEventListener('click', () => closeDialog(els.previewDialog));
+// Escape closes a native <dialog> without running the close button handler, so the
+// preview iframe kept the previous document loaded. Release it on every close path.
+els.previewDialog?.addEventListener('close', () => {
     els.previewFrame.src = 'about:blank';
 });
 els.syncForm.addEventListener('submit', submitSync);

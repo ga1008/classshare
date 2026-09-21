@@ -1,0 +1,25 @@
+/* S5 R package (archive domain) page layer.
+ *
+ * `.lq-field` is `width: 100%` by frozen contract, so every field placed
+ * directly in the FilterBar's flex `__controls` row claims a whole line and the
+ * six process-material filters stack into a tall column. Restore the density
+ * the legacy `.manage-lp__filters` grid had by making `__controls` the same
+ * auto-fit grid, which is also the layout `.lq-field` is designed for.
+ * Layout only - no colour is declared here. */
+.manage-lp .lq-filter-bar__controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(8.25rem, 100%), 1fr));
+  gap: var(--ls-s-3);
+  flex: 1 1 100%;
+}
+
+.manage-lp .lq-filter-bar__search { flex: 1 1 100%; }
+
+@media (min-width: 60rem) {
+  .manage-lp .lq-filter-bar__search { flex: 0 1 20rem; }
+  .manage-lp .lq-filter-bar__controls { flex: 1 1 24rem; }
+}
+
+@media (max-width: 40rem) {
+  .manage-lp .lq-filter-bar__controls { grid-template-columns: 1fr 1fr; }
+}

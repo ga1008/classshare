@@ -156,6 +156,30 @@ class LqComponentMacroTests(unittest.TestCase):
         self.assertNotIn("aria-hidden", attrs)
         self.assertNotIn("aria-live", attrs)
 
+    def test_filter_can_be_a_real_link_carrying_current_instead_of_pressed(self):
+        """URL-driven filters (the work inbox) need an anchor, not a toggle."""
+        attrs = Document(self.render("lq_chip", label="待我处理", kind="filter", pressed=True,
+                                     href="/manage/me/inbox?state=pending")).tag("a")[0]["attrs"]
+        self.assertEqual(attrs["href"], "/manage/me/inbox?state=pending")
+        self.assertEqual(attrs["aria-current"], "true")
+        self.assertNotIn("aria-pressed", attrs)
+        self.assertNotIn("type", attrs)
+
+    def test_a_disabled_link_filter_stops_being_a_link(self):
+        doc = Document(self.render("lq_chip", label="待我处理", kind="filter", href="/x", disabled=True))
+        self.assertEqual([], doc.tag("a"))
+        attrs = doc.tag("button")[0]["attrs"]
+        self.assertIn("disabled", attrs)
+        self.assertNotIn("href", attrs)
+
+    def test_only_a_filter_chip_may_be_a_link_and_the_scheme_is_checked(self):
+        for props in ({"label": "x", "kind": "status", "href": "/y"},
+                      {"label": "x", "kind": "tag", "href": "/y"},
+                      {"label": "x", "kind": "filter", "href": "javascript:alert(1)"},
+                      {"label": "x", "kind": "filter", "href": "//evil.test/x"}):
+            with self.subTest(props=props), self.assertRaises(ValueError):
+                self.render("lq_chip", **props)
+
     def test_static_status_is_not_a_live_region_or_a_button(self):
         doc = Document(self.render("lq_chip", label="已保存", tone="success", attrs={"aria-live": "polite"}))
         self.assertEqual(doc.tag("button"), [])

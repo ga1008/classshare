@@ -231,3 +231,31 @@ WebKit真实触控暴露旧人生一言浮层仅依赖document click的问题。
 四项Dock为真实SSR链接；激活态按当前pathname/section投影，私信与通知均激活消息。补白归属于显式main contentRoot，关闭增强后保留SSR补白；不叠加旧has-bottomnav。软键盘候选由原S2能力合同判定，当前仅仿真验证。新navbar顶部保留原场景和44px一言槽，移除图像上的额外filter blur，使手机顶栏和Dock为两个持续玻璃宿主。学生旧首页palette窄宽样式必须被新面板的完整宽度覆盖，验收同时检查三个当前选项的可读空间。
 
 居中壳保留原登录认证controller。学生仅在背景成功、Tier A及tinted等允许条件下从厚玻璃切Clear；教师及状态保持厚玻璃。材质切换的卡底、前景、遮罩与高光同步生效，不逐渐过渡成错误色对；错误语义软色叠不透明主题底。已有密码的原生POST与JS路径共用后端认证编排，失败SSR保留账号/安全next且不回填密码。此合同不包含尚待实施的完整无JS首次设密/找回、一言页迁移或实体键盘验收。
+
+## 2026-09-21 组件契约增补（主任务）
+
+S5 四域迁移中暴露的三处能力缺口，已在组件层补齐并附回归测试。三项都是纯加法，既有调用点行为不变。
+
+### `lq_chip` / `lq_chip_row`：筛选芯片可以是真链接
+
+新增顶层 `href` 参数（`lq_chip_row` 的 items 支持 `'href'` 键）。
+
+| 条件 | 渲染 | 选中态属性 |
+|---|---|---|
+| `kind='filter'` 且传 `href` 且未禁用 | `<a>` | `aria-current` |
+| `kind='filter'` 未传 `href` | `<button>` | `aria-pressed` |
+| `kind='filter'` 传 `href` 且 `disabled` | `<button>`，不带 href | `aria-pressed` |
+| `kind` 非 `filter` 传 `href` | 报错 | — |
+
+链接不是开关，所以用 `aria-current` 而非 `aria-pressed`。URL 复用既有 `_url()` 校验器，`javascript:`、`data:`、协议相对地址一律拒绝。动因是统一收件箱的筛选由 URL 驱动，原本是 `<a href>`，迁进芯片会丢失 href。
+
+### `lq_field` / `lq_input`：输入框可以引用 datalist
+
+`control_props` 新增 `datalist='<datalist 的 id>'`，由组件写出 `list` 属性。id 必须匹配 `[A-Za-z][\w:.-]*`。非 input 控件传它会**报错而不是静默丢弃**——静默丢弃会把调用方的错误藏起来。`<datalist>` 元素本身仍由页面模板自行书写。
+
+### `.lq-filter-bar__controls > .lq-field`：字段在筛选栏内共享行宽
+
+`.lq-field` 按冻结契约是 `width: 100%`，适合表单列。放进筛选栏的弹性容器后，这个宽度成为换行基准，导致每个字段独占一行。新增 `.lq-filter-bar__controls > .lq-field { width: auto; flex: 1 1 10rem; }`。
+
+实测对照（1440 宽，教材页）：修复前 3 个字段 3 行、每个 357px；修复后 2 行、宽度 172/172/356。教案页修复前后完全一致，无副作用。三个施工包独立撞上过这个问题，其中两个各自写了页面级覆盖，因此修在组件层。
+

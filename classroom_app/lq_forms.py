@@ -160,6 +160,16 @@ def _control(kind, p):
             raise ValueError("Invalid LQ range bounds")
         attrs.update({"type": "range", "min": _text(minimum), "max": _text(maximum), "step": _text(step), "value": _text(current), "data-lq-range-output": identity + "--lq-value"})
         value = _text(current)
+    # A datalist lives outside the control, so the component owns the `list`
+    # attribute rather than letting callers smuggle it through `attrs`. Checked
+    # for every kind: silently dropping it on a select would hide the mistake.
+    if p.get("datalist") is not None:
+        if kind != "input":
+            raise ValueError("Only an input can reference a datalist")
+        token = _text(p["datalist"]).strip()
+        if not re.fullmatch(r"[A-Za-z][\w:.-]*", token):
+            raise ValueError("Invalid LQ datalist id")
+        attrs["list"] = token
     if kind in ("input", "textarea"):
         for key in ("placeholder", "autocomplete", "pattern", "min", "max", "step"):
             if p.get(key) is not None:

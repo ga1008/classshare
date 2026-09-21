@@ -174,14 +174,23 @@ def _chip(props):
     removable = _flag(props.get("removable", False), "removable")
     if removable and kind != "tag":
         raise ValueError("Only a tag chip can be removable")
-    for key in ("aria-pressed", "aria-live", "aria-disabled", "data-lq-disabled", "aria-labelledby"):
+    for key in ("aria-pressed", "aria-current", "aria-live", "aria-disabled", "data-lq-disabled",
+                "aria-labelledby", "href", "rel", "target"):
         attrs.pop(key, None)
+    # A filter can be a real link when the page drives filtering through the URL
+    # (the work inbox does). A link is not a toggle, so it carries aria-current
+    # instead of aria-pressed, and a disabled one has to stop being a link.
+    href = _url(props.get("href"))
     attrs["data-tone"] = tone
     if props.get("id") is not None:
         attrs["id"] = _text(props["id"])
     classes = f"lq-chip lq-chip--{kind} lq-chip--{size}"
     if kind == "filter":
-        attrs.update({"type": "button", "aria-pressed": str(pressed).lower(), "aria-label": name})
+        attrs["aria-label"] = name
+        if href is not None and not disabled:
+            attrs.update({"href": href, "aria-current": "true" if pressed else "false"})
+        else:
+            attrs.update({"type": "button", "aria-pressed": str(pressed).lower()})
         if pressed:
             classes += " is-selected"
         if disabled:
@@ -191,7 +200,10 @@ def _chip(props):
     if disabled:
         classes += " is-disabled"
     remove_label = _text(props.get("remove_label")).strip() or f"移除{name}"
-    return {"tag": "button" if kind == "filter" else "span", "classes": classes, "attrs": attrs,
+    if kind != "filter" and href:
+        raise ValueError("Only a filter chip can be a link")
+    tag = ("a" if "href" in attrs else "button") if kind == "filter" else "span"
+    return {"tag": tag, "classes": classes, "attrs": attrs,
             "kind": kind, "label": label, "removable": removable, "remove_label": remove_label,
             "disabled": disabled}
 

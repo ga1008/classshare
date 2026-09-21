@@ -34,7 +34,11 @@ WORK_INBOX_SOURCES: tuple[WorkInboxSource, ...] = (
     WorkInboxSource("grading", "待批改", "primary", "teaching", "/manage/me/inbox?source=grading", "已提交、等我批改的答卷。"),
     WorkInboxSource("offering_gap", "课堂配置", "info", "teaching", "/manage/teaching/classroom-hub", "本学期课堂缺教材、未配 AI 助教或未排课。"),
     WorkInboxSource("teacher_calendar", "教务日程", "info", "academic", "/manage/academic", "监考、考试等教务安排。"),
-    WorkInboxSource("manual", "个人待办", "slate", "home", "/dashboard", "我自己添加的待办。"),
+    # Tones feed both the legacy hue classes and the semantic LQ chip registry.
+    # `slate` was styled nowhere, so it only ever degraded to the default; name
+    # the default outright. `rose` stays because the homepage really styles it,
+    # and it is a domain accent rather than one of the six semantic states.
+    WorkInboxSource("manual", "个人待办", "neutral", "home", "/dashboard", "我自己添加的待办。"),
     WorkInboxSource("feedback", "用户反馈", "rose", "admin", "/manage/system/feedback", "平台用户提交的问题反馈（超管）。"),
 )
 _SOURCE_BY_KEY = {source.key: source for source in WORK_INBOX_SOURCES}

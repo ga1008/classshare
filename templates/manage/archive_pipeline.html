@@ -2,6 +2,9 @@
 {% from "macros/manage_page.html" import page_head %}
 {# 成绩与归档域首页；签到原件为可选归档。 #}
 {% from "macros/ui_explanation.html" import explain_button %}
+{% from "macros/lq/content.html" import lq_list %}
+
+{% set _archive_lq_enabled = (lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages')) %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
@@ -13,8 +16,25 @@
     {{ page_head('成绩与归档',
         description='常规归档已覆盖 ' ~ done_steps ~ ' / ' ~ step_total ~ ' 类 · 签到统计表按需归档',
         explain='按命题与考核、成绩链、教务归档、课后材料组织工作。签到统计表为可选归档，不影响现有成绩材料流程。',
-        explain_label='成绩与归档说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+        explain_label='成绩与归档说明', lq_enabled=_archive_lq_enabled) }}
 
+    {% if _archive_lq_enabled %}
+    {%- set archive_groups = [] -%}
+    {%- for entry in pipeline -%}
+        {%- if not archive_groups or archive_groups[-1]['title'] != entry.group -%}
+            {%- set _ = archive_groups.append({'key': 'g-' ~ entry.key|replace('_', '-'), 'title': entry.group, 'items': []}) -%}
+        {%- endif -%}
+        {%- set _ = archive_groups[-1]['items'].append({
+            'id': 'archive-step-' ~ entry.key|replace('_', '-'),
+            'title': entry.label,
+            'primary': {'href': entry.href},
+            'meta': '第 ' ~ entry.step ~ ' 步 · ' ~ entry.hint ~ ' · ' ~ ((entry.count ~ ' 份') if entry.count else '尚无'),
+            'attrs': {'data-archive-step': entry.key, 'data-archive-state': entry.state},
+            'actions': [{'label': ('查看' if entry.count else '开始'), 'href': entry.href, 'variant': 'soft', 'size': 'sm'}]
+        }) -%}
+    {%- endfor -%}
+    {{ lq_list('成绩与归档流程', id='archivePipelineList', groups=archive_groups, ordered=true, attrs={'data-archive-pipeline': ''}) }}
+    {% else %}
     <ol class="ap-steps">
         {% set ns = namespace(group='') %}
         {% for entry in pipeline %}
@@ -28,5 +48,6 @@
         </li>
         {% endfor %}
     </ol>
+    {% endif %}
 </div>
 {% endblock %}
