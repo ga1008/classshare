@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {"id":"modal","title":"标准弹窗","body":"纯文本正文","footer":"说明"},
+    {"id":"modal-lg","type":"modal","size":"lg","title":"宽弹窗","closeButton":false},
+    {"id":"sheet-bottom","type":"sheet","side":"bottom","title":"底部面板","body":"保留内容"},
+    {"id":"sheet-right","type":"sheet","side":"right","title":"侧面板","body":"右侧内容"},
+    {"id":"drawer","type":"drawer","size":"wide","title":"宽抽屉","body":"抽屉内容"},
+    {"id":"popover","type":"popover","title":"浮层","body":"锚定正文"},
+    {"id":"escaped","title":"<img src=x onerror=alert(1)>","body":"<script>alert(2)</script>","footer":"<svg onload=alert(3)>","closeLabel":"<关闭>","attrs":{"title":"\" <test>","data-proof":"保留"}}
+  ],
+  "invalid": [
+    {"id":"bad","title":"不接受注入","attrs":{"onclick":"evil()"}},
+    {"id":"bad","title":"","body":"无标题"},
+    {"id":"bad","title":"错误大小","type":"popover","size":"xl"},
+    {"id":"bad","title":"原始HTML","rawHTML":"<b>拒绝</b>"},
+    {"id":"bad","title":"对象槽","body":{"html":"<b>拒绝</b>"}}
+  ]
+}

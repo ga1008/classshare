@@ -1,8 +1,148 @@
 from .common import *
+from fastapi.routing import APIRoute
+from starlette.datastructures import MutableHeaders
 from ...services.student_auth_service import build_password_reset_class_hint, matches_password_reset_class
 
 
-router = APIRouter()
+class _AuthRoute(APIRoute):
+    async def handle(self, scope, receive, send):
+        # Wrap the route's final ASGI response, including the existing exception
+        # handlers' JSON/redirects and FastAPI validation errors. Do not replace
+        # authentication or application error handling just to add this header.
+        async def send_no_store(message):
+            if scope["method"] == "POST" and message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
+            await send(message)
+
+        await super().handle(scope, receive, send_no_store)
+
+
+router = APIRouter(route_class=_AuthRoute)
+
+
+def _login_form_error(request, *, role, next_url, message, identifier="", email="", status_code=400):
+    return templates.TemplateResponse(
+        request,
+        "teacher_login_v4.html" if role == "teacher" else "student_login_v4.html",
+        _build_login_page_context(
+            request, next_url, login_error=message,
+            login_identifier=identifier, login_email=email,
+        ),
+        status_code=status_code,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _student_login_redirect(student_row, client_ip, safe_next):
+    access_token, _ = _build_student_login_token(student_row, client_ip)
+    response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
+    apply_access_token_cookie(response, access_token)
+    response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
+    return response
+
+
+def _student_auth_flow_page(
+    request, *, step, next_url=None, error="", status_code=200,
+    name="", student_id_number="", class_name="", setup_token="", student=None,
+):
+    # Explicit fields only: never pass submitted passwords or the full form to
+    # Jinja. A verified setup token is carried in the POST body, never the URL.
+    context = _build_login_page_context(request, next_url)
+    context.update({
+        "auth_step": step, "auth_error": error, "auth_name": name,
+        "auth_student_id_number": student_id_number, "auth_class_name": class_name,
+        "setup_token": setup_token, "auth_student": student,
+        "identity_entry_url": build_login_url("/student/login/identity", context["next_url"]),
+        "forgot_entry_url": build_login_url("/student/password/forgot", context["next_url"]),
+    })
+    return templates.TemplateResponse(
+        request, "student_auth_flow_v4.html", context, status_code=status_code,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@router.get("/student/login/identity", response_class=HTMLResponse)
+def student_identity_login_page(request: Request, next: Optional[str] = None):
+    return _student_auth_flow_page(request, step="identity", next_url=next)
+
+
+@router.post("/student/login/identity", response_class=HTMLResponse)
+def handle_student_identity_login(
+    request: Request, name: str = Form(default=""), student_id_number: str = Form(default=""),
+    next: Optional[str] = Form(default=None),
+):
+    safe_next = sanitize_next_path(next, fallback="/dashboard")
+    name, student_id_number = name.strip(), student_id_number.strip()
+    try:
+        if not name or not student_id_number:
+            raise HTTPException(status_code=400, detail="请填写姓名和学号。")
+        result = _perform_student_identity_login(name, student_id_number, safe_next)
+    except HTTPException as exc:
+        if exc.status_code not in {400, 403, 409}:
+            raise
+        return _student_auth_flow_page(
+            request, step="identity", next_url=safe_next, error=str(exc.detail),
+            status_code=exc.status_code, name=name, student_id_number=student_id_number,
+        )
+    return _student_auth_flow_page(
+        request, step="setup", next_url=safe_next,
+        setup_token=result["setup_token"], student=result["student"],
+    )
+
+
+@router.post("/student/password/setup", response_class=HTMLResponse)
+def handle_student_password_setup(
+    request: Request, setup_token: str = Form(default=""), password: str = Form(default=""),
+    confirm_password: str = Form(default=""), next: Optional[str] = Form(default=None),
+):
+    try:
+        student_row, client_ip, safe_next, _ = _perform_student_password_setup(
+            request, setup_token, password, confirm_password, next,
+        )
+    except HTTPException as exc:
+        if exc.status_code not in {400, 403, 404}:
+            raise
+        payload = decode_password_setup_token(setup_token)
+        # Only a password-input error can retry this token. Expired, missing or
+        # rejected account state returns to identity without retaining it.
+        retry = bool(payload and payload.get("student_id")) and (
+            password != confirm_password or bool(validate_student_password(password))
+        )
+        return _student_auth_flow_page(
+            request, step="setup" if retry else "identity",
+            next_url=next or (payload or {}).get("next"), error=str(exc.detail),
+            status_code=exc.status_code, setup_token=setup_token if retry else "",
+        )
+    return _student_login_redirect(student_row, client_ip, safe_next)
+
+
+@router.get("/student/password/forgot", response_class=HTMLResponse)
+def student_password_forgot_page(request: Request, next: Optional[str] = None):
+    return _student_auth_flow_page(request, step="forgot", next_url=next)
+
+
+@router.post("/student/password/forgot", response_class=HTMLResponse)
+def handle_student_password_forgot(
+    request: Request, name: str = Form(default=""), student_id_number: str = Form(default=""),
+    class_name: str = Form(default=""), next: Optional[str] = Form(default=None),
+):
+    name, student_id_number, class_name = name.strip(), student_id_number.strip(), class_name.strip()
+    try:
+        if not name or not student_id_number or not class_name:
+            raise HTTPException(status_code=400, detail="请填写姓名、学号和班级名称。")
+        if len(class_name) > 100:
+            raise HTTPException(status_code=400, detail="班级名称不能超过 100 个字符。")
+        _perform_student_password_forgot(request, name, student_id_number, class_name)
+    except HTTPException as exc:
+        if exc.status_code not in {400, 403}:
+            raise
+        return _student_auth_flow_page(
+            request, step="forgot", next_url=next, error=str(exc.detail), status_code=exc.status_code,
+            name=name, student_id_number=student_id_number, class_name=class_name,
+        )
+    # A server-rendered confirmation avoids an unverified ?success= query or a
+    # new flash/session store. A resubmission still uses the service's guard.
+    return _student_auth_flow_page(request, step="submitted", next_url=next)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -50,6 +190,7 @@ async def teacher_register_page(request: Request):
             "back_url": "/teacher/login",
         },
         status_code=status.HTTP_403_FORBIDDEN,
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -128,6 +269,11 @@ def api_student_identity_login(
 ):
     """学生首次登录/找回密码后重设密码前的身份核验。"""
     safe_next = sanitize_next_path(next, fallback="/dashboard")
+    return _perform_student_identity_login(name, student_id_number, safe_next)
+
+
+def _perform_student_identity_login(name, student_id_number, safe_next):
+    """One identity check and setup-token contract for JSON and native forms."""
 
     with get_db_connection() as conn:
         student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
@@ -182,6 +328,17 @@ def api_student_password_setup(
     next: Optional[str] = Form(default=None),
 ):
     """完成学生首次设密或重置后设密，并自动登录。"""
+    student_row, client_ip, safe_next, login_count = _perform_student_password_setup(
+        request, setup_token, password, confirm_password, next,
+    )
+    return _build_student_login_json_response(
+        student_row=student_row, client_ip=client_ip,
+        safe_next=safe_next, login_count=login_count,
+    )
+
+
+def _perform_student_password_setup(request, setup_token, password, confirm_password, next_url):
+    """Keep credential locks, account recheck and writes shared by both adapters."""
     from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     if password != confirm_password:
         raise HTTPException(status_code=400, detail="两次输入的密码不一致。")
@@ -196,7 +353,7 @@ def api_student_password_setup(
     if not token_payload.get("student_id"):
         raise HTTPException(status_code=400, detail="设密凭证无效，请重新进行身份验证。")
 
-    safe_next = sanitize_next_path(next or token_payload.get("next"), fallback="/dashboard")
+    safe_next = sanitize_next_path(next_url or token_payload.get("next"), fallback="/dashboard")
     flow_type = str(token_payload.get("flow_type") or "first_login")
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
@@ -242,12 +399,7 @@ def api_student_password_setup(
         )
         conn.commit()
 
-    return _build_student_login_json_response(
-        student_row=student_row,
-        client_ip=client_ip,
-        safe_next=safe_next,
-        login_count=login_count,
-    )
+    return student_row, client_ip, safe_next, login_count
 
 
 @router.post("/api/student/password/forgot/class-hint", response_class=JSONResponse)
@@ -269,6 +421,11 @@ def api_student_password_forgot(
     class_name: str = Form(max_length=100),
 ):
     """学生提交忘记密码申请，等待教师审核。"""
+    return _perform_student_password_forgot(request, name, student_id_number, class_name)
+
+
+def _perform_student_password_forgot(request, name, student_id_number, class_name):
+    """Use the existing request/notification transaction and duplicate guard."""
     with get_db_connection() as conn:
         student_row = get_student_auth_record_by_identity(conn, name, student_id_number)
         if not student_row or not matches_password_reset_class(
@@ -355,51 +512,44 @@ def handle_student_login(
 ):
     """兼容表单提交流程，优先支持密码登录。"""
     safe_next = sanitize_next_path(next, fallback="/dashboard")
+    identifier = (identifier or "").strip()
 
     if identifier and password:
         client_ip = get_client_ip(request)
-        with get_db_connection() as conn:
-            student_row, _ = _perform_student_password_login(
-                conn,
-                identifier=identifier.strip(),
-                password=password,
-                client_ip=client_ip,
-                user_agent=request.headers.get("user-agent", ""),
+        try:
+            with get_db_connection() as conn:
+                student_row, _ = _perform_student_password_login(
+                    conn,
+                    identifier=identifier,
+                    password=password,
+                    client_ip=client_ip,
+                    user_agent=request.headers.get("user-agent", ""),
+                )
+                conn.commit()
+        except HTTPException as exc:
+            if exc.status_code not in {400, 403, 409}:
+                raise
+            return _login_form_error(
+                request, role="student", next_url=safe_next,
+                message=str(exc.detail), identifier=identifier, status_code=exc.status_code,
             )
-            conn.commit()
 
-        access_token, _ = _build_student_login_token(student_row, client_ip)
-        response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
-        apply_access_token_cookie(response, access_token)
-        response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
-        return response
+        return _student_login_redirect(student_row, client_ip, safe_next)
 
     if name and student_id_number:
-        return templates.TemplateResponse(
-            request,
-            "status.html",
-            {
-                "request": request,
-                "success": False,
-                "message": "首次登录需要先完成密码设置，请返回登录页后按页面提示操作。",
-                "back_url": build_login_url("/student/login", safe_next),
-            },
+        return _login_form_error(
+            request, role="student", next_url=safe_next, identifier=identifier,
+            message="首次登录需要先完成密码设置，请按页面提示操作。",
         )
 
-    return templates.TemplateResponse(
-        request,
-        "status.html",
-        {
-            "request": request,
-            "success": False,
-            "message": "登录失败：请填写完整的登录信息。",
-            "back_url": build_login_url("/student/login", safe_next),
-        },
+    return _login_form_error(
+        request, role="student", next_url=safe_next, identifier=identifier,
+        message="登录失败：请填写完整的登录信息。",
     )
 
 
 @router.post("/teacher/register")
-def handle_teacher_register(request: Request, name: str = Form(), email: str = Form(), password: str = Form()):
+def handle_teacher_register(request: Request):
     """教师账号只能由超管在管理中心创建。"""
     return templates.TemplateResponse(
         request,
@@ -417,14 +567,20 @@ def handle_teacher_register(request: Request, name: str = Form(), email: str = F
 @router.post("/teacher/login")
 def handle_teacher_login(
     request: Request,
-    email: str = Form(),
-    password: str = Form(),
+    email: str = Form(default=""),
+    password: str = Form(default=""),
     next: Optional[str] = Form(default=None),
 ):
     """V4.0: 教师登录 - 验证数据库"""
     from ...dependencies import get_client_ip
     client_ip = get_client_ip(request)
     safe_next = sanitize_next_path(next, fallback="/dashboard")
+    email = email.strip()
+    if not email or not password:
+        return _login_form_error(
+            request, role="teacher", next_url=safe_next, email=email,
+            message="登录失败：请填写完整的登录信息。",
+        )
 
     with get_db_connection() as conn:
         teacher = conn.execute(
@@ -435,14 +591,15 @@ def handle_teacher_login(
               AND COALESCE(is_active, 1) = 1
             LIMIT 1
             """,
-            (email.strip().lower(),),
+            (email.lower(),),
         ).fetchone()
 
     # 修复：使用 verify_password 验证
     if not teacher or not verify_password(password, teacher['hashed_password']):
-        return templates.TemplateResponse(request, "status.html",
-                                          {"request": request, "success": False, "message": "登录失败：邮箱或密码错误。",
-                                           "back_url": build_login_url("/teacher/login", safe_next)})
+        return _login_form_error(
+            request, role="teacher", next_url=safe_next, email=email,
+            message="登录失败：邮箱或密码错误。",
+        )
 
     teacher_data = dict(teacher)
 

@@ -1,0 +1,644 @@
+{
+  "cases": [
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "topbar",
+        "title": "课堂管理与很长的可访问标题",
+        "back": {
+          "key": "back",
+          "label": "返回",
+          "href": "/courses",
+          "icon": "arrow-left"
+        },
+        "actions": [
+          {
+            "key": "help",
+            "label": "帮助"
+          }
+        ],
+        "primary": {
+          "key": "save",
+          "label": "保存"
+        }
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "immersive-bar",
+        "title": "独立工作台",
+        "variant": "immersive",
+        "lockNav": true
+      }
+    },
+    {
+      "kind": "nav_item",
+      "props": {
+        "id": "nav-current",
+        "item": {
+          "key": "courses",
+          "label": "课程",
+          "href": "/courses",
+          "icon": "book-open",
+          "current": true
+        }
+      }
+    },
+    {
+      "kind": "nav_item",
+      "props": {
+        "id": "nav-disabled",
+        "item": {
+          "key": "disabled",
+          "label": "无权限",
+          "href": "/not-allowed",
+          "disabled": true
+        }
+      }
+    },
+    {
+      "kind": "sidebar",
+      "props": {
+        "id": "sidebar",
+        "groups": [
+          {
+            "key": "teaching",
+            "label": "教学",
+            "items": [
+              {
+                "key": "courses",
+                "label": "课程管理",
+                "href": "/courses",
+                "icon": "book-open",
+                "current": true
+              },
+              {
+                "key": "classes",
+                "label": "课堂",
+                "href": "/classes",
+                "icon": "users"
+              }
+            ]
+          },
+          {
+            "key": "archive",
+            "label": "归档",
+            "items": [
+              {
+                "key": "files",
+                "label": "教学材料",
+                "href": "/files",
+                "icon": "file"
+              }
+            ]
+          }
+        ],
+        "persist": {
+          "identity": "teacher:1",
+          "resource": "manage",
+          "key": "navigation"
+        }
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "dock-nav",
+        "items": [
+          {
+            "key": "home",
+            "label": "首页",
+            "href": "/home",
+            "icon": "house",
+            "current": true
+          },
+          {
+            "key": "messages",
+            "label": "消息",
+            "href": "/messages",
+            "icon": "message-circle"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "dock-actions",
+        "mode": "actions",
+        "items": [
+          {
+            "key": "submit",
+            "label": "提交",
+            "icon": "check"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "dock-tabs",
+        "mode": "tabs",
+        "label": "课堂活动"
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "dock-more",
+        "mode": "actions",
+        "items": [
+          {
+            "key": "saveMore",
+            "label": "保存"
+          }
+        ],
+        "overflow": [
+          {
+            "key": "export",
+            "label": "导出",
+            "href": "/export"
+          },
+          {
+            "key": "inspect",
+            "label": "检查"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "fab",
+        "item": {
+          "key": "assistant",
+          "label": "打开助手",
+          "icon": "plus"
+        }
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "fab-small",
+        "size": "sm",
+        "stackIndex": 1,
+        "item": {
+          "key": "assistantSmall",
+          "label": "小型助手",
+          "icon": "plus",
+          "disabled": true
+        }
+      }
+    },
+    {
+      "kind": "crumbs",
+      "props": {
+        "id": "crumbs",
+        "items": [
+          {
+            "key": "root",
+            "label": "首页",
+            "href": "/home"
+          },
+          {
+            "key": "courses",
+            "label": "课程",
+            "href": "/courses"
+          },
+          {
+            "key": "detail",
+            "label": "当前课程"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "steps",
+      "props": {
+        "id": "steps",
+        "items": [
+          {
+            "key": "basic",
+            "label": "基本信息",
+            "state": "complete",
+            "href": "/basic"
+          },
+          {
+            "key": "content",
+            "label": "内容",
+            "state": "current"
+          },
+          {
+            "key": "publish",
+            "label": "发布",
+            "state": "upcoming"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "editor",
+        "title": "试卷编辑",
+        "kind": "exam",
+        "primary": {
+          "key": "save-exam",
+          "label": "保存试卷"
+        }
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "take",
+        "title": "考试作答",
+        "kind": "take"
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "lesson",
+        "title": "教案",
+        "kind": "lesson-plan"
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "assessment",
+        "title": "考核方案",
+        "kind": "assessment"
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "evaluation",
+        "title": "教师评学",
+        "kind": "evaluation"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-list",
+        "kind": "list",
+        "label": "列表页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-dashboard",
+        "kind": "dashboard",
+        "label": "总台页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-detail",
+        "kind": "detail",
+        "label": "详情页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-editor",
+        "kind": "editor",
+        "label": "编辑器页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-take",
+        "kind": "take",
+        "label": "作答页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-immersive",
+        "kind": "immersive",
+        "label": "沉浸页布局"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "layout-reading",
+        "kind": "reading",
+        "label": "阅读页布局"
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "escape",
+        "title": "<img src=x onerror=alert(1)>",
+        "attrs": {
+          "title": "\"<b>",
+          "aria-hidden": true
+        }
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "fab-prominent",
+        "variant": "prominent",
+        "stackIndex": 2,
+        "item": {
+          "key": "new",
+          "label": "创建记录",
+          "icon": "plus"
+        }
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "fab-prominent-disabled",
+        "variant": "prominent",
+        "size": "sm",
+        "item": {
+          "key": "locked",
+          "label": "无权限创建",
+          "icon": "plus",
+          "disabled": true
+        }
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "transition-bar",
+        "title": "唯一过渡名称顶栏",
+        "viewTransition": true
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "html": "<b>x</b>"
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x"
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "lockNav": "false"
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "back": {
+          "key": "back",
+          "label": "返回",
+          "href": "javascript:alert(1)"
+        }
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "back": {
+          "key": "back",
+          "label": "返回"
+        }
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "attrs": {
+          "style": "color:red"
+        }
+      }
+    },
+    {
+      "kind": "nav_item",
+      "props": {
+        "id": "x",
+        "item": {
+          "key": "x",
+          "label": "x",
+          "href": "//evil.test"
+        }
+      }
+    },
+    {
+      "kind": "nav_item",
+      "props": {
+        "id": "x",
+        "item": {
+          "key": "x",
+          "label": "x",
+          "icon": {}
+        }
+      }
+    },
+    {
+      "kind": "sidebar",
+      "props": {
+        "id": "x",
+        "groups": []
+      }
+    },
+    {
+      "kind": "sidebar",
+      "props": {
+        "id": "x",
+        "groups": [
+          {
+            "key": "a",
+            "label": "a",
+            "items": [
+              {
+                "key": "x",
+                "label": "x"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "sidebar",
+      "props": {
+        "id": "x",
+        "groups": [
+          {
+            "key": "a",
+            "label": "a",
+            "items": []
+          }
+        ],
+        "persist": {
+          "key": "global"
+        }
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "x",
+        "items": [
+          {
+            "key": "x",
+            "label": "x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "x",
+        "mode": "tabs",
+        "items": [
+          {
+            "key": "x",
+            "label": "x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "dock",
+      "props": {
+        "id": "x",
+        "mode": "other"
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "x",
+        "item": {
+          "key": "x",
+          "label": "x"
+        }
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "x",
+        "stackIndex": 3,
+        "item": {
+          "key": "x",
+          "label": "x",
+          "icon": "plus"
+        }
+      }
+    },
+    {
+      "kind": "crumbs",
+      "props": {
+        "id": "x",
+        "items": []
+      }
+    },
+    {
+      "kind": "steps",
+      "props": {
+        "id": "x",
+        "items": [
+          {
+            "key": "x",
+            "label": "x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "x--lq-main",
+        "title": "x"
+      }
+    },
+    {
+      "kind": "editor",
+      "props": {
+        "id": "x",
+        "title": "x",
+        "kind": "unknown"
+      }
+    },
+    {
+      "kind": "page_layout",
+      "props": {
+        "id": "x",
+        "kind": "unknown"
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "bad",
+        "variant": "danger",
+        "item": {
+          "key": "new",
+          "label": "创建",
+          "icon": "plus"
+        }
+      }
+    },
+    {
+      "kind": "fab",
+      "props": {
+        "id": "bad",
+        "variant": null,
+        "item": {
+          "key": "new",
+          "label": "创建",
+          "icon": "plus"
+        }
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "bad",
+        "title": "坏值",
+        "viewTransition": "true"
+      }
+    },
+    {
+      "kind": "topbar",
+      "props": {
+        "id": "bad",
+        "title": "坏值",
+        "viewTransition": null
+      }
+    }
+  ]
+}

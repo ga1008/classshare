@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
+import { LQ } from '/static/js/lq/index.js';
 
 const parseJsonScript = (id, fallback) => {
     const el = document.getElementById(id);
@@ -440,7 +441,14 @@ async function syncSmartClassroom(button) {
 }
 
 async function deleteCredential(id, button) {
-    if (!window.confirm('确定删除这个智慧课堂对接吗？')) {
+    if (button?.disabled) return;
+    const confirmed = await LQ.confirm({
+        title: '删除智慧课堂对接',
+        message: '确定删除这个智慧课堂对接吗？',
+        confirmLabel: '删除',
+        danger: true,
+    });
+    if (!confirmed) {
         return;
     }
     setBusy(button, true, '删除中');

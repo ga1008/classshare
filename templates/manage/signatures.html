@@ -105,7 +105,7 @@
     </div>
 
     {% call page_head('签名',
-        explain='本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。', explain_label='签名说明') %}
+        explain='本人或归属权在本人名下的签名，以及“已核”“同意”等特殊签名可直接使用。其他个人签名需在具体材料中申请；批准后仅对该材料当前内容版本和指定位置有效。', explain_label='签名说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">

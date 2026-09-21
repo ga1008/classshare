@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
 
 const root = document.querySelector('[data-profile-root]');
+const profileLq = Boolean(root?.hasAttribute('data-lq-profile'));
 const contextNode = document.getElementById('profile-context-json');
 
 function readContext() {
@@ -16,9 +17,90 @@ function readContext() {
 }
 
 const context = readContext();
+const chartThemeKey = Symbol.for('lanshare.profile.chart-theme');
+
+/** ECharts' canvas annotations do not inherit CSS text colors. Read the
+ * current tokens, including SSR dark before the first runtime theme event. */
+export function profileChartThemeOptions(element, type) {
+    const style = element.ownerDocument.defaultView.getComputedStyle(element);
+    const color = (token, fallback) => {
+        const channels = style.getPropertyValue(token).trim();
+        // These three typed tokens contain H S% L% channels. Comma syntax is
+        // accepted by both the canvas API and ECharts' own color parser.
+        return channels ? `hsl(${channels.split(/\s+/).join(', ')})` : fallback;
+    };
+    const ink = color('--ls-ink-2', '#334155');
+    const muted = color('--ls-ink-3', '#64748b');
+    const line = color('--ls-line', '#e2e8f0');
+    const options = { textStyle: { color: ink }, legend: { textStyle: { color: ink } } };
+    if (type === 'bar') {
+        const axis = () => ({ axisLabel: { color: muted }, nameTextStyle: { color: ink }, axisLine: { lineStyle: { color: line } }, axisTick: { lineStyle: { color: line } }, splitLine: { lineStyle: { color: line } } });
+        options.xAxis = axis();
+        options.yAxis = axis();
+    } else {
+        // Index-merge only annotation styles on the existing pie series. Never
+        // replace its data, palette, itemStyle, formatter or selected state.
+        options.series = [{ label: { color: ink }, labelLine: { lineStyle: { color: line } } }];
+    }
+    return options;
+}
+
+export function bindProfileChartTheme(element, chart, type) {
+    const doc = element.ownerDocument;
+    const win = doc.defaultView;
+    let state = doc[chartThemeKey];
+    if (!state) {
+        const bindings = new Map();
+        const releaseIfEmpty = () => {
+            if (bindings.size) return;
+            doc.removeEventListener('lq:theme-change', refresh);
+            win.removeEventListener('resize', resize);
+            if (doc[chartThemeKey] === state) delete doc[chartThemeKey];
+        };
+        const each = callback => {
+            for (const [instance, binding] of bindings) {
+                if (binding.element.isConnected === false || instance.isDisposed?.()) bindings.delete(instance);
+                else callback(instance, binding);
+            }
+            releaseIfEmpty();
+        };
+        const refresh = () => each((instance, binding) => instance.setOption(profileChartThemeOptions(binding.element, binding.type)));
+        const resize = () => each(instance => instance.resize());
+        state = { bindings, releaseIfEmpty };
+        doc[chartThemeKey] = state;
+        doc.addEventListener('lq:theme-change', refresh);
+        win.addEventListener('resize', resize, { passive: true });
+    }
+    const binding = { element, type };
+    state.bindings.set(chart, binding);
+    if (!chart.isDisposed?.()) chart.setOption(profileChartThemeOptions(element, type));
+    return () => {
+        if (state.bindings.get(chart) !== binding) return;
+        state.bindings.delete(chart);
+        state.releaseIfEmpty();
+    };
+}
 
 function setButtonBusy(button, busy, label = null) {
     if (!button) {
+        return;
+    }
+    if (profileLq && button.classList.contains('lq-btn')) {
+        // Retain the SSR label and its space; do not replace component children.
+        button.disabled = Boolean(busy);
+        button.setAttribute('aria-busy', String(Boolean(busy)));
+        button.classList.toggle('is-loading', Boolean(busy));
+        let spinner = button.querySelector('[data-profile-busy-spinner]');
+        if (busy && !spinner) {
+            spinner = document.createElement('span');
+            spinner.className = 'lq-btn__spinner';
+            spinner.dataset.profileBusySpinner = '';
+            spinner.setAttribute('aria-hidden', 'true');
+            const indicator = document.createElement('span');
+            indicator.className = 'lq-spinner lq-spinner--sm';
+            spinner.appendChild(indicator);
+            button.appendChild(spinner);
+        } else if (!busy) spinner?.remove();
         return;
     }
     if (!button.dataset.originalLabel) {
@@ -39,7 +121,7 @@ function renderChart(element, chartConfig) {
     }
     const labels = Array.isArray(chartConfig.labels) ? chartConfig.labels : [];
     const values = Array.isArray(chartConfig.values) ? chartConfig.values.map((value) => Number(value || 0)) : [];
-    const chart = window.echarts.init(element);
+    const chart = window.echarts.getInstanceByDom?.(element) || window.echarts.init(element);
     const hasData = values.some((value) => value > 0);
 
     if (chartConfig.type === 'bar') {
@@ -76,7 +158,7 @@ function renderChart(element, chartConfig) {
         });
     }
 
-    window.addEventListener('resize', () => chart.resize(), { passive: true });
+    bindProfileChartTheme(element, chart, chartConfig.type);
 }
 
 function initCharts() {
@@ -115,7 +197,8 @@ function updateProfileChrome(profile = {}) {
     if (Number.isFinite(Number(completion.percent))) {
         setText('[data-profile-completion-value]', String(completion.percent));
         document.querySelectorAll('[data-profile-completion-bar]').forEach((bar) => {
-            bar.style.width = `${completion.percent}%`;
+            if (profileLq && bar.tagName === 'PROGRESS') bar.value = Number(completion.percent);
+            else bar.style.width = `${completion.percent}%`;
         });
     }
 
@@ -195,6 +278,7 @@ function applyMoodValue(mood) {
     }
     document.querySelectorAll('[data-profile-mood]').forEach((button) => {
         button.classList.toggle('is-active', button.dataset.profileMood === mood);
+        if (profileLq) button.setAttribute('aria-pressed', String(button.dataset.profileMood === mood));
     });
 }
 
@@ -917,17 +1001,17 @@ function initIdentityEditor() {
             .map((option) => `<option value="${escapeHtml(option.key)}" ${option.key === selected ? 'selected' : ''}>${escapeHtml(option.label)}</option>`)
             .join('');
         const rows = state.items.map((item, index) => `
-            <div class="profile-identity-row" data-identity-row="${index}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-                <select class="form-control" data-identity-field="identity_category" style="flex:1;min-width:120px;">${optionHtml(item.identity_category)}</select>
-                <input type="date" class="form-control" data-identity-field="term_start" value="${escapeHtml(item.term_start || '')}" title="任期开始（可空）" style="flex:1;min-width:130px;">
-                <input type="date" class="form-control" data-identity-field="term_end" value="${escapeHtml(item.term_end || '')}" title="任期结束（可空，到期自动降级）" style="flex:1;min-width:130px;">
-                ${item.status === 'expired' ? '<span style="color:#92400e;font-size:0.78rem;font-weight:700;">已到期</span>' : ''}
+            <div class="profile-identity-row${profileLq ? ' lq-profile-identity-row' : ''}" data-identity-row="${index}" ${profileLq ? '' : 'style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;"'}>
+                <select class="form-control${profileLq ? ' lq-select' : ''}" data-identity-field="identity_category" ${profileLq ? 'aria-label="任职身份"' : 'style="flex:1;min-width:120px;"'}>${optionHtml(item.identity_category)}</select>
+                <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_start" value="${escapeHtml(item.term_start || '')}" title="任期开始（可空）" ${profileLq ? 'aria-label="任期开始（可空）"' : 'style="flex:1;min-width:130px;"'}>
+                <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_end" value="${escapeHtml(item.term_end || '')}" title="任期结束（可空，到期自动降级）" ${profileLq ? 'aria-label="任期结束（可空，到期自动降级）"' : 'style="flex:1;min-width:130px;"'}>
+                ${item.status === 'expired' ? (profileLq ? '<span class="lq-profile-identity-expired">已到期</span>' : '<span style="color:#92400e;font-size:0.78rem;font-weight:700;">已到期</span>') : ''}
                 <button type="button" class="btn btn-ghost btn-sm" data-identity-remove aria-label="移除">移除</button>
             </div>
         `).join('');
         container.innerHTML = `
-            ${rows || '<div class="profile-identity-empty" style="color:var(--text-muted);margin-bottom:8px;">尚未登记任职身份。</div>'}
-            <div style="display:flex;gap:8px;">
+            ${rows || (profileLq ? '<div class="profile-identity-empty">尚未登记任职身份。</div>' : '<div class="profile-identity-empty" style="color:var(--text-muted);margin-bottom:8px;">尚未登记任职身份。</div>')}
+            <div ${profileLq ? 'class="lq-profile-identity-actions"' : 'style="display:flex;gap:8px;"'}>
                 <button type="button" class="btn btn-outline btn-sm" data-identity-add ${state.items.length >= 4 ? 'disabled' : ''}>添加身份</button>
                 <button type="button" class="btn btn-primary btn-sm" data-identity-save>保存任职身份</button>
             </div>

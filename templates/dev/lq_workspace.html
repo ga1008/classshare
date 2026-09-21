@@ -1,0 +1,16 @@
+{% from 'macros/lq/workspace.html' import lq_split, lq_viewer %}
+{% from 'macros/lq/forms.html' import lq_textarea %}
+{% from 'macros/lq/button.html' import lq_btn %}
+<section class="lq-preview__section" aria-labelledby="lq-workspace-title">
+  <div class="lq-preview__heading"><h2 id="lq-workspace-title">分栏与嵌入阅读</h2><p>桌面可拖动分隔条，或聚焦后按左右方向键每次调整 8 像素。手机使用分段切换；输入和嵌入文档保留在原来的节点中。</p></div>
+  {% call(slot) lq_split('preview-workspace', '分栏阅读示例', '阅读笔记', '嵌入文档') %}
+    {% if slot == 'side' %}
+      <div class="lq-preview__form lq-surface">{{ lq_textarea('preview-split-draft', '阅读笔记草稿', value='切换到文档后，这份笔记仍会保留。', rows=5) }}</div>
+    {% elif slot == 'main' %}
+      {% call(view_slot) lq_viewer('preview-frame-viewer', '嵌入文档示例', kind='iframe') %}
+        {% if view_slot == 'actions' %}{{ lq_btn('示例操作', variant='glass', size='sm', attrs={'data-lq-demo-action':'嵌入文档示例操作'}) }}
+        {% else %}<iframe title="原有白纸文档" srcdoc="&lt;!doctype html&gt;&lt;html lang='zh-CN'&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;白纸文档&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;h1&gt;课程文档内容&lt;/h1&gt;&lt;p&gt;工具栏位于文档上方，不遮挡文档。这里保留文档自己的颜色与排版。&lt;/p&gt;&lt;label&gt;文档内笔记 &lt;input value='原文输入'&gt;&lt;/label&gt;&lt;/body&gt;&lt;/html&gt;"></iframe>{% endif %}
+      {% endcall %}
+    {% endif %}
+  {% endcall %}
+</section>

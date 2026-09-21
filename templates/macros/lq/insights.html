@@ -1,0 +1,16 @@
+{% from 'macros/lq/indicators.html' import lq_avatar %}
+{% macro _insight_tree(tree, slots=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slots %}{{ slots() }}{% endif %}
+{%- elif tree.avatar is defined -%}{{ lq_avatar(**tree.avatar) }}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for child in tree.children %}{{ _insight_tree(child, slots) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_avatar_stack(items,size=32,label='成员') -%}{{ _insight_tree(lq_props('avatar_stack',items=items,size=size,label=label,**kwargs)) }}{%- endmacro %}
+{# Opt-in copies of the old call signatures. Do not replace manage_insights.html. #}
+{% macro insight_ring(title,value,total,caption,tone='indigo',value_label='',data_key='') -%}{{ _insight_tree(lq_props('insight_ring',title=title,value=value,total=total,caption=caption,tone=tone,value_label=value_label,data_key=data_key,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro insight_bars(title,items,caption='',tone='indigo',limit=6) -%}{{ _insight_tree(lq_props('insight_bars',title=title,items=items,caption=caption,tone=tone,limit=limit,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro insight_meter(title,value,percent,caption='',tone='indigo',unit='',delta='',data_key='') -%}{{ _insight_tree(lq_props('insight_meter',title=title,value=value,percent=percent,caption=caption,tone=tone,unit=unit,delta=delta,data_key=data_key,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% set lq_insight_ring = insight_ring %}
+{% set lq_insight_bars = insight_bars %}
+{% set lq_insight_meter = insight_meter %}

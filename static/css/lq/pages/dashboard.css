@@ -1,0 +1,146 @@
+/* Source: static/css/lq/pages/dashboard.css
+   S4 B-package: teacher/student dashboard, family-gated presentation.
+   Scope: every rule is nested under [data-lq-dashboard] so it only applies
+   when the `dashboard` family is enabled (see templates/dashboard*.html).
+   Legacy selectors and JS-driven attributes (data-group-mode, aria-pressed,
+   data-offering-card, ...) are left untouched so the `dashboard`-family-off
+   DOM and behaviour are unaffected. */
+
+[data-lq-dashboard] {
+    color: hsl(var(--ls-ink));
+}
+
+/* -- page head --------------------------------------------------------
+   .ls-page-head--lq-compat is a selector-compat wrapper only (kept so
+   dashboard-todo-modal.spec.ts / semester-calendar-dialog.spec.ts can still
+   find the calendar opener via ".ls-page-head [data-ls-open]"). The real box
+   is the frozen `lq_page_head` component's own <header class="lq-page-head">,
+   already styled by static/css/lq/components/content.css. */
+[data-lq-dashboard] > .ls-page-head--lq-compat {
+    display: contents;
+}
+
+/* -- 需要处理: agenda list -------------------------------------------- */
+[data-lq-dashboard] .ls-focus-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--ls-surface-1));
+    overflow: clip;
+}
+[data-lq-dashboard] .ls-focus-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2) var(--ls-s-4);
+    padding: var(--ls-s-3) var(--ls-s-4);
+    border-block-end: 1px solid hsl(var(--ls-line));
+}
+[data-lq-dashboard] .ls-focus-item:last-child { border-block-end: none; }
+[data-lq-dashboard] .ls-item-kind {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px var(--ls-s-2);
+    border-radius: var(--ls-r-capsule);
+    font-size: var(--ls-t-caption);
+    font-weight: var(--ls-weight-title3);
+    background: hsl(var(--tone-agenda-todo-soft));
+    color: hsl(var(--tone-agenda-todo-fg));
+}
+[data-lq-dashboard] .ls-item-kind[data-tone="exam"] {
+    background: hsl(var(--tone-agenda-exam-soft));
+    color: hsl(var(--tone-agenda-exam-fg));
+}
+[data-lq-dashboard] .ls-item-kind[data-tone="homework"] {
+    background: hsl(var(--tone-agenda-homework-soft));
+    color: hsl(var(--tone-agenda-homework-fg));
+}
+[data-lq-dashboard] .ls-item-kind[data-tone="proctor"] {
+    background: hsl(var(--tone-agenda-proctor-soft));
+    color: hsl(var(--tone-agenda-proctor-fg));
+}
+[data-lq-dashboard] .ls-focus-item.is-primary { background: hsl(var(--ls-primary-soft)); }
+
+/* -- 我的课堂 / 课程日程: segmented group-mode toolbar ----------------- */
+[data-lq-dashboard] [data-group-mode-tabs] {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--ls-surface-2));
+}
+[data-lq-dashboard] [data-group-mode-tabs] .ls-filter {
+    border-radius: var(--ls-r-capsule);
+    padding: var(--ls-s-1) var(--ls-s-3);
+    transition: background var(--ls-dur-fast) var(--ls-ease-out), color var(--ls-dur-fast) var(--ls-ease-out);
+}
+[data-lq-dashboard] [data-group-mode-tabs] .ls-filter[aria-pressed="true"] {
+    background: hsl(var(--ls-surface-1));
+    color: hsl(var(--ls-primary));
+    box-shadow: var(--ls-shadow-1);
+}
+
+/* -- 课堂卡: interactive grid ------------------------------------------ */
+[data-lq-dashboard] .ls-course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--ls-s-4);
+}
+[data-lq-dashboard] .ls-course-row {
+    position: relative;
+    border-radius: var(--ls-r-lg);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+    padding: var(--ls-s-4) var(--ls-s-4) var(--ls-s-4) calc(var(--ls-s-4) + 4px);
+    overflow: clip;
+    transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
+}
+[data-lq-dashboard] .ls-course-row::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 4px;
+    background: hsl(var(--lq-course-tone, var(--tone-course-1)));
+}
+@media (hover: hover) {
+    [data-lq-dashboard] .ls-course-row:hover { transform: translateY(calc(var(--ls-s-1) / -2)); box-shadow: var(--ls-shadow-2); }
+}
+
+/* -- 去哪里 / 学习与成长: interactive cards ----------------------------- */
+[data-lq-dashboard] .ls-domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--ls-s-4); }
+[data-lq-dashboard] .ls-domain-card {
+    border-radius: var(--ls-r-lg);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+    transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
+}
+@media (hover: hover) {
+    [data-lq-dashboard] .ls-domain-card:hover { transform: translateY(calc(var(--ls-s-1) / -2)); box-shadow: var(--ls-shadow-2); }
+}
+[data-lq-dashboard] .ls-tool-links { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
+[data-lq-dashboard] .ls-tool-link {
+    border-radius: var(--ls-r-md);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+    padding: var(--ls-s-2) var(--ls-s-3);
+}
+
+/* -- evaluation menu -> lq-menu look ----------------------------------- */
+[data-lq-dashboard] .dashboard-evaluation-menu__popover {
+    border-radius: var(--ls-r-lg);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+    box-shadow: var(--ls-shadow-3);
+}
+
+/* -- mobile collapsible sections (reuses stage-9 memory / LQ.collapsible) */
+@media (max-width: 767px) {
+    [data-lq-dashboard] .ls-courses,
+    [data-lq-dashboard] .ls-domains,
+    [data-lq-dashboard] .ls-tools {
+        border-radius: var(--ls-r-lg);
+    }
+}

@@ -1,0 +1,10 @@
+{# Only opted-in S3/S4 shells include this before their body. Unsupported
+   engines retain the authored inline navigation while its existing controller
+   still owns search and actions. No hidden-page class, timer or second owner. #}
+<script>
+(() => {
+    let blocksRender = false;
+    try { blocksRender = document.createElement('script').blocking?.supports('render') === true; } catch {}
+    if (!blocksRender) document.documentElement.dataset.lqShellFallback = 'inline';
+})();
+</script>

@@ -139,9 +139,12 @@ class DeploymentBrowserCacheTests(unittest.TestCase):
             self.assertIn("PUBLIC_CACHE_RELEASE_VERIFIED", deploy_script)
             self.assertIn('$cacheReleaseId', deploy_script)
         self.assertIn("localStorage.setItem(LOCAL_DRAFT_KEY", exam_page)
-        self.assertIn("/draft`, { method: 'GET'", exam_page)
-        self.assertIn("/draft`, {", exam_page)
-        self.assertIn("method: 'POST'", exam_page)
+        # S3 moved the server-draft round trip into a real module; the page
+        # must import it through the versioned asset helper.
+        self.assertIn("asset_url('js/exam_take/submit.js')", exam_page)
+        submit_module = Path("static/js/exam_take/submit.js").read_text(encoding="utf-8")
+        self.assertIn("/draft`, { method: 'GET'", submit_module)
+        self.assertIn("method: 'POST'", submit_module)
 
 
 if __name__ == "__main__":

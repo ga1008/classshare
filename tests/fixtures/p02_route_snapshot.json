@@ -3225,6 +3225,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/academic-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_sync_academic_course_schedule",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/academic/course-schedule/overview",
     "methods": [
       "GET"
@@ -6505,6 +6513,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/dev/lq",
+    "methods": [
+      "GET"
+    ],
+    "name": "liquid_glass_preview",
+    "include_in_schema": false
+  },
+  {
     "path": "/download/course_file/{file_id}",
     "methods": [
       "GET"
@@ -6878,6 +6894,14 @@
       "GET"
     ],
     "name": "manage_me_overview_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/me/appearance",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage_me_appearance_page",
     "include_in_schema": true
   },
   {
@@ -7526,6 +7550,46 @@
       "POST"
     ],
     "name": "handle_student_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/login/identity",
+    "methods": [
+      "GET"
+    ],
+    "name": "student_identity_login_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/login/identity",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_student_identity_login",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/password/forgot",
+    "methods": [
+      "GET"
+    ],
+    "name": "student_password_forgot_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/password/forgot",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_student_password_forgot",
+    "include_in_schema": true
+  },
+  {
+    "path": "/student/password/setup",
+    "methods": [
+      "POST"
+    ],
+    "name": "handle_student_password_setup",
     "include_in_schema": true
   },
   {

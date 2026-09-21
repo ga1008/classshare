@@ -1,0 +1,21 @@
+{% extends "base_centered.html" %}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/forms.html' import lq_input %}
+{% block title %}居中状态页 · 骨架预览{% endblock %}
+{% block body_class %}lq-centered-preview{% endblock %}
+{% block css %}{{ super() }}<link rel="stylesheet" href="{{ asset_url('css/lq/preview.css') }}">{% endblock %}
+{% block card_content %}
+<section class="lq-preview__centered lq-preview__form lq-surface" data-lq-shell-preview="centered" aria-labelledby="centered-preview-title">
+  <h1 id="centered-preview-title">居中状态页</h1>
+  <p>沿用居中页面文档根。这里的输入与操作仅作本地示例，不验证身份或提交数据。</p>
+  <form class="lq-preview__controls" data-lq-shell-theme aria-label="居中页本地外观">
+    <label>配色<select name="palette_key">{% for key,label in [('teal','青碧'),('indigo','靛蓝'),('sky','天青'),('mint','薄荷'),('violet','紫藤'),('rose','玫瑰')] %}<option value="{{ key }}"{% if ui_palette.palette_key == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>外观<select name="appearance"><option value="light"{% if ui_palette.appearance != 'dark' %} selected{% endif %}>浅色</option><option value="dark"{% if ui_palette.appearance == 'dark' %} selected{% endif %}>深色</option></select></label>
+  </form>
+  {{ lq_input('centered-preview-draft','保留的本地内容',value='切换外观后仍保留') }}
+  {{ lq_btn('演示本地操作', attrs={'data-lq-command':'centered-preview-action'}) }}
+  <p role="status" data-lq-shell-feedback>尚未操作示例。</p>
+  {{ lq_btn('返回全部组件', href='/dev/lq', variant='link') }}
+</section>
+{% endblock %}
+{% block scripts %}{{ super() }}<script type="module" src="{{ asset_url('js/lq/preview-shell.js') }}"></script>{% endblock %}

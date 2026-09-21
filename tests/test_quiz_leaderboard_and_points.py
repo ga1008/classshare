@@ -1,11 +1,9 @@
 """随堂测抢答排行与学分币发奖的单元测试（sqlite，走真实服务流）。"""
 
-import os
 import unittest
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services import classroom_interaction_service as svc
 from classroom_app.services.student_points_service import ensure_points_schema, get_points_balance
 
@@ -64,7 +62,7 @@ def _seed(conn):
 class QuizLeaderboardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

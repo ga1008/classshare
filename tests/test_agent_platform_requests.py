@@ -338,24 +338,44 @@ class AgentPlatformRequestsTests(PlatformRequestFixture):
 
     def test_timeout_or_repeated_cancel_retains_capacity_until_actual_thread_finishes(self):
         original=blog.toggle_bookmark
+        original_wait_for,original_drain=asyncio.wait_for,service._drain
         for cancel in (False,True):
             with self.subTest(cancel=cancel):
-                started,release=threading.Event(),threading.Event()
+                started,waiting,draining=asyncio.Event(),asyncio.Event(),asyncio.Event()
+                release=threading.Event()
                 capacity=threading.BoundedSemaphore(1)
                 identities=[]
+                timeout_marker=object()
+                loop=None
                 def slow(conn,user,post_id):
                     identities.append(context._request_identity.get())
-                    started.set()
-                    if not release.wait(3): raise RuntimeError('fixture release missing')
+                    loop.call_soon_threadsafe(started.set)
+                    if not release.wait(10): raise RuntimeError('fixture release missing')
                     return original(conn,user,post_id)
+                async def wait_after_handler_start(awaitable,timeout=None):
+                    if timeout is not timeout_marker:
+                        return await original_wait_for(awaitable,timeout=timeout)
+                    # Exercise cancellation/timeout of an actually running native
+                    # handler, not a race between a 20ms timer and DB admission.
+                    # The watchdog only detects a broken fixture; real wait_for
+                    # still produces the timeout and cancels the shield itself.
+                    await original_wait_for(started.wait(),timeout=10)
+                    waiting.set()
+                    return await original_wait_for(awaitable,timeout=None if cancel else 0)
+                async def observed_drain(work):
+                    draining.set()
+                    return await original_drain(work)
                 async def exercise():
+                    nonlocal loop
+                    loop=asyncio.get_running_loop()
                     work=asyncio.create_task(service.dispatch_platform_request(self.app,self.tokens['student'],'http.blog.bookmark.toggle',str(uuid.uuid4()),path_params={'post_id':1}))
                     try:
-                        self.assertTrue(await asyncio.to_thread(started.wait,1))
+                        await original_wait_for(waiting.wait(),timeout=10)
                         if cancel: work.cancel()
-                        await asyncio.sleep(.05)
-                        if cancel: work.cancel()
-                        await asyncio.sleep(.01)
+                        await original_wait_for(draining.wait(),timeout=10)
+                        if cancel:
+                            work.cancel()
+                            await asyncio.sleep(0)  # Deliver cancellation; no wall-clock delay.
                         self.assertFalse(work.done())
                         self.assertFalse(capacity.acquire(blocking=False))
                         self.assertTrue(identities[0].active)
@@ -368,7 +388,7 @@ class AgentPlatformRequestsTests(PlatformRequestFixture):
                     self.assertFalse(identities[0].active)
                     self.assertTrue(capacity.acquire(blocking=False))
                     capacity.release()
-                with patch.object(blog,'toggle_bookmark',side_effect=slow),patch.object(service,'_CAPACITY',capacity),patch.object(service,'WAIT_TIMEOUT_SECONDS',.02):
+                with patch.object(blog,'toggle_bookmark',side_effect=slow),patch.object(service,'_CAPACITY',capacity),patch.object(service,'WAIT_TIMEOUT_SECONDS',timeout_marker),patch.object(asyncio,'wait_for',side_effect=wait_after_handler_start),patch.object(service,'_drain',side_effect=observed_drain):
                     asyncio.run(exercise())
         self.assertEqual(['observed_http_result']*2,[row[0] for row in self.sql('SELECT status FROM agent_platform_requests')])
 

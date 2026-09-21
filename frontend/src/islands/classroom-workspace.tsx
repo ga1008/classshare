@@ -22,7 +22,7 @@ function WorkspaceExplanation({ title, text }: { title: string; text: string }) 
   </button>;
 }
 
-/** Move the actual business surface into one Radix shell, then restore it on close.
+/** Move the actual business surface into one shared layer, then restore it on close.
  * No cloned controls, duplicate IDs, or remounted legacy controllers. */
 function ExistingSurface({ panel, filter, category, query, tasks, teacher, restoreScroll }: { panel: Panel; filter: string; category: string; query: string; tasks: ClassroomTask[]; teacher: boolean; restoreScroll: number }) {
   const host = useRef<HTMLDivElement>(null);
@@ -86,7 +86,7 @@ export function ClassroomWorkspace() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const activePanel = useRef(panel);
   useLayoutEffect(() => { activePanel.current = panel; }, [panel]);
-  // Radix retains the closing content until its exit animation ends. Keep the
+  // The layer retains closing content until its exit animation ends. Keep the
   // original surface mounted too, including its draft and scroll position.
   const [displayPanel, setDisplayPanel] = useState<Panel | null>(null);
   if (panel !== null && panel !== displayPanel) setDisplayPanel(panel);
@@ -103,6 +103,12 @@ export function ClassroomWorkspace() {
   const scrollPositions = useRef<Partial<Record<Panel, number>>>({});
   const suppressRestoreFocus = useRef(false);
   const externalReturn = useRef<Panel | null>(null);
+  const externalHandoff = useRef<(() => void) | null>(null);
+  const replayingExternal = useRef(false);
+  const editorGeneration = useRef(0);
+  const pendingEditorIntent = useRef<string | null>(null);
+  const mounted = useRef(false);
+  const initialRestore = useRef<{ key: string; state: SavedState } | null>(null);
   const [restoreScroll, setRestoreScroll] = useState(0);
   const preview = taskPreview(tasks, teacher);
   const history = taskHistory(tasks);
@@ -111,16 +117,29 @@ export function ClassroomWorkspace() {
   const indexSessions = sessions.filter(item => [item.session_number_label, item.detail_title, item.session_date, item.detail_meta].join(' ').toLowerCase().includes(timelineQuery.trim().toLowerCase()));
   const openHistory = () => { setFilter('all'); setQuery(''); open('tasks'); };
 
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; editorGeneration.current++; pendingEditorIntent.current = null; externalHandoff.current = null; };
+  }, []);
+  const cancelEditorIntent = () => {
+    editorGeneration.current++;
+    pendingEditorIntent.current = null;
+    setPendingEditor(null);
+  };
+
   const openEditor = async (selector: string) => {
-    if (pendingEditor) return;
+    if (pendingEditorIntent.current) return;
+    pendingEditorIntent.current = selector;
+    const generation = ++editorGeneration.current;
     setPendingEditor(selector);
     try {
       await classroomReadiness.wait();
+      if (!mounted.current || generation !== editorGeneration.current) return;
       document.querySelector<HTMLButtonElement>(selector)?.click();
     } catch {
-      window.UI?.showToast?.('课堂编辑工具尚未就绪，请刷新重试。', 'error');
+      if (mounted.current && generation === editorGeneration.current) window.UI?.showToast?.('课堂编辑工具尚未就绪，请刷新重试。', 'error');
     } finally {
-      setPendingEditor(null);
+      if (mounted.current && generation === editorGeneration.current) { pendingEditorIntent.current = null; setPendingEditor(null); }
     }
   };
 
@@ -131,6 +150,9 @@ export function ClassroomWorkspace() {
 
 
   const open = (next: Panel, trigger?: HTMLElement | null) => {
+    cancelEditorIntent();
+    externalHandoff.current = null;
+    suppressRestoreFocus.current = false;
     if (!panel) opener.current = trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     if (panel) scrollPositions.current[panel] = document.querySelector('.cw-dialog-scroll')?.scrollTop || 0;
     setRestoreScroll(scrollPositions.current[next] || 0);
@@ -142,14 +164,22 @@ export function ClassroomWorkspace() {
       state.restore = false; sessionStorage.setItem(storageKey, JSON.stringify(state));
     } catch { /* storage is optional */ }
   };
-  const close = () => { setPanel(null); returnPanel.current = null; consumeReturnState(); };
+  const close = () => { cancelEditorIntent(); setPanel(null); returnPanel.current = null; consumeReturnState(); };
 
   useEffect(() => {
-    try { saved.current = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState; } catch { /* storage is optional */ }
+    let cancelled = false;
+    if (initialRestore.current?.key !== storageKey) {
+      let state: SavedState = {};
+      try { state = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState; } catch { /* storage is optional */ }
+      initialRestore.current = { key: storageKey, state };
+    }
+    // Both StrictMode setups need the same original intent; only the surviving
+    // setup may deliver it once readiness resolves.
+    saved.current = { ...initialRestore.current.state };
     config.workspaceSelectedOrder = explicitSession.current.kind === 'none' ? saved.current.sessionOrder : explicitSession.current.session?.order_index;
     if (explicitSession.current.kind === 'valid') {
       saved.current.restore = false; consumeReturnState();
-      void classroomReadiness.wait().then(() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: explicitSession.current.session.order_index } }))).catch(() => window.UI?.showToast?.('指定课次尚未就绪，请刷新重试。', 'error'));
+      void classroomReadiness.wait().then(() => { if (!cancelled) document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: explicitSession.current.session.order_index } })); }).catch(() => { if (!cancelled) window.UI?.showToast?.('指定课次尚未就绪，请刷新重试。', 'error'); });
     }
     if (saved.current.restore && explicitSession.current.kind === 'none') {
       opener.current = document.querySelector<HTMLElement>(saved.current.openerKind === 'history' ? '[data-cw-history]' : '[data-cw-task-collection]');
@@ -160,7 +190,7 @@ export function ClassroomWorkspace() {
       if (saved.current.returnPanel) scrollPositions.current[saved.current.returnPanel] = saved.current.returnScroll || 0;
       if (saved.current.panel === 'session-detail') {
         const order = saved.current.sessionOrder;
-        void classroomReadiness.wait().then(() => document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order, resume: true } }))).catch(() => window.UI?.showToast?.('课堂详情尚未就绪，请刷新重试。', 'error'));
+        void classroomReadiness.wait().then(() => { if (!cancelled) document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order, resume: true } })); }).catch(() => { if (!cancelled) window.UI?.showToast?.('课堂详情尚未就绪，请刷新重试。', 'error'); });
       } else setPanel(saved.current.panel || 'tasks');
       saved.current.restore = false;
       try { sessionStorage.setItem(storageKey, JSON.stringify(saved.current)); } catch { /* optional */ }
@@ -204,6 +234,7 @@ export function ClassroomWorkspace() {
     };
     window.addEventListener('pageshow', pageShown);
     return () => {
+      cancelled = true;
       document.removeEventListener('classroom:session-selected', selected);
       document.removeEventListener('classroom:assignment-time-states', times);
       window.removeEventListener('lanshare:assessment-kind-updated', classificationChanged);
@@ -243,16 +274,24 @@ export function ClassroomWorkspace() {
         const state: SavedState = { panel: 'tasks', filter, category, query, scroll: document.querySelector('.cw-dialog-scroll')?.scrollTop || 0, restore: true, sessionOrder: session?.order_index, previewFilter, taskId: target?.closest<HTMLElement>('[data-assignment-id]')?.dataset.assignmentId, openerKind: opener.current?.hasAttribute('data-cw-history') ? 'history' : 'tasks' };
         try { sessionStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* optional */ }
       }
-      // Existing editors are independent modals. Relinquish the Radix trap before they open.
-      if (panel && target?.closest('[data-cw-external-modal]')) {
+      // Deliver this editor action only after locks release and its original
+      // business surface has been restored. The legacy handler still owns it.
+      const external = target?.closest<HTMLButtonElement>('[data-cw-external-modal]');
+      if (panel && external && !replayingExternal.current) {
+        event.preventDefault(); event.stopImmediatePropagation();
         scrollPositions.current[panel] = document.querySelector('.cw-dialog-scroll')?.scrollTop || 0;
-        if (target.closest('[data-group-config-btn]')) externalReturn.current = panel;
+        if (external.closest('[data-group-config-btn]')) externalReturn.current = panel;
+        externalHandoff.current = () => {
+          if (!external.isConnected || external.disabled) return;
+          replayingExternal.current = true;
+          try { external.click(); } finally { replayingExternal.current = false; }
+        };
         suppressRestoreFocus.current = true; close();
       }
     };
     const request = (event: Event) => {
       const next = (event as CustomEvent<{ panel: Panel | null; back?: boolean; origin?: HTMLElement; handoff?: boolean; resume?: boolean }>).detail;
-      if (next.handoff) { suppressRestoreFocus.current = true; setPanel(null); return; }
+      if (next.handoff) { cancelEditorIntent(); externalHandoff.current = null; suppressRestoreFocus.current = true; setPanel(null); return; }
       if (next.back) { setRestoreScroll(returnPanel.current ? scrollPositions.current[returnPanel.current] || 0 : 0); setPanel(returnPanel.current); returnPanel.current = null; return; }
       if (!next.resume && next.panel !== panel && (next.panel === 'material-detail' || next.panel === 'session-detail')) returnPanel.current = panel;
       if (!next.panel) { close(); return; }
@@ -299,7 +338,15 @@ export function ClassroomWorkspace() {
           const selected = document.querySelector<HTMLElement>('.cw-dialog [data-cw-session-order][aria-pressed="true"]');
           if (selected) { event.preventDefault(); selected.focus({ preventScroll: true }); selected.scrollIntoView({ block: 'nearest' }); }
         }
-      }} onCloseAutoFocus={event => { event.preventDefault(); if (activePanel.current !== null) return; if (!suppressRestoreFocus.current) opener.current?.focus({ preventScroll: true }); suppressRestoreFocus.current = false; document.dispatchEvent(new CustomEvent('classroom:workspace-closed')); }}>
+      }} returnFocus={() => opener.current}
+        onCloseAutoFocus={event => { if (activePanel.current !== null || suppressRestoreFocus.current) event.preventDefault(); }}
+        onAfterClose={() => {
+          if (activePanel.current !== null) return;
+          const callback = externalHandoff.current; externalHandoff.current = null;
+          suppressRestoreFocus.current = false;
+          document.dispatchEvent(new CustomEvent('classroom:workspace-closed'));
+          callback?.();
+        }}>
         <div className="cw-dialog-heading"><DialogTitle>{displayPanel ? labels[displayPanel] : '课堂工作区'}</DialogTitle><DialogDescription>{displayPanel === 'tasks' ? '本课堂全部已授权任务，包含已提交、已截止和历史记录。' : displayPanel === 'materials' ? '课堂材料目录，保留目录导航、预览和下载权限。' : displayPanel === 'timeline' ? '选择课次查看完整详情与材料；横向课次导航始终保留。' : session?.detail_title || session?.title || '查看详细信息'}</DialogDescription></div>
         {displayPanel === 'material-detail' && displayReturnPanel && <button type="button" className="cw-text-button cw-back" onClick={() => { setRestoreScroll(scrollPositions.current[displayReturnPanel] || 0); setPanel(displayReturnPanel); returnPanel.current = null; }}>← 返回列表</button>}
         {displayPanel === 'tasks' && <div className="cw-filterbar"><label>任务状态<select value={filter} onChange={event => setFilter(event.target.value)}><option value="all">全部（{tasks.length}）</option><option value="actionable">待处理（{preview.actionableCount}）</option><option value="urgent">24 小时内截止（{preview.urgentCount}）</option>{teacher ? <option value="draft">草稿</option> : <option value="submitted">已提交 / 已批改</option>}<option value="closed">已关闭</option></select></label><label>任务分类<select value={category} onChange={event => setCategory(event.target.value)}><option value="all">全部分类</option><option value="homework">平时作业</option><option value="midterm">期中测验</option><option value="final">期末测验</option><option value="legacy_unknown">{teacher ? '分类待确认' : '历史任务'}</option>{tasks.some(task => task.source_feature === 'personal_stage') && <option value="personal_stage">个人阶段试炼</option>}</select></label><label className="cw-search-label">查找任务<input value={query} onChange={event => setQuery(event.target.value)} type="search" placeholder="输入任务名称" /></label></div>}

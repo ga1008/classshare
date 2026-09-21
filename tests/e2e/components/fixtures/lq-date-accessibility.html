@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN" data-appearance="light" data-theme="lanshare" data-ui-palette="teal" data-lq-glass="off" data-lq-tier="C">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>日期兼容层可访问性</title><link rel="stylesheet" href="/static/css/tailwind-app.css"></head>
+<body>
+<main><h1>日期兼容层验证</h1><button id="opener" type="button" class="lq-btn lq-btn--prominent lq-btn--md">打开日期表单</button><label for="date-a">外部日期</label><input id="date-a" type="date" value="2026-09-20"></main>
+<div id="modal-a" class="modal-backdrop" style="display:none"><section class="modal" aria-labelledby="date-form-title"><h2 id="date-form-title">日期设置</h2><label for="modal-date">日期</label><input id="modal-date" type="date" value="2026-09-20"><label for="modal-datetime">日期时间</label><input id="modal-datetime" type="datetime-local" value="2026-09-20T12:30"><button type="button" class="lq-btn lq-btn--ghost lq-btn--md" data-dismiss="modal">关闭日期表单</button></section></div>
+<script type="module">
+import * as ui from '/static/js/ui.js';
+import * as help from '/static/js/ui_explanation.js';
+import '/static/js/ls_date_picker.js';
+window.help = help;
+window.events = [];
+document.querySelector('#opener').addEventListener('click', () => ui.openModal('modal-a'));
+document.querySelectorAll('input').forEach(input => {
+  input.addEventListener('input', () => window.events.push(`${input.id}:input`));
+  input.addEventListener('change', () => window.events.push(`${input.id}:change`));
+});
+document.body.dataset.ready = 'true';
+</script>
+</body></html>

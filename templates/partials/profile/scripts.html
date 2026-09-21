@@ -1,0 +1,10 @@
+{% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
+<script type="module" src="{{ asset_url('js/profile.js') }}"></script>
+{% if active_section == 'signatures' %}
+<script type="module" src="{{ asset_url('js/profile_signatures.js') }}"></script>
+{% endif %}
+{% if active_section in ['notifications', 'private'] %}
+{{ vite_entry_tags('frontend/src/islands/message-center-page.tsx') }}
+{{ vite_entry_tags('frontend/src/islands/message-center-workspace-sync.tsx') }}
+{% endif %}

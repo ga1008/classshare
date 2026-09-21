@@ -1,0 +1,65 @@
+{% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% set flow_titles = {'identity': '验证学生身份', 'setup': '设置登录密码', 'forgot': '找回密码', 'submitted': '申请已提交'} %}
+
+{% block title %}{{ flow_titles[auth_step] }} - 课堂平台{% endblock %}
+{% block css %}
+{{ super() }}
+{% if not _lq_centered %}<style>
+    .student-auth-flow form { text-align: start; }
+    .student-auth-flow h1 { margin-bottom: var(--spacing-sm, 0.5rem); color: var(--text-primary); font-size: 1.5rem; }
+    .student-auth-flow .auth-flow-feedback { padding: var(--spacing-md); margin-bottom: var(--spacing-lg); border: 1px solid currentColor; border-radius: var(--radius-md); overflow-wrap: anywhere; }
+    .student-auth-flow .auth-flow-feedback:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+    .student-auth-flow .auth-flow-student { overflow-wrap: anywhere; }
+    .student-auth-flow .footer-links a { display: inline-flex; align-items: center; min-height: 44px; padding: var(--spacing-sm); color: var(--primary-color); }
+</style>{% endif %}
+{% endblock %}
+
+{% block card_content %}
+{% if _lq_centered %}<div class="lq-login-frame" data-lq-login-material="thick"><div class="lq-scrim" aria-hidden="true"></div>{% endif %}
+<div class="login-card student-auth-flow{% if _lq_centered %} lq-login-card lq-glass lq-glass--thick{% endif %}" data-auth-step="{{ auth_step }}">
+    <h1>{{ flow_titles[auth_step] }}</h1>
+    {% if auth_step == 'submitted' %}
+        <p class="subtitle" role="status">找回密码申请已提交，请等待教师审核。审核通过后，请通过“首次登录 / 重置后登录”验证身份并设置新密码。</p>
+    {% else %}
+        <p class="subtitle">{% if auth_step == 'identity' %}仅限首次登录尚未设置密码，或教师已通过找回密码申请的学生。{% elif auth_step == 'setup' %}{{ password_policy_hint }} 设置成功后将自动登录。{% else %}请填写姓名、学号和班级名称，提交给教师审核。班级数字或系别也可核验。{% endif %}</p>
+        {% if auth_student %}<p class="auth-flow-student">{{ auth_student.name }} · {{ auth_student.student_id_number }} · {{ auth_student.class_name }}</p>{% endif %}
+        <form action="{{ '/student/login/identity' if auth_step == 'identity' else '/student/password/' ~ auth_step }}" method="post"{% if auth_error %} aria-describedby="auth-flow-feedback"{% endif %}>
+            {% if auth_error %}<p id="auth-flow-feedback" class="auth-flow-feedback lq-login-feedback" role="alert" tabindex="-1" autofocus>{{ auth_error }}</p>{% endif %}
+            <input type="hidden" name="next" value="{{ next_url }}">
+            {% if auth_step == 'setup' %}
+                <input type="hidden" name="setup_token" value="{{ setup_token }}">
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="auth-password">设置密码</label>
+                    <input id="auth-password" name="password" type="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" required autocomplete="new-password" aria-describedby="auth-password-policy"{% if not auth_error %} autofocus{% endif %}>
+                    <span id="auth-password-policy" class="form-text">{{ password_policy_hint }}</span>
+                </div>
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="auth-confirm-password">确认密码</label>
+                    <input id="auth-confirm-password" name="confirm_password" type="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" required autocomplete="new-password">
+                </div>
+            {% else %}
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="auth-name">姓名</label>
+                    <input id="auth-name" name="name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" required autocomplete="name" value="{{ auth_name }}"{% if not auth_error %} autofocus{% endif %}>
+                </div>
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="auth-student-id">学号</label>
+                    <input id="auth-student-id" name="student_id_number" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" required autocomplete="username" value="{{ auth_student_id_number }}">
+                </div>
+                {% if auth_step == 'forgot' %}<div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="auth-class">班级名称</label>
+                    <input id="auth-class" name="class_name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" required maxlength="100" value="{{ auth_class_name }}">
+                </div>{% endif %}
+            {% endif %}
+            {% set submit_label = '验证身份并设置密码' if auth_step == 'identity' else '确认并进入课堂' if auth_step == 'setup' else '提交申请' %}
+            {% if _lq_centered %}{{ lq_btn(submit_label, variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full btn-lg">{{ submit_label }}</button>{% endif %}
+        </form>
+    {% endif %}
+    <div class="footer-links">
+        <a href="{{ student_entry_url }}">返回密码登录</a>
+        {% if auth_step in ['forgot', 'submitted', 'setup'] %}<a href="{{ identity_entry_url }}">首次登录 / 重置后登录</a>{% else %}<a href="{{ forgot_entry_url }}">忘记密码？</a>{% endif %}
+    </div>
+</div>
+{% if _lq_centered %}</div>{% endif %}
+{% endblock %}

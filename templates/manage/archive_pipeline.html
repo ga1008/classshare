@@ -13,7 +13,7 @@
     {{ page_head('成绩与归档',
         description='常规归档已覆盖 ' ~ done_steps ~ ' / ' ~ step_total ~ ' 类 · 签到统计表按需归档',
         explain='按命题与考核、成绩链、教务归档、课后材料组织工作。签到统计表为可选归档，不影响现有成绩材料流程。',
-        explain_label='成绩与归档说明') }}
+        explain_label='成绩与归档说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
     <ol class="ap-steps">
         {% set ns = namespace(group='') %}

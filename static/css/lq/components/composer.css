@@ -1,0 +1,36 @@
+.lq-composer {
+    box-sizing: border-box; min-width: 0; width: 100%; padding: 10px;
+    border-radius: 28px; color: hsl(var(--lq-material-ink, var(--ls-ink)));
+}
+.lq-composer__content { overflow-wrap: anywhere; }
+.lq-composer__content:empty { display: none; }
+.lq-composer__input {
+    box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 40px;
+    max-height: 160px; margin: 0; padding: 8px 12px; resize: none;
+    border: 0; border-radius: 16px; background: transparent; color: inherit;
+    font: inherit; font-size: 16px; line-height: 24px; overflow-y: auto;
+}
+.lq-composer__input::placeholder { color: hsl(var(--lq-material-muted, var(--ls-ink-2))); opacity: 1; }
+.lq-composer__input:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
+.lq-composer__input:disabled { opacity: 1; color: hsl(var(--ls-ink-3)); background: hsl(var(--ls-surface-2)); cursor: not-allowed; }
+.lq-composer__actions, .lq-composer__tools { display: flex; align-items: center; gap: 4px; }
+.lq-composer__actions { justify-content: space-between; margin-top: 4px; }
+.lq-composer__tools { flex-wrap: wrap; min-width: 0; }
+.lq-composer__actions > .lq-btn { flex-shrink: 0; }
+.lq-composer[data-lq-composer-fixed] {
+    position: absolute; inset-inline: 12px; width: auto;
+    bottom: calc(max(var(--lq-dock-h, 0px), var(--lq-composer-keyboard, 0px)) + 12px + env(safe-area-inset-bottom));
+    z-index: var(--ls-z-nav);
+}
+[data-lq-composer-scroll] {
+    padding-block-end: calc(var(--lq-composer-h, 0px) + max(var(--lq-dock-h, 0px), var(--lq-composer-keyboard, 0px)) + 24px + env(safe-area-inset-bottom));
+    scroll-padding-block-end: calc(var(--lq-composer-h, 0px) + max(var(--lq-dock-h, 0px), var(--lq-composer-keyboard, 0px)) + 24px + env(safe-area-inset-bottom));
+}
+@media (pointer: coarse) {
+    .lq-composer__actions .lq-btn { min-width: 44px; min-height: 44px; }
+}
+@media (forced-colors: active) {
+    .lq-composer { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-composer__input::placeholder { color: GrayText; }
+    .lq-composer__input:focus-visible { outline-color: Highlight; }
+}

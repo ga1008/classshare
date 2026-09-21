@@ -21,7 +21,7 @@
 {% set _missing_ai_count = hub_offerings | rejectattr('has_ai_config') | list | length %}
 <div class="academic-shell offering-hub-shell">
     {% include "partials/teaching_stage_bar.html" %}
-    {% call page_head('课堂',
+    {% call page_head('课堂', lq_enabled=lq_pilot_enabled|default(false),
         explain='课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动、成绩都发生在课堂里。这里集中查看授课进度与配置缺口。', explain_label='课堂说明',
         actions=[
             {'label': '配置 AI 助教', 'variant': 'outline', 'href': '/manage/teaching/ai'},
@@ -89,6 +89,21 @@
                 </label>
             </div>
         </div>
+        {% set _hub_chip_family_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+        {% if _hub_chip_family_enabled %}
+        {% from "macros/lq/chip-row.html" import lq_chip_row %}
+        {% set _hub_chip_items = [
+            {'label': '全部（' ~ (hub_offerings | length) ~ '）', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'all'}},
+            {'label': '进行中（' ~ _active_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'active'}},
+        ] %}
+        {% if _combined_count %}{% set _hub_chip_items = _hub_chip_items + [{'label': '合班（' ~ _combined_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'combined'}}] %}{% endif %}
+        {% if _missing_textbook_count %}{% set _hub_chip_items = _hub_chip_items + [{'label': '缺教材（' ~ _missing_textbook_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'missing-textbook'}}] %}{% endif %}
+        {% if _missing_ai_count %}{% set _hub_chip_items = _hub_chip_items + [{'label': '缺 AI 配置（' ~ _missing_ai_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'missing-ai'}}] %}{% endif %}
+        {% if _finished_count %}{% set _hub_chip_items = _hub_chip_items + [{'label': '课次已结束（' ~ _finished_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': 'finished'}}] %}{% endif %}
+        <div class="offering-hub-chips" data-filter-chips data-filter-target="#offeringHubStatusFilter">
+            {{ lq_chip_row('offeringHubStatusChips', '按状态快速筛选', _hub_chip_items) }}
+        </div>
+        {% else %}
         <div class="filter-chips offering-hub-chips" data-filter-chips data-filter-target="#offeringHubStatusFilter" aria-label="按状态快速筛选">
             <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ hub_offerings | length }}</span></button>
             <button type="button" class="filter-chip" data-value="active">进行中<span class="filter-chip__count">{{ _active_count }}</span></button>
@@ -105,6 +120,7 @@
             <button type="button" class="filter-chip" data-value="finished">课次已结束<span class="filter-chip__count">{{ _finished_count }}</span></button>
             {% endif %}
         </div>
+        {% endif %}
     </section>
 
     <section class="class-workbench offering-hub-workbench">
@@ -341,7 +357,7 @@
                 <button type="button" class="class-student-drawer-close" id="offeringHubDrawerClose" aria-label="关闭编辑抽屉">&times;</button>
             </div>
         </div>
-        <iframe id="offeringHubDrawerFrame" title="课堂配置编辑器"></iframe>
+        <iframe id="offeringHubDrawerFrame" data-lq-theme-bridge="app" title="课堂配置编辑器"></iframe>
     </aside>
 </div>
 {% endblock %}

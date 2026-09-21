@@ -1,0 +1,4 @@
+{% macro lq_skeleton(shape='text', lines=1, attrs={}) -%}
+{%- set p = lq_props('skeleton', shape=shape, lines=lines, attrs=attrs) -%}
+<span class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for _ in range(p.lines) %}<span class="lq-skeleton__part"></span>{% endfor %}</span>
+{%- endmacro %}

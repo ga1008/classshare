@@ -1,0 +1,12 @@
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% from 'macros/lq/indicators.html' import lq_spinner %}
+
+{% macro lq_btn(label='', variant='soft', size='md', icon=none, href=none, id=none, attrs={}, badge=none, loading=false, type='button', disabled=false, aria_disabled=false) -%}
+{%- set p = lq_props('button', label=label, variant=variant, size=size, icon=icon, href=href, id=id, attrs=attrs, badge=badge, loading=loading, type=type, disabled=disabled, aria_disabled=aria_disabled) -%}
+<{{ p.tag }} class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+  {%- if p.icon %}<span class="lq-btn__icon" aria-hidden="true">{{ lq_icon(p.icon) }}</span>{% endif -%}
+  {%- if not p.icon_only %}<span class="lq-btn__label">{{ p.label|forceescape }}</span>{% endif -%}
+  {%- if p.badge is not none %}<span class="lq-btn__badge" aria-hidden="true">{{ p.badge|forceescape }}</span>{% endif -%}
+  {%- if p.loading %}<span class="lq-btn__spinner" aria-hidden="true">{{ lq_spinner(size='sm') }}</span>{% endif -%}
+</{{ p.tag }}>
+{%- endmacro %}

@@ -1,0 +1,18 @@
+/* Decoration only. The data owner marks its real container aria-busy. */
+.lq-skeleton { display: grid; width: 100%; gap: var(--ls-s-3); pointer-events: none; }
+.lq-skeleton__part {
+    display: block;
+    min-height: var(--ls-s-4);
+    overflow: hidden;
+    border-radius: var(--ls-r-xs);
+    background: linear-gradient(100deg, hsl(var(--ls-surface-2)) 20%, hsl(var(--ls-line)) 45%, hsl(var(--ls-surface-2)) 70%);
+    background-size: 250% 100%;
+    animation: lq-skeleton-shimmer calc(var(--ls-dur-enter) * 4) linear infinite;
+}
+.lq-skeleton--text .lq-skeleton__part:last-child:not(:first-child) { width: 65%; }
+.lq-skeleton--avatar { width: var(--ls-s-10); height: var(--ls-s-10); }
+.lq-skeleton--avatar .lq-skeleton__part { border-radius: var(--ls-r-capsule); }
+.lq-skeleton--block .lq-skeleton__part { min-height: calc(var(--ls-s-12) * 2); border-radius: var(--ls-r-sm); }
+@keyframes lq-skeleton-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .lq-skeleton__part { animation: none; background: hsl(var(--ls-surface-2)); } }
+@media (forced-colors: active) { .lq-skeleton__part { animation: none; background: Canvas; border: 1px solid GrayText; } }

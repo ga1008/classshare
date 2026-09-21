@@ -1,66 +1,33 @@
 {% extends "base.html" %}
+{% set report_card_pilot = lq_pilot_enabled|default(false) and request.url.path == '/report-card' and user_info.role == 'student' %}
+{% set navbar_shell_enabled = lq_family_enabled is defined and lq_family_enabled('navbar-shell') %}
 
-{% block css %}
-<style>
-    body { background-color: var(--bg-color); }
-
-    .student-security-summary {
-        display: grid;
-        gap: var(--spacing-sm);
-        margin-bottom: var(--spacing-lg);
-    }
-
-    .student-security-summary-row {
-        display: flex;
-        justify-content: space-between;
-        gap: var(--spacing-md);
-        padding: var(--spacing-sm) var(--spacing-md);
-        border-radius: var(--radius-md);
-        background: var(--bg-color);
-        border: 1px solid var(--border-color);
-    }
-
-    .student-security-summary-row span {
-        color: var(--text-muted);
-        font-size: 0.875rem;
-    }
-
-    .student-security-summary-row strong {
-        color: var(--text-primary);
-        text-align: right;
-    }
-
-    @media (max-width: 768px) {
-        .app-topbar,
-        .app-topbar-nav,
-        .app-topbar-actions,
-        .app-topbar-menu {
-            overflow: visible;
-        }
-
-        .app-topbar.app-topbar--menu-open {
-            z-index: 5000;
-        }
-
-        .app-topbar-menu__panel--floating {
-            position: fixed;
-            top: 12.6rem;
-            right: 1rem;
-            left: 1rem;
-            width: auto;
-            max-height: min(27rem, calc(100vh - 13.8rem));
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            z-index: 5001;
-        }
-    }
-</style>
+{% block head %}
+{{ super() }}
+{% if navbar_shell_enabled %}
+{% include 'partials/lq_shell_prepaint.html' %}
+<script type="module" blocking="render" src="{{ asset_url('js/navbar_lq.js') }}"></script>
+{% endif %}
 {% endblock %}
 
-{% block body_class %}page-wrapper{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ asset_url('css/lq/pages/navbar.css') }}">
+{% endblock %}
+
+{% block body_class %}page-wrapper{% if report_card_pilot %} lq-report-card-page{% endif %}{% endblock %}
 
 {% block body %}
 <!-- Navbar -->
+{% if navbar_shell_enabled %}
+<a class="lq-navbar-skip" href="#navbar-main">跳转到主要内容</a>
+{% set navbar_shell_id = 'navbar-topbar' %}
+{% set navbar_shell_report = false %}
+{% set navbar_shell_title = self.title()|striptags %}
+{% set navbar_shell_actions = self.navbar_actions() %}
+{% include 'partials/lq_navbar_topbar.html' %}
+{% elif report_card_pilot %}
+{% include "partials/lq_report_card_topbar.html" %}
+{% else %}
 <header class="navbar app-topbar role-{{ user_info.role }}" aria-label="全局导航">
     <a href="/dashboard" class="navbar-brand app-topbar-brand" aria-label="返回首页">
         <span class="app-topbar-brand__mark" aria-hidden="true">
@@ -121,6 +88,7 @@
         </div>
     </nav>
 </header>
+{% endif %}
 
 {% if user_info.role == 'student' %}
 {% include "partials/student_security_modal.html" %}
@@ -131,22 +99,23 @@
 {% endif %}
 
 <!-- Main Content -->
-<main class="main-content container">
+<main class="main-content container"{% if navbar_shell_enabled %} id="navbar-main" tabindex="-1" data-lq-navbar-content{% if user_info.role == 'student' %} data-lq-dock-content{% endif %}{% endif %}>
     {% block main_content %}{% endblock %}
 </main>
 {% if user_info.role == 'teacher' %}
 {% include "partials/ai_workspace_widget.html" %}
 {% endif %}
 {% if user_info.role == 'student' %}
-{% include "partials/app_bottomnav.html" %}
+{% if navbar_shell_enabled %}{% include 'partials/lq_app_bottomnav.html' %}{% else %}{% include "partials/app_bottomnav.html" %}{% endif %}
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-    import { showToast } from '/static/js/ui.js';
+    import { showToast } from '{{ asset_url('js/ui.js') }}';
     window.showToast = showToast;
 </script>
+{% if not report_card_pilot and not navbar_shell_enabled %}
 <script>
     (() => {
         const topbarMenus = Array.from(document.querySelectorAll('.app-topbar-menu'));
@@ -241,11 +210,12 @@
         mobileMenuQuery.addEventListener?.('change', syncTopbarMenuLayer);
     })();
 </script>
-{% if user_info.role == 'student' %}
-<script type="module" src="/static/js/student_security.js"></script>
 {% endif %}
-<script type="module" src="/static/js/feedback.js"></script>
-<script type="module" src="/static/js/global_search.js?v=global-search-20260714"></script>
+{% if user_info.role == 'student' %}
+<script type="module" src="{{ asset_url('js/student_security.js') }}"></script>
+{% endif %}
+<script type="module" src="{{ asset_url('js/feedback.js') }}"></script>
+<script type="module" src="{{ asset_url('js/global_search.js') }}"></script>
 {% if user_info.role == 'teacher' %}
 {% if dashboard_defer_ai_tools | default(false) %}
 <script type="application/json" id="ls-deferred-ai-assets">{{ {"scripts": [asset_url('es2022_polyfills'), asset_url('marked'), asset_url('markdown_runtime'), asset_url('js/ai_chat_component.js')], "module": asset_url('js/ai_workspace_widget.js'), "mermaid": asset_url('mermaid')} | tojson }}</script>

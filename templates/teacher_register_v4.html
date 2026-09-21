@@ -1,33 +1,34 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
 
 {% block title %}教师注册 - 课堂平台{% endblock %}
 
-{% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--success-light) 100%);{% endblock %}
+{% block body_class %}{{ super() }} centered-page--teacher{% endblock %}
 
 {% block card_content %}
-<div class="login-card">
+<div class="login-card{% if _lq_centered %} lq-login-card lq-glass lq-glass--thick{% endif %}"{% if _lq_centered %} data-lq-login-card="teacher"{% endif %}>
     <div class="login-logo logo-teacher">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
         </svg>
     </div>
-    <h2>创建教师账户</h2>
+    {% if _lq_centered %}<h1>创建教师账户</h1>{% else %}<h2>创建教师账户</h2>{% endif %}
     <p class="subtitle">填写以下信息，开启您的智慧课堂</p>
 
     <form action="/teacher/register" method="post">
-        <div class="form-group text-left">
-            <label class="form-label" for="name">真实姓名</label>
-            <input type="text" id="name" name="name" class="form-control" placeholder="如：张三老师" required autofocus>
+        <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="name">真实姓名</label>
+            <input type="text" id="name" name="name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="如：张三老师" required autofocus>
         </div>
-        <div class="form-group text-left">
-            <label class="form-label" for="email">登录邮箱</label>
-            <input type="email" id="email" name="email" class="form-control" placeholder="your@email.com" required>
+        <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="email">登录邮箱</label>
+            <input type="email" id="email" name="email" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="your@email.com" required>
         </div>
-        <div class="form-group text-left">
-            <label class="form-label" for="password">设置密码</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="至少6位字符" minlength="6" required>
+        <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="password">设置密码</label>
+            <input type="password" id="password" name="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="至少6位字符" minlength="6" required>
         </div>
-        <button type="submit" class="btn btn-success w-full btn-lg">注 册</button>
+        {% if _lq_centered %}{{ lq_btn('注 册', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-success w-full btn-lg">注 册</button>{% endif %}
     </form>
 
     <div class="footer-links">

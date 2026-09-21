@@ -21,7 +21,7 @@
             {'label': '刷新', 'variant': 'outline', 'id': 'gw-doc-refresh'},
             {'label': '关注设置', 'variant': 'outline', 'id': 'gw-follow-open'},
             {'label': '立即同步', 'variant': 'primary', 'id': 'gw-doc-sync'}
-        ]) %}<span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>{% endcall %}
+        ], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>{% endcall %}
 
     {% set follow_stats = gongwen_follow_stats or {'total': 0, 'unseen': 0} %}
     {% set follow_pct = ((follow_stats.total | int) / (summary.total | int) * 100) | round | int if (summary.total | int) > 0 else 0 %}

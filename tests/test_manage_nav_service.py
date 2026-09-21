@@ -1,7 +1,10 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 
 from classroom_app.app import app
 from classroom_app.core import templates
@@ -19,10 +22,40 @@ from classroom_app.services.manage_nav_service import (
     iter_platform_manage_routes,
 )
 from classroom_app.services.platform_knowledge_service import PLATFORM_ROUTES
-from classroom_app.dependencies import require_teacher_domain
+from classroom_app.dependencies import get_current_user, get_current_user_optional, require_teacher_domain
+from classroom_app.routers.ui_parts import manage_pages_teaching
 
 
 class ManageNavServiceTests(unittest.TestCase):
+    def test_retired_workflow_preserves_teacher_gate_and_query_without_loading_data(self):
+        # Exercise the real route and nested teacher/domain dependencies without
+        # involving unrelated application middleware or a live database.
+        test_app = FastAPI()
+        test_app.include_router(manage_pages_teaching.router)
+        client = TestClient(test_app)
+        test_app.dependency_overrides[get_current_user_optional] = lambda: None
+        response = client.get("/manage/teaching/workflow", follow_redirects=False)
+        self.assertEqual(401, response.status_code)
+        self.assertNotIn("location", response.headers)
+
+        test_app.dependency_overrides[get_current_user] = lambda: {"id": 1, "role": "student"}
+        response = client.get("/manage/teaching/workflow", follow_redirects=False)
+        self.assertEqual(403, response.status_code)
+        self.assertNotIn("location", response.headers)
+
+        test_app.dependency_overrides[get_current_user] = lambda: {"id": 1, "role": "teacher"}
+        with patch.object(manage_pages_teaching, "get_db_connection", side_effect=AssertionError("retired route must not load wizard data")):
+            response = client.get("/manage/teaching/workflow?semester=8&source=a%2Fb", follow_redirects=False)
+        self.assertEqual(301, response.status_code)
+        self.assertEqual("/manage/teaching/classroom-hub?semester=8&source=a%2Fb", response.headers["location"])
+
+    def test_retired_workflow_is_absent_from_navigation_and_knowledge(self):
+        for is_admin in (False, True):
+            nav = build_manage_nav({"id": 1, "role": "teacher"}, "semesters", is_super_admin=is_admin)
+            self.assertNotIn("workflow", nav["hrefs"])
+            self.assertNotIn("开课向导", str(nav))
+        self.assertNotIn("/manage/teaching/workflow", {route["path"] for route in PLATFORM_ROUTES})
+
     def test_registered_navigation_icons_render_without_fallback(self):
         render_icon = templates.get_template("macros/manage_icons.html").module.manage_icon
         fallback = str(render_icon("unknown")).strip()
@@ -56,7 +89,7 @@ class ManageNavServiceTests(unittest.TestCase):
             by_domain.setdefault(item.domain, []).append(item.key)
         self.assertEqual(["home"], by_domain["home"])
         self.assertEqual(
-            ["offering_hub", "offering_merge", "workflow", "semesters", "offerings", "ai", "classes"],
+            ["offering_hub", "offering_merge", "semesters", "offerings", "ai", "classes"],
             by_domain["teaching"],
         )
         self.assertEqual(
@@ -76,7 +109,7 @@ class ManageNavServiceTests(unittest.TestCase):
             by_domain["academic"],
         )
         self.assertEqual(
-            ["teacher_profile", "work_inbox", "me_settings", "me_security", "me_notifications", "me_email", "signatures", "signature_workflows", "teacher_credentials", "system_password_resets"],
+            ["teacher_profile", "work_inbox", "me_settings", "me_appearance", "me_security", "me_notifications", "me_email", "signatures", "signature_workflows", "teacher_credentials", "system_password_resets"],
             by_domain["me"],
         )
         self.assertTrue(all(item.required_flag == "super_admin" for item in MANAGE_NAV_ITEMS if item.domain == "admin"))
@@ -191,7 +224,7 @@ class ManageNavServiceTests(unittest.TestCase):
         self.assertIn("life_tips", admin_keys)
         self.assertEqual("admin", admin_nav["active_domain"])
 
-        teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "workflow", is_super_admin=False)
+        teacher_nav = build_manage_nav({"id": 1, "role": "teacher"}, "semesters", is_super_admin=False)
         teaching_keys = [
             item["key"]
             for domain in teacher_nav["domains"]

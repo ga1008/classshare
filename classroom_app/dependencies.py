@@ -47,6 +47,9 @@ VALID_AUTHENTICATED_ROLES = {"teacher", "student"}
 
 _AUTH_PAGE_PATHS = {
     "/student/login",
+    "/student/login/identity",
+    "/student/password/setup",
+    "/student/password/forgot",
     "/teacher/login",
     "/teacher/register",
     "/auth/forbidden",
@@ -386,7 +389,10 @@ def get_same_origin_referer_path(request: Request) -> Optional[str]:
     if not referer:
         return None
 
-    parsed = urlsplit(referer)
+    try:
+        parsed = urlsplit(referer)
+    except ValueError:
+        return None
     if parsed.scheme and parsed.scheme != request.url.scheme:
         return None
     if parsed.netloc and parsed.netloc != request.url.netloc:
@@ -414,11 +420,18 @@ def is_safe_local_path(target: Optional[str]) -> bool:
     if not target:
         return False
 
-    raw = str(target).strip()
-    if not raw or raw.startswith("//") or any(ch in raw for ch in "\r\n"):
+    # Browsers treat backslashes as slashes in special URLs; urlsplit does not.
+    # Check controls before stripping: URL parsers may silently discard them.
+    value = str(target)
+    if "\\" in value or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
         return False
-
-    parsed = urlsplit(raw)
+    raw = value.strip()
+    if not raw or not raw.startswith("/") or raw.startswith("//"):
+        return False
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return False
     if parsed.scheme or parsed.netloc:
         return False
 
@@ -431,7 +444,7 @@ def sanitize_next_path(target: Optional[str], fallback: str = "/dashboard") -> s
 
     parsed = urlsplit(str(target).strip())
     path = parsed.path or "/"
-    if path in _AUTH_PAGE_PATHS:
+    if path.rstrip("/") in _AUTH_PAGE_PATHS:
         return fallback
 
     query = f"?{parsed.query}" if parsed.query else ""
@@ -721,6 +734,13 @@ def get_current_teacher(user: dict = Depends(get_current_user)) -> dict:
             detail="Permission denied: Not a teacher",
             headers=_permission_denied_headers("teacher"),
         )
+    return user
+
+
+def get_current_preference_user(user: dict = Depends(get_current_user)) -> dict:
+    """Account preferences belong to the authenticated student or teacher."""
+    if user.get("role") not in {"student", "teacher"}:
+        raise _permission_denied("当前登录身份不能修改界面偏好。")
     return user
 
 

@@ -1,6 +1,11 @@
 /** Native overlay presence. Focus, aria and dismissal remain with each caller. */
 const operations = new WeakMap();
 
+/** Release presence resources without completing or hiding a superseded owner. */
+export function cancelOverlayMotion(element) {
+    operations.get(element)?.cancel();
+}
+
 const milliseconds = (value) => {
     const text = String(value || '').trim();
     return (parseFloat(text) || 0) * (text.endsWith('ms') ? 1 : 1000);

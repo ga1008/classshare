@@ -28,7 +28,7 @@ function fixture(kind, admin) {
         styles = template.match(/<style>([\s\S]*?)<\/style>/)[1];
     } else if (kind === 'profile') {
         content = '<section class="psig-shell" data-signature-app></section>';
-        styles = read('templates/profile.html').match(/<style>([\s\S]*?)<\/style>/)[1];
+        styles = read('templates/partials/profile/head.html').match(/<style>([\s\S]*?)<\/style>/)[1];
     } else { content = '<div id="point"></div>'; styles = ''; }
     content = content.replace(/{{[\s\S]*?}}/g, '').replace(/{%[\s\S]*?%}/g, '');
     const script = kind === 'point'

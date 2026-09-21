@@ -68,15 +68,23 @@ function CalendarHost() {
     const storage = document.querySelector<HTMLElement>('[data-ls-calendar-storage]');
     const calendar = storage?.querySelector<HTMLElement>('[data-semester-calendar-root]');
     if (!host.current || !calendar) return;
+    const parent = calendar.parentNode;
+    const next = calendar.nextSibling;
+    const hidden = calendar.hidden;
     host.current.append(calendar);
+    calendar.hidden = false;
     window.dispatchEvent(new CustomEvent('lanshare:dashboard-calendar-open', { detail: { root: calendar } }));
-    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-    return () => { storage?.append(calendar); };
+    const frame = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    return () => {
+      cancelAnimationFrame(frame);
+      calendar.hidden = hidden;
+      parent?.insertBefore(calendar, next?.parentNode === parent ? next : null);
+    };
   }, []);
   return <div className="ls-calendar-host" ref={host} />;
 }
 
-function DashboardWorkspace({ initial }: { initial: Workspace }) {
+export function DashboardWorkspace({ initial }: { initial: Workspace }) {
   const isStudent = document.querySelector<HTMLElement>('[data-dashboard-root]')?.dataset.dashboardRole === 'student';
   const [workspace, setWorkspace] = useState(initial);
   const [open, setOpen] = useState(false);
@@ -95,11 +103,20 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
   const returnFocus = useRef<HTMLElement | null>(null);
   const handoff = useRef(false);
   const handoffCallback = useRef<(() => void) | null>(null);
+  const handoffGeneration = useRef(0);
+  const mounted = useRef(false);
   const scroll = useRef<HTMLDivElement>(null);
   const scrollPosition = useRef(0);
   const pageCursors = useRef<Record<number, string>>({});
 
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; handoffGeneration.current++; handoffCallback.current = null; };
+  }, []);
+
   const show = (target: 'items' | 'calendar', trigger?: HTMLElement) => {
+    handoffGeneration.current++;
+    handoffCallback.current = null;
     returnFocus.current = trigger || allButton.current;
     handoff.current = false;
     setView(target); setOpen(true);
@@ -147,12 +164,15 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
   useEffect(() => {
     let controller: AbortController | null = null;
     const refresh = async (calendarFresh = false) => {
-      controller?.abort(); controller = new AbortController();
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
       try {
-        const fresh = await readWorkspace(new URLSearchParams({ limit: '100' }), controller.signal);
+        const fresh = await readWorkspace(new URLSearchParams({ limit: '100' }), request.signal);
+        if (request.signal.aborted || controller !== request) return;
         setWorkspace(fresh); setError('');
         if (!calendarFresh) window.dispatchEvent(new Event('lanshare:dashboard-calendar-invalidate'));
-      } catch (failure) { if ((failure as Error).name !== 'AbortError') setError('事项状态暂时无法更新，请重试。'); }
+      } catch (failure) { if (!request.signal.aborted && controller === request && (failure as Error).name !== 'AbortError') setError('事项状态暂时无法更新，请重试。'); }
     };
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
     const onRetry = (event: Event) => { void refresh(Boolean((event as CustomEvent<{ calendarFresh?: boolean }>).detail?.calendarFresh)); };
@@ -195,10 +215,12 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
         if (itemKey) query.set('item_key', itemKey);
         if (scope) query.set('offering_ids', scope.join(','));
         const fresh = await readWorkspace(query, controller.signal);
+        if (controller.signal.aborted) return;
         if (page > 0 && page * PAGE_SIZE >= fresh.filtered_total) { setPage(Math.max(0, Math.ceil(fresh.filtered_total / PAGE_SIZE) - 1)); return; }
         if (fresh.next_cursor) pageCursors.current[page + 1] = fresh.next_cursor;
         setResult({ items: fresh.all_items, total: fresh.filtered_total });
       } catch (failure) {
+        if (controller.signal.aborted) return;
         if ((failure as Error & { status?: number }).status === 409) {
           pageCursors.current = {}; setPage(0); setNotice('事项状态或排序已更新，已返回第一页。');
         } else if ((failure as Error).name !== 'AbortError') setError((failure as Error).message);
@@ -208,10 +230,13 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
   }, [open, view, filters, page, workspace, scope, retry, itemKey]);
 
   const setFilter = (key: keyof DashboardFilters, value: string) => { setFilters((current) => ({ ...current, [key]: value })); setPage(0); setNotice(''); scrollPosition.current = 0; };
-  const closeAndRun = (callback: () => void) => {
-    if (!open) { callback(); return; }
+  const closeAndRun = (callback: (generation: number) => void) => {
+    const generation = ++handoffGeneration.current;
+    if (!open) { callback(generation); return; }
     handoff.current = true;
-    handoffCallback.current = callback;
+    handoffCallback.current = () => {
+      if (mounted.current && generation === handoffGeneration.current) callback(generation);
+    };
     scrollPosition.current = scroll.current?.scrollTop || 0;
     setOpen(false);
   };
@@ -228,8 +253,11 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
   const pending = isStudent ? workspace.action_summary.total : workspace.pending_total;
   const openAttention = (date = '') => { setItemKey(''); setFilters({ ...initialFilters, state: isStudent ? 'attention' : 'actionable', date }); show('items'); };
   const todoAction = (item: DashboardItem, action: 'edit' | 'toggle', anchor: HTMLButtonElement) => {
-    const run = () => window.dispatchEvent(new CustomEvent(`lanshare:todo-${action}`, { detail: { data: dashboardAgendaDataset(item), anchor: action === 'edit' && open ? allButton.current : anchor, afterClose: action === 'edit' && open ? () => { handoff.current = false; setOpen(true); } : undefined } }));
-    if (action === 'edit' && open) closeAndRun(run); else run();
+    const run = (generation: number) => window.dispatchEvent(new CustomEvent(`lanshare:todo-${action}`, { detail: { data: dashboardAgendaDataset(item), anchor: action === 'edit' && open ? allButton.current : anchor, afterClose: action === 'edit' && open ? () => {
+      if (!mounted.current || generation !== handoffGeneration.current) return;
+      handoffGeneration.current++; handoff.current = false; setOpen(true);
+    } : undefined } }));
+    if (action === 'edit' && open) closeAndRun(run); else run(handoffGeneration.current);
   };
   const manualControls = (item: DashboardItem) => item.agenda_data.is_manual ? <span className="ls-manual-actions"><button type="button" className="ls-link" onClick={event => todoAction(item, 'edit', event.currentTarget)}>编辑</button><button type="button" className="ls-button" onClick={event => todoAction(item, 'toggle', event.currentTarget)}>{item.is_completed ? '恢复待办' : '完成'}</button></span> : null;
 
@@ -247,7 +275,10 @@ function DashboardWorkspace({ initial }: { initial: Workspace }) {
       {!open && error ? <p className="ls-error" role="status">{error}<button className="ls-link" type="button" onClick={() => window.dispatchEvent(new Event('lanshare:dashboard-workspace-refresh'))}>重试</button></p> : null}
     </section>
     <Dialog open={open} onOpenChange={(next) => { if (!next) scrollPosition.current = scroll.current?.scrollTop || 0; setOpen(next); }}>
-      <DialogContent className={`ls-dialog${view === 'calendar' ? ' ls-dialog--calendar' : ''}`} aria-modal="true" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); const callback = handoffCallback.current; handoffCallback.current = null; if (callback) window.setTimeout(callback, 0); else if (!handoff.current) (returnFocus.current || allButton.current)?.focus({ preventScroll: true }); }} onClickCapture={(event) => {
+      <DialogContent className={`ls-dialog${view === 'calendar' ? ' ls-dialog--calendar' : ''}`} aria-modal="true" aria-describedby={undefined}
+        returnFocus={() => returnFocus.current || allButton.current}
+        onCloseAutoFocus={event => { if (handoff.current) event.preventDefault(); }}
+        onAfterClose={() => { const callback = handoffCallback.current; handoffCallback.current = null; callback?.(); }} onClickCapture={(event) => {
         const trigger = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[data-semester-todo-add]') : null;
         if (!trigger) return;
         event.preventDefault(); event.stopPropagation();

@@ -1,5 +1,5 @@
 // 教师登录页：人生一言场景 + fetch 提交（保留原生表单 POST 作为无 JS 回退）。
-import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene3';
+import { finishLoginWithScene, initLoginScene, setLoginFeedback, setLoginSubmitting } from '/static/js/login_scene.js?v=20260803-scene3';
 import { showToast } from '/static/js/ui.js';
 
 let loginScene = null;
@@ -18,6 +18,8 @@ async function fetchLoginTipPayload() {
 }
 
 function extractStatusMessage(html) {
+    const feedback = new DOMParser().parseFromString(String(html || ''), 'text/html').querySelector('[data-login-feedback]');
+    if (feedback?.textContent.trim()) return feedback.textContent.trim();
     const match = String(html || '').match(/登录失败[^<]*/);
     return match ? match[0].trim() : '';
 }
@@ -32,11 +34,13 @@ function shakeLoginCard() {
     window.setTimeout(() => card.classList.remove('login-card--shake'), 620);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initTeacherLogin() {
     const form = document.getElementById('teacher-login-form');
     if (!form) {
         return;
     }
+    if (form.dataset.loginMounted === 'true') return;
+    form.dataset.loginMounted = 'true';
 
     initLoginScene().then((scene) => {
         loginScene = scene;
@@ -47,7 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submitButton = form.querySelector('button[type="submit"]');
-        if (submitButton) {
+        if (submitButton?.disabled) return;
+        setLoginFeedback(form);
+        if (submitButton && !setLoginSubmitting(submitButton, true)) {
             submitButton.dataset.originalText = submitButton.innerHTML;
             submitButton.disabled = true;
             submitButton.innerHTML = '登录中...';
@@ -66,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const finalUrl = new URL(response.url, window.location.origin);
                 const redirectTo = finalUrl.pathname + finalUrl.search;
                 const payload = await fetchLoginTipPayload();
+                if (form.closest('[data-lq-login-card]')) form.dataset.loginCompleting = 'true';
                 finishLoginWithScene({
                     scene: loginScene,
                     profile: payload?.profile || null,
@@ -78,12 +85,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const html = await response.text();
             shakeLoginCard();
-            showToast(extractStatusMessage(html) || '登录失败：邮箱或密码错误。', 'error');
+            const message = extractStatusMessage(html) || '登录失败：邮箱或密码错误。';
+            if (!setLoginFeedback(form, message)) showToast(message, 'error');
         } catch (error) {
             shakeLoginCard();
-            showToast('网络异常，请稍后重试。', 'error');
+            if (!setLoginFeedback(form, '网络异常，请稍后重试。')) showToast('网络异常，请稍后重试。', 'error');
         } finally {
-            if (submitButton) {
+            if (submitButton && form.dataset.loginCompleting !== 'true' && !setLoginSubmitting(submitButton, false)) {
                 submitButton.disabled = false;
                 if (submitButton.dataset.originalText) {
                     submitButton.innerHTML = submitButton.dataset.originalText;
@@ -91,4 +99,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initTeacherLogin, { once: true });
+else initTeacherLogin();

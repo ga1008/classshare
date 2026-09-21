@@ -18,6 +18,7 @@ interface LanShareLegacyAppModule {
 }
 
 interface Window {
+  __LS_ASSET_REV?: string;
   APP_CONFIG?: LanShareAppConfig;
   __LANSHARE_REACT_ISLANDS__?: {
     version: string;

@@ -1,0 +1,19 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{# Validated trees and template-author caller slots only; no HTML-string bypass. #}
+{% macro _lq_content_tree(tree, slots=none, caller_slot='*') -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slots %}{% if caller_slot == '*' %}{{ slots(tree.slot) }}{% elif tree.slot == caller_slot %}{{ slots() }}{% endif %}{% endif %}
+{%- elif tree.button is defined -%}
+{%- set b = tree.button -%}{{ lq_btn(label=b.label, variant=b.variant, size=b.size, href=b.href, id=b.id, icon=b.icon, disabled=b.disabled, aria_disabled=b.ariaDisabled, loading=b.loading, type=b.type, attrs=b.attrs) }}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if tree.tag != 'input' -%}{% for child in tree.children %}{{ _lq_content_tree(child, slots, caller_slot) }}{% endfor %}</{{ tree.tag }}>{% endif %}
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_card(title) -%}{{ _lq_content_tree(lq_props('card',title=title,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_list(label,items=[]) -%}{{ _lq_content_tree(lq_props('list',label=label,items=items,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_row(title) -%}{{ _lq_content_tree(lq_props('row',title=title,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_empty(reason='empty',description='',variant='inline') -%}{{ _lq_content_tree(lq_props('empty',reason=reason,description=description,variant=variant,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_page_head(title,description='',explain='',explain_label='',actions=[],eyebrow='',title_id='') -%}{{ _lq_content_tree(lq_props('page_head',title=title,description=description,explain=explain,explain_label=explain_label,actions=actions,eyebrow=eyebrow,title_id=title_id,**kwargs), caller if caller is defined else none, '*' if caller is defined and caller.arguments|length else 'aside') }}{%- endmacro %}
+{% macro lq_filter_bar(search_id='',search_placeholder='搜索…',search_attrs={}) -%}{{ _lq_content_tree(lq_props('filter_bar',search_id=search_id,search_placeholder=search_placeholder,search_attrs=search_attrs,**kwargs), caller if caller is defined else none, '*' if caller is defined and caller.arguments|length else 'filters') }}{%- endmacro %}
+{% macro lq_prose(text='') -%}{{ _lq_content_tree(lq_props('prose',text=text,**kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_bubble(author,time,text='') -%}{{ _lq_content_tree(lq_props('bubble',author=author,time=time,text=text,**kwargs), caller if caller is defined else none) }}{%- endmacro %}

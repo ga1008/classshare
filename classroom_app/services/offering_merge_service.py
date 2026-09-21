@@ -38,6 +38,7 @@ STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
 STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
 STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
+STRATEGY_SCHEDULE_REVIEW = "schedule_review"  # 教务课次身份不可按本地序号猜测重绑
 STRATEGY_LINKS = "links"                      # 收尾统一处理
 MAX_SNAPSHOT_ROWS = 100000
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
@@ -125,6 +126,13 @@ def _rules() -> dict[str, MergeRule]:
     rules["blog_posts"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="visible_class_offering_id")
     rules["polls"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="origin_class_offering_id")
     rules["poll_assignments"] = MergeRule(STRATEGY_SCOPE_REVIEW)
+    # These identities drive future approved schedule writes. Unlike attendance
+    # history, mapping by order_index (or nearest session) can change the wrong
+    # lesson, and multiple source bindings may collide on teacher/semester/session.
+    # Empty tables are safe; source-side identities require an explicit migration
+    # design before they can be moved, deduplicated or deleted.
+    for table in ("academic_schedule_session_bindings", "academic_schedule_change_session_links"):
+        rules[table] = MergeRule(STRATEGY_SCHEDULE_REVIEW)
     return rules
 
 
@@ -156,6 +164,8 @@ MERGE_TABLE_LABELS = {
     "class_offering_class_links": "合班名单", "class_offering_learning_materials": "课次材料绑定",
     "session_material_generation_tasks": "课时文档生成任务", "blog_posts": "课堂定向博客", "polls": "课堂发起投票",
     "smart_attendance_source_offerings": "智慧课堂考勤来源",
+    "academic_schedule_session_bindings": "教务课次同步身份",
+    "academic_schedule_change_session_links": "教务调停课关联",
 }
 
 # 自身/合并机制表——不参与迁移
@@ -464,6 +474,12 @@ def build_merge_preview(
             blockers.append(
                 f"{label}：{source_rows} 条记录仍使用原课堂作为读者或参与者范围。"
                 "请先在对应业务核对并调整范围；合班不能替作者扩大可见范围。"
+            )
+        if source_rows and rule.strategy == STRATEGY_SCHEDULE_REVIEW:
+            blockers.append(
+                f"{label}：被并课堂有 {source_rows} 条教务课次关联，暂不支持自动迁移。"
+                "按本地课次序号合并可能使后续调停课改错课次；请先核对教务课次身份并完成关联迁移，"
+                "本次不会改绑或删除这些记录。"
             )
         if source_rows and rule.strategy == STRATEGY_REPOINT_GUARDED:
             conflicts = _conflict_count(

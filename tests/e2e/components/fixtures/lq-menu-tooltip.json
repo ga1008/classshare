@@ -1,0 +1,18 @@
+{
+  "menus": [
+    {"id":"actions","label":"文档操作","items":[{"id":"edit","label":"编辑","icon":"pencil"},{"id":"copy","label":"复制","disabled":true},{"id":"open","label":"查看","href":"#details","target":"_blank"},{"id":"delete","label":"删除","danger":true,"group":"risk","icon":"trash-2"}]},
+    {"id":"escaped","label":"<script>","items":[{"id":"<x>","label":"<img onerror=alert(1)>","href":"/a?x=%22","icon":"info"}]}
+  ],
+  "tooltips":[{"id":"icon-name","text":"设置"},{"id":"escaped-tip","text":"<img onerror=alert(1)>"}],
+  "invalidMenus":[
+    {"id":"a","label":"x","items":[]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x","disabled":"false"}]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x","href":"javascript:alert(1)"}]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x","href":null}]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x","target":"_blank"}]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x"},{"id":"a","label":"y"}]},
+    {"id":"a","label":"x","items":[{"id":"a","label":"x","html":"<b>x</b>"}]},
+    {"id":"a b","label":"x","items":[{"id":"a","label":"x"}]}
+  ],
+  "invalidTooltips":[{"id":"x","text":""},{"id":"x","text":{"html":"x"}},{"id":"bad id","text":"x"},{"id":"x","text":"x","html":"x"}]
+}

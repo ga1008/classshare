@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
+import { LQ } from './lq/index.js';
 
 const STATUS_META = {
     draft: { label: '草稿', tone: 'is-draft' },
@@ -88,13 +89,24 @@ function renderList(data) {
 // --------------------------------------------------------------------------- #
 // overlay
 // --------------------------------------------------------------------------- #
+let overlayTrigger = null;
 function closeOverlay() {
     document.querySelectorAll('[data-poll-overlay]').forEach((node) => node.remove());
     document.removeEventListener('keydown', onOverlayKeydown);
+    if (overlayTrigger?.isConnected) overlayTrigger.focus();
+    overlayTrigger = null;
 }
-function onOverlayKeydown(event) { if (event.key === 'Escape') closeOverlay(); }
-function openOverlay(html) {
+function onOverlayKeydown(event) {
+    if (event.key !== 'Escape') return;
+    // An LQ.layer dialog (e.g. the delete-poll confirm) stacked on top of this
+    // overlay owns Escape first; let it close and return focus to its trigger
+    // before tearing the overlay (and that trigger) down.
+    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
     closeOverlay();
+}
+function openOverlay(html, trigger = null) {
+    closeOverlay();
+    overlayTrigger = trigger || null;
     const overlay = document.createElement('div');
     overlay.className = 'poll-overlay';
     overlay.setAttribute('data-poll-overlay', '');
@@ -301,15 +313,15 @@ export function initManagePolls() {
 
     const findPoll = (pollId) => (state.data?.polls || []).find((p) => String(p.id) === String(pollId));
 
-    const openForm = async (poll) => {
+    const openForm = async (poll, trigger = null) => {
         const offerings = await loadOfferings();
-        openOverlay(renderForm(poll, offerings));
+        openOverlay(renderForm(poll, offerings), trigger);
     };
 
-    const openDetail = async (pollId) => {
+    const openDetail = async (pollId, trigger = null) => {
         try {
             const data = await apiFetch(`/api/polls/${pollId}`, { silent: true });
-            openOverlay(renderDetailBody(data.poll || findPoll(pollId)));
+            openOverlay(renderDetailBody(data.poll || findPoll(pollId)), trigger);
         } catch (error) {
             showToast(error.message || '加载详情失败', 'error');
         }
@@ -336,12 +348,13 @@ export function initManagePolls() {
     };
 
     document.querySelectorAll('[data-poll-create-open]').forEach((btn) => {
-        btn.addEventListener('click', () => openForm(null));
+        btn.addEventListener('click', () => openForm(null, btn));
     });
 
     root.addEventListener('click', async (event) => {
-        const openId = event.target.closest('[data-poll-open]')?.dataset.pollOpen;
-        if (openId) { await openDetail(openId); }
+        const openTrigger = event.target.closest('[data-poll-open]');
+        const openId = openTrigger?.dataset.pollOpen;
+        if (openId) { await openDetail(openId, openTrigger); }
     });
 
     document.addEventListener('click', async (event) => {
@@ -379,20 +392,31 @@ export function initManagePolls() {
         if (editBtn) {
             try {
                 const data = await apiFetch(`/api/polls/${editBtn.dataset.pollEdit}`, { silent: true });
-                await openForm(data?.poll || findPoll(editBtn.dataset.pollEdit));
+                await openForm(data?.poll || findPoll(editBtn.dataset.pollEdit), editBtn);
             } catch (error) { showToast(error.message || '加载失败', 'error'); }
             return;
         }
 
         const delBtn = event.target.closest('[data-poll-delete]');
         if (delBtn) {
-            if (!window.confirm('确认删除该投票活动？所有投票记录将一并清除。')) return;
+            if (delBtn.dataset.lqBusy === '1') return;
+            const poll = findPoll(delBtn.dataset.pollDelete);
+            delBtn.dataset.lqBusy = '1';
             try {
+                const confirmed = await LQ.confirm({
+                    title: '删除投票活动',
+                    message: `确认删除投票活动${poll?.title ? `“${poll.title}”` : ''}吗？所有投票记录将一并清除。`,
+                    confirmLabel: '删除',
+                    danger: true,
+                });
+                if (!confirmed) return;
+                delBtn.disabled = true;
                 await apiFetch(`/api/polls/${delBtn.dataset.pollDelete}`, { method: 'DELETE', silent: true });
                 showToast('已删除', 'success');
                 closeOverlay();
                 await refresh();
             } catch (error) { showToast(error.message || '删除失败', 'error'); }
+            finally { delete delBtn.dataset.lqBusy; delBtn.disabled = false; }
             return;
         }
     });

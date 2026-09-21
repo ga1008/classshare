@@ -1,10 +1,18 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="lanshare">
+{% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
+{% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
+{% set _lq_manage_pilot = lq_pilot_enabled|default(false) %}
+{% set _lq_manage_shell = _lq_manage_pilot or (not embedded_mode and lq_family_enabled is defined and lq_family_enabled('manage-shell')) %}
+<html lang="zh-CN" data-theme="lanshare" {{ root_attrs(ui_palette) }}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - 教师工作台</title>
-    {% include "partials/ui_system_assets.html" %}
+    {% include "partials/lq_editor_head.html" %}
+    {% if _lq_manage_shell and not embedded_mode %}
+    {% include "partials/lq_shell_prepaint.html" %}
+    <script type="module" blocking="render" src="{{ asset_url('js/manage_lq_pilot.js') }}"></script>
+    {% endif %}
     {% block extra_head %}{% endblock %}
 </head>
 {#
@@ -12,11 +20,15 @@
   "app-shell layer"（令牌化，禁止在此写内联样式）。
   侧栏 = 六域手风琴：域标题即折叠开关，一次只开一个域；域内分组只做小标题。
 #}
-<body class="{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }} {% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %}>
+<body class="{% if _lq_manage_pilot %}lq-manage-pilot {% elif _lq_manage_shell %}lq-manage-shell {% endif %}{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }} {% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %} {{ body_attrs(ui_palette) }}>
+    {% if _lq_manage_shell %}<a class="lq-manage-skip" href="#manage-pilot-main">跳转到主要内容</a>{% endif %}
     {% if not embedded_mode %}
     {% from "macros/manage_icons.html" import manage_icon %}
     {% from "macros/ui_explanation.html" import explain_attrs %}
-    <div class="manage-layout app-shell" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
+    <div class="manage-layout app-shell{% if _lq_manage_shell %} lq-manage-layout{% endif %}" data-manage-domain="{{ manage_nav.active_domain|default('teaching') }}">
+        {% if _lq_manage_shell %}
+        {% include "manage/lq_sidebar.html" %}
+        {% else %}
         <aside class="manage-sidebar" id="sidebar">
             <div class="manage-brand">
                 <a href="/dashboard" class="manage-brand__mark" aria-label="返回首页" title="返回首页">
@@ -116,13 +128,18 @@
                 </a>
             </div>
         </aside>
+        {% endif %}
     {% else %}
     <div class="manage-embedded-root">
     {% endif %}
 
-        <main class="manage-main">
+        <main class="manage-main"{% if _lq_manage_shell %} id="manage-pilot-main" tabindex="-1"{% endif %}>
             {% if not embedded_mode %}
             {% from "macros/app_topbar.html" import topbar_action %}
+            {% if _lq_manage_shell %}
+            {% set manage_pilot_actions = self.header_actions() %}
+            {% include "manage/lq_topbar.html" %}
+            {% else %}
             <header class="navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="工作台顶栏">
                 <div class="manage-topbar-start">
                     <button type="button" class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开菜单">
@@ -157,6 +174,7 @@
                 </nav>
             </header>
             {% endif %}
+            {% endif %}
 
             {% if not embedded_mode and manage_nav.active_item and manage_nav.active_item.step %}
             {% set _step = manage_nav.active_item.step %}
@@ -181,21 +199,22 @@
     {% endif %}
     <div id="toast-container" class="toast-container"></div>
 
-    <script type="module" src="/static/js/auth.js"></script>
-    <script type="module" src="/static/js/manage_filter_chips.js?v=insights-20260607"></script>
+    <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+    <script type="module" src="{{ asset_url('js/manage_filter_chips.js') }}"></script>
     {% if not embedded_mode %}
-    <script type="module" src="/static/js/message_center_bell.js"></script>
+    <script type="module" src="{{ asset_url('js/message_center_bell.js') }}"></script>
     {% endif %}
     {% if not embedded_mode %}
     {% include "partials/vite_islands.html" %}
     {% endif %}
     <script type="module">
-        import { showMessage } from '/static/js/ui.js';
-        import { apiFetch } from '/static/js/api.js';
+        import { showMessage } from '{{ asset_url('js/ui.js') }}';
+        import { apiFetch } from '{{ asset_url('js/api.js') }}';
 
         window.showMessage = showMessage;
         window.apiFetch = apiFetch;
 
+        {% if not _lq_manage_shell %}
         const centerActiveManageNavItem = () => {
             const nav = document.querySelector('.manage-nav');
             const activeItem = nav?.querySelector('.manage-nav-item.active');
@@ -301,6 +320,8 @@
         };
         initManageSidebar();
 
+        {% endif %}
+
         window.handleFormSubmit = async function(event, successCallback) {
             event.preventDefault();
             const form = event.target;
@@ -336,6 +357,7 @@
             }
         };
 
+        {% if not _lq_manage_shell %}
         // Float-out transition when navigating via the sidebar or topbar actions.
         const REDUCED_MOTION_QUERY = window.matchMedia('(prefers-reduced-motion: reduce)');
         document.addEventListener('click', (event) => {
@@ -372,6 +394,8 @@
             }
         });
 
+        {% endif %}
+
         {% if embedded_mode %}
         if (window.self !== window.top) {
             const publishHeight = () => {
@@ -407,9 +431,9 @@
     {% endif %}
     {% block scripts %}{% endblock %}
     <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
-    <script type="module" src="/static/js/feedback.js"></script>
+    <script type="module" src="{{ asset_url('js/feedback.js') }}"></script>
     {% if not embedded_mode %}
-    <script type="module" src="/static/js/teacher_onboarding.js"></script>
+    <script type="module" src="{{ asset_url('js/teacher_onboarding.js') }}"></script>
     {% include "partials/markdown_assets.html" %}
     <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
     <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

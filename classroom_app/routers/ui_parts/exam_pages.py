@@ -3,6 +3,7 @@ from ...services.assessment_classification_service import assessment_kind_info, 
 from ...services.score_projection_service import load_submission_score_facts
 from ...services.submission_write_guard import submission_write_version
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
+from ...services.exam_paper_management_service import exam_paper_revision
 
 
 router = APIRouter()
@@ -192,6 +193,8 @@ async def exam_editor_page(request: Request, exam_id: str, user: dict = Depends(
             raise HTTPException(404, "试卷不存在")
         if is_personal_stage_exam_paper(conn, exam_id):
             raise HTTPException(404, "学生个人试炼不进入教师试卷库")
+        paper = dict(paper)
+        paper["revision"] = exam_paper_revision(paper)
 
         # 获取教师所有课堂（用于分配）
         offerings = conn.execute(

@@ -1,0 +1,10 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% macro lq_dialog(id, title, type='modal') -%}
+{%- set p = lq_dialog_props(id=id, title=title, type=type, **kwargs) -%}
+<div{% for key, value in p.root_attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if p.type != 'popover' %}<div class="lq-scrim" aria-hidden="true"></div>{% endif -%}
+<section{% for key, value in p.surface_attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+<div class="lq-dialog__grip" aria-hidden="true"></div><header class="lq-dialog__head"><h2 id="{{ p.id|forceescape }}--lq-title">{{ p.title|forceescape }}</h2>
+{%- if p.close_button %}{{ lq_btn(icon='x', variant='ghost', attrs={'aria-label': p.close_label, 'data-lq-dialog-close': ''}) }}{% endif -%}
+</header><div class="lq-dialog__body" id="{{ p.id|forceescape }}--lq-body">{{ p.body|forceescape }}</div><footer class="lq-dialog__foot">{{ p.footer|forceescape }}</footer></section></div>
+{%- endmacro %}

@@ -1,6 +1,13 @@
 import { apiFetch } from './api.js';
 
 const bellShells = Array.from(document.querySelectorAll('[data-message-center-bell-shell]'));
+const lqToastShells = bellShells.filter((shell) => shell.dataset.lqToast === 'true');
+// Lazily loaded only when at least one bell shell opted into LQ.toast via
+// data-lq-toast="true" (set by templates/partials/message_center_bell.html
+// when lq_family_enabled('messages') is on). Falls back to the legacy DOM
+// toast for shells that duplicate the bell markup outside that partial.
+const lqToastModulePromise = lqToastShells.length > 0 ? import('./lq/toast.js') : null;
+const LQ_BELL_TOAST_KEY = 'message-center-bell';
 const blogEntries = Array.from(document.querySelectorAll('[data-blog-topbar-entry]'));
 const blogCountNodes = Array.from(document.querySelectorAll('[data-blog-today-count]'));
 const blogCaptionNodes = Array.from(document.querySelectorAll('[data-blog-topbar-caption]'));
@@ -10,6 +17,7 @@ const bellState = {
     lastUnreadTotal: 0,
     latestUnreadId: 0,
     hideTimer: null,
+    lqToastHandle: null,
 };
 
 function legacyBellShells() {
@@ -58,7 +66,7 @@ function updateBell(summary) {
     });
 }
 
-function hideBellToast(immediate = false) {
+function hideLegacyBellToast(immediate = false) {
     const toastNode = legacyBellShells()[0]?.querySelector('[data-message-center-bell-toast]');
     if (!toastNode) {
         return;
@@ -81,7 +89,16 @@ function hideBellToast(immediate = false) {
     }, 180);
 }
 
-function showBellToast(notification) {
+function hideBellToast(immediate = false) {
+    if (lqToastShells.length > 0) {
+        bellState.lqToastHandle?.close('read');
+        bellState.lqToastHandle = null;
+        return;
+    }
+    hideLegacyBellToast(immediate);
+}
+
+function showLegacyBellToast(notification) {
     const shell = legacyBellShells()[0];
     if (!shell || !notification) {
         return;
@@ -109,7 +126,38 @@ function showBellToast(notification) {
     });
 
     window.clearTimeout(bellState.hideTimer);
-    bellState.hideTimer = window.setTimeout(() => hideBellToast(), 5000);
+    bellState.hideTimer = window.setTimeout(() => hideLegacyBellToast(), 5000);
+}
+
+async function showLqBellToast(notification) {
+    if (!lqToastModulePromise) {
+        return;
+    }
+    const { toast } = await lqToastModulePromise;
+    const actorName = String(notification.actor_display_name || '').trim();
+    const categoryLabel = String(notification.category_label || '\u6d88\u606f').trim();
+    const title = String(notification.title || '').trim();
+    const body = actorName
+        ? `\u6536\u5230\u6765\u81ea ${actorName} \u7684\u65b0\u4fe1\u606f`
+        : '\u6536\u5230\u4e00\u6761\u65b0\u7684\u7cfb\u7edf\u4fe1\u606f';
+    const meta = title || `${categoryLabel} \u5df2\u66f4\u65b0`;
+    // A stable key means a second notification while the toast is still
+    // open updates it in place instead of stacking a duplicate; combined
+    // with the latestUnreadId gate in syncBellState this is the de-dup.
+    bellState.lqToastHandle = toast(`${body}\u3002${meta}`, {
+        tone: 'info',
+        key: LQ_BELL_TOAST_KEY,
+        duration: 5000,
+        action: { label: '\u67e5\u770b', href: '/profile?section=notifications#profile-message-center' },
+    });
+}
+
+function showBellToast(notification) {
+    if (lqToastShells.length > 0) {
+        void showLqBellToast(notification);
+        return;
+    }
+    showLegacyBellToast(notification);
 }
 
 function syncBellState(summary, latestUnread, { allowPopup }) {

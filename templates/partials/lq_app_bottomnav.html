@@ -1,0 +1,10 @@
+{% from 'macros/lq/shells.html' import lq_dock %}
+{% set path = request.url.path %}
+{% set message_section = request.query_params.get('section', '') if request.query_params is defined else '' %}
+{% set on_messages = path == '/message-center' or (path == '/profile' and message_section in ['notifications', 'private']) %}
+{{ lq_dock('navbar-dock', label='移动端主导航', mode='navigation', attrs={'data-app-bottomnav':'', 'data-navbar-dock':''}, items=[
+    {'key':'home','label':'首页','href':'/dashboard','icon':'layout-dashboard','current':path in ['/', '/dashboard']},
+    {'key':'messages','label':'消息','href':'/message-center','icon':'message-circle','current':on_messages},
+    {'key':'learning','label':'学习路','href':'/learning-path','icon':'book-open','current':path == '/learning-path' or path.startswith('/learning-path/')},
+    {'key':'profile','label':'我的','href':'/profile','icon':'user','current':(path == '/profile' or path.startswith('/profile/')) and not on_messages}
+]) }}

@@ -12,7 +12,7 @@
     {{ page_head('待我处理',
         description=('共 ' ~ inbox.total ~ ' 项等你处理。') if inbox.total else '目前没有需要处理的事项。',
         explain='首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。',
-        explain_label='待我处理说明') }}
+        explain_label='待我处理说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
     <nav class="wi-sources" aria-label="按来源筛选">
         <a href="/manage/me/inbox" class="wi-chip{% if not inbox.source %} is-active{% endif %}">全部 <b>{{ inbox.total }}</b></a>

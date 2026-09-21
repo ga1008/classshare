@@ -1,7 +1,8 @@
 {# 试卷页分区 partial（P4 拆分自 manage/exams.html；页头已换 page_head 宏） #}
 {% from "macros/manage_page.html" import page_head %}
     {% call page_head('试卷', explain='按状态、题型、来源与标签整理试卷，归集同类试卷成清晰工作区。', explain_label='试卷说明',
-        actions=[{'label': '新建试卷', 'variant': 'primary', 'href': '/exam/new'}]) %}
+        actions=[{'label': '新建试卷', 'variant': 'primary', 'href': '/exam/new'}],
+        lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">

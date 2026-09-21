@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {"kind":"upload","props":{"id":"attachments","label":"第3题附件","policy":"PNG、JPEG、PDF；单个文件不超过20MB，最多5个。","accept":"image/*,.pdf","name":"files","snapshot":{"generation":0,"items":[{"id":"a","generation":1,"name":"网络实验.png","sizeLabel":"240 KB","state":"selected","questionLabel":"第3题"}]}}},
+    {"kind":"dropzone","props":{"id":"drop","label":"添加材料","policy":"任意类型；最多3个，总计30MB。","multiple":false,"snapshot":{"generation":8,"disabled":true,"items":[]}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"<img src=x onerror=alert(1)>.png","state":"rejected","reason":"与其他题目截图相同，请更换。","rejectionCode":"duplicate-image","duplicateOfQuestion":"第2题","questionLabel":"第3题"}}},
+    {"kind":"file_chip","props":{"item":{"id":"b","generation":2,"name":"报告.pdf","state":"uploading","progress":100}}},
+    {"kind":"file_chip","props":{"item":{"id":"c","generation":3,"name":"已保存.pdf","state":"uploaded","confirmation":{"id":42}}}},
+    {"kind":"file_chip","props":{"item":{"id":"d","generation":4,"name":"草稿.txt","state":"failed","reason":"网络中断，本地文件仍保留。"}}},
+    {"kind":"file_chip","props":{"item":{"id":"e","generation":5,"name":"检查.txt","state":"validating"}}},
+    {"kind":"file_chip","props":{"item":{"id":"f","generation":6,"name":"删除.txt","state":"removing"}}}
+  ],
+  "invalid": [
+    {"kind":"upload","props":{"id":"x","label":"附件","policy":""}},
+    {"kind":"upload","props":{"id":"x","label":"附件","policy":"类型不限","snapshot":null}},
+    {"kind":"upload","props":{"id":"x","label":"附件","policy":"类型不限","attrs":{"onclick":"run()"}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"uploaded"}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":true,"name":"x","state":"selected"}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"rejected"}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"rejected","reason":"重复截图","rejectionCode":"duplicate-image"}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"failed","reason":null}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"uploading","progress":101}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"uploaded","confirmation":{"id":true}}}},
+    {"kind":"file_chip","props":{"item":{"id":"x","generation":1,"name":"x","state":"selected","html":"<b>bad</b>"}}},
+    {"kind":"upload","props":{"id":"x","label":"附件","policy":"类型不限","snapshot":{"generation":1,"items":[{"id":"x","generation":1,"name":"a","state":"selected"},{"id":"x","generation":2,"name":"b","state":"selected"}]}}}
+  ]
+}

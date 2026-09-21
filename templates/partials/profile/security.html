@@ -1,0 +1,70 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <h2>账号安全</h2>
+                    <p>更新密码并查看账号的最近安全状态。</p>
+                </div>
+            </section>
+
+            <section class="profile-security-grid">
+                <section class="profile-band profile-reveal">
+                    <div class="profile-band__head">
+                        <div>
+                            <h3>更新密码</h3>
+                        </div>
+                    </div>
+                    <form id="profile-password-form" class="profile-form profile-password-form">
+                        <div class="profile-form-grid">
+                            <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
+                                <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-current-password">当前密码</label>
+                                <input id="profile-current-password" name="current_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="current-password" required>
+                            </div>
+                            <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-new-password">新密码</label>
+                                <input id="profile-new-password" name="new_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="new-password" required>
+                                <span class="form-text">{% if profile.role == 'student' %}至少 8 位，且同时包含字母和数字。{% else %}至少 6 位。{% endif %}</span>
+                            </div>
+                            <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-confirm-password">确认新密码</label>
+                                <input id="profile-confirm-password" name="confirm_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="new-password" required>
+                            </div>
+                        </div>
+                        <div class="{% if _profile_lq %}lq-form-actions {% endif %}profile-form-actions">
+                            {% if _profile_lq %}{{ lq_btn('更新密码', variant='prominent', type='submit') }}{% else %}<button type="submit" class="btn btn-primary">更新密码</button>{% endif %}
+                        </div>
+                    </form>
+                </section>
+
+                <aside class="profile-security-rail">
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>安全状态</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>最近密码更新</span><strong>{{ profile.password_updated_at or '暂无记录' }}</strong></div>
+                            <div class="profile-summary-row"><span>账号身份</span><strong>{{ profile.role_label }}</strong></div>
+                            <div class="profile-summary-row"><span>资料完整度</span><strong><span data-profile-completion-value>{{ profile.completion.percent }}</span>%</strong></div>
+                        </div>
+                    </section>
+                    {% if security_summary %}
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>最近登录</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>累计登录</span><strong>{{ security_summary.total_logins }} 次</strong></div>
+                            {% if security_summary.last_login %}
+                            <div class="profile-summary-row"><span>时间</span><strong data-datetime="{{ security_summary.last_login.logged_at }}">{{ security_summary.last_login.logged_at }}</strong></div>
+                            <div class="profile-summary-row"><span>设备</span><strong>{{ security_summary.last_login.device_label or '未记录' }}</strong></div>
+                            <div class="profile-summary-row"><span>IP</span><strong>{{ security_summary.last_login.ip_address or '未记录' }}</strong></div>
+                            {% endif %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </aside>
+            </section>
+

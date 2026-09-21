@@ -18,8 +18,8 @@
 ## 验证
 
 ```powershell
-venv/Scripts/python.exe -m unittest discover -s tests -p test_classroom_group_qr.py -v
-venv/Scripts/python.exe -m unittest discover -s tests -p test_db_postgres_schema.py -q
+venv/Scripts/python.exe tools/test_backend.py --pattern test_classroom_group_qr.py
+venv/Scripts/python.exe tools/test_backend.py --pattern test_db_postgres_schema.py
 node tools/validate_classroom_group_qr.cjs
 npm run test:e2e -- tests/e2e/specs/classroom-group-qr.spec.ts --project=chromium
 ```

@@ -22,6 +22,8 @@ class UiExplanationSystemTests(unittest.TestCase):
     def test_shared_asset_loads_explanation_module(self) -> None:
         partial = (ROOT / "templates/partials/ui_system_assets.html").read_text(encoding="utf-8")
         self.assertIn("js/ui_explanation.js", partial)
+        theme_head = (ROOT / "templates/partials/lq_editor_head.html").read_text(encoding="utf-8")
+        self.assertIn('partials/ui_system_assets.html', theme_head)
         for template_name in (
             "base.html",
             "manage/layout.html",
@@ -33,7 +35,7 @@ class UiExplanationSystemTests(unittest.TestCase):
             "teacher_evaluation_editor.html",
         ):
             source = (ROOT / "templates" / template_name).read_text(encoding="utf-8")
-            self.assertIn("partials/ui_system_assets.html", source, template_name)
+            self.assertIn("partials/lq_editor_head.html", source, template_name)
 
     def test_jinja_macro_escapes_structured_links_and_uses_required_defaults(self) -> None:
         template = self.environment.from_string(
@@ -70,6 +72,11 @@ class UiExplanationSystemTests(unittest.TestCase):
 
     def test_changed_templates_compile(self) -> None:
         for template_name in (
+            "base_centered.html",
+            "teacher_login_v4.html",
+            "teacher_register_v4.html",
+            "student_login_v4.html",
+            "permission_denied.html",
             "manage/layout.html",
             "manage/academic_final_materials.html",
             "manage/assessment_plans.html",
@@ -84,7 +91,6 @@ class UiExplanationSystemTests(unittest.TestCase):
             "manage/ai.html",
             "manage/offerings.html",
             "manage/semesters.html",
-            "manage/workflow.html",
             "manage/polls.html",
             "manage/life_tips.html",
         ):

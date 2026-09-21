@@ -1,0 +1,39 @@
+{% set _sec = profile_section_base|default("/profile?section=") %}
+{% set _profile_lq = profile_lq_enabled|default(false) %}
+{% set _profile_hrefs = profile_section_hrefs|default({}) %}
+{% set current_nav = nav_items | selectattr('active') | map(attribute='label') | first %}
+{% set security_summary = overview.security_summary if overview.security_summary is defined else none %}
+{% set cultivation = overview.cultivation if overview.cultivation is defined else none %}
+{% set hero_stats = overview.hero_stats if overview.hero_stats is defined else overview.metric_cards[:4] %}
+{% set portfolio_ctx = portfolio if portfolio is defined and portfolio else none %}
+
+<section class="profile-shell{% if _profile_lq %} lq-profile{% endif %}" data-profile-root data-active-section="{{ active_section }}" data-profile-role="{{ profile.role }}"{% if _profile_lq %} data-lq-profile{% endif %}>
+{% include "partials/profile/hero.html" %}
+
+    <section class="profile-workspace">
+{% include "partials/profile/navigation.html" %}
+
+        <section class="profile-main"{% if _profile_lq and active_section not in ['notifications', 'private'] %} data-lq-profile-content="{{ active_section }}"{% endif %}>
+            {% if active_section == 'overview' %}
+{% include "partials/profile/overview.html" %}
+            {% elif active_section == 'portfolio' and portfolio_ctx %}
+{% include "partials/profile/portfolio.html" %}
+            {% elif active_section == 'signatures' %}
+{% include "partials/profile/signatures.html" %}
+
+            {% elif active_section == 'settings' %}
+{% include "partials/profile/settings.html" %}
+            {% elif active_section == 'appearance' and _profile_lq %}
+{% include "partials/profile/appearance.html" %}
+            {% elif active_section == 'security' %}
+{% include "partials/profile/security.html" %}
+            {% elif active_section == 'email' and profile.role == 'teacher' %}
+{% include "partials/profile/email.html" %}
+            {% elif active_section in ['notifications', 'private'] %}
+{% include "partials/profile/messages.html" %}
+            {% endif %}
+        </section>
+    </section>
+</section>
+
+<script type="application/json" id="profile-context-json">{{ profile_context | tojson }}</script>

@@ -11,8 +11,8 @@ COPY deployment/docker ./deployment/docker
 COPY postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
 COPY frontend ./frontend
 COPY classroom_app ./classroom_app
-COPY static/css/ui-system.src.css ./static/css/ui-system.src.css
-COPY static/js ./static/js
+COPY static ./static
+COPY tools/build_static_assets.mjs ./tools/build_static_assets.mjs
 COPY templates ./templates
 
 RUN sh /usr/local/bin/lanshare-verify-dependencies frontend && npm run build
@@ -34,6 +34,7 @@ COPY . .
 RUN sh /usr/local/bin/lanshare-verify-dependencies runtime
 COPY --from=frontend-builder /app/static/css/tailwind-app.css /app/static/css/tailwind-app.css
 COPY --from=frontend-builder /app/static/dist /app/static/dist
+COPY --from=frontend-builder /app/static/assets /app/static/assets
 
 RUN mkdir -p \
     /app/data \

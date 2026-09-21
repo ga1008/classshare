@@ -1,4 +1,5 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_empty %}
 
 {% block title %}{{ path_context.title }} - 课堂平台{% endblock %}
 
@@ -35,14 +36,49 @@
 {% endblock %}
 
 {% block main_content %}
+{% set growth_on = lq_family_enabled('growth') %}
+{% set primary = path_context.primary_item %}
+{% set focus = path_context.focus_course %}
 <section
     class="path-workbench"
     data-path-root
     data-active-status="{{ path_context.active_status }}"
     data-active-course="{{ path_context.active_course_id }}"
+    {% if growth_on %}data-lq-scope="growth"{% endif %}
 >
-    {% set primary = path_context.primary_item %}
-    {% set focus = path_context.focus_course %}
+    {% if growth_on %}
+    {% call lq_page_head(path_context.title, description=path_context.subtitle) %}
+        {% for stat in path_context.stats[:3] %}
+        <div class="lq-card--stat"><span>{{ stat.label }}</span><strong>{{ stat.value }}</strong><small>{{ stat.hint }}</small></div>
+        {% endfor %}
+    {% endcall %}
+    <aside class="path-focus-card" aria-label="当前优先路径">
+        {% if focus %}
+        {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
+        {% set cultivation_card = {
+            'variant': 'full',
+            'title': focus.course_name,
+            'subtitle': focus.class_name,
+            'score': focus.score,
+            'progress_percent': focus.progress_percent,
+            'level_short': focus.current_level.short_name,
+            'level_name': focus.current_level.level_name,
+            'level': focus.current_level,
+            'theme': focus.current_level.theme,
+            'badge': focus.active_step_count ~ ' 项待推进',
+            'next_label': focus_status_label,
+            'next_hint': focus.bottleneck.label ~ ' · ' ~ focus.bottleneck.hint
+        } %}
+        {% include "partials/cultivation_card.html" %}
+        {% endif %}
+        <span>{{ '优先动作' if primary else '当前状态' }}</span>
+        <strong>{{ primary.title if primary else ('暂时没有待推进项' if not focus else focus.course_name) }}</strong>
+        <p>{{ primary.description if primary else ('可以回到课堂继续材料、讨论或预习下一节。' if not focus else focus.bottleneck.hint) }}</p>
+        <a href="{{ primary.href if primary else (focus.href if focus else '/dashboard') }}" class="path-action path-action--primary">
+            {{ primary.action_label if primary else '回到课堂' }}
+        </a>
+    </aside>
+    {% else %}
     <header class="path-hero">
         <div class="path-hero__copy">
             <h1>{{ path_context.title }}</h1>
@@ -85,6 +121,7 @@
         </article>
         {% endfor %}
     </section>
+    {% endif %}
 
     <section class="path-ladder" aria-labelledby="path-ladder-title">
         <div class="path-section-head">
@@ -178,6 +215,7 @@
 
     {% if path_context['items'] %}
     <section class="path-card-list" aria-label="学习路径动作列表">
+        {% set path_status_tone = {'active': 'info', 'snoozed': 'neutral', 'done': 'success'} %}
         {% for item in path_context['items'] %}
         <article
             class="path-card path-card--{{ item.status }} path-card--{{ item.tone }}{% if item.pinned %} is-pinned{% endif %}"
@@ -189,8 +227,8 @@
         >
             <div class="path-card__main">
                 <div class="path-card__topline">
-                    <span class="path-chip path-chip--{{ item.tone }}">{{ item.tag }}</span>
-                    <span class="path-chip path-chip--status" data-path-status-label>{{ item.status_label }}</span>
+                    <span class="path-chip path-chip--{{ item.tone }}"{% if growth_on %} data-tone="{{ item.tone }}"{% endif %}>{{ item.tag }}</span>
+                    <span class="path-chip path-chip--status"{% if growth_on %} data-tone="{{ path_status_tone.get(item.status, 'neutral') }}"{% endif %} data-path-status-label>{{ item.status_label }}</span>
                     {% if item.due_label %}
                     <span class="path-chip">{{ item.due_label }}</span>
                     {% endif %}
@@ -204,7 +242,11 @@
                 <p class="path-card__meta">{{ item.course_name }}{% if item.class_name %} · {{ item.class_name }}{% endif %}</p>
                 <p class="path-card__description">{{ item.description }}</p>
                 {% if item.progress_percent is not none %}
-                <div class="path-mini-meter" aria-label="进度 {{ item.progress_percent }}%">
+                <div
+                    class="path-mini-meter"
+                    {% if growth_on %}role="progressbar" aria-valuenow="{{ item.progress_percent }}" aria-valuemin="0" aria-valuemax="100"{% endif %}
+                    aria-label="进度 {{ item.progress_percent }}%"
+                >
                     <span style="--path-progress: {{ item.progress_percent }}%;"></span>
                 </div>
                 {% endif %}
@@ -231,6 +273,12 @@
         </article>
         {% endfor %}
     </section>
+    {% elif growth_on %}
+    {% call(slot) lq_empty(title='当前筛选下没有路径动作', description='可以切换到"全部"，或者回到学习首页继续推进课堂、材料和复盘。', reason='no-results', variant='card') %}
+        {% if slot == 'actions' %}
+        <a href="/dashboard" class="path-action path-action--primary">回到学习首页</a>
+        {% endif %}
+    {% endcall %}
     {% else %}
     <section class="path-empty">
         <strong>当前筛选下没有路径动作</strong>

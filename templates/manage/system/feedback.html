@@ -3,7 +3,7 @@
 {% block title %}问题反馈{% endblock %}
 {% block header_actions %}{% endblock %}
 {% block content %}
-{{ page_head('问题反馈', description='与用户逐条沟通，跟进问题处理。处理完成后由超管关闭，历史消息和截图会完整保留。') }}
+{{ page_head('问题反馈', description='与用户逐条沟通，跟进问题处理。处理完成后由超管关闭，历史消息和截图会完整保留。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 {% if current_teacher_is_super_admin %}
 <section class="fb-admin" data-feedback-admin aria-label="反馈工作台">
     <div class="fb-admin-toolbar">

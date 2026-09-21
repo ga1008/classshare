@@ -2,13 +2,34 @@
 
 {% macro user_palette_select(preferences) -%}
 {% if preferences.enabled|default(false) %}
-<span class="ui-palette-control">
-    <select class="ui-palette-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '应用于学习首页与课堂。选择后自动保存到当前账号；其他页面保留原有设计。') }}>
-        {% for preset in preferences.presets %}
-        <option value="{{ preset.key }}"{% if preset.key == preferences.palette_key %} selected{% endif %}>{{ preset.name }}{% if preset.key == 'indigo' %}（默认）{% endif %}</option>
-        {% endfor %}
-    </select>
-    <span class="ui-palette-status sr-only" data-ui-palette-status role="status" aria-live="polite"></span>
-</span>
+<details class="ui-palette-control" data-ui-preferences-details>
+    <summary class="ui-preferences-toggle" data-ui-preferences-toggle>
+        <span>外观</span>
+        <span class="ui-preferences-summary-status" data-ui-preferences-summary-status aria-live="polite" hidden>未保存</span>
+    </summary>
+    <div class="ui-preferences-panel" data-ui-preferences-panel>
+        <label class="ui-preferences-field"><span>配色</span>
+            <select class="ui-palette-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
+                {% for preset in preferences.presets %}
+                <option value="{{ preset.key }}"{% if preset.key == preferences.palette_key %} selected{% endif %}>{{ preset.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="ui-preferences-field"><span>外观</span>
+            <select class="ui-palette-select" data-ui-preference-select="appearance" aria-label="界面外观" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>
+                {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
+                <option value="{{ key }}"{% if key == preferences.appearance|default('auto') %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="ui-preferences-field"><span>玻璃效果</span>
+            <select class="ui-palette-select" data-ui-preference-select="glass" aria-label="玻璃效果" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>
+                <option value="tinted"{% if preferences.glass|default('tinted') == 'tinted' %} selected{% endif %}>柔和玻璃</option>
+                <option value="off"{% if preferences.glass|default('tinted') == 'off' %} selected{% endif %}>关闭玻璃</option>
+            </select>
+        </label>
+        <span class="ui-palette-status sr-only" data-ui-palette-status role="status" aria-live="polite"></span>
+    </div>
+</details>
 {% endif %}
 {%- endmacro %}

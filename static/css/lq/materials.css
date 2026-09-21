@@ -1,0 +1,290 @@
+/* Four material roles. The fallback is opaque until backdrop-filter is supported. */
+.lq-glass,
+.lq-surface {
+    font-family: var(--ls-font-sans);
+    color: hsl(var(--ls-ink));
+    background: hsl(var(--ls-surface-1));
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+}
+
+.lq-glass {
+    --lq-material-fill: var(--ls-glass-fill);
+    --lq-material-blur: var(--ls-blur-regular);
+    --lq-material-ink: var(--ls-glass-ink);
+    --lq-material-muted: var(--ls-glass-muted);
+    --lq-material-brightness: 1;
+    position: relative;
+    isolation: isolate;
+    color: hsl(var(--lq-material-ink));
+    border-color: hsl(var(--ls-glass-line));
+    box-shadow: var(--ls-glass-shadow);
+}
+
+.lq-glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: var(--ls-z-material-sheen);
+    border-radius: inherit;
+    border-top: 1px solid hsl(var(--ls-glass-rim));
+    border-bottom: 1px solid hsl(var(--ls-glass-rim-bottom));
+    background-image: var(--ls-glass-sheen);
+    pointer-events: none;
+}
+
+.lq-glass--thick {
+    --lq-material-fill: var(--ls-glass-fill-strong);
+    --lq-material-blur: var(--ls-blur-thick);
+    box-shadow: var(--ls-glass-shadow-strong);
+}
+
+/* Clear is an image-backed exception. Its enclosing scene must supply a scrim. */
+.lq-glass--clear {
+    --lq-material-fill: var(--ls-glass-fill-clear);
+    --ls-glass-sheen: var(--ls-glass-sheen-clear);
+}
+
+.lq-glass :where(h1, h2, h3, h4, h5, h6, p, label) {
+    color: inherit;
+}
+
+.lq-glass :where(.lq-material-muted) {
+    color: hsl(var(--lq-material-muted));
+}
+
+.lq-surface--frost {
+    --lq-material-fill: var(--ls-glass-fill-strong);
+    --lq-material-blur: var(--ls-blur-thin);
+}
+
+.lq-scrim {
+    position: absolute;
+    inset: 0;
+    background: hsl(var(--ls-scrim));
+    pointer-events: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+:root[data-appearance="dark"] .lq-glass {
+    --lq-material-brightness: 1.05;
+}
+
+:root[data-lq-tier="B"] {
+    --ls-glass-saturate: 130%;
+}
+
+:root[data-lq-low-end="true"] {
+    --ls-blur-regular: 8px;
+    --ls-blur-thick: 16px;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lq-glass,
+    .lq-surface--frost {
+        background: hsl(var(--lq-material-fill));
+        -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+        backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+    }
+
+    .lq-glass--clear,
+    .lq-glass[data-lq-tone="dark"] {
+        --lq-material-ink: var(--ls-fixed-white);
+        --lq-material-muted: var(--ls-fixed-white);
+    }
+
+    /* S4 keeps .login-card for the original scene handoff. Its legacy rule
+       must not override the material on this same existing glass host. */
+    .lq-centered-page .lq-login-card.lq-glass {
+        -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate));
+    }
+}
+
+/* Nested material classes cannot create a second blur host. */
+.lq-glass .lq-glass,
+.lq-glass .lq-surface--frost {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* Tier B does not use image-backed clear; the scene probe tests Tier A only. */
+:root[data-lq-tier="B"] .lq-glass--clear {
+    --lq-material-fill: var(--ls-glass-fill-strong);
+    --lq-material-blur: var(--ls-blur-thick);
+    --lq-material-ink: var(--ls-glass-ink);
+    --lq-material-muted: var(--ls-glass-muted);
+}
+
+:root[data-lq-contrast="more"] .lq-glass,
+:root[data-lq-contrast="more"] .lq-surface {
+    background: hsl(var(--ls-surface-1) / .92);
+    color: hsl(var(--ls-ink));
+    border: 2px solid hsl(var(--ls-ink) / .6);
+    --lq-material-ink: var(--ls-ink);
+    --lq-material-muted: var(--ls-control-muted);
+}
+
+@media (prefers-contrast: more) {
+    :root .lq-glass,
+    :root .lq-surface {
+        background: hsl(var(--ls-surface-1) / .92);
+        color: hsl(var(--ls-ink));
+        border: 2px solid hsl(var(--ls-ink) / .6);
+        --lq-material-ink: var(--ls-ink);
+        --lq-material-muted: var(--ls-control-muted);
+    }
+}
+
+/* These selectors also cover legacy/dynamically inserted hosts and pseudo-elements.
+ * !important is intentional: a late module may inject its own backdrop-filter. */
+[data-lq-glass="off"],
+[data-lq-glass="off"] *,
+[data-lq-glass="off"]::before,
+[data-lq-glass="off"]::after,
+[data-lq-glass="off"]::backdrop,
+[data-lq-glass="off"] *::before,
+[data-lq-glass="off"] *::after,
+[data-lq-glass="off"] *::backdrop {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+[data-lq-glass="off"].lq-glass,
+[data-lq-glass="off"].lq-surface--frost,
+[data-lq-glass="off"] .lq-glass,
+[data-lq-glass="off"] .lq-surface--frost {
+    --lq-material-ink: var(--ls-ink);
+    --lq-material-muted: var(--ls-control-muted);
+    background: hsl(var(--ls-surface-1)) !important;
+    color: hsl(var(--ls-ink)) !important;
+    border-color: hsl(var(--ls-line-strong));
+}
+[data-lq-glass="off"].lq-glass::before,
+[data-lq-glass="off"] .lq-glass::before { background-image: none; }
+
+:root[data-lq-tier="C"],
+:root[data-lq-tier="C"] *,
+:root[data-lq-tier="C"]::before,
+:root[data-lq-tier="C"]::after,
+:root[data-lq-tier="C"]::backdrop,
+:root[data-lq-tier="C"] *::before,
+:root[data-lq-tier="C"] *::after,
+:root[data-lq-tier="C"] *::backdrop {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root[data-lq-tier="C"].lq-glass,
+:root[data-lq-tier="C"].lq-surface--frost,
+:root[data-lq-tier="C"] .lq-glass,
+:root[data-lq-tier="C"] .lq-surface--frost {
+    --lq-material-ink: var(--ls-ink);
+    --lq-material-muted: var(--ls-control-muted);
+    background: hsl(var(--ls-surface-1)) !important;
+    color: hsl(var(--ls-ink)) !important;
+    border-color: hsl(var(--ls-line-strong));
+}
+:root[data-lq-tier="C"].lq-glass::before,
+:root[data-lq-tier="C"] .lq-glass::before { background-image: none; }
+
+@media (prefers-reduced-transparency: reduce) {
+    :root,
+    :root *,
+    :root::before,
+    :root::after,
+    :root::backdrop,
+    :root *::before,
+    :root *::after,
+    :root *::backdrop {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+    :root.lq-glass,
+    :root.lq-surface--frost,
+    :root .lq-glass,
+    :root .lq-surface--frost {
+        --lq-material-ink: var(--ls-ink);
+        --lq-material-muted: var(--ls-control-muted);
+        background: hsl(var(--ls-surface-1)) !important;
+        color: hsl(var(--ls-ink)) !important;
+        border-color: hsl(var(--ls-line-strong));
+    }
+    :root.lq-glass::before,
+    :root .lq-glass::before { background-image: none; }
+}
+
+/* Retained full-color glass aliases have the same opaque opt-out contract. */
+[data-lq-glass="off"]:is(.ls-glass, .ls-glass-pill, .ls-lightbox__stage),
+[data-lq-glass="off"] :is(.ls-glass, .ls-glass-pill, .ls-lightbox__stage),
+:root[data-lq-tier="C"] :is(.ls-glass, .ls-glass-pill, .ls-lightbox__stage) {
+    background: hsl(var(--ls-surface-1)) !important;
+    color: hsl(var(--ls-ink));
+}
+[data-lq-glass="off"] .ls-glass::before,
+:root[data-lq-tier="C"] .ls-glass::before { background-image: none; }
+@media (prefers-reduced-transparency: reduce) {
+    :root :is(.ls-glass, .ls-glass-pill, .ls-lightbox__stage) {
+        background: hsl(var(--ls-surface-1)) !important;
+        color: hsl(var(--ls-ink));
+    }
+    :root .ls-glass::before { background-image: none; }
+}
+
+/* System colors are CSS property values, never values of HSL channel tokens. */
+:root[data-lq-forced-colors="true"],
+:root[data-lq-forced-colors="true"] *,
+:root[data-lq-forced-colors="true"]::before,
+:root[data-lq-forced-colors="true"]::after,
+:root[data-lq-forced-colors="true"]::backdrop,
+:root[data-lq-forced-colors="true"] *::before,
+:root[data-lq-forced-colors="true"] *::after,
+:root[data-lq-forced-colors="true"] *::backdrop {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root[data-lq-forced-colors="true"],
+:root[data-lq-forced-colors="true"] *,
+:root[data-lq-forced-colors="true"] *::before,
+:root[data-lq-forced-colors="true"] *::after,
+:root[data-lq-forced-colors="true"] *::backdrop {
+    filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+:root[data-lq-forced-colors="true"] :is(.lq-glass, .lq-surface, .ls-glass, .ls-glass-pill, .ls-lightbox__stage) {
+    background: Canvas !important;
+    color: CanvasText !important;
+    border-color: CanvasText !important;
+}
+:root[data-lq-forced-colors="true"] .lq-glass::before { background-image: none; border-color: CanvasText; }
+:root[data-lq-forced-colors="true"] .lq-material-muted { color: CanvasText !important; }
+@media (forced-colors: active) {
+    :root,
+    :root *,
+    :root::before,
+    :root::after,
+    :root::backdrop,
+    :root *::before,
+    :root *::after,
+    :root *::backdrop {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+    :root,
+    :root *,
+    :root *::before,
+    :root *::after,
+    :root *::backdrop {
+        filter: none !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+    }
+    :root :is(.lq-glass, .lq-surface, .ls-glass, .ls-glass-pill, .ls-lightbox__stage) {
+        background: Canvas !important;
+        color: CanvasText !important;
+        border-color: CanvasText !important;
+    }
+    :root .lq-glass::before { background-image: none; border-color: CanvasText; }
+    :root .lq-material-muted { color: CanvasText !important; }
+}
+

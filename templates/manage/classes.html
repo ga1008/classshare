@@ -23,7 +23,7 @@
 {% if _cnt %}{% set _dept_ns.dist = _dept_ns.dist + [{'label': department, 'value': _cnt}] %}{% endif %}
 {% endfor %}
 <div class="academic-shell class-page-shell">
-    {% call page_head('班级',
+    {% call page_head('班级', lq_enabled=lq_pilot_enabled|default(false),
         explain='集中维护班级、系别与学生名单；开课、查看学生与通知可达性都从这里进入。', explain_label='班级说明',
         actions=[
             {'label': '从教务系统同步', 'variant': 'outline', 'id': 'syncAcademicRosterBtn'},

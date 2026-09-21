@@ -1,13 +1,18 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/icons.generated.html" import lq_icon %}
 
 {% block title %}操作结果{% endblock %}
 
 {% block css %}
+{% if _lq_centered %}{{ super() }}{% else %}
+{% endif %}
 {% endblock %}
 
-{% block body_class %}{% endblock %}
+{% block body_class %}{{ super() }}{% endblock %}
 
 {% block body %}
+{% if _lq_centered %}{{ super() }}{% else %}
 <div class="status-card {{ 'success' if success else 'failure' }}">
     <div class="status-icon">
         {% if success %}
@@ -32,4 +37,14 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block card_content %}
+<section class="lq-status-card lq-glass lq-glass--thick" data-tone="{{ 'success' if success else 'danger' }}" aria-labelledby="status-title">
+    <div class="lq-status-card__icon">{{ lq_icon('circle-check' if success else 'circle-alert') }}</div>
+    <h1 id="status-title">{{ '操作成功' if success else '操作失败' }}</h1>
+    <div class="lq-status-card__message">{{ message }}</div>
+    <div class="lq-status-card__actions">{{ lq_btn('返回' if success else '返回主页', href=back_url, variant='prominent', icon='arrow-left') }}</div>
+</section>
 {% endblock %}

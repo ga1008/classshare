@@ -1,0 +1,155 @@
+/* Six existing paired levels, shared by chips and the presentation indicators. */
+.lq-icon {
+    display: inline-block;
+    flex-shrink: 0;
+    width: var(--ls-s-5);
+    height: var(--ls-s-5);
+    color: inherit;
+    vertical-align: middle;
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress) {
+    --lq-tone-soft: var(--ls-tone-neutral-soft);
+    --lq-tone-fg: var(--ls-tone-neutral-fg);
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress)[data-tone="primary"] {
+    --lq-tone-soft: var(--ls-primary-soft);
+    --lq-tone-fg: var(--ls-on-primary-soft);
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress)[data-tone="success"] {
+    --lq-tone-soft: var(--ls-tone-success-soft);
+    --lq-tone-fg: var(--ls-tone-success-fg);
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress)[data-tone="warning"] {
+    --lq-tone-soft: var(--ls-tone-warning-soft);
+    --lq-tone-fg: var(--ls-tone-warning-fg);
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress)[data-tone="danger"] {
+    --lq-tone-soft: var(--ls-tone-danger-soft);
+    --lq-tone-fg: var(--ls-tone-danger-fg);
+}
+:is(.lq-chip, .lq-badge, .lq-avatar, .lq-progress)[data-tone="info"] {
+    --lq-tone-soft: var(--ls-tone-info-soft);
+    --lq-tone-fg: var(--ls-tone-info-fg);
+}
+.lq-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: calc(var(--ls-s-4) + var(--ls-s-1) / 2);
+    min-height: calc(var(--ls-s-4) + var(--ls-s-1) / 2);
+    padding-inline: var(--ls-s-1);
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--lq-tone-soft));
+    color: hsl(var(--lq-tone-fg));
+    font-family: var(--ls-font-sans);
+    font-size: var(--ls-t-caption);
+    font-weight: var(--ls-weight-title1);
+    line-height: var(--ls-leading-caption);
+    font-variant-numeric: tabular-nums;
+}
+.lq-badge--dot {
+    width: var(--ls-s-2);
+    height: var(--ls-s-2);
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: hsl(var(--lq-tone-fg));
+}
+.lq-avatar {
+    --lq-avatar-size: var(--ls-s-10);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 var(--lq-avatar-size);
+    width: var(--lq-avatar-size);
+    height: var(--lq-avatar-size);
+    overflow: hidden;
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--lq-tone-soft));
+    color: hsl(var(--lq-tone-fg));
+    font-family: var(--ls-font-sans);
+    font-size: var(--ls-t-headline);
+    font-weight: var(--ls-weight-title3);
+    vertical-align: middle;
+}
+.lq-avatar--24 { --lq-avatar-size: var(--ls-s-6); font-size: var(--ls-t-caption); }
+.lq-avatar--32 { --lq-avatar-size: var(--ls-s-8); font-size: var(--ls-t-sub); }
+.lq-avatar--56 { --lq-avatar-size: calc(var(--ls-s-12) + var(--ls-s-2)); font-size: var(--ls-t-title2); }
+.lq-avatar__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lq-spinner {
+    display: inline-block;
+    flex-shrink: 0;
+    width: var(--ls-s-5);
+    height: var(--ls-s-5);
+    border: calc(var(--ls-s-1) / 2) solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: var(--ls-r-capsule);
+    vertical-align: middle;
+    animation: lq-spinner-turn calc(var(--ls-dur-enter) * 2) linear infinite;
+}
+.lq-spinner--sm { width: var(--ls-s-4); height: var(--ls-s-4); }
+.lq-spinner--lg { width: var(--ls-s-8); height: var(--ls-s-8); }
+@keyframes lq-spinner-turn { to { transform: rotate(1turn); } }
+.lq-progress {
+    display: block;
+    width: 100%;
+    height: calc(var(--ls-s-1) + var(--ls-s-1) / 2);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--ls-r-capsule);
+    appearance: none;
+    background: hsl(var(--lq-tone-soft));
+    color: hsl(var(--lq-tone-fg));
+}
+.lq-progress::-webkit-progress-bar { background: transparent; border-radius: inherit; }
+.lq-progress::-webkit-progress-value { background: hsl(var(--lq-tone-fg)); border-radius: inherit; }
+.lq-progress::-moz-progress-bar { background: hsl(var(--lq-tone-fg)); border-radius: inherit; }
+.lq-progress:not(.lq-progress--ring):not([value]) {
+    background-image: linear-gradient(90deg, transparent, hsl(var(--lq-tone-fg)), transparent);
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    animation: lq-progress-pending calc(var(--ls-dur-enter) * 4) var(--ls-ease-in-out) infinite alternate;
+}
+.lq-progress:not(.lq-progress--ring):not([value])::-webkit-progress-bar { background: transparent; }
+.lq-progress--ring {
+    position: relative;
+    display: inline-block;
+    width: calc(var(--ls-s-12) + var(--ls-s-4));
+    height: calc(var(--ls-s-12) + var(--ls-s-4));
+    flex-shrink: 0;
+    overflow: visible;
+    background: transparent;
+    vertical-align: middle;
+}
+.lq-progress__svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.lq-progress__track, .lq-progress__fill { fill: none; stroke-width: 3; }
+.lq-progress__track { stroke: hsl(var(--lq-tone-soft)); }
+.lq-progress__fill { stroke: currentColor; stroke-linecap: round; }
+.lq-progress__value {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font: var(--ls-weight-title3) var(--ls-t-caption) / var(--ls-leading-caption) var(--ls-font-sans);
+    font-variant-numeric: tabular-nums;
+}
+.lq-progress--ring:not([aria-valuenow]) .lq-progress__svg { animation: lq-spinner-turn calc(var(--ls-dur-enter) * 4) linear infinite; }
+@keyframes lq-progress-pending { from { background-position: -100% 0; } to { background-position: 200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .lq-spinner, .lq-progress:not(.lq-progress--ring):not([value]), .lq-progress--ring:not([aria-valuenow]) .lq-progress__svg { animation: none; }
+    .lq-progress:not(.lq-progress--ring):not([value]) { background-position: center; }
+}
+@media (forced-colors: active) {
+    .lq-badge, .lq-avatar { background: Canvas; color: CanvasText; border: 1px solid CanvasText; }
+    .lq-badge--dot { background: CanvasText; }
+    .lq-spinner { color: CanvasText; }
+    .lq-progress { background: Canvas; color: Highlight; border: 1px solid CanvasText; }
+    .lq-progress::-webkit-progress-bar { background: Canvas; }
+    .lq-progress::-webkit-progress-value { background: Highlight; }
+    .lq-progress::-moz-progress-bar { background: Highlight; }
+    .lq-progress:not(.lq-progress--ring):not([value]) { background-image: none; border-style: dashed; }
+    .lq-progress--ring { border: 0; background: transparent; color: CanvasText; }
+    .lq-progress__track { stroke: GrayText; }
+    .lq-progress__fill { stroke: CanvasText; }
+}

@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import { LQ } from '/static/js/lq/index.js';
 import {
     computeSemesterWeekCount,
     initSemesterCalendar,
@@ -265,10 +266,13 @@ function setActiveSemester(semesterId, { scrollCalendar = false } = {}) {
     }
 }
 
-function openModal(mode, semester = null) {
+let modalTrigger = null;
+
+function openModal(mode, semester = null, trigger = null) {
     if (!elements.modalBackdrop || !elements.form) {
         return;
     }
+    modalTrigger = trigger || null;
     if (mode === 'edit' && semester?.can_manage === false) {
         showMessage('同校共享学期可以直接复用，只有创建者可以编辑。', 'warning');
         return;
@@ -315,6 +319,8 @@ function closeModal() {
     }
     elements.modalBackdrop.classList.remove('is-open');
     document.body.classList.remove('has-academic-modal');
+    if (modalTrigger?.isConnected) modalTrigger.focus();
+    modalTrigger = null;
 }
 
 function updateWeekPreview() {
@@ -340,7 +346,8 @@ function updateWeekPreview() {
     }
 }
 
-async function handleDeleteSemester(semesterId) {
+async function handleDeleteSemester(semesterId, button) {
+    if (button?.dataset.lqBusy === '1') return;
     const semester = getSemesterById(semesterId);
     if (!semester) {
         return;
@@ -349,15 +356,25 @@ async function handleDeleteSemester(semesterId) {
         showMessage('同校共享学期可以直接复用，只有创建者可以删除。', 'warning');
         return;
     }
+    if (button) button.dataset.lqBusy = '1';
+    try {
+        const confirmed = await LQ.confirm({
+            title: '删除学期',
+            message: `确定删除学期“${semester.name}”吗？如果已经有课堂绑定到这个学期，需要先调整课堂绑定。`,
+            confirmLabel: '删除',
+            danger: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        if (button) button.disabled = true;
 
-    const confirmed = window.confirm(`确定删除学期“${semester.name}”吗？\n如果已经有课堂绑定到这个学期，需要先调整课堂绑定。`);
-    if (!confirmed) {
-        return;
+        const result = await apiFetch(`/api/manage/semesters/${semester.id}`, { method: 'DELETE' });
+        showMessage(result.message || '学期已删除', 'success');
+        window.location.reload();
+    } finally {
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
     }
-
-    const result = await apiFetch(`/api/manage/semesters/${semester.id}`, { method: 'DELETE' });
-    showMessage(result.message || '学期已删除', 'success');
-    window.location.reload();
 }
 
 function updateSemesterSyncState(semesterId, payload = {}) {
@@ -522,7 +539,7 @@ function escapeHtml(value) {
 
 function initEvents() {
     elements.openCreateBtns.forEach((button) => {
-        button.addEventListener('click', () => openModal('create'));
+        button.addEventListener('click', () => openModal('create', null, button));
     });
 
     elements.modalCloseBtn?.addEventListener('click', closeModal);
@@ -567,7 +584,7 @@ function initEvents() {
         if (actionButton.dataset.action === 'edit') {
             const semester = getSemesterById(semesterId);
             if (semester) {
-                openModal('edit', semester);
+                openModal('edit', semester, actionButton);
             }
             return;
         }
@@ -576,7 +593,7 @@ function initEvents() {
             return;
         }
         if (actionButton.dataset.action === 'delete') {
-            await handleDeleteSemester(semesterId);
+            await handleDeleteSemester(semesterId, actionButton);
         }
     });
     elements.list?.addEventListener('keydown', (event) => {
@@ -598,7 +615,9 @@ function initEvents() {
     elements.form?.addEventListener('submit', handleSubmit);
     elements.syncCurrentBtn?.addEventListener('click', () => handleSyncCurrentSemester(elements.syncCurrentBtn));
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && elements.modalBackdrop?.classList.contains('is-open')) {
+        if (event.key !== 'Escape') return;
+        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
+        if (elements.modalBackdrop?.classList.contains('is-open')) {
             closeModal();
         }
     });

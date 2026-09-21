@@ -1,0 +1,63 @@
+/* Source: static/css/lq/pages/calendar.css
+   S4 B-package: semester calendar panel, family-gated presentation.
+   Scope: every rule is nested under [data-lq-calendar] on the panel root
+   (added by templates/partials/semester_calendar_panel.html only when the
+   `calendar` family is enabled). The scroll container
+   [data-semester-calendar-scroll] must never receive overflow:hidden here
+   (sticky first column depends on overflow:auto set by semester_calendar.js /
+   the legacy stylesheet) and `.semester-sticky-cell` must stay untouched. */
+
+[data-lq-calendar] {
+    border-radius: var(--ls-r-lg);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+    padding: var(--ls-s-5);
+}
+
+[data-lq-calendar] .semester-calendar-panel__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ls-s-3);
+}
+
+[data-lq-calendar] .semester-calendar-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-2);
+}
+[data-lq-calendar] .semester-calendar-panel__actions .btn {
+    border-radius: var(--ls-r-capsule);
+    padding: var(--ls-s-1) var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    background: hsl(var(--ls-surface-1));
+}
+[data-lq-calendar] .semester-calendar-panel__actions .btn-primary {
+    background: hsl(var(--ls-primary));
+    color: hsl(var(--ls-on-primary));
+    border-color: transparent;
+}
+
+/* today column / week-attribution tint — additive only, does not replace
+   the JS-driven highlight classes already applied by semester_calendar.js */
+[data-lq-calendar] .semester-calendar-chip.is-todo {
+    background: hsl(var(--tone-agenda-todo-soft));
+    color: hsl(var(--tone-agenda-todo-fg));
+    border-radius: var(--ls-r-capsule);
+    padding: 2px var(--ls-s-2);
+}
+
+/* scroll container: explicitly documented as overflow:auto-safe; never set
+   overflow:hidden on [data-semester-calendar-scroll] in this file. */
+[data-lq-calendar] [data-semester-calendar-scroll] {
+    border-radius: var(--ls-r-md);
+}
+
+[data-lq-calendar] .semester-calendar-panel__empty {
+    border-radius: var(--ls-r-md);
+    border: 1px dashed hsl(var(--ls-line));
+    padding: var(--ls-s-5);
+    text-align: center;
+    color: hsl(var(--ls-ink-2));
+}

@@ -809,6 +809,19 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertIn("submission_files", str(ctx.exception))
         self.assertIn("stored_path", str(ctx.exception))
 
+    def test_ui_preferences_new_columns_are_required_and_repaired_by_startup_schema(self):
+        from classroom_app.db.schema_user_ui_preferences import ensure_user_ui_preferences_schema
+
+        for column in ("appearance", "glass"):
+            with self.subTest(column=column):
+                self.assertIn(column, REQUIRED_POSTGRES_COLUMNS["user_ui_preferences"])
+                conn = FakePostgresConnection(missing_columns={"user_ui_preferences": (column,)})
+                with self.assertRaises(DatabaseProgrammingError) as raised:
+                    validate_postgres_schema(conn)
+                self.assertIn(f"user_ui_preferences({column})", str(raised.exception))
+                ensure_user_ui_preferences_schema(conn, engine="postgres")
+                self.assertEqual(validate_postgres_schema(conn)["status"], "ok")
+
     def test_init_database_dispatches_postgres_validation_without_sqlite_initializers(self):
         original_engine = config.DB_ENGINE
         config.DB_ENGINE = "postgres"

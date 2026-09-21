@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import {
   collectBrowserErrors,
   expectNoBrowserErrors,
@@ -6,6 +6,13 @@ import {
   loginTeacher,
   readFixture,
 } from '../fixtures/p03';
+
+// The pilot uses native details; legacy pages retain their existing controller.
+// Assert the shared navigation payload and actual open state, not a CSS owner.
+async function expectDomainOpen(domain: Locator, open = true) {
+  await expect.poll(() => domain.evaluate(element => element.tagName === 'DETAILS'
+    ? (element as HTMLDetailsElement).open : element.classList.contains('is-open'))).toBe(open);
+}
 
 // 六域壳（docs/manage-center-improvement-plan-2026-09-11.md §5）：
 // 首页 / 教学 / 资源库 / 成绩与归档 / 教务 / 我的，超管另有「平台」。
@@ -18,6 +25,7 @@ const domainPages = [
 ];
 
 const legacyRedirects = [
+  ['/manage/teaching/workflow', '/manage/teaching/classroom-hub'],
   ['/manage/offerings', '/manage/teaching/offerings'],
   ['/manage/classrooms', '/manage/academic/classrooms'],
   ['/manage/gongwen', '/manage/academic/gongwen'],
@@ -40,21 +48,25 @@ test.describe('P03 teacher app shell (six domains)', () => {
       await page.waitForLoadState('networkidle').catch(() => undefined);
       await expect(page.locator('.manage-layout')).toHaveAttribute('data-manage-domain', item.domain);
       await expect(page.locator('.manage-main')).toContainText(item.title);
-      const domainSection = page.locator(`.manage-nav-domain[data-nav-domain="${item.domain}"]`);
-      await expect(domainSection).toHaveClass(/is-open/);
+      const domainSection = page.locator(`#manageNav [data-manage-domain="${item.domain}"]`);
+      await expectDomainOpen(domainSection);
       await expect(domainSection.locator('.manage-nav-item.active')).toHaveCount(1);
     }
 
     // 普通教师：六个域（含首页），没有平台域；没有域 Tab。
-    await expect(page.locator('.manage-nav-domain')).toHaveCount(6);
-    await expect(page.locator('.manage-nav-domain[data-nav-domain="admin"]')).toHaveCount(0);
+    await expect(page.locator('#manageNav [data-manage-domain]')).toHaveCount(6);
+    await expect(page.locator('#manageNav [data-manage-domain="admin"]')).toHaveCount(0);
     await expect(page.locator('.manage-domain-tab')).toHaveCount(0);
+    await expect(page.locator('.manage-nav-item[href="/manage/teaching/workflow"]')).toHaveCount(0);
+    await page.locator('#manageNavSearch').fill('开课向导');
+    await expect(page.locator('.manage-nav-item:visible')).toHaveCount(0);
+    await page.locator('#manageNavSearch').fill('');
 
     // 手风琴：打开教务域会收起当前域。
-    await page.locator('.manage-nav-domain[data-nav-domain="academic"] .manage-nav-domain-toggle').click();
-    await expect(page.locator('.manage-nav-domain[data-nav-domain="academic"]')).toHaveClass(/is-open/);
-    await expect(page.locator('.manage-nav-domain[data-nav-domain="me"]')).not.toHaveClass(/is-open/);
-    await expect(page.locator('.manage-nav-domain[data-nav-domain="academic"] .manage-nav-item').first()).toBeVisible();
+    await page.locator('#manageNav [data-manage-domain="academic"]').locator('.manage-nav-domain-toggle,summary').first().click();
+    await expectDomainOpen(page.locator('#manageNav [data-manage-domain="academic"]'));
+    await expectDomainOpen(page.locator('#manageNav [data-manage-domain="me"]'), false);
+    await expect(page.locator('#manageNav [data-manage-domain="academic"] .manage-nav-item').first()).toBeVisible();
 
     await expectNoBrowserErrors(errors, testInfo);
   });
@@ -66,12 +78,12 @@ test.describe('P03 teacher app shell (six domains)', () => {
     await loginTeacher(page, fixture, fixture.superTeacher);
     await page.goto('/manage/teaching', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
-    await expect(page.locator('.manage-nav-domain')).toHaveCount(7);
+    await expect(page.locator('#manageNav [data-manage-domain]')).toHaveCount(7);
 
     await page.goto('/manage/system/users', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await expect(page.locator('.manage-layout')).toHaveAttribute('data-manage-domain', 'admin');
-    await expect(page.locator('.manage-nav-domain[data-nav-domain="admin"]')).toHaveClass(/is-open/);
+    await expectDomainOpen(page.locator('#manageNav [data-manage-domain="admin"]'));
     await expect(page.locator('#manage-domain-admin .manage-nav-item').first()).toBeVisible();
 
     await expectNoBrowserErrors(errors, testInfo);
@@ -119,15 +131,15 @@ test.describe('P03 teacher app shell (six domains)', () => {
     await loginTeacher(page, fixture);
     await page.goto('/manage/academic', { waitUntil: 'domcontentloaded' });
     await page.locator('.mobile-toggle').click();
-    await expect(page.locator('.manage-nav-domain-toggle').first()).toBeVisible();
-    await expect(page.locator('.manage-nav-domain')).toHaveCount(6);
+    await expect(page.locator('#manageNav [data-manage-domain]').locator('.manage-nav-domain-toggle,summary').first()).toBeVisible();
+    await expect(page.locator('#manageNav [data-manage-domain]')).toHaveCount(6);
 
     await page.goto('/logout', { waitUntil: 'domcontentloaded' });
     await page.setViewportSize({ width: 1440, height: 980 });
     await loginStudent(page, fixture);
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-dashboard-root]')).toBeVisible();
-    await expect(page.locator('.manage-nav-domain')).toHaveCount(0);
+    await expect(page.locator('#manageNav [data-manage-domain]')).toHaveCount(0);
 
     await expectNoBrowserErrors(errors, testInfo);
   });

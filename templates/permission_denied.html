@@ -1,10 +1,28 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/icons.generated.html" import lq_icon %}
 
 {% block title %}权限受限{% endblock %}
 
-{% block bg_gradient %}background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);{% endblock %}
+{% block body_class %}{{ super() }} centered-page--permission{% endblock %}
 
 {% block card_content %}
+{% if _lq_centered %}
+<section class="lq-status-card lq-glass lq-glass--thick" data-tone="warning" aria-labelledby="permission-title">
+    <div class="lq-status-card__icon">{{ lq_icon('triangle-alert') }}</div>
+    <h1 id="permission-title">当前账号无权访问</h1>
+    <div class="lq-status-card__message">
+        <p>{{ permission_message }}</p>
+        {% if current_user.name %}<p>当前身份：{{ current_user.name }}（{{ current_role_label }}）</p>{% endif %}
+        {% if required_role %}<p>继续访问通常需要 {{ required_role_label }} 身份。</p>{% endif %}
+    </div>
+    <div class="lq-status-card__actions">
+        {% if show_teacher_login %}{{ lq_btn('教师登录', href=teacher_login_url, variant='prominent') }}{% endif %}
+        {{ lq_btn('返回页面', href=dashboard_url, variant='soft') }}
+    </div>
+    {% if required_role == 'student' %}<div class="lq-status-card__note">{{ lq_btn('学生入口', href=student_login_url, variant='link') }}</div>{% endif %}
+</section>
+{% else %}
 <div class="status-card warning">
     <div class="status-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -39,4 +57,5 @@
     </div>
     {% endif %}
 </div>
+{% endif %}
 {% endblock %}

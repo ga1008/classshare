@@ -12,7 +12,7 @@
 
 {% block content %}
 <section class="org-page" data-organization-page>
-    {% call page_head('学校、学院、系部目录', description='这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。') %}
+    {% call page_head('学校、学院、系部目录', description='这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <div class="org-stat-grid" data-page-head-wide aria-label="组织概览">
             <article class="org-stat"><span>学校</span><strong id="org-stat-schools">{{ organization_payload.summary.school_count }}</strong></article>
             <article class="org-stat"><span>学院</span><strong id="org-stat-colleges">{{ organization_payload.summary.college_count }}</strong></article>

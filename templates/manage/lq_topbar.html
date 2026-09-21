@@ -1,0 +1,11 @@
+{% from 'macros/lq/shells.html' import lq_topbar %}
+<div class="manage-topbar role-teacher manage-page-{{ active_page }} lq-manage-topbar">
+{% call(slot) lq_topbar('manage-pilot-topbar', page_title, view_transition=true) %}
+    {% if slot == 'status' %}<span class="lq-manage-domain-label">{{ manage_nav.domain_meta[manage_nav.active_domain].label if manage_nav.active_domain in manage_nav.domain_meta else '工作台' }}</span>
+    {% elif slot == 'more' %}
+        <div class="manage-context-actions lq-manage-context-actions" aria-label="本页常用操作">{{ manage_pilot_actions }}</div>
+        {% include 'manage/lq_utility.html' %}
+    {% endif %}
+{% endcall %}
+</div>
+<p class="lq-manage-shell-status" data-lq-manage-shell-status role="status" hidden></p>

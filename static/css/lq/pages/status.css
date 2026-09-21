@@ -1,0 +1,27 @@
+/* Static status pages remain server-owned. This layer never performs retries. */
+.lq-centered-page .lq-status-card {
+    width: 100%; max-width: 500px; padding: var(--ls-s-8);
+    border-radius: var(--ls-r-2xl); text-align: center;
+    overflow-wrap: anywhere;
+}
+.lq-status-card__icon {
+    display: flex; align-items: center; justify-content: center;
+    width: var(--ls-s-16); height: var(--ls-s-16); margin: 0 auto var(--ls-s-5);
+    border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-neutral-soft)); color: hsl(var(--ls-tone-neutral-fg));
+}
+.lq-status-card__icon .lq-icon { width: var(--ls-s-8); height: var(--ls-s-8); }
+.lq-status-card[data-tone="success"] .lq-status-card__icon { background: hsl(var(--ls-tone-success-soft)); color: hsl(var(--ls-tone-success-fg)); }
+.lq-status-card[data-tone="warning"] .lq-status-card__icon { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); }
+.lq-status-card[data-tone="danger"] .lq-status-card__icon { background: hsl(var(--ls-tone-danger-soft)); color: hsl(var(--ls-tone-danger-fg)); }
+.lq-status-card h1 { margin: 0 0 var(--ls-s-4); color: hsl(var(--ls-ink)); font-size: var(--ls-t-title1); line-height: var(--ls-leading-title1); }
+.lq-status-card__message { margin-bottom: var(--ls-s-6); color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-body); line-height: var(--ls-leading-body); }
+.lq-status-card__message p { margin: 0 0 var(--ls-s-3); color: inherit; }
+.lq-status-card__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--ls-s-3); }
+.lq-status-card__note { margin: var(--ls-s-4) 0 0; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); }
+.lq-status-card__code { margin: 0 0 var(--ls-s-2); font-size: var(--ls-t-display); color: hsl(var(--ls-ink)); font-weight: var(--ls-weight-display); font-variant-numeric: tabular-nums; }
+.lq-status-card__list { margin-block: var(--ls-s-3); padding-inline-start: var(--ls-s-5); text-align: start; }
+@media (max-width: 480px) { .lq-centered-page .lq-status-card { padding: var(--ls-s-6); } }
+@media (forced-colors: active) {
+    .lq-centered-page .lq-status-card__icon { background: Canvas; color: CanvasText; border: 1px solid CanvasText; }
+    .lq-status-card :is(h1,.lq-status-card__message,.lq-status-card__note,.lq-status-card__code) { color: CanvasText; }
+}

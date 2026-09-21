@@ -1,0 +1,44 @@
+/* The existing file_preview/material_viewer/AI controllers still own these buttons. */
+.lq-prose .materials-code-block { position: relative; }
+.lq-prose .materials-code-block > pre,
+.lq-prose pre:has(> .copy-code-btn) { position: relative; padding-block-start: 56px; }
+.lq-prose :is(.materials-code-copy-btn, .copy-code-btn) {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    min-width: 44px;
+    max-width: calc(100% - 16px);
+    padding: var(--ls-s-2) var(--ls-s-3);
+    font: var(--ls-weight-title3) var(--ls-t-sub) / 1.2 var(--ls-font-sans);
+    border: 1px solid hsl(var(--ls-line-strong));
+    border-radius: var(--ls-r-sm);
+    background: hsl(var(--ls-surface-1));
+    color: hsl(var(--ls-ink));
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    opacity: 1;
+    white-space: normal;
+    cursor: pointer;
+}
+.lq-prose :is(.materials-code-copy-btn, .copy-code-btn):hover,
+.lq-prose :is(.materials-code-copy-btn, .copy-code-btn):focus-visible { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-primary)); transform: none; }
+.lq-prose :is(.materials-code-copy-btn, .copy-code-btn):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+.lq-prose :is(.materials-code-copy-btn.is-copied, .copy-code-btn.copied) { background: linear-gradient(hsl(var(--ls-tone-success-soft)), hsl(var(--ls-tone-success-soft))) hsl(var(--ls-surface-1)); color: hsl(var(--ls-tone-success-fg)); border-color: hsl(var(--ls-tone-success-fg)); }
+.lq-prose :is(.materials-code-copy-btn, .copy-code-btn):disabled { cursor: default; }
+@media (pointer: coarse) {
+    .lq-prose :is(.materials-code-copy-btn, .copy-code-btn) { min-height: 44px; }
+    .lq-prose .materials-code-block > pre,
+    .lq-prose pre:has(> .copy-code-btn) { padding-block-start: 64px; }
+}
+@media (forced-colors: active) {
+    .lq-prose :is(.materials-code-copy-btn, .copy-code-btn) { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+    .lq-prose :is(.materials-code-copy-btn.is-copied, .copy-code-btn.copied) { background: Highlight; color: HighlightText; border-color: Highlight; }
+    .lq-prose :is(.materials-code-copy-btn, .copy-code-btn):focus-visible { outline-color: Highlight; }
+}

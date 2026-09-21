@@ -1019,7 +1019,8 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn('data-ordinary-grade-step-index="3"', template)
         self.assertIn('id="classroom-final-material-prompt-step"', template)
         self.assertIn("第 5 步", template)
-        self.assertIn("materials: '/static/js/classroom_materials.js?v=", island)
+        self.assertIn("materials: legacyModuleUrl('classroom_materials.js')", island)
+        self.assertIn("@/lib/static-assets", island)
 
     def test_ordinary_grade_floor_policy_is_teacher_controlled_and_auditable(self):
         script = Path("static/js/classroom_materials.js").read_text(encoding="utf-8")
@@ -1835,7 +1836,7 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("summary.source_file_name", script)
         self.assertIn("summary.content_quality_label", script)
         self.assertIn("renderAiImportDetailSummary(detail)", script)
-        self.assertIn("lessondoc-editor-20260903", island)
+        self.assertIn("legacyModuleUrl('materials_manage.js')", island)
         self.assertIn(".materials-ai-import-summary", styles)
 
     def test_classroom_material_detail_surfaces_ai_import_summary(self):

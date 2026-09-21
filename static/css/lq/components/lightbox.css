@@ -1,0 +1,97 @@
+/* Existing ls_image_lightbox controller owns geometry and gestures. One blur host. */
+.lq-lightbox.ls-lightbox {
+    font-family: var(--ls-font-sans);
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+/* White clear-glass text needs a dark scene even when the underlying image is white. */
+.lq-lightbox > .lq-lightbox__bg.lq-scrim { background: hsl(var(--ls-scrim-login)); }
+.lq-lightbox .lq-lightbox__blob { display: none; animation: none; }
+.lq-lightbox .lq-lightbox__shell { gap: var(--ls-s-3); min-width: 0; }
+.lq-lightbox .lq-lightbox__bar.lq-glass {
+    flex: none;
+    padding: var(--ls-s-3) var(--ls-s-4);
+    border-radius: var(--ls-r-lg);
+    color: hsl(var(--lq-material-ink));
+    background: hsl(var(--ls-surface-1));
+    border-color: hsl(var(--ls-glass-line));
+    box-shadow: var(--ls-glass-shadow);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+.lq-lightbox .lq-lightbox__bar::before { background-image: var(--ls-glass-sheen); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lq-lightbox .lq-lightbox__bar.lq-glass {
+        background: hsl(var(--lq-material-fill));
+        -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+        backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+    }
+}
+.lq-lightbox .lq-lightbox__title { color: inherit; font-size: var(--ls-t-callout); }
+.lq-lightbox :is(.lq-lightbox__meta, .lq-lightbox__counter, .lq-lightbox__scale) { color: inherit; }
+.lq-lightbox .lq-lightbox__actions { gap: var(--ls-s-2); }
+.lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav, .lq-lightbox__hint) {
+    color: hsl(var(--ls-ink));
+    background: hsl(var(--ls-surface-1));
+    border: 1px solid hsl(var(--ls-line-strong));
+    box-shadow: var(--ls-shadow-1);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+.lq-lightbox .lq-lightbox__nav::before { content: none; }
+.lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav) { min-width: 44px; min-height: 44px; }
+.lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav):hover:not(:disabled) { color: hsl(var(--ls-ink)); background: hsl(var(--ls-surface-2)); border-color: hsl(var(--ls-primary)); box-shadow: var(--ls-shadow-1); transform: none; }
+.lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 3px; }
+.lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav):disabled { opacity: .5; transform: none; }
+.lq-lightbox .lq-lightbox__stage {
+    background: transparent;
+    border-color: hsl(var(--ls-fixed-white) / .24);
+    border-radius: var(--ls-r-lg);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+.lq-lightbox .lq-lightbox__img { background: hsl(var(--ls-fixed-white)); box-shadow: var(--ls-shadow-4); }
+.lq-lightbox .lq-lightbox__error { color: hsl(var(--ls-fixed-white)); max-width: calc(100% - 112px); text-align: center; }
+.lq-lightbox .lq-lightbox__spinner { border-color: hsl(var(--ls-fixed-white) / .3); border-top-color: hsl(var(--ls-fixed-white)); }
+@media (max-width: 720px) {
+    .lq-lightbox .lq-lightbox__bar { gap: var(--ls-s-2); padding: var(--ls-s-3); }
+    .lq-lightbox .lq-lightbox__copy { flex-basis: 100%; }
+    .lq-lightbox .lq-lightbox__actions { width: 100%; gap: var(--ls-s-1); }
+    .lq-lightbox .lq-lightbox__pill { padding-inline: var(--ls-s-2); }
+    .lq-lightbox .lq-lightbox__counter, .lq-lightbox .lq-lightbox__scale { min-width: 36px; }
+    .lq-lightbox .lq-lightbox__nav { width: 44px; height: 44px; margin-top: -22px; }
+}
+/* Scoped specificity keeps old ls-* theme overrides from restoring another blur. */
+:root[data-appearance] .lq-lightbox.ls-lightbox { background: transparent; }
+:root[data-appearance] .lq-lightbox .lq-lightbox__stage { background: transparent; }
+:root[data-appearance] .lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav, .lq-lightbox__hint) { background: hsl(var(--ls-surface-1)); }
+:root[data-appearance] .lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav):hover:not(:disabled) { background: hsl(var(--ls-surface-2)); }
+[data-lq-glass="off"] .lq-lightbox__error,
+:root[data-lq-tier="C"] .lq-lightbox__error { color: hsl(var(--ls-ink)); }
+[data-lq-glass="off"] .lq-lightbox__spinner,
+:root[data-lq-tier="C"] .lq-lightbox__spinner { border-color: hsl(var(--ls-line-strong)); border-top-color: hsl(var(--ls-primary)); }
+:root[data-lq-forced-colors="true"] .lq-lightbox__error { color: CanvasText; }
+@media (prefers-reduced-transparency: reduce) {
+    .lq-lightbox .lq-lightbox__error { color: hsl(var(--ls-ink)); }
+    .lq-lightbox .lq-lightbox__spinner { border-color: hsl(var(--ls-line-strong)); border-top-color: hsl(var(--ls-primary)); }
+}
+:root[data-lq-contrast="more"] .lq-lightbox .lq-lightbox__bar { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); }
+@media (prefers-contrast: more) {
+    .lq-lightbox .lq-lightbox__bar.lq-glass { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lq-lightbox .lq-lightbox__spinner { animation: none; }
+}
+@media (forced-colors: active) {
+    .lq-lightbox > .lq-lightbox__bg.lq-scrim { background: Canvas; }
+    .lq-lightbox .lq-lightbox__bar.lq-glass,
+    :root[data-appearance] .lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav, .lq-lightbox__hint) { background: Canvas; color: CanvasText; border-color: ButtonText; box-shadow: none; }
+    .lq-lightbox .lq-lightbox__bar::before { content: none; }
+    .lq-lightbox .lq-lightbox__stage { border-color: CanvasText; }
+    .lq-lightbox .lq-lightbox__error { color: CanvasText; }
+    .lq-lightbox .lq-lightbox__spinner { border-color: GrayText; border-top-color: Highlight; }
+    .lq-lightbox :is(.lq-lightbox__pill, .lq-lightbox__nav):focus-visible { outline-color: Highlight; }
+}

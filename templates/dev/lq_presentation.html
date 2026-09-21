@@ -1,0 +1,51 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/chip.html' import lq_chip %}
+{% from 'macros/lq/chip-row.html' import lq_chip_row %}
+{% from 'macros/lq/indicators.html' import lq_badge, lq_avatar, lq_spinner, lq_progress %}
+{% from 'macros/lq/skeleton.html' import lq_skeleton %}
+<section class="lq-preview__section" aria-labelledby="lq-buttons-title">
+  <div class="lq-preview__heading"><h2 id="lq-buttons-title">按钮与操作状态</h2><p>同一操作保留名称；忙碌、禁用和只读状态有明确区别。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {% for variant, label in [('prominent', '保存修改'), ('glass', '查看详情'), ('soft', '添加附件'), ('ghost', '返回列表'), ('destructive', '删除草稿'), ('link', '阅读说明')] %}
+      {{ lq_btn(label, variant=variant, attrs={'data-lq-demo-action': label}) }}
+    {% endfor %}
+    {{ lq_btn('处理中', icon='upload', loading=true) }}
+    {{ lq_btn('暂不可用', disabled=true) }}
+    {{ lq_btn('需要先选择项目', aria_disabled=true, attrs={'title': '选择项目后可继续'}) }}
+    {{ lq_btn(icon='plus', attrs={'aria-label': '新建项目', 'data-lq-demo-action': '新建项目'}) }}
+    {{ lq_btn('返回首页', variant='link', href='/dashboard', icon='arrow-left') }}
+  </div>
+  <p class="lq-preview__status" role="status" data-lq-demo-status>可操作按钮只反馈本地预览结果。</p>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-chips-title">
+  <div class="lq-preview__heading"><h2 id="lq-chips-title">筛选、状态与标签</h2><p>筛选是可切换按钮，状态用于说明，标签可以单独移除。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {{ lq_chip('只看未完成', kind='filter', attrs={'data-lq-demo-filter': ''}) }}
+    {{ lq_chip('我的任务', kind='filter', pressed=true, attrs={'data-lq-demo-filter': ''}) }}
+    {% for tone, label in [('success', '已完成'), ('warning', '待确认'), ('danger', '需处理'), ('info', '处理中'), ('neutral', '未开始')] %}
+      {{ lq_chip(label, tone=tone) }}
+    {% endfor %}
+    {{ lq_chip('第一小组', kind='tag', removable=true, attrs={'data-lq-demo-tag': ''}) }}
+  </div>
+  {{ lq_chip_row('preview-chip-row','更多筛选示例',[{'label':'全部','kind':'filter','pressed':true,'attrs':{'data-lq-demo-filter':''}},{'label':'未提交','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'已提交','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'待批改','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'已批改','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'待重交','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'小组任务','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'个人任务','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'最近更新','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'有附件','kind':'filter','attrs':{'data-lq-demo-filter':''}},{'label':'仅看自己','kind':'filter','attrs':{'data-lq-demo-filter':''}}]) }}
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-indicators-title">
+  <div class="lq-preview__heading"><h2 id="lq-indicators-title">数量、身份与进度</h2><p>零数量不显示徽章；未获取进度时保持不定态。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    <span>未读消息 {{ lq_badge(3, tone='danger') }}</span>
+    {{ lq_badge(dot=true, tone='info', label='有新消息') }}
+    {{ lq_avatar('张老师', size=32) }} {{ lq_avatar('李同学') }} {{ lq_avatar('😀学习小组', size=56) }}
+    <span>{{ lq_spinner() }} 正在准备文件</span>
+  </div>
+  <div class="lq-preview__progress-grid lq-surface">
+    <div><p>上传资料 · 40%</p>{{ lq_progress('上传资料', value=40) }}</div>
+    <div><p>正在获取处理进度</p>{{ lq_progress('获取处理进度') }}</div>
+    <div><p>环形进度 · 40%</p>{{ lq_progress('环形示例进度', value=40, variant='ring') }}</div>
+    <div><p>环形进度 · 尚未获取</p>{{ lq_progress('未确定的环形进度', variant='ring') }}</div>
+    <div aria-busy="true" aria-label="正在读取列表"><p>内容加载占位</p>{{ lq_skeleton(lines=3) }}</div>
+  </div>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-factories-title">
+  <div class="lq-preview__heading"><h2 id="lq-factories-title">动态构造</h2><p>动态插入的控件使用同一组名称、状态与交互规则。</p></div>
+  <div class="lq-preview__specimens lq-surface" data-lq-demo-factories></div>
+</section>

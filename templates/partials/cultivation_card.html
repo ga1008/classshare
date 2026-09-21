@@ -28,7 +28,9 @@
         {% if card.subtitle %}
         <p class="cultivation-card__subtitle">{{ card.subtitle }}</p>
         {% endif %}
-        <div class="cultivation-card__meter" aria-label="修为进度 {{ progress }}%">
+        <div class="cultivation-card__meter" role="progressbar" aria-label="修为进度"
+             aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"
+             aria-valuetext="修为进度 {{ progress }}%">
             <span style="--cultivation-card-progress: {{ progress }}%;"></span>
         </div>
         <div class="cultivation-card__footer">

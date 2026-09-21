@@ -2,6 +2,7 @@ import { apiFetch } from './api.js';
 import { openSignaturePad } from './signature_pad.js?v=1';
 import { SignatureScopeFields, signatureScopeOptions } from './signature_scope_fields.js';
 import { closeModal, escapeHtml, formatDate, formatSize, openModal, showMessage } from './ui.js';
+import { LQ } from './lq/index.js';
 
 const state = {
     items: [],
@@ -471,9 +472,12 @@ async function replaceCurrentSignatureImage(file) {
     if (!state.selectedId || !file) return;
     const refs = await fetchSignatureRefs(state.selectedId);
     if (refs?.active_binding_count > 0) {
-        const proceed = window.confirm(
-            `该签名当前被 ${refs.active_binding_count} 处材料签名点引用；更换图片后这些材料重新导出将使用新图片，相关人员会收到通知。确定更换？`,
-        );
+        const proceed = await LQ.confirm({
+            title: '更换签名图片',
+            message: `该签名当前被 ${refs.active_binding_count} 处材料签名点引用；更换图片后这些材料重新导出将使用新图片，相关人员会收到通知。确定更换？`,
+            confirmLabel: '更换',
+            danger: true,
+        });
         if (!proceed) return;
     }
     const formData = new FormData();
@@ -524,6 +528,8 @@ function openMergeModal() {
 }
 
 async function submitMerge() {
+    const button = els['signature-merge-submit-btn'];
+    if (button?.dataset.lqBusy === '1') return;
     const ids = Array.from(document.querySelectorAll('input[data-signature-merge-check]:checked'))
         .map((input) => Number(input.dataset.signatureMergeCheck || 0))
         .filter(Boolean);
@@ -531,10 +537,16 @@ async function submitMerge() {
         showMessage('请勾选要并入的重复签名。', 'warning');
         return;
     }
-    if (!window.confirm(`确定把 ${ids.length} 个重复签名并入当前主签名？此操作不可撤销。`)) return;
-    const button = els['signature-merge-submit-btn'];
-    if (button) button.disabled = true;
+    if (button) button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: '归并重复签名',
+            message: `确定把 ${ids.length} 个重复签名并入当前主签名？此操作不可撤销。`,
+            confirmLabel: '归并',
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (button) button.disabled = true;
         const result = await apiFetch(`/api/signatures/${state.selectedId}/merge`, {
             method: 'POST',
             body: { duplicate_ids: ids },
@@ -543,7 +555,7 @@ async function submitMerge() {
         closeModal('signature-merge-modal');
         await loadSignatures({ keepSelection: true });
     } finally {
-        if (button) button.disabled = false;
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
     }
 }
 
@@ -564,18 +576,28 @@ async function uploadHandwrittenSignature(blob) {
 }
 
 async function unbindCurrentSignature() {
+    const button = els['signature-unbind-btn'];
+    if (button?.dataset.lqBusy === '1') return;
     if (!state.selectedId) return;
     const item = state.items.find((entry) => entry.id === state.selectedId);
     if (!item?.can_unbind) return;
-    if (!window.confirm(`确定解除“${item.subject_name || item.name}”与账号的绑定？解除后该签名的使用申请将由归属人或管理员审批。`)) {
-        return;
-    }
+    if (button) button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: '解除签名绑定',
+            message: `确定解除“${item.subject_name || item.name}”与账号的绑定？解除后该签名的使用申请将由归属人或管理员审批。`,
+            confirmLabel: '解除绑定',
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (button) button.disabled = true;
         await apiFetch(`/api/signatures/${state.selectedId}/unbind`, { method: 'POST' });
         showMessage('绑定已解除。', 'success');
         await loadSignatures({ keepSelection: true });
     } catch {
         // apiFetch already surfaces the error.
+    } finally {
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
     }
 }
 
@@ -599,26 +621,36 @@ async function requestCurrentSignatureUse() {
 }
 
 async function deleteCurrentSignature() {
+    const button = els['signature-delete-btn'];
+    if (button?.dataset.lqBusy === '1') return;
     if (!state.selectedId) return;
     const item = state.items.find((entry) => entry.id === state.selectedId);
     if (!item) return;
     const refs = await fetchSignatureRefs(state.selectedId);
     const bindingWarning = refs?.active_binding_count > 0
-        ? `\n注意：该签名当前被 ${refs.active_binding_count} 处材料签名点引用，删除后这些材料重新导出将缺少此签名。`
+        ? `注意：该签名当前被 ${refs.active_binding_count} 处材料签名点引用，删除后这些材料重新导出将缺少此签名。`
         : '';
     const pendingWarning = refs?.pending_request_count > 0
-        ? `\n另有 ${refs.pending_request_count} 条待审批申请与它关联。`
+        ? `另有 ${refs.pending_request_count} 条待审批申请与它关联。`
         : '';
-    if (!window.confirm(`确定删除“${item.name}”？删除后不会再出现在可用签名中。${bindingWarning}${pendingWarning}`)) {
-        return;
-    }
+    if (button) button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: '删除签名',
+            message: [`确定删除“${item.name}”？删除后不会再出现在可用签名中。`, bindingWarning, pendingWarning].filter(Boolean).join(' '),
+            confirmLabel: '删除',
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (button) button.disabled = true;
         await apiFetch(`/api/signatures/${state.selectedId}`, { method: 'DELETE' });
         showMessage('签名已删除', 'success');
         state.selectedId = null;
         await loadSignatures({ keepSelection: false });
     } catch {
         // apiFetch already surfaces the error.
+    } finally {
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
     }
 }
 

@@ -10,6 +10,7 @@ import sqlite3
 import stat
 import string
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -50,17 +51,27 @@ def _source_db_path() -> Path:
     raise SystemExit("Cannot find data/classroom.db or data/db/classroom.db")
 
 
-def _copy_runtime_db(runtime_root: Path) -> Path:
+def _copy_runtime_db(runtime_root: Path, *, synthetic: bool = False) -> Path:
+    if synthetic:
+        runtime_root = runtime_root.resolve()
+        temporary = TEMP_ROOT.resolve()
+        if runtime_root == temporary or not runtime_root.is_relative_to(temporary) or runtime_root.exists():
+            raise SystemExit("Synthetic P03 requires a new task-owned child of .codex-temp")
     if runtime_root.exists():
         shutil.rmtree(runtime_root)
     (runtime_root / "db").mkdir(parents=True, exist_ok=True)
     (runtime_root / "uploads").mkdir(parents=True, exist_ok=True)
     db_path = runtime_root / "db" / "classroom.db"
-    shutil.copy2(_source_db_path(), db_path)
+    if synthetic:
+        with closing(sqlite3.connect(db_path)) as conn:
+            conn.execute("PRAGMA user_version=0")
+            conn.commit()
+    else:
+        shutil.copy2(_source_db_path(), db_path)
     with db_path.open("rb") as copied_db:
         copied_db.read(4096)
     db_path.chmod(db_path.stat().st_mode | stat.S_IREAD | stat.S_IWRITE)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS p03_runtime_write_probe (id INTEGER PRIMARY KEY)")
         conn.execute("DROP TABLE p03_runtime_write_probe")
         conn.commit()
@@ -457,13 +468,24 @@ def _counts(conn: sqlite3.Connection) -> dict[str, int]:
     return result
 
 
-def prepare(runtime_root: Path) -> dict[str, Any]:
-    db_path = _copy_runtime_db(runtime_root)
+def prepare(runtime_root: Path, *, synthetic: bool = False) -> dict[str, Any]:
+    if synthetic:
+        os.environ.update({
+            "PYTHON_DOTENV_DISABLED": "1", "DB_ENGINE": "sqlite", "POSTGRES_BACKEND_READY": "false",
+        })
+    db_path = _copy_runtime_db(runtime_root, synthetic=synthetic)
     os.environ["LANSHARE_DATA_ROOT"] = str(runtime_root)
     os.environ["MAIN_DATA_DIR"] = str(runtime_root)
     os.environ["MAIN_DB_PATH"] = str(db_path)
 
     sys.path.insert(0, str(REPO_ROOT))
+    if synthetic:
+        from tools.isolated_environment import (
+            guard_dotenv_loading, guard_postgres_connections, isolate_sqlite_environment,
+        )
+        isolate_sqlite_environment(runtime_root)
+        guard_dotenv_loading()
+        guard_postgres_connections()
     from classroom_app.database import init_database
     from classroom_app.dependencies import get_password_hash
 
@@ -658,6 +680,8 @@ def prepare(runtime_root: Path) -> dict[str, Any]:
         "baselineCounts": baseline_counts,
         "preparedAt": _now(),
     }
+    if synthetic:
+        fixture["p03Synthetic"] = True
     fixture_path = runtime_root / "fixture.json"
     fixture_path.write_text(json.dumps(fixture, ensure_ascii=True, indent=2), encoding="utf-8")
     (runtime_root / "baseline_counts.json").write_text(
@@ -677,16 +701,17 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", default=os.getenv("P03_RUNTIME_ROOT"))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--synthetic", action="store_true", help="Build a new isolated fixture from an empty database, never copy local data")
     args = parser.parse_args()
     runtime_root = _resolve_runtime_root(args.runtime_root)
-    fixture = prepare(runtime_root)
+    fixture = prepare(runtime_root, synthetic=args.synthetic)
     if args.json:
         redacted = dict(fixture)
         redacted["password"] = "<redacted>"
         print(json.dumps(redacted, ensure_ascii=True, indent=2))
     else:
         print(f"P03 runtime prepared at {runtime_root}")
-        print(f"P03 copied database: {fixture['databasePath']}")
+        print(f"P03 {'synthetic' if args.synthetic else 'copied'} database: {fixture['databasePath']}")
     return 0
 
 

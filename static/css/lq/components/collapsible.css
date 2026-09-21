@@ -1,0 +1,30 @@
+.lq-collapsible { min-width: 0; overflow: visible; }
+.lq-collapsible__summary { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-3); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-3) var(--ls-s-4); color: hsl(var(--ls-ink)); cursor: pointer; list-style: none; border-radius: inherit; }
+.lq-collapsible__summary::-webkit-details-marker { display: none; }
+.lq-collapsible__title { min-width: 0; font-size: var(--ls-t-headline); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
+.lq-collapsible__indicator { flex-shrink: 0; font-size: var(--ls-t-title2); transition: transform var(--ls-dur-fast) var(--ls-ease-out); }
+.lq-collapsible[open] > .lq-collapsible__summary .lq-collapsible__indicator { transform: rotate(180deg); }
+.lq-collapsible__summary[aria-disabled="true"] { cursor: default; }
+.lq-collapsible__summary[aria-disabled="true"] .lq-collapsible__indicator { visibility: hidden; }
+.lq-collapsible__content { min-width: 0; padding: 0 var(--ls-s-4) var(--ls-s-4); }
+.lq-collapsible__description { margin: 0 0 var(--ls-s-3); color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
+.lq-collapsible__summary:focus-visible, .lq-filter-more:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+.lq-filter-more { display: inline-flex; align-items: center; justify-content: center; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink-2)); font: inherit; font-size: var(--ls-t-sub); cursor: pointer; }
+[data-filter-overflow="more"] > [hidden] { display: none; }
+[data-filter-overflow="scroll"] { display: flex; flex-wrap: nowrap; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x proximity; padding: var(--ls-s-1); }
+[data-filter-overflow="scroll"] > button[data-value] { flex: 0 0 auto; scroll-snap-align: center; }
+@media (pointer: coarse) {
+    [data-filter-overflow] > button { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); }
+}
+@media (hover: hover) and (pointer: fine) {
+    .lq-collapsible__summary:hover:not([aria-disabled="true"]) { background: hsl(var(--ls-surface-2)); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lq-collapsible__indicator { transition: none; }
+    [data-filter-overflow="scroll"] { scroll-behavior: auto; }
+}
+@media (forced-colors: active) {
+    .lq-collapsible, .lq-filter-more { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-collapsible__summary, .lq-collapsible__description { color: CanvasText; }
+    .lq-collapsible__summary:focus-visible, .lq-filter-more:focus-visible { outline-color: Highlight; }
+}

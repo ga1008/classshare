@@ -10,7 +10,7 @@
 {% set dashboard = crawler_dashboard %}
 {% set config = dashboard.config %}
 {% set can_manage = current_teacher_is_super_admin %}
-{{ page_head('AI博客管家', description='按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。') }}
+{{ page_head('AI博客管家', description='按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
 <div class="bc-toolbar">
     <button type="button" class="btn btn-outline btn-sm" id="bc-refresh-btn">刷新状态</button>

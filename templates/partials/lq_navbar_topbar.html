@@ -1,0 +1,46 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% from 'macros/user_ui_preferences.html' import user_palette_select %}
+{# Authored page composition of the S2 Shell contract. Legacy scene hooks stay
+   on these exact nodes; one Shell controller owns the native overflow dialog. #}
+<header id="{{ navbar_shell_id }}" class="app-topbar role-{{ user_info.role }} lq-topbar lq-topbar--standard lq-glass lq-scroll-edge" data-lq-shell="topbar" {% if navbar_shell_report %}data-lq-report-card-topbar{% else %}data-lq-navbar-topbar{% endif %} data-lq-lock-nav="false" data-lq-view-transition="false" aria-label="全局导航">
+    <div class="lq-topbar__lead">
+        <a class="app-topbar-brand lq-report-card-brand" href="/dashboard" aria-label="返回首页">{{ lq_icon('book-open') }}<span>{{ '教师工作台' if user_info.role == 'teacher' else '学生学习台' }}</span></a>
+    </div>
+    <div class="lq-topbar__title">{% if navbar_shell_report %}<h1>{{ navbar_shell_title }}</h1>{% else %}<p class="lq-navbar-title">{{ navbar_shell_title }}</p>{% endif %}<span class="lq-report-card-account">{{ user_info.name }}{% if user_info.nickname %} · {{ user_info.nickname }}{% endif %}</span></div>
+    <button type="button" class="lq-shell-pane__trigger" data-lq-pane-open="actions" aria-controls="{{ navbar_shell_id }}--lq-actions" aria-expanded="false">更多</button>
+    <dialog id="{{ navbar_shell_id }}--lq-actions" class="lq-shell-pane lq-topbar__overflow" data-lq-pane="actions" data-lq-pane-label="更多操作" aria-label="更多操作" open>
+        <div class="lq-shell-pane__scrim" data-lq-pane-close aria-hidden="true"></div>
+        <section class="lq-shell-pane__surface lq-surface" aria-label="更多操作">
+            <header class="lq-shell-pane__head"><strong>更多操作</strong><button type="button" class="lq-shell-pane__close" data-lq-pane-close aria-label="关闭更多操作">{{ lq_icon('x') }}</button></header>
+            <div class="lq-topbar__actions">
+                {% if navbar_shell_actions|default('')|trim %}<div class="lq-navbar-context-actions">{{ navbar_shell_actions }}</div>{% endif %}
+                <div class="lq-report-card-utilities" role="group" aria-label="常用入口">
+                    <div class="message-center-bell-anchor" data-message-center-bell-shell>
+                        <a href="/profile?section=notifications#profile-message-center" class="message-center-bell lq-btn lq-btn--soft lq-btn--md" data-message-center-bell aria-label="打开通知中心">
+                            {{ lq_icon('bell') }}<span data-message-center-bell-caption>消息</span><span class="lq-badge" data-tone="danger" data-message-center-bell-count hidden>0</span>
+                        </a>
+                        <div class="message-center-bell-toast" data-message-center-bell-toast hidden><strong>新消息提醒</strong><div data-message-center-bell-toast-body>你有一条新消息。</div><div data-message-center-bell-toast-meta>点击消息入口进入通知中心</div></div>
+                    </div>
+                    {{ lq_btn('个人中心',href='/profile',variant='ghost',icon='user') }}
+                    {{ user_palette_select(ui_palette) }}
+                </div>
+                <div class="lq-report-card-tools" role="group" aria-label="学习与账号工具">
+                    {% if user_info.role == 'student' %}
+                    {{ lq_btn('学习路径',href='/learning-path',variant='ghost') }}
+                    {{ lq_btn('错题本',href='/wrong-book',variant='ghost') }}
+                    {{ lq_btn('反馈复盘',href='/feedback-review',variant='ghost') }}
+                    {% else %}{{ lq_btn('管理中心',href='/manage',variant='ghost') }}{% endif %}
+                    <a href="/blog" class="lq-btn lq-btn--ghost lq-btn--md" data-blog-topbar-entry aria-label="打开博客"><span data-blog-topbar-caption>博客</span><span class="lq-badge" data-tone="info" data-blog-today-count hidden>+0</span></a>
+                    {% if user_info.role == 'student' %}
+                    {{ lq_btn('职业路径',href='/career-path',variant='ghost') }}
+                    {{ lq_btn('个人简历',href='/resume',variant='ghost') }}
+                    {% endif %}
+                    {{ lq_btn('问题反馈',variant='ghost',attrs={'data-open-feedback':'','aria-label':'打开问题反馈'}) }}
+                    {% if user_info.role == 'student' %}{{ lq_btn('修改密码',variant='ghost',attrs={'data-open-student-security':''}) }}{% endif %}
+                    {{ lq_btn('退出登录',href='/logout',variant='ghost') }}
+                </div>
+            </div>
+        </section>
+    </dialog>
+</header>

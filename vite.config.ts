@@ -51,7 +51,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   test: {
-    include: ['frontend/src/**/*.test.ts', 'static/js/whiteboard/**/*.test.js', 'static/js/lessondoc_editor/**/*.test.js'],
+    include: ['frontend/src/**/*.test.{ts,tsx}', 'tests/lq/**/*.test.mjs', 'static/js/whiteboard/**/*.test.js', 'static/js/lessondoc_editor/**/*.test.js'],
     exclude: ['node_modules', 'dist', 'static/dist', '.codex-temp', 'data', 'venv'],
   },
 }));

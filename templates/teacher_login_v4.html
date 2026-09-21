@@ -1,30 +1,32 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
 
 {% block title %}教师登录 - 课堂平台{% endblock %}
 
-{% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--success-light) 100%);{% endblock %}
+{% block body_class %}{{ super() }} centered-page--teacher{% endblock %}
 
 {% block card_content %}
-<div class="login-card">
+<div class="login-card{% if _lq_centered %} lq-login-card lq-glass lq-glass--thick{% endif %}"{% if _lq_centered %} data-lq-login-card="teacher"{% endif %}>
     <div class="login-logo logo-teacher">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
     </div>
-    <h2>教师登录</h2>
+    {% if _lq_centered %}<h1>教师登录</h1>{% else %}<h2>教师登录</h2>{% endif %}
     <p class="subtitle">管理您的课堂、资源与作业</p>
 
-    <form id="teacher-login-form" action="/teacher/login" method="post">
+    <form id="teacher-login-form" action="/teacher/login" method="post"{% if login_error|default('') %} aria-describedby="teacher-login-form-feedback"{% endif %}>
+            {% if _lq_centered or login_error|default('') %}<p id="teacher-login-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1"{% if not login_error|default('') %} hidden{% endif %}>{{ login_error|default('') }}</p>{% endif %}
         <input type="hidden" name="next" value="{{ next_url }}">
-        <div class="form-group text-left">
-            <label class="form-label" for="email">邮箱</label>
-            <input type="email" id="email" name="email" class="form-control" placeholder="请输入教师邮箱" required autofocus autocomplete="email">
+        <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="email">邮箱</label>
+            <input type="email" id="email" name="email" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入教师邮箱" required autofocus autocomplete="email" value="{{ login_email|default('') }}">
         </div>
-        <div class="form-group text-left">
-            <label class="form-label" for="password">密码</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required>
+        <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="password">密码</label>
+            <input type="password" id="password" name="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入密码" required{% if _lq_centered %} autocomplete="current-password"{% endif %}>
         </div>
-        <button type="submit" class="btn btn-success w-full btn-lg">登录</button>
+        {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-success w-full btn-lg">登录</button>{% endif %}
     </form>
 
     <div class="footer-links footer-links-subtle">
@@ -35,5 +37,5 @@
 
 {% block scripts %}
 {{ super() }}
-<script type="module" src="/static/js/teacher_login.js?v=20260803-scene3"></script>
+<script type="module" src="{{ asset_url('js/teacher_login.js') }}"></script>
 {% endblock %}

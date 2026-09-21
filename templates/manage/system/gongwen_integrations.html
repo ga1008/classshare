@@ -12,7 +12,7 @@
 {% block content %}
 <section class="gw-shell">
     {{ page_head('校园公文通对接', eyebrow='OFFICIAL DOCUMENTS', description='保存账号前会先通过统一认证登录校验，登录页验证码由平台多模态模型自动识别。校验通过后系统会同步收件箱公文，拆解文号、发文单位、分类与附件，供检索与后续提醒使用。之后每 6 小时按账号错峰自动增量同步（仅拉取新增、按公文编号匹配、分页限速），无需手动操作。',
-        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'gw-account-manage-btn'}, {'label': '立即同步', 'variant': 'primary', 'id': 'gw-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'gw-capability-refresh-btn'}, {'label': '查看公文材料', 'variant': 'ghost', 'href': '/manage/academic/gongwen'}]) }}
+        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'gw-account-manage-btn'}, {'label': '立即同步', 'variant': 'primary', 'id': 'gw-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'gw-capability-refresh-btn'}, {'label': '查看公文材料', 'variant': 'ghost', 'href': '/manage/academic/gongwen'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     <div class="gw-hero">
         <article class="gw-card gw-intro">
             <div>

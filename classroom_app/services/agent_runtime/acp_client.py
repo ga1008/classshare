@@ -10,8 +10,7 @@ import contextlib
 import json
 import os
 import signal
-import subprocess
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from .contracts import (
     AcpClientOptions, AcpNotification, AcpProtocolError, AcpRemoteError,
@@ -21,64 +20,8 @@ from .contracts import (
 RequestHandler = Callable[[str, Any], Awaitable[Any]]
 
 
-class _WindowsProcessJob:
-    """Kill descendants even when the stdio owner exits before its children."""
-
-    def __init__(self, pid: int):
-        import ctypes
-        from ctypes import wintypes
-
-        class BasicLimits(ctypes.Structure):
-            _fields_ = [("process_time", ctypes.c_int64), ("job_time", ctypes.c_int64),
-                        ("flags", wintypes.DWORD), ("min_ws", ctypes.c_size_t),
-                        ("max_ws", ctypes.c_size_t), ("process_limit", wintypes.DWORD),
-                        ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD),
-                        ("scheduling", wintypes.DWORD)]
-
-        class IoCounters(ctypes.Structure):
-            _fields_ = [(name, ctypes.c_uint64) for name in
-                        ("read_ops", "write_ops", "other_ops", "read_bytes", "write_bytes", "other_bytes")]
-
-        class ExtendedLimits(ctypes.Structure):
-            _fields_ = [("basic", BasicLimits), ("io", IoCounters),
-                        ("process_memory", ctypes.c_size_t), ("job_memory", ctypes.c_size_t),
-                        ("peak_process", ctypes.c_size_t), ("peak_job", ctypes.c_size_t)]
-
-        api = ctypes.WinDLL("kernel32", use_last_error=True)
-        api.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
-        api.CreateJobObjectW.restype = wintypes.HANDLE
-        api.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
-        api.SetInformationJobObject.restype = wintypes.BOOL
-        api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-        api.OpenProcess.restype = wintypes.HANDLE
-        api.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
-        api.AssignProcessToJobObject.restype = wintypes.BOOL
-        api.CloseHandle.argtypes = [wintypes.HANDLE]
-        api.CloseHandle.restype = wintypes.BOOL
-        self._api = api
-        self._handle = api.CreateJobObjectW(None, None)
-        if not self._handle:
-            raise OSError(ctypes.get_last_error(), "Cannot create ACP process job")
-        process = None
-        try:
-            limits = ExtendedLimits()
-            limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            if not api.SetInformationJobObject(self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
-                raise OSError(ctypes.get_last_error(), "Cannot configure ACP process job")
-            process = api.OpenProcess(0x0100 | 0x0001, False, pid)  # SET_QUOTA | TERMINATE
-            if not process or not api.AssignProcessToJobObject(self._handle, process):
-                raise OSError(ctypes.get_last_error(), "Cannot contain ACP process tree")
-        except BaseException:
-            self.close()
-            raise
-        finally:
-            if process:
-                api.CloseHandle(process)
-
-    def close(self):
-        if self._handle:
-            self._api.CloseHandle(self._handle)
-            self._handle = None
+if TYPE_CHECKING:
+    from .windows_process import WindowsProcessJob
 
 
 class AcpStdioClient:
@@ -86,7 +29,7 @@ class AcpStdioClient:
         self.options = options
         self._handler = request_handler
         self._process: asyncio.subprocess.Process | None = None
-        self._job: _WindowsProcessJob | None = None
+        self._job: "WindowsProcessJob | None" = None
         self._start_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
         self._pending: dict[int, asyncio.Future] = {}
@@ -132,21 +75,27 @@ class AcpStdioClient:
             self._check_open()
             if self._process is not None:
                 return
-            spawn_options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
-            self._process = await asyncio.create_subprocess_exec(
-                *self.options.argv, cwd=str(self.options.cwd), env=dict(self.options.env),
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, limit=self.options.max_frame_bytes + 1,
-                **spawn_options,
-            )
-            try:
-                if os.name == "nt":
-                    self._job = _WindowsProcessJob(self._process.pid)
-            except BaseException:
-                self._process.kill()
-                await self._process.wait()
-                self._set_error(AcpTransportClosed("ACP process containment failed"))
-                raise
+            if os.name == "nt":
+                from .windows_process import WindowsProcessJob, create_job_subprocess_exec
+
+                try:
+                    self._job = WindowsProcessJob()
+                    self._process = await create_job_subprocess_exec(
+                        *self.options.argv, cwd=str(self.options.cwd), env=dict(self.options.env),
+                        limit=self.options.max_frame_bytes + 1, job=self._job,
+                    )
+                except BaseException:
+                    if self._job:
+                        self._job.close()
+                    self._set_error(AcpTransportClosed("ACP process containment or startup failed"))
+                    raise
+            else:
+                self._process = await asyncio.create_subprocess_exec(
+                    *self.options.argv, cwd=str(self.options.cwd), env=dict(self.options.env),
+                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE, limit=self.options.max_frame_bytes + 1,
+                    start_new_session=True,
+                )
             self._stderr_reader = asyncio.create_task(self._read_stderr())
             self._reader = asyncio.create_task(self._read_frames())
 

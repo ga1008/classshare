@@ -1,0 +1,58 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/indicators.html' import lq_progress %}
+{% set overview_href = _profile_hrefs.get('overview', '/manage/me' if profile_in_shell|default(false) else '/profile?section=overview') %}
+{% set settings_href = _profile_hrefs.get('settings', _sec ~ 'settings') %}
+<header class="lq-profile-head">
+    <div class="lq-profile-head__identity">
+        <img class="lq-profile-head__avatar profile-identity__avatar" src="{{ profile.avatar_url }}" alt="当前头像">
+        <div class="lq-profile-head__copy">
+            <p class="lq-profile-head__eyebrow">个人中心 · {{ current_nav }}</p>
+            <h1>{{ profile.name }}</h1>
+            <div class="lq-profile-head__meta">
+                <span data-profile-display-role>{{ profile.display_role }}</span>
+                {% if profile.class_name %}<span>{{ profile.class_name }}</span>{% endif %}
+                {% if profile.student_id_number %}<span>学号 {{ profile.student_id_number }}</span>{% endif %}
+                <span>今日心情 <strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></span>
+                <a data-profile-homepage-chip href="{{ profile.homepage_url or '#' }}" target="_blank" rel="noopener noreferrer"{% if not profile.homepage_url %} hidden{% endif %}>个人主页</a>
+            </div>
+        </div>
+    </div>
+    <div class="lq-profile-head__actions">
+        {{ lq_btn('完善资料' if active_section == 'overview' else '回到总览', variant='prominent', href=settings_href if active_section == 'overview' else overview_href) }}
+        {% if profile.role == 'student' and active_section != 'portfolio' %}{{ lq_btn('成长档案', href=_profile_hrefs.get('portfolio', _sec ~ 'portfolio')) }}{% endif %}
+        {% if active_section != 'notifications' %}{{ lq_btn('通知', variant='ghost', href=_profile_hrefs.get('notifications', _sec ~ 'notifications')) }}{% endif %}
+        {% if active_section != 'private' %}{{ lq_btn('私信', variant='ghost', href=_profile_hrefs.get('private', _sec ~ 'private')) }}{% endif %}
+    </div>
+    {% if profile.role == 'student' and cultivation %}
+    {# The existing cultivation card stays authored by its own subsystem. #}
+    <details class="lq-profile-head__growth">
+        <summary>成长概览 · {{ cultivation.highest_level.level_name }} · {{ cultivation.score }} 分</summary>
+        {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
+        {% set cultivation_card = {
+            'variant': 'full', 'title': cultivation.highest_level.level_name,
+            'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',
+            'score': cultivation.score, 'progress_percent': cultivation.progress_percent,
+            'level_short': cultivation.highest_level.short_name, 'level_name': cultivation.highest_level.level_name,
+            'level': cultivation.highest_level, 'theme': cultivation.highest_level.theme,
+            'next_label': cultivation_status_label, 'next_hint': cultivation.rank_notice
+        } %}
+        {% include 'partials/cultivation_card.html' %}
+        <dl class="lq-profile-head__growth-counts">
+            <div><dt>可破境课堂</dt><dd>{{ cultivation.breakthrough_course_count }}</dd></div>
+            <div><dt>已获道印</dt><dd>{{ cultivation.certificate_count }}</dd></div>
+        </dl>
+    </details>
+    {% else %}
+    <div class="lq-profile-head__completion">
+        <span>资料完整度 <strong data-profile-completion-value>{{ profile.completion.percent }}</strong>%</span>
+        {{ lq_progress(value=profile.completion.percent, label='资料完整度', attrs={'data-profile-completion-bar': ''}) }}
+        <small>已完善 {{ profile.completion.completed }} / {{ profile.completion.total }} 项</small>
+    </div>
+    {% endif %}
+</header>
+{% if profile.role == 'student' and not profile.email %}
+<aside class="lq-profile-reminder" data-profile-email-reminder>
+    <p>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</p>
+    {{ lq_btn('去补充', href=settings_href ~ '#profile-email', size='sm') }}
+</aside>
+{% endif %}

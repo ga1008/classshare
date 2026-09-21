@@ -1,0 +1,23 @@
+/* One atomic stacking context per registered root, regardless of old child z.
+   The repeated state attribute deliberately outranks a legacy component class
+   without changing unregistered overlays or relying on stylesheet order. */
+[data-lq-layer-state][data-lq-layer-state] {
+    z-index: calc(var(--ls-z-modal) + var(--lq-layer-order, 0));
+    isolation: isolate;
+}
+
+/* A portal host must not put all its layers beneath a connected legacy root. */
+#lq-layers { display: contents; }
+
+.ls-dp-layer[data-lq-layer-state],
+[data-ui-dialog-root][data-lq-layer-state] {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+.ls-dp-layer[data-lq-layer-state] > .ls-dp-pop,
+.ls-dp-layer[data-lq-layer-state] > .ls-dp-backdrop,
+[data-ui-dialog-root][data-lq-layer-state] > [data-ui-dialog-content],
+[data-ui-dialog-root][data-lq-layer-state] > [data-ui-dialog-overlay] {
+    pointer-events: auto;
+}

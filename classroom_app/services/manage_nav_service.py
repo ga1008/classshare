@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from ..lq_migration import lq_family_enabled
+
 
 # 六域按教师的任务生命周期排列（docs/manage-center-improvement-plan-2026-09-11.md §5.2）：
 # 首页 → 教学（课堂怎么运行）→ 资源库（东西在哪）→ 成绩与归档（材料做到第几步）
@@ -107,6 +109,8 @@ class ManageNavItem:
     legacy_hrefs: tuple[str, ...] = ()
     # 成绩与归档域流程步号；总数由注册项计算。
     step: int = 0
+    # Presentation rollout visibility is separate from role permission flags.
+    migration_family: str = ""
 
 
 MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
@@ -141,16 +145,6 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         href="/manage/teaching/offering-merge",
         search_text="课堂合并 双开 合班 merge offering",
         ai_hint="课堂合并：检测同课程同学期的疑似双开课堂，预检后把数据迁入主课堂并挂为合班（不可逆，有快照兜底）。",
-    ),
-    ManageNavItem(
-        key="workflow",
-        domain="teaching",
-        group="开课准备",
-        label="开课向导",
-        icon="workflow",
-        href="/manage/teaching/workflow",
-        search_text="教学 工作台 流程 开课向导 workflow",
-        ai_hint="开课向导：按开课流程检查学期、课程、班级、教材、材料和 AI 助教配置。",
     ),
     ManageNavItem(
         key="semesters",
@@ -531,6 +525,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         ai_hint="基础资料：维护头像、联系方式、个人简介与今日心情。",
     ),
     ManageNavItem(
+        key="me_appearance",
+        domain=MANAGE_ME_DOMAIN,
+        group="资料与安全",
+        label="外观",
+        icon="settings",
+        href="/manage/me/appearance",
+        search_text="外观 配色 深色 浅色 玻璃 显示 appearance palette",
+        ai_hint="外观：设置当前账号的配色、明暗模式与玻璃效果。",
+        migration_family="profile",
+    ),
+    ManageNavItem(
         key="me_security",
         domain=MANAGE_ME_DOMAIN,
         group="资料与安全",
@@ -745,6 +750,8 @@ def iter_archive_steps() -> list[ManageNavItem]:
 
 
 def _can_view_item(item: ManageNavItem, *, is_super_admin: bool) -> bool:
+    if item.migration_family and not lq_family_enabled(item.migration_family):
+        return False
     if item.required_flag == "super_admin":
         return is_super_admin
     return True

@@ -13,7 +13,7 @@
 
 {% block content %}
 <section class="manage-lp" data-te-root>
-    {% call page_head('教师评学表库', explain='每门课每个教学班一份。支持空白新建、按班级生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='教师评学表说明') %}<div class="manage-lp__summary" data-te-summary></div>{% endcall %}
+    {% call page_head('教师评学表库', explain='每门课每个教学班一份。支持空白新建、按班级生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='教师评学表说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-lp__summary" data-te-summary></div>{% endcall %}
 
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">

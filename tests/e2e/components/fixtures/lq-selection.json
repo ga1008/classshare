@@ -1,0 +1,21 @@
+{
+  "cases": [
+    {"kind":"combobox","props":{"id":"course","name":"sourceName","label":"课程","value":"","required":true,"help":"选择一门课程","attrs":{"data-source-name":"existing-contract"},"options":[{"value":"","label":"请选择"},{"value":"python","label":"Python 程序设计"},{"value":"disabled","label":"不可选课程","disabled":true},{"value":"network","label":"计算机网络"}]}},
+    {"kind":"listbox","props":{"id":"people","name":"people","label":"成员","multiple":true,"required":true,"value":["a"],"options":[{"value":"a","label":"安同学"},{"value":"b","label":"白同学"},{"value":"c","label":"陈同学","disabled":true}]}},
+    {"kind":"listbox","props":{"id":"single","label":"单值列表","value":"b","options":[{"value":"a","label":"甲"},{"value":"b","label":"乙"}]}},
+    {"kind":"combobox","props":{"id":"empty","label":"异步空列表","options":[]}},
+    {"kind":"combobox","props":{"id":"escaped","label":"<img>","name":"\"x","help":"<svg>","options":[{"value":"<x>","label":"<script>"}]}}
+  ],
+  "invalid": [
+    {"kind":"menu","props":{"id":"x","label":"x"}},
+    {"kind":"combobox","props":{"id":"x","label":"x","multiple":true}},
+    {"kind":"combobox","props":{"id":"x","label":"x","required":"true"}},
+    {"kind":"combobox","props":{"id":"x","label":"x","options":[{"value":"a","label":"A"},{"value":"a","label":"B"}]}},
+    {"kind":"combobox","props":{"id":"x","label":"x","value":"missing","options":[{"value":"a","label":"A"}]}},
+    {"kind":"listbox","props":{"id":"x","label":"x","multiple":true,"value":"a","options":[{"value":"a","label":"A"}]}},
+    {"kind":"combobox","props":{"id":"x","label":"x","options":[{"value":7,"label":"A"}]}},
+    {"kind":"combobox","props":{"id":"x","label":"x","attrs":{"onclick":"bad"}}},
+    {"kind":"combobox","props":{"id":"x","label":"x","children":{"html":"<b>"}}},
+    {"kind":"listbox","props":{"id":"x","label":"x","options":[{"value":"a","label":"A","disabled":null}]}}
+  ]
+}

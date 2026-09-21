@@ -1,0 +1,10 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% macro _upload_tree(tree) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.component is defined -%}{{ lq_btn(**tree.props) }}
+{%- else -%}<{{ tree.tag }}{% for key, value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% if tree.tag != 'input' %}{% for child in tree.children %}{{ _upload_tree(child) }}{% endfor %}</{{ tree.tag }}>{% endif %}
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_upload(id, label, policy) -%}{{ _upload_tree(lq_props('upload', id=id, label=label, policy=policy, **kwargs)) }}{%- endmacro %}
+{% macro lq_dropzone(id, label, policy) -%}{{ _upload_tree(lq_props('dropzone', id=id, label=label, policy=policy, **kwargs)) }}{%- endmacro %}
+{% macro lq_file_chip(item) -%}{{ _upload_tree(lq_props('file_chip', item=item, **kwargs)) }}{%- endmacro %}

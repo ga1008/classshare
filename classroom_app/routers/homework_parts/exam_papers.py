@@ -19,7 +19,7 @@ from ...services.exam_material_reverse_service import (
 
 from ...services.exam_paper_management_service import (
     create_exam_paper_record, update_exam_content_record, assign_exam_paper_record,
-    lock_exam_paper, get_exam_review, list_exam_reviews, _count_exam_assignments, _count_exam_submissions,
+    lock_exam_paper, exam_paper_revision, get_exam_review, list_exam_reviews, _count_exam_assignments, _count_exam_submissions,
     _count_exam_drafts, _sync_exam_assignment_content,
 )
 
@@ -308,6 +308,9 @@ async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(403, "无权查看此试卷")
     with get_db_connection() as conn:
         result = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]))
+        # Hash the stored row before adding response-only fields. This is also
+        # the token used by the locked authoring/Agent services and SSR editor.
+        result["revision"] = exam_paper_revision(result)
         # 获取已分配的课堂列表
         assignments = conn.execute(
             """SELECT a.id, a.status, a.title, o.id as offering_id, c.name as course_name, cl.name as class_name
@@ -334,11 +337,22 @@ async def get_exam_paper(paper_id: str, user: dict = Depends(get_current_user)):
 async def update_exam_paper(paper_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     """更新试卷"""
     data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(400, "请求数据格式错误")
+    if "expected_revision" in data:
+        expected = data["expected_revision"]
+        if not isinstance(expected, str) or len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            raise HTTPException(400, "expected_revision 必须是读取试卷时返回的版本标识")
     now = datetime.now().isoformat()
     requested_scope = _normalize_exam_open_scope(data.get("scope_level"), default=SCOPE_DEPARTMENT)
     with get_db_connection() as conn:
         lock_exam_paper(conn, paper_id)
         paper = _get_exam_paper_for_teacher(conn, paper_id, int(user["id"]), manage=True)
+        if "expected_revision" in data and data["expected_revision"] != exam_paper_revision(paper):
+            raise HTTPException(409, {
+                "code": "revision_conflict",
+                "message": "试卷已被其他操作更新。当前修改未保存，请先备份本页修改，再重新读取并核对最新试卷。",
+            })
         try:
             previous_questions = normalize_exam_scoring_payload(json.loads(paper.get("questions_json") or "{}"))
             questions_payload = normalize_exam_scoring_payload(data.get('questions', previous_questions))
@@ -382,8 +396,9 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
              owner_scope["department"],
              now, paper_id)
         )
+        revision = exam_paper_revision(conn.execute("SELECT * FROM exam_papers WHERE id = ?", (paper_id,)).fetchone())
         conn.commit()
-    return {"status": "success", "paper_id": paper_id}
+    return {"status": "success", "paper_id": paper_id, "revision": revision}
 
 
 @router.delete("/exam-papers/{paper_id}", response_class=JSONResponse)

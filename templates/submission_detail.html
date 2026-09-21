@@ -222,6 +222,10 @@
         background: var(--warning-light);
         color: var(--text-primary);
     }
+    #grade-conflict[hidden],
+    #grade-conflict [hidden] {
+        display: none;
+    }
     .grade-feedback-card {
         border-color: rgba(99, 102, 241, 0.16);
         background: rgba(255, 255, 255, 0.98);
@@ -1067,6 +1071,26 @@
 
     <!-- Grading Section (teacher only) -->
     {% if user_info.role == 'teacher' %}
+    <div class="status-card warning mb-md" id="grade-conflict" role="alert" tabindex="-1" hidden>
+        <strong id="grade-conflict-message"></strong>
+        <p id="grade-conflict-summary" class="mt-2"></p>
+        <details id="grade-conflict-latest" hidden>
+            <summary>查看最新评分、作业要求与评分标准</summary>
+            <p id="grade-conflict-server-score"></p>
+            <p>服务器最新评语：</p><pre id="grade-conflict-server-feedback" class="whitespace-pre-wrap tw-break-words"></pre>
+            <p>最新作业要求：</p><pre id="grade-conflict-requirements" class="whitespace-pre-wrap tw-break-words"></pre>
+            <p>最新评分标准：</p><pre id="grade-conflict-rubric" class="whitespace-pre-wrap tw-break-words"></pre>
+        </details>
+        <details id="grade-conflict-draft" hidden>
+            <summary>查看保留的本地评分草稿</summary>
+            <pre id="grade-conflict-draft-content" class="whitespace-pre-wrap tw-break-words"></pre>
+        </details>
+        <div class="mt-md">
+            <button type="button" class="btn btn-outline" id="grade-conflict-refresh">重新核对（保留草稿）</button>
+            <button type="button" class="btn btn-primary" id="grade-conflict-confirm" hidden>已核对最新答卷与评分标准</button>
+            <button type="button" class="btn btn-outline" id="grade-conflict-discard" hidden>放弃本地修改，查看最新</button>
+        </div>
+    </div>
     {% if submission.resubmission_allowed %}
     <div class="card" id="submission-grading-card">
         <div class="card-body">
@@ -1085,7 +1109,7 @@
             <div class="grading-score-group">
                 <label>评分</label>
                 <div class="score-input-wrapper">
-                    <input type="number" id="grade-score" data-testid="p03-submission-score-input" min="0" max="100"
+                    <input type="number" id="grade-score" data-testid="p03-submission-score-input" min="0" max="100" step="any"
                            value="{% if submission.is_late_submission and submission.score_before_late_penalty is not none %}{{ submission.score_before_late_penalty }}{% elif submission.score != None %}{{ submission.score }}{% endif %}"
                            placeholder="--">
                     <span>/ 100</span>
@@ -1104,12 +1128,13 @@
                 <p class="grading-feedback-hint">建议保留“总览评语 + 逐题反馈”结构；每题只写本题得分、扣分点、评价，学生端会自动高亮显示。</p>
             </div>
             <div class="grading-actions">
-                <button class="btn btn-outline" onclick="history.back()">取消</button>
-                <button class="btn btn-primary" data-testid="p03-submit-manual-grade" onclick="submitGrade()">提交批改结果</button>
+                <button type="button" class="btn btn-outline" id="grade-cancel">取消</button>
+                <button type="button" class="btn btn-primary" id="grade-save" data-testid="p03-submit-manual-grade">保存评分</button>
                 {% if submission.status != 'grading' %}
                 <button class="btn btn-outline text-warning" data-testid="p03-ai-regrade-detail" onclick="aiRegrade()">AI 辅助批改</button>
                 {% endif %}
             </div>
+            <p id="grade-save-status" role="status" class="text-muted mt-2" hidden></p>
         </div>
     </div>
     {% endif %}
@@ -1121,19 +1146,20 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/feedback.js"></script>
+<script type="module" src="{{ asset_url('js/feedback.js') }}"></script>
 <script type="module">
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { renderFilePreview } from '{{ asset_url("js/file_preview.js") }}';
     import { showToast, escapeHtml } from '{{ asset_url("js/ui.js") }}';
     import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
+    import { setupSubmissionGrading } from '{{ asset_url("js/submission_grading.js") }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
-    } from '/static/js/grading_feedback.js?v=20260517';
+    } from '{{ asset_url('js/grading_feedback.js') }}';
 
     const submissionId = {{ submission.id }};
     const assignmentId = "{{ assignment.id }}";
@@ -1728,6 +1754,7 @@
     }
 
     window.uploadSubmissionAttachments = async function(queueAi = false) {
+        if (manualGrading?.isBusy() || manualGrading?.allowReviewChange?.() === false) return;
         if (!teacherAttachmentUploadManager || !teacherAttachmentUploadManager.hasFiles()) {
             showToast('请先选择要添加的附件', 'warning');
             return;
@@ -1744,13 +1771,14 @@
                 throw new Error(data.detail || '附件保存失败');
             }
             showToast(queueAi ? '附件已保存，AI 批改任务已提交' : '附件已保存', 'success');
-            setTimeout(() => location.reload(), 900);
+            scheduleSubmissionReload(900);
         } catch (error) {
             showToast(error.message || '附件保存失败', 'error');
         }
     };
 
     async function deleteSubmissionFile(fileId, fileName) {
+        if (manualGrading?.isBusy() || manualGrading?.allowReviewChange?.() === false) return;
         if (!canManageSubmissionFiles || !fileId) return;
         if (!confirm(`确定删除附件“${fileName}”吗？`)) return;
         try {
@@ -1760,41 +1788,38 @@
                 throw new Error(data.detail || '删除附件失败');
             }
             showToast('附件已删除', 'success');
-            setTimeout(() => location.reload(), 700);
+            scheduleSubmissionReload(700);
         } catch (error) {
             showToast(error.message || '删除附件失败', 'error');
         }
     }
 
-    // Submit grading
-    window.submitGrade = async function() {
-        const scoreEl = document.getElementById('grade-score');
-        const feedbackEl = document.getElementById('grade-feedback');
-        if (!scoreEl || !feedbackEl) return;
+    // The tokens describe the answer and assignment rendered by this page.
+    {% if user_info.role == 'teacher' %}
+    const manualGrading = setupSubmissionGrading({
+        submissionId,
+        assignmentId,
+        teacherId: {{ user_info.id | tojson }},
+        expectedReviewRevision: {{ expected_review_revision | tojson }},
+        expectedAssignmentRevision: {{ expected_assignment_revision | tojson }},
+        initialScore: {{ (submission.score_before_late_penalty if submission.is_late_submission and submission.score_before_late_penalty is not none else submission.score) | tojson }},
+        initialFeedback: {{ (submission.feedback_md or '') | tojson }},
+        requirements: {{ (assignment.requirements_md or '') | tojson }},
+        rubric: {{ (assignment.rubric_md or '') | tojson }},
+        showToast,
+    });
+    {% else %}
+    const manualGrading = null;
+    {% endif %}
 
-        const score = scoreEl.value;
-        if (score === '' || score < 0 || score > 100) {
-            showToast('请输入有效得分 (0-100)', 'warning');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/submissions/${submissionId}/grade`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ score: parseInt(score), feedback_md: feedbackEl.value })
-            });
-            if (response.ok) {
-                showToast('批改成功', 'success');
-                setTimeout(() => window.location.href = `/assignment/${assignmentId}`, 800);
-            } else {
-                const data = await response.json();
-                throw new Error(data.detail || '批改失败');
-            }
-        } catch (error) {
-            showToast(error.message || '批改失败', 'error');
-        }
-    };
+    function scheduleSubmissionReload(delay) {
+        setTimeout(() => {
+            // An already-started attachment/AI request may finish after a grade
+            // conflict. Recheck at navigation time, not only before the request.
+            if (manualGrading?.isBusy() || manualGrading?.allowReviewChange?.() === false) return;
+            location.reload();
+        }, delay);
+    }
 
     function collectQuestionsForFeedbackTemplate() {
         const questions = [];
@@ -1853,13 +1878,14 @@
 
     // AI Regrade
     window.aiRegrade = async function() {
+        if (manualGrading?.isBusy() || manualGrading?.allowReviewChange?.() === false) return;
         if (!confirm('确定要使用 AI 辅助批改此作业吗？')) return;
         try {
             const response = await fetch(`/api/submissions/${submissionId}/regrade`, { method: 'POST' });
             const data = await response.json();
             if (response.ok) {
                 showToast(data.status === 'already_grading' ? '正在批改中' : 'AI 批改任务已提交', 'success');
-                setTimeout(() => location.reload(), 2000);
+                scheduleSubmissionReload(2000);
             } else {
                 throw new Error(data.detail || 'AI批改失败');
             }

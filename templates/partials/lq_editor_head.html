@@ -1,0 +1,6 @@
+{% include "partials/lq_theme_bootstrap.html" %}
+{% include "partials/ui_system_assets.html" %}
+{% if ui_palette.enabled %}
+<link rel="stylesheet" href="{{ asset_url('css/user_ui_preferences.css') }}">
+<script type="module" src="{{ asset_url('js/user_ui_preferences.js') }}"></script>
+{% endif %}

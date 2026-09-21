@@ -1,9 +1,11 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_empty %}
 
 {% block title %}我的错题本 - 课堂平台{% endblock %}
 
 {% block css %}
 {{ super() }}
+{% if not lq_family_enabled('growth') %}
 <style>
     .wrongbook-shell { display: grid; gap: 18px; }
     .wrongbook-hero {
@@ -74,11 +76,20 @@
     .wrongbook-empty strong { display: block; font-size: 1.05rem; color: #0f172a; margin-bottom: 6px; }
     #wrongbook-radar { width: 100%; height: 260px; }
 </style>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
 {% set summary = wrong_book.summary %}
-<section class="wrongbook-shell">
+{% set growth_on = lq_family_enabled('growth') %}
+<section class="wrongbook-shell"{% if growth_on %} data-lq-scope="growth"{% endif %}>
+    {% if growth_on %}
+    {% call lq_page_head('把每一道错题变成得分点', description='汇总你所有已批改考试里的失分题，按课程和知识点看清薄弱环节。') %}
+        <div class="lq-card--stat"><span>错题总数</span><strong>{{ summary.wrong_total }}</strong></div>
+        <div class="lq-card--stat"><span>整体正确率</span><strong>{{ summary.correct_percent ~ '%' if summary.correct_percent is not none else '—' }}</strong></div>
+        <div class="lq-card--stat"><span>覆盖考试</span><strong>{{ summary.exam_count }}</strong></div>
+    {% endcall %}
+    {% else %}
     <header class="wrongbook-hero">
         <div>
             <span class="wrongbook-hero__eyebrow">Wrong Book · 错题本</span>
@@ -91,6 +102,7 @@
             <div class="wrongbook-stat"><span>覆盖考试</span><strong>{{ summary.exam_count }}</strong></div>
         </div>
     </header>
+    {% endif %}
 
     {% if wrong_book['items'] or wrong_book.knowledge_mastery %}
     <div class="wrongbook-grid">
@@ -150,7 +162,7 @@
                 </article>
                 {% endfor %}
             </div>
-            <div class="wrongbook-empty" data-wrongbook-no-match hidden>
+            <div class="wrongbook-empty{% if growth_on %} lq-empty lq-empty--inline{% endif %}" data-wrongbook-no-match{% if growth_on %} data-reason="no-results"{% endif %} hidden>
                 <strong>没有匹配的错题</strong>
                 <p>换个筛选条件试试。</p>
             </div>
@@ -160,6 +172,7 @@
             <h2>知识点掌握度</h2>
             <p class="wrongbook-panel__subtitle">按你的历次作答统计，越靠上越需要优先补强。</p>
             {% if wrong_book.knowledge_mastery %}
+            {% set wrongbook_tier_tone = {'solid': 'success', 'good': 'info', 'weak': 'warning', 'danger': 'danger'} %}
             <div id="wrongbook-radar" aria-hidden="true"></div>
             <div>
                 {% for point in wrong_book.knowledge_mastery[:12] %}
@@ -168,10 +181,12 @@
                         <strong>{{ point.name }}</strong>
                         <small>答 {{ point.total }} 次 · 错 {{ point.wrong }} 次 · 正确率 {{ point.mastery_percent }}%</small>
                     </div>
-                    <span class="wrongbook-tier wrongbook-tier--{{ point.tier_tone }}">{{ point.tier_label }}</span>
+                    <span class="wrongbook-tier wrongbook-tier--{{ point.tier_tone }}"{% if growth_on %} data-tone="{{ wrongbook_tier_tone.get(point.tier_tone, 'neutral') }}"{% endif %}>{{ point.tier_label }}</span>
                 </div>
                 {% endfor %}
             </div>
+            {% elif growth_on %}
+            {% call(slot) lq_empty(title='暂无知识点数据', description='老师标注知识点后，自动生成掌握度画像。', reason='empty', variant='card') %}{% endcall %}
             {% else %}
             <div class="wrongbook-empty">
                 <strong>暂无知识点数据</strong>
@@ -180,6 +195,12 @@
             {% endif %}
         </aside>
     </div>
+    {% elif growth_on %}
+    {% call(slot) lq_empty(title='暂无错题', description='批改后做错的题自动收进这里。', reason='empty', variant='card') %}
+        {% if slot == 'actions' %}
+        <a class="btn btn-primary" href="/dashboard">回到首页</a>
+        {% endif %}
+    {% endcall %}
     {% else %}
     <section class="wrongbook-panel">
         <div class="wrongbook-empty">
@@ -195,7 +216,7 @@
 {% block scripts %}
 {{ super() }}
 <script type="application/json" data-wrongbook-radar-data>{{ wrong_book.knowledge_mastery[:8] | tojson }}</script>
-<script src="/static/js/echarts.min.js"></script>
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
 <script>
     (() => {
         // 筛选：课程 + 知识点 + 题干关键词，纯前端过滤。

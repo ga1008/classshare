@@ -1,0 +1,7 @@
+{% macro lq_collapsible(id, title) -%}
+{%- set p = lq_props('collapsible', id=id, title=title, **kwargs) -%}
+<details{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+<summary class="lq-collapsible__summary" id="{{ p.summary_id|forceescape }}" aria-controls="{{ p.content_id|forceescape }}"><span class="lq-collapsible__title">{{ p.title|forceescape }}</span><span class="lq-collapsible__indicator" aria-hidden="true">⌄</span></summary>
+<div class="lq-collapsible__content" id="{{ p.content_id|forceescape }}" role="region" aria-labelledby="{{ p.summary_id|forceescape }}">{% if p.description %}<p class="lq-collapsible__description">{{ p.description|forceescape }}</p>{% endif %}<div class="lq-collapsible__slot" data-lq-slot="content">{% if caller is defined %}{{ caller() }}{% endif %}</div></div>
+</details>
+{%- endmacro %}

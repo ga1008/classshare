@@ -1,0 +1,19 @@
+{% macro lq_badge(value=none, tone='neutral', dot=false, label=none, attrs={}) -%}
+{%- set p = lq_props('badge', value=value, tone=tone, dot=dot, label=label, attrs=attrs) -%}
+{%- if p.visible %}<span class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% if not p.dot %}{{ p.value|forceescape }}{% endif %}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro lq_avatar(name, src=none, size=40, attrs={}) -%}
+{%- set p = lq_props('avatar', name=name, src=src, size=size, attrs=attrs) -%}
+<span class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}><span class="lq-avatar__fallback" aria-hidden="true">{{ p.initial|forceescape }}</span>{% if p.src %}<img class="lq-avatar__image" src="{{ p.src|forceescape }}" alt="" loading="lazy" decoding="async">{% endif %}</span>
+{%- endmacro %}
+
+{% macro lq_spinner(size='md', attrs={}) -%}
+{%- set p = lq_props('spinner', size=size, attrs=attrs) -%}
+<span class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}></span>
+{%- endmacro %}
+
+{% macro lq_progress(label, value=none, max=100, attrs={}, variant='bar') -%}
+{%- set p = lq_props('progress', label=label, value=value, max=max, attrs=attrs, variant=variant) -%}
+<{{ p.tag }} class="{{ p.classes|forceescape }}"{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% if p.variant == 'ring' %}<svg class="lq-progress__svg" viewBox="0 0 36 36" focusable="false" aria-hidden="true"><circle class="lq-progress__track" cx="18" cy="18" r="15.9155" pathLength="100"></circle><circle class="lq-progress__fill" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="{{ (25 if p.percent is none else p.percent)|forceescape }} 100"{% if p.percent == 0 %} visibility="hidden"{% endif %}></circle></svg><span class="lq-progress__value" aria-hidden="true">{% if p.percent is none %}…{% else %}{{ p.percent|forceescape }}%{% endif %}</span>{% endif %}</{{ p.tag }}>
+{%- endmacro %}

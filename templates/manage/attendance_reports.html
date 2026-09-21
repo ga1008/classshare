@@ -6,7 +6,7 @@
 {% endblock %}
 {% block content %}
 <section class="att" data-attendance-root data-report-id="{{ report_id|default('', true) }}" data-class-offering-id="{{ class_offering_id|default('', true) }}" data-archive-enabled="{{ 'true' if attendance_archive_enabled|default(true) else 'false' }}" data-parse-enabled="{{ 'true' if attendance_parse_enabled|default(true) else 'false' }}">
-    {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档') }}
+    {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     <div class="att-notice" data-att-notice role="status" aria-live="polite" hidden></div>
     <div data-att-list-view>
         <div class="att-toolbar">

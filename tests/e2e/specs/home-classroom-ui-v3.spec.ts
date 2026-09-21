@@ -1,13 +1,20 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginStudent, loginTeacher, readFixture, expectHealthUsesRuntimeDb, type P03Fixture } from '../fixtures/p03';
+import { waitForClassroomControls } from '../fixtures/ui-v3';
 
 type V3Fixture = P03Fixture & { uiV3Synthetic: boolean; visualSessionIds: number[]; visualMaterialIds: number[]; additionalOfferingIds: number[] };
 const fixture = () => readFixture() as V3Fixture;
 const palette = (page: Page) => page.getByRole('combobox', { name: '界面配色', exact: true });
 
+async function openPreferences(page: Page) {
+  const disclosure = page.locator('[data-ui-preferences-details]');
+  if (await disclosure.getAttribute('open') === null) await disclosure.locator('summary').click();
+}
+
 test.beforeAll(() => { expect(fixture().uiV3Synthetic).toBe(true); });
 
 async function changePalette(page: Page, value: string) {
+  await openPreferences(page);
   const saved = page.waitForResponse(response => response.url().endsWith('/api/profile/ui-preferences') && response.request().method() === 'PATCH');
   await palette(page).selectOption(value);
   expect((await saved).status()).toBe(200);
@@ -18,8 +25,9 @@ test('one palette control persists through SSR, classroom and a new browser cont
   const f = fixture();
   await loginStudent(page, f);
   await expectHealthUsesRuntimeDb(page, f);
+  await openPreferences(page);
   await expect(palette(page)).toHaveCount(1);
-  await expect(palette(page).locator('option')).toHaveCount(5);
+  await expect(palette(page).locator('option')).toHaveCount(6);
   let businessRequests = 0;
   page.on('request', request => { if (/course-schedule\/overview|dashboard\/workspace|learning-materials\?/.test(request.url())) businessRequests++; });
   const value = await palette(page).inputValue() === 'sky' ? 'mint' : 'sky';
@@ -28,11 +36,13 @@ test('one palette control persists through SSR, classroom and a new browser cont
   expect(businessRequests).toBe(before);
   const response = await page.goto(`/classroom/${f.classOfferingId}`);
   expect(await response!.text()).toContain(`data-ui-palette="${value}"`);
+  await openPreferences(page);
   await expect(palette(page)).toHaveValue(value);
   const context = await browser.newContext();
   try {
     const fresh = await context.newPage();
     await loginStudent(fresh, f);
+    await openPreferences(fresh);
     await expect(palette(fresh)).toHaveValue(value);
     await changePalette(fresh, 'indigo');
   } finally { await context.close(); }
@@ -47,6 +57,7 @@ test('a stale account tab cannot change the newly logged-in student palette', as
   expect(await second.locator('body').getAttribute('data-ui-palette-context')).not.toBe(oldContext);
   const before = (await (await second.request.get('/api/profile/ui-preferences')).json()).preferences;
   const denied = page.waitForResponse(response => response.url().endsWith('/api/profile/ui-preferences') && response.request().method() === 'PATCH');
+  await openPreferences(page);
   await palette(page).selectOption('rose');
   expect((await denied).status()).toBe(409);
   await expect(palette(page)).toBeDisabled();
@@ -62,12 +73,14 @@ test('palette save failure keeps the preview and supports retry without disturbi
     if (fail && route.request().method() === 'PATCH') await route.fulfill({ status: 503, json: { detail: '暂时无法同步' } });
     else await route.continue();
   });
+  await openPreferences(page);
   await palette(page).selectOption('violet');
   await expect(page.locator('body')).toHaveAttribute('data-ui-palette', 'violet');
   await expect(page.locator('[data-ui-palette-status]')).toContainText('未同步');
   fail = false;
   await changePalette(page, 'mint');
   await page.reload();
+  await openPreferences(page);
   await expect(palette(page)).toHaveValue('mint');
 });
 
@@ -108,6 +121,7 @@ test('multiple materials use a list, zero materials stay in lesson details, and 
   const f = fixture();
   await loginStudent(page, f);
   await page.goto(`/classroom/${f.classOfferingId}`);
+  await waitForClassroomControls(page);
   const tasks = await page.locator('#cw-tasks-preview .cw-task-title').allTextContents();
   await page.locator(`#teachingTimelineScroll [data-session-id="${f.visualSessionIds[2]}"]`).click();
   await page.locator('#teachingSessionOpenMaterialBtn').click();
@@ -137,6 +151,7 @@ test('course cultivation is a topbar value and teachers keep their original role
   const f = fixture();
   await loginStudent(page, f);
   await page.goto(`/classroom/${f.classOfferingId}`);
+  await waitForClassroomControls(page);
   const entry = page.locator('.cw-cultivation-entry[data-learning-modal-open]');
   await expect(entry).toContainText(/本课修为\s*[\d.]+/);
   await entry.click();
@@ -146,7 +161,7 @@ test('course cultivation is a topbar value and teachers keep their original role
   await loginTeacher(page, f);
   await page.goto(`/classroom/${f.classOfferingId}`);
   await expect(palette(page)).toHaveCount(0);
-  expect((await page.request.get('/api/profile/ui-preferences')).status()).toBe(403);
+  expect((await page.request.get('/api/profile/ui-preferences')).status()).toBe(200);
   await expect(page.locator('#classroom-final-material-generate-btn')).toHaveCount(1);
 });
 

@@ -1,9 +1,12 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_card %}
+{% from 'macros/lq/chip.html' import lq_chip %}
 
 {% block title %}我的成就墙 - 课堂平台{% endblock %}
 
 {% block css %}
 {{ super() }}
+{% if not lq_family_enabled('growth') %}
 <style>
     .achv-shell { display: grid; gap: 18px; }
     .achv-hero {
@@ -48,10 +51,57 @@
         color: #5b21b6; font-weight: 700; font-size: 0.9rem;
     }
 </style>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
 {% set wall = achievement_wall %}
+{% if lq_family_enabled('growth') %}
+<section class="achv-shell" data-lq-scope="growth">
+    {% call lq_page_head('把学习痕迹变成勋章', description='连续学习、按时提交、拿下高分……每一步都会在这里留下印记。') %}
+        <div class="lq-grid--cards" aria-label="成就概览" style="--lq-stat-cols: 1;">
+            {% call(slot) lq_card('点亮进度', variant='stat', value=(wall.earned_count ~ ' / ' ~ wall.total_count)) %}{% endcall %}
+        </div>
+    {% endcall %}
+
+    {% if wall.newly_awarded %}
+    <div class="lq-surface achv-new-banner" role="status">
+        🎉 恭喜！刚刚解锁：
+        {% for badge in wall.newly_awarded %}{{ badge.icon }}《{{ badge.name }}》{% if not loop.last %}、{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if wall.badges %}
+    {% set newly_awarded_keys = wall.newly_awarded | map(attribute='key') | list if wall.newly_awarded else [] %}
+    <div class="lq-grid--cards" aria-label="成就墙">
+        {% for badge in wall.badges %}
+        {% set is_reveal = badge.key in newly_awarded_keys %}
+        {# The lq_card macro's attrs= only accepts aria-*/id/title (data-lq-*
+           keys are reserved for the macro's own internal use and silently
+           dropped), so the one-shot reveal state is expressed on a plain
+           wrapper div instead, targeted by growth.css as
+           `[data-lq-reveal="true"] .lq-card`. #}
+        <div{% if is_reveal %} data-lq-reveal="true"{% endif %}>
+        {% call(slot) lq_card(badge.name, variant='default', meta=badge.description) %}
+            {% if slot == 'body' %}
+            <div class="achv-card__body{% if not badge.earned %} is-locked{% endif %}">
+                <span class="achv-card__icon" aria-hidden="true">{{ badge.icon }}</span>
+                {{ lq_chip(badge.tier_label, kind='status', tone=('success' if badge.tier == 'gold' else ('info' if badge.tier == 'silver' else 'neutral'))) }}
+            </div>
+            {% elif slot == 'foot' %}
+            {% if badge.earned %}
+            {{ lq_chip('已点亮' ~ (' · ' ~ badge.earned_at if badge.earned_at else ''), kind='status', tone='success') }}
+            {% else %}
+            {{ lq_chip(badge.progress_hint, kind='status', tone='neutral') }}
+            {% endif %}
+            {% endif %}
+        {% endcall %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% else %}
 <section class="achv-shell">
     <header class="achv-hero">
         <div>
@@ -86,4 +136,5 @@
         {% endfor %}
     </div>
 </section>
+{% endif %}
 {% endblock %}

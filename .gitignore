@@ -13,6 +13,7 @@ build/
 develop-eggs/
 dist/
 static/dist/
+static/assets/
 downloads/
 eggs/
 .eggs/

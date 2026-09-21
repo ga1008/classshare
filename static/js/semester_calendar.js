@@ -1,4 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const dayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -506,6 +507,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     let ignoreClickUntil = 0;
     let suppressSnapUntil = 0;
     let todoModal = null;
+    let todoLayerHandle = null;
     let todoPickerState = null;
     let resizeTimer = 0;
 
@@ -1467,13 +1469,23 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         renderTodoPicker();
     }
 
-    function closeTodoModal() {
+    function finishCloseTodoModal() {
         if (!todoModal) return;
         todoModal.classList.remove('is-open');
         window.setTimeout(() => {
             if (todoModal) todoModal.hidden = true;
             document.body.classList.remove('has-semester-todo-modal');
         }, 160);
+    }
+
+    function closeTodoModal(reason = 'programmatic') {
+        if (!todoModal) return;
+        // Escape and focus-trap/return are owned by LQ.layer; the fade-out
+        // animation above still runs from its onClose callback below so the
+        // existing 160ms transition and .semester-todo-modal-card contract
+        // (dashboard-todo-modal.spec.ts) are unchanged.
+        if (todoLayerHandle) { void getLayerSystem(document).close(todoLayerHandle, reason); return; }
+        finishCloseTodoModal();
     }
 
     function openTodoModal() {
@@ -1484,6 +1496,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             return;
         }
         const modal = ensureTodoModal();
+        const card = modal.querySelector('.semester-todo-modal-card');
         const form = modal.querySelector('form');
         const select = form?.elements?.class_offering_id;
         if (select) {
@@ -1508,6 +1521,15 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             modal.classList.add('is-open');
             form?.elements?.title?.focus();
         });
+        if (card) {
+            todoLayerHandle = getLayerSystem(document).open(modal, {
+                type: 'modal',
+                surface: card,
+                trigger: document.activeElement,
+                initialFocus: () => form?.elements?.title,
+                onClose: () => { todoLayerHandle = null; finishCloseTodoModal(); },
+            });
+        }
     }
 
     async function refreshClassTodos(classOfferingId, nextOverview, nextTodoId = '') {

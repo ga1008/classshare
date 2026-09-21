@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}主题与材质预览 · LanShare{% endblock %}
+{% block css %}
+<link rel="stylesheet" href="{{ asset_url('css/lq/preview.css') }}">
+{% endblock %}
+{% block body %}
+<main class="lq-preview" data-lq-preview data-lq-stage="S2" aria-labelledby="lq-preview-title">
+  <header class="lq-preview__intro">
+    <p class="lq-preview__eyebrow">LANSHARE · DESIGN FOUNDATIONS</p>
+    <h1 id="lq-preview-title">主题与材质</h1>
+    <p>比较阅读层次、状态色与玻璃表面。此页的选项只影响本次预览，刷新后恢复账户设置。</p>
+    <a href="/dashboard">返回首页</a>
+  </header>
+  <form class="lq-preview__controls" aria-label="本地预览选项" data-lq-preview-controls>
+    <label>配色
+      <select name="palette_key" data-lq-preview-option>
+        {% for key, label in [('teal', '青碧'), ('indigo', '靛蓝'), ('sky', '天青'), ('mint', '薄荷'), ('violet', '紫藤'), ('rose', '玫瑰')] %}
+        <option value="{{ key }}"{% if ui_palette.palette_key == key %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>外观
+      <select name="appearance" data-lq-preview-option>
+        {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
+        <option value="{{ key }}"{% if ui_palette.appearance == key %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>玻璃效果
+      <select name="glass" data-lq-preview-option>
+        <option value="tinted"{% if ui_palette.glass == 'tinted' %} selected{% endif %}>开启</option>
+        <option value="off"{% if ui_palette.glass == 'off' %} selected{% endif %}>关闭</option>
+      </select>
+    </label>
+    <p class="lq-preview__status" role="status" data-lq-preview-status>读取当前主题…</p>
+  </form>
+  <section class="lq-preview__section" aria-labelledby="lq-reading-title">
+    <div class="lq-preview__heading"><h2 id="lq-reading-title">先看清，再操作</h2><p>三层文字与主色始终成对。</p></div>
+    <div class="lq-preview__reading lq-surface">
+      <div><p class="lq-preview__eyebrow">课堂阅读</p><h3 data-probe-ink="primary">让内容成为视觉中心</h3><p data-probe-ink="secondary">清晰的层次帮助学生找到任务，也让教师更快定位待处理事项。</p><p class="lq-preview__muted" data-probe-ink="muted">辅助信息 · 2026 秋季学期 · 16 周</p></div>
+      <div class="lq-preview__swatches"><span class="lq-preview__primary" data-probe-primary>主色与文字</span><span class="lq-preview__soft" data-probe-primary-soft>柔和选中态</span></div>
+    </div>
+  </section>
+  <section class="lq-preview__section" aria-labelledby="lq-semantic-title">
+    <div class="lq-preview__heading"><h2 id="lq-semantic-title">状态传达同一种含义</h2><p>文字说明与颜色共同表达，不只依赖色相。</p></div>
+    <div class="lq-preview__tones">
+      {% for tone, label in [('success', '已完成'), ('warning', '待确认'), ('danger', '需处理'), ('info', '提示'), ('neutral', '未开始')] %}
+      <article class="lq-preview__tone lq-surface" data-probe-tone="{{ tone }}">
+        <h3>{{ label }}</h3><p class="lq-preview__tone-fg" data-probe-pair="fg-surface">正文说明</p>
+        <p class="lq-preview__tone-soft" data-probe-pair="fg-soft">柔和状态</p>
+        <p class="lq-preview__tone-base" data-probe-pair="on-base">识别底色</p>
+        <p class="lq-preview__tone-solid" data-probe-pair="on-solid">实底操作色</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="lq-preview__section" aria-labelledby="lq-material-title">
+    <div class="lq-preview__heading"><h2 id="lq-material-title">材质服务于层次</h2><p>这里并排展示四种材质；业务页面仍按每个视图的玻璃层数预算验收。</p></div>
+    <div class="lq-preview__materials">
+      {% for material, classes, title, copy in [('surface', 'lq-surface', '内容表面', '阅读、列表与表单使用稳定的表面。'), ('regular', 'lq-glass', '标准玻璃', '导航与工具保持轻盈，文字仍然清晰。'), ('thick', 'lq-glass lq-glass--thick', '厚玻璃', '面板与弹层获得更明确的内容边界。'), ('clear', 'lq-glass lq-glass--clear', '通透玻璃', '仅在背景对比验证通过后使用。')] %}
+      <div class="lq-preview__scene" data-probe-material="{{ material }}">
+        {% if material == 'clear' %}<div class="lq-scrim" aria-hidden="true"></div>{% endif %}
+        <article class="lq-preview__material {{ classes }}"{% if material == 'clear' %} data-lq-tone="dark"{% endif %}>
+          <h3>{{ title }}</h3><p>{{ copy }}</p>
+        </article>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% include 'dev/lq_presentation.html' %}
+  {% include 'dev/lq_interactions.html' %}
+  {% include 'dev/lq_content.html' %}
+  {% include 'dev/lq_status.html' %}
+  {% include 'dev/lq_data.html' %}
+  {% include 'dev/lq_business.html' %}
+  {% include 'dev/lq_workspace.html' %}
+  {% include 'dev/lq_insights.html' %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/lq/preview.js') }}"></script>
+{% endblock %}

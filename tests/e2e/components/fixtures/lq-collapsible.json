@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {"id":"basic","title":"课程基本信息","description":"此区包含需要持续保留的输入。"},
+    {"id":"closed","title":"补充说明","open":false,"mode":"always"},
+    {"id":"guarded","title":"待处理错误","open":false,"hasError":true},
+    {"id":"current","title":"当前步骤","open":false,"current":true},
+    {"id":"dirty","title":"未保存草稿","open":false,"dirty":true},
+    {"id":"pinned","title":"固定信息","open":false,"keepOpen":true},
+    {"id":"saved","title":"持久化分区","persist":{"identity":"teacher:1","resource":"offering:2","key":"metadata"}},
+    {"id":"escaped","title":"<img src=x onerror=alert(1)>","description":"<b>普通文字</b>","attrs":{"aria-hidden":true,"aria-label":"错误命名","data-lq-mode":"always","title":"\" onmouseover=alert(1) x=\""}}
+  ],
+  "invalid": [
+    {"id":"x","title":""},
+    {"id":"x--lq-content","title":"x"},
+    {"id":"x","title":"x","open":"false"},
+    {"id":"x","title":"x","mode":"custom"},
+    {"id":"x","title":"x","attrs":[]},
+    {"id":"x","title":"x","attrs":{"onclick":"x"}},
+    {"id":"x","title":"x","attrs":{"style":"color:red"}},
+    {"id":"x","title":"x","attrs":{"data-x":{}}},
+    {"id":"x","title":"x","persist":"global"},
+    {"id":"x","title":"x","persist":{"key":"global"}},
+    {"id":"x","title":"x","persist":{"identity":"","resource":"2","key":"x"}},
+    {"id":"x","title":"x","persist":{"identity":"1","resource":"2","key":"\nx"}}
+  ]
+}

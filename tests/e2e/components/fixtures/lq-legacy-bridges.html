@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN" data-appearance="light" data-theme="lanshare" data-ui-palette="teal" data-lq-glass="tinted" data-lq-tier="A">
+<meta charset="utf-8"><link rel="stylesheet" href="/static/css/tailwind-app.css">
+<style>body{padding:20px;min-height:1800px}button{min-height:36px;margin:4px}.modal{padding:24px;background:white;width:420px}dialog{padding:20px}</style>
+<main id="page"><button id="opener">打开</button><button id="outside">外部</button>
+<form id="dates"><input type="date" id="date-a" value="2026-09-20"><input type="date" id="date-b" value="2026-10-21"><input type="datetime-local" id="date-time" value="2026-09-20T12:30"></form>
+<button id="help-outside" data-explain-toggle data-explain data-explain-text="外部说明" data-explain-delay="250">说明</button>
+</main>
+<div id="modal-a" class="modal-backdrop" style="display:none"><section class="modal"><button id="modal-close" data-dismiss="modal">关闭</button><input id="modal-date" type="date" value="2026-09-20"><button id="help" data-explain-toggle data-explain data-explain-text="安全说明" data-explain-links='[{"label":"帮助链接","href":"/help"}]'>说明</button><button id="image">图片</button><button id="modal-last">末项</button></section></div>
+<div id="modal-b" class="modal-backdrop" style="display:none"><section class="modal"><button data-dismiss="modal">第二层关闭</button></section></div>
+<div id="feedback" class="modal-backdrop" data-feedback-managed style="display:none"><section class="modal"><button id="feedback-close" data-dismiss="modal">反馈关闭</button></section></div>
+<dialog id="native"><button id="native-before">原生入口</button><input id="native-date" type="date" value="2026-09-20"><button id="native-help" data-explain-toggle data-explain data-explain-text="原生说明">说明</button><button id="native-image">图片</button></dialog>
+<script type="module">
+import * as ui from '/static/js/ui.js';
+import * as help from '/static/js/ui_explanation.js';
+import * as images from '/static/js/ls_image_lightbox.js';
+import '/static/js/ls_date_picker.js';
+import { getLayerSystem } from '/static/js/lq/layer.js';
+window.ui=ui;window.help=help;window.images=images;window.layer=getLayerSystem(document);window.events=[];
+window.pixel='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGRkAAAAASUVORK5CYII=';
+document.querySelector('#opener').onclick=()=>ui.openModal('modal-a');
+for(const id of ['image','native-image'])document.getElementById(id).onclick=()=>images.openImageLightbox({items:[{src:window.pixel,title:'第一张'},{src:window.pixel,title:'第二张'}]});
+document.querySelectorAll('input').forEach(input=>{input.addEventListener('input',()=>events.push(input.id+':input'));input.addEventListener('change',()=>events.push(input.id+':change'));});
+document.body.dataset.ready='true';
+</script></html>

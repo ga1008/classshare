@@ -13,6 +13,7 @@ from classroom_app.routers import ui as ui_router
 from classroom_app.routers.ui_parts import assignment_pages as ui_assignment_pages
 from classroom_app.routers.ui_parts import common as ui_common
 from classroom_app.routers.ui_parts import classroom as ui_classroom
+from tests.sqlite_database_fixture import isolated_sqlite_database
 
 
 REQUIRED_AUTHENTICATED_ISLANDS = (
@@ -33,6 +34,52 @@ REQUIRED_PAGE_ISLANDS = (
     "frontend/src/islands/message-center-workspace-sync.tsx",
     "frontend/src/islands/submission-jump-nav.tsx",
 )
+
+
+def _seed_authenticated_frontend_fixture():
+    """Own every record used by the real route/template integration checks."""
+    questions = {"pages": [{"name": "合成试卷", "questions": [
+        {"id": "q1", "type": "textarea", "text": "说明测试隔离的目的。", "points": 10},
+    ]}]}
+    with get_db_connection() as conn:
+        conn.execute(
+            """INSERT INTO teachers
+               (id, name, email, hashed_password, is_active, is_super_admin, school_code, school_name)
+               VALUES (1, '合成教师', 'frontend-fixture@example.test', 'unused-test-value', 1, 0, 'fixture', '合成学校')"""
+        )
+        conn.execute("INSERT INTO classes (id, name, created_by_teacher_id) VALUES (1, '合成班级', 1)")
+        conn.execute("INSERT INTO courses (id, name, created_by_teacher_id) VALUES (1, '合成课程', 1)")
+        conn.execute("INSERT INTO class_offerings (id, class_id, course_id, teacher_id) VALUES (1, 1, 1, 1)")
+        conn.execute(
+            """INSERT INTO class_offering_class_links
+               (offering_id, class_id, teacher_id, is_primary, source) VALUES (1, 1, 1, 1, 'manual')"""
+        )
+        conn.executemany(
+            """INSERT INTO students (id, student_id_number, name, class_id, enrollment_status)
+               VALUES (?, ?, ?, 1, 'active')""",
+            [(1, "FRONTEND-001", "合成待提交学生"), (2, "FRONTEND-002", "合成已提交学生")],
+        )
+        conn.execute(
+            """INSERT INTO exam_papers (id, teacher_id, title, questions_json, status, owner_role, scope_level)
+               VALUES ('frontend-fixture-paper', 1, '合成试卷', ?, 'published', 'teacher', 'private')""",
+            (json.dumps(questions, ensure_ascii=False),),
+        )
+        conn.execute(
+            """INSERT INTO assignments
+               (id, course_id, class_offering_id, title, requirements_md, status, created_at, due_at)
+               VALUES (1, 1, 1, '合成普通作业', '提交合成练习。', 'published', '2026-01-02T10:00:00', '2099-01-01T00:00:00')"""
+        )
+        conn.execute(
+            """INSERT INTO assignments
+               (id, course_id, class_offering_id, exam_paper_id, title, status, created_at, due_at)
+               VALUES (2, 1, 1, 'frontend-fixture-paper', '合成已提交测验', 'published', '2026-01-01T10:00:00', '2099-01-01T00:00:00')"""
+        )
+        conn.execute(
+            """INSERT INTO submissions
+               (id, assignment_id, student_pk_id, student_name, status, answers_json, submitted_at)
+               VALUES (1, 2, 2, '合成已提交学生', 'submitted', ?, '2026-01-01T11:00:00')""",
+            (json.dumps({"q1": "测试记录应存放在独立临时数据库。"}, ensure_ascii=False),),
+        )
 
 
 def _load_first_active_teacher() -> dict | None:
@@ -240,9 +287,14 @@ class _FakeScalarConnection:
 
 
 class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.enterClassContext(isolated_sqlite_database())
+        _seed_authenticated_frontend_fixture()
+
     def setUp(self):
         if not VITE_MANIFEST_PATH.is_file():
-            self.skipTest("Vite manifest is missing; run npm run build before authenticated frontend integration tests.")
+            self.fail("Vite manifest is missing; run npm run build before authenticated frontend integration tests.")
         self.manifest = json.loads(VITE_MANIFEST_PATH.read_text(encoding="utf-8"))
         missing_entries = [entry for entry in REQUIRED_AUTHENTICATED_ISLANDS if entry not in self.manifest]
         if missing_entries:
@@ -252,8 +304,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
             self.fail(f"Vite manifest is missing page island entries: {missing_page_entries}")
 
         self.teacher = _load_first_active_teacher()
-        if self.teacher is None:
-            self.skipTest("No active teacher is available for authenticated frontend integration smoke test.")
+        self.assertIsNotNone(self.teacher, "Synthetic teacher fixture is missing")
 
     def test_dashboard_injects_authenticated_vite_islands_and_status_endpoints_work(self):
         with _authenticated_client(self.teacher) as client:
@@ -268,7 +319,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
             self.assertIn("message-center-sync", html)
             self.assertIn("blog-topbar-sync", html)
             self.assertIn("student-security-sync", html)
-            self.assertIn("/static/js/message_center_bell.js", html)
+            self.assertRegex(html, r"/static/(?:assets/[a-f0-9]{64}/)?js/message_center_bell\.js")
             self.assertNotIn("login_required", html)
 
             blog_summary = client.get("/api/blog/summary")
@@ -288,20 +339,16 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(9, value)
 
-    def test_manage_workflow_page_renders_for_authenticated_teacher(self):
+    def test_retired_manage_workflow_redirects_for_authenticated_teacher(self):
         with _authenticated_client(self.teacher) as client:
             response = client.get("/manage/teaching/workflow", follow_redirects=False)
 
-        self.assertEqual(200, response.status_code)
-        html = response.text
-        self.assertIn("workflowStageTrack", html)
-        self.assertIn("data-teacher-onboarding-open", html)
-        self.assertNotIn("login_required", html)
+        self.assertEqual(301, response.status_code)
+        self.assertEqual("/manage/teaching/classroom-hub", response.headers["location"])
 
     def test_student_assignment_form_injects_submit_sync_without_removing_legacy_submission_flow(self):
         fixture = _load_student_assignment_form_fixture()
-        if fixture is None:
-            self.skipTest("No published unsubmitted non-exam assignment is available for student submit island smoke test.")
+        self.assertIsNotNone(fixture, "Synthetic unsubmitted assignment fixture is missing")
         student, assignment_id = fixture
 
         with (
@@ -317,14 +364,13 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         html = response.text
         self.assertIn('data-lanshare-island="assignment-submit-sync"', html)
         self.assertIn("assignment-submit-sync", html)
-        self.assertIn("/static/js/submission_upload.js", html)
+        self.assertRegex(html, r"/static/(?:assets/[a-f0-9]{64}/)?js/submission_upload\.js")
         self.assertIn("fetch(`/api/assignments/${ASSIGNMENT_ID}/submit`", html)
         self.assertIn("fetch(`/api/assignments/${ASSIGNMENT_ID}/withdraw`", html)
 
     def test_submission_detail_injects_jump_nav_island_and_keeps_review_actions(self):
         fixture = _load_teacher_submission_detail_fixture()
-        if fixture is None:
-            self.skipTest("No teacher-accessible submission with answers is available for submission detail island smoke test.")
+        self.assertIsNotNone(fixture, "Synthetic submitted answers fixture is missing")
         teacher, submission_id = fixture
 
         with (
@@ -341,13 +387,15 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("submission-jump-nav", html)
         self.assertIn("renderAnswers()", html)
         self.assertIn("initSubmissionPreview()", html)
-        self.assertIn("fetch(`/api/submissions/${submissionId}/grade`", html)
+        self.assertIn("setupSubmissionGrading({", html)
+        self.assertRegex(html, r"/static/(?:assets/[a-f0-9]{64}/)?js/submission_grading\.js")
+        self.assertIn("expectedReviewRevision:", html)
+        self.assertIn("expectedAssignmentRevision:", html)
         self.assertIn("fetch(`/api/submissions/${submissionId}/regrade`", html)
 
     def test_teacher_assignment_detail_keeps_bulk_actions_without_duplicate_workbench(self):
         fixture = _load_teacher_assignment_workbench_fixture()
-        if fixture is None:
-            self.skipTest("No teacher-accessible assignment is available for teacher workbench smoke test.")
+        self.assertIsNotNone(fixture, "Synthetic teacher assignment fixture is missing")
         teacher, assignment_id = fixture
 
         with (
@@ -371,8 +419,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
 
     def test_classroom_workspace_retires_duplicate_boards_and_preserves_business_modules(self):
         fixture = _load_teacher_classroom_fixture()
-        if fixture is None:
-            self.skipTest("No teacher-accessible classroom is available for classroom workspace nav smoke test.")
+        self.assertIsNotNone(fixture, "Synthetic classroom fixture is missing")
         teacher, class_offering_id = fixture
 
         with (
@@ -393,7 +440,8 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn('data-lanshare-island="classroom-page"', html)
         self.assertNotIn('data-lanshare-island="classroom-workspace-nav-sync"', html)
         self.assertIn('id="cw-tasks-preview"', html)
-        self.assertIn('id="cw-materials-preview"', html)
+        self.assertIn('id="classroom-material-collection"', html)
+        self.assertNotIn('id="cw-materials-preview"', html)
         self.assertIn('data-cw-source="tasks"', html)
         self.assertIn('data-cw-source="materials"', html)
         if 'id="teachingTimelineScroll"' in html:
@@ -417,7 +465,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
             self.assertIn("data-assignment-kind=", html)
             self.assertIn("data-assignment-status-key=", html)
             self.assertIn("data-assignment-stage-label=", html)
-        self.assertIn('id="materials-panel"', html)
+        self.assertNotIn('id="materials-panel"', html)
         self.assertIn('id="classroom-materials-list"', html)
         self.assertIn('id="classroom-materials-refresh-btn"', html)
         self.assertIn('id="classroom-materials-breadcrumbs"', html)
@@ -465,7 +513,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("message-center-page", html)
         self.assertIn('data-lanshare-island="message-center-workspace-sync"', html)
         self.assertIn("message-center-workspace-sync", html)
-        self.assertNotIn("/static/js/message_center.js", html)
+        self.assertNotRegex(html, r"/static/(?:assets/[a-f0-9]{64}/)?js/message_center\.js")
         self.assertIn('id="message-center-mark-read"', html)
         self.assertIn('id="message-center-feed"', html)
         self.assertIn('id="message-center-compose-form"', html)
@@ -479,7 +527,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         html = response.text
         self.assertIn('data-lanshare-island="materials-manage-page"', html)
         self.assertIn("materials-manage-page", html)
-        self.assertNotRegex(html, r'<script[^>]+src="/static/js/materials_manage\.js')
+        self.assertNotRegex(html, r'<script[^>]+src="/static/(?:assets/[a-f0-9]{64}/)?js/materials_manage\.js')
         self.assertIn("window.__LANSHARE_MATERIALS_MANAGE_PAGE_CONTROLLER__ ||= import(", html)
         self.assertIn("window.MATERIALS_MANAGE_CONFIG", html)
         self.assertIn('data-testid="p03-materials-list"', html)
@@ -496,7 +544,16 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn('data-lanshare-island="materials-manage-page"', response.text)
 
     def test_profile_message_center_injects_page_and_workspace_islands_without_direct_legacy_script(self):
+        # Teachers use /manage/me/notifications, covered above; /profile renders
+        # the student document directly instead of the teacher shell redirect.
         with _authenticated_client(self.teacher) as client:
+            redirect = client.get("/profile?section=notifications", follow_redirects=False)
+        self.assertEqual(302, redirect.status_code)
+        self.assertEqual("/manage/me/notifications", redirect.headers["location"])
+        fixture = _load_student_assignment_form_fixture()
+        self.assertIsNotNone(fixture, "Synthetic student fixture is missing")
+        student, _ = fixture
+        with _authenticated_client(student) as client:
             response = client.get("/profile?section=notifications#profile-message-center", follow_redirects=False)
 
         self.assertEqual(200, response.status_code)
@@ -505,7 +562,7 @@ class AuthenticatedViteIslandIntegrationTests(unittest.TestCase):
         self.assertIn("message-center-page", html)
         self.assertIn('data-lanshare-island="message-center-workspace-sync"', html)
         self.assertIn("message-center-workspace-sync", html)
-        self.assertNotIn("/static/js/message_center.js", html)
+        self.assertNotRegex(html, r"/static/(?:assets/[a-f0-9]{64}/)?js/message_center\.js")
         self.assertIn('id="message-center-mark-read"', html)
         self.assertIn('id="message-center-feed"', html)
         self.assertIn('id="message-center-compose-form"', html)

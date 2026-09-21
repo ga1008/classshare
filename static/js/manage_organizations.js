@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, showMessage } from './ui.js';
+import { LQ } from './lq/index.js';
 
 const state = {
     payload: window.__organizationPayload || { schools: [], summary: {} },
@@ -346,30 +347,73 @@ async function handleTreeClick(event) {
         return;
     }
     if (deleteCollegeBtn) {
+        if (deleteCollegeBtn.dataset.lqBusy === '1') return;
         const college = findCollege(deleteCollegeBtn.dataset.deleteCollege);
-        if (!college || !window.confirm(`停用学院“${college.college_name}”？历史资源会保留。`)) return;
-        await apiFetch(`/api/manage/system/organizations/colleges/${college.id}`, { method: 'DELETE' });
-        showMessage('学院已停用', 'success');
-        await loadTree({ keepSelection: true });
+        if (!college) return;
+        deleteCollegeBtn.dataset.lqBusy = '1';
+        try {
+            const confirmed = await LQ.confirm({
+                title: '停用学院',
+                message: `停用学院“${college.college_name}”？历史资源会保留。`,
+                confirmLabel: '停用',
+                danger: true,
+            });
+            if (!confirmed) return;
+            deleteCollegeBtn.disabled = true;
+            await apiFetch(`/api/manage/system/organizations/colleges/${college.id}`, { method: 'DELETE' });
+            showMessage('学院已停用', 'success');
+            await loadTree({ keepSelection: true });
+        } finally {
+            delete deleteCollegeBtn.dataset.lqBusy;
+            deleteCollegeBtn.disabled = false;
+        }
         return;
     }
     if (deleteDepartmentBtn) {
+        if (deleteDepartmentBtn.dataset.lqBusy === '1') return;
         const department = findDepartment(deleteDepartmentBtn.dataset.deleteDepartment);
-        if (!department || !window.confirm(`停用系部“${department.department_name}”？历史资源会保留。`)) return;
-        await apiFetch(`/api/manage/system/organizations/departments/${department.id}`, { method: 'DELETE' });
-        showMessage('系部已停用', 'success');
-        await loadTree({ keepSelection: true });
+        if (!department) return;
+        deleteDepartmentBtn.dataset.lqBusy = '1';
+        try {
+            const confirmed = await LQ.confirm({
+                title: '停用系部',
+                message: `停用系部“${department.department_name}”？历史资源会保留。`,
+                confirmLabel: '停用',
+                danger: true,
+            });
+            if (!confirmed) return;
+            deleteDepartmentBtn.disabled = true;
+            await apiFetch(`/api/manage/system/organizations/departments/${department.id}`, { method: 'DELETE' });
+            showMessage('系部已停用', 'success');
+            await loadTree({ keepSelection: true });
+        } finally {
+            delete deleteDepartmentBtn.dataset.lqBusy;
+            deleteDepartmentBtn.disabled = false;
+        }
     }
 }
 
 async function deactivateCurrentSchool() {
+    const button = els['org-deactivate-school-btn'];
+    if (button?.dataset.lqBusy === '1') return;
     const school = currentSchool();
-    if (!school || !window.confirm(`停用学校“${school.school_name}”？历史资源会保留，但新建资源将不再默认选择它。`)) {
-        return;
+    if (!school) return;
+    if (button) button.dataset.lqBusy = '1';
+    try {
+        const confirmed = await LQ.confirm({
+            title: '停用学校',
+            message: `停用学校“${school.school_name}”？历史资源会保留，但新建资源将不再默认选择它。`,
+            confirmLabel: '停用',
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (button) button.disabled = true;
+        await apiFetch(`/api/manage/system/organizations/schools/${school.id}`, { method: 'DELETE' });
+        showMessage('学校已停用', 'success');
+        await loadTree({ keepSelection: true });
+    } finally {
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
     }
-    await apiFetch(`/api/manage/system/organizations/schools/${school.id}`, { method: 'DELETE' });
-    showMessage('学校已停用', 'success');
-    await loadTree({ keepSelection: true });
 }
 
 function bindEvents() {

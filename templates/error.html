@@ -1,8 +1,11 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/icons.generated.html" import lq_icon %}
 
 {% block title %}发生错误 - {{ error_code }}{% endblock %}
 
 {% block css %}
+{% if _lq_centered %}{{ super() }}{% else %}
 <style>
     .error-card {
         background-color: var(--surface-color);
@@ -63,11 +66,13 @@
         border-radius: var(--radius-md, 0.5rem);
     }
 </style>
+{% endif %}
 {% endblock %}
 
-{% block body_class %}{% endblock %}
+{% block body_class %}{{ super() }}{% endblock %}
 
 {% block body %}
+{% if _lq_centered %}{{ super() }}{% else %}
 <div class="error-card">
     <div class="error-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -80,4 +85,15 @@
         返回首页
     </a>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block card_content %}
+<section class="lq-status-card lq-glass lq-glass--thick" data-tone="danger" aria-labelledby="error-title">
+    <div class="lq-status-card__icon">{{ lq_icon('triangle-alert') }}</div>
+    <p class="lq-status-card__code">{{ error_code }}</p>
+    <h1 id="error-title">{{ error_title }}</h1>
+    <div class="lq-status-card__message">{{ error_message }}</div>
+    <div class="lq-status-card__actions">{{ lq_btn('返回首页', href=back_url or '/', variant='prominent', icon='arrow-left') }}</div>
+</section>
 {% endblock %}

@@ -572,6 +572,10 @@ export function createScheduleDeck(container, options = {}) {
     let highlightTimer = null;
     let lineFrame = null;
     let destroyed = false;
+    // Optional host integration only. Standalone decks keep their own focus,
+    // key handling and animation without importing an application layer system.
+    let overlayCoordinator = null;
+    const notifyOverlay = () => overlayCoordinator?.onStateChange?.();
     const changeMapId = `cs-change-map-${++changeMapSequence}`;
     const changeColorsByTerm = new Map();
     let changeColors = new Map();
@@ -685,7 +689,7 @@ export function createScheduleDeck(container, options = {}) {
             const jump = counterpart ? ` ${proposed ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
             const actionLabel = scheduleChangeLabel(lesson) + jump;
             const shortLabel = adjustmentActionText(lesson);
-            button = `<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
+            button = `<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-expanded="false" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
             const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
             const detail = `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`;
             comparison = `<div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div>`;
@@ -969,9 +973,10 @@ export function createScheduleDeck(container, options = {}) {
             const cell = [...refs.expandBody.querySelectorAll('[data-event-key]')].find(node => node.dataset.eventKey === key);
             const detail = cell?.querySelector('.cs-adjustment-details');
             if (detail) {
-                detail.hidden = false;
-                cell.querySelector('.cs-adjustment-label')?.setAttribute('aria-expanded', 'true');
-                openLessonPreview(cell); positionLessonPreview();
+                const open = detail.hidden;
+                setChangeDetail(cell, open);
+                if (open) { openLessonPreview(cell); positionLessonPreview(); }
+                else closeLessonPreview();
                 cell.querySelector('.cs-adjustment-label')?.focus({ preventScroll: true });
             }
         }
@@ -982,6 +987,15 @@ export function createScheduleDeck(container, options = {}) {
 
     let previewCell = null;
     let pendingTouchPreview = null;
+    // Chromium re-dispatches pointerover under a stationary cursor once the
+    // expanded grid lays out beneath it; a hover preview must only follow a
+    // real movement, otherwise the first Escape closes a preview nobody asked for.
+    let hoverOrigin = null;
+    let hoverArmed = true;
+    let lastPointer = null;
+    const trackPointer = (event) => { if (event.pointerType !== 'touch') lastPointer = { x: event.clientX, y: event.clientY }; };
+    document.addEventListener('pointermove', trackPointer, { passive: true });
+    document.addEventListener('pointerdown', trackPointer, { passive: true });
     const previewMotions = new Map();
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -1014,8 +1028,17 @@ export function createScheduleDeck(container, options = {}) {
         cell.classList.remove('is-preview-moving');
     }
 
+    /** The comparison text is part of the preview: it opens with it and never outlives it. */
+    function setChangeDetail(cell, open) {
+        const detail = cell?.querySelector('.cs-adjustment-details');
+        if (!detail) return;
+        detail.hidden = !open;
+        cell.querySelector('.cs-adjustment-label')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
     function clearLessonPreviews() {
         previewCell = null;
+        refs.expandBody.querySelectorAll('.cs-adjustment-details:not([hidden])').forEach((node) => setChangeDetail(node.closest('[data-event-key]'), false));
         for (const cell of [...previewMotions.keys()]) cancelLessonMotion(cell);
         refs.expandBody.querySelectorAll('.is-preview, .is-preview-closing').forEach((node) => {
             node.classList.remove('is-preview', 'is-preview-closing');
@@ -1027,6 +1050,7 @@ export function createScheduleDeck(container, options = {}) {
         if (!previewCell) return;
         const cell = previewCell;
         previewCell = null;
+        setChangeDetail(cell, false);
         animateLessonPreview(cell, false);
     }
 
@@ -1271,10 +1295,11 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function openExpanded() {
-        if (!state.overview?.weeks?.length || !refs.expand) return;
+        if (destroyed || !state.overview?.weeks?.length || !refs.expand) return;
         if (state.expanded) return;
         expandMotionGeneration += 1;
         if (refs.expand.hidden) expandedTrigger = document.activeElement;
+        overlayCoordinator?.beforeOpen?.();
         state.expanded = true;
         if (refs.expand.hidden || renderedExpandedWeek !== state.overview.weeks[state.activeWeekIndex]) renderExpanded();
         refs.expand.hidden = false;
@@ -1283,11 +1308,14 @@ export function createScheduleDeck(container, options = {}) {
         // its current transform instead of reconstructing the course links.
         refs.expand.getBoundingClientRect();
         refs.expand.classList.add('is-open');
+        hoverArmed = false;
+        hoverOrigin = lastPointer ? { ...lastPointer } : null;
         scheduleChangeLines();
+        notifyOverlay();
         refs.expandClose.focus({ preventScroll: true });
     }
 
-    function closeExpanded() {
+    function closeExpanded({ restoreFocus = true, immediate = false } = {}) {
         if (!state.expanded) return;
         state.expanded = false;
         const generation = ++expandMotionGeneration;
@@ -1298,11 +1326,13 @@ export function createScheduleDeck(container, options = {}) {
             if (state.expanded || generation !== expandMotionGeneration) return;
             clearLessonPreviews();
             refs.expand.hidden = true;
+            notifyOverlay();
         };
-        const animations = reducedMotion.matches ? [] : refs.expand.getAnimations({ subtree: true });
+        const animations = immediate || reducedMotion.matches ? [] : refs.expand.getAnimations({ subtree: true });
         if (!animations.length) finish();
         else Promise.allSettled(animations.map((animation) => animation.finished)).then(finish);
-        (expandedTrigger?.isConnected ? expandedTrigger : refs.stage)?.focus({ preventScroll: true });
+        notifyOverlay();
+        if (restoreFocus) (expandedTrigger?.isConnected ? expandedTrigger : refs.stage)?.focus({ preventScroll: true });
     }
 
     /* ---------------- 学期下拉 ---------------- */
@@ -1442,8 +1472,17 @@ export function createScheduleDeck(container, options = {}) {
         config.onNavigate(link.getAttribute('href'));
     }
 
+    function onExpandPointerMove(event) {
+        if (hoverArmed || event.pointerType === 'touch') return;
+        if (hoverOrigin && Math.abs(event.clientX - hoverOrigin.x) + Math.abs(event.clientY - hoverOrigin.y) < 4) return;
+        hoverArmed = true;
+        const cell = event.target.closest('.cs-lesson--cell')
+            || event.target.closest('.cs-lesson-slot')?.querySelector('.cs-lesson--cell');
+        if (cell && !event.target.closest('[data-csd-change]')) openLessonPreview(cell);
+    }
+
     function onLessonPointerOver(event) {
-        if (event.pointerType === 'touch') return;
+        if (event.pointerType === 'touch' || !hoverArmed) return;
         if (event.target.closest('[data-csd-change]')) return;
         const cell = event.target.closest('.cs-lesson--cell')
             || event.target.closest('.cs-lesson-slot')?.querySelector('.cs-lesson--cell');
@@ -1477,7 +1516,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onDocumentKeydown(event) {
-        if (!state.expanded) return;
+        if (!state.expanded || event.defaultPrevented || event.isComposing || event.keyCode === 229 || (overlayCoordinator && !overlayCoordinator.isTop())) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             if (previewCell) closeLessonPreview();
@@ -1517,6 +1556,7 @@ export function createScheduleDeck(container, options = {}) {
     refs.expand.addEventListener('click', onExpandBackdrop);
     refs.expand.addEventListener('wheel', onExpandWheel, { passive: false });
     refs.expandBody.addEventListener('click', onExpandBodyClick);
+    refs.expandBody.addEventListener('pointermove', onExpandPointerMove);
     refs.expandBody.addEventListener('keydown', onLineKeydown);
     refs.expandBody.addEventListener('pointerover', onLessonPointerOver);
     refs.expandBody.addEventListener('pointerout', onLessonPointerOut);
@@ -1532,6 +1572,34 @@ export function createScheduleDeck(container, options = {}) {
     /* ---------------- 公开 API ---------------- */
 
     return {
+        overlay: {
+            getOwner: () => container,
+            getRoot: () => refs.expand,
+            getTrigger: () => expandedTrigger?.isConnected ? expandedTrigger : refs.stage,
+            isExpanded: () => state.expanded && !destroyed,
+            isPresent: () => !refs.expand.hidden && !destroyed,
+            dismissTop(reason = 'programmatic') {
+                if (destroyed) return false;
+                if (reason === 'parent-destroyed' && !state.expanded && !refs.expand.hidden) {
+                    expandMotionGeneration += 1;
+                    clearLessonPreviews();
+                    refs.expand.hidden = true;
+                    notifyOverlay();
+                    return true;
+                }
+                if (!state.expanded) return false;
+                if (reason === 'parent-destroyed') closeExpanded({ restoreFocus: false, immediate: true });
+                else if (previewCell) closeLessonPreview();
+                else closeExpanded();
+                return true;
+            },
+            connect(coordinator) {
+                if (destroyed) throw new Error('Cannot connect a destroyed schedule');
+                if (overlayCoordinator) throw new Error('Schedule overlay already has a coordinator');
+                overlayCoordinator = coordinator;
+                return () => { if (overlayCoordinator === coordinator) overlayCoordinator = null; };
+            },
+        },
         goToWeek,
         focusLesson,
         showAdjustment(eventKey) { if (!state.expanded) openExpanded(); return activateChange(eventKey); },
@@ -1573,7 +1641,11 @@ export function createScheduleDeck(container, options = {}) {
             return state.activeWeekIndex;
         },
         destroy() {
+            if (destroyed) return;
             destroyed = true;
+            state.expanded = false;
+            overlayCoordinator?.onDestroy?.();
+            overlayCoordinator = null;
             window.cancelAnimationFrame(lineFrame);
             previousLineRoutes = [];
             changeColorsByTerm.clear();
@@ -1584,6 +1656,8 @@ export function createScheduleDeck(container, options = {}) {
             window.removeEventListener('resize', positionLessonPreview);
             reducedMotion.removeEventListener('change', onReducedMotionChange);
             document.removeEventListener('keydown', onDocumentKeydown);
+            document.removeEventListener('pointermove', trackPointer);
+            document.removeEventListener('pointerdown', trackPointer);
             expand.remove();
             container.classList.remove('cs-deck');
             container.innerHTML = '';

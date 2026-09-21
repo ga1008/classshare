@@ -1,0 +1,17 @@
+.lq-tooltip {
+    --lq-material-blur: var(--ls-blur-thin);
+    position: fixed;
+    width: max-content;
+    max-width: min(280px, calc(100vw - 24px));
+    padding: 6px 9px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    opacity: 1;
+    transition: opacity 120ms var(--ls-ease-out);
+}
+.lq-tooltip[hidden] { display: none; }
+.lq-tooltip[data-ui-overlay-state="closed"] { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .lq-tooltip { transition: none; } }

@@ -6,6 +6,8 @@ from io import BytesIO
 from pathlib import Path
 import sqlite3
 import uuid
+from types import SimpleNamespace
+from urllib.parse import parse_qsl
 
 from fastapi import HTTPException
 from classroom_app.routers.materials_parts import node_ops, library
@@ -203,6 +205,20 @@ class AgentMaterialManagementTests(MaterialManagementFixture):
         self.assertEqual(200,normal.status_code,normal.text)
         self.assertEqual(normal.status_code,delegated['result']['http_status'],delegated)
         self.assertEqual(normal.json(),delegated['result']['data'])
+
+    def test_form_null_integer_omission_preserves_text_clear_false_and_zero(self):
+        from classroom_app.services.agent_platform_multipart_service import encode_form_upload
+        operation = SimpleNamespace(allows_files=False, parameters={'body': {
+            'parent_id': {'type': 'integer', 'nullable': True},
+            'clear_text': {'type': 'string', 'nullable': True},
+        }})
+        normalized = {'body': {'parent_id': None, 'clear_text': None,
+                               'empty_text': '', 'flag': False, 'zero': 0}}
+        wire, content_type, retained = encode_form_upload(None, None, operation, normalized, [])
+        self.assertEqual('application/x-www-form-urlencoded', content_type)
+        self.assertEqual([('clear_text', ''), ('empty_text', ''), ('flag', 'false'), ('zero', '0')],
+                         parse_qsl(wire.decode(), keep_blank_values=True))
+        self.assertIsNone(retained['body']['parent_id'])
 
     def test_delete_snapshot_includes_references_beyond_truncated_ui_samples(self):
         mid = self.create('Many references',kind='file')

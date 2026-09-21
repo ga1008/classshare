@@ -1,4 +1,5 @@
 import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
+import { connectScheduleLayer } from './lq/schedule-bridge.js';
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const termKey = (term) => term?.year ? `${term.year}|${term.term}` : '';
@@ -64,12 +65,19 @@ export function initStudentDashboardSchedule(root) {
     title: '本周课程', showTermSelect: false, compactSummary: true, onWeekChange: updateWeek,
     emptyHtml: () => '<strong>暂无已排定课表</strong><p>课程入口始终保留在“全部课程”中。</p>',
   });
+  connectScheduleLayer(deck);
   const applyMode = (next, animate = true) => {
     const previousPane = panes[mode];
     mode = next;
     if (next !== 'courses') save({ mode: next });
     const ticket = ++transition;
-    buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.studentScheduleMode === next)));
+    buttons.forEach(button => {
+      const isActive = button.dataset.studentScheduleMode === next;
+      // One state machine for both aria vocabularies: `dashboard` family renders
+      // real tabs (role="tab") server-side, the legacy DOM keeps role="group".
+      if (button.getAttribute('role') === 'tab') { button.setAttribute('aria-selected', String(isActive)); button.tabIndex = isActive ? 0 : -1; }
+      else button.setAttribute('aria-pressed', String(isActive));
+    });
     find('week-nav').hidden = next === 'courses';
     find('schedule-term').parentElement.hidden = next === 'courses';
     find('schedule-hint').hidden = next !== '3d';
@@ -134,6 +142,17 @@ export function initStudentDashboardSchedule(root) {
     }
   };
   buttons.forEach(button => button.addEventListener('click', () => applyMode(button.dataset.studentScheduleMode)));
+  if (buttons.length && buttons[0].getAttribute('role') === 'tab') {
+    buttons[0].parentElement?.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const currentIndex = buttons.findIndex(button => button === document.activeElement);
+      const baseIndex = currentIndex >= 0 ? currentIndex : buttons.findIndex(button => button.getAttribute('aria-selected') === 'true');
+      const nextIndex = (baseIndex + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[nextIndex].focus();
+      applyMode(buttons[nextIndex].dataset.studentScheduleMode);
+    });
+  }
   find('week-prev').addEventListener('click', () => deck.goToWeek(activeIndex - 1));
   find('week-next').addEventListener('click', () => deck.goToWeek(activeIndex + 1));
   find('week-today').addEventListener('click', () => { const index = overview?.weeks?.findIndex(week => week.is_current) ?? -1; if (index >= 0) deck.goToWeek(index); });

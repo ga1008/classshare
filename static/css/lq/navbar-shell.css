@@ -1,0 +1,129 @@
+/* Shared navbar composition, including S3 scene contrast and reserved chip geometry. */
+.lq-navbar-title { margin: 0; font-size: var(--ls-t-headline); line-height: var(--ls-leading-body); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
+.lq-navbar-context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); min-width: 0; max-width: 100%; }
+.lq-navbar-context-actions .app-topbar-action { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); height: auto; background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.lq-navbar-context-actions .app-topbar-action :is(strong,small,.app-topbar-action__icon) { color: inherit; }
+.lq-navbar-skip { position: fixed; left: var(--ls-s-3); top: var(--ls-s-3); padding: var(--ls-s-3); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-on-primary-soft)); z-index: var(--ls-z-toast); transform: translateY(-200%); }
+.lq-navbar-skip:focus { transform: none; }
+.lq-navbar-skip:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+/* The image remains behind its contrast surface. Avoid the legacy image's
+   additional software blur so topbar and Dock are the two persistent layers. */
+[data-lq-navbar-topbar] > .app-topbar__scene > i { filter: none; }
+[data-lq-navbar-content] { min-width: 0; }
+[data-lq-back-to-top].back-to-top { backdrop-filter: none; -webkit-backdrop-filter: none; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-on-primary-soft)); border-color: hsl(var(--ls-line)); box-shadow: var(--ls-shadow-1); }
+@media (max-width:767px) {
+  /* Stable no-JS compensation. The enhancer replaces this with the measured dock height. */
+  [data-lq-navbar-content][data-lq-dock-content] { --lq-dock-h: calc(var(--ls-s-16) + var(--ls-s-6)); }
+  [data-navbar-dock] { box-sizing: border-box; width: calc(100% - var(--ls-s-6)); }
+  [data-navbar-dock] .lq-dock__item { flex: 1 1 0; min-width: 0; }
+  [data-lq-dock-back-to-top].back-to-top { bottom: calc(var(--ls-s-16) + var(--ls-s-6) + env(safe-area-inset-bottom)); }
+}
+@media (forced-colors:active) {
+  .lq-navbar-context-actions .app-topbar-action, .lq-navbar-skip { background: Canvas; color: CanvasText; border-color: CanvasText; }
+}
+.app-topbar:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    position: sticky;
+    top: 0;
+    width: auto;
+    margin: var(--ls-s-3);
+    padding: var(--ls-s-2) var(--ls-s-4);
+    gap: var(--ls-s-3);
+    min-height: calc(var(--ls-s-12) + var(--ls-s-2));
+    border-radius: var(--ls-r-md);
+    color: hsl(var(--ls-ink));
+    isolation: isolate;
+}
+:root[data-appearance] :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) > .app-topbar__scene > b {
+    background: hsl(var(--ls-surface-1) / .96);
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .app-topbar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ls-s-2);
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1));
+    margin: 0;
+    padding: var(--ls-s-1);
+    color: hsl(var(--ls-on-primary-soft));
+    text-decoration: none;
+    font-size: var(--ls-t-sub);
+    font-weight: var(--ls-weight-title3);
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-topbar__lead {
+    display: grid;
+    grid-template-columns: auto calc(var(--ls-s-10) + var(--ls-s-1));
+    gap: var(--ls-s-2);
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .app-topbar-brand { min-width: calc(var(--ls-s-10) + var(--ls-s-1)); justify-content: center; }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .topbar-scene-chip {
+    position: relative;
+    box-sizing: border-box;
+    width: calc(var(--ls-s-10) + var(--ls-s-1));
+    height: calc(var(--ls-s-10) + var(--ls-s-1));
+    min-width: calc(var(--ls-s-10) + var(--ls-s-1));
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1));
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .topbar-scene-chip .topbar-scene-chip__label {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-account { color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); overflow-wrap: anywhere; }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-topbar__actions { align-items: stretch; }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-utilities,
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools { font-size: var(--ls-t-footnote); }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .message-center-bell {
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1));
+    padding: var(--ls-s-2) var(--ls-s-3);
+    white-space: nowrap;
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .message-center-bell.is-unread {
+    background: hsl(var(--ls-primary-soft));
+    color: hsl(var(--ls-on-primary-soft));
+    box-shadow: none;
+}
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .message-center-bell-toast { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [hidden] { display: none; }
+@media (max-width: 1023px) {
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [data-lq-pane-mode="drawer"] details.ui-palette-control[open],
+    :root[data-lq-shell-fallback="inline"] :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) details.ui-palette-control[open] { width: 100%; max-width: 100%; flex-basis: 100%; }
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [data-lq-pane-mode="drawer"] .ui-preferences-panel,
+    :root[data-lq-shell-fallback="inline"] :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .ui-preferences-panel {
+        position: static;
+        inset: auto;
+        width: 100%;
+        max-height: none;
+        margin-top: var(--ls-s-2);
+        overflow: visible;
+    }
+}
+/* Legacy student-home rules size its old palette select to 96/112px. The
+   shared preferences panel must give all three fields its actual grid space. */
+[data-lq-shell]:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [data-ui-preferences-panel] select.ui-palette-select { width: 100%; min-width: 0; max-width: 100%; }
+@media (min-width: 1024px) {
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools { flex-basis: 100%; justify-content: flex-end; }
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-topbar__actions { max-width: min(60vw, 900px); justify-content: flex-end; }
+}
+@media (max-width: 1023px) {
+    .app-topbar:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) { grid-template-columns: auto minmax(0,1fr) auto; margin: var(--ls-s-2); padding: var(--ls-s-2); }
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .app-topbar-brand span { display: none; }
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
+    :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools .lq-btn { white-space: normal; min-width: 0; }
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="lanshare" data-appearance="light" data-ui-palette="indigo" data-lq-tier="A" data-lq-glass="tinted">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login material contrast specimen</title>
+<link rel="stylesheet" href="/static/css/tailwind-app.css">
+<style>
+html, body { margin: 0; min-height: 100%; }
+body { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.scene-image { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.specimen-shell { position: relative; width: min(520px, 100%); }
+.specimen-shell > .lq-scrim { border-radius: var(--ls-r-lg); }
+.specimen-card { position: relative; padding: 32px; border-radius: var(--ls-r-lg); }
+.specimen-card h1 { color: inherit; font-size: 28px; font-weight: 700; margin-bottom: 16px; }
+.specimen-card p { color: inherit; font-size: 14px; line-height: 1.65; margin: 16px 0; }
+.specimen-card label { display: block; margin: 24px 0 10px; font-size: 14px; }
+.specimen-field { display: block; padding: 13px 12px; border: 1px solid currentColor; border-radius: var(--ls-r-sm); }
+.specimen-card footer { margin-top: 24px; font-size: 13px; }
+@media (max-width: 640px) { .specimen-card { padding: 24px; } }
+</style></head>
+<body>
+<img class="scene-image" alt="" aria-hidden="true">
+<div class="specimen-shell">
+  <div class="lq-scrim" aria-hidden="true"></div>
+  <main class="specimen-card lq-glass lq-glass--clear" data-lq-tone="dark">
+    <h1><span data-lq-pixel-text>欢迎回到课堂</span></h1>
+    <p><span data-lq-pixel-text>输入账户信息，继续你的学习旅程。</span></p>
+    <label><span data-lq-pixel-text>学号或账户</span></label>
+    <div class="specimen-field"><span data-lq-pixel-text>202600001</span></div>
+    <label><span data-lq-pixel-text>密码</span></label>
+    <div class="specimen-field"><span data-lq-pixel-text>安全登录课堂平台</span></div>
+    <footer><span data-lq-pixel-text>找回密码 · 教师入口</span></footer>
+  </main>
+</div>
+</body></html>

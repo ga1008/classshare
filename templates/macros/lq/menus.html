@@ -1,0 +1,12 @@
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% macro lq_menu(id, label, items) -%}
+{%- set p = lq_props('menu', id=id, label=label, items=items, **kwargs) -%}
+<div{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- for item in p['items'] -%}
+{%- if item.separator %}<div class="lq-menu__separator" role="separator" aria-orientation="horizontal"></div>{% endif -%}
+{%- set b = item.button -%}
+<{{ b.tag }} class="{{ b.classes|forceescape }}"{% for key, value in b.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if b.icon %}<span class="lq-btn__icon" aria-hidden="true">{{ lq_icon(b.icon) }}</span>{% endif -%}
+<span class="lq-btn__label">{{ b.label|forceescape }}</span></{{ b.tag }}>
+{%- endfor -%}</div>
+{%- endmacro %}

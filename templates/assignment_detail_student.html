@@ -892,8 +892,8 @@
 
 {% block scripts %}
 {% include "partials/markdown_assets.html" %}
-<script src="/static/js/behavior_tracker.js"></script>
-<script type="module" src="/static/js/feedback.js"></script>
+<script src="{{ asset_url('js/behavior_tracker.js') }}"></script>
+<script type="module" src="{{ asset_url('js/feedback.js') }}"></script>
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
@@ -907,7 +907,7 @@
         parseGradingFeedback,
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
-    } from '/static/js/grading_feedback.js?v=20260517';
+    } from '{{ asset_url('js/grading_feedback.js') }}';
 
     const MAX_SIZE = {{ max_total_mb }} * 1024 * 1024;
     const MAX_PER_FILE = {{ max_per_file_mb }} * 1024 * 1024;
@@ -919,6 +919,7 @@
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
     let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission) | tojson }};
+    let submissionSucceeded = false;
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     let uploadManager = null;
@@ -1134,6 +1135,7 @@
     }
 
     function saveLocalAnswerDraft() {
+        if (submissionSucceeded) return;
         const answers = collectAnswers();
         const savedAt = new Date().toISOString();
         try {
@@ -1166,6 +1168,7 @@
     }
 
     function scheduleAnswerServerSave(delay = ANSWER_SERVER_SAVE_DELAY_MS) {
+        if (submissionSucceeded) return;
         clearTimeout(answerServerTimer);
         answerServerTimer = setTimeout(() => {
             draftSyncChain = draftSyncChain.catch(() => null).then(() => saveAnswersToServer());
@@ -1184,6 +1187,7 @@
     }
 
     async function saveAnswersToServer() {
+        if (submissionSucceeded) return null;
         if (!document.querySelector('.answer-textarea')) return null;
         const answersJson = answersJsonString();
         if (answersJson === lastServerAnswersSignature) {
@@ -1215,6 +1219,7 @@
 
     /** Best-effort flush when the tab is being hidden or closed. */
     function flushAnswerDraftOnLeave() {
+        if (submissionSucceeded) return;
         if (!document.querySelector('.answer-textarea')) return;
         clearTimeout(answerLocalTimer);
         saveLocalAnswerDraft();
@@ -1235,6 +1240,7 @@
         if (!area || answerAutosaveBound) return;
         answerAutosaveBound = true;
         area.addEventListener('input', (event) => {
+            if (submissionSucceeded) return;
             if (!event.target.classList?.contains('answer-textarea')) return;
             clearTimeout(answerLocalTimer);
             answerLocalTimer = setTimeout(saveLocalAnswerDraft, ANSWER_LOCAL_SAVE_DELAY_MS);
@@ -1254,6 +1260,7 @@
 
     /** Server draft (answers + attachments) wins when it is newer than the local copy. */
     function restoreServerAnswers(draft) {
+        if (submissionSucceeded) return;
         if (!draft?.exists) {
             if (readLocalAnswerDraft()) scheduleAnswerServerSave(1200);
             return;
@@ -1276,6 +1283,7 @@
     }
 
     function saveLocalAnswerDraftSilently() {
+        if (submissionSucceeded) return;
         const answers = collectAnswers();
         try {
             if (answersHaveContent(answers)) {
@@ -1438,6 +1446,7 @@
     }
 
     function scheduleDraftSync(delay = 400) {
+        if (submissionSucceeded) return;
         clearTimeout(draftSyncTimer);
         draftSyncTimer = setTimeout(() => {
             draftSyncChain = draftSyncChain.catch(() => null).then(() => syncAttachmentsToDraft());
@@ -1445,6 +1454,7 @@
     }
 
     async function syncAttachmentsToDraft() {
+        if (submissionSucceeded) return null;
         if (!uploadManager) return null;
         const pending = uploadManager.getUnsyncedEntries();
         if (!pending.length) return null;
@@ -1550,6 +1560,7 @@
     }
 
     window.submitAnswers = async function() {
+        if (submissionSucceeded) return;
         if (!assignmentAcceptingSubmissions) {
             showToast('已超过允许提交时间，系统正在以服务器时间为准拦截提交。', 'warning');
             return;
@@ -1609,6 +1620,13 @@
             }
 
             const droppedCount = Number(payload.dropped_file_count || 0);
+            // Success is terminal for this page, including its scheduled
+            // reload: pagehide and old debounce callbacks must not recreate
+            // the draft that the accepted submission is about to clear.
+            submissionSucceeded = true;
+            clearTimeout(answerLocalTimer);
+            clearTimeout(answerServerTimer);
+            clearTimeout(draftSyncTimer);
             const successMessage = droppedCount > 0
                 ? `${droppedCount} filtered file(s) were ignored during submission.`
                 : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : '提交成功。');

@@ -1979,7 +1979,7 @@
 {% set include_mermaid = true %}
 {% include "partials/markdown_assets.html" %}
 <script type="module">
-    import { renderMarkdownHtml } from '/static/js/grading_feedback.js?v=20260517';
+    import { renderMarkdownHtml } from '{{ asset_url('js/grading_feedback.js') }}';
 
     const ASSIGNMENT_ID = {{ assignment.id | string | tojson }};
     const INITIAL_AI_ACTIVE = {{ summary.ai_status.is_active | tojson }};

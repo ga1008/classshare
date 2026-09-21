@@ -1,0 +1,17 @@
+        {% if not profile_in_shell|default(false) %}
+        <aside class="profile-sidebar">
+            <nav class="profile-nav profile-band profile-reveal{% if _profile_lq %} lq-profile-nav{% endif %}" aria-label="个人中心菜单">
+                {% for item in nav_items %}
+                <a class="profile-nav__link{% if item.active %} is-active{% endif %}" href="{{ item.href }}"{% if _profile_lq and item.active %} aria-current="page"{% endif %}>
+                    <span class="profile-nav__dot" aria-hidden="true"></span>
+                    <span class="profile-nav__copy">
+                        <strong>{{ item.label }}</strong>
+                        <small>{{ item.short_label }}</small>
+                    </span>
+                    {% if item.badge %}<span class="profile-nav__badge">{{ item.badge if item.badge < 100 else '99+' }}</span>{% endif %}
+                </a>
+                {% endfor %}
+            </nav>
+
+        </aside>
+        {% endif %}

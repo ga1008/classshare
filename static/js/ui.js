@@ -3,66 +3,40 @@
  * Global UI utilities for modals, toasts, dropdowns, formatters, and theme management.
  */
 
-// Toast Notifications
-const createToastContainer = () => {
-    let container = document.getElementById('toast-container');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toast-container';
-        container.className = 'toast-container';
-        document.body.appendChild(container);
-    }
-    return container;
-};
+import { getLayerSystem } from './lq/layer.js';
 
 const getMarkdownRuntime = () => window.MarkdownRuntime || null;
+const TOAST_BRIDGE = Symbol.for('lanshare.ui.toast-bridge.v1');
 
-/**
- * Display a toast notification
- * @param {string} message - Message text
- * @param {string} type - 'success', 'error', 'info', 'warning'
- * @param {number} duration - ms to display
- */
+/** Legacy calls stay synchronous/undefined; the shared notification module is lazy. */
 export function showToast(message, type = 'success', duration = 3000) {
-    const container = createToastContainer();
-    const toast = document.createElement('div');
-    const normalizedMessage = String(message ?? '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 280);
-
-    const icons = {
-        success: `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
-        error: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-        info: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
-        warning: `<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
-    };
-
-    const typeClass = type === 'error' ? 'danger' : type;
-    toast.className = `toast toast-${typeClass}`;
-    toast.innerHTML = `
-        <div class="toast-icon">${icons[type] || icons.info}</div>
-        <div class="toast-content">
-            <div class="toast-message">${escapeHtml(normalizedMessage || '操作已完成')}</div>
-        </div>
-        <button class="toast-close" aria-label="Close" onclick="this.parentElement.remove()">
-            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-    `;
-
-    container.appendChild(toast);
-
-    requestAnimationFrame(() => {
-        toast.classList.add('show');
+    const bridge = document[TOAST_BRIDGE] ||= { loading: null, fallback: null, fallbackLease: null };
+    const normalized = String(message ?? '').replace(/\s+/g, ' ').trim().slice(0, 280) || '操作已完成';
+    const tone = type === 'error' ? 'danger' : ['primary', 'success', 'warning', 'danger', 'info', 'neutral'].includes(type) ? type : 'info';
+    const milliseconds = Number(duration);
+    const delay = Number.isFinite(milliseconds) && milliseconds > 0 ? Math.min(milliseconds, 2147483647) : 0;
+    bridge.loading ||= import('./lq/toast.js');
+    void bridge.loading.then(module => {
+        bridge.fallbackLease?.destroy(); bridge.fallbackLease = null;
+        bridge.fallback?.remove(); bridge.fallback = null;
+        module.toast(normalized, { tone, duration: delay }, document);
+    }).catch(() => {
+        bridge.loading = null;
+        if (!bridge.fallback?.isConnected) {
+            bridge.fallback = document.createElement('div');
+            bridge.fallback.className = 'lq-toast-fallback';
+            bridge.fallback.setAttribute('role', 'status');
+            document.body.append(bridge.fallback);
+            bridge.fallbackLease = getLayerSystem(document).registerCompanion(bridge.fallback, {
+                onRelease: () => { bridge.fallback?.remove(); bridge.fallback = null; bridge.fallbackLease = null; },
+            });
+        }
+        // One plaintext failure notice, never a second timer/notification queue.
+        bridge.fallback.textContent = `${normalized}（通知组件暂不可用）`;
+        const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = '关闭通知';
+        dismiss.addEventListener('click', () => { bridge.fallbackLease?.destroy(); bridge.fallbackLease = null; bridge.fallback?.remove(); bridge.fallback = null; }, { once: true });
+        bridge.fallback.append(dismiss);
     });
-
-    if (duration > 0) {
-        setTimeout(() => {
-            toast.classList.remove('show');
-            toast.classList.add('hide');
-            toast.addEventListener('transitionend', () => toast.remove());
-        }, duration);
-    }
 }
 
 /**
@@ -71,14 +45,31 @@ export function showToast(message, type = 'success', duration = 3000) {
 export const showMessage = showToast;
 
 // Modals Management
+const MODAL_BRIDGE = Symbol.for('lanshare.ui.modal-bridge.v1');
+const modalBridge = document[MODAL_BRIDGE] ||= { handles: new WeakMap(), listening: false };
+
+function registerModal(modalOverlay, initialFocus = true) {
+    const layer = getLayerSystem(document);
+    const handle = layer.open(modalOverlay, {
+        type: 'modal', surface: modalOverlay.querySelector('.modal-dialog,.modal-box,.modal-content,.modal') || modalOverlay,
+        initialFocus: initialFocus ? undefined : false,
+        onCloseRequested: () => modalOverlay.classList.remove('show'),
+        onClose: () => { modalOverlay.style.display = 'none'; },
+        onDestroy: () => { modalOverlay.classList.remove('show'); modalOverlay.style.display = 'none'; },
+    });
+    modalBridge.handles.set(modalOverlay, handle);
+    return handle;
+}
+
 export function openModal(modalId) {
     const modalOverlay = document.getElementById(modalId);
     if (modalOverlay) {
         modalOverlay.style.display = 'flex';
-        requestAnimationFrame(() => {
-            modalOverlay.classList.add('show');
-        });
-        document.body.style.overflow = 'hidden';
+        modalOverlay.hidden = false;
+        // The existing show-class transition remains the visual contract.
+        window.getComputedStyle(modalOverlay).opacity;
+        modalOverlay.classList.add('show');
+        registerModal(modalOverlay);
     } else {
         console.error(`Modal with ID '${modalId}' not found.`);
     }
@@ -87,32 +78,27 @@ export function openModal(modalId) {
 export function closeModal(modalId) {
     const modalOverlay = document.getElementById(modalId);
     if (modalOverlay) {
-        modalOverlay.classList.remove('show');
-        setTimeout(() => {
-            modalOverlay.style.display = 'none';
-            document.body.style.overflow = '';
-        }, 300);
+        let handle = modalBridge.handles.get(modalOverlay);
+        if (!handle || ['closed', 'destroyed'].includes(handle.state)) {
+            if (modalOverlay.hidden || window.getComputedStyle(modalOverlay).display === 'none') return;
+            handle = registerModal(modalOverlay, false);
+        }
+        return getLayerSystem(document).close(handle, 'programmatic');
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-dismiss="modal"]').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-            const modal = e.target.closest('.modal-backdrop');
-            if (modal?.hasAttribute('data-feedback-managed')) return;
-            if (modal) closeModal(modal.id);
-        });
+if (!modalBridge.listening) {
+    modalBridge.listening = true;
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-dismiss="modal"]');
+        const backdrop = event.target.matches?.('.modal-backdrop') ? event.target : null;
+        const modal = button?.closest('.modal-backdrop,.modal-overlay') || backdrop;
+        if (!modal || modal.hasAttribute('data-feedback-managed')) return;
+        const current = modalBridge.handles.get(modal);
+        if (!button && current && !['closed', 'destroyed'].includes(current.state)) return;
+        event.preventDefault(); closeModal(modal.id);
     });
-
-    document.querySelectorAll('.modal-backdrop').forEach((overlay) => {
-        if (overlay.hasAttribute('data-feedback-managed')) return;
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeModal(overlay.id);
-            }
-        });
-    });
-});
+}
 
 // Formatters
 export function formatSize(bytes) {

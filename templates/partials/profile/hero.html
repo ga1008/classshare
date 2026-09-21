@@ -1,0 +1,69 @@
+{% if _profile_lq %}
+{% include 'partials/profile/hero_lq.html' %}
+{% else %}
+    <section class="profile-hero profile-reveal">
+        <div class="profile-hero__main">
+            <div class="profile-hero__eyebrow-row">
+                <span class="profile-section-pill">{{ current_nav }}</span>
+            </div>
+            <div class="profile-hero__identity">
+                <span class="profile-hero__avatar-ring">
+                    <img class="profile-hero__avatar profile-identity__avatar" src="{{ profile.avatar_url }}" alt="头像">
+                </span>
+                <div class="profile-hero__copy">
+                    <h1>{{ profile.name }}</h1>
+                    <div class="profile-chip-row">
+                        <span class="profile-chip profile-chip--role" data-profile-display-role>{{ profile.display_role }}</span>
+                        {% if profile.class_name %}<span class="profile-chip">{{ profile.class_name }}</span>{% endif %}
+                        {% if profile.student_id_number %}<span class="profile-chip">学号 {{ profile.student_id_number }}</span>{% endif %}
+                        <span class="profile-chip">今日心情 <strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></span>
+                        <a class="profile-chip profile-chip--link" data-profile-homepage-chip href="{{ profile.homepage_url or '#' }}" target="_blank" rel="noopener noreferrer" {% if not profile.homepage_url %}hidden{% endif %}>个人主页</a>
+                    </div>
+                </div>
+            </div>
+            <div class="profile-hero__actions">
+                <a class="btn btn-primary" href="{{ _sec }}{{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
+                {% if profile.role == 'student' and active_section != 'portfolio' %}<a class="btn btn-outline" href="{{ _sec }}portfolio">成长档案</a>{% endif %}
+                {% if active_section != 'notifications' %}<a class="btn btn-outline" href="{{ _sec }}notifications">通知</a>{% endif %}
+                {% if active_section != 'private' %}<a class="btn btn-outline" href="{{ _sec }}private">私信</a>{% endif %}
+            </div>
+        </div>
+        <aside class="profile-hero__signal">
+            {% if profile.role == 'student' and cultivation %}
+            {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
+            {% set cultivation_card = {
+                'variant': 'full',
+                'title': cultivation.highest_level.level_name,
+                'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',
+                'score': cultivation.score,
+                'progress_percent': cultivation.progress_percent,
+                'level_short': cultivation.highest_level.short_name,
+                'level_name': cultivation.highest_level.level_name,
+                'level': cultivation.highest_level,
+                'theme': cultivation.highest_level.theme,
+                'next_label': cultivation_status_label,
+                'next_hint': cultivation.rank_notice
+            } %}
+            {% include "partials/cultivation_card.html" %}
+            <div class="profile-signal-grid">
+                <div><span>可破境课堂</span><strong>{{ cultivation.breakthrough_course_count }}</strong></div>
+                <div><span>已获道印</span><strong>{{ cultivation.certificate_count }}</strong></div>
+            </div>
+            {% else %}
+            <span>资料完整度</span>
+            <div class="profile-hero__signal-value"><strong data-profile-completion-value>{{ profile.completion.percent }}</strong><small>%</small></div>
+            <p>已完善 {{ profile.completion.completed }} / {{ profile.completion.total }} 项</p>
+            <div class="profile-progress"><span data-profile-completion-bar style="width: {{ profile.completion.percent }}%"></span></div>
+            {% endif %}
+        </aside>
+    </section>
+
+    {% if profile.role == 'student' and not profile.email %}
+    <section class="profile-email-reminder profile-reveal" data-profile-email-reminder>
+        <div>
+            <strong>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</strong>
+        </div>
+        <a class="btn btn-outline btn-sm" href="{{ _sec }}settings#profile-email">去补充</a>
+    </section>
+    {% endif %}
+{% endif %}

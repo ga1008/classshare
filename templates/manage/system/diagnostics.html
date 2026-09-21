@@ -7,7 +7,7 @@
 
 
 {% block content %}
-{{ page_head('压测与诊断', description='查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。') }}
+{{ page_head('压测与诊断', description='查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
 <div class="dg-grid">
     <section class="dg-card">

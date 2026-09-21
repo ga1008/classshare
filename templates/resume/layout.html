@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="lanshare">
+{% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
+{% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
+<html lang="zh-CN" data-theme="lanshare" {{ root_attrs(ui_palette) }}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - 简历管理与优化</title>
-    {% include "partials/ui_system_assets.html" %}
-    <link rel="stylesheet" href="/static/css/resume_console.css?v=20260906a">
+    {% include "partials/lq_editor_head.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/resume_console.css') }}">
     {% block extra_head %}{% endblock %}
 </head>
 {% set rz_icons = {
@@ -21,7 +23,7 @@
   'layout': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>',
   'files': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v5h5"></path></svg>'
 } %}
-<body class="rz-body" data-student-id="{{ user_info.id }}">
+<body class="rz-body" data-student-id="{{ user_info.id }}" {{ body_attrs(ui_palette) }}>
     <div class="rz-layout">
         <aside class="rz-sidebar" id="rzSidebar">
             <a href="/career-path" class="rz-brand">
@@ -75,7 +77,7 @@
 
     <div id="toast-container" class="toast-container"></div>
     <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
-    <script src="/static/js/career_tools_client.js?v=20260906a"></script>
+    <script src="{{ asset_url('js/career_tools_client.js') }}"></script>
     {% block page_script %}{% endblock %}
 </body>
 </html>

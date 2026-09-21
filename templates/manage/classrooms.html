@@ -30,7 +30,7 @@
         actions=[
             {'label': '查询空闲教室', 'variant': 'outline', 'id': 'focusFreeRoomBtn'},
             {'label': '从教务系统同步', 'variant': 'primary', 'id': 'syncClassroomsBtn'}
-        ]) %}
+        ], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <div class="manage-pagehead__insights">
             <span class="manage-pagehead__sub">信息归集</span>
             <div class="insight-board">

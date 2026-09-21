@@ -1,9 +1,19 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head %}
 
 {% block title %}我的成绩单 - 课堂平台{% endblock %}
 
+{% block head %}
+{{ super() }}
+{% if lq_pilot_enabled|default(false) %}
+{% include "partials/lq_shell_prepaint.html" %}
+<script type="module" blocking="render" src="{{ asset_url('js/report_card.js') }}"></script>
+{% endif %}
+{% endblock %}
+
 {% block css %}
 {{ super() }}
+{% if not lq_pilot_enabled|default(false) %}
 <style>
     .report-shell { display: grid; gap: 18px; }
     .report-hero {
@@ -58,11 +68,21 @@
     .report-empty { text-align: center; padding: 44px 20px; color: #64748b; }
     .report-empty strong { display: block; font-size: 1.05rem; color: #0f172a; margin-bottom: 6px; }
 </style>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
 {% set summary = report_card.summary %}
-<section class="report-shell">
+<section class="report-shell"{% if lq_pilot_enabled|default(false) %} data-lq-report-card{% endif %}>
+    {% if lq_pilot_enabled|default(false) %}
+    {% call lq_page_head('我的成绩，一目了然',description='按开课学期与任务类型查看已公布成绩、班级平均和学习变化。') %}
+        <div class="report-stats" aria-label="成绩概览">
+            <div class="report-stat lq-surface"><span>可查成绩</span><strong>{{ summary.record_total }}</strong></div>
+            <div class="report-stat lq-surface"><span>任务均分 · 百分制</span><strong>{{ summary.overall_avg if summary.overall_avg is not none else '—' }}</strong></div>
+            <div class="report-stat lq-surface"><span>位居前列次数</span><strong>{{ summary.top_band_count }}</strong></div>
+        </div>
+    {% endcall %}
+    {% endif %}
     {% if report_card.published_grades %}
     <section class="report-course" aria-label="已公布课程成绩">
         <h2>已公布课程成绩</h2>
@@ -78,6 +98,7 @@
         {% endfor %}
     </section>
     {% endif %}
+    {% if not lq_pilot_enabled|default(false) %}
     <header class="report-hero">
         <div>
             <span class="report-hero__eyebrow">Report Card · 成绩单</span>
@@ -90,9 +111,10 @@
             <div class="report-stat"><span>位居前列次数</span><strong>{{ summary.top_band_count }}</strong></div>
         </div>
     </header>
+    {% endif %}
     <nav class="report-course__meta" aria-label="成绩类型筛选">
         {% for value, label in [('', '全部'), ('homework', '平时作业'), ('midterm', '期中测验'), ('final', '期末测验')] %}
-        <a class="btn {{ 'btn-primary' if report_card.selected_assessment_kind == value else 'btn-outline-secondary' }}" href="/report-card?{{ ('assessment_kind=' ~ value ~ '&') if value else '' }}{{ ('class_offering_id=' ~ report_card.selected_class_offering_id) if report_card.selected_class_offering_id else '' }}" {% if report_card.selected_assessment_kind == value %}aria-current="page"{% endif %}>{{ label }}</a>
+        <a class="{% if lq_pilot_enabled|default(false) %}lq-btn lq-btn--md {{ 'lq-btn--prominent' if report_card.selected_assessment_kind == value else 'lq-btn--soft' }}{% else %}btn {{ 'btn-primary' if report_card.selected_assessment_kind == value else 'btn-outline-secondary' }}{% endif %}" href="/report-card?{{ ('assessment_kind=' ~ value ~ '&') if value else '' }}{{ ('class_offering_id=' ~ report_card.selected_class_offering_id) if report_card.selected_class_offering_id else '' }}" {% if report_card.selected_assessment_kind == value %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
         {% if summary.pending_total %}<span>{{ summary.pending_total }} 条成绩待批改或待揭晓</span>{% endif %}
     </nav>
@@ -150,7 +172,7 @@
         <div class="report-empty">
             <strong>当前范围还没有成绩记录</strong>
             <p>提交后的平时作业、期中测验和期末测验会按学期汇总到这里。</p>
-            <a class="btn btn-primary" href="/dashboard">回到首页</a>
+            <a class="{{ 'lq-btn lq-btn--prominent lq-btn--md' if lq_pilot_enabled|default(false) else 'btn btn-primary' }}" href="/dashboard">回到首页</a>
         </div>
     </section>
     {% endif %}
@@ -172,7 +194,8 @@
 {% block scripts %}
 {{ super() }}
 <script type="application/json" data-report-chart-data>{{ report_card.charts | tojson }}</script>
-<script src="/static/js/echarts.min.js"></script>
+<script src="{{ asset_url('js/echarts.min.js') }}"></script>
+{% if not lq_pilot_enabled|default(false) %}
 <script>
     (() => {
         const dataEl = document.querySelector('[data-report-chart-data]');
@@ -214,4 +237,5 @@
         window.addEventListener('resize', () => instances.forEach((c) => c.resize()), { passive: true });
     })();
 </script>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,26 @@
+{% from 'macros/lq/status.html' import lq_status, lq_save_status, lq_alert, lq_conflict %}
+{% from 'macros/lq/forms.html' import lq_select %}
+<section class="lq-preview__section" aria-labelledby="lq-save-status-title">
+  <div class="lq-preview__heading"><h2 id="lq-save-status-title">保存状态与就地提示</h2><p>下面是九种状态的呈现示例；本机留存与服务器确认使用不同文案。切换控件不发起保存。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {% for state in ['dirty','local_saved','syncing','synced','offline','error','conflict','submitting','submitted'] %}
+      {{ lq_save_status(state, action={'label':'重新核对','attrs':{'data-demo-status-check':state}} if state in ['error','conflict'] else none) }}
+    {% endfor %}
+  </div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_select('preview-save-state', '切换示例保存状态', value='dirty', options=[{'value':'dirty','label':'尚未保存'},{'value':'local_saved','label':'已保存到本机'},{'value':'syncing','label':'正在同步'},{'value':'synced','label':'已同步到服务器'},{'value':'offline','label':'离线，尚未同步'},{'value':'error','label':'保存失败'},{'value':'conflict','label':'内容有冲突'},{'value':'submitting','label':'正在提交'},{'value':'submitted','label':'已提交'}]) }}
+    {{ lq_save_status('dirty', id='preview-save-status') }}
+    <p role="status" data-lq-demo-save-feedback>可以切换状态观察就地反馈。</p>
+  </div>
+  <div class="lq-preview__content-grid">
+    {{ lq_alert('请检查必填内容后再继续。', title='填写检查', tone='warning') }}
+    {{ lq_alert('此处展示当前操作的条件和说明。', title='操作说明', tone='info') }}
+    {{ lq_alert('示例请求失败，草稿仍保留；请核对后再重试。', title='需要处理', tone='danger') }}
+  </div>
+  {{ lq_conflict({'label':'重新核对示例','attrs':{'data-demo-status-check':'conflict'}}, local='本地输入继续保留，尚未写回。', server='服务器版本由业务控制器重新读取后提供。') }}
+  <div class="lq-preview__specimens">
+    {{ lq_status('job','running','任务运行中') }}
+    {{ lq_status('submission-flag','late','已迟交') }}
+    {{ lq_status('unknown','unknown','未知状态保持中性显示') }}
+  </div>
+</section>

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "path": "static/css/lq/manage-shell.css",
+      "rules": ["legacy-class"],
+      "reason": "The S3 adapter has been extracted unchanged for the S4 shell. Existing header_actions nodes keep their original business hooks and form/iframe identity; this CSS only pairs their current app-topbar-action foreground and background with LQ tokens.",
+      "owner": "S4 shared management shell",
+      "scope": "Only existing app-topbar-action descendants of lq-manage-context-actions, including responsive, reduced-motion and forced-colors rules. No new legacy markup, page content or business controller is covered.",
+      "reviewAt": "S4 regular-page header action consumer migration; remove as each remaining authored slot moves to LQ controls"
+    },
+    {
+      "path": "static/css/lq/navbar-shell.css",
+      "rules": ["legacy-class"],
+      "reason": "Shared navigation must retain the authored navbar_actions block and its live form/iframe nodes. The local adapter colors those existing controls without cloning them or registering another business event owner.",
+      "owner": "S4 shared navbar shell",
+      "scope": "Only existing app-topbar-action descendants of lq-navbar-context-actions and their forced-colors pairing. Native new navigation uses LQ controls.",
+      "reviewAt": "S4 dashboard/growth/profile page consumer migration; remove after all navbar_actions callers use LQ controls"
+    }
+  ],
+  "policy": "Exceptions need exact path, rule names, reason, owner, scope and reviewAt. Unmigrated files only warn; no blanket waiver counts as acceptance."
+}

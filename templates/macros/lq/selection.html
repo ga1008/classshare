@@ -1,0 +1,8 @@
+{% macro _selection(kind, id, label) -%}
+{%- set p = lq_props(kind, id=id, label=label, **kwargs) -%}
+<div class="lq-field"><label class="lq-field__label" for="{{ p.id|forceescape }}">{{ p.label|forceescape }}</label><select{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- for item in p.options -%}<option{% for key, value in item.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{{ item.label|forceescape }}</option>{%- endfor -%}</select>
+{%- if p.help %}<p class="lq-field__help" id="{{ p.id|forceescape }}--lq-help">{{ p.help|forceescape }}</p>{% endif -%}</div>
+{%- endmacro %}
+{% macro lq_combobox(id, label) -%}{{ _selection('combobox', id, label, **kwargs) }}{%- endmacro %}
+{% macro lq_listbox(id, label) -%}{{ _selection('listbox', id, label, **kwargs) }}{%- endmacro %}

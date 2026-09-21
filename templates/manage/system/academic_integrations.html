@@ -14,7 +14,7 @@
 
 {% block content %}
 {{ page_head('教务系统对接', description='教师可保存自己的真实教务系统账号。系统会先访问学校教务系统完成一次登录校验，确认可用后再加密保存，后续排课、班级学生、监考日历与待办提醒可以复用同一套访问方法。',
-    actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'academic-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'academic-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'academic-sync-capability-refresh-btn'}]) }}
+    actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'academic-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'academic-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'academic-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 <section class="edu-hero">
     <div class="edu-hero-main">
         <div>

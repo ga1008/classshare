@@ -1,0 +1,744 @@
+{
+  "cases": [
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-basic",
+        "title": "课程摘要",
+        "meta": "可选元信息"
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-link",
+        "title": "原生标题链接",
+        "primary": {
+          "href": "/courses/1",
+          "id": "primary-link"
+        },
+        "actions": [
+          {
+            "label": "编辑属性",
+            "id": "secondary-action",
+            "attrs": {
+              "data-action": "edit"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-command",
+        "title": "打开资料",
+        "primary": {
+          "id": "primary-command"
+        },
+        "actions": [
+          {
+            "label": "下载",
+            "href": "/download?id=1&name=x",
+            "attrs": {
+              "target": "_blank"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-disabled",
+        "title": "暂不可用",
+        "primary": {
+          "id": "disabled-primary",
+          "disabled": true
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-flat",
+        "title": "扁平列表卡",
+        "variant": "flat",
+        "primary": {
+          "href": "#target"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-zero",
+        "title": "当前余额",
+        "variant": "stat",
+        "value": 0
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-formatted",
+        "title": "格式化成绩",
+        "variant": "stat",
+        "value": "86.5 分"
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "card-hero",
+        "title": "首次使用指南",
+        "variant": "hero"
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "list-main",
+        "label": "附件列表",
+        "items": [
+          {
+            "title": "第一个附件",
+            "primary": {
+              "id": "row-command"
+            },
+            "meta": "大小未知",
+            "actions": [
+              {
+                "label": "删除",
+                "id": "row-delete",
+                "variant": "destructive"
+              }
+            ]
+          },
+          {
+            "title": "无附加信息",
+            "unread": true
+          }
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "list-ordered",
+        "label": "步骤",
+        "ordered": true,
+        "items": [
+          {
+            "title": "准备资料"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "row-alone",
+        "title": "行呈现",
+        "meta": "渲染时置入列表"
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "id": "empty-zero"
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "id": "empty-search",
+        "reason": "no-results",
+        "variant": "card",
+        "actions": [
+          {
+            "label": "清除筛选",
+            "id": "clear-filter"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "id": "empty-error",
+        "reason": "error",
+        "description": "服务器暂时不可用",
+        "actions": [
+          {
+            "label": "重试",
+            "id": "retry",
+            "attrs": {
+              "data-action": "retry"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "id": "empty-forbidden",
+        "reason": "forbidden",
+        "variant": "page"
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "id": "empty-offline",
+        "reason": "offline"
+      }
+    },
+    {
+      "kind": "page_head",
+      "props": {
+        "id": "page-head",
+        "title": "课程管理",
+        "description": "当前教师有权管理的课程",
+        "explain": "此处只显示可管理的内容。",
+        "explainLabel": "查看课程说明",
+        "titleId": "page-heading",
+        "eyebrow": "不会显示",
+        "actions": [
+          {
+            "label": "新建课程",
+            "variant": "primary",
+            "id": "create-course"
+          },
+          {
+            "label": "导入",
+            "variant": "outline",
+            "id": "import-course"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "filter_bar",
+      "props": {
+        "id": "search-form",
+        "searchId": "content-search",
+        "searchValue": "保留输入",
+        "searchPlaceholder": "课程或附件",
+        "searchAttrs": {
+          "data-filter-search": ""
+        },
+        "action": "/search"
+      }
+    },
+    {
+      "kind": "filter_bar",
+      "props": {
+        "id": "filter-group",
+        "tag": "div",
+        "label": "当前表单内筛选"
+      }
+    },
+    {
+      "kind": "prose",
+      "props": {
+        "id": "prose-text",
+        "text": "<img src=x onerror=alert(1)> 应作为普通文本显示。"
+      }
+    },
+    {
+      "kind": "bubble",
+      "props": {
+        "id": "bubble-in",
+        "author": "王同学",
+        "time": "09:35",
+        "datetime": "2026-09-20T09:35:00+08:00",
+        "text": "请问这一部分如何操作？"
+      }
+    },
+    {
+      "kind": "bubble",
+      "props": {
+        "id": "bubble-out",
+        "side": "outgoing",
+        "author": "教师",
+        "time": "09:36",
+        "connected": true,
+        "text": "先查看说明。\n时间在手机上仍然可见。"
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "id": "escaped-content",
+        "title": "<script>alert(1)</script>",
+        "meta": "<b>文本</b>",
+        "attrs": {
+          "aria-hidden": true,
+          "data-lq-slot": "wrong",
+          "title": "\" onmouseover=alert(1) x=\""
+        }
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "grouped-list",
+        "label": "按日期分组",
+        "groups": [
+          {
+            "key": "today",
+            "title": "今天 <标题>",
+            "items": [
+              {
+                "id": "swipe-row",
+                "title": "可以滑动的附件",
+                "meta": "不会自动删除",
+                "swipe": {
+                  "key": "delete",
+                  "label": "删除附件"
+                }
+              }
+            ]
+          },
+          {
+            "key": "earlier",
+            "title": "更早",
+            "items": [
+              {
+                "title": "仍是原生列表行"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "swipe-disabled",
+        "title": "禁止删除的行",
+        "swipe": {
+          "key": "delete",
+          "label": "删除",
+          "disabled": true
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "swipe-busy",
+        "title": "控制器忙碌",
+        "swipe": {
+          "key": "archive",
+          "label": "移至回收站",
+          "busy": true
+        }
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "groups-empty",
+        "label": "空分组容器",
+        "groups": [],
+        "ordered": true
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "kind": "card",
+      "props": {
+        "title": ""
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "primary": {
+          "href": "javascript:alert(1)"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "primary": {
+          "href": "//evil.example/x"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "primary": {
+          "href": "/x\\y"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "primary": {
+          "href": "/x\ny"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "primary": {
+          "label": "override"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "actions": [
+          {
+            "label": "x",
+            "attrs": "onclick=x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "actions": [
+          {
+            "label": "x",
+            "attrs": {
+              "onclick": "x"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "actions": [
+          {
+            "label": "x",
+            "html": "<b>x</b>"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "variant": "stat"
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "variant": "stat",
+        "value": true
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "variant": "stat",
+        "value": 1.5
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "variant": "stat",
+        "value": 9007199254740992
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "label": "x",
+        "items": [
+          "raw"
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "label": ""
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "title": "x",
+        "unread": "false"
+      }
+    },
+    {
+      "kind": "empty",
+      "props": {
+        "reason": "success"
+      }
+    },
+    {
+      "kind": "filter_bar",
+      "props": {
+        "tag": "div",
+        "action": "/search"
+      }
+    },
+    {
+      "kind": "filter_bar",
+      "props": {
+        "searchId": "q",
+        "searchAttrs": "data-x"
+      }
+    },
+    {
+      "kind": "filter_bar",
+      "props": {
+        "action": "mailto:someone@example.test"
+      }
+    },
+    {
+      "kind": "prose",
+      "props": {
+        "rawHTML": "<img onerror=x>"
+      }
+    },
+    {
+      "kind": "prose",
+      "props": {
+        "text": {
+          "html": "x"
+        }
+      }
+    },
+    {
+      "kind": "bubble",
+      "props": {
+        "author": "a",
+        "time": ""
+      }
+    },
+    {
+      "kind": "bubble",
+      "props": {
+        "author": "a",
+        "time": "x",
+        "attrs": {
+          "style": "color:red"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "attrs": {
+          "role": "button"
+        }
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "label": "x",
+        "groups": []
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": null
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": [
+          {
+            "key": "a",
+            "title": "A"
+          },
+          {
+            "key": "a",
+            "title": "B"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "items": [
+          {
+            "title": "x"
+          }
+        ],
+        "groups": []
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": [
+          {
+            "key": "bad key",
+            "title": "x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": [
+          {
+            "key": "a",
+            "title": ""
+          }
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": [
+          {
+            "key": "a",
+            "title": "x",
+            "items": [
+              "raw"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "list",
+      "props": {
+        "id": "g",
+        "label": "x",
+        "groups": [
+          {
+            "key": "a",
+            "title": "x",
+            "html": "raw"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "title": "x",
+        "swipe": {
+          "key": "delete",
+          "label": "删除"
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "r",
+        "title": "x",
+        "swipe": null
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "r",
+        "title": "x",
+        "swipe": {
+          "key": "delete",
+          "label": ""
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "r",
+        "title": "x",
+        "swipe": {
+          "key": "x",
+          "label": "删除",
+          "disabled": 1
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "r",
+        "title": "x",
+        "swipe": {
+          "key": "x",
+          "label": "删除",
+          "busy": null
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "id": "r",
+        "title": "x",
+        "swipe": {
+          "key": "x",
+          "label": "删除",
+          "href": "/remove"
+        }
+      }
+    },
+    {
+      "kind": "card",
+      "props": {
+        "title": "x",
+        "swipe": {
+          "key": "delete",
+          "label": "x"
+        }
+      }
+    },
+    {
+      "kind": "row",
+      "props": {
+        "title": "x",
+        "groups": []
+      }
+    }
+  ]
+}

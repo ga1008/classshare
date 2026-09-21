@@ -8,7 +8,16 @@
 #}
 {% from "macros/ui_explanation.html" import explain_button %}
 
-{% macro page_head(title, description='', explain='', explain_label='', actions=[], eyebrow='', title_id='') %}
+{% macro page_head(title, description='', explain='', explain_label='', actions=[], eyebrow='', title_id='', lq_enabled=false) %}
+{% if lq_enabled %}
+{% from "macros/lq/content.html" import lq_page_head %}
+{% if caller %}
+{% set _legacy_caller = caller %}
+{% call lq_page_head(title, description=description, explain=explain, explain_label=explain_label, actions=actions, eyebrow=eyebrow, title_id=title_id) %}{{ _legacy_caller() }}{% endcall %}
+{% else %}
+{{ lq_page_head(title, description=description, explain=explain, explain_label=explain_label, actions=actions, eyebrow=eyebrow, title_id=title_id) }}
+{% endif %}
+{% else %}
 <header class="page-head" data-page-head>
     <div class="page-head__copy">
         {% if eyebrow %}<span class="page-head__eyebrow">{{ eyebrow }}</span>{% endif %}
@@ -32,9 +41,14 @@
     </div>
     {% endif %}
 </header>
+{% endif %}
 {% endmacro %}
 
-{% macro empty_state(title, description='', action_label='', action_href='', action_attrs='') %}
+{% macro empty_state(title, description='', action_label='', action_href='', action_attrs='', lq_enabled=false, reason='empty') %}
+{% if lq_enabled %}
+{% from "macros/lq/content.html" import lq_empty %}
+{{ lq_empty(reason=reason, title=title, description=description, attrs={'data-page-empty': ''}, actions=[{'label': action_label, 'href': action_href or none, 'variant': 'prominent', 'attrs': action_attrs or {}}] if action_label else []) }}
+{% else %}
 <div class="page-empty" data-page-empty>
     <strong>{{ title }}</strong>
     {% if description %}<p>{{ description }}</p>{% endif %}
@@ -42,9 +56,18 @@
     {% if action_href %}<a class="btn btn-primary btn-sm" href="{{ action_href }}" {{ action_attrs|safe }}>{{ action_label }}</a>{% else %}<button type="button" class="btn btn-primary btn-sm" {{ action_attrs|safe }}>{{ action_label }}</button>{% endif %}
     {% endif %}
 </div>
+{% endif %}
 {% endmacro %}
 
-{% macro filter_bar(search_id='', search_placeholder='搜索…', search_attrs='') %}
+{% macro filter_bar(search_id='', search_placeholder='搜索…', search_attrs='', lq_enabled=false) %}
+{% if lq_enabled %}
+{% from "macros/lq/forms.html" import lq_input %}
+{# The compatibility filter remains a group: no new form owner, search name or autocomplete. #}
+<div class="lq-filter-bar" data-filter-bar role="group" aria-label="筛选">
+    {% if search_id %}<div class="lq-filter-bar__search">{{ lq_input(search_id, '搜索', type='search', placeholder=search_placeholder, autocomplete='off', attrs=search_attrs or {}) }}</div>{% endif %}
+    {% if caller %}<div class="lq-filter-bar__controls">{{ caller() }}</div>{% endif %}
+</div>
+{% else %}
 <div class="filter-bar" data-filter-bar>
     {% if search_id %}
     <label class="filter-bar__search">
@@ -54,4 +77,5 @@
     {% endif %}
     {% if caller %}<div class="filter-bar__controls">{{ caller() }}</div>{% endif %}
 </div>
+{% endif %}
 {% endmacro %}

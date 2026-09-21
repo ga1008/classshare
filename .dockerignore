@@ -24,6 +24,7 @@ storage/
 dist/
 build/
 static/dist/
+static/assets/
 
 .codex-temp/
 .codex_tmp*/

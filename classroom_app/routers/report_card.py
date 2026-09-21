@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..lq_pilot import is_lq_pilot_enabled
 from ..services.student_report_card_service import build_student_report_card
 
 router = APIRouter()
@@ -38,6 +39,7 @@ async def report_card_page(request: Request, user: dict = Depends(get_current_us
             "request": request,
             "user_info": user,
             "report_card": report_card,
+            "lq_pilot_enabled": is_lq_pilot_enabled(request),
         },
     )
 

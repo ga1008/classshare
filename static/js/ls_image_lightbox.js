@@ -23,13 +23,16 @@
  * two-finger pinch, swipe at fit view = prev/next, ←/→, +/−, 0 = fit, Esc.
  */
 
+import { getLayerSystem } from './lq/layer.js';
+
 const ZOOM_FACTOR = 1.18;
 const EPSILON = 0.001;
 const SWIPE_THRESHOLD = 70;
 
 let root = null;
 let refs = null;
-let delegationBound = false;
+let layerHandle = null;
+const delegations = new Map();
 
 const state = {
     items: [],
@@ -52,8 +55,10 @@ const state = {
     pinchStartScale: 1,
     dragStart: null,
     movedDuringDrag: false,
+    pointerStartedOnImage: false,
     returnFocus: null,
     loadToken: 0,
+    open: false,
 };
 
 function clamp(value, min, max) {
@@ -67,41 +72,41 @@ function escapeText(value) {
 function createRoot() {
     if (root) return root;
     root = document.createElement('div');
-    root.className = 'ls-lightbox';
+    root.className = 'ls-lightbox lq-lightbox';
     root.hidden = true;
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
     root.setAttribute('aria-label', '图片预览');
     root.innerHTML = `
-        <div class="ls-lightbox__bg" aria-hidden="true">
-            <span class="ls-lightbox__blob ls-lightbox__blob--1"></span>
-            <span class="ls-lightbox__blob ls-lightbox__blob--2"></span>
-            <span class="ls-lightbox__blob ls-lightbox__blob--3"></span>
+        <div class="ls-lightbox__bg lq-lightbox__bg lq-scrim" aria-hidden="true">
+            <span class="ls-lightbox__blob ls-lightbox__blob--1 lq-lightbox__blob lq-lightbox__blob--1"></span>
+            <span class="ls-lightbox__blob ls-lightbox__blob--2 lq-lightbox__blob lq-lightbox__blob--2"></span>
+            <span class="ls-lightbox__blob ls-lightbox__blob--3 lq-lightbox__blob lq-lightbox__blob--3"></span>
         </div>
-        <div class="ls-lightbox__shell">
-            <header class="ls-lightbox__bar ls-glass">
-                <div class="ls-lightbox__copy">
-                    <strong class="ls-lightbox__title" data-ref="title">图片预览</strong>
-                    <span class="ls-lightbox__meta" data-ref="meta"></span>
+        <div class="ls-lightbox__shell lq-lightbox__shell">
+            <header class="ls-lightbox__bar ls-glass lq-lightbox__bar lq-glass lq-glass--clear">
+                <div class="ls-lightbox__copy lq-lightbox__copy">
+                    <strong class="ls-lightbox__title lq-lightbox__title" data-ref="title">图片预览</strong>
+                    <span class="ls-lightbox__meta lq-lightbox__meta" data-ref="meta"></span>
                 </div>
-                <div class="ls-lightbox__actions">
-                    <span class="ls-lightbox__counter" data-ref="counter"></span>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill" data-act="zoom-out" aria-label="缩小" title="缩小（−）">−</button>
-                    <span class="ls-lightbox__scale" data-ref="scale">100%</span>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill" data-act="zoom-in" aria-label="放大" title="放大（+）">+</button>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill" data-act="fit" title="适应窗口（0）">适应</button>
-                    <a class="ls-glass-pill ls-lightbox__pill" data-act="original" target="_blank" rel="noopener noreferrer" title="在新标签页打开原图">原图</a>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill ls-lightbox__close" data-act="close" aria-label="关闭预览" title="关闭（Esc）">×</button>
+                <div class="ls-lightbox__actions lq-lightbox__actions">
+                    <span class="ls-lightbox__counter lq-lightbox__counter" data-ref="counter"></span>
+                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-out" aria-label="缩小" title="缩小（−）">−</button>
+                    <span class="ls-lightbox__scale lq-lightbox__scale" data-ref="scale">100%</span>
+                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-in" aria-label="放大" title="放大（+）">+</button>
+                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="fit" title="适应窗口（0）">适应</button>
+                    <a class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="original" target="_blank" rel="noopener noreferrer" title="在新标签页打开原图">原图</a>
+                    <button type="button" class="ls-glass-pill ls-lightbox__pill ls-lightbox__close lq-lightbox__pill lq-lightbox__close" data-act="close" aria-label="关闭预览" title="关闭（Esc）">×</button>
                 </div>
             </header>
-            <div class="ls-lightbox__stage" data-ref="stage">
-                <img class="ls-lightbox__img" data-ref="img" alt="" draggable="false">
-                <div class="ls-lightbox__spinner" data-ref="spinner" hidden></div>
-                <div class="ls-lightbox__error" data-ref="error" hidden>图片加载失败</div>
+            <div class="ls-lightbox__stage lq-lightbox__stage" data-ref="stage">
+                <img class="ls-lightbox__img lq-lightbox__img" data-ref="img" alt="" draggable="false">
+                <div class="ls-lightbox__spinner lq-lightbox__spinner" data-ref="spinner" hidden></div>
+                <div class="ls-lightbox__error lq-lightbox__error" data-ref="error" hidden>图片加载失败</div>
             </div>
-            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--prev ls-glass" data-act="prev" aria-label="上一张" title="上一张（←）">‹</button>
-            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--next ls-glass" data-act="next" aria-label="下一张" title="下一张（→）">›</button>
-            <div class="ls-lightbox__hint ls-glass-pill" aria-hidden="true">滚轮缩放 · 拖拽移动 · ← → 切换 · Esc 关闭</div>
+            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--prev ls-glass lq-lightbox__nav lq-lightbox__nav--prev" data-act="prev" aria-label="上一张" title="上一张（←）">‹</button>
+            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--next ls-glass lq-lightbox__nav lq-lightbox__nav--next" data-act="next" aria-label="下一张" title="下一张（→）">›</button>
+            <div class="ls-lightbox__hint ls-glass-pill lq-lightbox__hint" aria-hidden="true">滚轮缩放 · 拖拽移动 · ← → 切换 · Esc 关闭</div>
         </div>
     `;
     document.body.appendChild(root);
@@ -308,6 +313,9 @@ function onPointerDown(event) {
     if (!state.loaded) return;
     if (event.button !== undefined && event.button !== 0) return;
     event.preventDefault();
+    // Pointer capture retargets the later click/dblclick to the stage. Keep
+    // the original hit so an image tap is not mistaken for empty backdrop.
+    if (state.pointers.size === 0) state.pointerStartedOnImage = event.target === refs.img;
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { refs.stage.setPointerCapture(event.pointerId); } catch { /* ignore */ }
     if (state.pointers.size === 2) {
@@ -356,6 +364,10 @@ function onPointerUp(event) {
     state.dragging = false;
     state.dragStart = null;
     applyTransform();
+    if (event.type === 'pointercancel') {
+        state.movedDuringDrag = true;
+        return;
+    }
     if (!wasDragging || !start) return;
     // Swipe between images when the picture is not zoomed in.
     if (!isPannable() && event.pointerType !== 'mouse') {
@@ -375,12 +387,8 @@ function onWheel(event) {
 }
 
 function onKeydown(event) {
-    if (!root || root.hidden) return;
+    if (!state.open || getLayerSystem(document).top() !== layerHandle || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
     switch (event.key) {
-        case 'Escape':
-            event.preventDefault();
-            closeImageLightbox();
-            break;
         case 'ArrowLeft':
             event.preventDefault();
             go(-1);
@@ -424,7 +432,7 @@ function bindRootEvents() {
             return;
         }
         // Click on the backdrop (outside the image) closes.
-        if (event.target === refs.stage && !state.movedDuringDrag) {
+        if (event.target === refs.stage && !state.pointerStartedOnImage && !state.movedDuringDrag) {
             closeImageLightbox();
         }
     });
@@ -434,7 +442,7 @@ function bindRootEvents() {
     refs.stage.addEventListener('pointercancel', onPointerUp);
     refs.stage.addEventListener('wheel', onWheel, { passive: false });
     refs.stage.addEventListener('dblclick', (event) => {
-        if (event.target !== refs.img) return;
+        if (event.target !== refs.img && !(event.target === refs.stage && state.pointerStartedOnImage)) return;
         event.preventDefault();
         toggleActualSize({ clientX: event.clientX, clientY: event.clientY });
     });
@@ -444,13 +452,33 @@ function bindRootEvents() {
             event.preventDefault();
         }
     });
-    window.addEventListener('resize', () => {
-        if (root.hidden || !state.loaded) return;
-        const wasAtFit = isAtFit();
-        measureStage();
-        state.fitScale = computeFitScale();
-        if (wasAtFit) fitToStage(); else applyTransform();
-    });
+}
+
+function onResize() {
+    if (!state.open || !state.loaded) return;
+    const wasAtFit = isAtFit();
+    measureStage(); state.fitScale = computeFitScale();
+    if (wasAtFit) fitToStage(); else applyTransform();
+}
+
+function beginClose() {
+    state.open = false;
+    root?.classList.remove('is-visible');
+    document.removeEventListener('keydown', onKeydown, true);
+    window.removeEventListener('resize', onResize);
+    state.loadToken += 1; state.loaded = false;
+    for (const pointerId of state.pointers.keys()) { try { refs?.stage.releasePointerCapture(pointerId); } catch { /* already released */ } }
+    state.pointers.clear(); state.dragging = false; state.dragStart = null; state.pinchStartDistance = 0;
+    state.pointerStartedOnImage = false;
+}
+
+function finishClose(_reason, handle) {
+    if (handle !== layerHandle) return;
+    beginClose();
+    root.hidden = true; root.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('ls-lightbox-open');
+    refs.img.removeAttribute('src'); refs.img.classList.remove('is-ready');
+    state.returnFocus = null; layerHandle = null;
 }
 
 /* ---------- public API ---------- */
@@ -476,48 +504,40 @@ export function openImageLightbox(options = {}) {
         .filter(Boolean);
     if (!items.length) return false;
     createRoot();
+    const layer = getLayerSystem(document);
+    if (!layerHandle || ['closed', 'destroyed'].includes(layerHandle.state)) {
+        state.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const host = layer.getPortalHost({ trigger: state.returnFocus });
+        if (root.parentElement !== host) host.appendChild(root);
+    }
     state.items = items;
     state.index = clamp(Number(options.index) || 0, 0, items.length - 1);
     state.groupLabel = String(options.groupLabel || '');
-    state.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     root.hidden = false;
     root.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('ls-lightbox-open');
+    window.getComputedStyle(root).opacity;
+    root.classList.add('is-visible');
+    state.open = true;
     document.addEventListener('keydown', onKeydown, true);
+    window.addEventListener('resize', onResize);
     // Load immediately (rAF may be throttled in background tabs); only the
     // fade-in class waits for the next frame.
     loadCurrent();
-    refs.close.focus({ preventScroll: true });
-    const reveal = () => root.classList.add('is-visible');
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(reveal); else setTimeout(reveal, 0);
-    setTimeout(reveal, 120);
+    layerHandle = layer.open(root, { type: 'viewer', modality: 'modal', trigger: state.returnFocus,
+        initialFocus: refs.close, returnFocus: state.returnFocus,
+        closeOnOutside: false, onCloseRequested: beginClose, onClose: finishClose, onDestroy: finishClose,
+    });
     return true;
 }
 
 export function closeImageLightbox() {
-    if (!root || root.hidden) return;
-    root.classList.remove('is-visible');
-    root.hidden = true;
-    root.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('ls-lightbox-open');
-    document.removeEventListener('keydown', onKeydown, true);
-    state.loadToken += 1;
-    state.loaded = false;
-    state.pointers.clear();
-    state.dragging = false;
-    if (refs?.img) {
-        refs.img.removeAttribute('src');
-        refs.img.classList.remove('is-ready');
-    }
-    const focusTarget = state.returnFocus;
-    state.returnFocus = null;
-    if (focusTarget && document.contains(focusTarget)) {
-        try { focusTarget.focus({ preventScroll: true }); } catch { /* ignore */ }
-    }
+    if (!layerHandle) return;
+    beginClose();
+    return getLayerSystem(document).close(layerHandle, 'button');
 }
 
 export function isImageLightboxOpen() {
-    return Boolean(root && !root.hidden);
+    return state.open;
 }
 
 function itemFromElement(el) {
@@ -559,21 +579,30 @@ export function collectLightboxGroup(el) {
 }
 
 export function bindImageLightboxDelegation(scope = document) {
-    if (scope === document && delegationBound) return;
-    if (scope === document) delegationBound = true;
-    scope.addEventListener('click', (event) => {
-        const trigger = event.target.closest('[data-ls-lightbox]');
+    if (delegations.has(scope)) return delegations.get(scope).dispose;
+    const listener = (event) => {
+        if (event.defaultPrevented) return;
+        const trigger = event.target.closest?.('[data-ls-lightbox]');
         if (!trigger || trigger.hasAttribute('data-ls-lightbox-disabled')) return;
         const group = collectLightboxGroup(trigger);
         if (!group.items.length) return;
         event.preventDefault();
         openImageLightbox(group);
-    });
+    };
+    const dispose = () => { scope.removeEventListener('click', listener); delegations.delete(scope); };
+    delegations.set(scope, { dispose }); scope.addEventListener('click', listener);
+    return dispose;
+}
+
+export function destroyImageLightbox() {
+    layerHandle?.destroy(); beginClose();
+    root?.remove(); root = null; refs = null;
+    for (const { dispose } of [...delegations.values()]) dispose();
 }
 
 bindImageLightboxDelegation(document);
 
-const api = { open: openImageLightbox, close: closeImageLightbox, isOpen: isImageLightboxOpen, collectGroup: collectLightboxGroup };
+const api = { open: openImageLightbox, close: closeImageLightbox, isOpen: isImageLightboxOpen, collectGroup: collectLightboxGroup, destroy: destroyImageLightbox };
 if (typeof window !== 'undefined') {
     window.LsImageLightbox = api;
 }

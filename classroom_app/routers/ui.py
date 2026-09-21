@@ -11,6 +11,7 @@ from .ui_parts import life_tip_pages as _life_tip_pages
 from .ui_parts import lesson_plan_pages as _lesson_plan_pages
 from .ui_parts import assessment_plan_pages as _assessment_plan_pages
 from .ui_parts import teacher_evaluation_pages as _teacher_evaluation_pages
+from .ui_parts import design_system as _design_system
 
 from .ui_parts.common import *
 from .ui_parts.auth import *
@@ -38,6 +39,7 @@ router.include_router(_life_tip_pages.router)
 router.include_router(_lesson_plan_pages.router)
 router.include_router(_assessment_plan_pages.router)
 router.include_router(_teacher_evaluation_pages.router)
+router.include_router(_design_system.router)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

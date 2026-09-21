@@ -1,0 +1,36 @@
+/* S1 foundation only. Component geometry remains owned by the existing UI. */
+:root {
+    color-scheme: light;
+    font-family: var(--font-family-sans);
+    background-color: hsl(var(--ls-surface-0));
+    color: hsl(var(--ls-ink));
+}
+
+:root[data-appearance="dark"] {
+    color-scheme: dark;
+}
+
+body {
+    font-family: var(--font-family-sans);
+}
+
+.lq-ambient {
+    background-color: hsl(var(--ls-surface-0));
+    background-image:
+        radial-gradient(ellipse at 10% 0%, hsl(var(--ls-ambient-a)), transparent 55%),
+        radial-gradient(ellipse at 90% 20%, hsl(var(--ls-ambient-b)), transparent 55%),
+        radial-gradient(ellipse at 50% 100%, hsl(var(--ls-ambient-c)), transparent 55%);
+}
+
+:root[data-lq-save-data="true"] .lq-ambient {
+    background-image: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lq-ambient { background-image: none; }
+}
+
+@media print {
+    :root { color-scheme: light; }
+    .lq-ambient { background-image: none; }
+}

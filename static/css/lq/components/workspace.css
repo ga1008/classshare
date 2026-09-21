@@ -1,0 +1,22 @@
+.lq-split, .lq-split__panes, .lq-split__pane, .lq-viewer { min-width: 0; max-width: 100%; }
+.lq-split__panes { display: grid; gap: var(--ls-s-4); }
+.lq-split__pane { overflow-wrap: anywhere; }
+.lq-split__heading { margin: 0 0 var(--ls-s-3); color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-headline); line-height: var(--ls-leading-headline); font-weight: var(--ls-weight-title3); }
+.lq-split[data-lq-split-enhanced="wide"] > .lq-split__panes { grid-template-columns: var(--lq-split, 280px) 12px minmax(0,1fr); gap: 0; }
+.lq-split__separator { position: relative; min-height: 44px; touch-action: none; cursor: col-resize; outline-offset: -2px; }
+.lq-split__separator::before { content: ''; position: absolute; inset-block: 0; width: 2px; inset-inline-start: calc(50% - 1px); background: hsl(var(--ls-line-strong)); border-radius: var(--ls-r-capsule); }
+.lq-split__separator:focus-visible { outline: 2px solid hsl(var(--ls-ring)); }
+.lq-split.is-resizing { user-select: none; }
+.lq-split.is-resizing > .lq-split__panes iframe { pointer-events: none; }
+.lq-split [hidden] { display: none; }
+.lq-split__pane :where(input,textarea,select,img,video,iframe) { max-width: 100%; }
+.lq-split__pane:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: -2px; }
+.lq-viewer { position: relative; display: grid; grid-template-rows: auto minmax(0,1fr); color: hsl(var(--ls-ink)); }
+.lq-viewer__toolbar { position: sticky; top: var(--lq-topbar-h, 0px); z-index: var(--ls-z-nav); display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-3); padding: var(--ls-s-3); border-radius: var(--ls-r-lg); }
+.lq-viewer--iframe > .lq-viewer__toolbar { position: relative; top: auto; }
+.lq-viewer__title { flex: 1 1 12rem; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: var(--ls-t-headline); line-height: var(--ls-leading-headline); font-weight: var(--ls-weight-title3); }
+.lq-viewer__actions { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
+.lq-viewer__content { min-width: 0; min-height: 0; overflow-wrap: anywhere; }
+.lq-viewer__content > iframe { display: block; width: 100%; max-width: 100%; min-height: 20rem; border: 0; }
+@media (pointer: coarse) { .lq-split[data-lq-split-enhanced="wide"] > .lq-split__panes { grid-template-columns: var(--lq-split, 280px) 44px minmax(0,1fr); } }
+@media (forced-colors: active) { .lq-split__separator::before { background: CanvasText; } .lq-split__separator:focus-visible { outline-color: Highlight; } }

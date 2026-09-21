@@ -7,14 +7,16 @@
 //   data-dp-role="start" | "end"（end 一侧会以 start 的值作为最小可选日期）
 // 退出机制：input 或祖先带有 data-ls-native 属性时不接管。
 
+import { getLayerSystem } from './lq/layer.js';
+
 (() => {
     'use strict';
 
     const ENHANCED_FLAG = 'lsDpEnhanced';
     const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
     const DUE_HINT_RE = /due|deadline|end|expire|late|until|close/i;
-    const MOBILE_QUERY = window.matchMedia('(max-width: 640px)');
-    const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const MOBILE_QUERY = window.matchMedia?.('(max-width: 640px)') || { matches: false };
+    const REDUCE_MOTION = window.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
 
     const ICON_CALENDAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
     const ICON_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
@@ -83,16 +85,9 @@
 
     let activePopup = null; // { root, backdrop, input, kind, state, teardown }
 
-    function closePopup(commitAnimation) {
-        if (!activePopup) return;
-        const { root, backdrop, teardown } = activePopup;
-        activePopup = null;
-        teardown();
-        const remove = () => { root.remove(); if (backdrop) backdrop.remove(); };
-        if (REDUCE_MOTION.matches) { remove(); return; }
-        root.classList.add('is-closing');
-        if (backdrop) backdrop.classList.add('is-closing');
-        setTimeout(remove, commitAnimation ? 200 : 150);
+    function closePopup(commitAnimation, popup = activePopup, reason = 'button') {
+        if (!popup) return;
+        return getLayerSystem(document).close(popup.handle, reason);
     }
 
     function defaultTimeFor(input) {
@@ -111,7 +106,8 @@
     function openPopup(input, kind) {
         if (activePopup) {
             const same = activePopup.input === input;
-            closePopup(false);
+            if (same) closePopup(false);
+            else activePopup.handle.destroy();
             if (same) return;
         }
         const today = new Date();
@@ -144,6 +140,10 @@
         const rangeOther = pairVal && pairVal.y ? dateKey(pairVal.y, pairVal.mo, pairVal.d) : null;
 
         const mobile = MOBILE_QUERY.matches;
+        const layer = getLayerSystem(document);
+        const display = input.closest('.ls-dp')?.querySelector('.ls-dp-display') || input;
+        const container = document.createElement('div');
+        container.className = 'ls-dp-layer';
         const root = document.createElement('div');
         root.className = `ls-dp-pop ls-dp-pop--${kind}${mobile ? ' is-sheet' : ''}`;
         root.setAttribute('role', 'dialog');
@@ -152,9 +152,15 @@
         if (mobile) {
             backdrop = document.createElement('div');
             backdrop.className = 'ls-dp-backdrop';
-            document.body.appendChild(backdrop);
+            container.appendChild(backdrop);
         }
-        document.body.appendChild(root);
+        container.appendChild(root);
+        layer.getPortalHost({ trigger: display }).appendChild(container);
+        const popup = { root, backdrop, container, input, kind, state, handle: null, commitTimer: 0, frames: new Set() };
+        const frame = (callback) => {
+            const id = requestAnimationFrame(() => { popup.frames.delete(id); if (activePopup === popup) callback(); });
+            popup.frames.add(id);
+        };
 
         const commitValue = () => {
             if (kind === 'time') {
@@ -306,7 +312,8 @@
                         commitValue();
                         if (kind === 'date') {
                             cell.classList.add('is-selected');
-                            setTimeout(() => closePopup(true), REDUCE_MOTION.matches ? 0 : 140);
+                            clearTimeout(popup.commitTimer);
+                            popup.commitTimer = setTimeout(() => closePopup(true, popup), REDUCE_MOTION.matches ? 0 : 140);
                         } else {
                             render();
                         }
@@ -372,18 +379,23 @@
             const mkCol = (count, step, selected, unit, onPick) => {
                 const col = document.createElement('div');
                 col.className = 'ls-dp-time-col';
-                col.setAttribute('role', 'listbox');
+                col.setAttribute('role', 'group');
                 col.setAttribute('aria-label', unit);
                 for (let i = 0; i < count; i += step) {
                     const b = document.createElement('button');
                     b.type = 'button';
                     b.className = 'ls-dp-time-item';
                     b.textContent = pad2(i);
+                    b.setAttribute('aria-pressed', String(i === selected));
                     if (i === selected) b.classList.add('is-selected');
                     b.addEventListener('click', () => {
                         onPick(i);
-                        col.querySelectorAll('.is-selected').forEach((el) => el.classList.remove('is-selected'));
+                        col.querySelectorAll('.is-selected').forEach((el) => {
+                            el.classList.remove('is-selected');
+                            el.setAttribute('aria-pressed', 'false');
+                        });
                         b.classList.add('is-selected');
+                        b.setAttribute('aria-pressed', 'true');
                         b.scrollIntoView({ block: 'center', behavior: REDUCE_MOTION.matches ? 'auto' : 'smooth' });
                         label.querySelector('strong').textContent = `${pad2(state.selH)}:${pad2(state.selMin)}`;
                         if (kind === 'time' || state.selD !== null) commitValue();
@@ -396,7 +408,7 @@
             cols.appendChild(mkCol(60, minStep, state.selMin, '分钟', (v) => { state.selMin = v; }));
             wrap.appendChild(cols);
             root.appendChild(wrap);
-            requestAnimationFrame(() => {
+            frame(() => {
                 cols.querySelectorAll('.ls-dp-time-col .is-selected').forEach((el) => {
                     const colEl = el.parentElement;
                     colEl.scrollTop = el.offsetTop - colEl.clientHeight / 2 + el.offsetHeight / 2;
@@ -463,35 +475,29 @@
         };
 
         // 事件与清理
-        const onPointerDown = (e) => {
-            if (root.contains(e.target)) return;
-            const anchor = input.closest('.ls-dp');
-            if (anchor && anchor.contains(e.target)) return;
-            closePopup(false);
-        };
-        const onKeyDown = (e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); closePopup(false); }
-        };
         const onReposition = () => { if (!mobile) position(); };
-        document.addEventListener('pointerdown', onPointerDown, true);
-        document.addEventListener('keydown', onKeyDown, true);
         window.addEventListener('resize', onReposition);
         window.addEventListener('scroll', onReposition, true);
-        if (backdrop) backdrop.addEventListener('pointerdown', () => closePopup(false));
         // 屏蔽冒泡，避免误触页面级"点击外部关闭弹窗"处理器
         root.addEventListener('click', (e) => e.stopPropagation());
 
         const teardown = () => {
-            document.removeEventListener('pointerdown', onPointerDown, true);
-            document.removeEventListener('keydown', onKeyDown, true);
+            clearTimeout(popup.commitTimer);
+            popup.frames.forEach((id) => cancelAnimationFrame(id)); popup.frames.clear();
             window.removeEventListener('resize', onReposition);
             window.removeEventListener('scroll', onReposition, true);
         };
-
-        activePopup = { root, backdrop, input, kind, state, teardown };
+        const cleanup = () => { teardown(); if (activePopup === popup) activePopup = null; container.remove(); };
+        activePopup = popup;
         render();
         if (!mobile) position();
-        requestAnimationFrame(() => root.classList.add('is-open'));
+        window.getComputedStyle(root).opacity;
+        root.classList.add('is-open');
+        popup.handle = layer.open(container, { type: 'popover', modality: 'non-modal', surface: root, trigger: display, owner: input,
+            returnFocus: display,
+            onCloseRequested: () => { teardown(); if (activePopup === popup) activePopup = null; root.classList.add('is-closing'); backdrop?.classList.add('is-closing'); },
+            onClose: cleanup, onDestroy: cleanup,
+        });
     }
 
     // ------------------------------------------------------------- enhance —

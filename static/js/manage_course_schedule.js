@@ -8,6 +8,7 @@
  */
 
 import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
+import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 
 const bootElement = document.getElementById('course-schedule-boot');
@@ -39,6 +40,7 @@ const deck = createScheduleDeck(refs.deckMount, {
     description: '滚轮或方向键切换周次，点击周卡片放大；点击课程块进入课堂。',
     emptyHtml: () => '<strong>暂无课表数据</strong><p>点击「同步教务课表」可发现并初始化教务当前学期；也可使用原有智慧课堂同步。</p>',
 });
+connectScheduleLayer(deck);
 
 let toastTimer = null;
 

@@ -12,7 +12,7 @@
 
 {% block content %}
 <div class="agent-key-shell">
-    {{ page_head('Agent 任务运行密钥', description='超管统一管理 DSH 任务使用的 DeepSeek Key。启用前测试所选模型，后续请求通过平台模型网关读取当前配置。') }}
+    {{ page_head('Agent 任务运行密钥', description='超管统一管理 DSH 任务使用的 DeepSeek Key。启用前测试所选模型，后续请求通过平台模型网关读取当前配置。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     <section class="agent-key-hero">
         <div class="agent-key-hero-main">
             <div>
@@ -53,6 +53,22 @@
     <section class="agent-key-grid">
         <article class="agent-key-panel">
             <h3>新增 Key</h3>
+            {% set _agent_key_family_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+            {% if _agent_key_family_enabled %}
+            {% from "macros/lq/forms.html" import lq_field %}
+            {% from "macros/lq/button.html" import lq_btn %}
+            <form id="agent-key-form" class="agent-key-form lq-form">
+                {{ lq_field('agent-key-label', '名称', name='key_label', autocomplete='off', placeholder='如：主任务中心 Key') }}
+                {{ lq_field('agent-key-value', 'DeepSeek API Key', control_props={'type': 'password'}, name='api_key', autocomplete='new-password', required=true) }}
+                {{ lq_field('agent-key-base-url', 'Base URL', name='base_url', required=true) }}
+                {{ lq_field('agent-key-model', 'Agent 模型', name='model', required=true) }}
+                <div class="agent-key-check-row">
+                    {{ lq_field('agent-key-test-on-save', '保存前测试', control='checkbox', name='test_on_save', checked=true) }}
+                    {{ lq_field('agent-key-make-active', '保存后启用', control='checkbox', name='make_active', checked=true) }}
+                </div>
+                {{ lq_btn(label='测试并保存', id='agent-key-save-btn', type='submit', variant='prominent') }}
+            </form>
+            {% else %}
             <form id="agent-key-form" class="agent-key-form">
                 <div class="form-group">
                     <label for="agent-key-label">名称</label>
@@ -82,6 +98,7 @@
                 </div>
                 <button id="agent-key-save-btn" type="submit" class="btn btn-primary">测试并保存</button>
             </form>
+            {% endif %}
             <p class="agent-key-note">启用始终先测试当前模型。这里展示平台记录的请求及上游实际报告的用量；缺少完整回执或费用时显示“未提供”。</p>
         </article>
 

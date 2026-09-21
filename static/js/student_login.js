@@ -1,5 +1,5 @@
 import { apiFetch } from '/static/js/api.js';
-import { finishLoginWithScene, initLoginScene } from '/static/js/login_scene.js?v=20260803-scene3';
+import { finishLoginWithScene, initLoginScene, setLoginFeedback, setLoginSubmitting } from '/static/js/login_scene.js?v=20260803-scene3';
 import { closeModal, openModal, showToast } from '/static/js/ui.js';
 
 // 登录页人生一言场景（背景图 + 液态玻璃表单），DOMContentLoaded 后初始化。
@@ -9,6 +9,7 @@ function setSubmitting(button, submitting, pendingText) {
     if (!button) {
         return;
     }
+    if (setLoginSubmitting(button, submitting)) return;
 
     if (submitting) {
         button.dataset.originalText = button.innerHTML;
@@ -56,11 +57,13 @@ function shakeLoginCard() {
     window.setTimeout(() => card.classList.remove('login-card--shake'), 620);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initStudentLogin() {
     const root = document.querySelector('[data-student-login-root]');
     if (!root) {
         return;
     }
+    if (root.dataset.loginMounted === 'true') return;
+    root.dataset.loginMounted = 'true';
 
     initLoginScene().then((scene) => {
         loginScene = scene;
@@ -136,7 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setMode(defaultMode, { updateHash: false });
 
     document.querySelectorAll('[data-switch-mode]').forEach((button) => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+            event.preventDefault();
             clearIdentityAttention();
             consecutivePasswordFailures = 0;
             setMode(button.dataset.switchMode);
@@ -144,13 +149,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (forgotTrigger) {
-        forgotTrigger.addEventListener('click', () => openModal('forgot-password-modal'));
+        forgotTrigger.addEventListener('click', (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+            event.preventDefault();
+            openModal('forgot-password-modal');
+        });
     }
 
     if (passwordForm) {
         passwordForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             const submitButton = passwordForm.querySelector('button[type="submit"]');
+            if (submitButton?.disabled) return;
+            setLoginFeedback(passwordForm);
             setSubmitting(submitButton, true, '登录中...');
 
             try {
@@ -161,6 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 consecutivePasswordFailures = 0;
                 clearIdentityAttention();
+                if (root.hasAttribute('data-lq-login-card')) passwordForm.dataset.loginCompleting = 'true';
                 redirectAfterLogin(result);
             } catch (error) {
                 if (error.message === wrongPasswordMessage) {
@@ -174,9 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     consecutivePasswordFailures = 0;
                 }
                 shakeLoginCard();
-                showToast(error.message || '登录失败。', 'error');
+                if (!setLoginFeedback(passwordForm, error.message || '登录失败。')) showToast(error.message || '登录失败。', 'error');
             } finally {
-                setSubmitting(submitButton, false, '');
+                if (passwordForm.dataset.loginCompleting !== 'true') setSubmitting(submitButton, false, '');
             }
         });
     }
@@ -185,6 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
         identityForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             const submitButton = identityForm.querySelector('button[type="submit"]');
+            if (submitButton?.disabled) return;
+            setLoginFeedback(identityForm);
             setSubmitting(submitButton, true, '核验中...');
 
             try {
@@ -213,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearIdentityAttention();
                 openModal('student-password-setup-modal');
             } catch (error) {
-                showToast(error.message || '身份核验失败。', 'error');
+                if (!setLoginFeedback(identityForm, error.message || '身份核验失败。')) showToast(error.message || '身份核验失败。', 'error');
             } finally {
                 setSubmitting(submitButton, false, '');
             }
@@ -224,6 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             const submitButton = setupForm.querySelector('button[type="submit"]');
+            if (submitButton?.disabled) return;
+            setLoginFeedback(setupForm);
             setSubmitting(submitButton, true, '保存中...');
 
             try {
@@ -233,11 +249,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     silent: true,
                 });
                 closeModal('student-password-setup-modal');
+                if (root.hasAttribute('data-lq-login-card')) setupForm.dataset.loginCompleting = 'true';
                 redirectAfterLogin(result);
             } catch (error) {
-                showToast(error.message || '密码设置失败。', 'error');
+                if (!setLoginFeedback(setupForm, error.message || '密码设置失败。')) showToast(error.message || '密码设置失败。', 'error');
             } finally {
-                setSubmitting(submitButton, false, '');
+                if (setupForm.dataset.loginCompleting !== 'true') setSubmitting(submitButton, false, '');
             }
         });
     }
@@ -292,6 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
         forgotForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             const submitButton = forgotForm.querySelector('button[type="submit"]');
+            if (submitButton?.disabled) return;
+            setLoginFeedback(forgotForm);
             setSubmitting(submitButton, true, '提交中...');
 
             try {
@@ -304,10 +323,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 forgotForm.reset();
                 closeModal('forgot-password-modal');
             } catch (error) {
-                showToast(error.message || '申请提交失败。', 'error');
+                if (!setLoginFeedback(forgotForm, error.message || '申请提交失败。')) showToast(error.message || '申请提交失败。', 'error');
             } finally {
                 setSubmitting(submitButton, false, '');
             }
         });
     }
-});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initStudentLogin, { once: true });
+else initStudentLogin();

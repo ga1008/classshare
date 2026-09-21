@@ -13,6 +13,7 @@ DEPLOYMENT_RELEASE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 
 _RELEASE_ID_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
 _HASHED_VITE_ASSET_PATTERN = re.compile(r"-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$")
+_HASHED_NATIVE_ASSET_PATTERN = re.compile(r"^assets/[a-f0-9]{64}/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$")
 
 
 def normalize_deployment_release_id(value: Any) -> str:
@@ -29,13 +30,17 @@ def static_asset_cache_control(path: str) -> str:
 
     A large part of the legacy UI still uses manually versioned ``?v=...`` URLs.
     Treating every such URL as immutable made an unchanged version label serve
-    stale JS/CSS after a deploy. Vite assets are safe to cache for a year because
-    the content hash is part of the filename; all other static paths revalidate
-    with their ETag.
+    stale JS/CSS after a deploy. Vite filenames and native graph directories are
+    content-addressed; all other static paths revalidate with their ETag.
     """
 
     normalized_path = str(path or "").replace("\\", "/").lstrip("/")
-    if normalized_path.startswith("dist/assets/") and _HASHED_VITE_ASSET_PATTERN.search(normalized_path):
+    if ".." in normalized_path.split("/"):
+        return "public, no-cache, max-age=0, must-revalidate"
+    if (
+        _HASHED_NATIVE_ASSET_PATTERN.fullmatch(normalized_path)
+        or normalized_path.startswith("dist/assets/") and _HASHED_VITE_ASSET_PATTERN.search(normalized_path)
+    ):
         return "public, max-age=31536000, immutable"
     return "public, no-cache, max-age=0, must-revalidate"
 

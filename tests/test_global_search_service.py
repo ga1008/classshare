@@ -1,12 +1,10 @@
 """全局搜索服务的单元测试（sqlite）：范围隔离、可见性、通配转义。"""
 
-import os
 import unittest
 from datetime import datetime
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.global_search_service import search_everything
 
 TEACHER_MINE = 967
@@ -116,7 +114,7 @@ def _seed(conn):
 class GlobalSearchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:
@@ -173,7 +171,7 @@ class GlobalSearchTests(unittest.TestCase):
 class GlobalSearchApiSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         from classroom_app.app import app

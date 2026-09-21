@@ -1,6 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
 import { initAcademicSyncDialog } from '/static/js/academic_sync_dialog.js';
+import { LQ } from '/static/js/lq/index.js';
 
 const data = window.MANAGE_CLASSES_DATA || {};
 const classes = Array.isArray(data.classes) ? data.classes : [];
@@ -564,19 +565,25 @@ async function submitAddStudent(event) {
 }
 
 async function updateStudentStatus(button) {
+    if (button.dataset.lqBusy === '1') return;
     const studentId = Number(button.dataset.studentId || 0);
     const nextStatus = button.dataset.nextStatus || 'active';
     const studentName = button.dataset.studentName || '该学生';
     if (!studentId) return;
-    const confirmed = window.confirm(
-        nextStatus === 'suspended'
-            ? `确定将“${studentName}”设置为休学吗？\n休学后会保留数据，但不再纳入课堂任务、统计和通知范围。`
-            : `确定将“${studentName}”恢复为在读吗？\n恢复后会重新纳入课堂任务、统计和通知范围。`
-    );
-    if (!confirmed) return;
-    const formData = new FormData();
-    formData.set('enrollment_status', nextStatus);
+    button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: nextStatus === 'suspended' ? '设置为休学' : '恢复为在读',
+            message: nextStatus === 'suspended'
+                ? `确定将“${studentName}”设置为休学吗？休学后会保留数据，但不再纳入课堂任务、统计和通知范围。`
+                : `确定将“${studentName}”恢复为在读吗？恢复后会重新纳入课堂任务、统计和通知范围。`,
+            confirmLabel: nextStatus === 'suspended' ? '设为休学' : '恢复在读',
+            danger: nextStatus === 'suspended',
+        });
+        if (!confirmed) return;
+        button.disabled = true;
+        const formData = new FormData();
+        formData.set('enrollment_status', nextStatus);
         const result = await apiFetch(`/api/manage/students/${studentId}/status`, {
             method: 'POST',
             body: formData,
@@ -586,18 +593,27 @@ async function updateStudentStatus(button) {
         window.setTimeout(() => window.location.reload(), 650);
     } catch (error) {
         showMessage(error.message || '更新学生状态失败', 'error');
+    } finally {
+        delete button.dataset.lqBusy;
+        button.disabled = false;
     }
 }
 
 async function deleteStudent(button) {
+    if (button.dataset.lqBusy === '1') return;
     const studentId = Number(button.dataset.studentId || 0);
     const studentName = button.dataset.studentName || '该学生';
     if (!studentId) return;
-    const confirmed = window.confirm(
-        `确定删除“${studentName}”吗？\n这会移除该学生账号及其关联课堂数据；如果只是暂时不参与学习，请改用休学。`
-    );
-    if (!confirmed) return;
+    button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: '删除学生',
+            message: `确定删除“${studentName}”吗？这会移除该学生账号及其关联课堂数据；如果只是暂时不参与学习，请改用休学。`,
+            confirmLabel: '删除',
+            danger: true,
+        });
+        if (!confirmed) return;
+        button.disabled = true;
         const result = await apiFetch(`/api/manage/students/${studentId}`, {
             method: 'DELETE',
             silent: true,
@@ -606,6 +622,9 @@ async function deleteStudent(button) {
         window.setTimeout(() => window.location.reload(), 650);
     } catch (error) {
         showMessage(error.message || '删除学生失败', 'error');
+    } finally {
+        delete button.dataset.lqBusy;
+        button.disabled = false;
     }
 }
 
@@ -691,15 +710,20 @@ function bindEvents() {
         if (event.target === elements.customModal) closeCustomClassModal();
     });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && elements.addModal && !elements.addModal.hidden) {
+        if (event.key !== 'Escape') return;
+        // An LQ.layer dialog (e.g. a destructive-action confirm) stacked on top of
+        // this legacy drawer/modal owns Escape first; let it close and return focus
+        // to its trigger before this page's own Escape handling runs.
+        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
+        if (elements.addModal && !elements.addModal.hidden) {
             closeAddStudentModal();
             return;
         }
-        if (event.key === 'Escape' && elements.customModal && !elements.customModal.hidden) {
+        if (elements.customModal && !elements.customModal.hidden) {
             closeCustomClassModal();
             return;
         }
-        if (event.key === 'Escape' && elements.drawer && !elements.drawer.hidden) {
+        if (elements.drawer && !elements.drawer.hidden) {
             closeStudentDrawer();
         }
     });

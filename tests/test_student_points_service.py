@@ -1,12 +1,10 @@
 """学分币账本与兑换商店的单元测试（sqlite）。"""
 
-import os
 import unittest
 from datetime import date
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.student_points_service import (
     award_points_once,
     ensure_points_schema,
@@ -34,7 +32,7 @@ def _cleanup(conn):
 class StudentPointsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:
@@ -122,7 +120,7 @@ class PointsShopPageSmokeTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         from classroom_app.app import app

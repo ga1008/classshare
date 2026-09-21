@@ -21,7 +21,7 @@
 {% endif %}
 {% endfor %}
 <div class="academic-shell">
-    {% call page_head('教材',
+    {% call page_head('教材', lq_enabled=lq_pilot_enabled|default(false),
         explain='统一维护教材信息与附件，开设课堂时可直接引用；AI 可整理简介与目录。', explain_label='教材说明',
         actions=[
             {'label': '新建教材', 'variant': 'primary', 'id': 'heroTextbookCreateBtn'}
@@ -221,5 +221,5 @@
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/base_resource_modes.js') }}"></script>
-<script type="module" src="/static/js/manage_textbooks.js"></script>
+<script type="module" src="{{ asset_url('js/manage_textbooks.js') }}"></script>
 {% endblock %}

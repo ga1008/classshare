@@ -1,13 +1,11 @@
 """学生错题本服务的单元测试（sqlite）。"""
 
 import json
-import os
 import unittest
 from datetime import datetime
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.student_wrong_book_service import build_student_wrong_book
 
 TEACHER_ID = 917
@@ -131,7 +129,7 @@ def _seed(conn):
 class StudentWrongBookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

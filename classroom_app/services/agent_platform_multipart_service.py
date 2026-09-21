@@ -118,7 +118,15 @@ def encode_form_upload(conn, grant, operation, normalized, file_refs):
     if (not isinstance(file_refs, list) or len(file_refs) > max_files
             or (file_refs and not operation.allows_files)):
         raise HTTPException(400, f"该能力每次最多接受 {max_files} 个附件。")
-    values = form_values(normalized["body"])
+    # An optional integer has no empty-string form representation. Only omit
+    # declared nullable integer nulls (parent_id=None selects the material root).
+    # Preserve existing null/empty string clearing semantics for text fields.
+    body_schema = getattr(operation, "parameters", {}).get("body", {})
+    values = form_values({
+        key: value for key, value in normalized["body"].items()
+        if not (value is None and body_schema.get(key, {}).get("nullable")
+                and body_schema.get(key, {}).get("type") == "integer")
+    })
     if not file_refs:
         return urlencode(values).encode(), "application/x-www-form-urlencoded", normalized
     files, references, names = [], [], set()

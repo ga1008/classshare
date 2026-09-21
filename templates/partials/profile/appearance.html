@@ -1,0 +1,47 @@
+{% from 'macros/lq/forms.html' import lq_switch %}
+{% from 'macros/lq/chip.html' import lq_chip %}
+<section class="lq-profile-appearance" aria-labelledby="profile-appearance-title" data-profile-appearance>
+    <header class="lq-profile-appearance__head">
+        <h2 id="profile-appearance-title">外观</h2>
+        <p>让界面适合你的习惯。选择后自动保存到当前账号，课程、作品与打印内容保留自己的颜色。</p>
+    </header>
+    {% if ui_palette.enabled|default(false) %}
+    <fieldset class="lq-profile-appearance__group" aria-describedby="profile-appearance-help">
+        <legend>界面外观</legend>
+        <p id="profile-appearance-help">跟随系统会自动切换浅色与深色，也可以固定一种外观。</p>
+        {# A preference choice is a native radio group, not a view tabset. #}
+        <div class="lq-segment lq-profile-appearance__segment">
+            <div class="lq-tabs__list">
+                {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
+                <input class="lq-profile-appearance__radio" type="radio" name="profile-appearance" id="profile-appearance-{{ key }}" value="{{ key }}" data-ui-preference-input="appearance"{% if key == ui_palette.appearance|default('auto') %} checked{% endif %} aria-describedby="profile-appearance-help profile-appearance-status">
+                <label class="lq-tabs__tab" for="profile-appearance-{{ key }}">{{ label }}</label>
+                {% endfor %}
+            </div>
+        </div>
+    </fieldset>
+    <div class="lq-profile-appearance__group">
+        {{ lq_switch('profile-appearance-glass', '柔和玻璃', name='profile-glass', checked=ui_palette.glass|default('tinted') == 'tinted', help='关闭后使用实色表面。系统辅助功能或浏览器能力也可能降低透明度，不会改写你的选择。', attrs={'data-ui-preference-input': 'glass', 'aria-describedby': 'profile-appearance-status'}) }}
+    </div>
+    <fieldset class="lq-profile-appearance__group" aria-describedby="profile-palette-help">
+        <legend>界面配色</legend>
+        <p id="profile-palette-help">选择一种主色。名称和选中状态始终可见，不需要只靠颜色辨认。</p>
+        <div class="lq-profile-appearance__palettes">
+            {% for preset in ui_palette.presets %}
+            {{ lq_chip(preset.name, kind='filter', pressed=preset.key == ui_palette.palette_key, attrs={'data-ui-preference-choice': 'palette_key', 'data-ui-preference-value': preset.key, 'aria-describedby': 'profile-appearance-status'}) }}
+            {% endfor %}
+        </div>
+    </fieldset>
+    <div class="lq-profile-appearance__preview" aria-labelledby="profile-appearance-preview-title">
+        <h3 id="profile-appearance-preview-title">配色预览</h3>
+        <p>正文、辅助说明与强调色会一起更新。</p>
+        <div class="lq-profile-appearance__samples" aria-hidden="true">
+            <span class="lq-profile-appearance__sample">强调色</span>
+            {{ lq_chip('状态示例', tone='success') }}
+        </div>
+    </div>
+    <p id="profile-appearance-status" class="lq-profile-appearance__status" data-ui-palette-status data-ui-preference-primary-status role="status" aria-live="polite" aria-atomic="true">{% if ui_palette.available|default(true) %}选择后自动保存到当前账号。{% else %}暂时无法读取已保存的偏好；下一次选择时会先核对服务器。{% endif %}</p>
+    <noscript><p class="lq-profile-appearance__notice">启用 JavaScript 后才能预览和保存外观。当前页面仍使用已保存的偏好。</p></noscript>
+    {% else %}
+    <p class="lq-profile-appearance__notice">当前账号暂不提供外观设置。</p>
+    {% endif %}
+</section>

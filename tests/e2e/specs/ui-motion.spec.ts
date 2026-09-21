@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { loginStudent, readFixture, type P03Fixture } from '../fixtures/p03';
+import { waitForClassroomControls } from '../fixtures/ui-v3';
 
 type Fixture = P03Fixture & { uiV3Synthetic: boolean; visualSessionIds: number[] };
 const fixture = () => readFixture() as Fixture;
@@ -55,6 +56,7 @@ test('real timetable mouse hover expands and contracts smoothly, and cultivation
   expect(widths.filter(value => value > width + 2 && value < expanded - 2).length).toBeGreaterThan(3);
   await testInfo.attach('actual-hover-widths', { body: JSON.stringify(widths), contentType: 'application/json' });
   await page.goto(`/classroom/${fixture().classOfferingId}`);
+  await waitForClassroomControls(page);
   const cultivation = page.locator('.cw-cultivation-entry');
   await cultivation.click();
   await expect(page.locator('#learning-progress-modal')).toHaveCSS('opacity', '1');
@@ -66,6 +68,7 @@ test('real timetable mouse hover expands and contracts smoothly, and cultivation
 
 test('a dialog reverses from its current frame and restores fixed positioning at rest', async ({ page }, testInfo) => {
   await loginStudent(page, fixture());
+  await expect(page.getByRole('button', { name: '全部事项与历史', exact: true })).toBeVisible();
   const result = await page.evaluate(async () => {
     const wait = (time: number) => new Promise(resolve => setTimeout(resolve, time));
     const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
@@ -80,24 +83,28 @@ test('a dialog reverses from its current frame and restores fixed positioning at
       dialog = document.querySelector<HTMLElement>('.ls-dialog');
     }
     dialog = dialog!;
-    const closeStart = performance.now();
-    const beforeClose = Number(getComputedStyle(dialog).opacity);
-    dialog.querySelector<HTMLButtonElement>('.ui-dialog-close')!.click();
-    await nextFrame();
-    const afterClose = Number(getComputedStyle(dialog).opacity);
-    const closeGapMs = performance.now() - closeStart;
+    const sampleReversal = (state: string, activate: () => void) => new Promise<{ before: number; after: number; gapMs: number }>(resolve => {
+      const observer = new MutationObserver(() => {
+        if (dialog.dataset.state !== state) return;
+        observer.disconnect();
+        resolve({ before, after: Number(getComputedStyle(dialog).opacity), gapMs: performance.now() - started });
+      });
+      observer.observe(dialog, { attributes: true, attributeFilter: ['data-state'] });
+      const before = Number(getComputedStyle(dialog).opacity);
+      const started = performance.now();
+      activate();
+    });
+    // Sample at React's actual data-state commit, before another rendered frame
+    // advances the eased transition. A cross-frame delta measures animation
+    // speed as well as continuity, and cannot be bounded by linear elapsed/280.
+    const closing = await sampleReversal('closed', () => dialog.querySelector<HTMLButtonElement>('.ui-dialog-close')!.click());
     await wait(55);
-    const reopenStart = performance.now();
-    const beforeReopen = Number(getComputedStyle(dialog).opacity);
-    trigger.click();
-    await nextFrame();
-    const afterReopen = Number(getComputedStyle(dialog).opacity);
-    const reopenGapMs = performance.now() - reopenStart;
-    await wait(350);
-    return { beforeClose, afterClose, beforeReopen, afterReopen, closeGapMs, reopenGapMs, sameNode: dialog === document.querySelector('.ls-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
+    const reopening = await sampleReversal('open', () => trigger.click());
+    await Promise.all(dialog.getAnimations().map(animation => animation.finished));
+    return { beforeClose: closing.before, afterClose: closing.after, beforeReopen: reopening.before, afterReopen: reopening.after, closeGapMs: closing.gapMs, reopenGapMs: reopening.gapMs, sameNode: dialog === document.querySelector('.ls-dialog'), scale: getComputedStyle(dialog).scale, opacity: getComputedStyle(dialog).opacity };
   });
-  // The presence transition runs over 280ms, so a reversal may legitimately move
-  // opacity by (elapsed / 280) between the two samples; anything beyond that is a jump.
+  // Retain the original continuity tolerance; the samples now bracket the state
+  // commit, not an extra eased animation frame. Timing slack covers commit work.
   const allowed = (gapMs: number) => 0.1 + gapMs / 280;
   expect(result.beforeClose).toBeGreaterThan(.03);
   expect(result.beforeClose).toBeLessThan(.97);
@@ -143,6 +150,7 @@ test('lesson contents remain mounted during exit and materials fade before retur
   const f = fixture();
   await loginStudent(page, f);
   await page.goto(`/classroom/${f.classOfferingId}`);
+  await waitForClassroomControls(page);
   const lesson = page.locator(`#teachingTimelineScroll [data-session-id="${f.visualSessionIds[2]}"]`);
   const entering = await framesAfterClick(page, lesson, '.cw-dialog');
   expect(hasIntermediate(entering), JSON.stringify(entering.map(f => ({opacity:f.opacity,height:f.height})))).toBe(true);
@@ -204,6 +212,13 @@ test('reduced motion keeps dialogs and activity navigation functional without an
   await page.keyboard.press('Escape');
   await expect(page.locator('.ls-dialog')).toHaveCount(0);
   await page.goto(`/classroom/${fixture().classOfferingId}`);
+  await waitForClassroomControls(page);
+  const cultivation = page.locator('.cw-cultivation-entry');
+  await cultivation.click();
+  await expect(page.locator('#learning-progress-modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#learning-progress-modal')).toBeHidden();
+  await expect(cultivation).toBeFocused();
   await page.locator('#classroom-activity-tab-polls').click();
   await expect(page.locator('.classroom-activity-panels')).not.toHaveClass(/is-switching/);
   await expect(page.locator('[data-classroom-activity-panel]:not([hidden])')).toHaveCount(1);

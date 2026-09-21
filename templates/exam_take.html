@@ -1,11 +1,13 @@
 {% from "macros/app_topbar.html" import app_topbar_icon %}
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="lanshare">
+{% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
+{% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
+<html lang="zh-CN" data-theme="lanshare" {{ root_attrs(ui_palette) }}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>{{ paper.title }} - 在线考试</title>
-    {% include "partials/ui_system_assets.html" %}
+    {% include "partials/lq_editor_head.html" %}
     <style>
         :root {
             --exam-topbar-offset: 88px;
@@ -1497,7 +1499,7 @@
         }
     </style>
 </head>
-<body class="exam-page{% if submission %} exam-is-submitted{% endif %}">
+<body class="exam-page{% if submission %} exam-is-submitted{% endif %}" {{ body_attrs(ui_palette) }}>
 
 <header class="navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏">
     <a href="{{ assignment_back_url }}" class="navbar-brand app-topbar-brand exam-topbar-brand" aria-label="返回课堂">
@@ -1700,26 +1702,27 @@
 </div>
 {% endif %}
 
-<script type="module" src="/static/js/auth.js"></script>
-<script src="/static/js/behavior_tracker.js"></script>
-<script src="/static/js/tools.js"></script>
+<script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+<script src="{{ asset_url('js/behavior_tracker.js') }}"></script>
+<script src="{{ asset_url('js/tools.js') }}"></script>
 {% include "partials/markdown_assets.html" %}
 <script type="module">
-    import { showMessage } from '/static/js/ui.js';
-    import { apiFetch } from '/static/js/api.js';
+    import { showMessage } from '{{ asset_url('js/ui.js') }}';
+    import { apiFetch } from '{{ asset_url('js/api.js') }}';
+    import { createExamSubmissionController } from '{{ asset_url('js/exam_take/submit.js') }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { createDuplicateImageGuard } from '{{ asset_url("js/submission_image_guard.js") }}';
     import '{{ asset_url("js/ls_image_lightbox.js") }}';
-    import { initExamDrawingWhiteboard } from '/static/js/teacher_whiteboard.js';
-    import { initAssignmentClocks } from '/static/js/assignment_time.js';
-    import { initReviewDocxExportButtons } from '/static/js/review_docx_export.js';
-    import { mountLauncher as mountApprovalLauncher } from '/static/js/approval_workflow.js';
+    import { initExamDrawingWhiteboard } from '{{ asset_url('js/teacher_whiteboard.js') }}';
+    import { initAssignmentClocks } from '{{ asset_url('js/assignment_time.js') }}';
+    import { initReviewDocxExportButtons } from '{{ asset_url('js/review_docx_export.js') }}';
+    import { mountLauncher as mountApprovalLauncher } from '{{ asset_url('js/approval_workflow.js') }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
         renderMarkdownHtml,
         renderQuestionFeedbackHtml
-    } from '/static/js/grading_feedback.js?v=20260517';
+    } from '{{ asset_url('js/grading_feedback.js') }}';
 
     window.showMessage = showMessage;
     window.UI = Object.assign({}, window.UI || {}, { showMessage, showToast: showMessage });
@@ -1809,6 +1812,7 @@
     let questionDraftChangeVersions = new Map();
     let drawingBoard = null;
     let isEditingResubmission = false;
+    let submissionSucceeded = false;
     let localSaveWarningShown = false;
     let serverDraftSaveTimer = null;
     let serverDraftInFlight = null;
@@ -1847,6 +1851,79 @@
         progressBadge: document.getElementById('sidebarProgressBadge'),
         saveStatus: document.getElementById('saveStatus')
     };
+
+    // Keep page-owned primitives live across draft/submit awaits.
+    const { loadServerDraft, performServerDraftSave, handleSubmission } = createExamSubmissionController({
+        context: {
+            assignmentId: ASSIGNMENT_ID,
+            submissionVersion: SUBMISSION_VERSION,
+            examStartedAt: EXAM_STARTED_AT,
+            submissionExists: SUBMISSION_EXISTS,
+            localDraftKey: LOCAL_DRAFT_KEY,
+            restoreSyncDelayMs: SERVER_DRAFT_RESTORE_SYNC_DELAY_MS,
+        },
+        state,
+        live: {
+            get isEditingResubmission() { return isEditingResubmission; },
+            get submissionSucceeded() { return submissionSucceeded; },
+            get assignmentAcceptingSubmissions() { return assignmentAcceptingSubmissions; },
+            get uploadManager() { return uploadManager; },
+            get lastLocalSavedAt() { return lastLocalSavedAt; },
+            get serverDraftLoadDone() { return serverDraftLoadDone; },
+            set serverDraftLoadDone(value) { serverDraftLoadDone = value; },
+            get serverDraftConflict() { return serverDraftConflict; },
+            set serverDraftConflict(value) { serverDraftConflict = value; },
+            get lastServerDraftSignature() { return lastServerDraftSignature; },
+            set lastServerDraftSignature(value) { lastServerDraftSignature = value; },
+            get serverDraftInFlight() { return serverDraftInFlight; },
+            set serverDraftInFlight(value) { serverDraftInFlight = value; },
+            get serverDraftSaveTimer() { return serverDraftSaveTimer; },
+        },
+        ports: {
+            apiFetch,
+            createFormData: () => new FormData(),
+            buildAnswersListForDraft,
+            applyServerDraft,
+            applyServerDraftFiles,
+            applyServerFilesToManagers,
+            scheduleServerDraftSave,
+            saveServerDraft: options => saveServerDraft(options),
+            clearQuestionDraftUploadTimers,
+            buildPendingQuestionDraftPayload,
+            markPendingQuestionDraftsClean,
+            answerHasContent,
+            hasDrawing,
+            hasQuestionFiles,
+            validateQuestionAttachmentRequirements,
+            findUnsyncedQuestionDraft,
+            getQuestionDisplayLabel,
+            appendQuestionAttachmentFiles,
+            appendDrawingFiles,
+            validateFormDataFileLimits,
+            findQuestionById,
+            collectUploadIssueMessage,
+            getApiFailureMessage,
+            escapeStatusText,
+            setSaveStatus,
+            showMessage,
+            setSubmitBusy,
+            scrollToQuestion,
+            confirm: message => confirm(message),
+            getBehaviorTracker: () => window.behaviorTracker,
+            getOpenGroupPeerEval: () => window.openGroupPeerEval ? id => window.openGroupPeerEval(id) : null,
+            removeLocalDraft: key => localStorage.removeItem(key),
+            onSubmissionSucceeded: () => {
+                submissionSucceeded = true;
+                clearTimeout(serverDraftSaveTimer);
+                clearQuestionDraftUploadTimers();
+            },
+            reload: () => location.reload(),
+            setTimeout: (callback, delay) => setTimeout(callback, delay),
+            clearTimeout: timer => clearTimeout(timer),
+            nowIso: () => new Date().toISOString(),
+            warn: (...args) => console.warn(...args),
+        },
+    });
 
     // Initialize
     async function init() {
@@ -1961,7 +2038,7 @@
 
     // --- Data Persistence ---
     function saveToLocal() {
-        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
+        if (submissionSucceeded || (SUBMISSION_EXISTS && !isEditingResubmission)) return;
         lastLocalSavedAt = new Date().toISOString();
         try {
             localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({
@@ -1985,6 +2062,7 @@
             elements.saveStatus.classList.add('saved');
             elements.saveStatus.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> 已保存`;
             setTimeout(() => {
+                if (submissionSucceeded) return;
                 elements.saveStatus.classList.remove('saved');
                 elements.saveStatus.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> 本地自动保存`;
             }, 2000);
@@ -2098,37 +2176,6 @@
         }));
     }
 
-    async function loadServerDraft() {
-        if (SUBMISSION_EXISTS && !isEditingResubmission) return;
-        try {
-            const draft = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, { method: 'GET', silent: true });
-            serverDraftLoadDone = true;
-            if (draft?.submission_version && draft.submission_version !== SUBMISSION_VERSION) {
-                serverDraftConflict = true;
-                setSaveStatus('error', '提交轮次已变化，本页作答仍保留；请刷新后核对。');
-                return;
-            }
-            if (!draft?.exists) {
-                if (lastLocalSavedAt) scheduleServerDraftSave(SERVER_DRAFT_RESTORE_SYNC_DELAY_MS);
-                return;
-            }
-            const serverTime = Date.parse(draft.server_updated_at || '') || 0;
-            const localTime = Date.parse(lastLocalSavedAt || '') || 0;
-            if (serverTime >= localTime) {
-                applyServerDraft(draft);
-                showMessage('已恢复服务器自动保存的作答进度。', 'success');
-            } else {
-                applyServerDraftFiles(draft);
-                scheduleServerDraftSave(SERVER_DRAFT_RESTORE_SYNC_DELAY_MS);
-                showMessage('检测到本机草稿更新，正在同步到服务器。', 'info');
-            }
-        } catch (error) {
-            serverDraftLoadDone = true;
-            console.warn('Failed to load server draft:', error);
-            setSaveStatus('error', '服务器草稿暂不可用');
-        }
-    }
-
     function applyServerDraft(draft) {
         try {
             const raw = draft.answers_json || '';
@@ -2186,6 +2233,7 @@
     }
 
     function scheduleServerDraftSave(delay = SERVER_DRAFT_TEXT_SAVE_DELAY_MS) {
+        if (submissionSucceeded) return;
         if (serverDraftConflict) return;
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
         if (!serverDraftLoadDone && !lastLocalSavedAt) return;
@@ -2201,95 +2249,6 @@
         const task = serverDraftWriteChain.catch(() => null).then(() => performServerDraftSave(options));
         serverDraftWriteChain = task.catch(() => null);
         return task;
-    }
-
-    async function performServerDraftSave({ uploadItems = [], replaceQuestionIds = [] } = {}) {
-        if (SUBMISSION_EXISTS && !isEditingResubmission) return null;
-        if (serverDraftConflict) {
-            const error = new Error('提交轮次已变化，本页作答仍保留；请刷新后核对。');
-            error.status = 409;
-            throw error;
-        }
-        const normalizedUploadItems = Array.isArray(uploadItems) ? uploadItems : [];
-        const normalizedReplaceQuestionIds = Array.isArray(replaceQuestionIds) ? replaceQuestionIds : [];
-        const formData = new FormData();
-        const manifest = [];
-        const extraAttachments = [];
-        normalizedUploadItems.forEach((item) => {
-            if (!item?.file) return;
-            formData.append('files', item.file, item.file.name || 'upload.bin');
-            manifest.push({
-                relative_path: item.relative_path,
-                content_type: item.file.type || item.mime_type || '',
-                kind: item.kind || 'file',
-                question_id: item.question_id || '',
-                question: item.question || '',
-            });
-            extraAttachments.push({
-                kind: item.kind === 'exam_drawing' ? 'drawing' : ((item.file.type || '').startsWith('image/') ? 'image' : 'file'),
-                file_name: item.file.name || 'upload.bin',
-                relative_path: item.relative_path,
-                mime_type: item.file.type || item.mime_type || '',
-                file_size: item.file.size || 0,
-                question_id: item.question_id || '',
-                question: item.question || '',
-            });
-        });
-        const answersList = buildAnswersListForDraft(extraAttachments, normalizedReplaceQuestionIds);
-        const uploadSignature = normalizedUploadItems.map((item) => ({
-            relative_path: item?.relative_path || '',
-            name: item?.file?.name || '',
-            size: item?.file?.size || 0,
-            kind: item?.kind || '',
-            question_id: item?.question_id || '',
-        }));
-        const draftSignature = JSON.stringify({
-            answers: answersList,
-            current_page: state.currentPageIdx || 0,
-            replace_question_ids: normalizedReplaceQuestionIds,
-            uploads: uploadSignature,
-        });
-        const hasFileSideEffects = uploadSignature.length > 0 || normalizedReplaceQuestionIds.length > 0;
-        if (!hasFileSideEffects && draftSignature === lastServerDraftSignature) {
-            return {
-                status: 'success',
-                files_by_question: state.serverQuestionFiles || {},
-                stored_file_count: 0,
-                dropped_file_count: 0,
-            };
-        }
-        formData.append('answers_json', JSON.stringify({ answers: answersList }));
-        formData.append('expected_submission_version', SUBMISSION_VERSION);
-        formData.append('current_page', String(state.currentPageIdx || 0));
-        formData.append('client_updated_at', lastLocalSavedAt || new Date().toISOString());
-        formData.append('replace_question_ids', JSON.stringify(normalizedReplaceQuestionIds));
-        formData.append('manifest', JSON.stringify(manifest));
-
-        setSaveStatus('syncing', '正在同步到服务器...');
-        serverDraftInFlight = apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft`, {
-            method: 'POST',
-            body: formData,
-            silent: true,
-        });
-        try {
-            const resp = await serverDraftInFlight;
-            lastServerDraftSignature = draftSignature;
-            state.serverQuestionFiles = resp.files_by_question || {};
-            applyServerFilesToManagers();
-            setSaveStatus('saved', '已保存到服务器');
-            setTimeout(() => {
-                setSaveStatus('', '本地与服务器自动保存');
-            }, 2000);
-            return resp;
-        } catch (error) {
-            const message = getApiFailureMessage(error, '服务器保存失败，本地草稿仍在。请按提示调整后重新保存。');
-            if (error?.status === 409) serverDraftConflict = true;
-            setSaveStatus('error', escapeStatusText(message));
-            error.message = message;
-            throw error;
-        } finally {
-            serverDraftInFlight = null;
-        }
     }
 
     function isDrawingQuestion(q) {
@@ -3488,6 +3447,7 @@
     }
 
     function scheduleQuestionDraftUpload(qId, delay = 700) {
+        if (submissionSucceeded) return;
         const question = findQuestionById(qId);
         if (!question || (SUBMISSION_EXISTS && !isEditingResubmission)) return;
         const dirtyVersion = markQuestionDraftDirty(question.id);
@@ -3580,159 +3540,6 @@
     function setSubmitBusy(isBusy) {
         setFooterSubmitBusy(isBusy);
         setTopbarSubmitBusy(isBusy);
-    }
-
-    async function handleSubmission() {
-        if (!assignmentAcceptingSubmissions) {
-            showMessage('已超过允许提交时间，系统正在以服务器时间为准拦截交卷。', 'warning');
-            return;
-        }
-        const allQuestions = [];
-        state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
-
-        const unanswered = allQuestions.filter(q => !answerHasContent(q));
-        const hasAnswered = allQuestions.some(q => answerHasContent(q));
-        const hasQuestionUploads = allQuestions.some(q => hasDrawing(q.id) || hasQuestionFiles(q.id));
-        const hasFiles = (uploadManager?.hasFiles() ?? false) || hasQuestionUploads;
-        window.behaviorTracker?.log('exam_submit_attempt', '尝试提交试卷', {
-            total_questions: allQuestions.length,
-            unanswered_count: unanswered.length,
-            has_answered: hasAnswered,
-            has_files: hasFiles
-        }, 'exam_take');
-
-        if (!hasAnswered && !hasFiles) {
-            showMessage('请至少作答一道题或上传附件后再提交。', 'warning');
-            return;
-        }
-
-        const attachmentRequirementError = validateQuestionAttachmentRequirements(allQuestions);
-        if (attachmentRequirementError) {
-            showMessage(attachmentRequirementError.message, 'warning');
-            scrollToQuestion(attachmentRequirementError.question.id);
-            return;
-        }
-
-        if (unanswered.length > 0) {
-            if (!confirm(`还有 ${unanswered.length} 道题未作答，确定要强行交卷吗？`)) return;
-        } else {
-            const confirmText = isEditingResubmission
-                ? '确定要重新提交试卷吗？新的提交会替换当前版本。'
-                : '确定要提交试卷吗？提交后不可修改。';
-            if (!confirm(confirmText)) return;
-        }
-
-        setSubmitBusy(true);
-
-        try {
-            clearTimeout(serverDraftSaveTimer);
-            clearQuestionDraftUploadTimers();
-            let useServerDraftFiles = false;
-            try {
-                const pendingPayload = await buildPendingQuestionDraftPayload();
-                const draftResp = await saveServerDraft(pendingPayload);
-                markPendingQuestionDraftsClean(pendingPayload);
-                useServerDraftFiles = Boolean(draftResp);
-                if (Number(draftResp?.dropped_file_count || 0) > 0) {
-                    const message = collectUploadIssueMessage(
-                        draftResp,
-                        '部分题目附件没有保存到服务器草稿，请检查文件类型、大小和题目附件要求后重新提交。',
-                    );
-                    throw new Error(message);
-                }
-                const unsyncedQuestion = useServerDraftFiles ? findUnsyncedQuestionDraft(allQuestions) : null;
-                if (unsyncedQuestion) {
-                    throw new Error(`第 ${getQuestionDisplayLabel(unsyncedQuestion)} 题附件还没有完整同步到服务器草稿，请稍后重试。`);
-                }
-            } catch (draftError) {
-                console.warn('Final draft sync failed before submit:', draftError);
-                if (draftError?.status === 409) throw draftError;
-                const hasServerDraftFiles = Object.values(state.serverQuestionFiles || {}).some((files) => Array.isArray(files) && files.length > 0);
-                if (hasServerDraftFiles) {
-                    const message = getApiFailureMessage(
-                        draftError,
-                        '服务器草稿同步失败，已暂停提交，避免旧附件被误交。请检查网络后重新提交。',
-                    );
-                    throw new Error(`${message} 已暂停提交，避免旧附件被误交。请按提示调整后重新提交。`);
-                }
-                showMessage('服务器草稿同步失败，将继续使用当前页面内容提交。', 'warning');
-            }
-            const refreshedAttachmentRequirementError = validateQuestionAttachmentRequirements(allQuestions);
-            if (refreshedAttachmentRequirementError) {
-                showMessage(refreshedAttachmentRequirementError.message, 'warning');
-                scrollToQuestion(refreshedAttachmentRequirementError.question.id);
-                setSubmitBusy(false);
-                return;
-            }
-            const formData = uploadManager ? uploadManager.buildFormData() : new FormData();
-            let questionAttachmentEntries = [];
-            let drawingEntries = [];
-            if (!useServerDraftFiles) {
-                questionAttachmentEntries = appendQuestionAttachmentFiles(formData, allQuestions);
-                drawingEntries = await appendDrawingFiles(formData, allQuestions);
-            }
-            validateFormDataFileLimits(formData);
-            const attachmentMap = new Map();
-            if (useServerDraftFiles) {
-                Object.entries(state.serverQuestionFiles || {}).forEach(([qid, files]) => {
-                    (files || []).forEach((file) => {
-                        if (!attachmentMap.has(qid)) attachmentMap.set(qid, []);
-                        attachmentMap.get(qid).push({
-                            kind: file.kind === 'exam_drawing' ? 'drawing' : (file.kind || (file.is_image ? 'image' : 'file')),
-                            file_name: file.file_name || file.original_filename || '题目附件',
-                            relative_path: file.relative_path || '',
-                            mime_type: file.mime_type || '',
-                            file_size: file.file_size || 0,
-                            question_id: qid,
-                            question: findQuestionById(qid)?.text || '',
-                        });
-                    });
-                });
-            }
-            [...questionAttachmentEntries, ...drawingEntries].forEach((entry) => {
-                if (!attachmentMap.has(entry.question_id)) attachmentMap.set(entry.question_id, []);
-                attachmentMap.get(entry.question_id).push(entry);
-            });
-            const answersList = allQuestions.map(q => {
-                return {
-                    question_id: q.id,
-                    question: q.text,
-                    type: q.type || '',
-                    answer: state.answers[q.id] || '',
-                    attachments: attachmentMap.get(q.id) || [],
-                };
-            });
-            formData.append('answers_json', JSON.stringify({ answers: answersList }));
-            formData.append('started_at', EXAM_STARTED_AT);
-            formData.append('use_server_draft', useServerDraftFiles ? '1' : '0');
-            formData.append('expected_submission_version', SUBMISSION_VERSION);
-
-            const resp = await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/submit`, {
-                method: 'POST',
-                body: formData
-            });
-
-            const droppedCount = Number(resp?.dropped_file_count || 0);
-            showMessage(
-                droppedCount > 0
-                    ? collectUploadIssueMessage(resp, `交卷成功，但 ${droppedCount} 个不符合要求的文件已被过滤。`)
-                    : (resp?.is_late_submission ? '交卷成功，已按补交规则记录，批改后会自动扣分。' : '交卷成功！'),
-                droppedCount > 0 ? 'warning' : 'success'
-            );
-            localStorage.removeItem(LOCAL_DRAFT_KEY);
-
-            // Group exam: prompt teammate peer-evaluation before showing result.
-            if (window.openGroupPeerEval) {
-                try { await window.openGroupPeerEval(ASSIGNMENT_ID); } catch (err) {}
-            }
-
-            // Reload to show submitted state
-            setTimeout(() => location.reload(), 1000);
-
-        } catch(e) {
-            showMessage(getApiFailureMessage(e, '提交失败，请按提示调整后重试。'), 'error');
-            setSubmitBusy(false);
-        }
     }
 
     async function handleWithdrawSubmission() {

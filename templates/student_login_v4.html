@@ -1,10 +1,11 @@
 {% extends "base_centered.html" %}
+{% from "macros/lq/button.html" import lq_btn %}
 
 {% block title %}学生登录 - 课堂平台{% endblock %}
 
 {% block css %}
 {{ super() }}
-<style>
+{% if not _lq_centered %}<style>
     .login-card {
         max-width: 520px;
     }
@@ -203,38 +204,39 @@
             align-items: flex-start;
         }
     }
-</style>
+</style>{% endif %}
 {% endblock %}
 
-{% block bg_gradient %}background: linear-gradient(135deg, var(--bg-color) 0%, var(--primary-light) 100%);{% endblock %}
+
 
 {% block card_content %}
-<div class="login-card" data-student-login-root data-default-mode="password">
+{% if _lq_centered %}<div class="lq-login-frame" data-lq-login-material="thick"><div class="lq-scrim" aria-hidden="true"></div>{% endif %}
+<div class="login-card{% if _lq_centered %} lq-login-card lq-glass lq-glass--thick{% endif %}"{% if _lq_centered %} data-lq-login-card="student"{% endif %} data-student-login-root data-default-mode="password">
     <div class="login-logo logo-student">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
         </svg>
     </div>
-    <h2>学生登录</h2>
+    {% if _lq_centered %}<h1>学生登录</h1>{% else %}<h2>学生登录</h2>{% endif %}
     <p class="subtitle">首次登录需先设置密码，后续使用“姓名或学号 + 密码”登录</p>
 
     <section class="login-panel" data-login-panel="password">
-        <form id="student-password-login-form">
+        <form id="student-password-login-form" action="/student/login" method="post"{% if login_error|default('') %} aria-describedby="student-password-login-form-feedback"{% endif %}>
+            {% if _lq_centered or login_error|default('') %}<p id="student-password-login-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1"{% if not login_error|default('') %} hidden{% endif %}>{{ login_error|default('') }}</p>{% endif %}
             <input type="hidden" name="next" value="{{ next_url }}">
-            <div class="form-group">
-                <label class="form-label" for="identifier">姓名或学号</label>
-                <input type="text" id="identifier" name="identifier" class="form-control" placeholder="请输入姓名或学号" required autofocus autocomplete="username">
+            <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="identifier">姓名或学号</label>
+                <input type="text" id="identifier" name="identifier" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入姓名或学号" required autofocus autocomplete="username" value="{{ login_identifier|default('') }}">
             </div>
-            <div class="form-group">
-                <label class="form-label" for="password">密码</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="请输入密码" required autocomplete="current-password">
+            <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="password">密码</label>
+                <input type="password" id="password" name="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入密码" required autocomplete="current-password">
             </div>
-            <button type="submit" class="btn btn-primary w-full btn-lg">登录</button>
+            {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full btn-lg">登录</button>{% endif %}
         </form>
-
         <div class="login-inline-links">
-            <button type="button" class="link-button identity-entry-link" id="first-login-switch" data-switch-mode="identity">首次登录 / 重置后登录</button>
-            <button type="button" class="link-button" id="forgot-password-trigger">忘记密码？</button>
+            <a href="/student/login/identity?next={{ next_url|urlencode }}" class="link-button identity-entry-link" id="first-login-switch" data-switch-mode="identity">首次登录 / 重置后登录</a>
+            <a href="/student/password/forgot?next={{ next_url|urlencode }}" class="link-button" id="forgot-password-trigger">忘记密码？</a>
         </div>
     </section>
 
@@ -252,17 +254,18 @@
             2. 教师已通过您的“忘记密码”申请，允许重新使用姓名和学号登录。
         </div>
 
-        <form id="student-identity-login-form">
+        <form id="student-identity-login-form" action="/student/login/identity" method="post">
+            {% if _lq_centered %}<p id="student-identity-login-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1" hidden></p>{% endif %}
             <input type="hidden" name="next" value="{{ next_url }}">
-            <div class="form-group">
-                <label class="form-label" for="identity-name">姓名</label>
-                <input type="text" id="identity-name" name="name" class="form-control" placeholder="请输入姓名" required>
+            <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="identity-name">姓名</label>
+                <input type="text" id="identity-name" name="name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入姓名" required>
             </div>
-            <div class="form-group">
-                <label class="form-label" for="identity-student-id">学号</label>
-                <input type="text" id="identity-student-id" name="student_id_number" class="form-control" placeholder="请输入学号" required>
+            <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="identity-student-id">学号</label>
+                <input type="text" id="identity-student-id" name="student_id_number" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入学号" required>
             </div>
-            <button type="submit" class="btn btn-primary w-full btn-lg">验证身份并设置密码</button>
+            {% if _lq_centered %}{{ lq_btn('验证身份并设置密码', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full btn-lg">验证身份并设置密码</button>{% endif %}
         </form>
 
     </section>
@@ -271,6 +274,8 @@
         <a href="{{ teacher_entry_url }}" class="text-muted">教师入口</a>
     </div>
 </div>
+
+{% if _lq_centered %}</div>{% endif %}
 
 <div class="modal-backdrop" id="student-password-setup-modal">
     <div class="modal modal-sm">
@@ -296,19 +301,20 @@
                 </div>
             </div>
 
-            <form id="student-password-setup-form">
+            <form id="student-password-setup-form" action="/student/password/setup" method="post">
+            {% if _lq_centered %}<p id="student-password-setup-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1" hidden></p>{% endif %}
                 <input type="hidden" id="setup-token" name="setup_token" value="">
                 <input type="hidden" id="setup-next" name="next" value="{{ next_url }}">
-                <div class="form-group">
-                    <label class="form-label" for="setup-password">设置密码</label>
-                    <input type="password" id="setup-password" name="password" class="form-control" placeholder="请输入新密码" required autocomplete="new-password">
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="setup-password">设置密码</label>
+                    <input type="password" id="setup-password" name="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入新密码" required autocomplete="new-password">
                     <span class="form-text">{{ password_policy_hint }}</span>
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="setup-confirm-password">确认密码</label>
-                    <input type="password" id="setup-confirm-password" name="confirm_password" class="form-control" placeholder="请再次输入新密码" required autocomplete="new-password">
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="setup-confirm-password">确认密码</label>
+                    <input type="password" id="setup-confirm-password" name="confirm_password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请再次输入新密码" required autocomplete="new-password">
                 </div>
-                <button type="submit" class="btn btn-primary w-full">确认并进入课堂</button>
+                {% if _lq_centered %}{{ lq_btn('确认并进入课堂', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full">确认并进入课堂</button>{% endif %}
             </form>
         </div>
     </div>
@@ -323,24 +329,26 @@
         <div class="modal-body">
             <p class="login-panel-copy">请填写身份信息提交给教师审核。审核通过后，您可以重新使用姓名和学号登录，并再次设置密码。</p>
 
-            <form id="student-forgot-password-form">
-                <div class="form-group">
-                    <label class="form-label" for="forgot-name">姓名</label>
-                    <input type="text" id="forgot-name" name="name" class="form-control" placeholder="请输入姓名" maxlength="100" required>
+            <form id="student-forgot-password-form" action="/student/password/forgot" method="post">
+                <input type="hidden" name="next" value="{{ next_url }}">
+            {% if _lq_centered %}<p id="student-forgot-password-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1" hidden></p>{% endif %}
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="forgot-name">姓名</label>
+                    <input type="text" id="forgot-name" name="name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入姓名" maxlength="100" required>
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="forgot-student-id">学号</label>
-                    <input type="text" id="forgot-student-id" name="student_id_number" class="form-control" placeholder="请输入学号" maxlength="100" required>
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="forgot-student-id">学号</label>
+                    <input type="text" id="forgot-student-id" name="student_id_number" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入学号" maxlength="100" required>
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="forgot-class-name">班级名称</label>
+                <div class="{{ 'lq-field' if _lq_centered else 'form-group' }}">
+                    <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="forgot-class-name">班级名称</label>
                     <div class="forgot-class-field">
                         <span id="forgot-class-prefix" class="forgot-class-affix"></span>
-                        <input type="text" id="forgot-class-name" name="class_name" class="form-control" placeholder="数字或系别即可" aria-describedby="forgot-class-prefix forgot-class-suffix" maxlength="100" required>
+                        <input type="text" id="forgot-class-name" name="class_name" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="数字或系别即可" aria-describedby="forgot-class-prefix forgot-class-suffix" maxlength="100" required>
                         <span id="forgot-class-suffix" class="forgot-class-affix"></span>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-full">提交申请</button>
+                {% if _lq_centered %}{{ lq_btn('提交申请', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full">提交申请</button>{% endif %}
             </form>
         </div>
     </div>
@@ -348,5 +356,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/student_login.js?v=20260904-class-hint"></script>
+<script type="module" src="{{ asset_url('js/student_login.js') }}"></script>
 {% endblock %}

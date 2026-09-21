@@ -1,0 +1,40 @@
+{% from 'macros/lq/business.html' import lq_deadline_clock, lq_job_status, lq_question_navigator %}
+{% from 'macros/lq/upload.html' import lq_upload, lq_file_chip %}
+{% from 'macros/lq/forms.html' import lq_select %}
+<section class="lq-preview__section" aria-labelledby="lq-business-title">
+  <div class="lq-preview__heading"><h2 id="lq-business-title">截止、后台任务与答题导航</h2><p>这里展示状态快照，时间和任务均为示例；不启动后台任务或发送同步请求。</p></div>
+  <div class="lq-preview__form lq-surface">
+    {% for phase,label,value in [('none','尚未设置','—'),('regular','距离截止','02:15:00'),('urgent','临近截止','00:03:00'),('late','迟交开放','00:20:00'),('closed','已截止','已结束')] %}
+      {{ lq_deadline_clock(label=label, value=value, deadline_phase=phase, absolute='2026年10月1日 18:00:00（示例）', countdown_at='2026-10-01T18:00:00+08:00') }}
+    {% endfor %}
+    {{ lq_deadline_clock(label='考试紧凑时钟', compact=true, value='示例', absolute='2026年10月1日 18:00:00（示例）') }}
+  </div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_select('preview-job-state', '切换任务示例状态', value='running', options=[{'value':'queued','label':'排队中'},{'value':'running','label':'运行中'},{'value':'retry_wait','label':'等待重试'},{'value':'result_ready','label':'结果已就绪'},{'value':'failed','label':'失败'},{'value':'canceled','label':'已取消'},{'value':'superseded','label':'已被新任务替代'}]) }}
+    {{ lq_job_status('preview:task', 0, 'running', '运行中', id='preview-job', message='处理进度与操作由业务控制器提供；本示例不执行任务。', elapsed='12 秒', progress={'value':42,'label':'示例处理进度'}, actions=[{'key':'inspect','label':'查看示例状态'}]) }}
+    <p role="status" data-lq-demo-job-status>等待查看示例状态。</p>
+  </div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_select('preview-agent-state', '切换助手任务示例状态', value='waiting_input', options=[{'value':'queued','label':'排队中'},{'value':'running','label':'运行中'},{'value':'waiting_input','label':'等待确认'},{'value':'question_expired','label':'确认已过期'},{'value':'unverified','label':'结果待核对'},{'value':'partial','label':'部分完成'},{'value':'committed','label':'已应用'},{'value':'completed','label':'已完成'},{'value':'failed','label':'失败'},{'value':'canceled','label':'已取消'}]) }}
+    {{ lq_job_status('preview:agent', 0, 'waiting_input', '等待确认', family='agent', id='preview-agent', message='等待人工判断；不会把待核对、部分完成或已应用混为完成。', actions=[{'key':'inspect','label':'查看助手状态示例'}]) }}
+    <p role="status" data-lq-demo-agent-status>助手任务仅展示本地状态快照。</p>
+  </div>
+  {{ lq_question_navigator([{'id':'preview-group','label':'第一部分','items':[{'id':'q1','index':1,'current':true,'answered':true},{'id':'q2','index':2,'flagged':true},{'id':'q3','index':3,'error':true},{'id':'q4','index':4,'pendingUpload':true},{'id':'q5','index':5},{'id':'q6','index':6,'disabled':true}]}], id='preview-questions', label='示例答题卡') }}
+  <p role="status" data-lq-demo-question-status>当前是第 1 题。</p>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-upload-title">
+  <div class="lq-preview__heading"><h2 id="lq-upload-title">文件选择与上传状态</h2><p>可在本机选择文件观察队列。此处不读取文件内容、不上传；下面另列静态状态样例。</p></div>
+  {{ lq_upload('preview-upload', '选择本地示例文件', '类型不限；此预览只显示文件名和大小，不发送文件。', snapshot={'generation':0,'items':[]}) }}
+  <div class="lq-preview__content-grid">
+    {{ lq_upload('preview-upload-busy', '处理中的静态队列', '静态样例：文件选择与操作已禁用，不发送文件。', snapshot={'generation':1,'disabled':true,'items':[{'id':'busy-example','generation':1,'name':'处理状态示例.pdf','state':'uploading','progress':42}]}) }}
+    {{ lq_upload('preview-upload-partial', '部分失败的静态队列', '静态样例：已确认项目与失败项目分别保留。', snapshot={'generation':1,'disabled':true,'items':[{'id':'confirmed-example','generation':1,'name':'已确认示例.pdf','state':'uploaded','confirmation':{'id':'static-example'}},{'id':'failed-example','generation':1,'name':'需重试示例.pdf','state':'failed','reason':'示例网络中断，尚未确认保存。'}]}) }}
+  </div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_file_chip({'id':'example-validating','generation':1,'name':'格式检查状态样例.pdf','state':'validating'}) }}
+    {{ lq_file_chip({'id':'example-rejected','generation':1,'name':'截图重复状态样例.png','state':'rejected','reason':'截图与另一题的图片重复，请更换。','rejectionCode':'duplicate-image','duplicateOfQuestion':'第2题','questionLabel':'第3题'}, disabled=true) }}
+    {{ lq_file_chip({'id':'example-uploading','generation':1,'name':'传输完成等待确认状态样例.pdf','state':'uploading','progress':100}, disabled=true) }}
+    {{ lq_file_chip({'id':'example-uploaded','generation':1,'name':'服务器确认状态样例.pdf','state':'uploaded','confirmation':{'id':'static-example'}}, disabled=true) }}
+    {{ lq_file_chip({'id':'example-failed','generation':1,'name':'失败状态样例.pdf','state':'failed','reason':'网络中断，本地文件仍保留。'}, disabled=true) }}
+    {{ lq_file_chip({'id':'example-removing','generation':1,'name':'移除中状态样例.pdf','state':'removing'}) }}
+  </div>
+</section>

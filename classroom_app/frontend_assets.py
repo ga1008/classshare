@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -7,6 +8,7 @@ from urllib.parse import quote
 from markupsafe import Markup, escape
 
 from .config import STATIC_DIR
+from .services.deployment_cache_service import get_deployment_release_id
 
 
 ASSET_MANIFEST_PATH = STATIC_DIR / "vendor" / "manifest.json"
@@ -45,8 +47,48 @@ def _resolve_asset_revision(file_path: Path, entry: dict) -> str:
     return str(int(file_path.stat().st_mtime))
 
 
-@lru_cache(maxsize=1)
-def load_frontend_asset_manifest() -> dict[str, dict]:
+def _manifest_stamp(path: Path) -> tuple[int, int]:
+    # Local builds can replace a manifest without restarting the development app.
+    if get_deployment_release_id() == "dev" and path.is_file():
+        stat = path.stat()
+        return stat.st_mtime_ns, stat.st_size
+    return 0, 0
+
+
+@lru_cache(maxsize=8)
+def _load_static_graph(release_id: str, stamp: tuple[int, int]) -> dict:
+    path = STATIC_DIR / "assets" / "manifest.json"
+    if not path.is_file():
+        return {}
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    revision = manifest.get("revision", "")
+    if manifest.get("schema") != 1 or not re.fullmatch(r"[a-f0-9]{64}", revision):
+        raise ValueError("Invalid static asset graph manifest")
+    entries = manifest.get("entries")
+    if not isinstance(entries, dict):
+        raise ValueError("Invalid static asset graph entries")
+    for source, target in entries.items():
+        normalized_source = _normalize_static_path(source)
+        normalized_target = _normalize_static_path(target)
+        if normalized_target != f"assets/{revision}/{normalized_source}":
+            raise ValueError(f"Static asset graph escapes its revision: {source}")
+        if not _resolve_static_file(normalized_target).is_file():
+            raise FileNotFoundError(f"Static asset graph dependency missing: {target}")
+    return manifest
+
+
+def load_static_asset_graph() -> dict:
+    return _load_static_graph(
+        get_deployment_release_id(), _manifest_stamp(STATIC_DIR / "assets" / "manifest.json")
+    )
+
+
+def static_asset_revision() -> str:
+    return str(load_static_asset_graph().get("revision") or get_deployment_release_id())
+
+
+@lru_cache(maxsize=8)
+def _load_frontend_asset_manifest(release_id: str, stamp: tuple[int, int]) -> dict[str, dict]:
     if not ASSET_MANIFEST_PATH.is_file():
         return {}
 
@@ -70,6 +112,15 @@ def load_frontend_asset_manifest() -> dict[str, dict]:
     return assets
 
 
+def load_frontend_asset_manifest() -> dict[str, dict]:
+    return _load_frontend_asset_manifest(get_deployment_release_id(), _manifest_stamp(ASSET_MANIFEST_PATH))
+
+
+# Preserve the cache-reset interface used by tests and development commands.
+load_frontend_asset_manifest.cache_clear = _load_frontend_asset_manifest.cache_clear
+load_static_asset_graph.cache_clear = _load_static_graph.cache_clear
+
+
 def get_frontend_asset(name_or_path: str) -> dict:
     manifest = load_frontend_asset_manifest()
     asset = manifest.get(str(name_or_path))
@@ -87,6 +138,15 @@ def get_frontend_asset(name_or_path: str) -> dict:
 
 def asset_url(name_or_path: str) -> str:
     asset = get_frontend_asset(name_or_path)
+    graph = load_static_asset_graph()
+    hashed_path = graph.get("entries", {}).get(asset["path"])
+    if hashed_path:
+        return f"/static/{hashed_path}"
+    if graph and (
+        asset["path"].startswith(("js/", "css/", "vendor/", "fonts/"))
+        or asset["path"] == "google_css.css"
+    ):
+        raise FileNotFoundError(f"Application asset is absent from the built graph; rebuild assets: {asset['path']}")
     url = f"/static/{asset['path']}"
     revision = str(asset.get("revision") or "").strip()
     if revision:
@@ -128,8 +188,8 @@ def _vite_asset_url(file_name: str) -> str:
     return f"/static/dist/{_normalize_vite_dist_file(file_name)}"
 
 
-@lru_cache(maxsize=1)
-def load_vite_manifest() -> dict[str, dict]:
+@lru_cache(maxsize=8)
+def _load_vite_manifest(release_id: str, dev_server: str, stamp: tuple[int, int]) -> dict[str, dict]:
     if _vite_dev_server_url() or not VITE_MANIFEST_PATH.is_file():
         return {}
 
@@ -152,6 +212,15 @@ def load_vite_manifest() -> dict[str, dict]:
         manifest[str(entry_name)] = dict(entry)
 
     return manifest
+
+
+def load_vite_manifest() -> dict[str, dict]:
+    return _load_vite_manifest(
+        get_deployment_release_id(), _vite_dev_server_url(), _manifest_stamp(VITE_MANIFEST_PATH)
+    )
+
+
+load_vite_manifest.cache_clear = _load_vite_manifest.cache_clear
 
 
 def get_vite_entry(entry_name: str) -> dict | None:

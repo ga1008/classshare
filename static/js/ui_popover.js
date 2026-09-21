@@ -1,3 +1,6 @@
+import { findPopoverParent, getPopoverPosition } from './ui_popover_geometry.js';
+export { findPopoverParent, getPopoverPosition } from './ui_popover_geometry.js';
+
 /** Configurable shared popover lifecycle; no editor or whiteboard state. */
 export function createPopoverSystem({ prefix = 'ls' } = {}) {
 /**
@@ -68,7 +71,7 @@ class PopoverManager {
     open(popover) {
         // Nested controls opt in. Existing root popovers still replace one another.
         const parent = popover.options.parent === 'anchor'
-            ? this.stack.findLast(item => item.panel.contains(popover.anchor)) : null;
+            ? findPopoverParent(this.stack, popover.anchor) : null;
         if (parent) {
             while (this.current !== parent) this.current.close('replaced');
         } else this.closeAll('replaced');
@@ -151,18 +154,12 @@ function createPopover(options) {
         const rect = panel.getBoundingClientRect();
         const width = rect.width || panel.offsetWidth;
         const height = rect.height || panel.offsetHeight;
-        let left = options.placement === 'bottom-end' ? anchorRect.right - width : anchorRect.left;
-        left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - width - VIEWPORT_MARGIN));
-        let top = anchorRect.bottom + ANCHOR_GAP;
-        let flipped = false;
-        if (top + height > window.innerHeight - VIEWPORT_MARGIN && anchorRect.top - ANCHOR_GAP - height >= VIEWPORT_MARGIN) {
-            top = anchorRect.top - ANCHOR_GAP - height;
-            flipped = true;
-        }
-        top = Math.max(VIEWPORT_MARGIN, Math.min(top, window.innerHeight - height - VIEWPORT_MARGIN));
-        panel.style.left = `${Math.round(left)}px`;
-        panel.style.top = `${Math.round(top)}px`;
-        panel.classList.toggle(prefix + '-popover--flipped', flipped);
+        const positioned = getPopoverPosition({ anchor: anchorRect, panel: { width, height }, width: window.innerWidth,
+            height: window.innerHeight, placement: options.placement === 'bottom-end' ? 'bottom-end' : 'bottom-start',
+            margin: VIEWPORT_MARGIN, gap: ANCHOR_GAP });
+        panel.style.left = `${positioned.left}px`;
+        panel.style.top = `${positioned.top}px`;
+        panel.classList.toggle(prefix + '-popover--flipped', positioned.flipped);
     }
 
     function focusFirst() {

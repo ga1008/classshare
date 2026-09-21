@@ -76,7 +76,15 @@ test('room-only and cancel stay single cards and their labels reveal an accessib
   await room.getByRole('button').focus(); await page.keyboard.press('Enter');
   await expect(room.locator('.cs-adjustment-details')).toBeVisible();
   await expect(room.locator('.cs-adjustment-details')).toContainText('B210');
+  await expect(room.getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Enter');
+  await expect(room.locator('.cs-adjustment-details')).toBeHidden();
+  await expect(room.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Enter');
+  await expect(room.locator('.cs-adjustment-details')).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(room.locator('.cs-adjustment-details')).toBeHidden();
+  await expect(page.getByRole('dialog')).toBeVisible();
   const cancel = page.locator('.cs-expand [data-event-key="cancel"]');
   await cancel.getByRole('button').click();
   await expect(cancel.locator('.cs-adjustment-details')).toContainText('不自动安排补课');

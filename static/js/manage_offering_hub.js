@@ -2,6 +2,7 @@
 // 数据全部由服务端渲染在卡片 data-* 属性上，模式与 manage_classes.js 一致。
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import { LQ } from '/static/js/lq/index.js';
 
 const listEl = document.getElementById('offeringHubList');
 const searchInput = document.getElementById('offeringHubSearchInput');
@@ -82,19 +83,28 @@ function resetFilters() {
 }
 
 async function handleDelete(button) {
+    if (button.dataset.lqBusy === '1') return;
     const offeringId = Number(button.dataset.offeringId || 0);
     const offeringName = button.dataset.offeringName || '该课堂';
     if (!offeringId) return;
-    const confirmed = window.confirm(
-        `确定删除「${offeringName}」吗？\n课堂下的作业、互动与成绩记录将一并删除，此操作不可恢复。`
-    );
-    if (!confirmed) return;
+    button.dataset.lqBusy = '1';
     try {
+        const confirmed = await LQ.confirm({
+            title: '删除课堂',
+            message: `确定删除「${offeringName}」吗？课堂下的作业、互动与成绩记录将一并删除，此操作不可恢复。`,
+            confirmLabel: '删除',
+            danger: true,
+        });
+        if (!confirmed) return;
+        button.disabled = true;
         await apiFetch(`/api/manage/class_offerings/${offeringId}`, { method: 'DELETE' });
         showMessage('课堂已删除', 'success');
         window.location.reload();
     } catch (error) {
         // apiFetch 已弹出错误 toast，这里不再重复提示。
+    } finally {
+        delete button.dataset.lqBusy;
+        button.disabled = false;
     }
 }
 
@@ -122,10 +132,11 @@ async function handleBindLessonDoc(button) {
             showMessage('该学习文档包还没有已生成的课次，请先生成再绑定', 'warning');
             return;
         }
-        const confirmed = window.confirm(
-            `把学习文档包（${pack.ready_count}/${pack.total_count} 课就绪）绑定到这个课堂？\n`
-            + '课程首页会挂到课堂主页，每个已生成课次自动对应同序号的课次。'
-        );
+        const confirmed = await LQ.confirm({
+            title: '绑定学习文档包',
+            message: `把学习文档包（${pack.ready_count}/${pack.total_count} 课就绪）绑定到这个课堂？课程首页会挂到课堂主页，每个已生成课次自动对应同序号的课次。`,
+            confirmLabel: '绑定',
+        });
         if (!confirmed) return;
         button.textContent = '绑定中…';
         const result = await apiFetch(`/api/lessondoc/packs/${pack.id}/bind`, {
@@ -153,10 +164,12 @@ const drawerTitle = document.getElementById('offeringHubDrawerTitle');
 const drawerOpenFull = document.getElementById('offeringHubDrawerOpenFull');
 const drawerClose = document.getElementById('offeringHubDrawerClose');
 let drawerFrameLoads = 0;
+let drawerTrigger = null;
 
-function openEditDrawer(href, title) {
+function openEditDrawer(href, title, trigger = null) {
     if (!drawerBackdrop || !drawerFrame || !href) return false;
     drawerFrameLoads = 0;
+    drawerTrigger = trigger || null;
     drawerFrame.src = `${href}${href.includes('?') ? '&' : '?'}embed=1`;
     if (drawerTitle) drawerTitle.textContent = title || '编辑课堂配置';
     if (drawerOpenFull) drawerOpenFull.href = href;
@@ -173,6 +186,8 @@ function closeEditDrawer() {
     document.body.classList.remove('offering-hub-drawer-open');
     const dirty = drawerFrameLoads > 1;
     if (drawerFrame) drawerFrame.src = 'about:blank';
+    if (drawerTrigger?.isConnected) drawerTrigger.focus();
+    drawerTrigger = null;
     // iframe 内保存成功会自刷新（load 次数 > 1），此时刷新总台同步最新数据。
     if (dirty) window.location.reload();
 }
@@ -187,7 +202,9 @@ function bindDrawerEvents() {
         if (event.target === drawerBackdrop) closeEditDrawer();
     });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && drawerBackdrop && !drawerBackdrop.hidden) closeEditDrawer();
+        if (event.key !== 'Escape') return;
+        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
+        if (drawerBackdrop && !drawerBackdrop.hidden) closeEditDrawer();
     });
 }
 
@@ -210,7 +227,7 @@ function bindEvents() {
     listEl?.addEventListener('click', (event) => {
         const editLink = event.target.closest('[data-action="edit-config"]');
         if (editLink) {
-            if (openEditDrawer(editLink.getAttribute('href'), editLink.dataset.offeringTitle)) {
+            if (openEditDrawer(editLink.getAttribute('href'), editLink.dataset.offeringTitle, editLink)) {
                 event.preventDefault();
             }
             return;

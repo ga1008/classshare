@@ -1,0 +1,129 @@
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <h2 data-explain data-explain-title="{{ overview.headline }}" data-explain-text="课堂、任务、互动和通知的个人工作台。">{{ overview.headline }}</h2>
+                </div>
+            </section>
+
+            <section class="profile-metric-grid">
+                {% for item in overview.metric_cards %}
+                <article class="profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}" data-explain data-explain-title="{{ item.label }}" data-explain-text="{{ item.note }}">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.value }}</strong>
+                </article>
+                {% endfor %}
+            </section>
+
+            {% if profile.role == 'student' and cultivation and cultivation.courses %}
+            <section class="profile-band profile-cultivation-band profile-reveal">
+                <div class="profile-band__head">
+                    <div>
+                        <h3>各课堂修炼进度</h3>
+                    </div>
+                    <a class="btn btn-outline btn-sm" href="/dashboard">查看课堂</a>
+                </div>
+                <div class="profile-cultivation-grid">
+                    {% for course in cultivation.courses %}
+                    <a class="profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
+                        {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
+                        {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
+                        {% set cultivation_card = {
+                            'variant': 'compact',
+                            'eyebrow': course.sect_name or '',
+                            'title': course.course_name,
+                            'subtitle': course_subtitle,
+                            'score': course.score,
+                            'progress_percent': course.progress_percent,
+                            'level_short': course.current_level.short_name,
+                            'level_name': course.current_level.level_name,
+                            'level': course.current_level,
+                            'theme': course.current_level.theme,
+                            'badge': course.current_level.short_name,
+                            'next_label': course_status_label
+                        } %}
+                        {% include "partials/cultivation_card.html" %}
+                        <div class="profile-cultivation-stages" aria-label="{{ course.course_name }} 修炼阶段">
+                            {% for stage in course.stages %}
+                            <span class="is-{{ stage.status }}" title="{{ stage.short_name }} · {{ stage.progress_percent }}%">{{ stage.short_name }}</span>
+                            {% endfor %}
+                        </div>
+                        <small>
+                            {% if course.eligible_stage %}
+                            可破境 · {{ course.eligible_stage.name }}
+                            {% elif course.next_stage %}
+                            下一境界 · {{ course.next_stage.name }}
+                            {% else %}
+                            全部境界已点亮
+                            {% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            <section class="profile-overview-grid">
+                <div class="profile-overview-primary">
+                    <section class="profile-chart-grid">
+                        {% for chart in overview.charts %}
+                        <article class="profile-chart-card profile-reveal">
+                            <div class="profile-band__head">
+                                <div>
+                                    <h3>{{ chart.title }}</h3>
+                                </div>
+                            </div>
+                            <div class="profile-chart" data-profile-chart="{{ chart.id }}"></div>
+                        </article>
+                        {% endfor %}
+                    </section>
+                    <section class="profile-band profile-activity-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>近期动态</h3>
+                            </div>
+                        </div>
+                        <div class="profile-activity-list">
+                            {% for item in overview.recent_items %}
+                            <a class="profile-activity-item{% if item.is_unread %} is-unread{% endif %}" href="{{ item.href }}">
+                                <span>{{ item.type }}</span>
+                                <div><strong>{{ item.title }}</strong><p>{{ item.subtitle }}</p></div>
+                                <time>{{ item.created_at | datetime_format }}</time>
+                            </a>
+                            {% else %}
+                            <div class="profile-empty">暂无近期动态。</div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                </div>
+                <aside class="profile-overview-rail">
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>档案摘要</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>姓名</span><strong>{{ profile.name }}</strong></div>
+                            <div class="profile-summary-row"><span>身份</span><strong data-profile-display-role>{{ profile.display_role }}</strong></div>
+                            {% if profile.class_name %}<div class="profile-summary-row"><span>班级</span><strong>{{ profile.class_name }}</strong></div>{% endif %}
+                            <div class="profile-summary-row"><span>今日心情</span><strong data-profile-mood-display>{{ profile.today_mood or '未设置' }}</strong></div>
+                            <div class="profile-summary-row"><span>个人主页</span><strong>{% if profile.homepage_url %}<a href="{{ profile.homepage_url }}" target="_blank" rel="noopener noreferrer">打开</a>{% else %}未填写{% endif %}</strong></div>
+                        </div>
+                    </section>
+                    {% if security_summary %}
+                    <section class="profile-band profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>登录安全</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>累计登录</span><strong>{{ security_summary.total_logins }} 次</strong></div>
+                            {% if security_summary.last_login %}
+                            <div class="profile-summary-row"><span>最近登录</span><strong data-datetime="{{ security_summary.last_login.logged_at }}">{{ security_summary.last_login.logged_at }}</strong></div>
+                            <div class="profile-summary-row"><span>最近设备</span><strong>{{ security_summary.last_login.device_label or '未记录' }}</strong></div>
+                            {% endif %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </aside>
+            </section>

@@ -7,9 +7,12 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 
 from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL, SITE_RECORD
-from .frontend_assets import asset_url, vite_entry_tags
+from .frontend_assets import asset_url, static_asset_revision, vite_entry_tags
 from .time_utils import format_local_datetime
 from .services.user_ui_preferences_service import resolve_user_ui_preferences
+from .lq import lq_props
+from .lq_dialogs import lq_dialog_props
+from .lq_migration import lq_family_enabled
 
 # FastAPI 应用实例
 app = FastAPI()
@@ -27,9 +30,13 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["datetime_format"] = datetime_format
 templates.env.globals["asset_url"] = asset_url
+templates.env.globals["static_asset_revision"] = static_asset_revision
 templates.env.globals["vite_entry_tags"] = vite_entry_tags
 templates.env.globals["site_record"] = SITE_RECORD
 templates.env.globals["resolve_user_ui_preferences"] = resolve_user_ui_preferences
+templates.env.globals["lq_props"] = lq_props
+templates.env.globals["lq_dialog_props"] = lq_dialog_props
+templates.env.globals["lq_family_enabled"] = lq_family_enabled
 
 # AI 服务的 HTTP 客户端
 ai_client = httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=120.0)

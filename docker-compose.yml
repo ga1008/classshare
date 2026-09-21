@@ -70,6 +70,17 @@ services:
       # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much
       # larger than DB concurrency; requests wait briefly for a pooled slot.
       POSTGRES_POOL_MAX: "12"
+      LANSHARE_PUBLISH_STATIC: "1"
+    volumes:
+      - *lanshare-data
+      - *lanshare-attendance
+      - *lanshare-chat-logs
+      - *lanshare-submissions
+      - *lanshare-logs
+      - *lanshare-rosters
+      - *lanshare-shared
+      - *lanshare-storage
+      - lanshare-static:/srv/lanshare-static
     # Only the host's narrow Agent gateway uses this loopback listener.
     ports:
       - "127.0.0.1:18000:8000"
@@ -173,6 +184,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./tools/guardianangel.net.cn_nginx:/etc/nginx/ssl:ro
+      - lanshare-static:/srv/lanshare/static:ro
     networks:
       - lanshare
     healthcheck:
@@ -187,3 +199,6 @@ services:
 networks:
   lanshare:
     driver: bridge
+
+volumes:
+  lanshare-static:

@@ -1,13 +1,15 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="lanshare">
+{% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
+{% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
+<html lang="zh-CN" data-theme="lanshare" {{ root_attrs(ui_palette) }}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>编辑考核计划表 · {{ plan.title }}</title>
-    {% include "partials/ui_system_assets.html" %}
+    {% include "partials/lq_editor_head.html" %}
     <link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
 </head>
-<body class="lp-editor-body">
+<body class="lp-editor-body" {{ body_attrs(ui_palette) }}>
     <header class="lp-editor__header">
         <a class="lp-btn lp-btn--ghost" href="/manage/archive/assessment-plans">← 返回考核计划表库</a>
         <strong class="lp-editor__title" id="ap-editor-title">{{ plan.title }}</strong>

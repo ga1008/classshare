@@ -1,0 +1,4 @@
+{% macro lq_tooltip(id, text) -%}
+{%- set p = lq_props('tooltip', id=id, text=text, **kwargs) -%}
+<div{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{{ p.text|forceescape }}</div>
+{%- endmacro %}

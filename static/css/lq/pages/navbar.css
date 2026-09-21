@@ -1,0 +1,53 @@
+/* Existing base_navbar security and legacy menu presentation, extracted unchanged. */
+body { background-color: var(--bg-color); }
+
+    .student-security-summary {
+        display: grid;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .student-security-summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-md);
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+    }
+
+    .student-security-summary-row span {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    .student-security-summary-row strong {
+        color: var(--text-primary);
+        text-align: right;
+    }
+
+    @media (max-width: 768px) {
+        .app-topbar,
+        .app-topbar-nav,
+        .app-topbar-actions,
+        .app-topbar-menu {
+            overflow: visible;
+        }
+
+        .app-topbar.app-topbar--menu-open {
+            z-index: 5000;
+        }
+
+        .app-topbar-menu__panel--floating {
+            position: fixed;
+            top: 12.6rem;
+            right: 1rem;
+            left: 1rem;
+            width: auto;
+            max-height: min(27rem, calc(100vh - 13.8rem));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            z-index: 5001;
+        }
+    }

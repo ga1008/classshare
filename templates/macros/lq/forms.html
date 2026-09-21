@@ -1,0 +1,26 @@
+{# Only the validated typed tree supplies element names or attributes. Caller
+   slots are authored templates, never user-provided strings or a safe bypass. #}
+{% macro _lq_form_tree(tree, slot=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slot %}{{ slot() }}{% endif %}
+{%- else -%}
+<{{ tree.tag }}{% for key, value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if tree.tag != 'input' -%}
+{%- if tree.tag == 'textarea' and tree.children and tree.children[0].startswith('\n') %}{{ '\n' }}{% endif -%}
+{%- for child in tree.children -%}{{ _lq_form_tree(child, slot) }}{%- endfor -%}
+</{{ tree.tag }}>
+{%- endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro lq_input(id, label) -%}{{ _lq_form_tree(lq_props('input', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_textarea(id, label) -%}{{ _lq_form_tree(lq_props('textarea', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_select(id, label) -%}{{ _lq_form_tree(lq_props('select', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_checkbox(id, label) -%}{{ _lq_form_tree(lq_props('checkbox', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_radio(id, label) -%}{{ _lq_form_tree(lq_props('radio', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_range(id, label) -%}{{ _lq_form_tree(lq_props('range', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_switch(id, label) -%}{{ _lq_form_tree(lq_props('switch', id=id, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_field(id, label, control='input', control_props={}) -%}{{ _lq_form_tree(lq_props('field', id=id, label=label, control=control, control_props=control_props, **kwargs)) }}{%- endmacro %}
+{% macro lq_form_section(id, title) -%}{{ _lq_form_tree(lq_props('form_section', id=id, title=title, **kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_form_actions(hint='') -%}{{ _lq_form_tree(lq_props('form_actions', hint=hint, **kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_error_summary(id, title, errors) -%}{{ _lq_form_tree(lq_props('error_summary', id=id, title=title, errors=errors, **kwargs)) }}{%- endmacro %}

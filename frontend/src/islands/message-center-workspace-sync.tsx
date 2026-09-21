@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
+import { LqButton } from '@/components/lq-presentation';
 import {
   buildMessageCenterWorkspaceMessage,
   canUsePrivateWorkspace,
@@ -14,7 +15,7 @@ import {
 } from '@/lib/message-center-workspace';
 
 function readInitialSnapshot() {
-  return normalizeMessageCenterWorkspaceSnapshot(window.__LANSHARE_MESSAGE_CENTER_WORKSPACE__);
+  return normalizeMessageCenterWorkspaceSnapshot(window.__LANSHARE_MESSAGE_CENTER_WORKSPACE__ || { loadStatus: 'loading' });
 }
 
 function sendWorkspaceCommand(type: string, detail: Record<string, unknown> = {}) {
@@ -49,6 +50,23 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
   const privateHref = '/profile?section=private&tab=private_message#profile-message-center';
   const notificationsHref = '/profile?section=notifications#profile-message-center';
 
+  if (snapshot.lqEnabled) return (
+    <section className="lq-message-workspace" aria-label="消息概况" data-message-center-workspace-sync>
+      <p className="lq-message-workspace__status" role="status">{message}</p>
+      {snapshot.loadStatus === 'ready' ? <dl className="lq-message-workspace__counts">
+        <div><dt>{primaryMetric.label}</dt><dd>{primaryMetric.value}</dd></div>
+        <div><dt>总未读</dt><dd>{snapshot.unreadTotal}</dd></div>
+        {snapshot.blockCount > 0 ? <div><dt>黑名单</dt><dd>{snapshot.blockCount}</dd></div> : null}
+      </dl> : null}
+      <div className="lq-message-workspace__actions" aria-label="消息中心快捷操作">
+        <LqButton label="刷新" icon="refresh-cw" variant="ghost" disabled={snapshot.loadStatus === 'loading' || snapshot.actionBusy} onClick={() => sendWorkspaceCommand('refresh')} />
+        <LqButton label="通知" icon="bell" href={snapshot.notificationsHref} variant={snapshot.privateOpen ? 'ghost' : 'soft'} attrs={{ 'aria-current': snapshot.privateOpen ? null : 'page' }} />
+        <LqButton label="私信" icon="message-circle" href={snapshot.privateHref} variant={snapshot.privateOpen ? 'soft' : 'ghost'} attrs={{ 'aria-current': snapshot.privateOpen ? 'page' : null }} />
+        {snapshot.privateOpen ? <LqButton label="输入" icon="pencil" variant="ghost" disabled={!snapshot.hasConversation || !snapshot.canSend} onClick={() => sendWorkspaceCommand('focus-composer')} /> : null}
+      </div>
+    </section>
+  );
+
   const handlePrivateClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!privateDirect) {
       return;
@@ -65,14 +83,14 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
   };
 
   return (
-    <section className="message-center-workspace-sync" aria-live="polite" data-message-center-workspace-sync>
+    <section className="message-center-workspace-sync" data-message-center-workspace-sync>
       <div className="message-center-workspace-sync__summary">
         <span className="message-center-workspace-sync__eyebrow">
           <Bell size={14} aria-hidden="true" />
           {snapshot.privateOpen ? '私信工作台' : '通知工作台'}
         </span>
         <h2>{snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel}</h2>
-        <p>{message}</p>
+        <p role="status">{message}</p>
         <div className="message-center-workspace-sync__chips">
           {snapshot.filterLabel && snapshot.filterLabel !== '全部' ? <span>{snapshot.filterLabel}</span> : null}
           {snapshot.keyword ? <span>关键词：{snapshot.keyword}</span> : null}

@@ -12,7 +12,7 @@
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 <div class="academic-shell course-page-shell">
     {% set _course_complete = my_courses | selectattr('coverage_status', 'equalto', 'complete') | list | length %}
-    {% call page_head('课程',
+    {% call page_head('课程', lq_enabled=lq_pilot_enabled|default(false),
         explain='沉淀可复用的课程模板；开课时直接继承课堂设置并生成排课时间轴。', explain_label='课程说明',
         actions=[
             {'label': '从教务系统同步', 'variant': 'outline', 'id': 'heroCourseAcademicSyncBtn'},

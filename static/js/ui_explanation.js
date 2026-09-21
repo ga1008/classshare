@@ -1,4 +1,5 @@
-import { setOverlayOpen } from './ui_overlay_motion.js';
+import { cancelOverlayMotion, setOverlayOpen } from './ui_overlay_motion.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const TRIGGER_SELECTOR = '[data-explain], [data-lp-tip]';
 const DEFAULT_DELAY_MS = 2000;
@@ -22,7 +23,21 @@ const state = {
     config: null,
     returningFocus: false,
     focusOrigin: null,
+    pendingTrigger: null,
+    nativeHost: null,
+    focusRequest: 0,
 };
+
+function closeNativeOwner() { closeExplanation({ immediate: true }); }
+
+export function isExplanationOpen() { return Boolean(state.trigger && state.panel && !state.panel.hidden && !state.panel.inert); }
+export function getExplanationTrigger() { return state.trigger || state.pendingTrigger || state.touch?.trigger || null; }
+const external = getLayerSystem(document).registerExternal({
+    root: () => state.panel, trigger: getExplanationTrigger, isOpen: isExplanationOpen,
+    isPresent: () => Boolean(state.panel && !state.panel.hidden),
+    isActive: () => Boolean(state.trigger || state.openTimer || state.longPressTimer),
+    dismissTop: (reason) => closeExplanation({ restoreFocus: reason === 'escape' && state.panel?.contains(document.activeElement), immediate: ['parent-destroyed', 'superseded'].includes(reason) }),
+});
 
 function asElement(target) {
     if (target instanceof Element) return target;
@@ -258,6 +273,8 @@ function unbindOpenViewportListeners() {
 function cancelOpen() {
     if (state.openTimer) window.clearTimeout(state.openTimer);
     state.openTimer = 0;
+    state.pendingTrigger = null;
+    external.refresh();
 }
 
 function cancelClose() {
@@ -279,12 +296,14 @@ function scheduleOpen(trigger, delay) {
     cancelOpen();
     cancelClose();
     if (state.trigger === trigger && state.panel && !state.panel.hidden) return;
-    state.openTimer = window.setTimeout(() => openExplanation(trigger), delay);
+    state.pendingTrigger = trigger;
+    state.openTimer = window.setTimeout(() => { state.openTimer = 0; state.pendingTrigger = null; openExplanation(trigger); external.refresh(); }, delay);
+    external.refresh();
 }
 
 export function openExplanation(target, override = null) {
     const trigger = asElement(target);
-    if (!trigger) return false;
+    if (!trigger?.isConnected || trigger.closest('[hidden],[inert]') || !trigger.getClientRects().length) return false;
     const config = resolveConfig(trigger, override);
     if (!hasContent(config)) return false;
 
@@ -297,7 +316,10 @@ export function openExplanation(target, override = null) {
     renderPanel(config);
     const panel = createPanel();
     // Keep help inside an owning dialog's focus scope, while remaining nonmodal.
-    const panelHost = trigger.closest('[role="dialog"][aria-modal="true"]') || document.body;
+    const panelHost = getLayerSystem(document).getPortalHost({ trigger });
+    state.nativeHost?.removeEventListener('close', closeNativeOwner);
+    state.nativeHost = panelHost.closest('dialog[open]');
+    state.nativeHost?.addEventListener('close', closeNativeOwner);
     if (panel.parentElement !== panelHost) panelHost.appendChild(panel);
     if (trigger.getAttribute('aria-describedby') !== panel.id) {
         state.previousDescribedBy = trigger.getAttribute('aria-describedby');
@@ -306,29 +328,38 @@ export function openExplanation(target, override = null) {
     trigger.setAttribute('aria-expanded', 'true');
     panel.inert = false;
     setOverlayOpen(panel, true);
+    external.refresh();
+    panel.inert = false;
     positionPanel();
     bindOpenViewportListeners();
     return true;
 }
 
-export function closeExplanation({ restoreFocus = false } = {}) {
+export function closeExplanation({ restoreFocus = false, immediate = false } = {}) {
+    state.focusRequest++;
     cancelOpen();
     cancelClose();
+    window.clearTimeout(state.longPressTimer); state.longPressTimer = 0; state.touch = null;
+    if (state.repositionFrame) window.cancelAnimationFrame(state.repositionFrame);
+    state.repositionFrame = 0;
+    state.nativeHost?.removeEventListener('close', closeNativeOwner); state.nativeHost = null;
     const { trigger, panel, focusOrigin } = state;
     if (trigger) {
         if (state.previousDescribedBy) trigger.setAttribute('aria-describedby', state.previousDescribedBy);
         else trigger.removeAttribute('aria-describedby');
         trigger.removeAttribute('aria-expanded');
     }
-    if (panel) {
-        panel.inert = true;
-        setOverlayOpen(panel, false);
-    }
     unbindOpenViewportListeners();
     state.trigger = null;
     state.previousDescribedBy = null;
     state.config = null;
     state.focusOrigin = null;
+    external.refresh();
+    if (panel) {
+        panel.inert = true;
+        if (immediate) { cancelOverlayMotion(panel); panel.hidden = true; external.refresh(); }
+        else void setOverlayOpen(panel, false).then(() => external.refresh());
+    }
     if (restoreFocus && trigger?.isConnected) {
         state.returningFocus = true;
         const destination = focusOrigin?.isConnected ? focusOrigin : trigger;
@@ -342,7 +373,12 @@ function focusExplanation() {
     if (!panel || panel.hidden || panel.inert) return;
     cancelClose();
     const target = panel.querySelector('.ui-explain-popover__close');
-    target?.focus({ preventScroll: true });
+    const request = ++state.focusRequest;
+    // A direct Enter can arrive before the visibility transition's first frame.
+    // Reuse presence completion, and do not focus a subsequently closed/replaced help.
+    void setOverlayOpen(panel, true).then((completed) => {
+        if (completed && request === state.focusRequest && !panel.hidden && !panel.inert) target?.focus({ preventScroll: true });
+    });
 }
 
 function focusAfterExplanation() {
@@ -424,10 +460,12 @@ document.addEventListener('pointerdown', (event) => {
         opened: false,
     };
     state.longPressTimer = window.setTimeout(() => {
+        state.longPressTimer = 0;
         if (!state.touch || state.touch.pointerId !== event.pointerId) return;
         state.touch.opened = openExplanation(trigger);
         if (state.touch.opened) state.suppressClickUntil = Date.now() + 900;
     }, resolveConfig(trigger).longPress);
+    external.refresh();
 });
 
 document.addEventListener('pointermove', (event) => {
@@ -436,6 +474,7 @@ document.addEventListener('pointermove', (event) => {
         window.clearTimeout(state.longPressTimer);
         state.longPressTimer = 0;
         state.touch = null;
+        external.refresh();
     }
 }, { passive: true });
 
@@ -444,13 +483,14 @@ function endTouch(event) {
     window.clearTimeout(state.longPressTimer);
     state.longPressTimer = 0;
     state.touch = null;
+    external.refresh();
 }
 
 document.addEventListener('pointerup', endTouch);
 document.addEventListener('pointercancel', endTouch);
 
 document.addEventListener('contextmenu', (event) => {
-    if (findTrigger(event.target) && window.matchMedia('(pointer: coarse)').matches) {
+    if (findTrigger(event.target) && window.matchMedia?.('(pointer: coarse)')?.matches) {
         event.preventDefault();
     }
 });
@@ -477,12 +517,8 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-    if (!state.trigger) return;
-    if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        closeExplanation({ restoreFocus: state.panel?.contains(document.activeElement) });
-    } else if (event.key === 'Tab' && !event.shiftKey
+    if (!state.trigger || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'Tab' && !event.shiftKey
         && state.trigger.contains(document.activeElement)
         && state.trigger.matches('[data-explain-toggle]')
         && state.panel && !state.panel.hidden) {
@@ -508,6 +544,8 @@ window.LanShareExplanation = Object.freeze({
     close: closeExplanation,
     open: openExplanation,
     register: registerExplanations,
+    isOpen: isExplanationOpen,
+    getTrigger: getExplanationTrigger,
 });
 
 window.dispatchEvent(new CustomEvent('lanshare:explanation-ready'));

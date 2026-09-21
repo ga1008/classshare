@@ -1,9 +1,11 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head %}
 
 {% block title %}学分币商店 - 课堂平台{% endblock %}
 
 {% block css %}
 {{ super() }}
+{% if not lq_family_enabled('growth') %}
 <style>
     .pts-shell { display: grid; gap: 18px; }
     .pts-hero {
@@ -47,11 +49,18 @@
     .pts-status { font-size: 0.82rem; font-weight: 700; margin-top: 8px; min-height: 1.2em; }
     .pts-empty { color: #94a3b8; font-size: 0.82rem; padding: 12px 0; }
 </style>
+{% endif %}
 {% endblock %}
 
 {% block main_content %}
 {% set home = points_home %}
-<section class="pts-shell">
+{% set growth_on = lq_family_enabled('growth') %}
+<section class="pts-shell"{% if growth_on %} data-lq-scope="growth"{% endif %}>
+    {% if growth_on %}
+    {% call lq_page_head('学习攒币，兑换实用道具', description='每天学习、解锁徽章都会自动攒学分币；它独立于修为，放心花。') %}
+        <div class="lq-card--stat" data-points-balance-card><span>学分币余额</span><strong data-points-balance>{{ home.balance }}</strong></div>
+    {% endcall %}
+    {% else %}
     <header class="pts-hero">
         <div>
             <span class="pts-hero__eyebrow">Points · 学分币</span>
@@ -60,6 +69,7 @@
         </div>
         <div class="pts-balance">🪙 {{ home.balance }}</div>
     </header>
+    {% endif %}
 
     <div class="pts-grid">
         <section class="pts-panel">
@@ -77,6 +87,8 @@
                     type="button"
                     class="btn btn-primary btn-sm"
                     data-redeem-item="{{ item.key }}"
+                    data-redeem-cost="{{ item.cost }}"
+                    data-redeem-name="{{ item.name }}"
                     {% if not item.affordable %}disabled title="学分币不足"{% endif %}
                 >兑换</button>
             </div>
@@ -84,13 +96,13 @@
             <p class="pts-status" data-redeem-status aria-live="polite"></p>
         </section>
 
-        <aside style="display:grid;gap:18px;">
+        <aside class="{{ 'pts-aside' if growth_on else '' }}" {% if not growth_on %}style="display:grid;gap:18px;"{% endif %}>
             <section class="pts-panel">
                 <h2>怎么赚学分币</h2>
                 <p class="pts-panel__subtitle">全自动记账，无需手动领取。</p>
                 {% for rule in home.earn_rules %}
                 <div class="pts-earn-rule">
-                    <span>{{ rule.label }}<br><small style="color:#94a3b8;">{{ rule.description }}</small></span>
+                    <span>{{ rule.label }}<br><small{% if growth_on %} class="pts-earn-rule__hint"{% else %} style="color:#94a3b8;"{% endif %}>{{ rule.description }}</small></span>
                     <strong>+{{ rule.amount }}</strong>
                 </div>
                 {% endfor %}
@@ -101,7 +113,7 @@
                 {% if home.ledger %}
                 {% for row in home.ledger %}
                 <div class="pts-ledger-row">
-                    <span>{{ row.kind_label }}{% if row.note %} · {{ row.note }}{% endif %}<br><small style="color:#94a3b8;">{{ row.created_at }}</small></span>
+                    <span>{{ row.kind_label }}{% if row.note %} · {{ row.note }}{% endif %}<br><small{% if growth_on %} class="pts-ledger-row__hint"{% else %} style="color:#94a3b8;"{% endif %}>{{ row.created_at }}</small></span>
                     <span class="{{ 'is-earn' if row.delta > 0 else 'is-spend' }}">{{ '+' if row.delta > 0 }}{{ row.delta }}</span>
                 </div>
                 {% endfor %}
@@ -116,6 +128,9 @@
 
 {% block scripts %}
 {{ super() }}
+{% if lq_family_enabled('growth') %}
+<script type="module" src="{{ asset_url('js/points_shop.js') }}"></script>
+{% else %}
 <script>
     (() => {
         const statusEl = document.querySelector('[data-redeem-status]');
@@ -147,4 +162,5 @@
         });
     })();
 </script>
+{% endif %}
 {% endblock %}

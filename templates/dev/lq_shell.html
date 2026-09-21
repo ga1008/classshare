@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+{% set ui_palette = resolve_user_ui_preferences(request, user_info) %}
+{% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
+{% from 'macros/lq/shells.html' import lq_topbar, lq_sidebar, lq_editor, lq_page_layout, lq_dock, lq_fab, lq_crumbs, lq_steps %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_card, lq_prose, lq_filter_bar, lq_bubble %}
+{% from 'macros/lq/forms.html' import lq_input, lq_textarea %}
+{% from 'macros/lq/tables.html' import lq_table, lq_pager %}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/insights.html' import insight_meter %}
+<html lang="zh-CN" data-theme="lanshare" {{ root_attrs(ui_palette) }}>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ preview_layouts[preview_layout] }} · 骨架预览</title>
+{% include 'partials/lq_editor_head.html' %}
+<link rel="stylesheet" href="{{ asset_url('css/lq/preview.css') }}"></head>
+<body class="lq-shell-preview" {{ body_attrs(ui_palette) }} data-lq-shell-preview="{{ preview_layout }}">
+<a class="lq-preview__skip" href="#{{ 'shell-editor--lq-main' if preview_layout in ['editor','take'] else 'shell-preview-main' }}">跳到主要内容</a>
+{% set demo_primary = {'key':'preview-action','label':'演示主操作'} %}
+{% macro preview_controls() %}<p class="lq-shell-preview__notice">这里是本地骨架示例，不读取或保存业务数据。<a href="/dev/lq">返回全部组件</a></p><form class="lq-preview__controls" data-lq-shell-theme aria-label="骨架本地外观"><label>配色<select name="palette_key">{% for key,label in [('teal','青碧'),('indigo','靛蓝'),('sky','天青'),('mint','薄荷'),('violet','紫藤'),('rose','玫瑰')] %}<option value="{{ key }}"{% if ui_palette.palette_key == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label>外观<select name="appearance"><option value="light"{% if ui_palette.appearance != 'dark' %} selected{% endif %}>浅色</option><option value="dark"{% if ui_palette.appearance == 'dark' %} selected{% endif %}>深色</option></select></label></form><p role="status" data-lq-shell-feedback>尚未操作示例。</p>{% endmacro %}
+{% macro main_content() %}
+{{ preview_controls() }}
+{% if preview_layout == 'list' %}
+{{ lq_filter_bar('shell-search', '查找示例记录', tag='div', label='示例筛选') }}
+{{ lq_table('shell-records','示例课程记录',[{'key':'name','label':'课程','rowHeader':true},{'key':'count','label':'待处理'}],[{'key':'python','cells':{'name':'Python 程序设计','count':0}},{'key':'network','cells':{'name':'计算机网络','count':3}}]) }}
+{{ lq_pager(1, 2) }}
+{% elif preview_layout == 'dashboard' %}
+<div class="lq-preview__content-grid">{{ lq_card('待处理示例', variant='stat', value=0) }}{{ insight_meter('完成示例',3,75,'四项示例中的三项。',unit='项') }}</div>
+{% elif preview_layout in ['editor','take'] %}
+{{ lq_textarea('shell-main-draft','正文草稿',value='调整窗口宽度、打开辅助面板后，这里的输入仍保留。',rows=6) }}
+{{ lq_steps('shell-steps',[{'key':'read','label':'阅读','state':'complete'},{'key':'write','label':'填写','state':'current'},{'key':'review','label':'核对'}]) }}
+{% elif preview_layout == 'immersive' %}
+<div class="lq-preview__conversation">{{ lq_bubble('教师','14:30','请在这里讨论课堂示例。') }}{{ lq_bubble('同学','14:31','活动内容保持在原来的工作区中。',side='outgoing') }}</div>
+{% else %}
+{% call(slot) lq_prose() %}{% if slot == 'content' %}<h2>专注阅读的内容区域</h2><p>内容使用清晰的正文表面，导航与操作保持可达。此处展示真实组件组合，不加载额外业务控制器。</p><p>可以调整浏览器宽度，检查标题、辅助信息和正文的阅读顺序。</p>{% endif %}{% endcall %}
+{% endif %}
+{{ lq_btn('演示主操作', id='shell-primary-fallback', variant='prominent', attrs={'data-lq-command':'preview-action'}) }}
+{% endmacro %}
+{% if preview_layout in ['editor','take'] %}
+{% call(slot) lq_editor('shell-editor',preview_layouts[preview_layout],kind='take' if preview_layout == 'take' else 'exam',primary=demo_primary) %}
+  {% if slot == 'lead' %}<a href="/dev/lq">返回组件</a>
+  {% elif slot == 'main' %}{{ main_content() }}
+  {% elif slot == 'rail' %}<div class="lq-preview__form">{{ lq_input('shell-rail-draft','辅助面板草稿',value='此输入保留在原来的节点中') }}</div>
+  {% elif slot == 'aside' %}<iframe class="lq-shell-preview__frame" title="骨架独立文档" srcdoc="&lt;!doctype html&gt;&lt;html lang='zh-CN'&gt;&lt;head&gt;&lt;meta charset='utf-8'&gt;&lt;title&gt;独立文档&lt;/title&gt;&lt;/head&gt;&lt;body&gt;&lt;h1&gt;白纸预览&lt;/h1&gt;&lt;label&gt;文档内草稿 &lt;input value='文档草稿'&gt;&lt;/label&gt;&lt;/body&gt;&lt;/html&gt;"></iframe>{% endif %}
+{% endcall %}
+{% else %}
+{{ lq_topbar('shell-topbar',preview_layouts[preview_layout],variant='immersive' if preview_layout == 'immersive' else 'standard',back={'key':'back','label':'返回组件','href':'/dev/lq'},primary=demo_primary,view_transition=true) }}
+<div class="lq-shell-preview__workspace">
+{% if preview_layout in ['list','dashboard','detail'] %}
+{{ lq_sidebar('shell-sidebar',[{'key':'preview','label':'工作台示例','items':[{'key':'list','label':'列表工作台','href':'/dev/lq?layout=list','current':preview_layout == 'list','icon':'list'},{'key':'dashboard','label':'概览','href':'/dev/lq?layout=dashboard','current':preview_layout == 'dashboard','icon':'layout-dashboard'},{'key':'detail','label':'详情','href':'/dev/lq?layout=detail','current':preview_layout == 'detail','icon':'file-text'}]}],label='示例导航') }}
+{% endif %}
+<main id="shell-preview-main" tabindex="-1">
+{% call(slot) lq_page_layout('shell-layout',preview_layout,label=preview_layouts[preview_layout]) %}
+  {% if slot == 'head' %}{{ lq_crumbs('shell-crumbs',[{'key':'components','label':'组件预览','href':'/dev/lq'},{'key':'current','label':preview_layouts[preview_layout]}]) }}{{ lq_page_head('内容与操作',description='可交互的本地页面骨架。') }}
+  {% elif slot == 'main' %}{{ main_content() }}
+  {% elif slot == 'aside' and preview_layout in ['dashboard','detail','immersive'] %}{{ lq_card('辅助信息',meta='原有业务内容的具名槽。') }}{% endif %}
+{% endcall %}
+</main></div>
+{{ lq_dock('shell-dock',mode='actions',items=[demo_primary],overflow=[{'key':'preview-more','label':'演示更多操作'}]) }}
+{% if preview_layout == 'list' %}{{ lq_fab('shell-fab',{'key':'preview-fab','label':'演示浮动新增','icon':'plus'},variant='prominent') }}{% endif %}
+{% endif %}
+<script type="module" src="{{ asset_url('js/lq/preview-shell.js') }}"></script>
+</body></html>

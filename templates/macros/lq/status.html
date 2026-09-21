@@ -1,0 +1,14 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/indicators.html' import lq_spinner %}
+{% macro _status_tree(tree, slot=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slot %}{{ slot(tree.slot) }}{% else %}{{ tree.text|forceescape }}{% endif %}
+{%- elif tree.component is defined -%}{% if tree.component == 'button' %}{{ lq_btn(**tree.props) }}{% else %}{{ lq_spinner(**tree.props) }}{% endif %}
+{%- else -%}
+<{{ tree.tag }}{% for key, value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for child in tree.children %}{{ _status_tree(child, slot) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_status(family, state, label) -%}{{ _status_tree(lq_props('status', family=family, state=state, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_save_status(state='dirty') -%}{{ _status_tree(lq_props('save_status', state=state, **kwargs)) }}{%- endmacro %}
+{% macro lq_alert(body='') -%}{{ _status_tree(lq_props('alert', body=body, **kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_conflict(action) -%}{{ _status_tree(lq_props('conflict', action=action, **kwargs), caller if caller is defined else none) }}{%- endmacro %}

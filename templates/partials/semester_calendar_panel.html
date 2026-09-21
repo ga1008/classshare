@@ -7,7 +7,7 @@
 {% set show_todos = semester_calendar_show_todos | default(false) %}
 {% set compact = semester_calendar_compact | default(false) %}
 
-<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}" data-semester-calendar-root{% if compact %} data-semester-calendar-compact="true"{% endif %}{% if show_todos %} data-semester-calendar-todos="true"{% endif %}>
+<section class="semester-calendar-panel{% if panel_class %} {{ panel_class }}{% endif %}{% if lq_family_enabled('calendar') %} lq-surface{% endif %}" data-semester-calendar-root{% if lq_family_enabled('calendar') %} data-lq-calendar{% endif %}{% if compact %} data-semester-calendar-compact="true"{% endif %}{% if show_todos %} data-semester-calendar-todos="true"{% endif %}>
     <div class="semester-calendar-panel__header">
         <div class="semester-calendar-panel__heading">
             <h3 class="semester-calendar-panel__title" data-explain data-explain-title="{{ panel_title }}" data-explain-text="{{ panel_subtitle }} 第一行是月份、第二行是周次；周末与节假日、当前周和今天会自动高亮。{{ panel_hint }}">{{ panel_title }}</h3>
@@ -16,14 +16,14 @@
             {% if show_todos %}
             <span class="semester-calendar-chip is-todo" data-semester-todo-summary hidden></span>
             {% if not compact %}
-            <button type="button" class="btn btn-primary" data-semester-todo-add hidden>
+            <button type="button" class="btn btn-primary{% if lq_family_enabled('calendar') %} lq-btn lq-btn--soft{% endif %}" data-semester-todo-add hidden>
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 新增待办
             </button>
             {% endif %}
             {% endif %}
-            <button type="button" class="btn btn-outline" data-semester-calendar-scroll-start>回到开头</button>
-            <button type="button" class="btn btn-outline" data-semester-calendar-scroll-today>定位今天</button>
+            <button type="button" class="btn btn-outline{% if lq_family_enabled('calendar') %} lq-btn lq-btn--ghost{% endif %}" data-semester-calendar-scroll-start>回到开头</button>
+            <button type="button" class="btn btn-outline{% if lq_family_enabled('calendar') %} lq-btn lq-btn--ghost{% endif %}" data-semester-calendar-scroll-today>定位今天</button>
         </div>
     </div>
 

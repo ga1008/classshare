@@ -1,0 +1,8 @@
+{% macro _workspace_tree(tree, slots=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slots %}{{ slots(tree.slot) }}{% else %}{{ tree.text|forceescape }}{% endif %}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for child in tree.children %}{{ _workspace_tree(child,slots) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_split(id,label,sideLabel,mainLabel) -%}{{ _workspace_tree(lq_props('split',id=id,label=label,sideLabel=sideLabel,mainLabel=mainLabel,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_viewer(id,title) -%}{{ _workspace_tree(lq_props('viewer',id=id,title=title,**kwargs),caller if caller is defined else none) }}{%- endmacro %}

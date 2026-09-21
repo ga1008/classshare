@@ -14,25 +14,51 @@ async function openMembers(page: Page, tab = 'members') {
   if (tab !== 'members') await page.locator(`[data-member-tab="${tab}"]`).click();
 }
 
-test('teacher saves ordinary grade kind from the complete task panel', async ({ page }) => {
+test('teacher saves task classification from the complete task panel and reads it back', async ({ page }) => {
   const fixture = readFixture();
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  const open = () => page.locator('#cw-tasks-preview').getByRole('button', { name: /全部任务/ }).click();
+  const open = async () => {
+    await page.locator('#cw-tasks-preview').getByRole('button', { name: /全部任务/ }).click();
+    await page.locator(`[data-assignment-task-card][data-assignment-id="${fixture.teacherReviewAssignmentId}"]`)
+      .locator('summary', { hasText: '调整分类' }).click();
+  };
   await open();
-  const control = page.locator(`[data-ordinary-grade-kind-select][data-assignment-id="${fixture.teacherReviewAssignmentId}"]`);
+  const control = page.locator(`[data-assessment-kind-select][data-assignment-id="${fixture.teacherReviewAssignmentId}"]`);
+  await expect(control).toHaveAttribute('data-bound', '1');
+  const save = control.locator('..').locator('[data-assessment-kind-save]');
+  await expect(save).toBeDisabled();
   const previous = await control.inputValue();
-  const next = previous === 'exam' ? 'assignment' : 'exam';
-  const saved = page.waitForResponse(response => response.url().endsWith(`/api/assignments/${fixture.teacherReviewAssignmentId}/ordinary-grade-kind`) && response.request().method() === 'PATCH');
+  const version = Number(await control.getAttribute('data-version'));
+  const next = previous === 'final' ? 'homework' : 'final';
+  const saved = page.waitForResponse(response => response.url().endsWith(`/api/assignments/${fixture.teacherReviewAssignmentId}/assessment-kind`) && response.request().method() === 'PATCH');
   await control.selectOption(next);
-  expect((await saved).status()).toBe(200);
+  await expect(save).toBeEnabled();
+  await save.click();
+  const savedResponse = await saved;
+  expect(savedResponse.status()).toBe(200);
+  expect(savedResponse.request().postDataJSON()).toEqual({ assessment_kind: next, expected_version: version });
+  await expect(control).toHaveAttribute('data-version', String(version + 1));
+  await expect(save).toBeDisabled();
   expect(page.url()).toContain(`/classroom/${fixture.classOfferingId}`);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: '全部课堂任务', exact: true })).toBeHidden();
   await page.reload();
   await open();
   await expect(control).toHaveValue(next);
-  const restored = page.waitForResponse(response => response.url().endsWith(`/api/assignments/${fixture.teacherReviewAssignmentId}/ordinary-grade-kind`) && response.request().method() === 'PATCH');
-  await control.selectOption(previous);
+  // Legacy unknown has no supported "unclassify" action. Give that synthetic
+  // assignment a known classification while still proving a second save.
+  const restored = page.waitForResponse(response => response.url().endsWith(`/api/assignments/${fixture.teacherReviewAssignmentId}/assessment-kind`) && response.request().method() === 'PATCH');
+  await control.selectOption(previous || 'homework');
+  await save.click();
   expect((await restored).status()).toBe(200);
+  await expect(save).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: '全部课堂任务', exact: true })).toBeHidden();
+  await page.reload();
+  await open();
+  await expect(control).toHaveValue(previous || 'homework');
+  await expect(control).toHaveAttribute('data-version', String(version + 2));
 });
 
 test('member details return to the same roster filter, scroll and focused row', async ({ page }) => {
@@ -102,7 +128,7 @@ test('material selection, select all and cancel keep one count and survive detai
   const fixture = readFixture();
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  await page.locator('#cw-materials-preview').getByRole('button', { name: /全部课堂材料/ }).click();
+  await page.getByRole('button', { name: '全部课堂材料', exact: true }).click();
   const rows = page.locator('#classroom-materials-list .materials-row');
   await expect(rows.first()).toBeVisible();
   const count = await rows.count();
@@ -248,7 +274,7 @@ test('restricted materials block both the mobile batch control and a direct down
   await page.setViewportSize({ width: 390, height: 844 });
   await loginStudent(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
-  await page.locator('#cw-materials-preview').getByRole('button', { name: /全部课堂材料/ }).click();
+  await page.getByRole('button', { name: '全部课堂材料', exact: true }).click();
   const rows = page.locator('#classroom-materials-list .materials-row');
   const restricted = page.locator('#classroom-materials-list .materials-row[data-material-download-allowed="false"]').first();
   await expect(restricted).toBeVisible();

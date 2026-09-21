@@ -287,8 +287,8 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 ```bash
 # 单测（内存 SQLite；-t . 不可省略）
-venv/Scripts/python.exe -m unittest discover -s tests -t . -p "test_ai_*.py"
-venv/Scripts/python.exe -m unittest discover -s tests -t . -p "test_agent_*.py"
+venv/Scripts/python.exe tools/test_backend.py --pattern "test_ai_*.py"
+venv/Scripts/python.exe tools/test_backend.py --pattern "test_agent_*.py"
 venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 ```
 

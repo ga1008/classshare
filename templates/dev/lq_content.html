@@ -1,0 +1,56 @@
+{% from 'macros/lq/content.html' import lq_card, lq_list, lq_row, lq_empty, lq_page_head, lq_filter_bar, lq_prose, lq_bubble %}
+{% from 'macros/lq/composer.html' import lq_composer %}
+<section class="lq-preview__section" aria-labelledby="lq-content-title">
+  {{ lq_page_head('内容、列表与明确的空态', description='标题操作与次要操作各自可达；零值、离线和加载失败分别表达。', title_id='lq-content-title', actions=[{'label':'新增示例','variant':'prominent','attrs':{'data-lq-demo-action':'新增示例'}}]) }}
+  <div class="lq-preview__content-grid">
+    {% call(slot) lq_card('课堂学习计划', meta='内容卡片 · 独立主操作', primary={'id':'preview-card-open','attrs':{'data-lq-demo-action':'打开内容'}}, actions=[{'label':'编辑示例','attrs':{'data-lq-demo-action':'编辑示例'}}]) %}
+      {% if slot == 'body' %}<p>点击标题查看内容，使用旁边的编辑按钮修改。卡片中的正文仍可选择和复制。</p>
+      {% elif slot == 'foot' %}<p>两个操作分别响应，不依赖整卡点击。</p>{% endif %}
+    {% endcall %}
+    {{ lq_card('当前待处理', variant='stat', value=0, meta='零值保留，不生成虚假的完成数据。') }}
+    {{ lq_card('平面列表卡片', variant='flat', meta='用于较长列表，保持稳定的阅读边界。') }}
+    {{ lq_card('本页主题卡片', variant='hero', meta='一页只使用一张，集中展示当前主题。') }}
+  </div>
+  {% call(slot) lq_list('预览资料列表') %}
+    {% if slot == 'items' %}
+      {{ lq_row('课程资料', meta='标题链接与独立操作', primary={'href':'#lq-content-title'}, actions=[{'label':'资料操作','attrs':{'data-lq-demo-action':'资料操作'}}], unread=true) }}
+      {{ lq_row('已阅读资料', meta='保持原生列表结构和阅读顺序。') }}
+    {% endif %}
+  {% endcall %}
+  {{ lq_list('分组与滑动操作示例', id='preview-grouped-list', groups=[{'key':'today','title':'今天','items':[{'id':'preview-swipe-row','title':'本地示例记录','meta':'手机可滑出操作，也可用显示操作按钮。','swipe':{'key':'remove-example','label':'演示移除'}}]},{'key':'earlier','title':'更早','items':[{'title':'另一条示例','meta':'分组保持自然阅读顺序。'}]}]) }}
+  <p role="status" data-lq-demo-row-status>滑动只展开操作；点击按钮只演示意图，不删除记录。</p>
+  {{ lq_filter_bar('preview-content-search', '查找本地示例', tag='div', label='内容筛选示例') }}
+  <div class="lq-preview__content-grid">
+    {{ lq_empty('empty') }}
+    {{ lq_empty('no-results', actions=[{'label':'清除示例筛选','attrs':{'data-lq-demo-action':'清除示例筛选'}}]) }}
+    {{ lq_empty('error', actions=[{'label':'演示重试','attrs':{'data-lq-demo-action':'演示重试'}}]) }}
+    {{ lq_empty('forbidden') }}
+    {{ lq_empty('offline') }}
+    {{ lq_empty('empty', variant='card', title='暂无示例资料', description='卡片内暂时没有内容。') }}
+    {{ lq_empty('empty', variant='page', title='开始整理示例资料', description='页面级引导保留清晰的下一步。', actions=[{'label':'演示新增','attrs':{'data-lq-demo-action':'新增空态示例'}}]) }}
+  </div>
+  {% call(slot) lq_prose() %}
+    {% if slot == 'content' %}<div class="md-content"><h3>阅读正文</h3><p>正文排版保持阅读节奏，<code>value = 0</code> 仍是有效值。</p><blockquote>显示结果应以业务控制器确认的数据为准。</blockquote><pre><code>for item in items:
+    print(item.title)</code></pre></div>{% endif %}
+  {% endcall %}
+  <div class="lq-preview__conversation">
+    {{ lq_bubble('同学', '14:30', '切换视图后，我写的内容还在吗？', side='incoming') }}
+    {{ lq_bubble('我', '14:31', '内容保留在原来的输入节点中，可以继续编辑。', side='outgoing') }}
+  </div>
+  <form class="lq-preview__form" data-lq-demo-composer-form aria-label="本地消息输入示例">
+    <p>消息和附件只用于本地交互预览；检查后保留草稿，不发送消息或上传文件。</p>
+    <label>输入状态<select id="preview-composer-state" class="lq-select"><option value="ready">可编辑</option><option value="busy">处理中</option><option value="disabled">不可用</option></select></label>
+    {{ lq_composer(label='预览消息草稿', id='preview-composer', value='', sendLabel='检查预览消息', attachment='选择本地附件示例', emoji='插入笑脸示例', submit_name='intent', submit_value='preview') }}
+    <input type="file" hidden multiple aria-label="本地消息附件" data-lq-demo-composer-file>
+    <p data-lq-demo-composer-files>尚未选择附件。</p>
+    <p role="status" data-lq-demo-composer-status>尚未检查预览消息。</p>
+  </form>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-lightbox-title">
+  <div class="lq-preview__heading"><h2 id="lq-lightbox-title">原有图片灯箱</h2><p>点击现有图标示例，检查分组切换、缩放和关闭；原图保持自己的颜色。</p></div>
+  <div class="lq-preview__specimens lq-surface" data-ls-lightbox-scope>
+    <button type="button" class="lq-btn lq-btn--soft" data-ls-lightbox data-ls-lightbox-group="preview-icons" data-ls-lightbox-title="星星图标示例" data-ls-lightbox-src="{{ asset_url('vendor/twemoji/svg/2b50.svg') }}"><img width="48" height="48" src="{{ asset_url('vendor/twemoji/svg/2b50.svg') }}" alt="打开星星图标示例"></button>
+    <button type="button" class="lq-btn lq-btn--soft" data-ls-lightbox data-ls-lightbox-group="preview-icons" data-ls-lightbox-title="爱心图标示例" data-ls-lightbox-src="{{ asset_url('vendor/twemoji/svg/2764.svg') }}"><img width="48" height="48" src="{{ asset_url('vendor/twemoji/svg/2764.svg') }}" alt="打开爱心图标示例"></button>
+    <button type="button" class="lq-btn lq-btn--soft" data-ls-lightbox data-ls-lightbox-group="preview-icons" data-ls-lightbox-title="咖啡图标示例" data-ls-lightbox-src="{{ asset_url('vendor/twemoji/svg/2615.svg') }}"><img width="48" height="48" src="{{ asset_url('vendor/twemoji/svg/2615.svg') }}" alt="打开咖啡图标示例"></button>
+  </div>
+</section>

@@ -13,7 +13,7 @@
 <section class="manage-life-tips" data-life-tip-root data-categories='{{ life_tip_categories | tojson }}'>
     {% call page_head('一言提示',
         explain='学生/教师登录加载屏上的一句话提示：通用池全平台共享，本校/本系池由公文 AI 挖掘与手工录入。可下架劣句、查看“有用/无感”反馈。',
-        explain_label='一言提示说明') %}<div class="manage-life-tips__summary" data-life-tip-summary></div>{% endcall %}
+        explain_label='一言提示说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-life-tips__summary" data-life-tip-summary></div>{% endcall %}
 
     <form class="manage-life-tips__filters" data-life-tip-filters>
         <select name="scope">

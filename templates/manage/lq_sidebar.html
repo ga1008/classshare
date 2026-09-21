@@ -1,0 +1,60 @@
+{% from 'macros/manage_icons.html' import manage_icon %}
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% from 'macros/ui_explanation.html' import explain_attrs %}
+{# Authored in-place pane. Navigation payload and permissions remain server-owned. #}
+<aside id="sidebar" class="manage-sidebar lq-sidebar-root lq-manage-sidebar" data-lq-shell="sidebar" data-lq-manage-sidebar data-lq-manage-identity="{{ user_info.role }}:{{ user_info.id }}" aria-label="教师工作台导航区">
+    <button type="button" class="lq-shell-pane__trigger mobile-toggle" data-lq-pane-open="nav" aria-controls="manage-pilot-nav" aria-expanded="false" aria-label="展开菜单" hidden>{{ lq_icon('menu') }}</button>
+    <dialog id="manage-pilot-nav" class="lq-shell-pane lq-manage-sidebar-pane" data-lq-pane="nav" aria-label="教师工作台导航" open>
+        <div class="lq-shell-pane__scrim" data-lq-pane-close aria-hidden="true"></div>
+        <div class="lq-shell-pane__surface lq-sidebar__surface">
+            <div class="lq-shell-pane__head"><strong>教师工作台</strong><button type="button" class="lq-shell-pane__close" data-lq-pane-close aria-label="关闭菜单">{{ lq_icon('x') }}</button></div>
+            <div class="lq-manage-brand">
+                <a href="/dashboard" class="lq-manage-brand__home" aria-label="返回首页">{{ lq_icon('book-open') }}<span class="lq-manage-sidebar__copy">课堂互动平台</span></a>
+                <button type="button" id="sidebarCollapseBtn" class="lq-shell-pane__close lq-manage-collapse" aria-label="折叠或展开菜单" aria-controls="manageNav" aria-expanded="true">{{ lq_icon('chevron-left') }}</button>
+            </div>
+            <label class="lq-sidebar__search"><span>搜索菜单</span><input type="search" id="manageNavSearch" data-lq-nav-search-input placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项"></label>
+            <nav id="manageNav" class="lq-manage-nav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}" aria-label="教师工作台导航">
+                {% for domain in manage_nav.domains %}
+                {% if domain.key == 'home' %}
+                <div id="manage-domain-home" class="lq-manage-home" data-manage-domain="home" data-nav-domain="home">
+                    {% for group in domain.groups %}{% for item in group['items'] %}
+                    <a href="{{ item.href }}" class="lq-nav-item manage-nav-item manage-nav-item--home{% if item.active %} active{% endif %}" data-lq-nav-search="{{ item.search_text }}" data-nav-text="{{ item.search_text }}" data-nav-domain="{{ item.domain }}"{% if item.active %} aria-current="page"{% endif %} {{ explain_attrs(item.label, item.help_text, placement='right') }}>
+                        <span class="lq-manage-nav__icon" aria-hidden="true">{{ manage_icon(item.icon) }}</span><span class="lq-nav-item__label manage-nav-item__copy">{{ item.label }}</span>
+                    </a>
+                    {% endfor %}{% endfor %}
+                </div>
+                {% else %}
+                <details id="manage-domain-{{ domain.key }}" class="lq-sidebar__group lq-manage-domain{% if domain.active %} is-active{% endif %}" data-lq-nav-group="{{ domain.key }}" data-manage-domain="{{ domain.key }}" data-nav-domain="{{ domain.key }}"{% if domain.active %} open{% endif %}>
+                    <summary class="lq-manage-domain__toggle" aria-controls="manage-domain-items-{{ domain.key }}" {{ explain_attrs(domain.title, domain.description, placement='right') }}>
+                        <span class="lq-manage-domain__dot" aria-hidden="true"></span><span class="lq-manage-sidebar__copy">{{ domain.label }}</span><span class="lq-manage-domain__count">{{ domain.item_count }}</span>
+                    </summary>
+                    <div id="manage-domain-items-{{ domain.key }}">
+                        {% for group in domain.groups %}
+                        <div class="lq-manage-nav-group" data-nav-group="{{ domain.key }}:{{ group.label }}">
+                            {% if domain.groups|length > 1 %}<div class="lq-manage-nav-group__label">{{ group.label }}</div>{% endif %}
+                            <ul>
+                            {% for item in group['items'] %}
+                                <li data-lq-nav-search="{{ item.search_text }}">
+                                    <a href="{{ item.href }}" class="lq-nav-item manage-nav-item{% if item.active %} active{% endif %}" data-nav-text="{{ item.search_text }}" data-nav-domain="{{ item.domain }}"{% if item.active %} aria-current="page"{% endif %} {{ explain_attrs(item.label, item.help_text, placement='right') }}>
+                                        <span class="lq-manage-nav__icon" aria-hidden="true">{{ manage_icon(item.icon) }}</span><span class="lq-nav-item__label manage-nav-item__copy">{{ item.label }}</span>
+                                        {% if item.step %}<span class="lq-manage-nav__step" aria-label="第 {{ item.step }} 步">{{ item.step }}</span>{% endif %}
+                                    </a>
+                                </li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endif %}
+                {% endfor %}
+                <p id="manageNavEmpty" data-lq-nav-empty hidden>没有匹配的菜单项</p>
+            </nav>
+            <div class="lq-manage-user">
+                <span class="lq-manage-user__avatar" aria-hidden="true">{{ user_info.name[0] if user_info.name else 'T' }}</span>
+                <span class="lq-manage-sidebar__copy"><strong>{{ user_info.name }}</strong><small>{{ user_info.email }}</small></span>
+                <a href="/logout" class="lq-nav-item lq-manage-logout" title="退出登录" aria-label="退出登录">{{ lq_icon('arrow-right') }}</a>
+            </div>
+        </div>
+    </dialog>
+</aside>

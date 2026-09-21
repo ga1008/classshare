@@ -1,0 +1,6 @@
+{# Blocking inline bootstrap runs before every stylesheet. The included core is
+   also the runtime's implementation: no second resolver and no browser cache. #}
+<script>{% include "partials/lq_theme_core.js" %}</script>
+<script>{% include "partials/lq_ready_core.js" %}</script>
+<script type="module" src="{{ asset_url('js/lq/theme.js') }}"></script>
+<script type="module" src="{{ asset_url('js/lq/index.js') }}"></script>

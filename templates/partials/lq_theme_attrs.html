@@ -1,0 +1,8 @@
+{# Explicit entry points: root owns the theme; body retains account metadata. #}
+{% macro root_attrs(preferences) -%}
+data-ui-palette="{{ preferences.palette_key|default('indigo') }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-appearance="{{ 'dark' if preferences.appearance|default('auto') == 'dark' else 'light' }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-lq-glass="off" data-lq-tier="C"
+{%- endmacro %}
+
+{% macro body_attrs(preferences) -%}
+{% if preferences.enabled|default(false) %}data-ui-palette="{{ preferences.palette_key }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-ui-palette-version="{{ preferences.version }}" data-ui-palette-context="{{ preferences.context_token }}" data-ui-palette-available="{{ 'true' if preferences.available else 'false' }}"{% endif %}
+{%- endmacro %}

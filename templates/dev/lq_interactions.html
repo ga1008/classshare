@@ -1,0 +1,89 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/forms.html' import lq_input, lq_textarea, lq_select, lq_checkbox, lq_radio, lq_range, lq_switch, lq_form_section, lq_form_actions, lq_error_summary %}
+{% from 'macros/lq/navigation.html' import lq_tabs, lq_segment %}
+{% from 'macros/lq/collapsible.html' import lq_collapsible %}
+{% from 'macros/lq/menus.html' import lq_menu %}
+{% from 'macros/lq/tooltips.html' import lq_tooltip %}
+<section class="lq-preview__section" aria-labelledby="lq-forms-title">
+  <div class="lq-preview__heading"><h2 id="lq-forms-title">填写、校验与保留输入</h2><p>标签、帮助与错误就近显示。下列操作只在预览中演示。</p></div>
+  <form class="lq-preview__form lq-surface" data-lq-demo-form>
+    {% call lq_form_section('preview-basic', '基本信息', description='必填项会保留浏览器原生校验。') %}
+      <div class="lq-preview__form-grid">
+        {{ lq_input('preview-name', '项目名称', name='name', value='课堂学习计划', required=true, clearable=true, help='可清除后重新填写。') }}
+        {{ lq_select('preview-kind', '内容类型', name='kind', value='study', options=[{'value':'study','label':'学习计划'}, {'value':'practice','label':'课后练习'}, {'value':'archived','label':'归档内容','disabled':true}]) }}
+        {{ lq_input('preview-readonly', '已确认编号', value='LQ-2026', readonly=true, help='编号仅供核对。') }}
+        {{ lq_input('preview-disabled', '暂不可修改', value='待审核', disabled=true, help='审核结束后可继续操作。') }}
+      </div>
+      {{ lq_textarea('preview-description', '补充说明', name='description', value='切换视图、打开弹窗后，这里的输入仍会保留。', auto_grow=true, count=true, maxlength=240, help='最多 240 个字符。') }}
+    {% endcall %}
+    {% call lq_form_section('preview-options', '可选设置') %}
+      <div class="lq-preview__form-grid">
+        {{ lq_checkbox('preview-subscribe', '接收本任务的站内提醒', name='subscribe', checked=true) }}
+        {{ lq_switch('preview-visible', '在预览列表中显示', name='visible', checked=true) }}
+        <fieldset><legend>预览范围</legend>{{ lq_radio('preview-personal', '仅本人', name='scope', value='personal', checked=true) }}{{ lq_radio('preview-team', '所在小组', name='scope', value='team') }}</fieldset>
+        {{ lq_range('preview-progress', '示例完成度', name='progress', value=40, min=0, max=100, step=5) }}
+      </div>
+    {% endcall %}
+    {% call lq_form_actions(hint='预览操作不会保存到服务器。') %}{{ lq_btn('检查填写', type='submit') }}{{ lq_btn('恢复示例', variant='soft', type='reset') }}{% endcall %}
+    <p role="status" data-lq-demo-form-status>等待检查填写。</p>
+  </form>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_error_summary('preview-errors', '请核对下列内容', [{'id':'preview-version','message':'内容版本有变化，请核对后再提交。'}]) }}
+    {{ lq_input('preview-version', '本地草稿', value='这份输入需要保留', error='示例冲突提示：核对版本时保留本地输入。') }}
+  </div>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-menu-title">
+  <div class="lq-preview__heading"><h2 id="lq-menu-title">操作菜单与图标名称</h2><p>菜单执行操作，选值继续使用表单控件。图标提示只补充按钮名称。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {{ lq_btn('更多示例操作', icon='ellipsis', id='preview-menu-trigger', variant='soft') }}
+    {{ lq_btn('', icon='refresh', id='preview-tooltip-trigger', variant='ghost', attrs={'aria-label':'刷新预览','data-lq-demo-action':'刷新预览'}) }}
+  </div>
+  {{ lq_menu('preview-menu', '示例操作', [{'id':'edit','label':'编辑示例','icon':'pencil'}, {'id':'copy','label':'保留示例副本','icon':'file-text'}, {'id':'unavailable','label':'暂不可用','disabled':true}, {'id':'remove','label':'移除示例','danger':true,'icon':'trash-2'}]) }}
+  {{ lq_tooltip('preview-tooltip', '刷新预览') }}
+  <p role="status" data-lq-demo-menu-status>尚未执行菜单操作。</p>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-collapsible-title">
+  <div class="lq-preview__heading"><h2 id="lq-collapsible-title">折叠与重要内容</h2><p>手机端可折叠辅助信息；错误、当前步骤和未保存内容保持可见。</p></div>
+  {% call lq_collapsible('preview-fold-help', '辅助说明') %}<p>这里放置辅助说明。较窄屏幕下可使用标题按钮展开或收起。</p>{% endcall %}
+  {% call lq_collapsible('preview-fold-draft', '尚未保存的内容', dirty=true) %}{{ lq_textarea('preview-fold-input', '草稿内容', value='有未保存内容时，保持该分区展开。', rows=2) }}{% endcall %}
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-navigation-title">
+  <div class="lq-preview__heading"><h2 id="lq-navigation-title">视图切换与草稿保留</h2><p>方向键切换焦点。下方标签页需按 Enter 或空格确认切换，适合需要加载内容的视图。</p></div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_segment('preview-segment', '显示方式', [{'key':'overview','label':'概览','panel':'概览内容：用分段控件切换同级视图。'}, {'key':'details','label':'详细','panel':'详细内容：输入和选择使用表单控件表达。'}]) }}
+    {% call(key) lq_tabs('preview-tabs', '学习内容', [{'key':'draft','label':'草稿','badge':2}, {'key':'resources','label':'资料'}, {'key':'unavailable','label':'暂未开放','disabled':true}, {'key':'history','label':'历史记录'}], activation='manual') %}
+      {% if key == 'draft' %}{{ lq_textarea('preview-tab-draft', '视图内草稿', value='在此修改后，切换到其他视图再回来。', rows=3) }}
+      {% elif key == 'resources' %}<p>这里可以放置真实的资料列表，切换时不会重建节点。</p>
+      {% elif key == 'history' %}<p>历史记录使用独立面板，键盘可以直接进入。</p>
+      {% else %}<p>此视图当前不可用。</p>{% endif %}
+    {% endcall %}
+  </div>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-navigation-variants-title">
+  <div class="lq-preview__heading"><h2 id="lq-navigation-variants-title">胶囊与纵向视图</h2><p>同一套键盘和面板保留规则，按内容布局选择方向。</p></div>
+  <div class="lq-preview__form lq-surface">
+    {{ lq_tabs('preview-pill-tabs', '胶囊视图示例', [{'key':'recent','label':'最近','panel':'最近资料示例。'},{'key':'saved','label':'收藏','panel':'收藏资料示例。'},{'key':'shared','label':'共享','panel':'共享资料示例。'}], variant='pill') }}
+    {{ lq_tabs('preview-vertical-tabs', '纵向视图示例', [{'key':'outline','label':'大纲','panel':'课程大纲示例。'},{'key':'files','label':'文件','panel':'课程文件示例。'},{'key':'notes','label':'笔记','panel':'课程笔记示例。'}], orientation='vertical') }}
+  </div>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-dialog-title">
+  <div class="lq-preview__heading"><h2 id="lq-dialog-title">弹层与明确选择</h2><p>Esc 逐层退出，关闭后返回原操作位置。取消不会被当成确认。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {{ lq_btn('打开对话框', attrs={'data-lq-demo-dialog':'modal'}) }}
+    {{ lq_btn('打开底部面板', variant='soft', attrs={'data-lq-demo-dialog':'sheet'}) }}
+    {{ lq_btn('打开侧边抽屉', variant='soft', attrs={'data-lq-demo-dialog':'drawer'}) }}
+    {{ lq_btn('打开锚定浮层', variant='soft', attrs={'data-lq-demo-dialog':'popover'}) }}
+    {{ lq_btn('演示确认', variant='ghost', attrs={'data-lq-demo-confirm':''}) }}
+    {{ lq_btn('演示三项选择', variant='ghost', attrs={'data-lq-demo-choose':''}) }}
+    {{ lq_btn('演示离开保护', variant='soft', attrs={'data-lq-demo-dirty':''}) }}
+  </div>
+  <p role="status" data-lq-demo-dialog-status>尚未打开弹层。</p>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-toast-title">
+  <div class="lq-preview__heading"><h2 id="lq-toast-title">轻量通知</h2><p>通知中的文字、操作与关闭按钮各自可达；悬停或键盘焦点停留时暂停计时。</p></div>
+  <div class="lq-preview__specimens lq-surface">
+    {{ lq_btn('成功通知', variant='soft', attrs={'data-lq-demo-toast':'success'}) }}
+    {{ lq_btn('需要处理的通知', variant='soft', attrs={'data-lq-demo-toast':'danger'}) }}
+    {{ lq_btn('带操作的通知', variant='soft', attrs={'data-lq-demo-toast':'action'}) }}
+  </div>
+</section>

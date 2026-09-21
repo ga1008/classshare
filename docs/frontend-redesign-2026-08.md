@@ -1,5 +1,8 @@
 # 前端设计系统统一改造（2026-08 · 方案 A）
 
+> **2026-09-19 起被取代**：视觉/组件体系真源改为 `docs/liquid-glass-design-system-2026-09.md`（LanShare Glass，`lq-` 组件库）。本文仅作历史记录；其四条铁律由新文档第 3 节继承并扩展。
+
+
 > 真源文档。目标:消灭「四套视觉语言并存」(Tailwind 工具类 + daisyUI + flowbite + 5.7 万行手写 CSS),
 > 全站收敛到 **单一语义令牌层 + shadcn/ui 组件**,以绞杀者模式逐页迁移,不做大爆炸重写。
 > 架构不变:FastAPI + Jinja + Vite islands(总体架构目标见 frontend-modernization-goal.md,

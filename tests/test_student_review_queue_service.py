@@ -1,12 +1,10 @@
 """间隔重复复习队列的单元测试（sqlite）。"""
 
-import os
 import unittest
 from datetime import timedelta
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.academic_service import china_now
 from classroom_app.services.student_review_queue_service import (
     build_review_next_steps,
@@ -112,7 +110,7 @@ def _seed(conn):
 class ReviewQueueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

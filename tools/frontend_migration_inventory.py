@@ -295,7 +295,17 @@ def render_inventory() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate the LanShare frontend migration inventory.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Markdown output path.")
+    parser.add_argument("--lq-registry", action="store_true", help="Generate the route/template Liquid Glass registry, preserving manual evidence.")
     args = parser.parse_args()
+
+    if args.lq_registry:
+        from ui.lq_inventory import write_registry
+        output = ROOT / "docs" / "lq-migration-registry.json" if args.output == DEFAULT_OUTPUT else args.output
+        if not output.is_absolute():
+            output = ROOT / output
+        registry = write_registry(ROOT, output)
+        print(f"{output}: {registry['coverage']['templateCount']} templates, {registry['coverage']['entryCount']} entries")
+        return
 
     output = args.output
     if not output.is_absolute():

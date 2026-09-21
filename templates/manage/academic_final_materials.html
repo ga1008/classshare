@@ -36,7 +36,7 @@ data-afm-open-sync {{ explain_attrs(
     data-document-label="{{ document_type_label }}"
 >
     {% call page_head(document_type_label, eyebrow='期末材料 · 教务系统闭环',
-        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。') %}
+        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
             <div class="afm-hero__actions">
                 <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
                     '同步教务双表',

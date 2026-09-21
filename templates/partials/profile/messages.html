@@ -1,0 +1,110 @@
+{% set _messages_lq = messages_lq_enabled|default(false) %}
+{% if _messages_lq %}{% from 'macros/lq/button.html' import lq_btn %}{% endif %}
+            <section id="profile-message-center" class="message-center-shell profile-message-center{% if _messages_lq %} lq-messages{% endif %}" data-message-center-app{% if _messages_lq %} data-lq-messages data-private-href="{{ (profile_section_hrefs|default({})).get('private', '/profile?section=private') }}#profile-message-center" data-notifications-href="{{ (profile_section_hrefs|default({})).get('notifications', '/profile?section=notifications') }}#profile-message-center"{% endif %} data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
+                <div
+                    data-lanshare-island="message-center-page"
+                    data-island-id="message-center-page-profile-{{ active_section }}"
+                    hidden
+                ></div>
+                <section class="{% if _messages_lq %}lq-page-head lq-messages__heading{% else %}profile-band profile-stream-head profile-reveal{% endif %}">
+                    <div>
+                        <h2{% if _messages_lq %} class="lq-page-head__title"{% endif %} data-explain data-explain-title="{{ '私信' if active_section == 'private' else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
+                    </div>
+                    {# 工作台状态卡是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}
+                    <div hidden>
+                        <strong id="message-center-unread-total">0</strong>
+                        <strong id="message-center-current-tab-label">全部</strong>
+                        <strong id="message-center-contact-total">0</strong>
+                    </div>
+                </section>
+
+                <div
+                    class="message-center-workspace-island{% if not _messages_lq %} profile-reveal{% endif %}"
+                    data-lanshare-island="message-center-workspace-sync"
+                    data-island-id="message-center-workspace-profile-{{ active_section }}"
+                ></div>
+
+                <section class="message-center-toolbar profile-message-toolbar{% if not _messages_lq %} profile-reveal{% endif %}">
+                    <div class="message-center-tabs" id="message-center-tabs"{% if _messages_lq %} role="group" aria-label="通知分类筛选"{% endif %}></div>
+                    <div class="message-center-controls">
+                        <input id="message-center-search" class="message-center-search{% if _messages_lq %} lq-input{% endif %}" type="search" placeholder="搜索关键词"{% if _messages_lq %} aria-label="搜索消息"{% endif %}>
+                        <select id="message-center-filter" class="message-center-filter{% if _messages_lq %} lq-select{% endif %}"{% if _messages_lq %} aria-label="消息筛选条件"{% endif %}></select>
+                        {% if _messages_lq %}{{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}{% else %}<button type="button" id="message-center-mark-read" class="btn btn-outline">标记当前已读</button>{% endif %}
+                    </div>
+                </section>
+
+                <section class="message-center-body profile-message-body{% if not _messages_lq %} profile-reveal{% endif %}">
+                    <div id="message-center-feed" class="message-center-feed"{% if _messages_lq %} role="region" aria-label="通知列表"{% endif %}></div>
+                    <div id="message-center-private-panel" class="message-center-private-panel" hidden>
+                        <aside class="message-center-sidebar">
+                            <div class="message-center-pane-header">
+                                <h2 class="message-center-pane-title">私信会话</h2>
+                                <p class="message-center-conversation__hint">支持联系本班同学、老师与 AI 助教。</p>
+                            </div>
+                            <div class="message-center-contact-picker">
+                                <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
+                                <input id="message-center-contact-search" class="message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词">
+                                <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
+                                <select id="message-center-contact-select" class="message-center-contact-select"></select>
+                                <div id="message-center-contact-current" class="message-center-contact-current"></div>
+                                {% if _messages_lq %}<div id="message-center-recent-contacts" hidden></div>{% endif %}
+                            </div>
+                            <div class="message-center-blocks">
+                                <div class="message-center-card__actions">
+                                    <h3 class="message-center-pane-title">黑名单</h3>
+                                    <span class="message-center-pill" id="message-center-block-count">0</span>
+                                </div>
+                                <div id="message-center-block-list" class="message-center-block-list"></div>
+                            </div>
+                        </aside>
+                        <section class="message-center-conversation">
+                            <div id="message-center-conversation-header" class="message-center-conversation__header"></div>
+                            <div id="message-center-conversation-body" class="message-center-conversation__body"{% if _messages_lq %} role="region" aria-label="私信消息"{% endif %}></div>
+                            <div class="message-center-composer{% if _messages_lq %} lq-composer lq-surface{% endif %}">
+                                <form id="message-center-compose-form" class="message-center-composer__form">
+                                    <div id="message-center-attachment-preview" class="message-center-attachment-preview" hidden></div>
+                                    <input id="message-center-image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="选择图片">
+                                    <input id="message-center-file-input" type="file" multiple hidden aria-label="选择附件">
+                                    <div class="message-center-composer__editor">
+                                        <div class="message-center-composer__main{% if _messages_lq %} lq-field{% endif %}">
+                                            <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
+                                                <button type="button" data-md-insert="heading" title="标题">H</button>
+                                                <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
+                                                <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
+                                                <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
+                                                <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
+                                                <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
+                                                <button type="button" data-md-insert="ol" title="有序列表">1.</button>
+                                                <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
+                                                <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                            </div>
+                                            {% if _messages_lq %}<label class="lq-field__label" for="message-center-compose-input">私信内容</label>{% endif %}
+                                            <textarea id="message-center-compose-input" class="message-center-composer__input{% if _messages_lq %} lq-composer__input{% endif %}" placeholder="输入私信内容（支持 Markdown 语法）"{% if _messages_lq %} rows="1" data-lq-auto-grow="true" aria-describedby="message-center-compose-hint"{% endif %}></textarea>
+                                            {% if _messages_lq %}<p id="message-center-compose-hint" class="lq-field__help">选择联系人后可发送；Enter 换行，点击发送提交。</p>{% endif %}
+                                        </div>
+                                        <div class="message-center-composer__actions">
+                                            {% if _messages_lq %}
+                                            {{ lq_btn('图片', id='message-center-image-trigger', variant='ghost', icon='image') }}
+                                            {{ lq_btn('附件', id='message-center-file-trigger', variant='ghost', icon='paperclip') }}
+                                            {% else %}
+                                            <button type="button" id="message-center-image-trigger" class="message-center-composer__action-button" title="添加图片">图片</button>
+                                            <button type="button" id="message-center-file-trigger" class="message-center-composer__action-button" title="添加文件">附件</button>
+                                            {% endif %}
+                                            <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
+                                                {% if _messages_lq %}{{ lq_btn('表情', id='message-center-emoji-trigger', variant='ghost', icon='smile') }}{% else %}<button type="button" id="message-center-emoji-trigger" class="message-center-composer__action-button message-center-emoji-trigger" title="表情">
+                                                    <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
+                                                    <span>表情</span>
+                                                </button>{% endif %}
+                                            </div>
+                                            {% if _messages_lq %}{{ lq_btn('发送', icon='send', variant='prominent', type='submit', attrs={'data-send-button':''}) }}{% else %}<button type="submit" class="btn btn-primary message-center-compose-submit" data-send-button>
+                                                <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
+                                                <span class="message-center-compose-submit__label">发送</span>
+                                            </button>{% endif %}
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+            </section>

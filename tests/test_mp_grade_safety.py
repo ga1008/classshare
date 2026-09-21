@@ -12,6 +12,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 
@@ -196,6 +197,56 @@ class ManualGradeSafetyTests(unittest.TestCase):
         self.assertEqual([200, 409], sorted(results))
         self.assertEqual(1, self.count_revisions())
         self.assertEqual(1, grading_domain.create_student_grading_notification.call_count)
+
+    def web_review_context(self, teacher_id=10):
+        from classroom_app.routers.ui_parts import assignment_pages
+        request = SimpleNamespace(query_params={})
+        with (
+            patch.object(assignment_pages, "get_db_connection", self.connection),
+            patch.object(assignment_pages, "close_overdue_assignments", lambda conn: None),
+            patch.object(assignment_pages, "refresh_assignment_runtime_status", lambda conn, row: dict(row)),
+            patch.object(assignment_pages, "_enrich_assignment_upload_config", lambda row: {**row, "display_only": True}),
+            patch.object(assignment_pages.templates, "TemplateResponse", lambda request, name, context: context),
+        ):
+            return asyncio.run(assignment_pages.submission_detail_page(
+                request, 1, user={"id": teacher_id, "role": "teacher"},
+            ))
+
+    def test_web_page_tokens_match_shared_grade_contract_and_preserve_decimal_and_zero(self):
+        for score in (82.75, 0):
+            context = self.web_review_context()
+            with self.connection() as conn:
+                domain = grading_domain.get_teacher_submission_review(conn, submission_id=1, teacher_id=10)
+            for key in ("expected_review_revision", "expected_assignment_revision"):
+                self.assertEqual(domain[key], context[key])
+            self.grade({"score": score, "feedback_md": "Web grading",
+                        **{key: context[key] for key in ("expected_review_revision", "expected_assignment_revision")}})
+            self.assertEqual(score, self.review()["score"])
+        self.assertEqual(2, self.count_revisions())
+
+    def test_web_stale_assignment_token_rejects_before_grade_ai_or_notification_side_effects(self):
+        with self.connection() as conn:
+            conn.execute("INSERT INTO ai_jobs(id,status,lease_token) VALUES(11,'running','lease')")
+            conn.execute("UPDATE submissions SET grading_job_id=11,status='grading' WHERE id=1")
+        context = self.web_review_context()
+        with self.connection() as conn:
+            conn.execute("UPDATE assignments SET late_penalty_points=15 WHERE id='1'")
+        with self.assertRaises(HTTPException) as error:
+            self.grade({"score": 83.25,
+                        **{key: context[key] for key in ("expected_review_revision", "expected_assignment_revision")}})
+        self.assertEqual(409, error.exception.status_code)
+        self.assertIsNone(self.review()["score"])
+        self.assertEqual(0, self.count_revisions())
+        grading_domain.create_student_grading_notification.assert_not_called()
+        with self.connection() as conn:
+            job = conn.execute("SELECT status,lease_token FROM ai_jobs WHERE id=11").fetchone()
+        self.assertEqual("running", job["status"])
+        self.assertEqual("lease", job["lease_token"])
+
+    def test_web_review_tokens_are_not_rendered_to_unauthorized_teacher(self):
+        with self.assertRaises(HTTPException) as error:
+            self.web_review_context(teacher_id=99)
+        self.assertEqual(403, error.exception.status_code)
 
     def test_stale_answer_after_resubmit_is_rejected_even_without_existing_grade_revision(self):
         token = self.review()["review_revision"]

@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { SignatureMultiSelect } from './signature_multi_select.js?v=material-workflows-1';
+import { SignatureMultiSelect } from './signature_multi_select.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const refKey=doc=>`${doc.material_type}:${doc.material_id}`;

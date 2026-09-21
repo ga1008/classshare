@@ -7,8 +7,10 @@ side-effect-free tests — this is test scaffolding, not an application backend.
 
 Forcing SQLite here (before any ``classroom_app`` import, so it wins over both
 the config default and ``.env`` which is loaded with ``override=False``) keeps
-the whole suite runnable with a plain ``python -m unittest discover -s tests``
-— no more scattered ``DB_ENGINE=sqlite`` on every command line.
+package-qualified test imports isolated. Plain discovery with ``-s tests``
+can import modules before this package, so the full unit suite must be run
+through ``python tools/test_backend.py``. That entry point also disables
+dotenv, uses a temporary data root, and forbids real PostgreSQL connections.
 """
 
 import os

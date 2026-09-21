@@ -1,12 +1,10 @@
 """作业截止临期提醒 + 个人日历订阅 feed 的单元测试（sqlite）。"""
 
-import os
 import unittest
 from datetime import datetime, timedelta
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services import scheduled_task_handlers as handlers
 from classroom_app.services.assignment_reminder_service import (
     ASSIGNMENT_DUE_REMINDER_TASK_KIND,
@@ -105,7 +103,7 @@ def _cleanup(conn):
 class AssignmentDueReminderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:
@@ -225,7 +223,7 @@ class AssignmentDueReminderTests(unittest.TestCase):
 class CalendarFeedTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

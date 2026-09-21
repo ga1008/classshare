@@ -4,6 +4,12 @@ export const MESSAGE_CENTER_WORKSPACE_COMMAND_EVENT = 'lanshare:message-center-w
 export type MessageCenterWorkspaceMode = 'full' | 'notifications' | 'private';
 
 export type MessageCenterWorkspaceSnapshot = {
+  lqEnabled: boolean;
+  actionBusy: boolean;
+  privateHref: string;
+  notificationsHref: string;
+  loadStatus: 'idle' | 'loading' | 'ready' | 'error';
+  loadError: string;
   mode: MessageCenterWorkspaceMode;
   currentTab: string;
   currentTabLabel: string;
@@ -59,6 +65,13 @@ export function normalizeMessageCenterWorkspaceSnapshot(value: unknown): Message
   const currentTab = toText(record.currentTab, 'all');
 
   return {
+    lqEnabled: toBoolean(record.lqEnabled),
+    actionBusy: toBoolean(record.actionBusy),
+    privateHref: toText(record.privateHref, '/profile?section=private&tab=private_message#profile-message-center'),
+    notificationsHref: toText(record.notificationsHref, '/profile?section=notifications#profile-message-center'),
+    loadStatus: record.loadStatus === 'loading' || record.loadStatus === 'error' || record.loadStatus === 'idle'
+      ? record.loadStatus : 'ready',
+    loadError: toText(record.loadError),
     mode: normalizeMode(record.mode),
     currentTab,
     currentTabLabel: toText(record.currentTabLabel, currentTab === 'private_message' ? '私信' : '全部'),
@@ -88,6 +101,8 @@ export function normalizeMessageCenterWorkspaceSnapshot(value: unknown): Message
 }
 
 export function buildMessageCenterWorkspaceMessage(snapshot: MessageCenterWorkspaceSnapshot): string {
+  if (snapshot.loadStatus === 'loading') return '正在加载，请稍候。';
+  if (snapshot.loadStatus === 'error') return snapshot.loadError || '暂时无法加载，请重试。';
   if (snapshot.privateOpen) {
     if (!snapshot.hasConversation) {
       return snapshot.visibleContactTotal > 0

@@ -5,6 +5,8 @@ from .common import *
 from ...services.assessment_classification_service import enrich_assessment_classifications
 from ...services.score_projection_service import load_submission_score_facts
 from ...services.submission_write_guard import submission_write_version
+from ...services.submission_grade_guard_service import submission_review_revision
+from ...services.assignment_management_service import assignment_revision, load_assignment_row
 
 
 router = APIRouter()
@@ -319,10 +321,13 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
             raise HTTPException(404, "提交记录不存在")
         submission = dict(submission)
 
-        assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (submission['assignment_id'],)).fetchone()
+        # Hash the same joined, persisted row used by the manual-grade service;
+        # upload/display enrichment must not enter the concurrency token.
+        assignment = load_assignment_row(conn, submission['assignment_id'])
         if not assignment:
             raise HTTPException(404, "作业不存在")
         assignment = refresh_assignment_runtime_status(conn, assignment)
+        expected_assignment_revision = assignment_revision(assignment)
         assignment = _enrich_assignment_upload_config(dict(assignment))
         submission_back_url = _submission_return_url(request, f"/assignment/{assignment['id']}")
         submission_back_label = "返回错题归集" if "/wrong-summary" in submission_back_url else "返回作业"
@@ -366,6 +371,8 @@ async def submission_detail_page(request: Request, submission_id: int, user: dic
         "user_info": user,
         "assignment": assignment,
         "submission": submission,
+        "expected_review_revision": submission_review_revision(submission),
+        "expected_assignment_revision": expected_assignment_revision,
         "submission_files": submission_files,
         "exam_questions": exam_questions,
         "can_manage_submission_files": can_manage_submission_files,

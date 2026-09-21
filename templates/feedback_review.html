@@ -1,4 +1,5 @@
 {% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_empty %}
 
 {% block title %}{{ review_context.title }} - 课堂平台{% endblock %}
 
@@ -35,12 +36,22 @@
 {% endblock %}
 
 {% block main_content %}
+{% set growth_on = lq_family_enabled('growth') %}
 <section
     class="review-workbench"
     data-review-root
     data-active-status="{{ review_context.active_status }}"
     data-active-course="{{ review_context.active_course_id }}"
+    {% if growth_on %}data-lq-scope="growth"{% endif %}
 >
+    {% if growth_on %}
+    {% call lq_page_head(review_context.title, description=review_context.subtitle) %}
+        <div class="lq-card--stat"><span>掌握进度</span><strong>{{ review_context.progress.percent }}%</strong><small>{{ review_context.progress.mastered }} 已掌握 / {{ review_context.progress.total }} 总反馈点</small></div>
+        {% for stat in review_context.stats[:2] %}
+        <div class="lq-card--stat"><span>{{ stat.label }}</span><strong>{{ stat.value }}</strong><small>{{ stat.hint }}</small></div>
+        {% endfor %}
+    {% endcall %}
+    {% else %}
     <header class="review-hero">
         <div class="review-hero__copy">
             <h1>{{ review_context.title }}</h1>
@@ -65,6 +76,7 @@
         </article>
         {% endfor %}
     </section>
+    {% endif %}
 
     <section class="review-toolbar" aria-label="复盘筛选">
         <div class="review-filter-tabs" role="tablist" aria-label="状态筛选">
@@ -103,6 +115,8 @@
     </div>
 
     {% if review_context['items'] %}
+    {% set review_status_tone = {'open': 'warning', 'reviewing': 'info', 'mastered': 'success'} %}
+    {% set review_severity_tone = {'high': 'danger', 'medium': 'warning', 'low': 'neutral'} %}
     <section class="review-card-list" aria-label="复盘卡列表">
         {% for item in review_context['items'] %}
         <article
@@ -116,8 +130,8 @@
         >
             <div class="review-card__main">
                 <div class="review-card__topline">
-                    <span class="review-chip review-chip--{{ item.severity }}">{{ item.severity_label }}</span>
-                    <span class="review-chip review-chip--status" data-review-status-label>{{ item.status_label }}</span>
+                    <span class="review-chip review-chip--{{ item.severity }}"{% if growth_on %} data-tone="{{ review_severity_tone.get(item.severity, 'neutral') }}"{% endif %}>{{ item.severity_label }}</span>
+                    <span class="review-chip review-chip--status"{% if growth_on %} data-tone="{{ review_status_tone.get(item.status, 'neutral') }}"{% endif %} data-review-status-label>{{ item.status_label }}</span>
                     {% if item.score_text %}
                     <span class="review-chip">{{ item.score_text }} 分</span>
                     {% endif %}
@@ -179,6 +193,12 @@
         </article>
         {% endfor %}
     </section>
+    {% elif growth_on %}
+    {% call(slot) lq_empty(title='暂时没有需要复盘的反馈点', description='等作业或考试批改后，这里会自动把扣分点和改进建议整理成复盘卡。已经掌握的内容也可以从筛选里切回来查看。', reason='empty', variant='card') %}
+        {% if slot == 'actions' %}
+        <a href="/dashboard" class="review-action review-action--primary">回到学习驾驶舱</a>
+        {% endif %}
+    {% endcall %}
     {% else %}
     <section class="review-empty">
         <strong>暂时没有需要复盘的反馈点</strong>

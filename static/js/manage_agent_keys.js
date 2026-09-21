@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
+import { LQ } from '/static/js/lq/index.js';
 
 const parseJsonScript = (id, fallback) => {
     const el = document.getElementById(id);
@@ -327,7 +328,13 @@ async function activateKey(id, button) {
 
 async function deleteKey(id, button) {
     if (state.busy) return;
-    if (!window.confirm('确定删除这个 Agent API Key 吗？新请求将无法再使用它，历史请求记录会保留。')) {
+    const confirmed = await LQ.confirm({
+        title: '删除 Agent API Key',
+        message: '确定删除这个 Agent API Key 吗？新请求将无法再使用它，历史请求记录会保留。',
+        confirmLabel: '删除',
+        danger: true,
+    });
+    if (!confirmed) {
         return;
     }
     setBusy(button, true, '删除中');

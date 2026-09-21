@@ -1,0 +1,10 @@
+{% from 'macros/lq/chip.html' import lq_chip %}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% macro lq_chip_row(id, label, items) -%}
+{%- set p = lq_props('chip_row', id=id, label=label, items=items) -%}
+<div class="lq-chip-row"{% for key,value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}><div class="lq-chip-row__track" id="{{ p.track_id|forceescape }}" tabindex="0">
+{%- for item in p['items'] -%}
+{{ lq_chip(label=item.label,kind=item.get('kind','status'),tone=item.get('tone','neutral'),size=item.get('size','md'),pressed=item.get('pressed',false),removable=item.get('removable',false),remove_label=item.get('removeLabel'),id=item.get('id'),attrs=item.get('attrs',{}),disabled=item.get('disabled',false)) }}
+{%- endfor -%}
+</div><div class="lq-chip-row__disclosure" hidden>{{ lq_btn(label='更多',variant='soft',icon='chevron-down') }}</div></div>
+{%- endmacro %}

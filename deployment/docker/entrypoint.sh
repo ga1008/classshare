@@ -17,6 +17,9 @@ service="${1:-main}"
 case "$service" in
   main)
     shift || true
+    if [ "${LANSHARE_PUBLISH_STATIC:-0}" = "1" ]; then
+      python /app/tools/publish_static_assets.py
+    fi
     exec python -u main.py "$@"
     ;;
   ai)

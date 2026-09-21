@@ -70,7 +70,7 @@ try {
     Invoke-PreflightStep "frontend-typecheck" { npm run typecheck }
     Invoke-PreflightStep "frontend-test" { npm test }
     Invoke-PreflightStep "frontend-build" { npm run build }
-    Invoke-PreflightStep "backend-tests" { python -m unittest discover -s tests -p "test_*.py" }
+    Invoke-PreflightStep "backend-tests" { python tools/test_backend.py }
     Invoke-PreflightStep "manifest-check" {
         python tools\deploy\check_manifest.py --json-output (Join-Path $ReportDir "manifest-check.json")
     }

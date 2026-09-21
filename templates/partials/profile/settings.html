@@ -1,0 +1,116 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+            <section class="profile-band profile-section-head profile-reveal">
+                <div>
+                    <h2>基础信息</h2>
+                    <p>头像、昵称、联系方式和个人介绍会同步到个人中心与 AI 助教上下文。</p>
+                </div>
+            </section>
+
+            <section class="profile-settings-grid">
+                <aside class="profile-settings-rail">
+                    <section class="profile-band profile-avatar-card profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>头像展示</h3>
+                            </div>
+                        </div>
+                        <img id="profile-avatar-preview" src="{{ profile.avatar_url }}" alt="当前头像">
+                        <input id="profile-avatar-input" type="file" accept="image/png,image/jpeg,image/gif" hidden>
+                        {% if _profile_lq %}{{ lq_btn('上传头像 / GIF', variant='soft', type='button', attrs={'data-profile-avatar-pick': ''}) }}{% else %}<button type="button" class="btn btn-outline" data-profile-avatar-pick>上传头像 / GIF</button>{% endif %}
+                    </section>
+
+                    <section class="profile-band profile-mood-card profile-reveal">
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>今日心情</h3>
+                            </div>
+                        </div>
+                        <div class="profile-mood-editor">
+                            <div class="profile-mood-options">
+                                {% for mood in ['平静', '专注', '开心', '有点累', '需要鼓励'] %}
+                                <button type="button" class="profile-mood-option{% if profile.today_mood == mood %} is-active{% endif %}" data-profile-mood="{{ mood }}"{% if _profile_lq %} aria-pressed="{{ 'true' if profile.today_mood == mood else 'false' }}"{% endif %}>{{ mood }}</button>
+                                {% endfor %}
+                            </div>
+                            <div class="profile-mood-custom">
+                                {% if _profile_lq %}<label for="profile-mood-input" class="lq-field__label">自定义今日心情</label>{% endif %}
+                                <input id="profile-mood-input" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.today_mood }}" maxlength="40" placeholder="自定义今日心情">
+                                {% if _profile_lq %}{{ lq_btn('保存心情', variant='prominent', type='button', id='profile-mood-save') }}{% else %}<button type="button" id="profile-mood-save" class="btn btn-primary">保存心情</button>{% endif %}
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="profile-band profile-form-band profile-reveal">
+                    <form id="profile-basic-form" class="profile-form">
+                        <div class="profile-form-section{% if _profile_lq %} lq-form-section{% endif %}">
+                            <div class="profile-form-section__head">
+                                <h3>身份信息</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-name">姓名</label>
+                                    <input id="profile-name" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.name }}" readonly>
+                                </div>
+                                {% if profile.role == 'student' %}
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-student-id">学号</label>
+                                    <input id="profile-student-id" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.student_id_number }}" readonly>
+                                </div>
+                                {% endif %}
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-nickname">身份昵称</label>
+                                    <input id="profile-nickname" name="nickname" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.nickname }}" maxlength="40">
+                                </div>
+                                {% if profile.role == 'teacher' %}
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}">职务身份（可兼任，最多 4 个）</label>
+                                    <div id="profile-identity-editor" data-profile-identity-editor>
+                                        <div class="profile-identity-loading">正在加载任职身份…</div>
+                                    </div>
+                                    <small class="form-hint">与你绑定的电子签名双向同步；可设置任期起止日期，到期自动降级。主身份取职级最高的在任身份。</small>
+                                </div>
+                                {% endif %}
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-email">邮箱</label>
+                                    <input id="profile-email" name="email" type="email" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.email }}" maxlength="120">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-form-section{% if _profile_lq %} lq-form-section{% endif %}">
+                            <div class="profile-form-section__head">
+                                <h3>联系方式</h3>
+                            </div>
+                            <div class="profile-form-grid">
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-phone">电话</label>
+                                    <input id="profile-phone" name="phone" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.phone }}" maxlength="32">
+                                </div>
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-wechat">微信</label>
+                                    <input id="profile-wechat" name="wechat" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.wechat }}" maxlength="64">
+                                </div>
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-qq">QQ</label>
+                                    <input id="profile-qq" name="qq" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.qq }}" maxlength="32">
+                                </div>
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-homepage">个人主页</label>
+                                    <input id="profile-homepage" name="homepage_url" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.homepage_url }}" maxlength="240" placeholder="https://">
+                                </div>
+                                {% if profile.role != 'student' %}
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-description">个人简介</label>
+                                    <textarea id="profile-description" name="description" class="{% if _profile_lq %}lq-textarea lq-control--md {% endif %}form-control" maxlength="600">{{ profile.description }}</textarea>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="{% if _profile_lq %}lq-form-actions {% endif %}profile-form-actions">
+                            {% if _profile_lq %}{{ lq_btn('保存资料', variant='prominent', type='submit') }}{% else %}<button type="submit" class="btn btn-primary">保存资料</button>{% endif %}
+                        </div>
+                    </form>
+                </section>
+            </section>
+

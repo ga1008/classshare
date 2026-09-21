@@ -2,20 +2,21 @@ import { useEffect } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 import { classroomReadiness } from '@/lib/classroom-bootstrap-ready';
+import { legacyModuleUrl } from '@/lib/static-assets';
 import { ClassroomWorkspace } from './classroom-workspace';
 
 const LEGACY_MODULES = {
-  ui: '/static/js/ui.js',
-  chat: '/static/js/chat.js?v=classroom-workspace-20260918',
-  privateMessages: '/static/js/classroom_private_messages.js?v=classroom-workspace-20260918',
-  files: '/static/js/app_files.js?v=classroom-workspace-20260918',
-  materials: '/static/js/classroom_materials.js?v=classroom-workspace-20260918',
-  exams: '/static/js/app_exams.js',
-  classroomPage: '/static/js/classroom_page.js?v=classroom-workspace-20260919',
-  learningProgress: '/static/js/learning_progress.js?v=classroom-members-20260913',
-  interactions: '/static/js/classroom_interactions.js?v=quiz-leaderboard-20260714',
-  collaboration: '/static/js/collaboration.js?v=group-remove-redistribute-20260624',
-  polls: '/static/js/classroom_polls.js?v=classroom-workspace-20260918',
+  ui: legacyModuleUrl('ui.js'),
+  chat: legacyModuleUrl('chat.js'),
+  privateMessages: legacyModuleUrl('classroom_private_messages.js'),
+  files: legacyModuleUrl('app_files.js'),
+  materials: legacyModuleUrl('classroom_materials.js'),
+  exams: legacyModuleUrl('app_exams.js'),
+  classroomPage: legacyModuleUrl('classroom_page.js'),
+  learningProgress: legacyModuleUrl('learning_progress.js'),
+  interactions: legacyModuleUrl('classroom_interactions.js'),
+  collaboration: legacyModuleUrl('collaboration.js'),
+  polls: legacyModuleUrl('classroom_polls.js'),
 } as const;
 
 type LegacyModule = Record<string, unknown>;
@@ -50,12 +51,7 @@ function resolveConstructor<T>(module: LegacyModule, name: string): T {
   return value as T;
 }
 
-async function bootstrapClassroomPage(app: HTMLElement) {
-  if (app.dataset.classroomPageControllerMounted === 'true') {
-    return;
-  }
-  app.dataset.classroomPageControllerMounted = 'true';
-
+async function initializeClassroomPage(app: HTMLElement) {
   // These editors live in secondary surfaces. Start their downloads after the
   // document's first render instead of preloading them alongside critical CSS.
   // Each island reads its latest snapshot when it mounts; no commands are lost.
@@ -224,19 +220,30 @@ async function bootstrapClassroomPage(app: HTMLElement) {
   await secondaryIslands;
 }
 
-function ClassroomPageController() {
+function bootstrapClassroomPage(app: HTMLElement) {
+  return classroomReadiness.start(async () => {
+    app.dataset.classroomPageControllerMounted = 'true';
+    try {
+      await initializeClassroomPage(app);
+    } catch (error) {
+      app.dataset.classroomPageControllerMounted = 'false';
+      console.error('[classroom-page] controller failed to load', error);
+      window.UI?.showToast?.('课堂页面初始化失败，请刷新重试。', 'error');
+      throw error;
+    }
+  });
+}
+
+export function ClassroomPageController() {
   useEffect(() => {
     const app = document.querySelector<HTMLElement>('[data-classroom-page-app]');
     if (!app) {
       return;
     }
 
-    bootstrapClassroomPage(app).then(() => classroomReadiness.complete()).catch((error: unknown) => {
-      classroomReadiness.complete(error);
-      app.dataset.classroomPageControllerMounted = 'false';
-      console.error('[classroom-page] controller failed to load', error);
-      window.UI?.showToast?.('课堂页面初始化失败，请刷新重试。', 'error');
-    });
+    // Unmounting this React view does not stop the document's native controllers.
+    // start() owns readiness and consumes failure even if no view remains.
+    void bootstrapClassroomPage(app);
   }, []);
 
   return <ClassroomWorkspace />;

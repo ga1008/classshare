@@ -1,0 +1,11 @@
+{% from 'macros/lq/indicators.html' import lq_badge %}
+{% macro _navigation_tree(tree, slot=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slot %}{{ slot(tree.slot) }}{% else %}{{ tree.text|forceescape }}{% endif %}
+{%- elif tree.component is defined -%}{{ lq_badge(**tree.props) }}
+{%- else -%}
+<{{ tree.tag }}{% for key, value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for child in tree.children %}{{ _navigation_tree(child, slot) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_tabs(id, label, items) -%}{{ _navigation_tree(lq_props('tabs', id=id, label=label, items=items, **kwargs), caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_segment(id, label, items) -%}{{ _navigation_tree(lq_props('segment', id=id, label=label, items=items, **kwargs), caller if caller is defined else none) }}{%- endmacro %}

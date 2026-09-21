@@ -1,13 +1,11 @@
 """AI 学伴课程上下文服务的单元测试（sqlite）。"""
 
 import json
-import os
 import unittest
 from datetime import datetime, timedelta
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.student_ai_tutor_context_service import (
     build_tutor_context_block,
     detect_open_task_hit,
@@ -107,7 +105,7 @@ def _seed(conn):
 class TutorContextTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

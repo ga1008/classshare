@@ -12,8 +12,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user, get_password_hash, verify_password
+from ..lq_migration import lq_family_enabled
 from ..services.emoji_service import get_custom_emoji_path, validate_and_store_custom_emoji
 from ..services.profile_service import (
+    PROFILE_SECTIONS,
     build_profile_page_context,
     get_user_profile,
     normalize_profile_section,
@@ -121,6 +123,7 @@ def _load_avatar_profile(conn, *, role: str, user_id: int) -> dict[str, Any] | N
 _SHELL_SECTION_NAV = {
     "overview": "teacher_profile",
     "settings": "me_settings",
+    "appearance": "me_appearance",
     "security": "me_security",
     "notifications": "me_notifications",
     "private": "me_notifications",
@@ -129,6 +132,7 @@ _SHELL_SECTION_NAV = {
 _SHELL_SECTION_TITLES = {
     "overview": "我的概览",
     "settings": "基础资料",
+    "appearance": "外观",
     "security": "账号安全",
     "notifications": "通知与私信",
     "private": "私信",
@@ -138,17 +142,20 @@ _SHELL_SECTION_TITLES = {
 
 def shell_profile_href(section: str) -> str:
     section = normalize_profile_section(section)
+    if section == "appearance" and not lq_family_enabled("profile"):
+        section = "settings"
     return "/manage/me" if section == "overview" else f"/manage/me/{section}"
 
 
 def _render_profile(request: Request, user: dict, *, section: str, tab: str, contact: str, scope: int | None, in_shell: bool):
+    profile_lq_enabled = lq_family_enabled("profile")
     active_section = normalize_profile_section(section)
     initial_tab = "private_message" if active_section == "private" else str(tab or "all")
     if active_section == "notifications" and initial_tab == "private_message":
         initial_tab = "all"
 
     with get_db_connection() as conn:
-        profile_context = build_profile_page_context(conn, user, active_section)
+        profile_context = build_profile_page_context(conn, user, active_section, include_appearance=profile_lq_enabled)
         active_section = profile_context["active_section"]
 
     nav_items = profile_context["nav_items"]
@@ -171,6 +178,12 @@ def _render_profile(request: Request, user: dict, *, section: str, tab: str, con
         "initial_scope": scope,
         "profile_in_shell": in_shell,
         "profile_section_base": "/manage/me/" if in_shell else "/profile?section=",
+        "profile_lq_enabled": profile_lq_enabled,
+        "messages_lq_enabled": lq_family_enabled("messages"),
+        "profile_section_hrefs": {
+            name: shell_profile_href(name) if in_shell else f"/profile?section={name}"
+            for name in PROFILE_SECTIONS
+        },
     }
     if in_shell:
         from .ui_parts.common import _build_manage_template_context
@@ -179,7 +192,8 @@ def _render_profile(request: Request, user: dict, *, section: str, tab: str, con
             request, user, page_title=context["page_title"], active_page=_SHELL_SECTION_NAV.get(active_section, "teacher_profile")
         )
         context = {**shell, **context}
-    return templates.TemplateResponse(request, "profile.html", context)
+    template_name = "manage/profile.html" if in_shell else "profile.html"
+    return templates.TemplateResponse(request, template_name, context)
 
 
 @router.get("/profile", response_class=HTMLResponse)
@@ -216,7 +230,7 @@ def _shell_section_endpoint(section_name: str):
 
 # 显式注册每个 section（路由快照与导航契约都按字面路径校验，不用 {section} 通配）。
 router.add_api_route("/manage/me", _shell_section_endpoint("overview"), methods=["GET"], response_class=HTMLResponse, name="manage_me_overview_page")
-for _section in ("settings", "security", "notifications", "private", "email"):
+for _section in ("settings", "appearance", "security", "notifications", "private", "email"):
     router.add_api_route(f"/manage/me/{_section}", _shell_section_endpoint(_section), methods=["GET"], response_class=HTMLResponse, name=f"manage_me_{_section}_page")
 
 
@@ -225,7 +239,7 @@ def api_profile_bootstrap(section: str = "overview", user: dict = Depends(get_cu
     with get_db_connection() as conn:
         return {
             "status": "success",
-            **build_profile_page_context(conn, user, section),
+            **build_profile_page_context(conn, user, section, include_appearance=lq_family_enabled("profile")),
         }
 
 

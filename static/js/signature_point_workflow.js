@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { SignatureMultiSelect } from './signature_multi_select.js?v=material-workflows-1';
+import { SignatureMultiSelect } from './signature_multi_select.js';
 
 const statusText = {
     pending: '待审批',

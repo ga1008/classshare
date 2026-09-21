@@ -1285,21 +1285,36 @@ export class ClassroomChat {
     }
 
     handleDocumentKeydown(event) {
-        if (event.key === 'Escape') {
-            if (this.isAttachmentPreviewOpen()) {
-                this.closeAttachmentPreview();
-                return;
-            }
-            if (this.isEmojiPopoverOpen()) {
-                this.closeEmojiPopover();
-            }
-            if (this.messageMenu && !this.messageMenu.hidden) {
-                this.cancelMessageMenuHover();
-                this.cancelMessageMenuClose();
-                this.closeMessageActionMenu();
-            }
-            this.chatInput?.focus();
+        if (event.key !== 'Escape' || event.defaultPrevented || event.cancelBubble || event.isComposing) return;
+        // An external dialog owns its key event even when its earlier listener
+        // has already hidden it and restored focus. Use the original target,
+        // not document.activeElement, which may have changed during dispatch.
+        const target = event.target instanceof Element ? event.target : null;
+        const dialog = target?.closest('dialog, [role="dialog"], [aria-modal="true"]');
+        if (dialog && !dialog.contains(this.chatInput)
+            && ![this.emojiPopover, this.messageMenu, this.attachmentPreviewModal].some(panel => panel?.contains(target))) return;
+
+        // The shared image lightbox normally consumes Escape in capture phase
+        // and restores its own opener, so defaultPrevented above preserves it.
+        if (this.isAttachmentPreviewOpen()) {
+            event.preventDefault();
+            this.closeAttachmentPreview();
+            return;
         }
+        let dismissed = false;
+        if (this.isEmojiPopoverOpen()) {
+            this.closeEmojiPopover();
+            dismissed = true;
+        }
+        if (this.messageMenu && !this.messageMenu.hidden) {
+            this.cancelMessageMenuHover();
+            this.cancelMessageMenuClose();
+            this.closeMessageActionMenu();
+            dismissed = true;
+        }
+        if (!dismissed) return;
+        event.preventDefault();
+        this.chatInput?.focus({ preventScroll: true });
     }
 
     resolveMessageMenuAnchor(target) {

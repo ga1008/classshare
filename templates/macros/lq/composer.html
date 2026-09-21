@@ -1,0 +1,14 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% macro _composer_tree(tree, content=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if content %}{{ content() }}{% endif %}
+{%- elif tree.button is defined -%}
+{%- set rendered = lq_btn(**tree.button) -%}
+{%- if tree.submit_name is defined -%}
+{%- set native_open -%}<button name="{{ tree.submit_name|forceescape }}" value="{{ tree.submit_value|forceescape }}"{%- endset -%}
+{{ rendered|replace('<button', native_open) }}
+{%- else -%}{{ rendered }}{%- endif -%}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% if tree.tag == 'textarea' %}{{ '\n' }}{% endif %}{% for child in tree.children %}{{ _composer_tree(child, content) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_composer(label='消息内容', name='content', value='') -%}{{ _composer_tree(lq_props('composer',label=label,name=name,value=value,**kwargs), caller if caller is defined else none) }}{%- endmacro %}

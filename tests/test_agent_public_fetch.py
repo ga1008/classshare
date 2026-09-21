@@ -81,21 +81,25 @@ class PublicFetchTests(unittest.TestCase):
         server.bind(("127.0.0.1", 0))
         server.listen(1)
         stopped = threading.Event()
+        fixture_events = []
 
         def respond():
             try:
                 client, _ = server.accept()
+                fixture_events.append(("accepted", time.monotonic()))
                 with client:
                     client.settimeout(2)
-                    client.recv(4096)
+                    request = client.recv(4096)
+                    fixture_events.append(("request", len(request), request.endswith(b"\r\n\r\n")))
                     if headers:
                         client.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: ")
                     else:
                         client.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n")
+                    fixture_events.append(("response-started", time.monotonic()))
                     while not stopped.wait(.015):
                         client.sendall(b"x")
-            except OSError:
-                pass
+            except OSError as exc:
+                fixture_events.append(("server-error", repr(exc), time.monotonic()))
 
         thread = threading.Thread(target=respond, daemon=True)
         thread.start()
@@ -107,7 +111,15 @@ class PublicFetchTests(unittest.TestCase):
             with patch.object(service, "MAX_WEB_SECONDS", .15), patch.object(service, "public_target", return_value=(target, "fixture.example", port, address, "/")):
                 with self.assertRaises(HTTPException) as caught:
                     service.fetch_public_web(f"http://fixture.example:{port}/")
-            self.assertEqual(504, caught.exception.status_code)
+            self.assertEqual(
+                504,
+                caught.exception.status_code,
+                {
+                    "elapsed": time.monotonic() - started,
+                    "http_context": repr(caught.exception.__context__),
+                    "fixture_events": fixture_events,
+                },
+            )
             self.assertLess(time.monotonic() - started, 1)
         finally:
             stopped.set()
@@ -120,6 +132,129 @@ class PublicFetchTests(unittest.TestCase):
 
     def test_total_deadline_interrupts_body_after_httpconnection_detaches_socket(self):
         self._dripping_server(headers=False)
+
+    def test_watchdog_rechecks_deadline_after_early_wakes(self):
+        clock = [10.0]
+        abort_times = []
+        watchdog = service._DeadlineWatchdog(12.0, lambda: abort_times.append(clock[0]))
+        wake_times = iter((10.5, 11.9, 12.0))
+        waits = []
+
+        def wake_early(delay):
+            self.assertFalse(abort_times)
+            self.assertFalse(watchdog.expired.is_set())
+            waits.append(delay)
+            clock[0] = next(wake_times)
+            return False
+
+        with patch.object(service.time, "monotonic", side_effect=lambda: clock[0]), patch.object(watchdog._cancelled, "wait", side_effect=wake_early):
+            watchdog.run()
+        self.assertEqual([12.0], abort_times)
+        self.assertEqual(3, len(waits))
+        for actual, expected in zip(waits, (2.0, 1.5, .1)):
+            self.assertAlmostEqual(expected, actual)
+        self.assertTrue(watchdog.expired.is_set())
+
+    def test_watchdog_cancel_interrupts_wait_without_expiring(self):
+        abort = Mock()
+        watchdog = service._DeadlineWatchdog(12.0, abort)
+        with patch.object(service.time, "monotonic", return_value=10.0), patch.object(watchdog._cancelled, "wait", side_effect=lambda _: watchdog.cancel()):
+            watchdog.run()
+            self.assertEqual(2.0, watchdog.check())
+        self.assertFalse(watchdog.expired.is_set())
+        abort.assert_not_called()
+
+    def test_watchdog_abort_reason_survives_read_error_or_partial_body(self):
+        for read_result in (ConnectionAbortedError(10053, "fixture abort"), b"partial"):
+            with self.subTest(read_result=repr(read_result)):
+                clock = [10.0]
+                response = Mock(status=200)
+                response.getheader.return_value = "identity"
+                connection = Mock()
+                connection.getresponse.return_value = response
+                watchdogs = []
+                watchdog_class = service._DeadlineWatchdog
+
+                def new_watchdog(deadline, abort):
+                    watchdog = watchdog_class(deadline, abort)
+                    watchdog.start = Mock()
+                    watchdogs.append(watchdog)
+                    return watchdog
+
+                def read_body(_):
+                    clock[0] = watchdogs[0].deadline
+                    watchdogs[0].run()
+                    if isinstance(read_result, BaseException):
+                        raise read_result
+                    return read_result
+
+                response.read.side_effect = read_body
+                target = (service.urlsplit("http://fixture.example/"), "fixture.example", 80, None, "/")
+                with patch.object(service, "public_target", return_value=target), patch.object(service, "PinnedConnection", return_value=connection), patch.object(service, "_DeadlineWatchdog", side_effect=new_watchdog), patch.object(service.time, "monotonic", side_effect=lambda: clock[0]), patch.object(service, "_remaining", return_value=1.0):
+                    with self.assertRaises(HTTPException) as caught:
+                        service.fetch_public_web("http://fixture.example/")
+                self.assertEqual(504, caught.exception.status_code)
+                connection.abort.assert_called_once()
+                connection.close.assert_called_once()
+                response.close.assert_called_once()
+                self.assertTrue(watchdogs[0]._cancelled.is_set())
+
+    def test_remote_early_disconnect_and_reset_remain_502(self):
+        failures = (
+            ("headers", service.http.client.RemoteDisconnected("fixture early EOF")),
+            ("body", service.http.client.IncompleteRead(b"partial", 100)),
+            ("body", ConnectionResetError("fixture reset")),
+            ("body", ConnectionAbortedError(10053, "fixture peer abort")),
+        )
+        for phase, error in failures:
+            with self.subTest(phase=phase, error=type(error).__name__):
+                response = Mock(status=200)
+                response.getheader.return_value = "identity"
+                response.read.side_effect = error
+                connection = Mock()
+                connection.getresponse.return_value = response
+                if phase == "headers":
+                    connection.getresponse.side_effect = error
+                target = (service.urlsplit("http://fixture.example/"), "fixture.example", 80, None, "/")
+                with patch.object(service, "public_target", return_value=target), patch.object(service, "PinnedConnection", return_value=connection), patch.object(service._DeadlineWatchdog, "start"), patch.object(service.time, "monotonic", return_value=10.0):
+                    with self.assertRaises(HTTPException) as caught:
+                        service.fetch_public_web("http://fixture.example/")
+                self.assertEqual(502, caught.exception.status_code)
+                connection.abort.assert_not_called()
+                connection.close.assert_called_once()
+
+    def test_each_redirect_cancels_its_own_watchdog(self):
+        redirect = Mock(status=302)
+        redirect.getheader.return_value = "http://fixture.example/next"
+        response = Mock(status=200)
+        response.getheader.side_effect = lambda key, default=None: {"Content-Type": "text/plain", "Content-Encoding": "identity"}.get(key, default)
+        response.read.return_value = b"complete"
+        connections = [Mock(), Mock()]
+        connections[0].getresponse.return_value = redirect
+        connections[1].getresponse.return_value = response
+        watchdogs = []
+        watchdog_class = service._DeadlineWatchdog
+
+        def new_watchdog(deadline, abort):
+            watchdog = watchdog_class(deadline, abort)
+            watchdog.start = Mock()
+            watchdogs.append(watchdog)
+            return watchdog
+
+        target = (service.urlsplit("http://fixture.example/"), "fixture.example", 80, None, "/")
+        with patch.object(service, "public_target", return_value=target), patch.object(service, "PinnedConnection", side_effect=connections), patch.object(service, "_DeadlineWatchdog", side_effect=new_watchdog), patch.object(service.time, "monotonic", return_value=10.0):
+            result = service.fetch_public_web("http://fixture.example/")
+        self.assertEqual("complete", result["content"])
+        self.assertEqual(2, len(watchdogs))
+        self.assertEqual(watchdogs[0].deadline, watchdogs[1].deadline)
+        with patch.object(service.time, "monotonic", return_value=watchdogs[0].deadline + 1):
+            for watchdog in watchdogs:
+                self.assertTrue(watchdog._cancelled.is_set())
+                watchdog.run()
+                self.assertFalse(watchdog.expired.is_set())
+        for connection in connections:
+            connection.abort.assert_not_called()
+            connection.close.assert_called_once()
 
     def test_dns_timeout_keeps_its_slot_until_real_lookup_finishes(self):
         release = threading.Event()

@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 import anyio.to_thread
 from dataclasses import asdict
 from fastapi import FastAPI, Request, HTTPException
@@ -31,6 +32,8 @@ from .db.postgres import close_connection_pool, get_pool_stats
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
 from .dependencies import infer_required_role_from_path
+from .dependencies import build_login_url, get_auth_redirect_target, sanitize_next_path
+from .lq_migration import lq_family_enabled
 from .schemas.api_common import (
     ApiErrorCode,
     api_error_code_for_status,
@@ -417,6 +420,28 @@ def _api_error_response(
     return JSONResponse(payload, status_code=status_code, headers=headers)
 
 
+def _is_html_navigation(request: Request) -> bool:
+    if (request.method not in {"GET", "HEAD"}
+            or request.headers.get("sec-fetch-dest", "document") != "document"
+            or request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"):
+        return False
+    for media_range in request.headers.get("accept", "").split(","):
+        media_type, *parameters = media_range.split(";")
+        if media_type.strip().lower() != "text/html":
+            continue
+        quality = "1"
+        for parameter in parameters:
+            name, _, value = parameter.partition("=")
+            if name.strip().lower() == "q":
+                quality = value.strip()
+        try:
+            if 0 < float(quality) <= 1:
+                return True
+        except ValueError:
+            pass
+    return False
+
+
 @app.exception_handler(401)
 async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     login_url = build_login_redirect_url(request)
@@ -431,6 +456,28 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
             details={"redirect_to": login_url},
             legacy_fields={"redirect_to": login_url},
         )
+        clear_access_token_cookie(response)
+        return response
+
+    # A missing cookie still goes straight to login. Only an unusable browser
+    # session gets this recovery page; never invalidate another device's session.
+    if (_is_html_navigation(request)
+            and "access_token" in request.cookies and lq_family_enabled("centered")
+            and not get_active_user_from_request(request)):
+        next_path = sanitize_next_path(get_auth_redirect_target(request))
+        required_role = (infer_required_role_from_path(urlsplit(next_path).path)
+                         or infer_required_role_from_path(request.url.path))
+        response = templates.TemplateResponse(request, "session_expired.html", {
+            "request": request, "user_info": None,
+            "session_login_url": login_url,
+            "session_login_label": "教师重新登录" if login_url.startswith("/teacher/login?") else "学生重新登录",
+            "session_alternate_login_url": (
+                build_login_url("/student/login" if login_url.startswith("/teacher/login?") else "/teacher/login", next_path)
+                if required_role is None else None
+            ),
+            "session_alternate_login_label": "学生重新登录" if login_url.startswith("/teacher/login?") else "教师重新登录",
+            "session_auto_redirect": required_role is not None,
+        }, status_code=401, headers={"Cache-Control": "no-store"})
         clear_access_token_cookie(response)
         return response
 

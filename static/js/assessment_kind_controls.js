@@ -1,8 +1,10 @@
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 import './grade_publication_controls.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const latestVersions = new Map();
+const dialogStates = new WeakMap();
 const defaultNote = '分类用于后续批改和成绩归类；原成绩与历史成绩表保留。';
 const kindLabels = { homework: '平时作业', midterm: '期中测验', final: '期末测验' };
 
@@ -68,6 +70,12 @@ async function saveClassification(select) {
     const note = control.querySelector('[data-assessment-kind-note]');
     if (select.disabled || !select.value || select.value === select.dataset.savedValue) return;
     const requestedKind = select.value;
+    const dialog = select.closest('[data-assessment-kind-dialog]');
+    const session = dialog && dialogStates.get(dialog);
+    const current = () => !dialog || (dialogStates.get(dialog) === session && dialog.open);
+    const controller = new AbortController();
+    if (session) session.saveController = controller;
+    const timeout = setTimeout(() => controller.abort(), 30000);
     setBusy(select, true, true);
     note.textContent = '正在保存分类…';
     try {
@@ -75,15 +83,21 @@ async function saveClassification(select) {
             method: 'PATCH',
             body: { assessment_kind: requestedKind, expected_version: Number(select.dataset.version || 0) },
             silent: true,
-            signal: AbortSignal.timeout(30000),
+            signal: controller.signal,
         });
+        controller.signal.throwIfAborted();
+        if (!current()) return;
         if (!validClassification(data, select.dataset.assignmentId) || data.assessment_kind !== requestedKind) {
             throw new Error('未收到保存确认，请重试或关闭后重新打开核对分类');
         }
         window.dispatchEvent(new CustomEvent('lanshare:assessment-kind-updated', { detail: data }));
-        select.closest('[data-assessment-kind-dialog]')?.close();
+        // Saving vetoes all user dismissals; a confirmed save releases that
+        // veto before asking the same coordinator to perform the close.
+        setBusy(select, false);
+        if (session?.handle) await getLayerSystem(document).close(session.handle, 'programmatic');
         showToast('任务分类已更新，原成绩保留', 'success');
     } catch (error) {
+        if (!current()) return;
         let message = error?.message || '分类未保存，请重试';
         if (error?.status === 409) {
             try {
@@ -93,10 +107,13 @@ async function saveClassification(select) {
                 message = '分类已在其他页面更新，暂时无法读取最新分类，请关闭后重新打开。';
             }
         }
+        if (!current()) return;
         note.textContent = message;
         showToast(message, 'error');
     } finally {
-        setBusy(select, false);
+        clearTimeout(timeout);
+        if (session?.saveController === controller) session.saveController = null;
+        if (current()) setBusy(select, false);
     }
 }
 
@@ -121,55 +138,57 @@ function init() {
         const select = dialog?.querySelector('[data-assessment-kind-select]');
         if (!select) return;
         const returnFocus = trigger.closest('details')?.querySelector('summary') || trigger;
-        let previousOverflow = '';
-        let readController = null;
+        const layers = getLayerSystem(document);
+        const cleanup = session => {
+            if (dialogStates.get(dialog) !== session) return;
+            dialogStates.delete(dialog);
+            session.readController?.abort();
+            session.saveController?.abort();
+            select.value = select.dataset.savedValue || '';
+            setBusy(select, false);
+        };
         trigger.addEventListener('click', async () => {
             if (dialog.open) return;
             trigger.closest('details')?.removeAttribute('open');
             select.value = select.dataset.savedValue || '';
-            previousOverflow = document.body.style.overflow;
-            document.body.style.overflow = 'hidden';
-            dialog.showModal();
+            const session = { handle: null, readController: null, saveController: null };
+            dialogStates.set(dialog, session);
+            session.handle = layers.open(dialog, {
+                type: 'modal', trigger, returnFocus,
+                beforeClose: () => dialog.dataset.saving !== 'true',
+                onClose: () => cleanup(session), onDestroy: () => cleanup(session),
+            });
             setBusy(select, true);
             const controller = new AbortController();
-            readController = controller;
+            session.readController = controller;
             const timeout = setTimeout(() => controller.abort(), 15000);
             const note = dialog.querySelector('[data-assessment-kind-note]');
             note.textContent = '正在读取最新分类…';
             try {
                 await refreshClassification(select, controller.signal);
-                note.textContent = defaultNote;
+                if (dialogStates.get(dialog) === session) note.textContent = defaultNote;
             } catch (error) {
-                if (readController === controller && dialog.open) {
+                if (dialogStates.get(dialog) === session && dialog.open) {
                     note.textContent = `${error?.message || '暂时无法读取最新分类'}。可关闭后重新打开，或选择分类后重试保存。`;
                 }
             } finally {
                 clearTimeout(timeout);
-                if (readController === controller && dialog.open) {
-                    readController = null;
+                if (dialogStates.get(dialog) === session && dialog.open) {
+                    session.readController = null;
                     setBusy(select, false);
-                    select.focus();
+                    if (layers.top() === session.handle) select.focus();
                 }
             }
         });
-        const dismiss = () => { if (dialog.dataset.saving !== 'true') dialog.close(); };
-        dialog.querySelectorAll('[data-assessment-kind-close]').forEach(button => button.addEventListener('click', dismiss));
-        dialog.addEventListener('cancel', event => {
-            event.preventDefault();
-            dismiss();
-        });
+        const dismiss = reason => {
+            const handle = dialogStates.get(dialog)?.handle;
+            if (handle) void layers.close(handle, reason);
+        };
+        dialog.querySelectorAll('[data-assessment-kind-close]').forEach(button => button.addEventListener('click', () => dismiss('button')));
         dialog.addEventListener('click', event => {
             const bounds = dialog.getBoundingClientRect();
             if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right
-                || event.clientY < bounds.top || event.clientY > bounds.bottom)) dismiss();
-        });
-        dialog.addEventListener('close', () => {
-            readController?.abort();
-            readController = null;
-            document.body.style.overflow = previousOverflow;
-            select.value = select.dataset.savedValue || '';
-            updateSaveButton(select);
-            returnFocus.focus();
+                || event.clientY < bounds.top || event.clientY > bounds.bottom)) dismiss('outside');
         });
     });
 }

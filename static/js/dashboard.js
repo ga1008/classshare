@@ -1,5 +1,6 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
 import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
+import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 
@@ -179,7 +180,16 @@ if (root) {
         groupModeButtons.forEach((button) => {
             const isActive = (button.dataset.groupMode || '') === activeGroupMode;
             button.classList.toggle('is-active', isActive);
-            button.setAttribute('aria-pressed', String(isActive));
+            // One state machine for both aria vocabularies: the `dashboard` family
+            // renders real tabs (role="tab") server-side, the legacy DOM keeps
+            // role="group" buttons. Branch on the element's actual role instead
+            // of duplicating a second query/update pass.
+            if (button.getAttribute('role') === 'tab') {
+                button.setAttribute('aria-selected', String(isActive));
+                button.tabIndex = isActive ? 0 : -1;
+            } else {
+                button.setAttribute('aria-pressed', String(isActive));
+            }
         });
     };
 
@@ -421,6 +431,25 @@ if (root) {
             applyFilters();
         });
     });
+
+    // Roving tabindex + Left/Right arrow navigation, only meaningful when the
+    // `dashboard` family rendered real role="tab" buttons server-side.
+    if (groupModeButtons.length && groupModeButtons[0].getAttribute('role') === 'tab') {
+        const tablist = groupModeButtons[0].parentElement;
+        tablist?.addEventListener('keydown', (event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                return;
+            }
+            event.preventDefault();
+            const currentIndex = groupModeButtons.findIndex((button) => button === document.activeElement);
+            const baseIndex = currentIndex >= 0 ? currentIndex : groupModeButtons.findIndex((button) => button.getAttribute('aria-selected') === 'true');
+            const delta = event.key === 'ArrowRight' ? 1 : -1;
+            const nextIndex = (baseIndex + delta + groupModeButtons.length) % groupModeButtons.length;
+            const nextButton = groupModeButtons[nextIndex];
+            nextButton.focus();
+            nextButton.click();
+        });
+    }
 
     searchForm?.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -724,6 +753,7 @@ if (root) {
                     ? '<strong>暂无课程安排</strong><p>已加入的课堂尚未发布课次安排，可切换学期或查看课堂列表。</p>'
                     : '<strong>暂无课表数据</strong><p>请先到 <a href="/manage/academic/course-schedule">课时统计</a> 同步智慧课堂课程表。</p>',
             });
+            connectScheduleLayer(scheduleDeck);
         }
         // Free-text teacher semesters have no matching academic schedule key.
         // Do not silently request another semester and label it as this one.

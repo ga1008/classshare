@@ -554,13 +554,13 @@ function ensureTopbarChip(tipText) {
     chip.innerHTML = '<span class="topbar-scene-chip__dot" aria-hidden="true"></span><span class="topbar-scene-chip__label">人生一言</span>';
     const text = String(tipText || '').trim();
     if (text) {
+        let popover = null;
         chip.title = text;
         chip.setAttribute('aria-label', `人生一言：${text}`);
         chip.addEventListener('click', (event) => {
             event.stopPropagation();
-            const existing = document.querySelector('.topbar-scene-pop');
-            if (existing) {
-                existing.remove();
+            if (popover) {
+                popover.close();
                 return;
             }
             // 挂在 body 上做 fixed 定位，避开顶栏层叠上下文与继承样式。
@@ -582,18 +582,31 @@ function ensureTopbarChip(tipText) {
                 pop.style.left = `${Math.round(Math.max(12, rect.left))}px`;
             }
             document.body.appendChild(pop);
+            let closed = false;
             const close = () => {
-                document.querySelector('.topbar-scene-pop')?.remove();
+                if (closed) return;
+                closed = true;
+                document.removeEventListener('pointerdown', onOutsidePointer, true);
                 document.removeEventListener('click', close);
                 document.removeEventListener('keydown', onEsc);
+                pop.remove();
+                if (popover === owner) popover = null;
+            };
+            const onOutsidePointer = (pointerEvent) => {
+                if (chip.contains(pointerEvent.target) || pop.contains(pointerEvent.target)) return;
+                close();
             };
             const onEsc = (keyEvent) => {
                 if (keyEvent.key === 'Escape') close();
             };
-            window.setTimeout(() => {
-                document.addEventListener('click', close);
-                document.addEventListener('keydown', onEsc);
-            }, 0);
+            const owner = { close };
+            popover = owner;
+            // The opening chip click already stops propagation. Register now so
+            // touch-only outside pointers also dismiss, with no late timer that
+            // can reinstall listeners after a toggle has closed this owner.
+            document.addEventListener('pointerdown', onOutsidePointer, true);
+            document.addEventListener('click', close);
+            document.addEventListener('keydown', onEsc);
         });
     } else {
         chip.disabled = true;

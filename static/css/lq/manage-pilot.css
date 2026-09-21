@@ -1,0 +1,42 @@
+/* Only the eight explicit S3 management pages: business surfaces and compatibility rules. */
+.lq-manage-pilot .lq-page-head { gap: var(--ls-s-4); }
+.lq-manage-pilot .lq-page-head .page-head__aside { min-width: 0; }
+.lq-manage-pilot .lq-page-head .manage-pagehead__insights { max-width: 100%; }
+.lq-manage-pilot .lq-page-head:has(> .page-head__aside > :is(.manage-pagehead__insights,[data-page-head-wide])) > .page-head__aside { flex: 1 1 100%; order: 3; display: block; }
+.lq-manage-pilot #courseSaveBtn { inline-size: calc(var(--ls-s-16) + var(--ls-s-10)); max-inline-size: 100%; white-space: nowrap; transform: none; }
+html[data-appearance="dark"] .lq-manage-pilot :is(.class-manage-card,.semester-calendar-panel,.materials-card,.materials-row,.um-hero-main,.um-create-card,.um-panel) { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.course-card-metric,.course-card-alignment,.course-card-sync-summary,.course-result-summary,.course-organization-bar,.course-group-switch,.class-form-note,.academic-context-block,.semester-calendar-overview-card,.semester-calendar-panel__hint,.semester-calendar-panel__empty,.textbook-catalog-preview,.materials-list-body,.materials-list-header,.materials-row-time,.materials-search-box,.materials-meta-item,.um-summary-item) { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.course-card-sync-summary strong,.course-organization-label strong,.class-card-kicker) { color: hsl(var(--ls-ink-2)); }
+html[data-appearance="dark"] .lq-manage-pilot .course-card-alignment.is-ok { background: hsl(var(--ls-tone-success-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .course-card-alignment.is-warn { background: hsl(var(--ls-tone-warning-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .academic-list-item.is-active { background: hsl(var(--ls-primary-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot #classRosterInput::file-selector-button { background: hsl(var(--ls-surface-2)) !important; color: hsl(var(--ls-ink)) !important; }
+html[data-appearance="dark"] .lq-manage-pilot #semesterList .academic-list-item:not(.is-active) { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot #semesterList .academic-badge.is-success { background: hsl(var(--ls-tone-success-soft)); color: hsl(var(--ls-tone-success-fg)); border-color: hsl(var(--ls-tone-success-fg) / .35); }
+html[data-appearance="dark"] .lq-manage-pilot #semesterList .academic-badge.is-accent { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); border-color: hsl(var(--ls-tone-warning-fg) / .35); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-band-cell.is-gap { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.materials-library-controls,.materials-breadcrumb-count) { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot .materials-library-controls #materials-filters-toggle { background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .um-panel .um-badge.is-super { background: hsl(var(--ls-tone-success-soft)); color: hsl(var(--ls-tone-success-fg)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.semester-calendar-board,.semester-sticky-cell,.semester-header-cell,.semester-weekday-cell,.semester-day-cell,.semester-todo-cell) { background: hsl(var(--ls-surface-1)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.semester-header-cell,.semester-weekday-cell) { color: hsl(var(--ls-ink-2)); }
+html[data-appearance="dark"] .lq-manage-pilot :is(.semester-header-cell,.semester-weekday-cell,.semester-day-cell,.semester-todo-cell):is(.is-current-week,.is-active-week,.is-today,.is-todo-highlight) { background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-day-cell:is(.is-weekend,.is-outside,.is-padding-week) { background: hsl(var(--ls-surface-2)); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-header-cell.is-padding-week { color: transparent; }
+html[data-appearance="dark"] .lq-manage-pilot .semester-day-cell.is-holiday { background: hsl(var(--ls-tone-warning-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-day-cell.is-workday { background: hsl(var(--ls-tone-info-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-mini-tag.holiday { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); }
+html[data-appearance="dark"] .lq-manage-pilot .semester-mini-tag.workday { background: hsl(var(--ls-tone-info-soft)); color: hsl(var(--ls-tone-info-fg)); }
+html[data-appearance="dark"] .lq-manage-pilot .materials-row:is(:hover,.is-active) { background: hsl(var(--ls-primary-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .materials-row.is-selected { background: hsl(var(--ls-tone-success-soft)); }
+html[data-appearance="dark"] .lq-manage-pilot .um-panel .table { color: hsl(var(--ls-ink)); }
+html[data-appearance="dark"] .lq-manage-pilot .um-panel .table > :is(thead,tbody) > tr > :is(th,td) { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }
+html[data-appearance="dark"] .lq-manage-pilot .um-panel .table > thead > tr > th { background: hsl(var(--ls-surface-2)); }
+html[data-appearance="dark"] .lq-manage-pilot .um-seed-note { background: hsl(var(--ls-tone-success-soft)); color: hsl(var(--ls-tone-success-fg)); }
+@media (max-width:1023px) {
+  .lq-manage-pilot .materials-header-actions { display: flex; flex-wrap: wrap; width: 100%; }
+  .lq-manage-pilot .materials-upload-dropdown { position: static; min-width: 0; width: 100%; }
+}
+@media (max-width:768px) {
+  .lq-manage-pilot .materials-manage-row { grid-template-columns: calc(var(--ls-s-8) + var(--ls-s-1)) minmax(0,1fr); grid-template-areas: "check main" ". time" ". actions"; }
+}

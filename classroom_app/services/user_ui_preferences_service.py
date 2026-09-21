@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-import re
+from collections.abc import Mapping
 from typing import Any
 
 from .. import config
@@ -13,6 +13,7 @@ from ..db.connection import get_db_connection
 
 logger = logging.getLogger(__name__)
 PALETTES = (
+    ("teal", "清润青绿"),
     ("indigo", "经典靛蓝"),
     ("sky", "晴空蓝"),
     ("mint", "薄荷绿"),
@@ -21,26 +22,31 @@ PALETTES = (
 )
 PALETTE_KEYS = frozenset(key for key, _ in PALETTES)
 DEFAULT_PALETTE = "indigo"
-_LEARNING_PAGE = re.compile(r"^/(?:dashboard|classroom/[1-9][0-9]*)/?$")
+MAX_PREFERENCE_VERSION = 2147483646
+PREFERENCE_VALUES = {
+    "palette_key": PALETTE_KEYS,
+    "appearance": frozenset({"light", "dark", "auto"}),
+    "glass": frozenset({"tinted", "off"}),
+}
 
 
 class PreferenceConflict(Exception):
     def __init__(self, current: dict[str, Any]):
-        super().__init__("配色已在其他页面或设备更新，请重新选择以保存。")
+        super().__init__("界面偏好已在其他页面或设备更新，请重新选择以保存。")
         self.current = current
 
 
 def preference_identity(user: dict) -> tuple[str, int]:
     role = str(user.get("role") or "").strip().lower()
     raw_id = user.get("id")
-    if role != "student" or isinstance(raw_id, bool):
-        raise ValueError("界面配色目前仅面向学生本人开放。")
+    if role not in {"student", "teacher"} or isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)):
+        raise ValueError("当前用户身份无效。")
     try:
         user_pk = int(raw_id)
     except (ValueError, TypeError) as exc:
-        raise ValueError("当前学生身份无效。") from exc
+        raise ValueError("当前用户身份无效。") from exc
     if user_pk <= 0:
-        raise ValueError("当前学生身份无效。")
+        raise ValueError("当前用户身份无效。")
     return role, user_pk
 
 
@@ -55,41 +61,62 @@ def preference_context_token(user: dict) -> str:
     return hmac.new(str(config.SECRET_KEY).encode(), message, hashlib.sha256).hexdigest()
 
 
-def get_ui_preferences(conn: Any, user: dict) -> dict[str, Any]:
-    role, user_pk = preference_identity(user)
-    row = conn.execute(
-        "SELECT palette_key, version, updated_at FROM user_ui_preferences "
-        "WHERE user_role = ? AND user_pk = ?",
-        (role, user_pk),
-    ).fetchone()
-    key = str(row["palette_key"]) if row else DEFAULT_PALETTE
+def default_palette_for_role(role: str) -> str:
+    return "teal" if role == "teacher" else DEFAULT_PALETTE
+
+
+def _resolved_preferences(user: dict, row: Any = None) -> dict[str, Any]:
+    role, _ = preference_identity(user)
+    defaults = {"palette_key": default_palette_for_role(role), "appearance": "auto", "glass": "tinted"}
     return {
-        "palette_key": key if key in PALETTE_KEYS else DEFAULT_PALETTE,
+        **{field: row[field] if row and row[field] in allowed else defaults[field]
+           for field, allowed in PREFERENCE_VALUES.items()},
         "version": int(row["version"]) if row else 0,
         "updated_at": str(row["updated_at"]) if row else None,
         "context_token": preference_context_token(user),
     }
 
 
-def update_ui_preferences(conn: Any, user: dict, *, palette_key: str, version: int) -> dict[str, Any]:
+def get_ui_preferences(conn: Any, user: dict) -> dict[str, Any]:
     role, user_pk = preference_identity(user)
-    if palette_key not in PALETTE_KEYS:
-        raise ValueError("请选择提供的界面配色。")
-    if type(version) is not int or version < 0:
-        raise ValueError("配色版本无效。")
+    row = conn.execute(
+        "SELECT palette_key, appearance, glass, version, updated_at FROM user_ui_preferences "
+        "WHERE user_role = ? AND user_pk = ?",
+        (role, user_pk),
+    ).fetchone()
+    return _resolved_preferences(user, row)
+
+
+def validate_preference_changes(changes: Mapping[str, Any]) -> dict[str, str]:
+    """One whitelist serves HTTP validation and direct service callers."""
+    if not isinstance(changes, Mapping) or not changes or changes.keys() - PREFERENCE_VALUES.keys():
+        raise ValueError("请仅提交需要修改的界面偏好。")
+    for field, value in changes.items():
+        if not isinstance(value, str) or value not in PREFERENCE_VALUES[field]:
+            raise ValueError(f"界面偏好 {field} 的取值无效。")
+    return {field: changes[field] for field in PREFERENCE_VALUES if field in changes}
+
+
+def update_ui_preferences(conn: Any, user: dict, *, changes: Mapping[str, Any], version: int) -> dict[str, Any]:
+    role, user_pk = preference_identity(user)
+    changes = validate_preference_changes(changes)
+    if type(version) is not int or not 0 <= version <= MAX_PREFERENCE_VERSION:
+        raise ValueError("界面偏好版本无效。")
     if version == 0:
         cursor = conn.execute(
-            "INSERT INTO user_ui_preferences (user_role, user_pk, palette_key, version) "
-            "VALUES (?, ?, ?, 1) ON CONFLICT (user_role, user_pk) DO NOTHING "
+            "INSERT INTO user_ui_preferences (user_role, user_pk, palette_key, appearance, glass, version) "
+            "VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT (user_role, user_pk) DO NOTHING "
             "RETURNING version",
-            (role, user_pk, palette_key),
+            (role, user_pk, changes.get("palette_key", default_palette_for_role(role)),
+             changes.get("appearance"), changes.get("glass")),
         )
     else:
+        assignments = ", ".join(f"{field} = ?" for field in changes)
         cursor = conn.execute(
-            "UPDATE user_ui_preferences SET palette_key = ?, version = version + 1, "
+            f"UPDATE user_ui_preferences SET {assignments}, version = version + 1, "
             "updated_at = CURRENT_TIMESTAMP WHERE user_role = ? AND user_pk = ? "
             "AND version = ? RETURNING version",
-            (palette_key, role, user_pk, version),
+            (*changes.values(), role, user_pk, version),
         )
     if cursor.fetchone() is None:
         raise PreferenceConflict(get_ui_preferences(conn, user))
@@ -97,29 +124,28 @@ def update_ui_preferences(conn: Any, user: dict, *, palette_key: str, version: i
 
 
 def resolve_user_ui_preferences(request: Any, user: dict | None) -> dict[str, Any]:
-    """Called by base.html after its route has authenticated the user.
+    """Resolve for any page after its route has authenticated the user.
 
-    Other pages/roles perform no lookup. No process or browser cache can leak a
-    prior account's color into SSR, and reading a default never creates a row.
+    Only a request-local identity cache is used; defaults never create a row.
     """
-    if not user or user.get("role") != "student" or not _LEARNING_PAGE.fullmatch(request.url.path):
+    if not user:
         return {"enabled": False}
-    cached = getattr(request.state, "user_ui_preferences", None)
-    if cached is not None:
-        return cached
+    try:
+        identity = preference_identity(user)
+    except ValueError:
+        return {"enabled": False}
+    cache = getattr(request.state, "user_ui_preferences_by_identity", None)
+    if cache is None:
+        cache = request.state.user_ui_preferences_by_identity = {}
+    if identity in cache:
+        return cache[identity]
     try:
         with get_db_connection() as conn:
             preferences = get_ui_preferences(conn, user)
         preferences["available"] = True
     except Exception:
-        logger.warning("UI preferences unavailable during learning-page SSR", exc_info=True)
-        preferences = {
-            "palette_key": DEFAULT_PALETTE,
-            "version": 0,
-            "updated_at": None,
-            "context_token": preference_context_token(user),
-            "available": False,
-        }
+        logger.warning("UI preferences unavailable during page SSR", exc_info=True)
+        preferences = {**_resolved_preferences(user), "available": False}
     preferences.update(enabled=True, presets=[{"key": key, "name": name} for key, name in PALETTES])
-    request.state.user_ui_preferences = preferences
+    cache[identity] = preferences
     return preferences

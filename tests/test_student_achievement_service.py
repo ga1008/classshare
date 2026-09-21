@@ -1,12 +1,10 @@
 """学生成就徽章系统的单元测试（sqlite）。"""
 
-import os
 import unittest
 from datetime import datetime
 
-os.environ.setdefault("DB_ENGINE", "sqlite")
-
-from classroom_app.database import get_db_connection, init_database
+from classroom_app.database import get_db_connection
+from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.student_achievement_service import (
     build_achievement_wall,
     ensure_achievement_schema,
@@ -88,7 +86,7 @@ def _seed(conn):
 class StudentAchievementTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        init_database()
+        cls.enterClassContext(isolated_sqlite_database())
 
     def setUp(self):
         with get_db_connection() as conn:

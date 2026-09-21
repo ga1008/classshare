@@ -14,22 +14,11 @@ router = APIRouter()
 
 @router.get("/manage/teaching/workflow", response_class=HTMLResponse)
 async def manage_workflow_page(request: Request, user: dict = Depends(require_teacher_domain("teaching"))):
-    with get_db_connection() as conn:
-        workflow_snapshot = _build_classroom_opening_workflow_snapshot(conn, int(user["id"]))
-
-    return templates.TemplateResponse(
-        request,
-        "manage/workflow.html",
-        _build_manage_template_context(
-            request,
-            user,
-            page_title="开课向导",
-            active_page="workflow",
-            extra={
-                "workflow_snapshot": workflow_snapshot,
-            },
-        ),
-    )
+    """Retire the opening wizard while retaining its teacher/domain access gate."""
+    target = canonical_manage_href("offering_hub")
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=301)
 
 
 @router.get("/manage/teaching/classes", response_class=HTMLResponse)

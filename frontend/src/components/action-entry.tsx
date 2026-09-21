@@ -1,4 +1,9 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
+import { LqAvatar, LqButton } from './lq-presentation';
+
+function actionName(children: ReactNode, props: { 'aria-label'?: string; title?: string }) {
+  return props['aria-label'] || (typeof children === 'string' ? children : '') || props.title || '';
+}
 
 type IconActionContentProps = {
   icon: ReactNode;
@@ -24,8 +29,14 @@ export function IconActionLink({
   iconClassName,
   children,
   className,
+  href,
   ...props
 }: IconActionLinkProps) {
+  if (href !== undefined) return <LqButton href={href} variant="ghost" ariaDisabled={props['aria-disabled'] === true || props['aria-disabled'] === 'true'}
+    label={children == null ? '' : actionName(children, props)}
+    icon="circle-question-mark" iconContent={icon} iconClassName={iconClassName} labelContent={children}
+    attrs={{ 'aria-label': actionName(children, props), title: props.title, target: props.target, rel: props.rel }}
+    className={className} nativeProps={props} />;
   return (
     <a className={className} {...props}>
       <IconActionContent icon={icon} iconClassName={iconClassName}>
@@ -43,15 +54,13 @@ export function IconActionButton({
   children,
   className,
   type = 'button',
+  disabled,
   ...props
 }: IconActionButtonProps) {
-  return (
-    <button type={type} className={className} {...props}>
-      <IconActionContent icon={icon} iconClassName={iconClassName}>
-        {children}
-      </IconActionContent>
-    </button>
-  );
+  return <LqButton type={type} disabled={disabled} variant="ghost" ariaDisabled={props['aria-disabled'] === true || props['aria-disabled'] === 'true'}
+    label={children == null ? '' : actionName(children, props)}
+    icon="circle-question-mark" iconContent={icon} iconClassName={iconClassName} labelContent={children}
+    attrs={{ 'aria-label': actionName(children, props), title: props.title }} className={className} nativeProps={props} />;
 }
 
 type AvatarActionLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -66,8 +75,8 @@ export function AvatarActionLink({
   ...props
 }: AvatarActionLinkProps) {
   return (
-    <a className={className} {...props}>
-      <img className={avatarClassName} src={avatarSrc} alt="" loading="lazy" />
+    <a className={['lq-avatar-link', className].filter(Boolean).join(' ')} {...props}>
+      <LqAvatar className={avatarClassName} src={avatarSrc} name={actionName(null, props)} size={32} />
     </a>
   );
 }

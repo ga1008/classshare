@@ -90,7 +90,7 @@
     hidden
 ></div>
 
-{% call page_head(materials_page_heading | default('课程资料与 Git 教学仓库'),
+{% call page_head(materials_page_heading | default('课程资料与 Git 教学仓库'), lq_enabled=lq_pilot_enabled|default(false),
     explain=materials_page_lead | default('批量上传、目录浏览、搜索与排序，并支持课堂分配、AI 解析和仓库同步。'),
     explain_label='材料库说明') %}
     <div hidden aria-hidden="true">

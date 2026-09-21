@@ -1,0 +1,1126 @@
+/* S1 token source of truth. Values are HSL channels unless annotated.
+ * hsl-alpha-channels must be wrapped exactly once, without an opacity suffix.
+ * Full-color compatibility aliases keep their original var() consumer type.
+ * Root palettes are independent of role; SSR/runtime resolve teacher default.
+ * The 126 legacy --ls-* names include the 86 fixed --ls-c-* colors.
+ */
+
+:root {
+    --ls-surface-0: 223 47% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-control-muted: 215 18% 43%; /* @type hsl-channels */
+    --ls-chat-teacher: var(--ls-c-violet-500); /* @type hsl-channels */
+    --ls-fixed-deep-ink: 222 47% 4%; /* @type hsl-channels */
+    --ls-fixed-dark-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-fixed-white: 0 0% 100%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 243 75% 59%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: var(--ls-primary) / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 245 58% 40%; /* @type hsl-channels */
+    --ls-palette-accent: 247 100% 96%; /* @type hsl-channels */
+    --ls-palette-border: 216 33% 86%; /* @type hsl-channels */
+    --ls-primary-rgb: 79.87875, 72.0375, 228.8625; /* @type rgb-channels-comma */
+    --ls-ambient-a: var(--ls-primary) / .10; /* @type hsl-alpha-channels */
+    --ls-ambient-b: 173 80% 40% / .08; /* @type hsl-alpha-channels */
+    --ls-ambient-c: 274 48% 47% / .06; /* @type hsl-alpha-channels */
+    --ls-glass-fill: 0 0% 100% / .58; /* @type hsl-alpha-channels */
+    --ls-glass-fill-strong: 0 0% 100% / .78; /* @type hsl-alpha-channels */
+    --ls-glass-fill-clear: 0 0% 100% / .22; /* @type hsl-alpha-channels */
+    --ls-glass-line: 0 0% 100% / .85; /* @type hsl-alpha-channels */
+    --ls-glass-rim: 0 0% 100% / .95; /* @type hsl-alpha-channels */
+    --ls-glass-rim-bottom: 0 0% 100% / .35; /* @type hsl-alpha-channels */
+    --ls-glass-ink: 216 45% 16%; /* @type hsl-channels */
+    --ls-glass-muted: 215 18% 43%; /* @type hsl-channels */
+    --ls-scrim: 222 47% 11% / .28; /* @type hsl-alpha-channels */
+    --ls-scrim-login: 0 0% 0% / .80; /* @type hsl-alpha-channels */
+    --ls-glass-sheen-clear: linear-gradient(135deg, hsl(0 0% 100% / .04), transparent 60%); /* @type image */
+    --ls-glass-blur: 16px; /* @type length */
+    --ls-blur-thin: 8px; /* @type length */
+    --ls-blur-regular: 16px; /* @type length */
+    --ls-blur-thick: 24px; /* @type length */
+    --ls-blur-scrim: 8px; /* @type length */
+    --ls-glass-saturate: 170%; /* @type percentage */
+    --ls-glass-sheen: linear-gradient(135deg, hsl(0 0% 100% / .55) 0%, hsl(0 0% 100% / .08) 38%, transparent 60%, hsl(var(--ls-primary) / .05) 100%); /* @type image */
+    --ls-glass-shadow: 0 20px 60px hsl(215 43% 32% / .10), 0 2px 6px hsl(215 43% 32% / .05); /* @type shadow */
+    --ls-glass-shadow-strong: 0 24px 70px hsl(215 43% 32% / .18), 0 4px 10px hsl(215 43% 32% / .08); /* @type shadow */
+    --ls-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC", system-ui, sans-serif; /* @type font-family */
+    --ls-font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace; /* @type font-family */
+    --ls-font-serif-cjk: "Songti SC", SimSun, serif; /* @type font-family */
+    --ls-gutter: clamp(16px, 3vw, 32px); /* @type length */
+    --ls-content-max: 1280px; /* @type length */
+    --ls-reading-max: 56rem; /* @type length */
+    --ls-reading-narrow: 42rem; /* @type length */
+    --ls-ease-out: cubic-bezier(.2,.7,.3,1); /* @type easing */
+    --ls-ease-in-out: cubic-bezier(.4,0,.2,1); /* @type easing */
+    --ls-r-capsule: 999px; /* @type length */
+    --ls-r-xs: 6px; /* @type length */
+    --ls-r-sm: 10px; /* @type length */
+    --ls-r-md: 14px; /* @type length */
+    --ls-r-lg: 20px; /* @type length */
+    --ls-r-xl: 28px; /* @type length */
+    --ls-r-2xl: 36px; /* @type length */
+    --ls-s-1: 4px; /* @type length */
+    --ls-s-2: 8px; /* @type length */
+    --ls-s-3: 12px; /* @type length */
+    --ls-s-4: 16px; /* @type length */
+    --ls-s-5: 20px; /* @type length */
+    --ls-s-6: 24px; /* @type length */
+    --ls-s-8: 32px; /* @type length */
+    --ls-s-10: 40px; /* @type length */
+    --ls-s-12: 48px; /* @type length */
+    --ls-s-16: 64px; /* @type length */
+    --ls-z-material-sheen: -1; /* @type integer */
+    --ls-z-raised: 10; /* @type integer */
+    --ls-z-nav: 100; /* @type integer */
+    --ls-z-popover: 1100; /* @type integer */
+    --ls-z-drawer: 1200; /* @type integer */
+    --ls-z-modal: 1300; /* @type integer */
+    --ls-z-viewer: 1400; /* @type integer */
+    --ls-z-toast: 1500; /* @type integer */
+    --ls-z-explain: 1600; /* @type integer */
+    --ls-dur-fast: 120ms; /* @type time */
+    --ls-dur-base: 180ms; /* @type time */
+    --ls-dur-slow: 280ms; /* @type time */
+    --ls-dur-enter: 400ms; /* @type time */
+    --ls-spring-snappy: var(--ls-ease-out); /* @type easing */
+    --ls-spring-soft: var(--ls-ease-out); /* @type easing */
+    --ls-spring-bouncy: var(--ls-ease-out); /* @type easing */
+    --bp-sm: 640px; /* @type length */
+    --bp-md: 768px; /* @type length */
+    --bp-lg: 1024px; /* @type length */
+    --bp-xl: 1280px; /* @type length */
+    --bp-2xl: 1536px; /* @type length */
+    --ls-t-display: 32px; /* @type length */
+    --ls-leading-display: 1.2; /* @type number */
+    --ls-weight-display: 700; /* @type integer */
+    --ls-t-title1: 24px; /* @type length */
+    --ls-leading-title1: 1.25; /* @type number */
+    --ls-weight-title1: 700; /* @type integer */
+    --ls-t-title2: 20px; /* @type length */
+    --ls-leading-title2: 1.3; /* @type number */
+    --ls-weight-title2: 600; /* @type integer */
+    --ls-t-title3: 17px; /* @type length */
+    --ls-leading-title3: 1.35; /* @type number */
+    --ls-weight-title3: 600; /* @type integer */
+    --ls-t-headline: 15px; /* @type length */
+    --ls-leading-headline: 1.45; /* @type number */
+    --ls-weight-headline: 600; /* @type integer */
+    --ls-t-body: 15px; /* @type length */
+    --ls-leading-body: 1.6; /* @type number */
+    --ls-weight-body: 400; /* @type integer */
+    --ls-t-callout: 14px; /* @type length */
+    --ls-leading-callout: 1.5; /* @type number */
+    --ls-weight-callout: 500; /* @type integer */
+    --ls-t-sub: 13px; /* @type length */
+    --ls-leading-sub: 1.45; /* @type number */
+    --ls-weight-sub: 500; /* @type integer */
+    --ls-t-footnote: 12px; /* @type length */
+    --ls-leading-footnote: 1.4; /* @type number */
+    --ls-weight-footnote: 500; /* @type integer */
+    --ls-t-caption: 11px; /* @type length */
+    --ls-leading-caption: 1.35; /* @type number */
+    --ls-weight-caption: 600; /* @type integer */
+    --ls-shadow-1: 0 1px 2px hsl(222 47% 11% / .06), 0 1px 3px hsl(222 47% 11% / .04); /* @type shadow */
+    --ls-shadow-2: 0 4px 14px hsl(222 47% 11% / .08); /* @type shadow */
+    --ls-shadow-3: 0 12px 32px -12px hsl(222 47% 11% / .22); /* @type shadow */
+    --ls-shadow-4: 0 24px 64px -16px hsl(222 47% 11% / .30); /* @type shadow */
+    --ls-shadow-focus: 0 0 0 4px hsl(var(--ls-ring) / .18); /* @type shadow */
+    --ls-tone-success-base: 152 58% 40%; /* @type hsl-channels */
+    --ls-tone-success-fg: 152 62% 27%; /* @type hsl-channels */
+    --ls-tone-success-soft: 152 58% 40% / 0.13; /* @type hsl-alpha-channels */
+    --ls-tone-success-on-base: 222 47% 4%; /* @type hsl-channels */
+    --ls-tone-success-solid: 152 62% 27%; /* @type hsl-channels */
+    --ls-tone-success-on-solid: 0 0% 100%; /* @type hsl-channels */
+    --ls-tone-warning-base: 34 92% 50%; /* @type hsl-channels */
+    --ls-tone-warning-fg: 30 88% 32%; /* @type hsl-channels */
+    --ls-tone-warning-soft: 34 92% 50% / 0.16; /* @type hsl-alpha-channels */
+    --ls-tone-warning-on-base: 222 47% 4%; /* @type hsl-channels */
+    --ls-tone-warning-solid: 30 88% 32%; /* @type hsl-channels */
+    --ls-tone-warning-on-solid: 0 0% 100%; /* @type hsl-channels */
+    --ls-tone-danger-base: 4 74% 54%; /* @type hsl-channels */
+    --ls-tone-danger-fg: 4 68% 38%; /* @type hsl-channels */
+    --ls-tone-danger-soft: 4 74% 54% / 0.12; /* @type hsl-alpha-channels */
+    --ls-tone-danger-on-base: 222 47% 4%; /* @type hsl-channels */
+    --ls-tone-danger-solid: 4 68% 38%; /* @type hsl-channels */
+    --ls-tone-danger-on-solid: 0 0% 100%; /* @type hsl-channels */
+    --ls-tone-info-base: 212 86% 48%; /* @type hsl-channels */
+    --ls-tone-info-fg: 212 82% 33%; /* @type hsl-channels */
+    --ls-tone-info-soft: 212 86% 48% / 0.13; /* @type hsl-alpha-channels */
+    --ls-tone-info-on-base: 0 0% 100%; /* @type hsl-channels */
+    --ls-tone-info-solid: 212 82% 33%; /* @type hsl-channels */
+    --ls-tone-info-on-solid: 0 0% 100%; /* @type hsl-channels */
+    --ls-tone-neutral-base: 220 12% 50%; /* @type hsl-channels */
+    --ls-tone-neutral-fg: 220 16% 34%; /* @type hsl-channels */
+    --ls-tone-neutral-soft: 220 12% 50% / 0.1; /* @type hsl-alpha-channels */
+    --ls-tone-neutral-on-base: 222 47% 4%; /* @type hsl-channels */
+    --ls-tone-neutral-solid: 220 16% 34%; /* @type hsl-channels */
+    --ls-tone-neutral-on-solid: 0 0% 100%; /* @type hsl-channels */
+    --tone-course-1: 243.396226 75.355450% 58.627451%; /* @type hsl-channels */
+    --tone-course-2: 198.630137 88.663968% 48.431373%; /* @type hsl-channels */
+    --tone-course-3: 161.379310 93.548387% 30.392157%; /* @type hsl-channels */
+    --tone-course-4: 32.132701 94.618834% 43.725490%; /* @type hsl-channels */
+    --tone-course-5: 333.333333 71.428571% 50.588235%; /* @type hsl-channels */
+    --tone-course-6: 262.122905 83.255814% 57.843137%; /* @type hsl-channels */
+    --tone-course-7: 191.647059 91.397849% 36.470588%; /* @type hsl-channels */
+    --tone-course-8: 84.800000 85.227273% 34.509804%; /* @type hsl-channels */
+    --tone-course-9: 20.540541 90.243902% 48.235294%; /* @type hsl-channels */
+    --tone-course-10: 346.836735 77.165354% 49.803922%; /* @type hsl-channels */
+    --tone-attachment-image: 199 70% 46%; /* @type hsl-channels */
+    --tone-attachment-doc: 221 70% 46%; /* @type hsl-channels */
+    --tone-attachment-sheet: 152 70% 46%; /* @type hsl-channels */
+    --tone-attachment-slide: 21 70% 46%; /* @type hsl-channels */
+    --tone-attachment-pdf: 4 70% 46%; /* @type hsl-channels */
+    --tone-attachment-archive: 262 70% 46%; /* @type hsl-channels */
+    --tone-attachment-other: 220 12% 46%; /* @type hsl-channels */
+    --tone-agenda-proctor: 38 92% 50%; /* @type hsl-channels */
+    --tone-agenda-proctor-fg: 25.964912 90.476190% 37.058824%; /* @type hsl-channels */
+    --tone-agenda-proctor-soft: 38 92% 50% / 0.16; /* @type hsl-alpha-channels */
+    --tone-agenda-exam: 0 84% 60%; /* @type hsl-channels */
+    --tone-agenda-exam-fg: 0 72.222222% 50.588235%; /* @type hsl-channels */
+    --tone-agenda-exam-soft: 0 84% 60% / 0.14; /* @type hsl-alpha-channels */
+    --tone-agenda-homework: 258.311688 89.534884% 66.274510%; /* @type hsl-channels */
+    --tone-agenda-homework-fg: 262.122905 83.255814% 57.843137%; /* @type hsl-channels */
+    --tone-agenda-homework-soft: 258.311688 89.534884% 66.274510% / 0.16; /* @type hsl-alpha-channels */
+    --tone-agenda-todo: 199 89% 48%; /* @type hsl-channels */
+    --tone-agenda-todo-fg: 200.406091 98.009950% 39.411765%; /* @type hsl-channels */
+    --tone-agenda-todo-soft: 199 89% 48% / 0.16; /* @type hsl-alpha-channels */
+    --tone-agenda-class: 174.666667 83.850932% 31.568627%; /* @type hsl-channels */
+    --tone-agenda-class-fg: 175 77% 26%; /* @type hsl-channels */
+    --tone-agenda-class-soft: 174.666667 83.850932% 31.568627% / 0.16; /* @type hsl-alpha-channels */
+    --ls-background: var(--ls-surface-0); /* @type hsl-channels */
+    --ls-foreground: var(--ls-ink); /* @type hsl-channels */
+    --ls-card: var(--ls-surface-1); /* @type hsl-channels */
+    --ls-card-foreground: var(--ls-ink); /* @type hsl-channels */
+    --ls-popover: var(--ls-surface-1); /* @type hsl-channels */
+    --ls-popover-foreground: var(--ls-ink); /* @type hsl-channels */
+    --ls-primary-foreground: var(--ls-on-primary); /* @type hsl-channels */
+    --ls-secondary: var(--ls-surface-2); /* @type hsl-channels */
+    --ls-secondary-foreground: var(--ls-ink-2); /* @type hsl-channels */
+    --ls-muted: var(--ls-surface-2); /* @type hsl-channels */
+    --ls-muted-foreground: var(--ls-control-muted); /* @type hsl-channels */
+    --ls-accent: var(--ls-palette-accent); /* @type hsl-channels */
+    --ls-accent-foreground: var(--ls-on-primary-soft); /* @type hsl-channels */
+    --ls-destructive: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --ls-destructive-strong: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --ls-destructive-foreground: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --ls-border: var(--ls-palette-border); /* @type hsl-channels */
+    --ls-input: var(--ls-control-line); /* @type hsl-channels */
+    --ls-ring: var(--ls-primary); /* @type hsl-channels */
+    --ls-success: var(--ls-tone-success-base); /* @type hsl-channels */
+    --ls-warning: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --ls-info: var(--ls-tone-info-base); /* @type hsl-channels */
+    --ls-info-strong: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --ls-teal: 175 77% 26%; /* @type hsl-channels */
+    --ls-teal-bright: 173 80% 40%; /* @type hsl-channels */
+    --ls-radius: 0.7rem; /* @type length */
+    --ls-indigo: 243 75% 59%; /* @type hsl-channels */
+    --ls-indigo-strong: 244 55% 41%; /* @type hsl-channels */
+    --ls-domain-accent: var(--ls-primary); /* @type hsl-channels */
+    --ls-domain-accent-strong: var(--ls-on-primary-soft); /* @type hsl-channels */
+    --ls-card-domain-accent: var(--ls-primary); /* @type hsl-channels */
+    --ls-c-amber-100: 48 96.5% 88.8%; /* @type hsl-channels */
+    --ls-c-amber-200: 48 96.6% 76.7%; /* @type hsl-channels */
+    --ls-c-amber-300: 46 96.7% 64.5%; /* @type hsl-channels */
+    --ls-c-amber-400: 43 96.4% 56.3%; /* @type hsl-channels */
+    --ls-c-amber-50: 48 100% 96.1%; /* @type hsl-channels */
+    --ls-c-amber-500: 38 92.1% 50.2%; /* @type hsl-channels */
+    --ls-c-amber-600: 32 94.6% 43.7%; /* @type hsl-channels */
+    --ls-c-amber-700: 26 90.5% 37.1%; /* @type hsl-channels */
+    --ls-c-amber-800: 23 82.5% 31.4%; /* @type hsl-channels */
+    --ls-c-black: 0 0% 0%; /* @type hsl-channels */
+    --ls-c-blue-50: 214 100% 96.9%; /* @type hsl-channels */
+    --ls-c-blue-500: 217 91.2% 59.8%; /* @type hsl-channels */
+    --ls-c-blue-600: 221 83.2% 53.3%; /* @type hsl-channels */
+    --ls-c-blue-700: 224 76.3% 48%; /* @type hsl-channels */
+    --ls-c-cyan-50: 183 100% 96.3%; /* @type hsl-channels */
+    --ls-c-emerald-100: 149 80.4% 90%; /* @type hsl-channels */
+    --ls-c-emerald-400: 158 64.4% 51.6%; /* @type hsl-channels */
+    --ls-c-emerald-50: 152 81% 95.9%; /* @type hsl-channels */
+    --ls-c-emerald-500: 160 84.1% 39.4%; /* @type hsl-channels */
+    --ls-c-emerald-600: 161 93.5% 30.4%; /* @type hsl-channels */
+    --ls-c-emerald-700: 163 93.5% 24.3%; /* @type hsl-channels */
+    --ls-c-emerald-800: 163 88.1% 19.8%; /* @type hsl-channels */
+    --ls-c-gray-900: 221 39.3% 11%; /* @type hsl-channels */
+    --ls-c-green-100: 141 84.2% 92.5%; /* @type hsl-channels */
+    --ls-c-green-300: 142 76.6% 73.1%; /* @type hsl-channels */
+    --ls-c-green-50: 138 76.5% 96.7%; /* @type hsl-channels */
+    --ls-c-green-500: 142 70.6% 45.3%; /* @type hsl-channels */
+    --ls-c-green-600: 142 76.2% 36.3%; /* @type hsl-channels */
+    --ls-c-green-700: 142 71.8% 29.2%; /* @type hsl-channels */
+    --ls-c-green-800: 143 64.2% 24.1%; /* @type hsl-channels */
+    --ls-c-indigo-100: 226 100% 93.9%; /* @type hsl-channels */
+    --ls-c-indigo-200: 228 96.5% 88.8%; /* @type hsl-channels */
+    --ls-c-indigo-400: 234 89.5% 73.9%; /* @type hsl-channels */
+    --ls-c-indigo-50: 226 100% 96.7%; /* @type hsl-channels */
+    --ls-c-indigo-500: 239 83.5% 66.7%; /* @type hsl-channels */
+    --ls-c-indigo-600: 243 75.4% 58.6%; /* @type hsl-channels */
+    --ls-c-indigo-700: 245 57.9% 50.6%; /* @type hsl-channels */
+    --ls-c-indigo-900: 242 47.4% 34.3%; /* @type hsl-channels */
+    --ls-c-orange-100: 34 100% 91.8%; /* @type hsl-channels */
+    --ls-c-orange-50: 33 100% 96.5%; /* @type hsl-channels */
+    --ls-c-orange-500: 25 95% 53.1%; /* @type hsl-channels */
+    --ls-c-orange-800: 15 79.1% 33.7%; /* @type hsl-channels */
+    --ls-c-pink-200: 326 84.6% 89.8%; /* @type hsl-channels */
+    --ls-c-pink-300: 327 87.1% 81.8%; /* @type hsl-channels */
+    --ls-c-pink-50: 327 73.3% 97.1%; /* @type hsl-channels */
+    --ls-c-purple-50: 270 100% 98%; /* @type hsl-channels */
+    --ls-c-purple-600: 271 81.3% 55.9%; /* @type hsl-channels */
+    --ls-c-purple-700: 272 71.7% 47.1%; /* @type hsl-channels */
+    --ls-c-red-100: 0 93.3% 94.1%; /* @type hsl-channels */
+    --ls-c-red-200: 0 96.3% 89.4%; /* @type hsl-channels */
+    --ls-c-red-300: 0 93.5% 81.8%; /* @type hsl-channels */
+    --ls-c-red-50: 0 85.7% 97.3%; /* @type hsl-channels */
+    --ls-c-red-500: 0 84.2% 60.2%; /* @type hsl-channels */
+    --ls-c-red-600: 0 72.2% 50.6%; /* @type hsl-channels */
+    --ls-c-red-700: 0 73.7% 41.8%; /* @type hsl-channels */
+    --ls-c-red-800: 0 70% 35.3%; /* @type hsl-channels */
+    --ls-c-rose-400: 351 94.5% 71.4%; /* @type hsl-channels */
+    --ls-c-rose-50: 356 100% 97.3%; /* @type hsl-channels */
+    --ls-c-rose-500: 350 89.2% 60.2%; /* @type hsl-channels */
+    --ls-c-rose-700: 345 82.7% 40.8%; /* @type hsl-channels */
+    --ls-c-sky-100: 204 93.8% 93.7%; /* @type hsl-channels */
+    --ls-c-sky-400: 198 93.2% 59.6%; /* @type hsl-channels */
+    --ls-c-sky-50: 204 100% 97.1%; /* @type hsl-channels */
+    --ls-c-sky-500: 199 88.7% 48.4%; /* @type hsl-channels */
+    --ls-c-sky-700: 201 96.3% 32.2%; /* @type hsl-channels */
+    --ls-c-sky-800: 201 90% 27.5%; /* @type hsl-channels */
+    --ls-c-sky-900: 202 80.3% 23.9%; /* @type hsl-channels */
+    --ls-c-slate-100: 210 40% 96.1%; /* @type hsl-channels */
+    --ls-c-slate-200: 214 31.8% 91.4%; /* @type hsl-channels */
+    --ls-c-slate-300: 213 26.8% 83.9%; /* @type hsl-channels */
+    --ls-c-slate-400: 215 20.2% 65.1%; /* @type hsl-channels */
+    --ls-c-slate-50: 210 40% 98%; /* @type hsl-channels */
+    --ls-c-slate-500: 215 16.3% 46.9%; /* @type hsl-channels */
+    --ls-c-slate-600: 215 19.3% 34.5%; /* @type hsl-channels */
+    --ls-c-slate-700: 215 25% 26.7%; /* @type hsl-channels */
+    --ls-c-slate-900: 222 47.4% 11.2%; /* @type hsl-channels */
+    --ls-c-teal-50: 166 76.5% 96.7%; /* @type hsl-channels */
+    --ls-c-teal-500: 173 80.4% 40%; /* @type hsl-channels */
+    --ls-c-teal-700: 175 77.4% 26.1%; /* @type hsl-channels */
+    --ls-c-violet-50: 250 100% 97.6%; /* @type hsl-channels */
+    --ls-c-violet-500: 258 89.5% 66.3%; /* @type hsl-channels */
+    --ls-c-violet-600: 262 83.3% 57.8%; /* @type hsl-channels */
+    --ls-c-violet-700: 263 70% 50.4%; /* @type hsl-channels */
+    --ls-c-violet-800: 263 69.3% 42.2%; /* @type hsl-channels */
+    --ls-c-white: 0 0% 100%; /* @type hsl-channels */
+    --ls-c-yellow-400: 48 95.8% 53.1%; /* @type hsl-channels */
+    --ls-glass: hsl(var(--ls-glass-fill)); /* @type color */
+    --ls-glass-strong: hsl(var(--ls-glass-fill-strong)); /* @type color */
+    --ls-glass-accent-rgb: var(--ls-primary-rgb); /* @type rgb-channels-comma */
+    --primary-color: hsl(var(--ls-primary)); /* @type color */
+    --primary-hover: hsl(var(--ls-on-primary-soft)); /* @type color */
+    --primary-light: hsl(var(--ls-palette-accent)); /* @type color */
+    --primary-dark: hsl(var(--ls-on-primary-soft)); /* @type color */
+    --surface-color: hsl(var(--ls-surface-1) / .92); /* @type color */
+    --surface-hover: hsl(var(--ls-surface-2) / .98); /* @type color */
+    --bg-color: hsl(var(--ls-surface-0)); /* @type color */
+    --border-color: hsl(var(--ls-palette-border)); /* @type color */
+    --border-color-focus: hsl(var(--ls-ring)); /* @type color */
+    --text-primary: hsl(var(--ls-ink)); /* @type color */
+    --text-secondary: hsl(var(--ls-ink-2)); /* @type color */
+    --text-muted: hsl(var(--ls-ink-3)); /* @type color */
+    --text-inverse: hsl(var(--ls-fixed-white)); /* @type color */
+    --font-family-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "WenQuanYi Micro Hei", system-ui, sans-serif; /* @type font-family */
+    --shadow-focus: var(--ls-shadow-focus); /* @type shadow */
+    --ux-motion-fast: var(--ls-dur-fast); /* @type time */
+    --ux-motion-base: var(--ls-dur-base); /* @type time */
+    --ux-ease: var(--ls-ease-out); /* @type easing */
+    --ui-palette-primary-rgb: var(--ls-primary-rgb); /* @type rgb-channels-comma */
+    --success-color: hsl(var(--ls-tone-success-base)); /* @type color */
+    --success-light: hsl(var(--ls-tone-success-soft)); /* @type color */
+    --success-dark: hsl(var(--ls-tone-success-fg)); /* @type color */
+    --warning-color: hsl(var(--ls-tone-warning-base)); /* @type color */
+    --warning-light: hsl(var(--ls-tone-warning-soft)); /* @type color */
+    --warning-dark: hsl(var(--ls-tone-warning-fg)); /* @type color */
+    --danger-color: hsl(var(--ls-tone-danger-base)); /* @type color */
+    --danger-light: hsl(var(--ls-tone-danger-soft)); /* @type color */
+    --danger-dark: hsl(var(--ls-tone-danger-fg)); /* @type color */
+    --danger-hover: hsl(var(--ls-tone-danger-fg)); /* @type color */
+    --secondary-color: var(--gray-100); /* @type color */
+    --secondary-hover: var(--gray-200); /* @type color */
+    --secondary-dark: var(--gray-600); /* @type color */
+    --gray-50: #f8fafc; /* @type color */
+    --gray-100: #f1f5f9; /* @type color */
+    --gray-200: #e2e8f0; /* @type color */
+    --gray-300: #cbd5e1; /* @type color */
+    --gray-400: #94a3b8; /* @type color */
+    --gray-500: #64748b; /* @type color */
+    --gray-600: #475569; /* @type color */
+    --gray-700: #334155; /* @type color */
+    --gray-800: #1e293b; /* @type color */
+    --gray-900: #0f172a; /* @type color */
+    --spacing-xs: 0.25rem; /* @type length */
+    --spacing-sm: 0.5rem; /* @type length */
+    --spacing-md: 1rem; /* @type length */
+    --spacing-lg: 1.5rem; /* @type length */
+    --spacing-xl: 2rem; /* @type length */
+    --spacing-2xl: 3rem; /* @type length */
+    --spacing-1: 0.25rem; /* @type length */
+    --spacing-2: 0.5rem; /* @type length */
+    --spacing-3: 1rem; /* @type length */
+    --spacing-4: 1.5rem; /* @type length */
+    --spacing-5: 2rem; /* @type length */
+    --spacing-6: 3rem; /* @type length */
+    --spacing-8: 4rem; /* @type length */
+    --spacing-10: 6rem; /* @type length */
+    --radius-sm: 0.5rem; /* @type length */
+    --radius-md: 0.7rem; /* @type length */
+    --radius-lg: 0.95rem; /* @type length */
+    --radius-xl: 1.15rem; /* @type length */
+    --radius-2xl: 1.5rem; /* @type length */
+    --radius-full: 9999px; /* @type length */
+    --text-2xs: 0.7rem; /* @type length */
+    --text-xs: 0.75rem; /* @type length */
+    --text-sm: 0.8rem; /* @type length */
+    --text-md: 0.875rem; /* @type length */
+    --text-rg: 0.95rem; /* @type length */
+    --shadow-xs: 0 14px 30px -28px rgba(15, 23, 42, 0.54); /* @type shadow */
+    --shadow-sm: 0 8px 24px -18px rgba(15, 23, 42, 0.45), 0 3px 10px -8px rgba(15, 23, 42, 0.28); /* @type shadow */
+    --shadow-md: 0 18px 40px -24px rgba(15, 23, 42, 0.5), 0 8px 22px -16px rgba(15, 23, 42, 0.3); /* @type shadow */
+    --shadow-lg: 0 28px 68px -36px rgba(15, 23, 42, 0.58), 0 16px 36px -24px rgba(15, 23, 42, 0.34); /* @type shadow */
+    --shadow-xl: 0 38px 84px -42px rgba(15, 23, 42, 0.64), 0 20px 46px -28px rgba(15, 23, 42, 0.38); /* @type shadow */
+    --transition-fast: 180ms cubic-bezier(0.4, 0, 0.2, 1); /* @type transition */
+    --transition-normal: 280ms cubic-bezier(0.2, 0.8, 0.2, 1); /* @type transition */
+    --tone-assignment-draft: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-assignment-draft-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-assignment-draft-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-assignment-draft-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-assignment-draft-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-assignment-draft-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-assignment-published: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-assignment-published-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-assignment-published-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-assignment-published-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-assignment-published-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-assignment-published-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-assignment-closed: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-assignment-closed-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-assignment-closed-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-assignment-closed-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-assignment-closed-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-assignment-closed-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-submission-unsubmitted: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-submission-unsubmitted-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-submission-unsubmitted-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-submission-unsubmitted-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-submission-unsubmitted-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-submission-unsubmitted-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-submission-submitted: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-submission-submitted-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-submission-submitted-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-submission-submitted-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-submission-submitted-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-submission-submitted-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-submission-grading: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-submission-grading-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-submission-grading-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-submission-grading-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-submission-grading-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-submission-grading-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-submission-grading_review: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-submission-grading_review-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-submission-grading_review-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-submission-grading_review-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-submission-grading_review-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-submission-grading_review-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-submission-grading_failed: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-submission-grading_failed-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-submission-grading_failed-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-submission-grading_failed-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-submission-grading_failed-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-submission-grading_failed-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-submission-graded: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-submission-graded-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-submission-graded-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-submission-graded-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-submission-graded-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-submission-graded-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-submission-returned: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-submission-returned-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-submission-returned-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-submission-returned-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-submission-returned-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-submission-returned-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-submission-flag-offline: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-submission-flag-offline-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-submission-flag-offline-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-submission-flag-offline-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-submission-flag-offline-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-submission-flag-offline-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-submission-flag-absence-zero: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-submission-flag-absence-zero-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-submission-flag-absence-zero-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-submission-flag-absence-zero-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-submission-flag-absence-zero-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-submission-flag-absence-zero-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-submission-flag-late: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-submission-flag-late-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-submission-flag-late-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-submission-flag-late-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-submission-flag-late-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-submission-flag-late-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-submission-flag-group-pending: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-submission-flag-group-pending-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-submission-flag-group-pending-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-submission-flag-group-pending-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-submission-flag-group-pending-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-submission-flag-group-pending-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-submission-flag-group-final: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-submission-flag-group-final-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-submission-flag-group-final-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-submission-flag-group-final-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-submission-flag-group-final-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-submission-flag-group-final-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-score-none: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-score-none-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-score-none-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-score-none-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-score-none-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-score-none-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-score-fail: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-score-fail-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-score-fail-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-score-fail-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-score-fail-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-score-fail-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-score-good: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-score-good-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-score-good-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-score-good-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-score-good-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-score-good-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-score-excellent: var(--ls-primary); /* @type hsl-channels */
+    --tone-score-excellent-fg: var(--ls-on-primary-soft); /* @type hsl-channels */
+    --tone-score-excellent-soft: var(--ls-primary-soft); /* @type hsl-alpha-channels */
+    --tone-score-excellent-on-base: var(--ls-on-primary); /* @type hsl-channels */
+    --tone-score-excellent-solid: var(--ls-primary); /* @type hsl-channels */
+    --tone-score-excellent-on-solid: var(--ls-on-primary); /* @type hsl-channels */
+    --tone-score-top: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-score-top-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-score-top-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-score-top-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-score-top-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-score-top-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-score-pass: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-score-pass-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-score-pass-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-score-pass-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-score-pass-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-score-pass-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-deadline-none: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-deadline-none-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-deadline-none-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-deadline-none-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-deadline-none-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-deadline-none-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-deadline-regular: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-deadline-regular-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-deadline-regular-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-deadline-regular-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-deadline-regular-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-deadline-regular-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-deadline-urgent: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-deadline-urgent-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-deadline-urgent-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-deadline-urgent-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-deadline-urgent-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-deadline-urgent-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-deadline-late: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-deadline-late-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-deadline-late-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-deadline-late-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-deadline-late-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-deadline-late-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-deadline-closed: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-deadline-closed-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-deadline-closed-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-deadline-closed-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-deadline-closed-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-deadline-closed-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-save-dirty: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-save-dirty-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-save-dirty-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-save-dirty-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-save-dirty-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-save-dirty-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-save-local_saved: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-save-local_saved-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-save-local_saved-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-save-local_saved-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-save-local_saved-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-save-local_saved-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-save-syncing: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-save-syncing-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-save-syncing-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-save-syncing-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-save-syncing-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-save-syncing-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-save-synced: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-save-synced-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-save-synced-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-save-synced-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-save-synced-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-save-synced-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-save-offline: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-save-offline-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-save-offline-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-save-offline-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-save-offline-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-save-offline-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-save-error: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-save-error-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-save-error-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-save-error-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-save-error-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-save-error-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-save-conflict: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-save-conflict-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-save-conflict-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-save-conflict-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-save-conflict-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-save-conflict-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-save-submitting: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-save-submitting-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-save-submitting-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-save-submitting-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-save-submitting-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-save-submitting-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-save-submitted: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-save-submitted-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-save-submitted-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-save-submitted-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-save-submitted-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-save-submitted-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-job-queued: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-job-queued-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-job-queued-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-job-queued-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-job-queued-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-job-queued-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-job-retry_wait: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-job-retry_wait-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-job-retry_wait-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-job-retry_wait-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-job-retry_wait-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-job-retry_wait-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-job-running: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-job-running-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-job-running-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-job-running-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-job-running-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-job-running-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-job-result_ready: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-job-result_ready-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-job-result_ready-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-job-result_ready-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-job-result_ready-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-job-result_ready-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-job-superseded: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-job-superseded-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-job-superseded-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-job-superseded-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-job-superseded-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-job-superseded-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-job-failed: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-job-failed-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-job-failed-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-job-failed-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-job-failed-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-job-failed-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-job-canceled: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-job-canceled-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-job-canceled-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-job-canceled-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-job-canceled-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-job-canceled-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-agent-queued: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-agent-queued-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-agent-queued-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-agent-queued-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-agent-queued-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-agent-queued-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-agent-running: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-agent-running-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-agent-running-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-agent-running-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-agent-running-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-agent-running-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-agent-waiting_input: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-agent-waiting_input-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-agent-waiting_input-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-agent-waiting_input-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-agent-waiting_input-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-agent-waiting_input-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-agent-question_expired: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-agent-question_expired-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-agent-question_expired-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-agent-question_expired-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-agent-question_expired-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-agent-question_expired-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-agent-unverified: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-agent-unverified-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-agent-unverified-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-agent-unverified-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-agent-unverified-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-agent-unverified-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-agent-partial: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-agent-partial-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-agent-partial-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-agent-partial-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-agent-partial-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-agent-partial-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-agent-committed: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-agent-committed-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-agent-committed-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-agent-committed-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-agent-committed-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-agent-committed-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-agent-completed: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-agent-completed-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-agent-completed-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-agent-completed-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-agent-completed-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-agent-completed-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-agent-failed: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-agent-failed-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-agent-failed-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-agent-failed-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-agent-failed-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-agent-failed-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-agent-canceled: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-agent-canceled-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-agent-canceled-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-agent-canceled-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-agent-canceled-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-agent-canceled-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-signature-neutral: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-signature-neutral-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-signature-neutral-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-signature-neutral-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-signature-neutral-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-signature-neutral-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-signature-pending: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-signature-pending-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-signature-pending-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-signature-pending-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-signature-pending-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-signature-pending-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-signature-partially_approved: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-signature-partially_approved-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-signature-partially_approved-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-signature-partially_approved-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-signature-partially_approved-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-signature-partially_approved-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-signature-approved: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-signature-approved-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-signature-approved-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-signature-approved-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-signature-approved-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-signature-approved-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+    --tone-signature-rejected: var(--ls-tone-danger-base); /* @type hsl-channels */
+    --tone-signature-rejected-fg: var(--ls-tone-danger-fg); /* @type hsl-channels */
+    --tone-signature-rejected-soft: var(--ls-tone-danger-soft); /* @type hsl-alpha-channels */
+    --tone-signature-rejected-on-base: var(--ls-tone-danger-on-base); /* @type hsl-channels */
+    --tone-signature-rejected-solid: var(--ls-tone-danger-solid); /* @type hsl-channels */
+    --tone-signature-rejected-on-solid: var(--ls-tone-danger-on-solid); /* @type hsl-channels */
+    --tone-signature-cancelled: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-signature-cancelled-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-signature-cancelled-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-signature-cancelled-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-signature-cancelled-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-signature-cancelled-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-signature-superseded: var(--ls-tone-neutral-base); /* @type hsl-channels */
+    --tone-signature-superseded-fg: var(--ls-tone-neutral-fg); /* @type hsl-channels */
+    --tone-signature-superseded-soft: var(--ls-tone-neutral-soft); /* @type hsl-alpha-channels */
+    --tone-signature-superseded-on-base: var(--ls-tone-neutral-on-base); /* @type hsl-channels */
+    --tone-signature-superseded-solid: var(--ls-tone-neutral-solid); /* @type hsl-channels */
+    --tone-signature-superseded-on-solid: var(--ls-tone-neutral-on-solid); /* @type hsl-channels */
+    --tone-signature-updating: var(--ls-tone-info-base); /* @type hsl-channels */
+    --tone-signature-updating-fg: var(--ls-tone-info-fg); /* @type hsl-channels */
+    --tone-signature-updating-soft: var(--ls-tone-info-soft); /* @type hsl-alpha-channels */
+    --tone-signature-updating-on-base: var(--ls-tone-info-on-base); /* @type hsl-channels */
+    --tone-signature-updating-solid: var(--ls-tone-info-solid); /* @type hsl-channels */
+    --tone-signature-updating-on-solid: var(--ls-tone-info-on-solid); /* @type hsl-channels */
+    --tone-signature-dirty: var(--ls-tone-warning-base); /* @type hsl-channels */
+    --tone-signature-dirty-fg: var(--ls-tone-warning-fg); /* @type hsl-channels */
+    --tone-signature-dirty-soft: var(--ls-tone-warning-soft); /* @type hsl-alpha-channels */
+    --tone-signature-dirty-on-base: var(--ls-tone-warning-on-base); /* @type hsl-channels */
+    --tone-signature-dirty-solid: var(--ls-tone-warning-solid); /* @type hsl-channels */
+    --tone-signature-dirty-on-solid: var(--ls-tone-warning-on-solid); /* @type hsl-channels */
+    --tone-signature-confirmed: var(--ls-tone-success-base); /* @type hsl-channels */
+    --tone-signature-confirmed-fg: var(--ls-tone-success-fg); /* @type hsl-channels */
+    --tone-signature-confirmed-soft: var(--ls-tone-success-soft); /* @type hsl-alpha-channels */
+    --tone-signature-confirmed-on-base: var(--ls-tone-success-on-base); /* @type hsl-channels */
+    --tone-signature-confirmed-solid: var(--ls-tone-success-solid); /* @type hsl-channels */
+    --tone-signature-confirmed-on-solid: var(--ls-tone-success-on-solid); /* @type hsl-channels */
+}
+
+:root[data-appearance="dark"] {
+    --ls-chat-teacher: 258 89.5% 78%; /* @type hsl-channels */
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-control-muted: 215 20% 75%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 239 84% 72%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: var(--ls-primary) / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 239 74% 84%; /* @type hsl-channels */
+    --ls-palette-accent: 233.924981 28.063158% 22.800000%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-primary-rgb: 123.624, 125.6232, 243.576; /* @type rgb-channels-comma */
+    --ls-glass-fill: 224 30% 12% / .62; /* @type hsl-alpha-channels */
+    --ls-glass-fill-strong: 224 30% 12% / .80; /* @type hsl-alpha-channels */
+    --ls-glass-fill-clear: 224 30% 12% / .22; /* @type hsl-alpha-channels */
+    --ls-glass-line: 0 0% 100% / .14; /* @type hsl-alpha-channels */
+    --ls-glass-rim: 0 0% 100% / .18; /* @type hsl-alpha-channels */
+    --ls-glass-rim-bottom: 0 0% 100% / .06; /* @type hsl-alpha-channels */
+    --ls-glass-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-glass-muted: 215 20% 75%; /* @type hsl-channels */
+    --ls-scrim: 0 0% 0% / .5; /* @type hsl-alpha-channels */
+    --ls-glass-saturate: 140%; /* @type percentage */
+    --ls-glass-sheen: linear-gradient(135deg, hsl(0 0% 100% / .06) 0%, hsl(0 0% 100% / .015) 38%, transparent 60%, hsl(var(--ls-primary) / .05) 100%); /* @type image */
+    --ls-glass-shadow: 0 20px 60px hsl(0 0% 0% / .28), 0 2px 6px hsl(0 0% 0% / .18); /* @type shadow */
+    --ls-glass-shadow-strong: 0 24px 70px hsl(0 0% 0% / .38), 0 4px 10px hsl(0 0% 0% / .24); /* @type shadow */
+    --ls-tone-success-base: 152 52% 56%; /* @type hsl-channels */
+    --ls-tone-success-fg: 152 55% 78%; /* @type hsl-channels */
+    --ls-tone-success-soft: 152 52% 56% / 0.2; /* @type hsl-alpha-channels */
+    --ls-tone-success-on-base: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-success-solid: 152 52% 56%; /* @type hsl-channels */
+    --ls-tone-success-on-solid: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-warning-base: 38 94% 62%; /* @type hsl-channels */
+    --ls-tone-warning-fg: 40 95% 80%; /* @type hsl-channels */
+    --ls-tone-warning-soft: 38 94% 62% / 0.2; /* @type hsl-alpha-channels */
+    --ls-tone-warning-on-base: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-warning-solid: 38 94% 62%; /* @type hsl-channels */
+    --ls-tone-warning-on-solid: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-danger-base: 4 82% 68%; /* @type hsl-channels */
+    --ls-tone-danger-fg: 4 88% 82%; /* @type hsl-channels */
+    --ls-tone-danger-soft: 4 82% 68% / 0.18; /* @type hsl-alpha-channels */
+    --ls-tone-danger-on-base: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-danger-solid: 4 82% 68%; /* @type hsl-channels */
+    --ls-tone-danger-on-solid: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-info-base: 212 88% 66%; /* @type hsl-channels */
+    --ls-tone-info-fg: 212 90% 82%; /* @type hsl-channels */
+    --ls-tone-info-soft: 212 88% 66% / 0.2; /* @type hsl-alpha-channels */
+    --ls-tone-info-on-base: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-info-solid: 212 88% 66%; /* @type hsl-channels */
+    --ls-tone-info-on-solid: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-neutral-base: 220 10% 62%; /* @type hsl-channels */
+    --ls-tone-neutral-fg: 220 12% 80%; /* @type hsl-channels */
+    --ls-tone-neutral-soft: 220 10% 62% / 0.16; /* @type hsl-alpha-channels */
+    --ls-tone-neutral-on-base: 222 47% 11%; /* @type hsl-channels */
+    --ls-tone-neutral-solid: 220 10% 62%; /* @type hsl-channels */
+    --ls-tone-neutral-on-solid: 222 47% 11%; /* @type hsl-channels */
+    --tone-course-1: 243.396226 75.355450% 72.627451%; /* @type hsl-channels */
+    --tone-course-2: 198.630137 88.663968% 62.431373%; /* @type hsl-channels */
+    --tone-course-3: 161.379310 93.548387% 44.392157%; /* @type hsl-channels */
+    --tone-course-4: 32.132701 94.618834% 57.725490%; /* @type hsl-channels */
+    --tone-course-5: 333.333333 71.428571% 64.588235%; /* @type hsl-channels */
+    --tone-course-6: 262.122905 83.255814% 71.843137%; /* @type hsl-channels */
+    --tone-course-7: 191.647059 91.397849% 50.470588%; /* @type hsl-channels */
+    --tone-course-8: 84.800000 85.227273% 48.509804%; /* @type hsl-channels */
+    --tone-course-9: 20.540541 90.243902% 62.235294%; /* @type hsl-channels */
+    --tone-course-10: 346.836735 77.165354% 63.803922%; /* @type hsl-channels */
+    --tone-attachment-image: 199 70% 62%; /* @type hsl-channels */
+    --tone-attachment-doc: 221 70% 62%; /* @type hsl-channels */
+    --tone-attachment-sheet: 152 70% 62%; /* @type hsl-channels */
+    --tone-attachment-slide: 21 70% 62%; /* @type hsl-channels */
+    --tone-attachment-pdf: 4 70% 62%; /* @type hsl-channels */
+    --tone-attachment-archive: 262 70% 62%; /* @type hsl-channels */
+    --tone-attachment-other: 220 12% 62%; /* @type hsl-channels */
+    --tone-agenda-proctor: 43.255814 96.412556% 56.274510%; /* @type hsl-channels */
+    --tone-agenda-proctor-fg: 43.255814 96.412556% 56.274510%; /* @type hsl-channels */
+    --tone-agenda-proctor-soft: 43.255814 96.412556% 56.274510% / 0.18; /* @type hsl-alpha-channels */
+    --tone-agenda-exam: 0 90.604027% 70.784314%; /* @type hsl-channels */
+    --tone-agenda-exam-fg: 0 93.548387% 81.764706%; /* @type hsl-channels */
+    --tone-agenda-exam-soft: 0 90.604027% 70.784314% / 0.2; /* @type hsl-alpha-channels */
+    --tone-agenda-homework: 255.135135 91.735537% 76.274510%; /* @type hsl-channels */
+    --tone-agenda-homework-fg: 252.500000 94.736842% 85.098039%; /* @type hsl-channels */
+    --tone-agenda-homework-soft: 255.135135 91.735537% 76.274510% / 0.2; /* @type hsl-alpha-channels */
+    --tone-agenda-todo: 198.437500 93.203883% 59.607843%; /* @type hsl-channels */
+    --tone-agenda-todo-fg: 199.370079 95.488722% 73.921569%; /* @type hsl-channels */
+    --tone-agenda-todo-soft: 198.437500 93.203883% 59.607843% / 0.18; /* @type hsl-alpha-channels */
+    --tone-agenda-class: 172.455090 66.007905% 50.392157%; /* @type hsl-channels */
+    --tone-agenda-class-fg: 170.571429 76.923077% 64.313725%; /* @type hsl-channels */
+    --tone-agenda-class-soft: 172.455090 66.007905% 50.392157% / 0.18; /* @type hsl-alpha-channels */
+}
+
+:root[data-ui-palette="teal"] {
+    --ls-surface-0: 222 47% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 175 77% 26%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 175 77% 26% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 176 69% 22%; /* @type hsl-channels */
+    --ls-primary-rgb: 15.249, 117.351, 108.8425; /* @type rgb-channels-comma */
+    --ls-palette-accent: 167 85% 89%; /* @type hsl-channels */
+    --ls-palette-border: 214 32% 91%; /* @type hsl-channels */
+    --ls-ring: 175 77% 26%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="indigo"] {
+    --ls-surface-0: 223 47% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 243 75% 59%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 243 75% 59% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 245 58% 40%; /* @type hsl-channels */
+    --ls-primary-rgb: 79.87875, 72.0375, 228.8625; /* @type rgb-channels-comma */
+    --ls-palette-accent: 247 100% 96%; /* @type hsl-channels */
+    --ls-palette-border: 216 33% 86%; /* @type hsl-channels */
+    --ls-ring: 243 75% 59%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="sky"] {
+    --ls-surface-0: 204 56% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 205 75% 36%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 205 75% 36% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 205 75% 30%; /* @type hsl-channels */
+    --ls-primary-rgb: 22.95, 103.275, 160.65; /* @type rgb-channels-comma */
+    --ls-palette-accent: 207 76% 95%; /* @type hsl-channels */
+    --ls-palette-border: 207 45% 85%; /* @type hsl-channels */
+    --ls-ring: 205 75% 36%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="mint"] {
+    --ls-surface-0: 150 30% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 172 69% 27%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 172 69% 27% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 172 70% 23%; /* @type hsl-channels */
+    --ls-primary-rgb: 21.3435, 116.3565, 103.6881; /* @type rgb-channels-comma */
+    --ls-palette-accent: 156 43% 93%; /* @type hsl-channels */
+    --ls-palette-border: 151 30% 84%; /* @type hsl-channels */
+    --ls-ring: 172 69% 27%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="violet"] {
+    --ls-surface-0: 274 44% 97%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 274 48% 47%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 274 48% 47% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 274 50% 38%; /* @type hsl-channels */
+    --ls-primary-rgb: 127.5204, 62.322, 177.378; /* @type rgb-channels-comma */
+    --ls-palette-accent: 274 65% 96%; /* @type hsl-channels */
+    --ls-palette-border: 273 35% 86%; /* @type hsl-channels */
+    --ls-ring: 274 48% 47%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="rose"] {
+    --ls-surface-0: 343 54% 98%; /* @type hsl-channels */
+    --ls-surface-1: 0 0% 100%; /* @type hsl-channels */
+    --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
+    --ls-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 45%; /* @type hsl-channels */
+    --ls-line: 214 32% 91%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 53%; /* @type hsl-channels */
+    --ls-primary: 341 49% 45%; /* @type hsl-channels */
+    --ls-on-primary: 0 0% 100%; /* @type hsl-channels */
+    --ls-primary-soft: 341 49% 45% / .12; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 341 54% 35%; /* @type hsl-channels */
+    --ls-primary-rgb: 170.9775, 58.5225, 94.13325; /* @type rgb-channels-comma */
+    --ls-palette-accent: 337 73% 96%; /* @type hsl-channels */
+    --ls-palette-border: 337 40% 86%; /* @type hsl-channels */
+    --ls-ring: 341 49% 45%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="teal"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 173 62% 52%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 173 62% 52% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 173 52% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 56.712, 208.488, 190.7808; /* @type rgb-channels-comma */
+    --ls-palette-accent: 188.374165 37.128534% 18.575040%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 173 62% 52%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="indigo"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 239 84% 72%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 239 84% 72% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 239 74% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 123.624, 125.6232, 243.576; /* @type rgb-channels-comma */
+    --ls-palette-accent: 233.924981 28.063158% 22.800000%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 239 84% 72%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="sky"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 205 65% 50%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 205 65% 50% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 205 55% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 44.625, 141.3125, 210.375; /* @type rgb-channels-comma */
+    --ls-palette-accent: 210.131906 42.541401% 18.840000%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 205 65% 50%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="mint"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 172 59% 41%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 172 59% 41% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 172 49% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 42.8655, 166.2345, 149.7853; /* @type rgb-channels-comma */
+    --ls-palette-accent: 190.173985 35.688941% 16.639440%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 172 59% 41%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="violet"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 274 38% 61%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 274 38% 61% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 274 28% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 160.5888, 117.759, 193.341; /* @type rgb-channels-comma */
+    --ls-palette-accent: 253.175093 19.886266% 21.397280%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 274 38% 61%; /* @type hsl-channels */
+}
+
+:root[data-ui-palette="rose"][data-appearance="dark"] {
+    --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
+    --ls-surface-1: 224 22% 12%; /* @type hsl-channels */
+    --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
+    --ls-ink: 214 32% 94%; /* @type hsl-channels */
+    --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
+    --ls-ink-3: 215 16% 58%; /* @type hsl-channels */
+    --ls-line: 220 14% 22%; /* @type hsl-channels */
+    --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
+    --ls-control-line: 215 16% 58%; /* @type hsl-channels */
+    --ls-primary: 341 39% 59%; /* @type hsl-channels */
+    --ls-on-primary: 222 47% 11%; /* @type hsl-channels */
+    --ls-primary-soft: 341 39% 59% / .18; /* @type hsl-alpha-channels */
+    --ls-on-primary-soft: 341 29% 84%; /* @type hsl-channels */
+    --ls-primary-rgb: 191.2245, 109.6755, 135.49935; /* @type rgb-channels-comma */
+    --ls-palette-accent: 295.245283 13.103740% 19.070510%; /* @type hsl-channels */
+    --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
+    --ls-ring: 341 39% 59%; /* @type hsl-channels */
+}
+
+[data-lq-scope="monitor"] {
+    --tone-monitor-accent: 198.437500 93.203883% 59.607843%; /* @type hsl-channels */
+    --tone-monitor-violet: 255.135135 91.735537% 76.274510%; /* @type hsl-channels */
+    --tone-monitor-good: 158.113208 64.372470% 51.568627%; /* @type hsl-channels */
+    --tone-monitor-warn: 43.255814 96.412556% 56.274510%; /* @type hsl-channels */
+    --tone-monitor-bad: 351.304348 94.520548% 71.372549%; /* @type hsl-channels */
+    --tone-monitor-muted: 217.627119 33.714286% 65.686275%; /* @type hsl-channels */
+    --tone-monitor-background: 220 48.837209% 8.431373%; /* @type hsl-channels */
+    --tone-monitor-text: 220 60% 94.117647%; /* @type hsl-channels */
+    --tone-monitor-grid: 219.574468 41.964286% 56.078431% / .16; /* @type hsl-alpha-channels */
+}
+
+@media (max-width: 640px) {
+    :root {
+    --ls-t-display: 28px; /* @type length */
+    --ls-t-title1: 22px; /* @type length */
+    --ls-t-title2: 19px; /* @type length */
+    --ls-t-title3: 17px; /* @type length */
+    --ls-t-headline: 16px; /* @type length */
+    --ls-t-body: 16px; /* @type length */
+    --ls-t-callout: 15px; /* @type length */
+    --ls-t-sub: 14px; /* @type length */
+    --ls-t-footnote: 13px; /* @type length */
+    --ls-t-caption: 12px; /* @type length */
+}
+}

@@ -1,0 +1,15 @@
+{% extends "manage/layout.html" %}
+
+{% block body_class %}page-wrapper profile-page role-{{ profile.role }} profile-page--shell{% endblock %}
+
+{% block extra_head %}
+{% include "partials/profile/head.html" %}
+{% endblock %}
+
+{% block content %}
+{% include "partials/profile/body.html" %}
+{% endblock %}
+
+{% block scripts %}
+{% include "partials/profile/scripts.html" %}
+{% endblock %}

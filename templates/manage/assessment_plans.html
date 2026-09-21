@@ -17,7 +17,7 @@
 {% endblock %}
 {% block content %}
 <section class="manage-lp" data-ap-root>
-    {% call page_head('考核计划表库', explain='每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='考核计划表说明') %}<div class="manage-lp__summary" data-ap-summary></div>{% endcall %}
+    {% call page_head('考核计划表库', explain='每学期每门课一份。支持空白新建、按课堂生成或导入解析，完成后可预览、导出 Word/PDF 并设置公开范围。', explain_label='考核计划表说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-lp__summary" data-ap-summary></div>{% endcall %}
 
     <div class="manage-lp__toolbar">
         <div class="manage-lp__search" data-lp-tip="搜索会匹配标题、课程、班级、学院和标签。">

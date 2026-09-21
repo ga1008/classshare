@@ -8,6 +8,11 @@ import {
 } from '@/lib/message-center-workspace';
 
 describe('message-center-workspace helpers', () => {
+  it('reports loading and failure instead of an empty private workspace', () => {
+    expect(buildMessageCenterWorkspaceMessage(normalizeMessageCenterWorkspaceSnapshot({ privateOpen: true, loadStatus: 'loading' }))).toBe('正在加载，请稍候。');
+    expect(buildMessageCenterWorkspaceMessage(normalizeMessageCenterWorkspaceSnapshot({ privateOpen: true, loadStatus: 'error', loadError: '会话当前不可用' }))).toBe('会话当前不可用');
+    expect(normalizeMessageCenterWorkspaceSnapshot({ privateOpen: true }).loadStatus).toBe('ready');
+  });
   it('normalizes missing or noisy payloads into a stable snapshot', () => {
     expect(
       normalizeMessageCenterWorkspaceSnapshot({

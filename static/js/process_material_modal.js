@@ -1,4 +1,5 @@
 import { escapeHtml } from './ui.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const DEFAULT_CLOSE_SELECTOR = '[data-pm-close],[data-lp-close],[data-ap-close],[data-te-close]';
 const FOCUSABLE_SELECTOR = '[autofocus]:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -51,6 +52,12 @@ export function openProcessMaterialModal(
     { footerHtml = '', onMount, onClose, wide = false, closeAttr = 'data-pm-close', closeSelector = DEFAULT_CLOSE_SELECTOR, canClose } = {},
 ) {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // A legacy child opened from a coordinated modal must join that same stack.
+    // Standalone process-material dialogs retain their existing owner until
+    // their page family migrates; never run two focus/Escape controllers.
+    const layer = getLayerSystem(document);
+    const parentLayer = layer.top();
+    let layerHandle = null;
     const overlay = document.createElement('div');
     overlay.className = 'lp-modal-overlay';
     overlay.innerHTML = `
@@ -62,31 +69,69 @@ export function openProcessMaterialModal(
             <div class="lp-modal__body">${bodyHtml}</div>
             <footer class="lp-modal__foot">${footerHtml}</footer>
         </div>`;
-    document.body.appendChild(overlay);
+    (parentLayer ? layer.getPortalHost({ trigger: previousFocus, parentLayer }) : document.body).appendChild(overlay);
 
     let closed = false;
     function onKeydown(e) {
         if (e.key === 'Escape') close();
         if (e.key === 'Tab') trapModalFocus(e, overlay);
     }
-    function close(options = {}) {
+    function finish() {
         if (closed) return;
-        const force = Boolean(options?.force);
-        if (!force && typeof canClose === 'function' && canClose() === false) return;
         closed = true;
         document.removeEventListener('keydown', onKeydown);
         overlay.remove();
         if (typeof onClose === 'function') onClose();
-        if (previousFocus && document.contains(previousFocus)) {
+        if (!layerHandle && previousFocus && document.contains(previousFocus)) {
             previousFocus.focus({ preventScroll: true });
         }
+    }
+    function close(options = {}) {
+        if (closed) return;
+        const force = Boolean(options?.force);
+        if (layerHandle) {
+            if (force) {
+                // Destroy also invalidates an already pending, vetoed close.
+                // Updating beforeClose alone would reuse that old promise.
+                layerHandle.destroy();
+                if (layer.top() === parentLayer && previousFocus?.isConnected
+                    && !previousFocus.closest('[hidden],[inert],[aria-hidden="true"]')) {
+                    previousFocus.focus({ preventScroll: true });
+                }
+                return;
+            }
+            return layer.close(layerHandle, 'programmatic');
+        }
+        if (!force && typeof canClose === 'function' && canClose() === false) return;
+        finish();
     }
 
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay || e.target.closest(closeSelector)) close();
     });
-    document.addEventListener('keydown', onKeydown);
+    if (!parentLayer) document.addEventListener('keydown', onKeydown);
     if (onMount) onMount(overlay, close);
+    if (closed) return { overlay, close };
+    if (parentLayer) {
+        if (!overlay.isConnected || !parentLayer.root.isConnected
+            || ['closed', 'destroyed'].includes(parentLayer.state)) {
+            finish();
+            return { overlay, close };
+        }
+        try {
+            layerHandle = layer.open(overlay, {
+                type: 'modal', surface: overlay.querySelector('.lp-modal'),
+                trigger: previousFocus, parentLayer,
+                initialFocus: () => pickInitialFocusTarget(overlay),
+                beforeClose: () => typeof canClose !== 'function' || canClose() !== false,
+                onClose: finish, onDestroy: finish,
+            });
+        } catch (error) {
+            finish();
+            throw error;
+        }
+        return { overlay, close };
+    }
     const focusTarget = pickInitialFocusTarget(overlay);
     if (focusTarget instanceof HTMLElement) focusTarget.focus({ preventScroll: true });
     return { overlay, close };

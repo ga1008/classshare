@@ -1,5 +1,6 @@
 ﻿import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import { LQ } from '/static/js/lq/index.js';
 
 const config = window.TEXTBOOK_MANAGE_DATA || {};
 
@@ -309,15 +310,27 @@ function addChip(type) {
     syncChipPayloads();
 }
 
-async function handleDelete(textbookId) {
+async function handleDelete(textbookId, button) {
+    if (button?.dataset.lqBusy === '1') return;
     const textbook = state.textbooks.find((item) => item.id === Number(textbookId));
     if (!textbook) return;
-    const confirmed = window.confirm(`确定删除教材“${textbook.title}”吗？\n如果它已经绑定到课堂，需要先调整课堂绑定。`);
-    if (!confirmed) return;
+    if (button) button.dataset.lqBusy = '1';
+    try {
+        const confirmed = await LQ.confirm({
+            title: '删除教材',
+            message: `确定删除教材“${textbook.title}”吗？如果它已经绑定到课堂，需要先调整课堂绑定。`,
+            confirmLabel: '删除',
+            danger: true,
+        });
+        if (!confirmed) return;
+        if (button) button.disabled = true;
 
-    const result = await apiFetch(`/api/manage/textbooks/${textbook.id}`, { method: 'DELETE' });
-    showMessage(result.message || '教材已删除', 'success');
-    window.location.reload();
+        const result = await apiFetch(`/api/manage/textbooks/${textbook.id}`, { method: 'DELETE' });
+        showMessage(result.message || '教材已删除', 'success');
+        window.location.reload();
+    } finally {
+        if (button) { delete button.dataset.lqBusy; button.disabled = false; }
+    }
 }
 
 async function handleSubmit(event) {
@@ -523,7 +536,7 @@ function initEvents() {
             return;
         }
         if (target.dataset.action === 'delete') {
-            await handleDelete(textbookId);
+            await handleDelete(textbookId, target);
         }
     });
 

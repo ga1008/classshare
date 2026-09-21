@@ -1,0 +1,133 @@
+/* Structure only: one material surface, one coordinating layer/presence owner. */
+.lq-dialog-root {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    pointer-events: none;
+}
+.lq-dialog-root[hidden] { display: none; }
+.lq-dialog-root > .lq-scrim { pointer-events: auto; }
+.lq-dialog__surface {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    max-height: calc(100dvh - 32px);
+    overflow: hidden;
+    pointer-events: auto;
+    border-radius: var(--ls-r-xl);
+    opacity: 1;
+    transform: none;
+    transition: opacity 220ms var(--ls-ease-out), transform 220ms var(--ls-ease-out);
+}
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-dialog__surface { opacity: 0; transform: scale(.98); }
+.lq-dialog__head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    padding: 20px 24px 12px;
+}
+.lq-dialog__head > h2 {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.5;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.lq-dialog__head > .lq-btn { flex: none; min-width: 44px; min-height: 44px; }
+.lq-dialog__body {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 8px 24px 20px;
+    font-size: 14px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.lq-dialog__body:empty, .lq-dialog__foot:empty { display: none; }
+.lq-dialog__foot {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 24px 20px;
+    overflow-wrap: anywhere;
+}
+.lq-dialog__foot > .lq-btn { min-height: 44px; max-width: 100%; white-space: normal; }
+.lq-dialog__grip {
+    display: none;
+    flex: none;
+    align-self: center;
+    width: 36px;
+    height: 4px;
+    margin-top: 10px;
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--ls-line-strong));
+}
+.lq-modal { width: min(560px, calc(100vw - 32px)); }
+.lq-modal--sm { width: min(360px, calc(100vw - 32px)); }
+.lq-modal--lg { width: min(800px, calc(100vw - 32px)); }
+.lq-modal--xl { width: min(1080px, calc(100vw - 32px)); }
+.lq-modal--full { width: calc(100vw - 32px); height: calc(100dvh - 32px); }
+.lq-dialog-root[data-lq-dialog="sheet"],
+.lq-dialog-root[data-lq-dialog="drawer"] { padding: 0; }
+.lq-sheet--bottom {
+    align-self: end;
+    width: 100%;
+    max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: var(--ls-r-2xl) var(--ls-r-2xl) 0 0;
+}
+.lq-sheet--bottom > .lq-dialog__grip {
+    display: block;
+}
+.lq-sheet--right, .lq-drawer {
+    justify-self: end;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+    border-radius: var(--ls-r-xl) 0 0 var(--ls-r-xl);
+}
+.lq-sheet--right { width: min(480px, 100vw); }
+.lq-drawer { width: min(640px, 100vw); transition-duration: 280ms; }
+.lq-drawer--wide { width: min(960px, 100vw); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-sheet--bottom { transform: translateY(24px); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > :is(.lq-sheet--right, .lq-drawer) { transform: translateX(24px); }
+.lq-popover {
+    position: fixed;
+    width: max-content;
+    max-width: min(360px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    border-radius: var(--ls-r-lg);
+}
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-popover { transform: scale(.96); }
+@media (max-width: 640px) {
+    .lq-dialog-root[data-lq-dialog="modal"] { padding: 0; }
+    .lq-modal {
+        align-self: end;
+        width: 100%;
+        max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        border-radius: var(--ls-r-2xl) var(--ls-r-2xl) 0 0;
+    }
+    .lq-modal > .lq-dialog__grip {
+        display: block;
+    }
+    .lq-dialog__head { padding-inline: 20px; }
+    .lq-dialog__body { padding-inline: 20px; }
+    .lq-dialog__foot { flex-direction: column; align-items: stretch; padding-inline: 20px; }
+    .lq-dialog__foot > .lq-btn { width: 100%; }
+    .lq-dialog-root[data-ui-overlay-state="closed"] > .lq-modal { transform: translateY(24px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lq-dialog__surface { transition: none; }
+}

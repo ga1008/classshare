@@ -96,8 +96,8 @@ Local protocol reproduction, using an isolated deterministic model fixture:
 ```powershell
 npm.cmd install --prefix .codex-temp/dsh-poc --no-audit --no-fund --save-exact '@deepseek-ai/dsh@0.1.5-rc.1'
 python tools/dsh_acp_poc.py --report docs/agent-dsh-poc-2026-09-10.json
-python -m unittest discover -s tests -p test_agent_acp_client.py -v
-python -m unittest discover -s tests -p test_agent_dsh_provider.py -v
+python tools/test_backend.py --pattern test_agent_acp_client.py
+python tools/test_backend.py --pattern test_agent_dsh_provider.py
 ```
 
 The ACP and Linux PoCs use actual official DSH and its ACP/MCP bridge, but model

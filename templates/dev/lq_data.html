@@ -1,0 +1,23 @@
+{% from 'macros/lq/tables.html' import lq_table, lq_pager, lq_bulk_bar, lq_result_count %}
+{% from 'macros/lq/selection.html' import lq_combobox, lq_listbox %}
+{% from 'macros/lq/button.html' import lq_btn %}
+<section class="lq-preview__section" aria-labelledby="lq-data-title">
+  <div class="lq-preview__heading"><h2 id="lq-data-title">记录列表与成绩矩阵</h2><p>记录列表在手机上转为卡片；对照矩阵保留列头并在局部横向滚动。选择、排序和翻页仅演示操作入口。</p></div>
+  {% set columns=[{'key':'name','label':'姓名','rowHeader':true,'sortable':true},{'key':'score','label':'得分','align':'end','sortable':true},{'key':'note','label':'说明'}] %}
+  {% set rows=[{'key':'first','label':'示例甲','cells':{'name':'示例甲','score':0,'note':'零分仍然显示'}},{'key':'second','label':'示例乙','selected':true,'cells':{'name':'示例乙','score':86,'note':'已选中的可操作记录'}},{'key':'locked','label':'示例丙','selected':true,'disabled':true,'cells':{'name':'示例丙','score':none,'note':'暂不可操作，保留原选中值'}}] %}
+  {{ lq_table('preview-records', '记录型列表', columns, rows, selectable=true) }}
+  <p role="status" data-lq-demo-table-status>可选择记录并查看当前选择。</p>
+  <div class="lq-preview__specimens">{{ lq_result_count(3) }}{{ lq_result_count(0) }}{{ lq_result_count(state='loading') }}</div>
+  <div data-lq-demo-bulk-host>{{ lq_bulk_bar(2, [{'label':'查看选中项','variant':'soft','attrs':{'data-lq-demo-action':'查看选中项'}}]) }}</div>
+  {{ lq_pager(2, 18) }}
+  {{ lq_table('preview-matrix', '成绩对照矩阵', columns, rows, mode='matrix') }}
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-selection-title">
+  <div class="lq-preview__heading"><h2 id="lq-selection-title">搜索选值与多选列表</h2><p>选中值保留在原生表单控件中。搜索、键盘选择和重置都只影响本地示例。</p></div>
+  <form class="lq-preview__form lq-surface" data-lq-demo-selection-form>
+    {{ lq_combobox('preview-course-select', '搜索示例课程', name='course', help='输入课程名称查找。', value='', options=[{'value':'','label':'请选择课程'},{'value':'python','label':'Python 程序设计'},{'value':'network','label':'计算机网络原理'},{'value':'unavailable','label':'暂不可选课程','disabled':true}], required=true) }}
+    {{ lq_listbox('preview-resource-select', '选择示例资料', name='resources', value=['notes'], multiple=true, options=[{'value':'notes','label':'课堂笔记'},{'value':'practice','label':'课后练习'},{'value':'review','label':'知识回顾'}]) }}
+    <div class="lq-preview__specimens">{{ lq_btn('检查选择', type='submit') }}{{ lq_btn('重置选择', type='reset', variant='soft') }}</div>
+    <p role="status" data-lq-demo-selection-status>等待检查选择。</p>
+  </form>
+</section>

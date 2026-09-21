@@ -1,4 +1,5 @@
-<div class="message-center-bell-anchor" data-message-center-bell-shell>
+{% set _bell_lq_toast = lq_family_enabled('messages') if lq_family_enabled is defined else false %}
+<div class="message-center-bell-anchor" data-message-center-bell-shell{% if _bell_lq_toast %} data-lq-toast="true"{% endif %}>
     <a
         href="/profile?section=notifications#profile-message-center"
         class="message-center-bell"

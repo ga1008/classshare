@@ -102,6 +102,37 @@ def public_target(raw_url, *, deadline=None):
     return url, hostname, port, addresses[0], target
 
 
+class _DeadlineWatchdog(threading.Thread):
+    """Interrupt this hop only after the shared absolute deadline expires."""
+
+    def __init__(self, deadline, abort):
+        super().__init__(daemon=True)
+        self.deadline = deadline
+        self._abort = abort
+        self._cancelled = threading.Event()
+        self.expired = threading.Event()
+
+    def run(self):
+        while not self._cancelled.is_set():
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                # Publish the cancellation reason before shutdown wakes a read.
+                self.expired.set()
+                self._abort()
+                return
+            # A relative wait is not proof that the absolute deadline arrived.
+            # Recheck after every wake; cancel() also interrupts this wait.
+            self._cancelled.wait(remaining)
+
+    def check(self):
+        if self.expired.is_set():
+            raise HTTPException(504, "网页读取超过总时间限制。")
+        return _remaining(self.deadline)
+
+    def cancel(self):
+        self._cancelled.set()
+
+
 class PinnedConnection(http.client.HTTPConnection):
     def __init__(self, hostname, port, address, *, tls, deadline=None):
         self.deadline = deadline if deadline is not None else time.monotonic() + MAX_WEB_SECONDS
@@ -150,14 +181,13 @@ def fetch_public_web(raw_url: str, *, mode="text"):
     for hop in range(5):
         url, hostname, port, address, target = public_target(current, deadline=deadline)
         connection = PinnedConnection(hostname, port, address, tls=url.scheme == "https", deadline=deadline)
-        timer = threading.Timer(_remaining(deadline), connection.abort)
-        timer.daemon = True
-        timer.start()
+        watchdog = _DeadlineWatchdog(deadline, connection.abort)
+        watchdog.start()
         response = None
         try:
             connection.request("GET", target, headers={"User-Agent": "LanShare-Agent/2.0", "Accept-Encoding": "identity"})
             response = connection.getresponse()
-            _remaining(deadline)
+            watchdog.check()
             if response.status in {301, 302, 303, 307, 308}:
                 if hop >= 4 or not response.getheader("Location"):
                     raise HTTPException(502, "网页重定向次数过多或地址无效。")
@@ -167,7 +197,7 @@ def fetch_public_web(raw_url: str, *, mode="text"):
             if encoding not in {"identity", ""}:
                 raise HTTPException(502, "网页未提供可安全读取的正文编码。")
             body = response.read(MAX_WEB_BYTES + 1)
-            _remaining(deadline)
+            watchdog.check()
             truncated = len(body) > MAX_WEB_BYTES
             body = body[:MAX_WEB_BYTES]
             content_type = response.getheader("Content-Type", "")[:200]
@@ -181,16 +211,16 @@ def fetch_public_web(raw_url: str, *, mode="text"):
                 text = body.decode("utf-8", errors="replace")
             if mode == "text" and "html" in content_type.lower():
                 text = _html_text(text)
-            _remaining(deadline)
+            watchdog.check()
             return {"status": "success", "url": current, "status_code": response.status,
                     "content_type": content_type, "truncated": truncated, "content": text}
         except HTTPException:
             raise
         except (OSError, http.client.HTTPException, UnicodeError):
-            _remaining(deadline)
+            watchdog.check()
             raise HTTPException(502, "网页暂时无法读取。") from None
         finally:
-            timer.cancel()
+            watchdog.cancel()
             if response is not None:
                 response.close()
             connection.close()

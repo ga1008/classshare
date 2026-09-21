@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
+import { legacyModuleUrl } from '@/lib/static-assets';
 
-const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = '/static/js/materials_manage.js?v=lessondoc-editor-20260903';
+const LEGACY_MATERIALS_MANAGE_CONTROLLER_URL = legacyModuleUrl('materials_manage.js');
 
 function MaterialsManagePageController() {
   useEffect(() => {

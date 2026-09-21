@@ -11,7 +11,7 @@
 
 {% block content %}
 <section class="mh-shell">
-    {% call page_head('材料检索', explain='汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。勾选分类后模糊搜索或 AI 搜索。') %}<p class="mh-hero-count-wrap"><span class="mh-hero-count" id="mh-total"></span></p>{% endcall %}
+    {% call page_head('材料检索', explain='汇聚学习文档、课后材料、教案、过程材料、期末材料、试卷、教材与公文。勾选分类后模糊搜索或 AI 搜索。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<p class="mh-hero-count-wrap"><span class="mh-hero-count" id="mh-total"></span></p>{% endcall %}
 
     {# 分类 chips：JS 契约与旧侧栏 rail 完全一致（#libraryCategoryRail / data-cat-key / data-cat-action / .is-checked）。 #}
     <div class="mh-cats" id="libraryCategoryRail" data-hub-active="1" role="group" aria-label="材料分类">

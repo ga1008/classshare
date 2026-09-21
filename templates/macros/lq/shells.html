@@ -1,0 +1,21 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% macro _lq_shell_tree(tree, slots=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slots %}{{ slots(tree.slot)|trim }}{% endif %}
+{%- elif tree.icon is defined -%}{{ lq_icon(tree.icon) }}
+{%- elif tree.button is defined -%}{% set b=tree.button %}{{ lq_btn(label=b.label,icon=b.icon,href=b.href,variant=b.variant,size=b.size,disabled=b.disabled,attrs=b.attrs) }}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if tree.tag != 'input' %}{% for child in tree.children %}{{ _lq_shell_tree(child,slots) }}{% endfor %}</{{ tree.tag }}>{% endif -%}
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_shell(component,id) -%}{{ _lq_shell_tree(lq_props(component,id=id,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_topbar(id,title) -%}{{ _lq_shell_tree(lq_props('topbar',id=id,title=title,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_sidebar(id,groups) -%}{{ _lq_shell_tree(lq_props('sidebar',id=id,groups=groups,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_dock(id) -%}{{ _lq_shell_tree(lq_props('dock',id=id,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_editor(id,title) -%}{{ _lq_shell_tree(lq_props('editor',id=id,title=title,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_page_layout(id,kind) -%}{{ _lq_shell_tree(lq_props('page_layout',id=id,kind=kind,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_nav_item(id,item) -%}{{ _lq_shell_tree(lq_props('nav_item',id=id,item=item,**kwargs)) }}{%- endmacro %}
+{% macro lq_fab(id,item) -%}{{ _lq_shell_tree(lq_props('fab',id=id,item=item,**kwargs)) }}{%- endmacro %}
+{% macro lq_crumbs(id,items) -%}{{ _lq_shell_tree(lq_props('crumbs',id=id,items=items,**kwargs)) }}{%- endmacro %}
+{% macro lq_steps(id,items) -%}{{ _lq_shell_tree(lq_props('steps',id=id,items=items,**kwargs)) }}{%- endmacro %}

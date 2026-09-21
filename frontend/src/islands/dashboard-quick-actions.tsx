@@ -1,3 +1,5 @@
+import { legacyModuleUrl } from '@/lib/static-assets';
+
 // Keep SSR available while secondary controllers wait for the first paint.
 const selectors = '[data-ls-open], [data-agenda-add-todo], [data-agenda-item], [data-agenda-calendar-feed], [data-agenda-sync], [data-group-mode], [data-student-schedule-mode], [data-student-week-prev], [data-student-week-next], [data-student-week-today], [data-student-schedule-expand], #ai-chat-fab';
 let ready = false;
@@ -73,8 +75,8 @@ function start(): Promise<void> {
     await afterPaint();
     await Promise.all([
       import('./dashboard-workspace'),
-      loadLegacy('/static/js/dashboard.js?v=academic-schedule-20260919'),
-      loadLegacy('/static/js/dashboard_agenda_widget.js?v=workspace-20260905'),
+      loadLegacy(legacyModuleUrl('dashboard.js')),
+      loadLegacy(legacyModuleUrl('dashboard_agenda_widget.js')),
     ]);
     if (document.readyState === 'loading') await new Promise<void>(resolve => document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }));
     await islandReady;

@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<style>
+body{margin:20px;font:16px sans-serif;height:2200px;padding-right:7px}
+.overlay{position:fixed;inset:0;z-index:calc(1000 + var(--lq-layer-order,0));background:#0003}
+.overlay[hidden]{display:none}.surface{position:relative;width:320px;margin:100px auto;padding:20px;background:white;transition:opacity 80ms}
+[data-ui-overlay-state=closed]>.surface{opacity:0}.floating{position:fixed;margin:0;width:200px;padding:10px;background:white}
+dialog{padding:20px}button{margin:8px;min-height:36px}
+</style>
+<main id="background" aria-hidden="false"><button id="before">原入口</button><button id="after">外部目标</button></main>
+<section id="pre-inert" inert aria-hidden="true"><button tabindex="3">原先禁用背景</button></section>
+<script type="module">
+import {getLayerSystem} from '/static/js/lq/layer.js';
+window.system=getLayerSystem(document);window.getLayerSystem=getLayerSystem;
+window.events=[];window.handles={};
+window.create=(id,{empty=false,native=false,attach=true}={})=>{
+ const root=document.createElement(native?'dialog':'div');root.id=id;root.hidden=true;
+ if(!native)root.className='overlay';
+ const surface=document.createElement('section');surface.className='surface';surface.id=id+'-surface';
+ if(!empty)surface.innerHTML=`<button id="${id}-first" data-autofocus>初始动作</button><button disabled>禁用</button><button hidden>隐藏</button><button id="${id}-last">最后动作</button>`;
+ root.append(surface);if(attach)document.body.append(root);return root;
+};
+window.openLayer=(id,options={})=>{const root=document.getElementById(id)||window.create(id);
+ const handle=window.system.open(root,{surface:root.firstElementChild,...options});window.handles[id]=handle;return handle;};
+document.body.dataset.ready='true';
+</script></html>

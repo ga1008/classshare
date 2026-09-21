@@ -1,0 +1,226 @@
+/* Page-only layout for the messages family (lq_family_enabled('messages')).
+ * Reuses frozen shared component classes (lq-page-head, lq-tabs chips via
+ * lqPresentation.createComponent('chip', ...), lq-list/lq-row, lq-bubble,
+ * lq-composer, lq-field, lq-btn) from static/css/lq/components/*.css and
+ * only adds message-center specific layout/spacing on top of them.
+ * Colors/spacing use --ls-*/--tone-* tokens only (see tokens.css). */
+
+.lq-messages.profile-message-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-4);
+    min-width: 0;
+}
+
+.lq-messages__heading {
+    padding-block: var(--ls-s-2) var(--ls-s-1);
+}
+
+/* Toolbar: tabs group + search/filter/mark-read controls */
+.lq-messages .message-center-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ls-s-3);
+}
+
+.lq-messages #message-center-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+.lq-messages .message-center-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2);
+    min-width: 0;
+    margin-inline-start: auto;
+}
+
+.lq-messages .message-center-search.lq-input {
+    min-width: 12rem;
+}
+
+/* Notification rows: extra copy line under the lq-row title/meta */
+.lq-messages__notification-copy {
+    margin: var(--ls-s-1) 0 0;
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+    overflow-wrap: anywhere;
+}
+
+/* Private message body: two-pane layout (contacts/blocks + conversation) */
+.lq-messages .message-center-private-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+    gap: var(--ls-s-4);
+    align-items: start;
+    min-width: 0;
+}
+
+.lq-messages .message-center-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-3);
+    min-width: 0;
+}
+
+.lq-messages .message-center-contact-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+.lq-messages .message-center-conversation {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-3);
+    min-width: 0;
+}
+
+.lq-messages .message-center-conversation__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--ls-s-3);
+    padding-block-end: var(--ls-s-2);
+    border-block-end: 1px solid hsl(var(--ls-line));
+}
+
+.lq-messages .message-center-conversation__body {
+    min-height: 16rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-inline-end: var(--ls-s-1);
+}
+
+/* Message bubble stream: vertical rhythm between bubbles, tighter when connected */
+.lq-messages__stream {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-3);
+    min-width: 0;
+}
+
+.lq-messages__stream .lq-bubble.is-connected {
+    margin-top: calc(-1 * var(--ls-s-2));
+}
+
+.lq-messages__status-copy {
+    margin: var(--ls-s-1) 0 0;
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-caption);
+    line-height: var(--ls-leading-caption);
+}
+
+/* Composer: glass capsule with auto-growing textarea and icon actions */
+.lq-messages .message-center-composer.lq-composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-2);
+    padding: var(--ls-s-3) var(--ls-s-4);
+    border-radius: var(--ls-r-xl);
+}
+
+.lq-messages .message-center-composer__editor {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+.lq-messages .message-center-composer__main {
+    flex: 1;
+    min-width: 0;
+}
+
+.lq-messages .message-center-composer__input.lq-composer__input {
+    max-height: calc(var(--ls-s-10) * 3);
+    resize: none;
+    overflow-y: auto;
+}
+
+.lq-messages .message-center-composer__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--ls-s-2);
+    flex-shrink: 0;
+}
+
+.lq-messages .message-center-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-1);
+    margin-block-end: var(--ls-s-1);
+}
+
+/* Attachment preview chips above the composer */
+.lq-messages .message-center-attachment-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-2);
+    padding-block-end: var(--ls-s-1);
+}
+
+.lq-messages .message-center-attachment-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--ls-s-2);
+    padding: var(--ls-s-1) var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--ls-surface-2));
+    font-size: var(--ls-t-sub);
+    max-width: 100%;
+}
+
+.lq-messages .message-center-attachment-chip__meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Send cooldown ("12s 后可发送") is written into the button's own
+ * .lq-btn__label text by setSubmitButtonVisualState() in message_center.js
+ * (no separate DOM node); tabular-nums avoids the label width jittering
+ * while the countdown ticks down inside the button. */
+.lq-messages [data-send-button] .lq-btn__label {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Block list */
+.lq-messages .message-center-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+@media (max-width: 767px) {
+    .lq-messages .message-center-private-panel {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lq-messages .message-center-conversation__body {
+        max-height: 50vh;
+    }
+
+    .lq-messages .message-center-controls {
+        margin-inline-start: 0;
+        width: 100%;
+    }
+
+    .lq-messages .message-center-search.lq-input {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+}

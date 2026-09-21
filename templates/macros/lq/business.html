@@ -1,0 +1,14 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/indicators.html' import lq_progress %}
+{% from 'macros/lq/status.html' import lq_status %}
+{% macro _business_tree(tree) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.status is defined -%}{{ lq_status(**tree.status) }}
+{%- elif tree.component is defined -%}{% if tree.component == 'button' %}{{ lq_btn(**tree.props) }}{% else %}{{ lq_progress(**tree.props) }}{% endif %}
+{%- else -%}
+<{{ tree.tag }}{% for key, value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>{% for child in tree.children %}{{ _business_tree(child) }}{% endfor %}</{{ tree.tag }}>
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_deadline_clock() -%}{{ _business_tree(lq_props('deadline_clock', **kwargs)) }}{%- endmacro %}
+{% macro lq_job_status(identity, generation, state, label) -%}{{ _business_tree(lq_props('job_status', identity=identity, generation=generation, state=state, label=label, **kwargs)) }}{%- endmacro %}
+{% macro lq_question_navigator(groups, label='答题卡') -%}{{ _business_tree(lq_props('question_navigator', groups=groups, label=label, **kwargs)) }}{%- endmacro %}

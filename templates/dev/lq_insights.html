@@ -1,0 +1,19 @@
+{% from 'macros/lq/insights.html' import lq_avatar_stack, insight_ring, insight_meter, insight_bars %}
+<section class="lq-preview__section" aria-labelledby="lq-insights-title">
+  <div class="lq-preview__heading"><h2 id="lq-insights-title">成员与统计</h2><p>示例数字仅供比较样式；未知、空集合和有效零值分别表达。</p></div>
+  <div class="lq-preview__form lq-surface">{{ lq_avatar_stack([{'name':'张同学'},{'name':'李同学'},{'name':'王同学'},{'name':'赵同学'},{'name':'孙同学'},{'name':'周同学'}], label='示例小组成员') }}</div>
+  <div class="lq-preview__content-grid">
+    {{ insight_ring('资料占比', 3, 7, '七份示例资料中有三份文件。', tone='teal', value_label='3 / 7 项') }}
+    {{ insight_meter('有效零分', 0, 0, '零是有效成绩，保留数字。', unit='分', zero='value') }}
+    {{ insight_meter('尚未提供的统计', none, none, '缺少数据时不推断为零。') }}
+    {{ insight_bars('资料结构', [{'label':'文件','value':3,'tone':'teal'},{'label':'目录','value':2,'tone':'violet'},{'label':'未分类','value':0}], '静态示例，不读取资料库。') }}
+    {{ insight_bars('空集合', [], '没有项目时显示明确的空态。') }}
+  </div>
+</section>
+<section class="lq-preview__section" aria-labelledby="lq-shells-title">
+  <div class="lq-preview__heading"><h2 id="lq-shells-title">页面骨架</h2><p>每个骨架在独立预览中展示导航、侧栏与底部操作。所有输入和操作均为本地示例。</p></div>
+  <nav aria-label="页面骨架示例" class="lq-preview__specimens lq-surface">
+    {% for key,label in preview_layouts.items() %}<a class="lq-btn lq-btn--soft" href="/dev/lq?layout={{ key }}">{{ label }}</a>{% endfor %}
+    <a class="lq-btn lq-btn--soft" href="/dev/lq?shell=centered">居中状态页</a>
+  </nav>
+</section>

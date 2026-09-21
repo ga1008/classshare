@@ -15,7 +15,7 @@ from .learning_progress_service import build_student_global_cultivation_profile
 from .portfolio_service import build_student_portfolio_context
 from .student_auth_service import build_student_security_summary
 
-PROFILE_SECTIONS = ("overview", "portfolio", "signatures", "settings", "security", "notifications", "private", "email")
+PROFILE_SECTIONS = ("overview", "portfolio", "signatures", "settings", "appearance", "security", "notifications", "private", "email")
 
 EDITABLE_PROFILE_FIELDS = (
     "nickname",
@@ -251,7 +251,7 @@ def _private_unread_count(conn, *, role: str, user_id: int) -> int:
     )
 
 
-def build_profile_nav(conn, user: dict, active_section: str) -> list[dict[str, Any]]:
+def build_profile_nav(conn, user: dict, active_section: str, *, include_appearance: bool = False) -> list[dict[str, Any]]:
     role = str(user.get("role") or "").strip().lower()
     user_id = _safe_int(user.get("id"))
     notification_count = _notification_unread_count(conn, role=role, user_id=user_id)
@@ -269,6 +269,9 @@ def build_profile_nav(conn, user: dict, active_section: str) -> list[dict[str, A
         nav_items.insert(2, ("signatures", "电子签名", "签名"))
     if role == "teacher":
         nav_items.insert(3, ("email", "邮箱通知", "发信"))
+    if include_appearance:
+        settings_index = next(index for index, item in enumerate(nav_items) if item[0] == "settings")
+        nav_items.insert(settings_index + 1, ("appearance", "外观", "配色与显示"))
 
     badges = {
         "notifications": notification_count,
@@ -679,8 +682,10 @@ def build_profile_overview(conn, profile: dict[str, Any], user: dict) -> dict[st
     return _build_student_overview(conn, profile, user)
 
 
-def build_profile_page_context(conn, user: dict, section: Any) -> dict[str, Any]:
+def build_profile_page_context(conn, user: dict, section: Any, *, include_appearance: bool = False) -> dict[str, Any]:
     active_section = normalize_profile_section(section)
+    if active_section == "appearance" and not include_appearance:
+        active_section = "settings"
     profile = get_user_profile(conn, user)
     if active_section == "email" and profile["role"] != "teacher":
         active_section = "settings"
@@ -692,7 +697,7 @@ def build_profile_page_context(conn, user: dict, section: Any) -> dict[str, Any]
     portfolio_context = None
     if profile["role"] == "student" and active_section == "portfolio":
         portfolio_context = build_student_portfolio_context(conn, int(profile["id"]), include_candidates=True)
-    nav_items = build_profile_nav(conn, user, active_section)
+    nav_items = build_profile_nav(conn, user, active_section, include_appearance=include_appearance)
     return {
         "active_section": active_section,
         "profile": profile,

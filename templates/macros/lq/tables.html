@@ -1,0 +1,13 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% macro _lq_table_tree(tree, slots=none) -%}
+{%- if tree is string -%}{{ tree|forceescape }}
+{%- elif tree.slot is defined -%}{% if slots %}{{ slots(tree.slot) }}{% endif %}
+{%- elif tree.button is defined -%}{% set b=tree.button %}{{ lq_btn(label=b.label,href=b.href,id=b.id,attrs=b.attrs,variant=b.variant,size=b.size,disabled=b.disabled,loading=b.loading) }}
+{%- else -%}<{{ tree.tag }}{% for key,value in tree.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if tree.tag != 'input' %}{% for child in tree.children %}{{ _lq_table_tree(child,slots) }}{% endfor %}</{{ tree.tag }}>{% endif -%}
+{%- endif -%}
+{%- endmacro %}
+{% macro lq_table(id,caption,columns,rows=[]) -%}{{ _lq_table_tree(lq_props('table',id=id,caption=caption,columns=columns,rows=rows,**kwargs),caller if caller is defined else none) }}{%- endmacro %}
+{% macro lq_pager(page,total_pages) -%}{{ _lq_table_tree(lq_props('pager',page=page,total_pages=total_pages,**kwargs)) }}{%- endmacro %}
+{% macro lq_bulk_bar(selected_count,actions=[]) -%}{{ _lq_table_tree(lq_props('bulk_bar',selected_count=selected_count,actions=actions,**kwargs)) }}{%- endmacro %}
+{% macro lq_result_count(count=none,state='ready') -%}{{ _lq_table_tree(lq_props('result_count',count=count,state=state,**kwargs)) }}{%- endmacro %}

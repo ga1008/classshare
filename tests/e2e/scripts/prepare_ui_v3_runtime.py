@@ -27,6 +27,13 @@ def prepare(runtime: Path) -> None:
     with closing(sqlite3.connect(template)) as conn:
         conn.execute('PRAGMA user_version=0')
         conn.commit()
+    sys.path.insert(0, str(REPO))
+    from tools.isolated_environment import (
+        guard_dotenv_loading, guard_postgres_connections, isolate_sqlite_environment,
+    )
+    isolate_sqlite_environment(runtime)
+    guard_dotenv_loading()
+    guard_postgres_connections()
     os.environ.update({
         'PYTHON_DOTENV_DISABLED': '1', 'DB_ENGINE': 'sqlite', 'POSTGRES_BACKEND_READY': 'false',
         'LANSHARE_DATA_ROOT': str(runtime), 'MAIN_DATA_DIR': str(runtime),

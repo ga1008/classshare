@@ -1,0 +1,126 @@
+/* S4 centered family only. The original branch continues to use centered.css. */
+body.lq-centered-page {
+    min-height: 100svh;
+    background: hsl(var(--ls-surface-0));
+    color: hsl(var(--ls-ink));
+    font-family: var(--ls-font-sans);
+    isolation: isolate;
+}
+.lq-centered-page .lq-centered-main {
+    align-items: safe center;
+    padding: var(--ls-s-8) var(--ls-s-4);
+    min-width: 0;
+}
+.lq-centered-page .lq-skip-link {
+    position: fixed;
+    top: var(--ls-s-2);
+    left: var(--ls-s-2);
+    z-index: var(--ls-z-nav);
+    padding: var(--ls-s-3);
+    transform: translateY(-200%);
+    background: hsl(var(--ls-surface-1));
+    color: hsl(var(--ls-ink));
+    border: 1px solid hsl(var(--ls-input));
+}
+.lq-centered-page .lq-skip-link:focus { transform: none; }
+.lq-login-frame {
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    max-width: 420px;
+    border-radius: var(--ls-r-2xl);
+}
+.lq-login-frame > .lq-scrim {
+    display: none;
+    border-radius: inherit;
+    background: hsl(var(--ls-scrim-login));
+}
+.lq-login-frame[data-lq-login-material="clear"] > .lq-scrim { display: block; }
+body.lq-centered-page .lq-login-card {
+    width: 100%;
+    max-width: 420px;
+    padding: var(--ls-s-8);
+    border: 1px solid hsl(var(--ls-glass-line));
+    border-radius: var(--ls-r-2xl);
+    background: hsl(var(--lq-material-fill));
+    color: hsl(var(--lq-material-ink));
+    box-shadow: var(--ls-glass-shadow-strong);
+    animation: none;
+    /* Material fill, scrim and foreground must change in the same frame. */
+    transition: border-color var(--ls-dur-base) var(--ls-ease-out);
+}
+.lq-centered-page .lq-login-card h1 {
+    margin: 0 0 var(--ls-s-2);
+    color: inherit;
+    font-size: var(--ls-t-display);
+    font-weight: var(--ls-weight-display);
+    line-height: var(--ls-leading-display);
+    overflow-wrap: anywhere;
+}
+.lq-centered-page .lq-login-card .subtitle {
+    margin: 0 0 var(--ls-s-6);
+    color: inherit;
+    font-size: var(--ls-t-footnote);
+    line-height: var(--ls-leading-body);
+}
+.lq-centered-page .login-logo { width: var(--ls-s-16); height: var(--ls-s-16); margin-bottom: var(--ls-s-4); background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
+.lq-centered-page .lq-login-card form,
+.lq-centered-page .modal-body form { display: grid; gap: var(--ls-s-4); text-align: start; }
+.lq-centered-page .lq-login-card form > .lq-btn,
+.lq-centered-page .modal-body form > .lq-btn { width: 100%; }
+.lq-centered-page .lq-login-card :is(.lq-field,.lq-field__label,.form-text) { color: inherit; }
+.lq-centered-page .lq-field__label { text-align: start; }
+.lq-centered-page .login-panel { text-align: start; }
+.lq-centered-page .login-panel[hidden] { display: none; }
+.lq-centered-page :is(.login-panel-copy,.identity-panel-note) { margin: 0 0 var(--ls-s-4); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); color: hsl(var(--ls-ink-2)); }
+.lq-centered-page .lq-login-card .identity-panel-note { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: var(--ls-r-sm); padding: var(--ls-s-3); }
+.lq-centered-page .identity-panel-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2); margin-bottom: var(--ls-s-3); }
+.lq-centered-page .identity-panel-title { margin: 0; font-size: var(--ls-t-headline); color: inherit; }
+.lq-centered-page .login-inline-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2); margin-top: var(--ls-s-3); }
+.lq-centered-page .link-button,
+.lq-centered-page .footer-links a {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1));
+    max-width: 100%; padding: var(--ls-s-2);
+    background: transparent; color: inherit; border: 0;
+    font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body);
+    text-align: start; text-decoration: underline; text-underline-offset: var(--ls-s-1);
+    overflow-wrap: anywhere; cursor: pointer;
+    transition: none;
+}
+.lq-centered-page .identity-entry-link.is-attention { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); border-radius: var(--ls-r-sm); }
+.lq-centered-page .footer-links { margin-top: var(--ls-s-3); }
+.lq-centered-page .lq-login-feedback { margin: 0; padding: var(--ls-s-3); background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-surface-1)); color: hsl(var(--ls-tone-danger-fg)); border: 1px solid hsl(var(--ls-tone-danger-fg)); border-radius: var(--ls-r-sm); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
+.lq-centered-page .lq-login-feedback[hidden] { display: none; }
+.lq-centered-page :is(.link-button,.footer-links a,.lq-login-feedback):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+.lq-centered-page .lq-login-card.lq-glass--clear :is(.link-button,.footer-links a):focus-visible { outline-color: hsl(var(--ls-fixed-white)); }
+.lq-centered-page .student-identity-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--ls-s-2); margin-bottom: var(--ls-s-4); }
+.lq-centered-page .student-identity-chip { min-width: 0; padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-sm); background: hsl(var(--ls-surface-2)); }
+.lq-centered-page .student-identity-chip span { display: block; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); }
+.lq-centered-page .student-identity-chip strong { display: block; overflow-wrap: anywhere; color: hsl(var(--ls-ink)); font-size: var(--ls-t-footnote); }
+.lq-centered-page .student-auth-flow .auth-flow-student { margin-bottom: var(--ls-s-4); overflow-wrap: anywhere; font-size: var(--ls-t-footnote); }
+.lq-centered-page .forgot-class-field { display: flex; align-items: center; gap: var(--ls-s-2); }
+.lq-centered-page .forgot-class-field .lq-input { flex: 1; width: 0; min-width: 0; text-align: center; }
+.lq-centered-page .forgot-class-affix { max-width: 32%; overflow-wrap: anywhere; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); }
+.lq-centered-page .forgot-class-affix:empty { display: none; }
+body.lq-centered-page .site-record-footer { background: hsl(var(--ls-surface-0)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.lq-centered-page .site-record-footer :is(a,span,p) { color: inherit; }
+.lq-centered-page .login-scene-backdrop { transition-duration: var(--ls-dur-base); }
+@media (max-width: 480px) {
+    .lq-centered-page .lq-centered-main { padding-block: var(--ls-s-4); }
+    body.lq-centered-page .lq-login-card { padding: var(--ls-s-6); }
+    .lq-centered-page .student-identity-summary { grid-template-columns: 1fr; }
+}
+@media (hover: hover) and (pointer: fine) {
+    .lq-centered-page :is(.link-button,.footer-links a):hover { text-decoration-thickness: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body.lq-centered-page .lq-login-card,
+    .lq-centered-page .login-scene-backdrop { transition: none; animation: none; }
+}
+@media (forced-colors: active) {
+    .lq-centered-page .login-scene-backdrop,
+    .lq-login-frame > .lq-scrim { display: none; }
+    .lq-centered-page :is(.lq-login-feedback,.login-logo,.student-identity-chip,.identity-entry-link.is-attention) { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-centered-page :is(.link-button,.footer-links a) { color: LinkText; }
+}

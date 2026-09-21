@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Runtime audit fixture</title>
+<style>
+body { margin: 0; background: white; color: black; font: 16px sans-serif; }
+#covered { position: absolute; top: 700px; left: 10px; width: 100px; height: 50px; backdrop-filter: blur(2px); }
+#cover { position: absolute; top: 700px; left: 10px; width: 100px; height: 50px; background: white; z-index: 2; }
+#pseudo { position: absolute; top: 760px; left: 10px; width: 100px; height: 50px; }
+#pseudo::before, #pseudo::after { content: ''; position: absolute; inset: 0; backdrop-filter: blur(2px); }
+#scroll { position: absolute; top: 820px; left: 10px; width: 150px; height: 60px; overflow-y: auto; }
+#scrolling { height: 100px; backdrop-filter: blur(2px); }
+#hidden { display: none; } #hidden > div { backdrop-filter: blur(2px); width: 30px; height: 30px; }
+#transparent { opacity: 0; backdrop-filter: blur(2px); width: 30px; height: 30px; }
+dialog { position: fixed; left: auto; right: 20px; top: 20px; margin: 0; width: 120px; height: 80px; backdrop-filter: blur(2px); }
+dialog::backdrop { backdrop-filter: blur(2px); background: rgb(0 0 0 / .1); }
+p { margin: 10px; padding: 4px; width: 300px; }
+#alphaParent { background: rgb(0 0 0 / .5); width: 320px; }
+#alpha { background: rgb(255 255 255 / .5); color: rgb(0 0 0 / .8); }
+#gradient { background: linear-gradient(white, black); }
+#image { background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="2" height="2"%3E%3Cpath fill="black" d="M0 0h2v2H0z"/%3E%3C/svg%3E'); }
+#opacity { opacity: .5; }
+#low { color: #aaa; }
+#large { font-size: 24px; color: #888; }
+</style></head><body>
+<p id="black">Black text on white</p><div id="alphaParent"><p id="alpha">Nested transparent backgrounds</p></div>
+<p id="gradient">Gradient needs pixels</p><p id="image">Image needs pixels</p><p id="opacity">Opacity needs group compositing</p>
+<p id="low">Low contrast must fail</p><p id="large">Large text uses 3 to 1</p>
+<div id="covered"></div><div id="cover"></div><div id="pseudo"></div><div id="scroll"><div id="scrolling"></div></div>
+<div id="hidden"><div></div></div><div id="transparent"></div>
+<dialog id="dialog">Dialog</dialog><script>document.querySelector('dialog').showModal();</script>
+</body></html>
