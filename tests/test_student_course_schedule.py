@@ -105,6 +105,26 @@ class StudentCourseScheduleTests(unittest.TestCase):
         self.assertNotIn("秘密", str(result))
         self.assertNotIn("已取消", str(result))
 
+    def test_overlapping_custom_term_does_not_hide_the_real_timetable(self):
+        """A second term covering today must not blank out an enrolled student.
+
+        A student can belong to one offering in the school term and another in a
+        custom term sharing the same anchors. Selecting whichever term was listed
+        first handed them an empty deck, so the term that actually carries their
+        sessions has to win.
+        """
+        self.conn.execute(
+            "INSERT INTO academic_semesters VALUES(4,1,'test','测试学校','独立合成学期',"
+            "'2026-08-31','2027-01-15',20,'','','','[]','','')")
+        self.conn.execute(
+            "INSERT INTO class_offerings(id,class_id,course_id,teacher_id,semester,semester_id,"
+            "combined_class_names) VALUES(3,1,2,1,'独立合成学期',4,'主班')")
+        result = self.get()
+        self.assertEqual(("2026-2027", "1"),
+                         (result["selected_term"]["year"], result["selected_term"]["term"]))
+        self.assertEqual([1, 3], [lesson["id"] for week in result["weeks"] for lesson in week["lessons"]])
+        self.assertIn("独立合成学期", [entry["label"] for entry in result["terms"]])
+
     def test_merged_class_and_membership_revocation_are_live(self):
         self.user = {"id": 8, "role": "student"}
         self.assertTrue(self.get()["has_data"])

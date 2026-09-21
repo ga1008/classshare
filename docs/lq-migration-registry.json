@@ -1395,7 +1395,7 @@
           },
           {
             "path": "templates/dashboard.html",
-            "sha256": "1c1eb63012cca20e1d0bb7690d182220ccf275b822ca83641f6837773f5d9829",
+            "sha256": "2ecd7405754d090e3098a0294d4cd708ccfe9ac0ab2582ad5cb9b5a8f13f60ce",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_navbar_shell.py",
@@ -7162,7 +7162,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/classes.html",
-            "sha256": "7c6ee0870c16e0c7868b41d2432087fce7a9349dfece56c03696af463eae958b",
+            "sha256": "f51cc5c254e4b4d559992f910f3987b27993afcecdf79fdaa4a1681370500924",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8092,7 +8092,7 @@
           },
           {
             "path": "templates/dashboard_teacher.html",
-            "sha256": "2a9f02176424198868ba3f09b89f34395cb9eb275b6e8fd1b72a475122b91a75",
+            "sha256": "86355ae3fd42867cdde1340b9f3c13f9f0dade47d86ab653a8f9d408645f067e",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -11080,7 +11080,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/semesters.html",
-            "sha256": "55367f43bef96207884962a98317ec4872629f3e3a5712b8cad414c09fd4cca7",
+            "sha256": "8d9603bdae9e97b422c99130227b1dcd4fc319b5758c761fa6f68ceb3e717f0e",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",

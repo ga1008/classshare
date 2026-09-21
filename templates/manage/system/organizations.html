@@ -11,6 +11,11 @@
 
 
 {% block content %}
+{% set _org_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{% if _org_lq_enabled %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% endif %}
 <section class="org-page" data-organization-page>
     {% call page_head('学校、学院、系部目录', description='这里维护平台后续权限与资源划分的组织底座。停用组织不会删除历史课堂、账号或签名，重命名会同步更新已引用的主要资源字段。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <div class="org-stat-grid" data-page-head-wide aria-label="组织概览">
@@ -39,6 +44,18 @@
                 <h3>新增学校</h3>
                 <p class="org-section-note">学校代码是未来权限隔离的稳定键，创建后请尽量保持不变。</p>
             </div>
+            {% if _org_lq_enabled %}
+            <form id="org-school-form" class="org-form-grid lq-form">
+                {{ lq_field('org-school-code-input', '学校代码', name='school_code', maxlength=40, placeholder='例如 gxufl', required=true) }}
+                {{ lq_field('org-school-order-input', '显示顺序', control_props={'type': 'number'}, name='display_order', value='0') }}
+                <div class="is-full">
+                    {{ lq_field('org-school-name-input', '学校名称', name='school_name', maxlength=120, placeholder='例如 广西外国语学院', required=true) }}
+                </div>
+                <div class="org-actions is-full">
+                    {{ lq_btn(label='保存学校', type='submit', variant='prominent') }}
+                </div>
+            </form>
+            {% else %}
             <form id="org-school-form" class="org-form-grid">
                 <label class="org-field">
                     <span>学校代码</span>
@@ -56,11 +73,45 @@
                     <button type="submit" class="btn btn-primary">保存学校</button>
                 </div>
             </form>
+            {% endif %}
 
             <div>
                 <h3>当前选择</h3>
                 <p class="org-section-note" id="org-current-note">请选择左侧学校后维护学院与系部。</p>
             </div>
+            {% if _org_lq_enabled %}
+            <form id="org-current-school-form" class="org-form-grid lq-form" hidden>
+                <div class="is-full">
+                    {{ lq_field('org-current-school-name-input', '学校名称', name='school_name', maxlength=120, required=true) }}
+                </div>
+                {{ lq_field('org-current-school-order-input', '显示顺序', control_props={'type': 'number'}, name='display_order', value='0') }}
+                {{ lq_field('org-current-school-active-input', '状态', control='select', name='is_active', value='1', options=[{'value': '1', 'label': '启用'}, {'value': '0', 'label': '停用'}]) }}
+                <div class="org-actions is-full">
+                    {{ lq_btn(label='更新学校', type='submit', variant='prominent') }}
+                    {{ lq_btn(label='停用学校', type='button', id='org-deactivate-school-btn', variant='destructive') }}
+                </div>
+            </form>
+
+            <form id="org-college-form" class="org-form-grid lq-form" hidden>
+                <div class="is-full">
+                    {{ lq_field('org-college-name-input', '新增学院', name='college_name', maxlength=120, placeholder='学院名称') }}
+                </div>
+                {{ lq_field('org-college-order-input', '显示顺序', control_props={'type': 'number'}, name='display_order', value='0') }}
+                <div class="org-actions">
+                    {{ lq_btn(label='保存学院', type='submit', variant='soft') }}
+                </div>
+            </form>
+
+            <form id="org-department-form" class="org-form-grid lq-form" hidden>
+                <div class="is-full">
+                    {{ lq_field('org-department-name-input', '新增系部', name='department_name', maxlength=120, placeholder='先在左侧选择学院') }}
+                </div>
+                {{ lq_field('org-department-order-input', '显示顺序', control_props={'type': 'number'}, name='display_order', value='0') }}
+                <div class="org-actions">
+                    {{ lq_btn(label='保存系部', type='submit', variant='soft') }}
+                </div>
+            </form>
+            {% else %}
             <form id="org-current-school-form" class="org-form-grid" hidden>
                 <label class="org-field is-full">
                     <span>学校名称</span>
@@ -110,6 +161,7 @@
                     <button type="submit" class="btn btn-outline">保存系部</button>
                 </div>
             </form>
+            {% endif %}
         </aside>
     </div>
 </section>

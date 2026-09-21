@@ -136,6 +136,15 @@ function setActiveDepartmentChip(value) {
     elements.departmentChips?.querySelectorAll('[data-department-chip]').forEach((chip) => {
         chip.classList.toggle('is-active', chip.dataset.departmentChip === normalizedValue);
     });
+    // Under the manage-pages family the chips are rendered by lq_chip_row and
+    // proxied by manage_filter_chips.js, which only syncs on select `change`.
+    // applyFilters() can also run without a change event (search input, reset),
+    // so keep the LQ chips in step with the select here as well.
+    elements.departmentChips?.querySelectorAll('button.lq-chip--filter[data-value]').forEach((chip) => {
+        const selected = chip.getAttribute('data-value') === normalizedValue;
+        chip.classList.toggle('is-active', selected);
+        chip.setAttribute('aria-pressed', String(selected));
+    });
 }
 
 function compareCards(a, b) {
@@ -205,6 +214,11 @@ function resetFilters() {
     if (elements.departmentFilter) elements.departmentFilter.value = 'all';
     if (elements.healthFilter) elements.healthFilter.value = 'all';
     if (elements.sortSelect) elements.sortSelect.value = 'department';
+    // Proxy chip rows (manage_filter_chips.js) mirror the select value and only
+    // resync on `change`, so announce the reset before re-filtering.
+    [elements.departmentFilter, elements.healthFilter, elements.sortSelect].forEach((select) => {
+        select?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     applyFilters();
 }
 

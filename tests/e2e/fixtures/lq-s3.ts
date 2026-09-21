@@ -42,6 +42,29 @@ export async function guardS3Page(page: Page): Promise<S3Fixture> {
   return fixture;
 }
 
+// Manage pages fade in over 380ms (`managePageEnter` in ui-system.src.css), so
+// every descendant is composited at a partial opacity while it runs. axe reads
+// those blended values and reports contrast failures that the tokens do not
+// have, which is why such failures appeared and vanished between identical
+// runs. Await the entrance before scanning colours.
+//
+// Only finite animations count. Manage pages keep infinitely looping spinners
+// inside the same container, so waiting for every running animation would never
+// resolve on a page that is merely still loading something.
+export async function settleEntranceAnimations(page: Page): Promise<void> {
+  await page.waitForFunction(() => document
+    .getAnimations()
+    .filter(animation => animation.playState === 'running')
+    .filter(animation => {
+      const effect = (animation as { effect?: AnimationEffect | null }).effect;
+      return effect ? effect.getComputedTiming().iterations !== Infinity : false;
+    })
+    .every(animation => {
+      const target = (animation as { effect?: { target?: Element | null } }).effect?.target;
+      return !(target instanceof Element) || !target.closest('.manage-content');
+    }), null, { timeout: 5000 });
+}
+
 // No application imports, dotenv, or write-capable SQLite connection. Queries
 // are authored by the tests and observe only the exact asserted fixture DB.
 export function readS3Rows<T = Record<string, unknown>>(sql: string, parameters: unknown[] = []): T[] {

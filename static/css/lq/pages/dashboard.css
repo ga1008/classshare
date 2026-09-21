@@ -136,11 +136,45 @@
     box-shadow: var(--ls-shadow-3);
 }
 
-/* -- mobile collapsible sections (reuses stage-9 memory / LQ.collapsible) */
+/* -- 课堂工具行: frozen `filter_bar` component ---------------------------
+   The <form> is now the component root (.lq-filter-bar), so the legacy
+   .ls-course-search layout rules injected by academic_schedule_sync.js no
+   longer match. These restore the same wrapping behaviour on the component
+   root; every dashboard.js data-* hook is unchanged. */
+[data-lq-dashboard] .ls-course-toolbar > .lq-filter-bar {
+    flex-wrap: wrap;
+    row-gap: var(--ls-s-3);
+}
+[data-lq-dashboard] .lq-filter-bar__search { flex: 1 1 260px; min-width: 0; }
+[data-lq-dashboard] .lq-filter-bar__search .lq-field { gap: var(--ls-s-1); }
+/* Slot order in the component tree is search -> filters -> actions; the search
+   row reads better with its two buttons beside it, so the filters slot is
+   moved after them without touching the component's DOM order. */
+[data-lq-dashboard] .lq-filter-bar__actions { order: 1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ls-s-2); }
+[data-lq-dashboard] .lq-filter-bar__controls { order: 2; flex: 1 1 100%; min-width: 0; }
+[data-lq-dashboard] .lq-filter-bar__actions .cs-sync-feedback { flex-basis: 100%; }
+[data-lq-dashboard] .lq-filter-bar .ls-course-options { width: 100%; min-width: 0; }
+
+/* -- mobile collapsible sections (frozen `lq_collapsible` component) ------
+   mode="responsive" means enhanceCollapsible locks the disclosure open at
+   >=768px, so the desktop layout is identical to the family-off branch and
+   only the <=767px viewport actually folds. The .lq-surface chrome would
+   otherwise double up with the page background, so it is flattened on
+   desktop and only rendered as a card on narrow screens. */
+[data-lq-dashboard] .lq-collapsible {
+    border: none;
+    background: none;
+    box-shadow: none;
+}
+[data-lq-dashboard] .lq-collapsible > .lq-collapsible__content { padding: 0; }
+[data-lq-dashboard] .lq-collapsible > .lq-collapsible__summary { padding-inline: 0; }
+[data-lq-dashboard] .lq-collapsible__title { font-size: var(--ls-t-title3); }
 @media (max-width: 767px) {
-    [data-lq-dashboard] .ls-courses,
-    [data-lq-dashboard] .ls-domains,
-    [data-lq-dashboard] .ls-tools {
+    [data-lq-dashboard] .lq-collapsible {
+        border: 1px solid hsl(var(--ls-line));
         border-radius: var(--ls-r-lg);
+        background: hsl(var(--ls-surface-1));
     }
+    [data-lq-dashboard] .lq-collapsible > .lq-collapsible__summary { padding-inline: var(--ls-s-4); }
+    [data-lq-dashboard] .lq-collapsible > .lq-collapsible__content { padding: 0 var(--ls-s-4) var(--ls-s-4); }
 }

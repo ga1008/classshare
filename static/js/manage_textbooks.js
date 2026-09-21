@@ -223,7 +223,18 @@ function syncChipPayloads() {
     renderChipList(elements.tagChipList, state.modalTags, 'tag');
 }
 
-function openModal(mode, textbook = null) {
+// Overlay triggers, so closing an overlay can hand focus back where it came
+// from (the bespoke backdrops here are not LQ.layer dialogs and had no
+// focus-return of their own).
+let modalTrigger = null;
+let introCatalogTrigger = null;
+
+function restoreFocus(trigger) {
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+}
+
+function openModal(mode, textbook = null, trigger = null) {
+    modalTrigger = trigger;
     elements.modalTitle.textContent = mode === 'edit' ? '编辑教材' : '新增教材';
     elements.submitBtn.textContent = mode === 'edit' ? '保存修改' : '保存教材';
     state.editingTextbookId = textbook?.id ?? null;
@@ -273,6 +284,8 @@ function openModal(mode, textbook = null) {
 
 function closeModal() {
     elements.modalBackdrop.classList.remove('is-open');
+    restoreFocus(modalTrigger);
+    modalTrigger = null;
 }
 
 function renderExistingAttachment(textbook) {
@@ -388,7 +401,8 @@ function showFormattedResult(introduction, catalogText) {
     }
 }
 
-function openIntroCatalogPopup() {
+function openIntroCatalogPopup(trigger = null) {
+    introCatalogTrigger = trigger;
     // Pre-populate with raw content (for re-editing)
     if (elements.rawIntroInput) {
         elements.rawIntroInput.value = state.rawIntroduction;
@@ -408,6 +422,8 @@ function closeIntroCatalogPopup() {
     if (elements.introCatalogBackdrop) {
         elements.introCatalogBackdrop.classList.remove('is-open');
     }
+    restoreFocus(introCatalogTrigger);
+    introCatalogTrigger = null;
 }
 
 async function handleAiFormatIntroCatalog() {
@@ -490,7 +506,19 @@ function initEvents() {
     renderCards();
 
     elements.openCreateBtns.forEach((button) => {
-        button.addEventListener('click', () => openModal('create'));
+        button.addEventListener('click', () => openModal('create', null, button));
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        // A stacked LQ.layer dialog owns Escape first; closing our backdrop out
+        // from under it would hide its return-focus target.
+        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
+        if (elements.introCatalogBackdrop?.classList.contains('is-open')) {
+            closeIntroCatalogPopup();
+            return;
+        }
+        if (elements.modalBackdrop?.classList.contains('is-open')) closeModal();
     });
 
     elements.modalCloseBtn?.addEventListener('click', closeModal);
@@ -532,7 +560,7 @@ function initEvents() {
         if (!textbook) return;
 
         if (target.dataset.action === 'edit') {
-            openModal('edit', textbook);
+            openModal('edit', textbook, target);
             return;
         }
         if (target.dataset.action === 'delete') {
@@ -587,8 +615,8 @@ function initEvents() {
     elements.form?.addEventListener('submit', handleSubmit);
 
     // Intro/Catalog popup events
-    elements.openIntroCatalogBtn?.addEventListener('click', openIntroCatalogPopup);
-    elements.reformatBtn?.addEventListener('click', openIntroCatalogPopup);
+    elements.openIntroCatalogBtn?.addEventListener('click', () => openIntroCatalogPopup(elements.openIntroCatalogBtn));
+    elements.reformatBtn?.addEventListener('click', () => openIntroCatalogPopup(elements.reformatBtn));
     elements.introCatalogCloseBtn?.addEventListener('click', closeIntroCatalogPopup);
     elements.introCatalogCancelBtn?.addEventListener('click', closeIntroCatalogPopup);
     elements.introCatalogBackdrop?.addEventListener('click', (event) => {

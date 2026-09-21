@@ -1,8 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { loginStudent, loginTeacher, readFixture } from '../fixtures/p03';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+
+// The segmented controls carry two accessibility vocabularies on purpose: the
+// legacy branch stays role=group with aria-pressed, while the migrated branch
+// uses real tab semantics with aria-selected. Assert whichever the element
+// actually renders so one spec covers both branches of the feature flag.
+async function expectSelected(locator: Locator) {
+  const attribute = await locator.evaluate(node => node.getAttribute('role') === 'tab'
+    ? 'aria-selected' : 'aria-pressed');
+  await expect(locator).toHaveAttribute(attribute, 'true');
+}
 
 test.beforeAll(() => {
   const python = process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python';
@@ -15,7 +25,7 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   page.on('pageerror', error => errors.push(error.message));
   await loginTeacher(page, readFixture());
   await expect(page.locator('[data-filter-value="recent"]')).toHaveAttribute('aria-current', 'true');
-  await expect(page.locator('[data-group-mode="schedule3d"]')).toHaveAttribute('aria-pressed', 'true');
+  await expectSelected(page.locator('[data-group-mode="schedule3d"]'));
   await expect(page.locator('.cs-stage')).toBeVisible();
   const currentSemester = await page.locator('[data-dashboard-root]').getAttribute('data-current-semester-key');
   expect(currentSemester).toMatch(/^\d{4}-\d{4}-[123]$/);
@@ -23,7 +33,10 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   await expect(page.locator('.cs-lesson--mini').first()).toBeAttached();
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 980 });
-    const search = await page.locator('.ls-course-search').boundingBox();
+    // Measure the search input, not its form: the migrated branch renders this row
+    // through lq_filter_bar, whose form also wraps the options block, so the form's
+    // box would span both. data-dashboard-search marks the input in either branch.
+    const search = await page.locator('[data-dashboard-search]').boundingBox();
     const options = await page.locator('.ls-course-options').boundingBox();
     expect(Math.abs(search!.x - options!.x)).toBeLessThan(2);
     expect(options!.y).toBeGreaterThanOrEqual(search!.y + search!.height);
@@ -38,7 +51,7 @@ test('teacher defaults, explicit all and saved choices survive reload with align
   await expect(page.locator('[data-filter-value="all"]')).toHaveAttribute('aria-current', 'true');
   // All closes its disclosure on reload; choices remain active inside it.
   await page.locator('.ls-course-options summary').click();
-  await expect(page.locator('[data-group-mode="flat"]')).toHaveAttribute('aria-pressed', 'true');
+  await expectSelected(page.locator('[data-group-mode="flat"]'));
   if (await page.locator('[data-semester-filter]').count()) await expect(page.locator('[data-semester-filter]')).toHaveValue('');
   expect(errors).toEqual([]);
 });
@@ -49,7 +62,7 @@ test('student schedule defaults to 3D and collection filtering preserves its ind
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (request.url().includes('course-schedule/overview')) scheduleRequests.push(request.url()); });
   await loginStudent(page, readFixture());
-  await expect(page.locator('[data-student-schedule-mode="3d"]')).toHaveAttribute('aria-pressed', 'true');
+  await expectSelected(page.locator('[data-student-schedule-mode="3d"]'));
   await expect(page.locator('#dashboard-class-list')).toHaveCount(0);
   await expect(page.locator('.cs-stage')).toBeVisible();
   expect(scheduleRequests.length).toBeGreaterThan(0);
@@ -74,7 +87,7 @@ test('student schedule defaults to 3D and collection filtering preserves its ind
   expect(scheduleRequests.length).toBe(requestsBeforeModes);
   await page.locator('[data-student-schedule-mode="agenda"]').click();
   await page.reload();
-  await expect(page.locator('[data-student-schedule-mode="agenda"]')).toHaveAttribute('aria-pressed', 'true');
+  await expectSelected(page.locator('[data-student-schedule-mode="agenda"]'));
   await expect(page.locator('[data-student-schedule-agenda]')).toBeVisible();
   expect(errors).toEqual([]);
 });

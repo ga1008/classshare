@@ -757,7 +757,11 @@ function bindEvents() {
     elements.aiSectionCountInput?.addEventListener('input', updateAiMeta);
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && elements.aiDialog?.classList.contains('is-open')) {
+        if (event.key !== 'Escape') return;
+        // A stacked LQ.layer dialog owns Escape first; closing this dialog out
+        // from under it would hide its return-focus target.
+        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
+        if (elements.aiDialog?.classList.contains('is-open')) {
             setAiDialogOpen(false);
         }
     });

@@ -35,10 +35,23 @@ def seed_current_semester(runtime: Path) -> None:
         school = conn.execute('SELECT school_code, school_name FROM teachers WHERE id=?', (teacher_id,)).fetchone()
         school_code = (school[0] if school and school[0] else 'p03-school')
         school_name = (school[1] if school and school[1] else 'P03 QA School')
-        # Reuse the fixture's authoritative current term; duplicate identities with
-        # different anchors would exercise a different teacher calendar scenario.
-        row = conn.execute('SELECT id,name FROM academic_semesters WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?)) AND start_date<=? AND end_date>=? ORDER BY end_date DESC, start_date DESC, id DESC LIMIT 1',
-                           (school_code, school_code, today.isoformat(), today.isoformat())).fetchone()
+        # Reuse the fixture's authoritative current term. Prefer the term the
+        # fixture offering already belongs to: later preparers (tools/ui/
+        # prepare_lq_s3.py) clone that row into a deliberately independent term
+        # sharing the same anchors, so a plain "newest row covering today" pick
+        # would silently repoint the offering onto the clone and leave the
+        # dashboard timetable empty.
+        current = ('lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?)) '
+                   'AND start_date<=? AND end_date>=?')
+        args = (school_code, school_code, today.isoformat(), today.isoformat())
+        own = conn.execute('SELECT semester_id FROM class_offerings WHERE id=?', (offering_id,)).fetchone()
+        row = None
+        if own and own[0]:
+            row = conn.execute(f'SELECT id,name FROM academic_semesters WHERE id=? AND {current}',
+                               (own[0], *args)).fetchone()
+        if row is None:
+            row = conn.execute(f'SELECT id,name FROM academic_semesters WHERE {current} '
+                               'ORDER BY end_date DESC, start_date DESC, id DESC LIMIT 1', args).fetchone()
         if row:
             semester = row[0]
             name = row[1]

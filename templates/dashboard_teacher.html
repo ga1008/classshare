@@ -87,9 +87,36 @@
     </div>
 
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}
-    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title">
-        <div class="ls-section-head"><h2 id="ls-courses-title">我的课堂</h2>{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a class="ls-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
+    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title">{% set lq_courses_body %}
+        <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a class="ls-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
+        {% if lq_family_enabled('dashboard') %}
+        {% from "macros/lq/content.html" import lq_filter_bar %}
+        {# LQ filter bar (S4 B4): the frozen `filter_bar` content component owns the
+           <form> itself (method/action/search name+value), so every dashboard.js hook
+           is a verbatim move rather than a rewrite -- data-dashboard-search-form on the
+           form root, data-dashboard-search on the search input, plus
+           data-dashboard-filter-field / data-semester-filter / data-filter-value /
+           data-filter-label / data-group-mode(-tabs) untouched inside the filters slot.
+           filter_bar renders a permanently expanded control group, so the collapsible
+           "筛选与显示" <details> is kept *inside* that slot to preserve the interaction. #}
         <div class="ls-course-toolbar">
+        {% call(lq_slot) lq_filter_bar('dashboard-search', search_placeholder='搜索课程、班级', search_attrs={'data-dashboard-search': ''}, search_label='搜索课堂', search_name='q', search_value=dashboard_initial_search|default('')|string, method='get', action='/dashboard', label='课堂筛选', attrs={'data-dashboard-search-form': ''}) %}
+        {%- if lq_slot == 'filters' -%}
+            <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
+            <details class="ls-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
+                <summary>筛选与显示</summary><div class="ls-course-options-body">
+                    <div class="ls-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a href="{{ filter.href }}" class="ls-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
+                    {% if dashboard_semester_options %}<label class="ls-field">学期<select id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
+                    <div class="ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button type="button" class="ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button type="button" class="ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button type="button" class="ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button type="button" class="ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
+                </div>
+            </details>
+        {%- elif lq_slot == 'actions' -%}
+            <button type="submit" class="ls-button">搜索</button>
+            <button type="button" class="ls-button" data-academic-schedule-sync>同步教务课表</button>
+        {%- endif -%}
+        {% endcall %}
+        </div>
+        {% else %}<div class="ls-course-toolbar">
             <form method="get" action="/dashboard" class="ls-course-search" data-dashboard-search-form>
                 <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
                 <label class="sr-only" for="dashboard-search">搜索课堂</label><input id="dashboard-search" type="search" name="q" class="ls-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button type="submit" class="ls-button">搜索</button>
@@ -102,7 +129,7 @@
                     <div class="ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button type="button" class="ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button type="button" class="ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button type="button" class="ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button type="button" class="ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
                 </div>
             </details>
-        </div>
+        </div>{% endif %}
         <div class="ls-results"><span>显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span><span data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span><button type="button" class="ls-link" data-reset-search{% if dashboard_initial_filter == 'all' and not dashboard_initial_search %} hidden{% endif %}>清除筛选</button></div>
         <div class="ls-course-list{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}" data-offering-list{% if lq_family_enabled('dashboard') %} id="dashboard-offering-panel" role="tabpanel"{% endif %}{% if dashboard_initial_visible_count == 0 %} hidden{% endif %}>
         {% for offering in class_offerings %}{% set offering_summary = workspace.offering_summaries|default({}) %}{% set offering_summary = offering_summary.get(offering.id|string, {}) %}
@@ -147,11 +174,20 @@
                 <p data-explain data-explain-title="教学评价" data-explain-text="每门课程默认只自动同步一次；详情读取本地数据。">同步与详情</p>
             </div>
         </details>
+    {%- endset %}{% if lq_family_enabled('dashboard') %}
+    {#- S4 B4: the section body is captured once and rendered either bare
+        (family off -- byte-identical to baseline) or inside the frozen
+        lq_collapsible component (family on). mode="responsive" keeps the
+        desktop layout (>=768px) permanently expanded; only <=767px folds. -#}
+    {% from "macros/lq/collapsible.html" import lq_collapsible %}
+    <h2 id="ls-courses-title" class="sr-only">我的课堂</h2>
+    {% call lq_collapsible('dashboard-courses', '我的课堂', mode='responsive', keep_open=(not class_offerings), current=(dashboard_initial_filter != 'all' or (dashboard_initial_search|default('')|string) != ''), persist={'identity': user_info.id|string, 'resource': 'dashboard', 'key': 'courses'}) %}{{ lq_courses_body }}{% endcall %}
+    {% else %}{{ lq_courses_body }}{% endif %}
     </section>
 
     {# ── 去哪里：六域卡 ───────────────────────────────────────────── #}
-    <section class="ls-domains" aria-labelledby="ls-domains-title">
-        <div class="ls-section-head"><h2 id="ls-domains-title">去哪里</h2></div>
+    <section class="ls-domains" aria-labelledby="ls-domains-title">{% set lq_domains_body %}
+        <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-domains-title">去哪里</h2>{% endif %}</div>
         <div class="ls-domain-grid{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}">
             {% for domain in dashboard_domain_cards %}
             <article class="ls-domain-card ls-domain-card--{{ domain.domain }}{% if lq_family_enabled('dashboard') %} lq-card--interactive{% endif %}" data-domain="{{ domain.domain }}">
@@ -166,6 +202,15 @@
             </article>
             {% endfor %}
         </div>
+    {%- endset %}{% if lq_family_enabled('dashboard') %}
+    {#- S4 B4: the section body is captured once and rendered either bare
+        (family off -- byte-identical to baseline) or inside the frozen
+        lq_collapsible component (family on). mode="responsive" keeps the
+        desktop layout (>=768px) permanently expanded; only <=767px folds. -#}
+    {% from "macros/lq/collapsible.html" import lq_collapsible %}
+    <h2 id="ls-domains-title" class="sr-only">去哪里</h2>
+    {% call lq_collapsible('dashboard-domains', '去哪里', mode='responsive', open=false, persist={'identity': user_info.id|string, 'resource': 'dashboard', 'key': 'domains'}) %}{{ lq_domains_body }}{% endcall %}
+    {% else %}{{ lq_domains_body }}{% endif %}
     </section>
 
     <div data-ls-calendar-storage hidden>

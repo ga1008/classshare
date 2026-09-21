@@ -388,3 +388,110 @@ root已实看学生资料/教师概览的390原图，以及修复前后390暗色
 ### 主任务终检（2026-09-21）
 
 令牌守卫捕获并修复首页包新建样式中三个凭空发明的令牌名：`--ls-t-caption1`→`--ls-t-caption`、`--ls-ease-standard`→`--ls-ease-out`、`--ls-primary-ink`（带浅色回退，会在深色模式失效）→`--ls-on-primary`。修复后全量回归：隔离后端 **3744 项全过**（205 条件跳过）、前端 **78 文件 668 项**、`npm run typecheck` 干净、`lint_lq.py` **blocking 为空**（3912 条未迁旧代码警告、27 个审阅共享源）。注册表三处过期指纹（两个首页模板、课堂运营台）经逐 diff 复核后刷新。最终静态图 `a815bad04945b17ef891c6d0a770eb6506495165ff39710d71c5291f635854be`，422 文件 11,645,516 字节。
+
+## 跨包遗留项结案（2026-09-21，主任务）
+
+前三轮各包上报、无人有权限独立结案的两项疑点，本轮由主任务查清。两项都不是改造引入的缺陷，但其中一项暴露了一个真实产品缺陷。
+
+### 一、`dashboard-schedule.spec.ts` 的 3 个失败：已修复，现 11/11 全绿
+
+B 包三轮都把这 3 个失败标为"与任何 LQ 开关无关的既有失败"，并推测是学期行被误复用导致课堂挂到不覆盖今天的学期上。直接查合成运行时的 SQLite 后，**推测的方向对、机制不对**：两个学期都覆盖今天。
+
+真实链路：
+
+1. `tools/ui/prepare_lq_s3.py:95` 把夹具课堂所属的学期行**克隆**一份，命名"S3 独立表单学期"，起止日期与原学期完全相同、id 更大。该处注释明确写着这份克隆应与首页学期互不干扰。
+2. `tests/e2e/scripts/prepare_schedule_fixture.py` 的注释写"复用夹具自己的当前学期"，实现却是"挑任意一个覆盖今天、id 最大的学期"，于是把夹具课堂改挂到了克隆学期上。教师端与管理端课表因此取不到课次。
+
+修复两处：
+
+- `tests/e2e/scripts/prepare_schedule_fixture.py`：优先复用课堂自身的 `semester_id`（当它确实覆盖今天），否则才回退到原查询。实现与既有注释的意图对齐。
+- `classroom_app/services/student_course_schedule_service.py`：**真实产品缺陷**。多个学期同时覆盖今天时，学生课表按列表顺序取第一个，恰好会挑中名称无法解析出学年学期的那个，已选课学生因此看到空课表。改为在所有"当前"学期中优先选择确实承载该学生课堂、且名称能解析出学年学期的那个。
+
+回归证据：
+
+| 项 | 结果 |
+|---|---|
+| `dashboard-schedule.spec.ts`（全部开关关闭） | 11 passed（修复前 8 passed / 3 failed） |
+| `tests/test_student_course_schedule.py` | Ran 11 tests, OK |
+| 新增用例在无修复时 | FAILED（确认能抓住该缺陷） |
+| `test_dashboard*.py` / `test_course_schedule_service.py` / `test_semester*.py` / `test_academic*.py` | 64 OK / 45 OK / 24 OK / 247 OK(skipped=4) |
+
+新增回归用例 `test_overlapping_custom_term_does_not_hide_the_real_timetable`：学生同时属于学校学期与一个共享相同起止日期的自定义学期时，课表必须落在承载其课次的那个学期上。
+
+### 二、`lq-btn--soft` / `lq-btn--prominent` 对比度：令牌无问题，测试夹具已加固
+
+F 包上报 teal 调色板 390px 下实测 3.17 与 3.13，低于 AA 的 4.5:1，但复现不稳定。
+
+直接从 `static/css/lq/tokens.css` 计算全部 12 个调色板 × 明暗共 24 种组合的真实对比度：prominent 最低 4.94，soft 最低 5.96，**全部达标**。teal 亮色实际为 `#115f5a` / `#e2eeed`，对比度 6.34。
+
+F 包测到的 `#558c8a` / `#e2ecef` 恰好等于真实颜色按约 70% 不透明度合成的结果。根因在 `static/css/ui-system.src.css:51926`：`.manage-content:not(.is-embedded)` 挂有 `managePageEnter` 动画，opacity 由 0 到 1、时长 380ms，每次加载管理页都会跑。axe 在这段时间内采样读到的就是整棵子树的混合色，这解释了为什么它只出现过一次、重跑即消失。
+
+处置：**不改任何 CSS**。在 `tests/e2e/fixtures/lq-s3.ts` 新增导出的 `settleEntranceAnimations(page)`，在扫描颜色前等待管理页入场动画结束，避免这类间歇性假阳性。
+
+### 三、`process_material_modal.js` 双 Escape 控制器嫌疑：不成立，无需改动
+
+F 包上报该文件第 58–78 行疑似同时挂载协调层与自有 `document` keydown，与文件自身注释矛盾。逐行核对后确认两条路径互斥：
+
+- `static/js/process_material_modal.js:112` 的自有键盘处理器带 `if (!parentLayer)` 守卫，只在没有父层（独立弹层、尚未迁移的页族）时挂载。
+- 同文件 `layer.open(...)` 只在 `parentLayer` 存在时调用。
+
+因此任一时刻只有一个焦点/Escape 控制器在运行，文件第 55–57 行的注释与实现一致。不改动。
+
+## S4 第四轮：B 包与 F 包遗留项收口（2026-09-21）
+
+第三轮各包如实标注的遗留项，本轮由两个施工包并行推进，主任务复核合并。
+
+### B 包（首页与日历）
+
+| 项 | 结果 |
+|---|---|
+| 工具行改用 `lq_filter_bar` | 完成。13 个钩子迁移前后逐一 grep 核对，`dashboard.js` 一行未改 |
+| 移动端折叠 `lq_collapsible` | 完成。`mode='responsive'` 桌面锁定常开，390px 折叠，"我的课堂"用守卫态强制展开 |
+| 评估菜单改 `lq-menu` | **未做，停在冻结契约边界**（见下） |
+
+`lq-menu` 不做的理由经复核成立，且比工作量估算更硬：`classroom_app/lq_menu_tooltip.py` 拒绝根节点 `attrs`，状态机面板的钩子无处挂载；菜单宏只渲染 items、没有插槽，面板里的三态标题与 `aria-live` 状态区既不是菜单项也拿不到该属性。要接入必须先扩展共享组件，属独立的 A 包票，不在本轮范围内。
+
+B 包同时纠正了第三轮报告的一处错误：此前点名的 `manage_page.filter_bar` 兼容宏不转发 `name` 与 `value`，用它会直接破坏 GET 提交与搜索回填，实际应使用冻结组件 `lq_filter_bar`。
+
+### F 包（常规管理页）
+
+| 项 | 结果 |
+|---|---|
+| `lq-field` 迁移 | 学期页 3 个控件、组织架构页 10 个控件 + 5 个按钮。投票页**明确不做** |
+| `classes.html` 三个下拉改筛选芯片 | 完成，真实下拉全部保留，复用既有代理机制 |
+| 材料库域 | 覆盖层审计与修复完成，结构层未做 |
+
+投票页不做的理由成立：该表单由 `manage_polls.js` 在运行时用模板字符串拼装，服务端宏够不着；在客户端手写等价 DOM 等于绕过服务端属性校验，违反冻结契约。需先由共享组件提供客户端字段工厂。
+
+F 包在审计中修复三个真实缺陷：教材页两个自造覆盖层既无 Escape 处理也不返还焦点；班级页清除筛选不派发变更事件，导致新芯片高亮不归位；课程页无条件吞掉 Escape 键。前两项有真实浏览器用例锁住，第三项为同类模式修复、无专属用例（该文件当前无 LQ 弹层调用点），已如实标注。
+
+### 主任务在本轮修掉的两处
+
+**`settleEntranceAnimations` 的真实缺陷。** 我上一节新增的这个辅助函数会等待所有运行中的动画，而管理页存在常驻的无限循环加载动画，谓词永远不成立，五秒必然超时。改为只等待有限次数的动画。验证方式是在 `/manage/teaching/semesters` 页面内主动注入一个 `iterations: Infinity` 的动画，函数仍在 321ms 内返回。F 包随后删除了它的固定等待兜底，改为直接调用，重跑 16 passed / 0 skipped、`flaky: 0`，且此前唯一复现过按钮对比度假阳性的 390px 组合未再复现。
+
+**`dashboard-schedule.spec.ts` 在开启分支下的失败。** B 包三轮都归因为"第二轮语义切换的既有后果"，复核后发现不完全准确：其中一条是本轮 `lq_filter_bar` 迁移带来的 DOM 归属变化。分两处修正：
+
+- 四处分段控件断言改为按元素实际 `role` 选择断言 `aria-selected` 还是 `aria-pressed`，一份用例同时覆盖开关两个分支。
+- 布局断言此前测量搜索表单，而迁移后的表单同时包住了筛选块，测得的盒子跨越两行。改为测量搜索输入本身，两个分支共有的 `data-dashboard-search` 钩子。像素容差保持原值 2，未放宽。
+
+### 本轮回归（主任务合并后全量重跑）
+
+| 入口 | 结果 |
+|---|---|
+| `tools/test_backend.py`（隔离全量） | Ran 3745 tests, OK (skipped=205) |
+| `npx vitest run` | 78 files / 668 tests passed |
+| `npx tsc --noEmit` | 通过 |
+| `tools/ui/lint_lq.py` | blocking 为空 |
+| `dashboard-schedule.spec.ts` 开启分支 | 11 passed |
+| `dashboard-schedule.spec.ts` 关闭分支 | 11 passed |
+| `lq-s4-f.playwright.config.ts` | 16 passed / 0 skipped / flaky 0 |
+| `locked_build.py` | `LQ_GRAPH=98ebd8bc3d3a…5db628`，422 files |
+
+审阅指纹已刷新四份：`templates/dashboard.html`、`templates/dashboard_teacher.html`、`templates/manage/classes.html`、`templates/manage/semesters.html`。
+
+### 本轮新增的已知问题（未修，如实记录）
+
+1. **桌面首屏折叠抖动**：`.ls-domains` 与 `.ls-tools` 在桌面首屏有一次折叠到展开的跳动，是让移动端默认折叠真正生效的代价。主内容"我的课堂"无跳动。属共享折叠组件的渲染时序问题，需 A 包处理。
+2. **搜索框标签由视觉隐藏变为可见**：`classroom_app/lq_forms.py` 显式拒绝无可见标签的控件，这是冻结契约的既定无障碍决策，无法在页面侧退回。需产品确认这一视觉变化是否接受。
+3. **材料库、归档、教务、我的四域**仍只完成页头开关接线，结构层未迁移。
+4. **评估菜单与投票表单**两项组件化都卡在共享组件能力缺口上，需先开 A 包票扩展组件。

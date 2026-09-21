@@ -1631,3 +1631,27 @@ if (root) {
 })();
 
 // ===== UX overhaul 2026-08 · 阶段 9 移动端分区手风琴 =====
+// 阶段 9 的手风琴在 LQ 页族开启时由冻结的 lq_collapsible 组件承担：
+// 模板渲染 <details data-lq-collapsible data-lq-mode="responsive">，这里只负责
+// 增强。responsive 模式下 enhanceCollapsible 自己在 >=768px 锁定常开
+// （summary aria-disabled=true、点击/Enter/Space 被阻止），所以桌面端的折叠
+// 行为与关闭分支一致；只有 <=767px 才真正可折叠，并按 data-lq-persist 记忆。
+// data-lq-keep-open / -has-error / -current / -dirty 四个守卫态（模板里由
+// "没有任何课堂" 与 "当前有筛选/搜索" 驱动）会在任何宽度下强制展开。
+(function initDashboardCollapsibleSections() {
+    const sections = document.querySelectorAll('[data-lq-dashboard] details[data-lq-collapsible]');
+    if (!sections.length) return;
+    import('./lq/collapsible.js').then(({ enhanceCollapsible }) => {
+        sections.forEach((section) => {
+            try {
+                enhanceCollapsible(section);
+                section.setAttribute('data-dashboard-collapsible', 'ready');
+            } catch (error) {
+                // 增强失败时保留原生 <details>：内容始终可达，只是没有记忆与守卫态。
+                console.warn('LQ collapsible enhancement skipped', section.id, error);
+            }
+        });
+    }).catch((error) => {
+        console.warn('LQ collapsible module unavailable', error);
+    });
+})();

@@ -232,3 +232,104 @@ test('20 group-mode cycles keep the same 3D panel instance and do not grow liste
   noResourceGrowth(before, after, 'group-mode 20 cycles');
   await cdp.detach().catch(() => {});
 });
+
+// ── S4 B4: 工具行改用冻结的 `filter_bar` 组件 ────────────────────────────
+// 组件自己拥有 <form>（method/action/search name+value），所以这条用例逐个
+// 断言 dashboard.js 强绑定的 data-* 钩子都还在真实 DOM 里，并且筛选行为与
+// URL 回写（syncUrlState，static/js/dashboard.js:218-234）没有改变。
+test('filter bar component keeps every dashboard.js hook and the same URL sync', async ({ page }) => {
+  const fixture = readS3Fixture();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginTeacher(page, fixture);
+
+  const form = page.locator('[data-dashboard-search-form]');
+  await expect(form).toHaveCount(1);
+  // The frozen component owns the form element itself.
+  await expect(form).toHaveClass(/\blq-filter-bar\b/);
+  expect(await form.evaluate((node) => node.tagName)).toBe('FORM');
+  await expect(form).toHaveAttribute('method', 'get');
+  await expect(form).toHaveAttribute('action', '/dashboard');
+  await expect(form).toHaveAttribute('data-filter-bar', '');
+
+  // Every hook dashboard.js binds by querySelector, checked one by one.
+  const search = form.locator('[data-dashboard-search]');
+  await expect(search).toHaveCount(1);
+  await expect(search).toHaveAttribute('name', 'q');
+  await expect(search).toHaveAttribute('type', 'search');
+  await expect(search).toHaveAttribute('id', 'dashboard-search');
+  const filterField = form.locator('[data-dashboard-filter-field]');
+  await expect(filterField).toHaveCount(1);
+  await expect(filterField).toHaveAttribute('name', 'filter');
+  await expect(form.locator('[data-semester-filter]')).toHaveCount(1);
+  await expect(form.locator('[data-group-mode-tabs]')).toHaveCount(1);
+  await expect(form.locator('[data-group-mode]')).toHaveCount(4);
+  expect(await form.locator('[data-filter-value]').count()).toBeGreaterThan(0);
+  expect(await form.locator('[data-filter-label]').count()).toBeGreaterThan(0);
+  // The collapsible "筛选与显示" disclosure survives inside the filters slot.
+  await expect(form.locator('details.ls-course-options')).toHaveCount(1);
+
+  // Behaviour: typing filters the list and writes the keyword back to the URL.
+  const visible = page.locator('[data-visible-count]');
+  const initial = Number(await visible.textContent());
+  expect(initial).toBeGreaterThan(0);
+  await search.fill('zzz-no-such-course');
+  await expect(visible).toHaveText('0');
+  await expect(page).toHaveURL(/[?&]q=zzz-no-such-course/);
+  await search.fill('');
+  await expect(visible).toHaveText(String(initial));
+  await expect(page).not.toHaveURL(/[?&]q=/);
+  // The hidden filter field still mirrors the active filter for a real GET submit.
+  expect(await filterField.inputValue()).toBeTruthy();
+});
+
+// ── S4 B4: 移动端分区折叠改用冻结的 `lq_collapsible` 组件 ────────────────
+// mode="responsive": >=768px 由 enhanceCollapsible 锁定常开（aria-disabled=true、
+// 点击无效），<=767px 才真正可折叠；data-lq-current 等守卫态在任何宽度下强制展开。
+test('collapsible sections: desktop unchanged, 390px folds, guard state forces open', async ({ page }) => {
+  const fixture = readS3Fixture();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginTeacher(page, fixture);
+
+  const courses = page.locator('#dashboard-courses');
+  const domains = page.locator('#dashboard-domains');
+  await expect(courses).toHaveAttribute('data-dashboard-collapsible', 'ready');
+  await expect(domains).toHaveAttribute('data-dashboard-collapsible', 'ready');
+  // Desktop: both locked open, so the family-off layout is preserved.
+  for (const section of [courses, domains]) {
+    expect(await section.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+    await expect(section.locator(':scope > summary')).toHaveAttribute('aria-disabled', 'true');
+    await expect(section.locator(':scope > summary')).toHaveAttribute('aria-expanded', 'true');
+  }
+  // Clicking a locked summary on desktop must not fold anything.
+  await domains.locator(':scope > summary').click({ force: true });
+  expect(await domains.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+
+  // 390px: the unguarded section becomes a real disclosure and honours its
+  // server-rendered data-lq-default-open="false", i.e. it folds itself away.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(domains.locator(':scope > summary')).toHaveAttribute('aria-disabled', 'false');
+  await expect(domains).toHaveAttribute('data-lq-default-open', 'false');
+  await expect(domains.locator(':scope > summary')).toHaveAttribute('aria-expanded', 'false');
+  expect(await domains.evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
+  await expect(domains.locator(':scope > .lq-collapsible__content')).toBeHidden();
+  // It is a working disclosure, not a hidden section: one click reveals it.
+  await domains.locator(':scope > summary').click();
+  expect(await domains.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+  await expect(domains.locator(':scope > .lq-collapsible__content')).toBeVisible();
+  // Folding it again is what the reload below must remember.
+  await domains.locator(':scope > summary').click();
+  expect(await domains.evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
+
+  // Guard state: 我的课堂 carries data-lq-current="true" (a filter/search is
+  // active) and therefore stays expanded and non-foldable even at 390px.
+  await expect(courses).toHaveAttribute('data-lq-current', 'true');
+  await expect(courses.locator(':scope > summary')).toHaveAttribute('aria-disabled', 'true');
+  await courses.locator(':scope > summary').click({ force: true });
+  expect(await courses.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+
+  // The collapsed preference is remembered per user/resource/key.
+  await page.reload();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await expect(page.locator('#dashboard-domains')).toHaveAttribute('data-dashboard-collapsible', 'ready');
+  expect(await page.locator('#dashboard-domains').evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
+});

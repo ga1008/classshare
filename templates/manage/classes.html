@@ -14,6 +14,7 @@
 {% endblock %}
 
 {% block content %}
+{% set _classes_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
 {% from "macros/manage_insights.html" import insight_ring, insight_bars, insight_meter %}
 {% set avg_class_size = ((class_stats.student_count / class_stats.class_count) | round(1)) if class_stats.class_count else 0 %}
 {% set _email_covered = class_stats.student_count - class_stats.missing_email_count %}
@@ -91,6 +92,41 @@
                 </label>
             </div>
         </div>
+        {% if _classes_lq_enabled %}
+        {% from "macros/lq/chip-row.html" import lq_chip_row %}
+        {% set _dept_chip_ns = namespace(items=[{'label': '全部（' ~ class_stats.class_count ~ '）', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'all'}}]) %}
+        {% for department in department_options %}
+        {% set dept_count = my_classes | selectattr("department_label", "equalto", department) | list | length %}
+        {% set _dept_chip_ns.items = _dept_chip_ns.items + [{'label': department ~ '（' ~ dept_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': department}}] %}
+        {% endfor %}
+        {% set uncategorized_count = my_classes | selectattr("department_label", "equalto", "未分类") | list | length %}
+        {% if uncategorized_count %}
+        {% set _dept_chip_ns.items = _dept_chip_ns.items + [{'label': '未分类（' ~ uncategorized_count ~ '）', 'kind': 'filter', 'attrs': {'data-value': '未分类'}}] %}
+        {% endif %}
+        <div class="class-department-chips" id="classDepartmentChips" data-filter-chips data-filter-target="#classDepartmentFilter">
+            {{ lq_chip_row('classDepartmentChipRow', '按系别快速筛选', _dept_chip_ns.items) }}
+        </div>
+        <div class="class-department-chips" id="classHealthChips" data-filter-chips data-filter-target="#classHealthFilter">
+            {{ lq_chip_row('classHealthChipRow', '按名单状态快速筛选', [
+                {'label': '全部状态', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'all'}},
+                {'label': '有学生缺邮箱', 'kind': 'filter', 'attrs': {'data-value': 'missing-email'}},
+                {'label': '邮箱完整', 'kind': 'filter', 'attrs': {'data-value': 'complete-email'}},
+                {'label': '含休学学生', 'kind': 'filter', 'attrs': {'data-value': 'has-suspended'}},
+                {'label': '自定义班级', 'kind': 'filter', 'attrs': {'data-value': 'custom-class'}},
+                {'label': '已教务同步', 'kind': 'filter', 'attrs': {'data-value': 'academic-synced'}},
+                {'label': '已绑定课堂', 'kind': 'filter', 'attrs': {'data-value': 'bound'}},
+                {'label': '未绑定课堂', 'kind': 'filter', 'attrs': {'data-value': 'unbound'}}
+            ]) }}
+        </div>
+        <div class="class-department-chips" id="classSortChips" data-filter-chips data-filter-target="#classSortSelect">
+            {{ lq_chip_row('classSortChipRow', '排序方式', [
+                {'label': '按系别与名称', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'department'}},
+                {'label': '学生数从多到少', 'kind': 'filter', 'attrs': {'data-value': 'students-desc'}},
+                {'label': '缺邮箱优先', 'kind': 'filter', 'attrs': {'data-value': 'missing-desc'}},
+                {'label': '最近导入优先', 'kind': 'filter', 'attrs': {'data-value': 'recent-desc'}}
+            ]) }}
+        </div>
+        {% else %}
         <div class="class-department-chips" id="classDepartmentChips" aria-label="按系别快速筛选">
             <button type="button" class="class-chip is-active" data-department-chip="all">全部 <b>{{ class_stats.class_count }}</b></button>
             {% for department in department_options %}
@@ -102,6 +138,7 @@
             <button type="button" class="class-chip" data-department-chip="未分类">未分类 <b>{{ uncategorized_count }}</b></button>
             {% endif %}
         </div>
+        {% endif %}
     </section>
 
     <section class="class-workbench">

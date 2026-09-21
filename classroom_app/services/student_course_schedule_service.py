@@ -132,7 +132,20 @@ def build_student_course_schedule_overview(
     if (year or term) and selected is None:
         # An inaccessible/stale term must not silently substitute a different one.
         return _empty(terms, authorized_courses)
-    selected = selected or next((entry for entry in terms if entry["status"] == "current"), None)
+    if selected is None:
+        # Several terms can cover today at once (a school-wide term plus a custom
+        # one). Taking the first would hand the student whichever row happened to
+        # be listed first, which is how an enrolled student ends up staring at an
+        # empty timetable. Prefer a term that actually holds this student's
+        # offerings, then one whose name carries a real academic identity.
+        offering_keys = {_term_key(matched) for offering in offerings
+                         if (matched := _match_semester_for_offering(semesters, offering))}
+        current = [entry for entry in terms if entry["status"] == "current"]
+        selected = max(current, key=lambda entry: (
+            (entry["year"], entry["term"]) in offering_keys,
+            not entry["year"].startswith("semester-"),
+            entry["week1_monday"],
+        ), default=None)
     if selected is None:
         ended = [entry for entry in terms if entry["status"] == "ended"]
         selected = max(ended, key=lambda entry: entry["week1_monday"]) if ended else terms[0]

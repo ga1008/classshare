@@ -9,6 +9,7 @@
 {% endblock %}
 
 {% block content %}
+{% set _semester_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
 <div class="academic-shell semester-layout{% if embedded_mode %} is-embedded{% endif %}">
     {% if not embedded_mode %}
     {{ page_head('学期', lq_enabled=lq_pilot_enabled|default(false), explain='管理学期时间范围与校历。新增学期后自动对齐教务系统教学日历，并结合 AI 与爬虫核对广西节假日和补课安排；周次自动计算。', actions=[{'label': '新建学期', 'id': 'heroSemesterCreateBtn', 'variant': 'primary'}]) }}
@@ -112,6 +113,21 @@
         <form id="semesterForm" action="/api/manage/semesters/save" method="post">
             <div class="academic-modal-body">
                 <input type="hidden" name="semester_id" id="semesterIdInput">
+                {% if _semester_lq_enabled %}
+                {% from "macros/lq/forms.html" import lq_field %}
+                <div class="academic-form-grid two-col lq-form">
+                    {{ lq_field('semesterNameInput', '学期名称', name='name', placeholder='例如：2025-2026 第一学期', help='根据所选日期自动生成，保存后可随时修改。') }}
+                    <div class="academic-field">
+                        <label>自动周数</label>
+                        <div class="academic-context-block">
+                            <h4 id="semesterWeekCountValue">0 周</h4>
+                            <p id="semesterWeekCountHint">选择开始和结束日期后自动计算。</p>
+                        </div>
+                    </div>
+                    {{ lq_field('semesterStartInput', '开始日期', control_props={'type': 'date'}, name='start_date', required=true, attrs={'data-dp-pair': '#semesterEndInput', 'data-dp-role': 'start'}) }}
+                    {{ lq_field('semesterEndInput', '结束日期', control_props={'type': 'date'}, name='end_date', required=true, attrs={'data-dp-pair': '#semesterStartInput', 'data-dp-role': 'end'}) }}
+                </div>
+                {% else %}
                 <div class="academic-form-grid two-col">
                     <div class="academic-field">
                         <label for="semesterNameInput">学期名称</label>
@@ -134,6 +150,7 @@
                         <input type="date" id="semesterEndInput" name="end_date" class="form-control" required data-dp-pair="#semesterStartInput" data-dp-role="end">
                     </div>
                 </div>
+                {% endif %}
             </div>
             <div class="academic-modal-footer">
                 <button type="button" class="btn btn-ghost" id="semesterModalCancelBtn">取消</button>
