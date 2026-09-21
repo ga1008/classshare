@@ -35,9 +35,9 @@ function table(p, attrs) {
   if (!Array.isArray(p.columns) || !p.columns.length || !Array.isArray(rows)) throw new TypeError('Table columns and rows must be lists');
   const keys = new Set(); let activeSorts = 0, rowHeaders = 0;
   const columns = p.columns.map(item => {
-    if (!object(item) || Object.keys(item).some(key => !['key', 'label', 'align', 'sortable', 'sort', 'rowHeader'].includes(key))) throw new TypeError('Invalid table column');
+    if (!object(item) || Object.keys(item).some(key => !['key', 'label', 'align', 'sortable', 'sort', 'rowHeader', 'slot'].includes(key))) throw new TypeError('Invalid table column');
     const k = key(item.key); if (keys.has(k)) throw new TypeError('Duplicate table column key'); keys.add(k);
-    const col = { key: k, label: text(item.label, true), align: choice(item.align === undefined ? 'start' : item.align, ['start', 'end']), sortable: flag(item, 'sortable'), sort: choice(item.sort === undefined ? 'none' : item.sort, ['none', 'ascending', 'descending']), rowHeader: flag(item, 'rowHeader') };
+    const col = { key: k, label: text(item.label, true), align: choice(item.align === undefined ? 'start' : item.align, ['start', 'end']), sortable: flag(item, 'sortable'), sort: choice(item.sort === undefined ? 'none' : item.sort, ['none', 'ascending', 'descending']), rowHeader: flag(item, 'rowHeader'), slot: flag(item, 'slot') };
     if (col.sort !== 'none') { if (!col.sortable) throw new TypeError('Only sortable columns have sort state'); activeSorts++; }
     if (col.rowHeader) rowHeaders++; return col;
   });
@@ -62,6 +62,10 @@ function table(p, attrs) {
     const th = { scope: 'col', role: 'columnheader', id: `${id}--lq-col-${col.key}`, 'data-align': col.align };
     let label = [col.label];
     if (col.sortable) { th['aria-sort'] = col.sort; label = [node('button', { type: 'button', class: 'lq-table__sort', 'data-lq-sort': col.key, 'aria-label': `按${col.label}排序` }, [col.label, node('span', { 'aria-hidden': 'true', class: 'lq-table__sort-mark' }, ['↕'])])]; }
+    // Opt-in per column: a header that has to carry its own controls gets the same
+    // slot treatment as a cell. Columns that do not ask for it keep the exact
+    // markup they had, so no existing table changes shape.
+    if (col.slot) { const slotName = `col:${col.key}`; label = [node('div', { class: 'lq-table__colhead', 'data-lq-slot': slotName }, [...label, { slot: slotName }])]; }
     head.push(node('th', th, label));
   }
   const selectionName = text(p.selectionName === undefined ? 'selected' : p.selectionName, true);

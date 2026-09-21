@@ -79,6 +79,15 @@ function control(kind, p) {
     if (![min, max, step, current].every(v => typeof v === 'number' && Number.isFinite(v)) || min >= max || step <= 0 || current < min || current > max) throw new TypeError('Invalid range bounds');
     value = text(current); Object.assign(a, { type: 'range', min: text(min), max: text(max), step: text(step), value, 'data-lq-range-output': `${identity}--lq-value` });
   }
+  // A datalist lives outside the control, so the component owns the `list`
+  // attribute rather than letting callers smuggle it through `attrs`. Checked
+  // for every kind: silently dropping it on a select would hide the mistake.
+  if (p.datalist != null) {
+    if (kind !== 'input') throw new TypeError('Only an input can reference a datalist');
+    const token = text(p.datalist).trim();
+    if (!/^[A-Za-z][\w:.-]*$/.test(token)) throw new TypeError('Invalid LQ datalist id');
+    a.list = token;
+  }
   if (['input', 'textarea'].includes(kind)) {
     for (const key of ['placeholder', 'autocomplete', 'pattern', 'min', 'max', 'step']) if (p[key] != null) a[key] = text(p[key]);
     if (p.inputMode != null) {

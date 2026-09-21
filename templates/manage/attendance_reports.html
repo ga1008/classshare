@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
 {% endblock %}
 {% block content %}
-<section class="att" data-attendance-root data-report-id="{{ report_id|default('', true) }}" data-class-offering-id="{{ class_offering_id|default('', true) }}" data-archive-enabled="{{ 'true' if attendance_archive_enabled|default(true) else 'false' }}" data-parse-enabled="{{ 'true' if attendance_parse_enabled|default(true) else 'false' }}">
+<section class="att" data-attendance-root data-report-id="{{ report_id|default('', true) }}" data-class-offering-id="{{ class_offering_id|default('', true) }}" data-archive-enabled="{{ 'true' if attendance_archive_enabled|default(true) else 'false' }}" data-parse-enabled="{{ 'true' if attendance_parse_enabled|default(true) else 'false' }}"{% if _attendance_reports_lq_enabled %} data-lq-tables="true"{% endif %}>
     {{ page_head('签到统计表', description='保留智慧课堂原始 PDF，核对每名学生的逐次签到。', eyebrow='教务归档', lq_enabled=_attendance_reports_lq_enabled) }}
     <div class="att-notice" data-att-notice role="status" aria-live="polite" hidden></div>
     <div data-att-list-view>
@@ -50,7 +50,7 @@
         {% else %}
         <div class="att-list-head"><p data-att-count role="status">正在读取档案…</p><label class="att-sort">排序<select name="sort" data-att-sort aria-label="排序"><option value="updated_desc">最近更新</option><option value="updated_asc">最早更新</option><option value="course_asc">课程名称</option></select></label></div>
         {% endif %}
-        <div data-att-chips class="att-chips" aria-label="已选筛选条件"></div>
+        <div data-att-chips class="att-chips" role="group" aria-label="已选筛选条件"></div>
         <div data-att-reports></div>
         <nav class="att-pagination" data-att-list-pagination aria-label="档案分页"></nav>
     </div>

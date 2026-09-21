@@ -12,9 +12,16 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
+// The page carries a `_attendance_reports_lq_enabled` switch. Resolve it the way
+// Jinja does before the generic strip below, otherwise both branches survive and
+// the LQ filter form - whose lq_field() calls are {{ }} expressions that strip to
+// nothing - wins every [data-att-filters] lookup. This fixture renders the legacy
+// branch; the LQ branch needs real macro output and is covered by the S6 e2e.
+const SWITCH = /{% if _attendance_reports_lq_enabled %}([\s\S]*?)(?:{% else %}([\s\S]*?))?{% endif %}/g;
 function fixture(id = '', classroom = false) {
     const template = fs.readFileSync(path.join(workspace, 'templates/manage/attendance_reports.html'), 'utf8');
     let body = template.match(/{% block content %}([\s\S]*?){% endblock %}/)[1]
+        .replace(SWITCH, (_, on, off) => off || '')
         .replace(/{{ report_id\|default\('', true\) }}/g, id).replace(/{{ class_offering_id\|default\('', true\) }}/g, '')
         .replace(/{{[\s\S]*?}}/g, '').replace(/{%[\s\S]*?%}/g, '');
     if (classroom) body = '<div data-attendance-classroom-panel data-class-offering-id="9"></div>';

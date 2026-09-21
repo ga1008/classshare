@@ -1,6 +1,16 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { LQ } from './lq/index.js';
+import {
+    input as lqInput,
+    textarea as lqTextarea,
+    nativeSelect as lqSelect,
+    checkbox as lqCheckbox,
+    formSection as lqFormSection,
+    formActions as lqFormActions,
+    enhanceForms,
+} from './lq/forms.js';
+import { button as lqButton } from './lq/components.js';
 
 const STATUS_META = {
     draft: { label: '草稿', tone: 'is-draft' },
@@ -90,7 +100,10 @@ function renderList(data) {
 // overlay
 // --------------------------------------------------------------------------- #
 let overlayTrigger = null;
+let overlayFormsLease = null;
 function closeOverlay() {
+    overlayFormsLease?.dispose();
+    overlayFormsLease = null;
     document.querySelectorAll('[data-poll-overlay]').forEach((node) => node.remove());
     document.removeEventListener('keydown', onOverlayKeydown);
     if (overlayTrigger?.isConnected) overlayTrigger.focus();
@@ -104,14 +117,20 @@ function onOverlayKeydown(event) {
     if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
     closeOverlay();
 }
-function openOverlay(html, trigger = null) {
+// `content` is either the legacy HTML string or, on the LQ branch, a DOM node
+// built by the lq/forms.js factories. The string path must stay byte-identical
+// to the pre-LQ markup.
+function openOverlay(content, trigger = null) {
     closeOverlay();
     overlayTrigger = trigger || null;
+    const isNode = typeof content !== 'string';
     const overlay = document.createElement('div');
     overlay.className = 'poll-overlay';
     overlay.setAttribute('data-poll-overlay', '');
-    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div class="poll-overlay__shell" role="dialog" aria-modal="true">${html}</div>`;
+    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div class="poll-overlay__shell" role="dialog" aria-modal="true">${isNode ? '' : content}</div>`;
+    if (isNode) overlay.querySelector('.poll-overlay__shell').append(content);
     document.body.appendChild(overlay);
+    if (isNode) overlayFormsLease = enhanceForms(overlay);
     document.addEventListener('keydown', onOverlayKeydown);
     return overlay;
 }
@@ -262,6 +281,151 @@ function renderForm(poll, offerings) {
 }
 
 // --------------------------------------------------------------------------- #
+// form (LQ branch: built with the lq/forms.js + lq/components.js factories)
+// --------------------------------------------------------------------------- #
+// The template only adds `data-poll-lq-forms` when the manage-pages family (or
+// the per-route pilot) is on. Without it every renderer below is skipped and the
+// legacy template-literal markup is produced unchanged.
+function lqFormsEnabled(doc = document) {
+    return Boolean(doc.querySelector('[data-poll-manage-root][data-poll-lq-forms]'));
+}
+
+// Ids must be unique per live control and rows are added/removed freely, so a
+// monotonic counter is the only safe source.
+let optionRowUid = 0;
+
+function closeButtonNode() {
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'poll-overlay__close';
+    close.setAttribute('data-poll-overlay-close', '');
+    close.setAttribute('aria-label', '关闭');
+    close.textContent = '×';
+    return close;
+}
+
+function optionRowNode(value, index) {
+    optionRowUid += 1;
+    const row = document.createElement('div');
+    row.className = 'poll-option-row';
+    row.append(lqInput({
+        id: `pollOptionInput${optionRowUid}`,
+        label: `选项 ${index + 1}`,
+        name: 'poll_option_label',
+        value: value || '',
+        maxLength: 160,
+        placeholder: `选项 ${index + 1}`,
+    }));
+    row.append(lqButton({
+        label: '',
+        icon: 'x',
+        variant: 'ghost',
+        size: 'sm',
+        attrs: { 'aria-label': '删除选项', 'data-poll-remove-option': '' },
+    }));
+    return row;
+}
+
+function classPickerNode(offerings, selectedIds) {
+    if (!offerings || !offerings.length) {
+        const note = document.createElement('p');
+        note.className = 'poll-detail-note';
+        note.textContent = '你还没有可分配的课堂。';
+        return note;
+    }
+    const selected = new Set((selectedIds || []).map((id) => String(id)));
+    const list = document.createElement('div');
+    list.className = 'poll-participant-list';
+    for (const off of offerings) {
+        list.append(lqCheckbox({
+            id: `pollClassPick${String(off.id).replace(/[^A-Za-z0-9_-]/g, '')}`,
+            label: `${off.course_name} · ${off.class_name}`,
+            name: 'poll_class',
+            value: String(off.id),
+            checked: selected.has(String(off.id)),
+        }));
+    }
+    return list;
+}
+
+// The select factory rejects a value matching no option. Server data is trusted
+// but not guaranteed, so fall back to the same default the legacy branch shows
+// instead of letting a stray value throw the whole form away.
+function pickOption(value, options, fallback) {
+    return options.some((option) => option.value === value) ? value : fallback;
+}
+
+function renderFormNode(poll, offerings) {
+    const isEdit = Boolean(poll);
+    const options = isEdit ? (poll.options || []).map((o) => o.label) : DEFAULT_OPTIONS;
+    const voteTypeOptions = [{ value: 'single', label: '单选' }, { value: 'multiple', label: '多选' }];
+    const voteType = pickOption(isEdit ? poll.vote_type : 'single', voteTypeOptions, 'single');
+    const visibility = pickOption(isEdit ? poll.result_visibility : 'after_vote', VISIBILITY_OPTIONS, 'after_vote');
+    const allowChange = isEdit ? Boolean(poll.allow_change) : false;
+    const maxChanges = Number(isEdit ? poll.max_changes : 0) || 0;
+    const deadline = isEdit && poll.deadline_at ? poll.deadline_at.slice(0, 16) : '';
+    const selectedClasses = isEdit ? (poll.assigned_classes || []).map((c) => c.id) : [];
+
+    const wrap = document.createElement('div');
+    wrap.className = 'poll-form-wrap';
+    const head = document.createElement('div');
+    head.className = 'poll-detail__head';
+    const heading = document.createElement('h3');
+    heading.textContent = isEdit ? '编辑投票' : '新建投票';
+    head.append(heading, closeButtonNode());
+    wrap.append(head);
+
+    const form = document.createElement('form');
+    form.className = 'poll-form-lq';
+    form.setAttribute('data-poll-form', '');
+    form.setAttribute('data-poll-id', isEdit ? String(poll.id) : '');
+
+    const basics = lqFormSection({ id: 'pollFormBasics', title: '基本信息' }, [
+        lqInput({
+            id: 'pollFormTitle', label: '标题', name: 'title', required: true,
+            value: isEdit ? poll.title : '', maxLength: 120, placeholder: '例如：xx课程期末考核形式',
+        }),
+        lqTextarea({
+            id: 'pollFormDescription', label: '说明（可选）', name: 'description', rows: 2,
+            value: isEdit ? (poll.description || '') : '', maxLength: 1000, placeholder: '补充投票背景或说明',
+        }),
+        lqSelect({ id: 'pollFormVoteType', label: '投票形式', name: 'vote_type', value: voteType, options: voteTypeOptions }),
+        lqSelect({ id: 'pollFormVisibility', label: '统计可见时机', name: 'result_visibility', value: visibility, options: VISIBILITY_OPTIONS }),
+        lqInput({ id: 'pollFormDeadline', label: '截止时间（可选）', name: 'deadline_at', type: 'datetime-local', value: deadline }),
+        lqCheckbox({ id: 'pollFormAllowChange', label: '截止前允许修改', name: 'allow_change', checked: allowChange }),
+        lqInput({
+            id: 'pollFormMaxChanges', label: '可修改次数', name: 'max_changes', type: 'number',
+            value: String(maxChanges), min: 0, max: 20, placeholder: '0 = 不限次数', help: '0 = 不限次数',
+            disabled: !allowChange, attrs: { 'data-poll-max-changes': '' },
+        }),
+    ]);
+
+    const optionList = document.createElement('div');
+    optionList.className = 'poll-option-editor';
+    optionList.setAttribute('data-poll-option-list', '');
+    optionList.setAttribute('data-poll-lq', '1');
+    options.forEach((value, index) => optionList.append(optionRowNode(value, index)));
+    const optionsSection = lqFormSection({ id: 'pollFormOptionsSection', title: '选项' }, [
+        optionList,
+        lqButton({ label: '增加选项', icon: 'plus', variant: 'ghost', size: 'sm', attrs: { 'data-poll-add-option': '' } }),
+    ]);
+
+    const classesSection = lqFormSection(
+        { id: 'pollFormClassesSection', title: '分配班级', description: '可多选，跨班级共享数据' },
+        [classPickerNode(offerings, selectedClasses)],
+    );
+
+    const actions = lqFormActions({}, [
+        lqButton({ label: '保存为草稿', type: 'submit', variant: 'soft', size: 'sm', attrs: { 'data-poll-save-status': 'draft' } }),
+        lqButton({ label: isEdit ? '保存并开始' : '创建并开始', type: 'submit', variant: 'prominent', size: 'sm', attrs: { 'data-poll-save-status': 'active' } }),
+    ]);
+
+    form.append(basics, optionsSection, classesSection, actions);
+    wrap.append(form);
+    return wrap;
+}
+
+// --------------------------------------------------------------------------- #
 // controller
 // --------------------------------------------------------------------------- #
 export function initManagePolls() {
@@ -315,7 +479,7 @@ export function initManagePolls() {
 
     const openForm = async (poll, trigger = null) => {
         const offerings = await loadOfferings();
-        openOverlay(renderForm(poll, offerings), trigger);
+        openOverlay(lqFormsEnabled() ? renderFormNode(poll, offerings) : renderForm(poll, offerings), trigger);
     };
 
     const openDetail = async (pollId, trigger = null) => {
@@ -365,7 +529,8 @@ export function initManagePolls() {
             const list = document.querySelector('[data-poll-option-list]');
             const count = list ? list.querySelectorAll('.poll-option-row').length : 0;
             if (count >= MAX_OPTIONS) { showToast(`最多 ${MAX_OPTIONS} 个选项`, 'warning'); return; }
-            list?.insertAdjacentHTML('beforeend', optionRow('', count));
+            if (list?.dataset.pollLq === '1') list.append(optionRowNode('', count));
+            else list?.insertAdjacentHTML('beforeend', optionRow('', count));
             return;
         }
         const removeOption = event.target.closest('[data-poll-remove-option]');
@@ -423,7 +588,11 @@ export function initManagePolls() {
 
     document.addEventListener('change', (event) => {
         if (event.target.matches('input[name="allow_change"]')) {
-            const maxInput = event.target.closest('.poll-form-field')?.querySelector('[data-poll-max-changes]');
+            // The legacy branch wraps both controls in one .poll-form-field; the LQ
+            // branch gives each its own .lq-field. The form holds exactly one
+            // [data-poll-max-changes] either way, so scope the lookup to it.
+            const scope = event.target.closest('[data-poll-form]') || event.target.closest('.poll-form-field');
+            const maxInput = scope?.querySelector('[data-poll-max-changes]');
             if (maxInput) maxInput.disabled = !event.target.checked;
         }
     });

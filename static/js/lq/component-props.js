@@ -72,18 +72,26 @@ function chip(p) {
   const disabled = flag(option(p, 'disabled', false), 'disabled');
   const removable = flag(option(p, 'removable', false), 'removable');
   if (removable && kind !== 'tag') throw new TypeError('Only a tag chip can be removable');
-  for (const key of ['aria-pressed', 'aria-live', 'aria-disabled', 'aria-labelledby', 'data-lq-disabled']) delete attrs[key];
+  for (const key of ['aria-pressed', 'aria-current', 'aria-live', 'aria-disabled', 'aria-labelledby',
+    'data-lq-disabled', 'href', 'rel', 'target']) delete attrs[key];
+  // A filter can be a real link when the page drives filtering through the URL.
+  // A link is not a toggle, so it carries aria-current instead of aria-pressed,
+  // and a disabled one has to stop being a link.
+  const href = safeUrl(p.href);
+  if (href !== null && kind !== 'filter') throw new TypeError('Only a filter chip can be a link');
   attrs['data-tone'] = tone;
   if (p.id != null) attrs.id = text(p.id);
   let classes = `lq-chip lq-chip--${kind} lq-chip--${size}`;
   if (kind === 'filter') {
-    Object.assign(attrs, { type: 'button', 'aria-pressed': text(pressed) }); nameAttributes(attrs, name);
+    nameAttributes(attrs, name);
+    if (href !== null && !disabled) Object.assign(attrs, { href, 'aria-current': text(pressed) });
+    else Object.assign(attrs, { type: 'button', 'aria-pressed': text(pressed) });
     if (pressed) classes += ' is-selected';
     if (disabled) Object.assign(attrs, { disabled: '', 'aria-disabled': 'true', 'data-lq-disabled': 'true' });
   } else delete attrs['aria-label'];
   if (disabled) classes += ' is-disabled';
-  return { tag: kind === 'filter' ? 'button' : 'span', classes, attrs, kind, label, removable,
-    remove_label: text(p.removeLabel).trim() || `移除${name}`, disabled };
+  return { tag: kind === 'filter' ? ('href' in attrs ? 'a' : 'button') : 'span', classes, attrs, kind, label,
+    removable, remove_label: text(p.removeLabel).trim() || `移除${name}`, disabled };
 }
 function badge(p) {
   const attrs = normalizeAttributes(p.attrs); const dot = flag(option(p, 'dot', false), 'dot');

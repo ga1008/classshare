@@ -1,77 +1,662 @@
 {
-  "buttonVariants": ["prominent", "glass", "soft", "ghost", "destructive", "link"],
-  "buttonSizes": ["sm", "md", "lg"],
+  "buttonVariants": [
+    "prominent",
+    "glass",
+    "soft",
+    "ghost",
+    "destructive",
+    "link"
+  ],
+  "buttonSizes": [
+    "sm",
+    "md",
+    "lg"
+  ],
   "cases": [
-    {"id":"button-aria-disabled","kind":"button","props":{"label":"原因可查看","ariaDisabled":true,"type":"submit"}},
-    {"id":"button-native-disabled","kind":"button","props":{"label":"不可提交","disabled":true,"type":"submit"}},
-    {"id":"button-submit","kind":"button","props":{"label":"提交","type":"submit"}},
-    {"id":"button-link","kind":"button","props":{"label":"材料","href":"/materials?a=1&b=2","attrs":{"target":"_blank","rel":"opener nofollow"}}},
-    {"id":"button-disabled-link","kind":"button","props":{"label":"无权限链接","href":"/blocked","ariaDisabled":true}},
-    {"id":"button-icon-only","kind":"button","props":{"icon":"x","size":"sm","attrs":{"aria-label":"关闭"}}},
-    {"id":"button-loading-icon","kind":"button","props":{"icon":"save","loading":true,"attrs":{"aria-label":"保存"}}},
-    {"id":"button-unknown-icon","kind":"button","props":{"label":"帮助","icon":"safe-unknown-name"}},
-    {"id":"button-escaped","kind":"button","props":{"label":"<img src=x onerror=alert(1)> & 中文","badge":"<b>2</b>","attrs":{"title":"\" onmouseover=alert(1) x=\"","data-note":"<script>unsafe</script>"}}},
-    {"id":"button-core-priority","kind":"button","props":{"label":"真实名称","attrs":{"aria-label":"错误","aria-hidden":true,"aria-live":"assertive","aria-labelledby":"absent","aria-disabled":true,"aria-busy":true,"data-lq-disabled":true,"data-value":2.5,"data-ready":false}}},
-    {"id":"button-badge-zero","kind":"button","props":{"label":"消息","badge":0}},
-    {"id":"filter-off","kind":"chip","props":{"label":"未选筛选","kind":"filter","size":"sm"}},
-    {"id":"filter-on","kind":"chip","props":{"label":"已选筛选","kind":"filter","pressed":true,"attrs":{"aria-pressed":false}}},
-    {"id":"filter-disabled","kind":"chip","props":{"label":"禁用筛选","kind":"filter","disabled":true}},
-    {"id":"status-core","kind":"chip","props":{"label":"已保存","tone":"success","attrs":{"aria-live":"assertive","aria-hidden":true,"aria-labelledby":"absent"}}},
-    {"id":"tag-remove","kind":"chip","props":{"label":"课程","kind":"tag","removable":true,"removeLabel":"移除课程标签"}},
-    {"id":"tag-disabled","kind":"chip","props":{"label":"固定课程","kind":"tag","removable":true,"disabled":true}},
-    {"id":"tag-core","kind":"chip","props":{"label":"静态标签","kind":"tag","attrs":{"aria-label":"错误","aria-labelledby":"absent"}}},
-    {"id":"badge-count","kind":"badge","props":{"value":8,"tone":"info"}},
-    {"id":"badge-zero","kind":"badge","props":{"value":0}},
-    {"id":"badge-dot","kind":"badge","props":{"dot":true,"label":"有未读消息"}},
-    {"id":"badge-dot-zero","kind":"badge","props":{"dot":true,"value":0,"label":"未读"}},
-    {"id":"avatar-unicode","kind":"avatar","props":{"name":"👩‍💻 张老师","size":56}},
-    {"id":"avatar-casefold","kind":"avatar","props":{"name":"ßeta","size":24}},
-    {"id":"avatar-image","kind":"avatar","props":{"name":"教师头像","src":"/assets/avatar.png","size":32}},
-    {"id":"spinner","kind":"spinner","props":{"attrs":{"aria-label":"错误","aria-labelledby":"absent","aria-hidden":false,"aria-live":"polite"}}},
-    {"id":"progress-value","kind":"progress","props":{"label":"上传进度","value":2.5,"max":10,"attrs":{"aria-valuenow":99,"aria-valuetext":"错误","aria-label":"错误"}}},
-    {"id":"progress-pending","kind":"progress","props":{"label":"正在加载"}},
-    {"id":"skeleton-text","kind":"skeleton","props":{"shape":"text","lines":3,"attrs":{"aria-label":"剔除","aria-busy":true,"aria-describedby":"absent"}}},
-    {"id":"skeleton-avatar","kind":"skeleton","props":{"shape":"avatar"}},
-    {"id":"skeleton-block","kind":"skeleton","props":{"shape":"block"}}
+    {
+      "id": "button-aria-disabled",
+      "kind": "button",
+      "props": {
+        "label": "原因可查看",
+        "ariaDisabled": true,
+        "type": "submit"
+      }
+    },
+    {
+      "id": "button-native-disabled",
+      "kind": "button",
+      "props": {
+        "label": "不可提交",
+        "disabled": true,
+        "type": "submit"
+      }
+    },
+    {
+      "id": "button-submit",
+      "kind": "button",
+      "props": {
+        "label": "提交",
+        "type": "submit"
+      }
+    },
+    {
+      "id": "button-link",
+      "kind": "button",
+      "props": {
+        "label": "材料",
+        "href": "/materials?a=1&b=2",
+        "attrs": {
+          "target": "_blank",
+          "rel": "opener nofollow"
+        }
+      }
+    },
+    {
+      "id": "button-disabled-link",
+      "kind": "button",
+      "props": {
+        "label": "无权限链接",
+        "href": "/blocked",
+        "ariaDisabled": true
+      }
+    },
+    {
+      "id": "button-icon-only",
+      "kind": "button",
+      "props": {
+        "icon": "x",
+        "size": "sm",
+        "attrs": {
+          "aria-label": "关闭"
+        }
+      }
+    },
+    {
+      "id": "button-loading-icon",
+      "kind": "button",
+      "props": {
+        "icon": "save",
+        "loading": true,
+        "attrs": {
+          "aria-label": "保存"
+        }
+      }
+    },
+    {
+      "id": "button-unknown-icon",
+      "kind": "button",
+      "props": {
+        "label": "帮助",
+        "icon": "safe-unknown-name"
+      }
+    },
+    {
+      "id": "button-escaped",
+      "kind": "button",
+      "props": {
+        "label": "<img src=x onerror=alert(1)> & 中文",
+        "badge": "<b>2</b>",
+        "attrs": {
+          "title": "\" onmouseover=alert(1) x=\"",
+          "data-note": "<script>unsafe</script>"
+        }
+      }
+    },
+    {
+      "id": "button-core-priority",
+      "kind": "button",
+      "props": {
+        "label": "真实名称",
+        "attrs": {
+          "aria-label": "错误",
+          "aria-hidden": true,
+          "aria-live": "assertive",
+          "aria-labelledby": "absent",
+          "aria-disabled": true,
+          "aria-busy": true,
+          "data-lq-disabled": true,
+          "data-value": 2.5,
+          "data-ready": false
+        }
+      }
+    },
+    {
+      "id": "button-badge-zero",
+      "kind": "button",
+      "props": {
+        "label": "消息",
+        "badge": 0
+      }
+    },
+    {
+      "id": "filter-off",
+      "kind": "chip",
+      "props": {
+        "label": "未选筛选",
+        "kind": "filter",
+        "size": "sm"
+      }
+    },
+    {
+      "id": "filter-on",
+      "kind": "chip",
+      "props": {
+        "label": "已选筛选",
+        "kind": "filter",
+        "pressed": true,
+        "attrs": {
+          "aria-pressed": false
+        }
+      }
+    },
+    {
+      "id": "filter-disabled",
+      "kind": "chip",
+      "props": {
+        "label": "禁用筛选",
+        "kind": "filter",
+        "disabled": true
+      }
+    },
+    {
+      "id": "status-core",
+      "kind": "chip",
+      "props": {
+        "label": "已保存",
+        "tone": "success",
+        "attrs": {
+          "aria-live": "assertive",
+          "aria-hidden": true,
+          "aria-labelledby": "absent"
+        }
+      }
+    },
+    {
+      "id": "tag-remove",
+      "kind": "chip",
+      "props": {
+        "label": "课程",
+        "kind": "tag",
+        "removable": true,
+        "removeLabel": "移除课程标签"
+      }
+    },
+    {
+      "id": "tag-disabled",
+      "kind": "chip",
+      "props": {
+        "label": "固定课程",
+        "kind": "tag",
+        "removable": true,
+        "disabled": true
+      }
+    },
+    {
+      "id": "tag-core",
+      "kind": "chip",
+      "props": {
+        "label": "静态标签",
+        "kind": "tag",
+        "attrs": {
+          "aria-label": "错误",
+          "aria-labelledby": "absent"
+        }
+      }
+    },
+    {
+      "id": "badge-count",
+      "kind": "badge",
+      "props": {
+        "value": 8,
+        "tone": "info"
+      }
+    },
+    {
+      "id": "badge-zero",
+      "kind": "badge",
+      "props": {
+        "value": 0
+      }
+    },
+    {
+      "id": "badge-dot",
+      "kind": "badge",
+      "props": {
+        "dot": true,
+        "label": "有未读消息"
+      }
+    },
+    {
+      "id": "badge-dot-zero",
+      "kind": "badge",
+      "props": {
+        "dot": true,
+        "value": 0,
+        "label": "未读"
+      }
+    },
+    {
+      "id": "avatar-unicode",
+      "kind": "avatar",
+      "props": {
+        "name": "👩‍💻 张老师",
+        "size": 56
+      }
+    },
+    {
+      "id": "avatar-casefold",
+      "kind": "avatar",
+      "props": {
+        "name": "ßeta",
+        "size": 24
+      }
+    },
+    {
+      "id": "avatar-image",
+      "kind": "avatar",
+      "props": {
+        "name": "教师头像",
+        "src": "/assets/avatar.png",
+        "size": 32
+      }
+    },
+    {
+      "id": "spinner",
+      "kind": "spinner",
+      "props": {
+        "attrs": {
+          "aria-label": "错误",
+          "aria-labelledby": "absent",
+          "aria-hidden": false,
+          "aria-live": "polite"
+        }
+      }
+    },
+    {
+      "id": "progress-value",
+      "kind": "progress",
+      "props": {
+        "label": "上传进度",
+        "value": 2.5,
+        "max": 10,
+        "attrs": {
+          "aria-valuenow": 99,
+          "aria-valuetext": "错误",
+          "aria-label": "错误"
+        }
+      }
+    },
+    {
+      "id": "progress-pending",
+      "kind": "progress",
+      "props": {
+        "label": "正在加载"
+      }
+    },
+    {
+      "id": "skeleton-text",
+      "kind": "skeleton",
+      "props": {
+        "shape": "text",
+        "lines": 3,
+        "attrs": {
+          "aria-label": "剔除",
+          "aria-busy": true,
+          "aria-describedby": "absent"
+        }
+      }
+    },
+    {
+      "id": "skeleton-avatar",
+      "kind": "skeleton",
+      "props": {
+        "shape": "avatar"
+      }
+    },
+    {
+      "id": "skeleton-block",
+      "kind": "skeleton",
+      "props": {
+        "shape": "block"
+      }
+    },
+    {
+      "id": "filter-link-on",
+      "kind": "chip",
+      "props": {
+        "label": "待我处理",
+        "kind": "filter",
+        "size": "sm",
+        "href": "/manage/me/inbox?source=approval",
+        "pressed": true
+      }
+    },
+    {
+      "id": "filter-link-off",
+      "kind": "chip",
+      "props": {
+        "label": "全部",
+        "kind": "filter",
+        "size": "sm",
+        "href": "/manage/me/inbox"
+      }
+    },
+    {
+      "id": "filter-link-disabled",
+      "kind": "chip",
+      "props": {
+        "label": "暂不可用",
+        "kind": "filter",
+        "size": "sm",
+        "href": "/manage/me/inbox",
+        "disabled": true
+      }
+    }
   ],
   "invalid": [
-    {"kind":"button","props":{"icon":"x"}},
-    {"kind":"button","props":{"attrs":{"aria-label":"没有图标"}}},
-    {"kind":"button","props":{"label":"x","icon":"<svg onload=x>"}},
-    {"kind":"button","props":{"label":"x","icon":{"html":"<svg>"}}},
-    {"kind":"button","props":{"label":"x","attrs":{"onclick":"x"}}},
-    {"kind":"button","props":{"label":"x","attrs":{"style":"color:red"}}},
-    {"kind":"button","props":{"label":"x","attrs":{"role":"link"}}},
-    {"kind":"button","props":{"label":"x","attrs":{"type":"submit"}}},
-    {"kind":"button","props":{"label":"x","attrs":{"data-test":{"html":"x"}}}},
-    {"kind":"button","props":{"label":"x","attrs":[]}},
-    {"kind":"button","props":{"label":"x","disabled":"false"}},
-    {"kind":"button","props":{"label":"x","variant":"custom"}},
-    {"kind":"button","props":{"label":"x","href":"javascript:alert(1)"}},
-    {"kind":"button","props":{"label":"x","href":"data:text/html,x"}},
-    {"kind":"button","props":{"label":"x","href":"vbscript:x"}},
-    {"kind":"button","props":{"label":"x","href":"//external.example/x"}},
-    {"kind":"button","props":{"label":"x","href":"\\\\external.example/x"}},
-    {"kind":"button","props":{"label":"x","href":"https://example.org/a b"}},
-    {"kind":"button","props":{"label":"x","href":"\thttps://example.org"}},
-    {"kind":"button","props":{"label":"x","href":"java\nscript:alert(1)"}},
-    {"kind":"chip","props":{"label":"x","tone":"business-state"}},
-    {"kind":"chip","props":{"label":"x","removable":true}},
-    {"kind":"chip","props":{"label":"x","pressed":1}},
-    {"kind":"badge","props":{"dot":true}},
-    {"kind":"badge","props":{"value":true}},
-    {"kind":"badge","props":{"value":-1}},
-    {"kind":"avatar","props":{"name":""}},
-    {"kind":"avatar","props":{"name":"x","size":48}},
-    {"kind":"avatar","props":{"name":"x","src":"data:image/svg+xml,x"}},
-    {"kind":"avatar","props":{"name":"x","src":"mailto:x@example.org"}},
-    {"kind":"progress","props":{"label":"进度","value":101}},
-    {"kind":"progress","props":{"label":"进度","value":true}},
-    {"kind":"progress","props":{"label":"进度","max":0}},
-    {"kind":"skeleton","props":{"lines":0}},
-    {"kind":"skeleton","props":{"lines":9}},
-    {"kind":"skeleton","props":{"lines":"3"}},
-    {"kind":"skeleton","props":{"lines":null}},
-    {"kind":"skeleton","props":{"shape":"avatar","lines":3}}
+    {
+      "kind": "button",
+      "props": {
+        "icon": "x"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "attrs": {
+          "aria-label": "没有图标"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "icon": "<svg onload=x>"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "icon": {
+          "html": "<svg>"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": {
+          "onclick": "x"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": {
+          "style": "color:red"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": {
+          "role": "link"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": {
+          "type": "submit"
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": {
+          "data-test": {
+            "html": "x"
+          }
+        }
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "attrs": []
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "disabled": "false"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "variant": "custom"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "javascript:alert(1)"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "data:text/html,x"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "vbscript:x"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "//external.example/x"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "\\\\external.example/x"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "https://example.org/a b"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "\thttps://example.org"
+      }
+    },
+    {
+      "kind": "button",
+      "props": {
+        "label": "x",
+        "href": "java\nscript:alert(1)"
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "tone": "business-state"
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "removable": true
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "pressed": 1
+      }
+    },
+    {
+      "kind": "badge",
+      "props": {
+        "dot": true
+      }
+    },
+    {
+      "kind": "badge",
+      "props": {
+        "value": true
+      }
+    },
+    {
+      "kind": "badge",
+      "props": {
+        "value": -1
+      }
+    },
+    {
+      "kind": "avatar",
+      "props": {
+        "name": ""
+      }
+    },
+    {
+      "kind": "avatar",
+      "props": {
+        "name": "x",
+        "size": 48
+      }
+    },
+    {
+      "kind": "avatar",
+      "props": {
+        "name": "x",
+        "src": "data:image/svg+xml,x"
+      }
+    },
+    {
+      "kind": "avatar",
+      "props": {
+        "name": "x",
+        "src": "mailto:x@example.org"
+      }
+    },
+    {
+      "kind": "progress",
+      "props": {
+        "label": "进度",
+        "value": 101
+      }
+    },
+    {
+      "kind": "progress",
+      "props": {
+        "label": "进度",
+        "value": true
+      }
+    },
+    {
+      "kind": "progress",
+      "props": {
+        "label": "进度",
+        "max": 0
+      }
+    },
+    {
+      "kind": "skeleton",
+      "props": {
+        "lines": 0
+      }
+    },
+    {
+      "kind": "skeleton",
+      "props": {
+        "lines": 9
+      }
+    },
+    {
+      "kind": "skeleton",
+      "props": {
+        "lines": "3"
+      }
+    },
+    {
+      "kind": "skeleton",
+      "props": {
+        "lines": null
+      }
+    },
+    {
+      "kind": "skeleton",
+      "props": {
+        "shape": "avatar",
+        "lines": 3
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "kind": "status",
+        "href": "/y"
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "kind": "tag",
+        "href": "/y"
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "kind": "filter",
+        "href": "javascript:alert(1)"
+      }
+    },
+    {
+      "kind": "chip",
+      "props": {
+        "label": "x",
+        "kind": "filter",
+        "href": "//evil.test/x"
+      }
+    }
   ]
 }

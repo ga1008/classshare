@@ -101,6 +101,22 @@ const refs = {
     fullDownload: document.getElementById('gw-full-download'),
 };
 
+// ---------------- LQ (liquid glass) list rendering ----------------
+// The template marks the list container with `data-lq-doc-table` only inside the
+// `manage-pages` family branch. When the switch is off none of these hosts exist,
+// no LQ module is imported and every code path below stays on the legacy string
+// renderer, byte for byte.
+const lqTableHost = document.querySelector('[data-lq-doc-table]');
+const lqCountHost = document.querySelector('[data-lq-doc-count]');
+const lqPagerHost = document.querySelector('[data-lq-doc-pager]');
+const [lqTables, lqComponents, lqContent] = lqTableHost
+    ? await Promise.all([
+        import('/static/js/lq/tables.js'),
+        import('/static/js/lq/components.js'),
+        import('/static/js/lq/content.js'),
+    ])
+    : [null, null, null];
+
 function formatDateTime(value) {
     if (!value) return '';
     return String(value).trim().replace('T', ' ').replace(/\.\d+$/, '').slice(0, 16);
@@ -108,12 +124,18 @@ function formatDateTime(value) {
 
 function setBusy(button, busy, label) {
     if (!button) return;
+    // An LQ button keeps its text inside `.lq-btn__label`; writing `textContent`
+    // on the host element would delete that span permanently (the restore path
+    // only ever puts a bare text node back). Address the span when it exists.
+    // Legacy buttons have no such span, so `target === button` and the produced
+    // DOM is unchanged.
+    const target = button.querySelector?.('.lq-btn__label') || button;
     if (busy) {
-        button.dataset.originalText = button.textContent;
-        button.textContent = label || '处理中';
+        button.dataset.originalText = target.textContent;
+        target.textContent = label || '处理中';
         button.disabled = true;
     } else {
-        button.textContent = button.dataset.originalText || button.textContent;
+        target.textContent = button.dataset.originalText || target.textContent;
         button.disabled = false;
     }
 }
@@ -213,11 +235,134 @@ function rowHtml(doc) {
         </tr>`;
 }
 
+// --- LQ table assembly (factories only; no hand-written `lq-*` markup) --------
+// Columns mirror the legacy `<thead>` one-for-one. The title column is the row
+// header so each row keeps an accessible name in the LQ branch.
+const LQ_COLUMNS = Object.freeze([
+    { key: 'title', label: '标题', rowHeader: true },
+    { key: 'author', label: '发文单位' },
+    { key: 'sender', label: '发送人' },
+    { key: 'category', label: '分类' },
+    { key: 'time', label: '时间' },
+    { key: 'scope', label: '归属 / 开放' },
+    { key: 'actions', label: '操作' },
+]);
+const PARSE_TONES = { done: 'success', pending: 'neutral', idle: 'neutral', parsing: 'info', failed: 'danger' };
+const OPENNESS_TONES = { public: 'info', school: 'primary', college: 'success', department: 'neutral' };
+
+function lqEl(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [name, value] of Object.entries(attrs)) {
+        if (value != null) node.setAttribute(name, String(value));
+    }
+    node.append(...children.filter((child) => child != null));
+    return node;
+}
+
+const lqChip = (props) => lqComponents.createComponent('chip', props);
+
+function lqTitleNodes(doc) {
+    // Same hooks as `rowHtml`: `.gwlist-title[data-open-reader]` drives the reader.
+    const title = lqEl('span', { class: 'gwlist-title', 'data-open-reader': doc.id, title: '点击查看原文' });
+    if (!doc.is_read) title.append(lqEl('span', { class: 'gwlist-unread-dot', title: '未读' }));
+    if (doc.sn) title.append(lqEl('span', { class: 'gwlist-sn' }, [String(doc.sn)]));
+    title.append(String(doc.title || '(无标题)'));
+    const nodes = [title];
+    const st = String(doc.parse_status || 'pending');
+    if (st !== 'done' || doc._justParsed) {
+        nodes.push(lqChip({
+            label: st === 'done' ? '解析完成' : (PARSE_LABELS[st] || '未解析'),
+            kind: 'status', size: 'sm', tone: PARSE_TONES[st] || 'neutral',
+        }));
+    }
+    const hit = doc.follow_hit;
+    if (hit) {
+        const matched = [...(hit.matched_keywords || []), ...(hit.matched_items || [])];
+        const detail = [matched.length ? `命中：${matched.join('、')}` : '', hit.ai_reason || ''].filter(Boolean).join('；');
+        nodes.push(lqChip({
+            label: '★ 关注命中', kind: 'tag', size: 'sm', tone: 'warning',
+            attrs: { title: detail || '命中了你的关注设置' },
+        }));
+    }
+    return nodes;
+}
+
+function lqScopeNodes(doc) {
+    return [lqEl('div', { class: 'gwlist-scope' }, [
+        lqChip({ label: String(doc.attribution_label || '本校'), kind: 'tag', size: 'sm' }),
+        lqChip({
+            label: String(doc.openness_label || '本校可见'), kind: 'status', size: 'sm',
+            tone: OPENNESS_TONES[String(doc.openness || 'school')] || 'neutral',
+        }),
+    ])];
+}
+
+function lqActionNodes(doc) {
+    // `data-package` / `data-scope-edit` stay as the delegation hooks; the file
+    // links keep `target=_blank` (an LQ anchor button preserves target/rel and
+    // `normalizeAttributes` force-adds noopener noreferrer).
+    const fileLink = (label, which) => lqComponents.createComponent('button', {
+        label, variant: 'soft', size: 'sm',
+        href: `/api/manage/gongwen/documents/${doc.id}/file?which=${which}`,
+        attrs: { target: '_blank', rel: 'noopener' },
+    });
+    const nodes = [];
+    if (doc.file_url || doc.has_local_file) nodes.push(fileLink('正文', 'primary'));
+    if (doc.attachment_url || doc.has_local_attachment) nodes.push(fileLink('附件', 'attachment'));
+    if (doc.file_url || doc.has_local_file || doc.attachment_url || doc.has_local_attachment) {
+        nodes.push(lqComponents.createComponent('button', {
+            label: '打包', variant: 'soft', size: 'sm',
+            attrs: { 'data-package': String(doc.id), title: '正文与全部附件打包为 zip，并按「文号 标题」重命名' },
+        }));
+    }
+    nodes.push(lqComponents.createComponent('button', {
+        label: '归属', variant: 'ghost', size: 'sm', attrs: { 'data-scope-edit': String(doc.id) },
+    }));
+    return [lqEl('div', { class: 'gwlist-row-actions' }, nodes)];
+}
+
+function renderLq() {
+    const slots = {};
+    const rows = state.documents.map((doc) => {
+        const rowKey = String(doc.id);
+        slots[`cell:${rowKey}:title`] = lqTitleNodes(doc);
+        if (doc.category_name) {
+            slots[`cell:${rowKey}:category`] = [lqChip({ label: String(doc.category_name), kind: 'tag', size: 'sm' })];
+        }
+        slots[`cell:${rowKey}:scope`] = lqScopeNodes(doc);
+        slots[`cell:${rowKey}:actions`] = lqActionNodes(doc);
+        return {
+            key: rowKey,
+            cells: {
+                title: '', category: '', scope: '', actions: '',
+                author: String(doc.author || '-'),
+                sender: String(doc.sender_name || '-'),
+                time: formatDateTime(doc.publish_time),
+            },
+        };
+    });
+    if (!rows.length) {
+        slots.empty = [lqContent.createContent('empty', {
+            reason: 'no-results', variant: 'card', title: '没有匹配的公文',
+            description: '调整筛选条件，或点击「立即同步」从统一认证账号拉取收件箱公文。',
+        })];
+    }
+    lqTableHost.replaceChildren(lqTables.createTable('table', {
+        id: 'gw-doc-table', caption: '公文收件箱', columns: LQ_COLUMNS, rows,
+    }, slots));
+    if (lqCountHost) lqCountHost.replaceChildren(lqTables.createTable('result_count', { count: state.total, label: '条公文' }));
+    if (lqPagerHost) lqPagerHost.replaceChildren(lqTables.createTable('pager', { page: state.page, totalPages: totalPages() }));
+}
+
 function totalPages() {
     return Math.max(1, Math.ceil(state.total / state.pageSize));
 }
 
 function render() {
+    if (lqTableHost) {
+        renderLq();
+        return;
+    }
     if (!refs.tbody) return;
     if (!state.documents.length) {
         refs.tbody.innerHTML = `
@@ -898,7 +1043,7 @@ refs.pagesize?.addEventListener('change', () => {
 refs.prev?.addEventListener('click', () => goPage(-1));
 refs.next?.addEventListener('click', () => goPage(1));
 
-refs.tbody?.addEventListener('click', (event) => {
+function handleListClick(event) {
     const packageBtn = event.target.closest('[data-package]');
     if (packageBtn) {
         downloadPackage(packageBtn.dataset.package, packageBtn);
@@ -912,6 +1057,17 @@ refs.tbody?.addEventListener('click', (event) => {
     }
     const titleEl = event.target.closest('[data-open-reader]');
     if (titleEl) openReader(titleEl.dataset.openReader);
+}
+refs.tbody?.addEventListener('click', handleListClick);
+// LQ branch: the host survives every re-render, the table inside it does not.
+lqTableHost?.addEventListener('click', handleListClick);
+lqPagerHost?.addEventListener('click', (event) => {
+    const control = event.target.closest('[data-lq-page]');
+    if (!control || control.hasAttribute('disabled') || control.getAttribute('aria-disabled') === 'true') return;
+    const target = parseInt(control.dataset.lqPage, 10);
+    if (!Number.isFinite(target) || target === state.page) return;
+    state.page = Math.min(Math.max(target, 1), totalPages());
+    reload();
 });
 
 refs.readerClose?.addEventListener('click', closeReader);

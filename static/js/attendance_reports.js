@@ -17,7 +17,24 @@ const sourcePath = (reportId, versionId, download = false) => `${API}/${encodeUR
 const detailPath = (id, params = {}) => `${PAGE}/${encodeURIComponent(id)}${Object.keys(params).length ? `?${new URLSearchParams(params)}` : ''}`;
 const empty = (title, copy = '', action = '') => `<div class="att-empty"><strong>${esc(title)}</strong><p>${esc(copy)}</p>${action}</div>`;
 const button = (action, title, extra = '', className = '') => `<button type="button" class="att-btn ${className}" data-att-action="${esc(action)}" ${extra}>${esc(title)}</button>`;
-const badge = value => `<span class="att-badge att-badge--${value === 'confirmed' || value === 'succeeded' ? 'good' : ['failed', 'dead_letter'].includes(value) ? 'error' : ['needs_review', 'validated', 'review_required'].includes(value) ? 'warn' : 'muted'}">${esc(states[value] || value || '待下载')}</span>`;
+const tone = value => value === 'confirmed' || value === 'succeeded' ? 'good' : ['failed', 'dead_letter'].includes(value) ? 'error' : ['needs_review', 'validated', 'review_required'].includes(value) ? 'warn' : 'muted';
+const badge = value => `<span class="att-badge att-badge--${tone(value)}">${esc(states[value] || value || '待下载')}</span>`;
+
+/**
+ * Liquid Glass branch. The template writes `data-lq-tables` only on its true
+ * branch, so every legacy string renderer below stays byte-identical while the
+ * switch is off. Structure comes from the audited client factories
+ * (`lq/tables.js`, `lq/components.js`), which run the same validation as the
+ * Jinja macros; no `lq-*` class name is ever written by hand here.
+ */
+const LQ_TONES = { good: 'success', warn: 'warning', error: 'danger', muted: 'neutral' };
+let lqFactories = null;
+const loadLqFactories = () => (lqFactories ||= Promise.all([import('./lq/tables.js'), import('./lq/components.js')])
+    .then(([tables, components]) => ({ table: tables.createTable, component: components.createComponent })));
+const el = (tag, className = '', copy = '') => { const element = document.createElement(tag); if (className) element.className = className; element.textContent = copy == null ? '' : String(copy); return element; };
+const lqBadge = (lq, value) => lq.component('chip', { kind: 'status', tone: LQ_TONES[tone(value)], label: states[value] || value || '待下载' });
+/** Puts inline slot content on its own line without needing a stylesheet. */
+const stack = child => { const wrapper = document.createElement('div'); wrapper.append(child); return wrapper; };
 async function request(path, options = {}) {
     try { return await apiFetch(path.startsWith('/api/') ? path : `${API}${path}`, { silent: true, ...options }); }
     catch (error) { if (options.signal?.aborted) throw new DOMException('Request superseded', 'AbortError'); throw error; }
@@ -163,6 +180,7 @@ export function initClassroomAttendancePanel(container) {
 
 class ArchiveController {
     constructor(root) {
+        this.lq = root.dataset.lqTables === 'true' ? loadLqFactories() : null;
         this.root = root; this.reportId = root.dataset.reportId || ''; this.listPage = 1; this.pageSize = 25; this.tab = 'overview'; this.matrixPage = 1; this.studentPage = 1; this.columnPage = 1; this.reviewPage = 1; this.epochs = {}; this.aborts = {}; this.pollDelay = 2000;
         this.source = new SourcePanel($('[data-att-source-content]', root), { offeringId: root.dataset.classOfferingId || new URLSearchParams(location.search).get('offering') || '', onQueued: result => { notify(this.notice, '任务已提交，原件缓存后即可查看。'); this.reportId ? this.loadDetail() : this.loadList(); } });
         this.notice = $('[data-att-notice]', root); this.filters = $('[data-att-filters]', root); this.evidence = $('[data-att-evidence-dialog]', root); this.reviewForm = $('[data-att-review-form]', root);
@@ -213,6 +231,7 @@ class ArchiveController {
     writeURL() { const values = this.values(); if (values.page === 1) delete values.page; if (values.page_size === 25) delete values.page_size; if (values.deleted === '0') delete values.deleted; if (values.sort === 'updated_desc') delete values.sort; history.replaceState(null, '', `${PAGE}${query(values) ? '?' + query(values) : ''}`); }
     writeDetailURL() { const values = { ...(this.selectedVersion ? { version: this.selectedVersion } : {}), ...(this.selectedRun ? { run: this.selectedRun } : {}) }; const back = new URLSearchParams(location.search).get('back'); if (back) values.back = back; history.replaceState(null, '', detailPath(this.reportId, values)); }
     async loadList() {
+        const lq = this.lq ? await this.lq.catch(() => null) : null;
         const epoch = this.next('list'), values = this.values(); clearTimeout(this.pollTimer); $('[data-att-reports]', this.root).setAttribute('aria-busy', 'true');
         try {
             const [data, facets] = await Promise.all([this.get(`?${query(values)}`, 'list'), this.get(`/options?${query(values)}`, 'options')]);
@@ -222,7 +241,8 @@ class ArchiveController {
             $('[data-att-count]', this.root).textContent = `共 ${Number(data.total || 0)} 份${values.deleted === '1' ? '已删除' : ''}档案`;
             $('[data-att-chips]', this.root).innerHTML = [...this.filters.elements].filter(field => field.name && field.value && !(field.name === 'deleted' && field.value === '0')).map(field => `<span class="att-chip">${esc(field.tagName === 'SELECT' ? field.selectedOptions[0]?.textContent : field.value)}</span>`).join('') + (this.offeringFilter ? '<span class="att-chip">当前课堂</span>' : '');
             const rows = items(data), returnQuery = location.search.slice(1);
-            $('[data-att-reports]', this.root).innerHTML = rows.length ? `<div class="att-table-wrap"><table class="att-table att-list-table"><thead><tr><th>课程 / 教学班</th><th>学年学期</th><th>学生 × 点名</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rows.map(row => `<tr><td><a href="${esc(detailPath(row.id, returnQuery ? { back: returnQuery } : {}))}"><strong>${esc(row.course_name || '未命名课程')}</strong></a><small>${esc(row.teaching_class_name || '未标教学班')} · ${esc(row.course_code || '')}</small></td><td data-label="学期">${esc(row.academic_year)} 第${esc(row.academic_term)}学期</td><td data-label="规模">${Number(row.student_count || 0)} × ${Number(row.session_count || 0)}</td><td>${badge(statusOf(row))}${row.confirmed_parse_run_id && row.parse_state !== 'confirmed' ? '<small>已有确认结果可用</small>' : ''}</td><td data-label="更新">${esc(date(row.updated_at))}</td><td><div class="att-row-actions"><a class="att-btn" href="${esc(detailPath(row.id, returnQuery ? { back: returnQuery } : {}))}">查看</a>${row.source_version_id && ['cached', 'source_cached'].includes(row.source_state) ? `<a class="att-btn" href="${esc(sourcePath(row.id, row.source_version_id, true))}">原件</a>` : ''}${row.deleted_at ? button('restore-list', '恢复', `data-id="${esc(row.id)}" data-revision="${esc(row.revision)}"`) : ''}</div></td></tr>`).join('')}</tbody></table></div>` : empty(values.q || values.year || values.term || values.course || values.teaching_class || values.status || this.offeringFilter ? '没有符合条件的档案' : values.deleted === '1' ? '暂无已删除档案' : '还没有签到统计表', '可以调整筛选条件，或从智慧课堂导出原始点名记录。', button('open-source', '从智慧课堂导出', '', 'att-btn--primary'));
+            if (lq && rows.length) $('[data-att-reports]', this.root).replaceChildren(this.lqReportsTable(lq, rows, returnQuery));
+            else $('[data-att-reports]', this.root).innerHTML = rows.length ? `<div class="att-table-wrap"><table class="att-table att-list-table"><thead><tr><th>课程 / 教学班</th><th>学年学期</th><th>学生 × 点名</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rows.map(row => `<tr><td><a href="${esc(detailPath(row.id, returnQuery ? { back: returnQuery } : {}))}"><strong>${esc(row.course_name || '未命名课程')}</strong></a><small>${esc(row.teaching_class_name || '未标教学班')} · ${esc(row.course_code || '')}</small></td><td data-label="学期">${esc(row.academic_year)} 第${esc(row.academic_term)}学期</td><td data-label="规模">${Number(row.student_count || 0)} × ${Number(row.session_count || 0)}</td><td>${badge(statusOf(row))}${row.confirmed_parse_run_id && row.parse_state !== 'confirmed' ? '<small>已有确认结果可用</small>' : ''}</td><td data-label="更新">${esc(date(row.updated_at))}</td><td><div class="att-row-actions"><a class="att-btn" href="${esc(detailPath(row.id, returnQuery ? { back: returnQuery } : {}))}">查看</a>${row.source_version_id && ['cached', 'source_cached'].includes(row.source_state) ? `<a class="att-btn" href="${esc(sourcePath(row.id, row.source_version_id, true))}">原件</a>` : ''}${row.deleted_at ? button('restore-list', '恢复', `data-id="${esc(row.id)}" data-revision="${esc(row.revision)}"`) : ''}</div></td></tr>`).join('')}</tbody></table></div>` : empty(values.q || values.year || values.term || values.course || values.teaching_class || values.status || this.offeringFilter ? '没有符合条件的档案' : values.deleted === '1' ? '暂无已删除档案' : '还没有签到统计表', '可以调整筛选条件，或从智慧课堂导出原始点名记录。', button('open-source', '从智慧课堂导出', '', 'att-btn--primary'));
             paginate($('[data-att-list-pagination]', this.root), data.total, this.listPage, this.pageSize, 'list', '份档案', true);
             if (this.root.dataset.archiveEnabled === 'false') $$('[data-att-action=open-source]', this.root).forEach(node => node.hidden = true);
             if (rows.some(row => activeStates.has(statusOf(row)) || activeStates.has(row.source_state))) this.pollTimer = setTimeout(() => this.loadList(), 5000);
@@ -265,6 +285,7 @@ class ArchiveController {
     loadPanel() { if (this.tab === 'matrix') this.loadMatrix(); if (this.tab === 'students') this.loadStudents(); if (this.tab === 'review') this.loadReviews(); }
     runPath() { return `/${encodeURIComponent(this.reportId)}/runs/${encodeURIComponent(this.selectedRun)}`; }
     async loadMatrix() {
+        const lq = this.lq ? await this.lq.catch(() => null) : null;
         const epoch = this.next('matrix'), scope = `${this.selectedRun}:${this.selectedVersion}`; if (!this.run()) { $('[data-att-matrix-content]', this.root).innerHTML = empty('尚无可查看的解析', '原件缓存后在后台解析。'); return; }
         try {
             const [students, sessions] = await Promise.all([
@@ -277,20 +298,118 @@ class ArchiveController {
             if (!this.current('matrix', epoch) || scope !== `${this.selectedRun}:${this.selectedVersion}`) return;
             this.cells = new Map(items(cells).map(cell => [String(cell.id), cell])); this.matrixStudents = rows; this.matrixSessions = columns;
             const lookup = new Map(items(cells).map(cell => [`${cell.student_row_id}:${cell.session_column_id}`, cell]));
-            $('[data-att-matrix-content]', this.root).innerHTML = rows.length && columns.length ? `<div class="att-table-wrap att-matrix" tabindex="0" aria-label="逐次签到表，可左右滚动"><table class="att-table"><thead><tr><th>学生 / 学号</th>${columns.map(column => `<th>${esc(column.source_header || date(column.source_datetime))}<small>${column.mapping_state === 'matched' ? '已关联课次' : '未关联课次'}</small>${button('review-session', '核对课次', `data-id="${esc(column.id)}"`, 'att-btn--text')}</th>`).join('')}</tr></thead><tbody>${rows.map(student => `<tr><td><strong>${esc(student.source_name)}</strong><small>${esc(student.student_number)}</small>${button('review-student', student.identity_state === 'matched' ? '核对身份' : '关联学生', `data-id="${esc(student.id)}"`, 'att-btn--text')}</td>${columns.map(column => { const cell = lookup.get(`${student.id}:${column.id}`); const status = cell?.normalized_status || 'UNKNOWN'; return `<td>${cell ? `<button type="button" class="att-cell att-status-${esc(Object.hasOwn(labels, status) ? status : 'UNKNOWN')} ${cell.quality_state === 'conflict' ? 'att-quality-conflict' : ''}" data-att-action="evidence" data-id="${esc(cell.id)}" title="${esc(student.source_name)} · ${esc(column.source_header)} · ${esc(labels[status] || status)}${cell.quality_state === 'conflict' ? '（来源冲突）' : ''}">${esc(labels[status] || '待核实')}${cell.quality_state === 'conflict' ? ' !' : ''}</button>` : '<span class="att-cell att-status-UNKNOWN">待核实</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>` : empty('没有符合条件的记录', '调整学生或异常状态筛选条件后重试。');
+            if (lq && rows.length && columns.length) $('[data-att-matrix-content]', this.root).replaceChildren(this.lqMatrixTable(lq, rows, columns, lookup));
+            else $('[data-att-matrix-content]', this.root).innerHTML = rows.length && columns.length ? `<div class="att-table-wrap att-matrix" tabindex="0" aria-label="逐次签到表，可左右滚动"><table class="att-table"><thead><tr><th>学生 / 学号</th>${columns.map(column => `<th>${esc(column.source_header || date(column.source_datetime))}<small>${column.mapping_state === 'matched' ? '已关联课次' : '未关联课次'}</small>${button('review-session', '核对课次', `data-id="${esc(column.id)}"`, 'att-btn--text')}</th>`).join('')}</tr></thead><tbody>${rows.map(student => `<tr><td><strong>${esc(student.source_name)}</strong><small>${esc(student.student_number)}</small>${button('review-student', student.identity_state === 'matched' ? '核对身份' : '关联学生', `data-id="${esc(student.id)}"`, 'att-btn--text')}</td>${columns.map(column => { const cell = lookup.get(`${student.id}:${column.id}`); const status = cell?.normalized_status || 'UNKNOWN'; return `<td>${cell ? `<button type="button" class="att-cell att-status-${esc(Object.hasOwn(labels, status) ? status : 'UNKNOWN')} ${cell.quality_state === 'conflict' ? 'att-quality-conflict' : ''}" data-att-action="evidence" data-id="${esc(cell.id)}" title="${esc(student.source_name)} · ${esc(column.source_header)} · ${esc(labels[status] || status)}${cell.quality_state === 'conflict' ? '（来源冲突）' : ''}">${esc(labels[status] || '待核实')}${cell.quality_state === 'conflict' ? ' !' : ''}</button>` : '<span class="att-cell att-status-UNKNOWN">待核实</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>` : empty('没有符合条件的记录', '调整学生或异常状态筛选条件后重试。');
             paginate($('[data-att-matrix-pagination]', this.root), students.total, this.matrixPage, 25, 'matrix', '名学生'); paginate($('[data-att-column-pagination]', this.root), sessions.total, this.columnPage, 20, 'columns', '次点名');
         } catch (error) { if (error.name !== 'AbortError' && this.current('matrix', epoch)) $('[data-att-matrix-content]', this.root).innerHTML = empty('签到矩阵读取失败', error.message, button('reload-matrix', '重试')); }
     }
     async loadStudents() {
+        const lq = this.lq ? await this.lq.catch(() => null) : null;
         const epoch = this.next('students'); if (!this.run()) { $('[data-att-students-content]', this.root).innerHTML = empty('尚无学生统计', '等待原件解析完成。'); return; }
         try {
             const data = await this.get(`${this.runPath()}/students?${query({ page: this.studentPage, page_size: 25, q: $('[data-att-student-query]', this.root).value })}`, 'students'); if (!this.current('students', epoch)) return;
             this.summaryStudents = items(data);
-            $('[data-att-students-content]', this.root).innerHTML = items(data).length ? `<div class="att-table-wrap"><table class="att-table"><thead><tr><th>姓名 / 学号</th><th>班级</th><th>出勤</th><th>缺课</th><th>病假</th><th>事假</th><th>迟到或早退</th><th>不适用</th><th>待核实</th><th>完整率</th><th>已知记录出勤率</th><th>完整来源出勤率</th></tr></thead><tbody>${items(data).map(student => { const summary = student.summary || {}, noRecords = Number(summary.applicable || 0) === 0; return `<tr><td><strong>${esc(student.source_name)}</strong><small>${esc(student.student_number)}</small>${button('review-student', student.identity_state === 'matched' ? '核对身份' : '关联学生', `data-id="${esc(student.id)}"`, 'att-btn--text')}</td><td>${esc(student.source_class_name)}</td>${['checked', 'absent', 'sick_leave', 'personal_leave', 'late_or_early', 'not_applicable', 'unknown'].map(status => `<td>${Number(summary[status] || 0)}</td>`).join('')}<td>${this.percent(summary.completeness_rate, noRecords)}</td><td>${this.percent(summary.known_attendance_rate, noRecords)}</td><td>${this.percent(summary.attendance_rate, noRecords)}</td></tr>`; }).join('')}</tbody></table></div>` : empty('没有找到该学生', '核对姓名或学号；历史原件与当前班级名单可能不同。');
+            if (lq && items(data).length) $('[data-att-students-content]', this.root).replaceChildren(this.lqStudentsTable(lq, items(data)));
+            else $('[data-att-students-content]', this.root).innerHTML = items(data).length ? `<div class="att-table-wrap"><table class="att-table"><thead><tr><th>姓名 / 学号</th><th>班级</th><th>出勤</th><th>缺课</th><th>病假</th><th>事假</th><th>迟到或早退</th><th>不适用</th><th>待核实</th><th>完整率</th><th>已知记录出勤率</th><th>完整来源出勤率</th></tr></thead><tbody>${items(data).map(student => { const summary = student.summary || {}, noRecords = Number(summary.applicable || 0) === 0; return `<tr><td><strong>${esc(student.source_name)}</strong><small>${esc(student.student_number)}</small>${button('review-student', student.identity_state === 'matched' ? '核对身份' : '关联学生', `data-id="${esc(student.id)}"`, 'att-btn--text')}</td><td>${esc(student.source_class_name)}</td>${['checked', 'absent', 'sick_leave', 'personal_leave', 'late_or_early', 'not_applicable', 'unknown'].map(status => `<td>${Number(summary[status] || 0)}</td>`).join('')}<td>${this.percent(summary.completeness_rate, noRecords)}</td><td>${this.percent(summary.known_attendance_rate, noRecords)}</td><td>${this.percent(summary.attendance_rate, noRecords)}</td></tr>`; }).join('')}</tbody></table></div>` : empty('没有找到该学生', '核对姓名或学号；历史原件与当前班级名单可能不同。');
             paginate($('[data-att-students-pagination]', this.root), data.total, this.studentPage, 25, 'students', '名学生');
         } catch (error) { if (error.name !== 'AbortError' && this.current('students', epoch)) $('[data-att-students-content]', this.root).innerHTML = empty('学生统计读取失败', error.message, button('reload-students', '重试')); }
     }
     percent(value, noRecords = false) { return noRecords ? '暂无适用点名' : value === null || value === undefined ? '待核实' : `${Number(value).toFixed(1)}%`; }
+    /**
+     * Record-mode archive list. The stacked "课程 / 教学班" cell becomes two real
+     * columns because cell text is plain text by contract; every `data-att-*`
+     * hook the delegated click handler reads is carried by the slot nodes.
+     */
+    lqReportsTable(lq, rows, returnQuery) {
+        const slots = {};
+        const tableRows = rows.map((row, index) => {
+            const key = `report-${index}`, href = detailPath(row.id, returnQuery ? { back: returnQuery } : {});
+            slots[`cell:${key}:course`] = [lq.component('button', { label: row.course_name || '未命名课程', href, variant: 'link', size: 'sm' })];
+            const status = [lqBadge(lq, statusOf(row))];
+            if (row.confirmed_parse_run_id && row.parse_state !== 'confirmed') status.push(el('small', 'att-muted', '已有确认结果可用'));
+            slots[`cell:${key}:status`] = status;
+            const actions = el('div', 'att-row-actions');
+            actions.append(lq.component('button', { label: '查看', href, size: 'sm' }));
+            if (row.source_version_id && ['cached', 'source_cached'].includes(row.source_state)) actions.append(lq.component('button', { label: '原件', href: sourcePath(row.id, row.source_version_id, true), size: 'sm' }));
+            if (row.deleted_at) actions.append(lq.component('button', { label: '恢复', size: 'sm', attrs: { 'data-att-action': 'restore-list', 'data-id': String(row.id), 'data-revision': String(row.revision) } }));
+            slots[`cell:${key}:actions`] = [actions];
+            return { key, cells: { course: '', teaching_class: `${row.teaching_class_name || '未标教学班'} · ${row.course_code || ''}`,
+                term: `${row.academic_year} 第${row.academic_term}学期`, scale: `${Number(row.student_count || 0)} × ${Number(row.session_count || 0)}`,
+                status: '', updated: date(row.updated_at), actions: '' } };
+        });
+        return lq.table('table', { id: 'attReports', caption: '签到统计表档案列表', mode: 'record', columns: [
+            { key: 'course', label: '课程', rowHeader: true }, { key: 'teaching_class', label: '教学班' }, { key: 'term', label: '学年学期' },
+            { key: 'scale', label: '学生 × 点名', align: 'end' }, { key: 'status', label: '状态' }, { key: 'updated', label: '更新时间' },
+            { key: 'actions', label: '操作' },
+        ], rows: tableRows }, slots);
+    }
+    /**
+     * One attendance cell. Deliberately kept as the legacy `att-cell att-status-*`
+     * button: those classes are the shared status palette that [data-att-legend]
+     * also renders, so swapping them for an LQ component here would desynchronise
+     * the legend. The factory owns the table; this owns only the cell content.
+     */
+    matrixCell(student, column, cell) {
+        if (!cell) return el('span', 'att-cell att-status-UNKNOWN', '待核实');
+        const status = cell.normalized_status || 'UNKNOWN', conflict = cell.quality_state === 'conflict';
+        const known = Object.hasOwn(labels, status) ? status : 'UNKNOWN';
+        const button = el('button', `att-cell att-status-${known}${conflict ? ' att-quality-conflict' : ''}`, `${labels[status] || '待核实'}${conflict ? ' !' : ''}`);
+        button.type = 'button';
+        button.dataset.attAction = 'evidence';
+        button.dataset.id = String(cell.id);
+        button.title = `${student.source_name} · ${column.source_header} · ${labels[status] || status}${conflict ? '（来源冲突）' : ''}`;
+        return button;
+    }
+    /**
+     * Per-session matrix. Each session column opts into the header slot added on
+     * 2026-09-22, so the mapping-state line and the review-session trigger -
+     * openIdentity('session')'s only entry point - survive the migration.
+     */
+    lqMatrixTable(lq, students, sessions, lookup) {
+        const slots = {}, columns = [{ key: 'name', label: '学生', rowHeader: true }, { key: 'number', label: '学号' }, { key: 'identity', label: '核对' }];
+        const trigger = (label, action, id) => lq.component('button', { label, variant: 'link', size: 'sm', attrs: { 'data-att-action': action, 'data-id': String(id) } });
+        sessions.forEach((column, index) => {
+            const key = `session-${index}`;
+            columns.push({ key, label: column.source_header || date(column.source_datetime), slot: true });
+            // Two block wrappers: `.lq-table__colhead` has no layout rules of its
+            // own, so without them the label, the state line and the trigger run
+            // together on one line. Legacy stacked them via `.att-table small`.
+            slots[`col:${key}`] = [stack(el('small', '', column.mapping_state === 'matched' ? '已关联课次' : '未关联课次')),
+                stack(trigger('核对课次', 'review-session', column.id))];
+        });
+        const rows = students.map((student, index) => {
+            const key = `student-${index}`, cells = { name: student.source_name ?? '', number: student.student_number ?? '', identity: '' };
+            slots[`cell:${key}:identity`] = [trigger(student.identity_state === 'matched' ? '核对身份' : '关联学生', 'review-student', student.id)];
+            for (const [column, session] of sessions.entries()) {
+                const name = `session-${column}`;
+                cells[name] = '';
+                slots[`cell:${key}:${name}`] = [this.matrixCell(student, session, lookup.get(`${student.id}:${session.id}`))];
+            }
+            return { key, cells };
+        });
+        return lq.table('table', { id: 'attMatrix', caption: '逐次签到', mode: 'matrix', density: 'dense', columns, rows }, slots);
+    }
+    /** Wide measure grid: matrix mode keeps the legacy local horizontal scroll at every width. */
+    lqStudentsTable(lq, rows) {
+        const counts = [['checked', '出勤'], ['absent', '缺课'], ['sick_leave', '病假'], ['personal_leave', '事假'], ['late_or_early', '迟到或早退'], ['not_applicable', '不适用'], ['unknown', '待核实']];
+        const rates = [['completeness_rate', '完整率'], ['known_attendance_rate', '已知记录出勤率'], ['attendance_rate', '完整来源出勤率']];
+        const slots = {};
+        const tableRows = rows.map((student, index) => {
+            const key = `student-${index}`, summary = student.summary || {}, noRecords = Number(summary.applicable || 0) === 0;
+            slots[`cell:${key}:review`] = [lq.component('button', { label: student.identity_state === 'matched' ? '核对身份' : '关联学生', variant: 'link', size: 'sm',
+                attrs: { 'data-att-action': 'review-student', 'data-id': String(student.id) } })];
+            const cells = { name: student.source_name ?? '', student_number: student.student_number ?? '', source_class: student.source_class_name ?? '', review: '' };
+            for (const [name] of counts) cells[name] = String(Number(summary[name] || 0));
+            for (const [name] of rates) cells[name] = this.percent(summary[name], noRecords);
+            return { key, cells };
+        });
+        return lq.table('table', { id: 'attStudentSummary', caption: '学生签到汇总', mode: 'matrix', density: 'dense', columns: [
+            { key: 'name', label: '姓名', rowHeader: true }, { key: 'student_number', label: '学号' }, { key: 'source_class', label: '班级' },
+            ...counts.map(([name, label]) => ({ key: name, label, align: 'end' })),
+            ...rates.map(([name, label]) => ({ key: name, label, align: 'end' })),
+            { key: 'review', label: '核对' },
+        ], rows: tableRows }, slots);
+    }
     async loadReviews() {
         const run = this.run(); if (!run) { $('[data-att-review-content]', this.root).innerHTML = empty('尚无核对记录'); return; }
         const epoch = this.next('reviews');

@@ -95,13 +95,13 @@ def _table(p, attrs):
         raise ValueError("Table columns and rows must be lists")
     cols, keys, active_sorts, row_headers = [], set(), 0, 0
     for item in columns:
-        if not isinstance(item, Mapping) or set(item) - {"key", "label", "align", "sortable", "sort", "rowHeader"}:
+        if not isinstance(item, Mapping) or set(item) - {"key", "label", "align", "sortable", "sort", "rowHeader", "slot"}:
             raise ValueError("Invalid table column")
         key = _key(item.get("key"))
         if key in keys:
             raise ValueError("Duplicate table column key")
         keys.add(key)
-        col = {"key": key, "label": _text(item.get("label"), True), "align": _choice(item.get("align", "start"), ("start", "end")), "sortable": _flag(item, "sortable"), "sort": _choice(item.get("sort", "none"), ("none", "ascending", "descending")), "rowHeader": _flag(item, "rowHeader")}
+        col = {"key": key, "label": _text(item.get("label"), True), "align": _choice(item.get("align", "start"), ("start", "end")), "sortable": _flag(item, "sortable"), "sort": _choice(item.get("sort", "none"), ("none", "ascending", "descending")), "rowHeader": _flag(item, "rowHeader"), "slot": _flag(item, "slot")}
         if col["sort"] != "none":
             if not col["sortable"]:
                 raise ValueError("Only sortable columns have sort state")
@@ -145,6 +145,12 @@ def _table(p, attrs):
         if col["sortable"]:
             th_attrs["aria-sort"] = col["sort"]
             label = [_node("button", {"type": "button", "class": "lq-table__sort", "data-lq-sort": col["key"], "aria-label": "按" + col["label"] + "排序"}, [col["label"], _node("span", {"aria-hidden": "true", "class": "lq-table__sort-mark"}, ["↕"])])]
+        # Opt-in per column: a header that has to carry its own controls gets the
+        # same slot treatment as a cell. Columns that do not ask for it keep the
+        # exact markup they had, so no existing table changes shape.
+        if col["slot"]:
+            slot_name = "col:" + col["key"]
+            label = [_node("div", {"class": "lq-table__colhead", "data-lq-slot": slot_name}, [*label, {"slot": slot_name}])]
         head.append(_node("th", th_attrs, label))
     selection_name = _text(p.get("selection_name", "selected"), True)
     for row in normalized_rows:

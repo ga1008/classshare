@@ -56064,8 +56064,11 @@ body.manage-embedded-page { background: transparent; }
 .gwlist-shell { display: grid; gap: var(--spacing-lg); }
 .gwlist-toolbar { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; }
 .gwlist-search { position: relative; flex: 1 1 240px; min-width: 200px; }
-.gwlist-search input { width: 100%; padding: 9px 12px; border: 1px solid hsl(var(--ls-c-slate-400) / 0.3); border-radius: 10px; background: hsl(var(--ls-c-white)); font-size: 0.88rem; }
-.gwlist-card { border: 1px solid hsl(var(--ls-c-slate-400) / 0.2); border-radius: var(--radius-lg); background: hsl(var(--ls-c-white)); box-shadow: var(--shadow-sm); overflow: hidden; }
+.gwlist-search input { width: 100%; padding: 9px 12px; border: 1px solid hsl(var(--ls-c-slate-400) / 0.3); border-radius: 10px; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); font-size: 0.88rem; }
+/* --ls-c-white is a fixed hue while the text colour follows the theme, so dark
+   mode painted light text on a white card. --ls-surface-1 is white in light mode,
+   leaving that appearance untouched. */
+.gwlist-card { border: 1px solid hsl(var(--ls-c-slate-400) / 0.2); border-radius: var(--radius-lg); background: hsl(var(--ls-surface-1)); box-shadow: var(--shadow-sm); overflow: hidden; }
 .gwlist-card-head { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; justify-content: space-between; padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid hsl(var(--ls-c-slate-200) / 0.9); }
 .gwlist-card-head h3 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-primary); }
 .gwlist-table-wrap { overflow-x: auto; }
@@ -56081,7 +56084,7 @@ table.gwlist-table tr:hover td { background: hsl(var(--ls-c-slate-50) / 0.6); }
 .gwlist-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .gwlist-empty { padding: var(--spacing-2xl); text-align: center; color: var(--text-muted); }
 .gwlist-empty strong { display: block; color: var(--text-primary); font-size: 1.02rem; margin-bottom: 6px; }
-.gwlist-chip { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--radius-full); border: 1px solid hsl(var(--ls-c-slate-400) / 0.3); background: hsl(var(--ls-c-white)); color: var(--text-secondary); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.gwlist-chip { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--radius-full); border: 1px solid hsl(var(--ls-c-slate-400) / 0.3); background: hsl(var(--ls-surface-1)); color: var(--text-secondary); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
 .gwlist-chip.is-active { background: hsl(var(--ls-c-indigo-600) / 0.12); border-color: hsl(var(--ls-c-indigo-600) / 0.3); color: hsl(var(--ls-c-indigo-600)); }
 .gwlist-foot { padding: var(--spacing-md) var(--spacing-lg); color: var(--text-muted); font-size: 0.82rem; text-align: center; }
 .gwlist-scope { display: grid; gap: 4px; }

@@ -25,6 +25,16 @@
 .lq-table-shell--matrix .lq-table { width: max-content; min-width: 100%; }
 .lq-table-shell--matrix :is(th, td) { min-width: calc(var(--ls-s-16) * 2); max-width: calc(var(--ls-s-16) * 5); }
 .lq-table-shell--matrix .lq-table__selection { min-width: 0; }
+/* A column header that opts into its own slot stacks its label above whatever the
+   page puts there; inline they collide on one line. Layout only, no colour. */
+.lq-table__colhead { display: flex; flex-direction: column; align-items: inherit; gap: var(--ls-s-1); min-width: 0; }
+/* A matrix scrolls sideways, so the row header has to stay put or the reader
+   loses which row they are on. The background follows the surface token, unlike
+   the legacy rule it replaces, which pinned a light colour into dark mode. */
+.lq-table-shell--matrix :is(th, td)[scope="row"], .lq-table-shell--matrix th[role="rowheader"] {
+    position: sticky; inset-inline-start: 0; z-index: var(--ls-z-raised); background: hsl(var(--ls-surface-1));
+}
+.lq-table-shell--matrix thead th[scope="col"]:first-child { position: sticky; inset-inline-start: 0; z-index: calc(var(--ls-z-raised) + 1); background: hsl(var(--ls-surface-1)); }
 .lq-table-shell--record .lq-table { table-layout: fixed; }
 .lq-pager, .lq-bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-2); min-width: 0; max-width: 100%; color: hsl(var(--ls-ink)); font-family: var(--ls-font-sans); }
 .lq-pager { padding-block: var(--ls-s-3); }

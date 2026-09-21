@@ -11,7 +11,7 @@
 
 
 {% block content %}
-{% set summary = gongwen_summary or {} %}
+{% set _gongwen_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}{% set summary = gongwen_summary or {} %}
 {% set read_count = (summary.total | int) - (summary.unread | int) %}
 {% set cat_bars = [] %}
 {% for cat in gongwen_categories or [] %}{% set _ = cat_bars.append({'label': cat.name, 'value': cat.total}) %}{% endfor %}
@@ -21,7 +21,7 @@
             {'label': '刷新', 'variant': 'outline', 'id': 'gw-doc-refresh'},
             {'label': '关注设置', 'variant': 'outline', 'id': 'gw-follow-open'},
             {'label': '立即同步', 'variant': 'primary', 'id': 'gw-doc-sync'}
-        ], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>{% endcall %}
+        ], lq_enabled=_gongwen_lq_enabled) %}<span class="gwlist-time" id="gw-doc-last-sync">{% if summary.last_synced_at %}上次同步：{{ summary.last_synced_at[:16] }}{% else %}尚未同步{% endif %}</span>{% endcall %}
 
     {% set follow_stats = gongwen_follow_stats or {'total': 0, 'unseen': 0} %}
     {% set follow_pct = ((follow_stats.total | int) / (summary.total | int) * 100) | round | int if (summary.total | int) > 0 else 0 %}
@@ -38,27 +38,27 @@
             <h3>收件箱</h3>
             <div class="gwlist-toolbar">
                 <div class="gwlist-search">
-                    <input type="search" id="gw-doc-search" placeholder="搜索标题 / 文号 / 发文单位 / 正文内容…" autocomplete="off">
+                    <input type="search" id="gw-doc-search" placeholder="搜索标题 / 文号 / 发文单位 / 正文内容…" autocomplete="off" aria-label="搜索公文">
                 </div>
-                <select class="form-control gwlist-select" id="gw-doc-category">
+                <select class="form-control gwlist-select" id="gw-doc-category" aria-label="按分类筛选">
                     <option value="">全部分类</option>
                     {% for cat in (gongwen_facets.categories if gongwen_facets else gongwen_categories) or [] %}
                     <option value="{{ cat.name }}">{{ cat.name }}（{{ cat.total }}）</option>
                     {% endfor %}
                 </select>
-                <select class="form-control gwlist-select" id="gw-doc-author">
+                <select class="form-control gwlist-select" id="gw-doc-author" aria-label="按发文单位筛选">
                     <option value="">全部发文单位</option>
                     {% for a in (gongwen_facets.authors if gongwen_facets else []) %}
                     <option value="{{ a.name }}">{{ a.name }}（{{ a.total }}）</option>
                     {% endfor %}
                 </select>
-                <select class="form-control gwlist-select" id="gw-doc-sender">
+                <select class="form-control gwlist-select" id="gw-doc-sender" aria-label="按发送人筛选">
                     <option value="">全部发送人</option>
                     {% for s in (gongwen_facets.senders if gongwen_facets else []) %}
                     <option value="{{ s.name }}">{{ s.name }}（{{ s.total }}）</option>
                     {% endfor %}
                 </select>
-                <select class="form-control gwlist-select" id="gw-doc-parse">
+                <select class="form-control gwlist-select" id="gw-doc-parse" aria-label="按解析状态筛选">
                     <option value="">全部解析状态</option>
                     <option value="done">已解析</option>
                     <option value="pending">未解析 / 解析中</option>
@@ -69,7 +69,10 @@
                 <button type="button" class="gwlist-chip" id="gw-doc-follow" data-active="0">我的关注</button>
             </div>
         </div>
-        <div class="gwlist-table-wrap">
+{# LQ host only. No `gwlist-table-wrap`: that class is `overflow-x: auto`, and the
+   factory's own `.lq-table__scroll` already owns scrolling and the sticky header,
+   so keeping it would nest two scrollers around one table. #}{% if _gongwen_lq_enabled %}        <div id="gw-doc-table-host" data-lq-doc-table></div>
+{% else %}        <div class="gwlist-table-wrap">
             <table class="gwlist-table">
                 <thead>
                     <tr>
@@ -94,20 +97,22 @@
                 </tbody>
             </table>
         </div>
-        <div class="gwlist-foot">
-            <span id="gw-doc-count"></span>
-            <div class="gwlist-pager">
+{% endif %}        <div class="gwlist-foot">
+{% if _gongwen_lq_enabled %}            <div data-lq-doc-count></div>
+{% else %}            <span id="gw-doc-count"></span>
+{% endif %}            <div class="gwlist-pager">
                 <label for="gw-doc-pagesize">每页</label>
-                <select class="form-control gwlist-pagesize" id="gw-doc-pagesize">
+                <select class="form-control gwlist-pagesize" id="gw-doc-pagesize" aria-label="每页条数">
                     <option value="10">10</option>
                     <option value="20" selected>20</option>
                     <option value="50">50</option>
                     <option value="100">100</option>
                 </select>
-                <button type="button" class="btn btn-outline btn-sm" id="gw-doc-prev">上一页</button>
+{% if _gongwen_lq_enabled %}                <div data-lq-doc-pager></div>
+{% else %}                <button type="button" class="btn btn-outline btn-sm" id="gw-doc-prev">上一页</button>
                 <span id="gw-doc-pageinfo">1 / 1</span>
                 <button type="button" class="btn btn-outline btn-sm" id="gw-doc-next">下一页</button>
-            </div>
+{% endif %}            </div>
         </div>
     </div>
 </section>

@@ -259,3 +259,31 @@ S5 四域迁移中暴露的三处能力缺口，已在组件层补齐并附回�
 
 实测对照（1440 宽，教材页）：修复前 3 个字段 3 行、每个 357px；修复后 2 行、宽度 172/172/356。教案页修复前后完全一致，无副作用。三个施工包独立撞上过这个问题，其中两个各自写了页面级覆盖，因此修在组件层。
 
+## 客户端工厂的使用边界（2026-09-22）
+
+`static/js/lq/{forms,tables,content,components}.js` 的工厂与服务端同源校验，并由 `tests/e2e/components/lq-{forms,tables,content,presentation}.spec.ts` 逐例断言**工厂产出与 Jinja 宏产出完全相等**。因此在控制器里调用工厂是走契约；手写字符串或 `innerHTML` 拼 `lq-*` 类名才是绕过契约。
+
+三条经常被误判为缺陷、实为两端一致的行为：
+
+1. **字符串模式无法填插槽。** `formMarkup('form_section'|'form_actions', props)` 产出的插槽容器是空的。这**不是静默错误**：Jinja 宏在没有 `{% call %}` 时产出完全相同的空容器，两端一致。字符串接口本就没有传子节点的入口。**需要插槽内容时用 DOM 工厂** `createForm(kind, props, children)`。
+2. **控件强制可见标签。** `lq_field` 与客户端 `field` 都要求非空 label（服务端 `lq_forms.py`、客户端 `forms.js` 各自 raise）。重复性列表（如投票选项行）因此会出现"选项 N"这类标签。这是冻结契约的既定无障碍决策，不可在页面侧退回。
+3. **按钮总是写出 `aria-label`，即使已有可见文案。** 服务端 `lq_components.py` 与客户端 `component-props.js` 行为相同，写入的字符串就是可见文案。属契约级设计选择，不是两端漂移。
+
+## Table 增补：表头按列开启插槽（2026-09-22）
+
+列定义新增布尔 `slot`（服务端 `classroom_app/lq_tables.py`、客户端 `static/js/lq/tables.js` 同步）：
+
+```
+columns: [{ key: 's1', label: '第 1 次课', slot: true }]
+→ <th><div class="lq-table__colhead" data-lq-slot="col:s1">标签 + 插槽</div></th>
+```
+
+插槽名 `col:<列key>`，与既有 `cell:<行key>:<列key>` 同构。**按列开启**：没有声明 `slot` 的列，表头 DOM 与此前一字不差，因此全站既有表格形状零变化。未知键仍然拒绝。
+
+动因：签到统计的课次矩阵，每个课次列的表头承载映射状态行与唯一的「复核课次」按钮；没有表头插槽就只能删掉这个功能钩子。
+
+配套样式（`static/css/lq/components/tables.css`，均为布局与令牌，无硬编码颜色）：
+
+- `.lq-table__colhead` 纵向排列，否则插槽内容会与列标签挤在同一行。
+- `.lq-table-shell--matrix` 的行表头列改为吸附（sticky），背景取 `--ls-surface-1`。矩阵横向滚动时行表头必须留在视野内；它替代的旧选择器把浅色背景写死，在暗色下会造成缺陷。实测亮色 `rgb(255,255,255)`、暗色 `rgb(24,27,37)`，跟随主题。
+

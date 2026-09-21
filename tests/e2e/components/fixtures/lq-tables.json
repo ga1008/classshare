@@ -1,48 +1,698 @@
 {
   "cases": [
-    {"kind":"table","props":{"id":"records","caption":"可管理的课程记录","selectable":true,"selectionName":"course_ids","columns":[{"key":"name","label":"课程","rowHeader":true,"sortable":true,"sort":"ascending"},{"key":"score","label":"成绩","align":"end","sortable":true},{"key":"note","label":"说明"}],"rows":[{"key":"a","label":"课程甲","selected":true,"cells":{"name":"课程甲","score":0,"note":"首条记录"}},{"key":"b","label":"课程乙","cells":{"name":"课程乙","score":"88.5","note":""}},{"key":"c","label":"受保护的课程丙","selected":true,"disabled":true,"cells":{"name":"受保护的课程丙","score":"未公布","note":"服务端已有选中值不得清除"}}]}},
-    {"kind":"table","props":{"id":"dense","caption":"鼠标紧凑表格","density":"dense","columns":[{"key":"name","label":"记录"},{"key":"value","label":"数量","align":"end"}],"rows":[{"key":"d","cells":{"name":"简单记录","value":0}}]}},
-    {"kind":"table","props":{"id":"matrix","caption":"成绩对照矩阵","mode":"matrix","columns":[{"key":"name","label":"学生","rowHeader":true},{"key":"a","label":"评分项一","align":"end"},{"key":"b","label":"评分项二","align":"end"},{"key":"c","label":"评分项三","align":"end"},{"key":"d","label":"评分项四","align":"end"},{"key":"e","label":"评分项五","align":"end"},{"key":"f","label":"评分项六","align":"end"}],"rows":[{"key":"s1","cells":{"name":"学生甲","a":0,"b":"88.5","c":90,"d":85,"e":"未评分","f":80}},{"key":"s2","cells":{"name":"学生乙","a":60,"b":0,"c":88,"d":92,"e":85,"f":90}}]}},
-    {"kind":"table","props":{"id":"empty-table","caption":"没有可选择的行","selectable":true,"columns":[{"key":"name","label":"名称"}],"rows":[]}},
-    {"kind":"table","props":{"id":"disabled-table","caption":"全部行不可操作","selectable":true,"columns":[{"key":"name","label":"名称"}],"rows":[{"key":"locked","label":"锁定记录","disabled":true,"selected":true,"cells":{"name":"保留服务端选择"}}]}},
-    {"kind":"table","props":{"id":"escaped-table","caption":"<b>安全标题</b>","columns":[{"key":"text","label":"<img src=x>"}],"rows":[{"key":"r","cells":{"text":"<script>alert(1)</script>"}}],"attrs":{"aria-hidden":true,"aria-label":"覆盖命名","title":"\" onmouseover=x"}}},
-    {"kind":"pager","props":{"id":"pager-first","page":1,"totalPages":1,"label":"单页分页"}},
-    {"kind":"pager","props":{"id":"pager-middle","page":3,"totalPages":5,"label":"命令分页"}},
-    {"kind":"pager","props":{"id":"pager-huge","page":5000,"totalPages":10000,"label":"有界大分页"}},
-    {"kind":"pager","props":{"id":"pager-empty","page":0,"totalPages":0,"label":"空分页"}},
-    {"kind":"pager","props":{"id":"pager-disabled","page":3,"totalPages":5,"disabled":true,"label":"禁用分页"}},
-    {"kind":"pager","props":{"id":"pager-links","page":2,"totalPages":3,"links":{"1":"/records?page=1&filter=x","3":"/records?page=3&filter=x"},"label":"链接分页"}},
-    {"kind":"bulk_bar","props":{"id":"bulk-zero","selectedCount":0,"actions":[{"label":"删除","id":"hidden-delete"}]}},
-    {"kind":"bulk_bar","props":{"id":"bulk-selected","selectedCount":2,"actions":[{"label":"删除所选","id":"bulk-delete","variant":"destructive"},{"label":"导出","href":"/export?selection=explicit","attrs":{"target":"_blank"}}]}},
-    {"kind":"result_count","props":{"id":"count-zero","count":0}},
-    {"kind":"result_count","props":{"id":"count-ready","count":12,"label":"名学生"}},
-    {"kind":"result_count","props":{"id":"count-loading","state":"loading"}}
+    {
+      "kind": "table",
+      "props": {
+        "id": "records",
+        "caption": "可管理的课程记录",
+        "selectable": true,
+        "selectionName": "course_ids",
+        "columns": [
+          {
+            "key": "name",
+            "label": "课程",
+            "rowHeader": true,
+            "sortable": true,
+            "sort": "ascending"
+          },
+          {
+            "key": "score",
+            "label": "成绩",
+            "align": "end",
+            "sortable": true
+          },
+          {
+            "key": "note",
+            "label": "说明"
+          }
+        ],
+        "rows": [
+          {
+            "key": "a",
+            "label": "课程甲",
+            "selected": true,
+            "cells": {
+              "name": "课程甲",
+              "score": 0,
+              "note": "首条记录"
+            }
+          },
+          {
+            "key": "b",
+            "label": "课程乙",
+            "cells": {
+              "name": "课程乙",
+              "score": "88.5",
+              "note": ""
+            }
+          },
+          {
+            "key": "c",
+            "label": "受保护的课程丙",
+            "selected": true,
+            "disabled": true,
+            "cells": {
+              "name": "受保护的课程丙",
+              "score": "未公布",
+              "note": "服务端已有选中值不得清除"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "dense",
+        "caption": "鼠标紧凑表格",
+        "density": "dense",
+        "columns": [
+          {
+            "key": "name",
+            "label": "记录"
+          },
+          {
+            "key": "value",
+            "label": "数量",
+            "align": "end"
+          }
+        ],
+        "rows": [
+          {
+            "key": "d",
+            "cells": {
+              "name": "简单记录",
+              "value": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "matrix",
+        "caption": "成绩对照矩阵",
+        "mode": "matrix",
+        "columns": [
+          {
+            "key": "name",
+            "label": "学生",
+            "rowHeader": true
+          },
+          {
+            "key": "a",
+            "label": "评分项一",
+            "align": "end"
+          },
+          {
+            "key": "b",
+            "label": "评分项二",
+            "align": "end"
+          },
+          {
+            "key": "c",
+            "label": "评分项三",
+            "align": "end"
+          },
+          {
+            "key": "d",
+            "label": "评分项四",
+            "align": "end"
+          },
+          {
+            "key": "e",
+            "label": "评分项五",
+            "align": "end"
+          },
+          {
+            "key": "f",
+            "label": "评分项六",
+            "align": "end"
+          }
+        ],
+        "rows": [
+          {
+            "key": "s1",
+            "cells": {
+              "name": "学生甲",
+              "a": 0,
+              "b": "88.5",
+              "c": 90,
+              "d": 85,
+              "e": "未评分",
+              "f": 80
+            }
+          },
+          {
+            "key": "s2",
+            "cells": {
+              "name": "学生乙",
+              "a": 60,
+              "b": 0,
+              "c": 88,
+              "d": 92,
+              "e": 85,
+              "f": 90
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "empty-table",
+        "caption": "没有可选择的行",
+        "selectable": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "名称"
+          }
+        ],
+        "rows": []
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "disabled-table",
+        "caption": "全部行不可操作",
+        "selectable": true,
+        "columns": [
+          {
+            "key": "name",
+            "label": "名称"
+          }
+        ],
+        "rows": [
+          {
+            "key": "locked",
+            "label": "锁定记录",
+            "disabled": true,
+            "selected": true,
+            "cells": {
+              "name": "保留服务端选择"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "escaped-table",
+        "caption": "<b>安全标题</b>",
+        "columns": [
+          {
+            "key": "text",
+            "label": "<img src=x>"
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "text": "<script>alert(1)</script>"
+            }
+          }
+        ],
+        "attrs": {
+          "aria-hidden": true,
+          "aria-label": "覆盖命名",
+          "title": "\" onmouseover=x"
+        }
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-first",
+        "page": 1,
+        "totalPages": 1,
+        "label": "单页分页"
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-middle",
+        "page": 3,
+        "totalPages": 5,
+        "label": "命令分页"
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-huge",
+        "page": 5000,
+        "totalPages": 10000,
+        "label": "有界大分页"
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-empty",
+        "page": 0,
+        "totalPages": 0,
+        "label": "空分页"
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-disabled",
+        "page": 3,
+        "totalPages": 5,
+        "disabled": true,
+        "label": "禁用分页"
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "id": "pager-links",
+        "page": 2,
+        "totalPages": 3,
+        "links": {
+          "1": "/records?page=1&filter=x",
+          "3": "/records?page=3&filter=x"
+        },
+        "label": "链接分页"
+      }
+    },
+    {
+      "kind": "bulk_bar",
+      "props": {
+        "id": "bulk-zero",
+        "selectedCount": 0,
+        "actions": [
+          {
+            "label": "删除",
+            "id": "hidden-delete"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "bulk_bar",
+      "props": {
+        "id": "bulk-selected",
+        "selectedCount": 2,
+        "actions": [
+          {
+            "label": "删除所选",
+            "id": "bulk-delete",
+            "variant": "destructive"
+          },
+          {
+            "label": "导出",
+            "href": "/export?selection=explicit",
+            "attrs": {
+              "target": "_blank"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "id": "count-zero",
+        "count": 0
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "id": "count-ready",
+        "count": 12,
+        "label": "名学生"
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "id": "count-loading",
+        "state": "loading"
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "sessions",
+        "caption": "课次矩阵示例",
+        "columns": [
+          {
+            "key": "student",
+            "label": "学生",
+            "rowHeader": true
+          },
+          {
+            "key": "s1",
+            "label": "第 1 次课",
+            "slot": true
+          },
+          {
+            "key": "s2",
+            "label": "第 2 次课"
+          }
+        ],
+        "rows": [
+          {
+            "key": "stu-1",
+            "cells": {
+              "student": "张三",
+              "s1": "出勤",
+              "s2": "缺勤"
+            }
+          }
+        ]
+      }
+    }
   ],
   "invalid": [
-    {"kind":"table","props":{"id":"x","columns":[{"key":"a","label":"A"}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A"},{"key":"a","label":"B"}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A","sort":"ascending"}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A","sortable":true,"sort":"ascending"},{"key":"b","label":"B","sortable":true,"sort":"descending"}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A","sort":"custom"}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A"}],"rows":[{"key":"r","cells":{"b":"x"}}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A"}],"rows":[{"key":"r","cells":{"a":"x"}},{"key":"r","cells":{"a":"y"}}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","selectable":true,"columns":[{"key":"a","label":"A"}],"rows":[{"key":"r","cells":{"a":"x"}}]}},
-    {"kind":"table","props":{"id":"x","caption":"x","columns":[{"key":"a","label":"A"}],"rows":[{"key":"r","cells":{"a":{"html":"x"}}}]}},
-    {"kind":"pager","props":{"page":1,"totalPages":0}},
-    {"kind":"pager","props":{"page":0,"totalPages":5}},
-    {"kind":"pager","props":{"page":6,"totalPages":5}},
-    {"kind":"pager","props":{"page":1,"totalPages":9007199254740992}},
-    {"kind":"pager","props":{"page":1,"totalPages":2,"links":{"2":"javascript:alert(1)"}}},
-    {"kind":"pager","props":{"page":1,"totalPages":2,"links":{"2":"//evil.example"}}},
-    {"kind":"pager","props":{"page":1,"totalPages":2,"links":{}}},
-    {"kind":"pager","props":{"page":1,"totalPages":2,"links":{"2":null}}},
-    {"kind":"pager","props":{"page":1,"totalPages":2,"disabled":"false"}},
-    {"kind":"bulk_bar","props":{"selectedCount":-1}},
-    {"kind":"bulk_bar","props":{"selectedCount":2,"actions":[{"label":"x","attrs":"onclick=x"}]}},
-    {"kind":"result_count","props":{}},
-    {"kind":"result_count","props":{"count":false}},
-    {"kind":"result_count","props":{"count":1,"attrs":{"onclick":"x"}}},
-    {"kind":"result_count","props":{"count":1,"rawHTML":"<b>x</b>"}}
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": []
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          },
+          {
+            "key": "a",
+            "label": "B"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A",
+            "sort": "ascending"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A",
+            "sortable": true,
+            "sort": "ascending"
+          },
+          {
+            "key": "b",
+            "label": "B",
+            "sortable": true,
+            "sort": "descending"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A",
+            "sort": "custom"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "b": "x"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "a": "x"
+            }
+          },
+          {
+            "key": "r",
+            "cells": {
+              "a": "y"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "selectable": true,
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "a": "x"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "x",
+        "caption": "x",
+        "columns": [
+          {
+            "key": "a",
+            "label": "A"
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "a": {
+                "html": "x"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 0
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 0,
+        "totalPages": 5
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 6,
+        "totalPages": 5
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 9007199254740992
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 2,
+        "links": {
+          "2": "javascript:alert(1)"
+        }
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 2,
+        "links": {
+          "2": "//evil.example"
+        }
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 2,
+        "links": {}
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 2,
+        "links": {
+          "2": null
+        }
+      }
+    },
+    {
+      "kind": "pager",
+      "props": {
+        "page": 1,
+        "totalPages": 2,
+        "disabled": "false"
+      }
+    },
+    {
+      "kind": "bulk_bar",
+      "props": {
+        "selectedCount": -1
+      }
+    },
+    {
+      "kind": "bulk_bar",
+      "props": {
+        "selectedCount": 2,
+        "actions": [
+          {
+            "label": "x",
+            "attrs": "onclick=x"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {}
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "count": false
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "count": 1,
+        "attrs": {
+          "onclick": "x"
+        }
+      }
+    },
+    {
+      "kind": "result_count",
+      "props": {
+        "count": 1,
+        "rawHTML": "<b>x</b>"
+      }
+    },
+    {
+      "kind": "table",
+      "props": {
+        "id": "t",
+        "caption": "c",
+        "columns": [
+          {
+            "key": "a",
+            "label": "甲",
+            "slotty": true
+          }
+        ],
+        "rows": [
+          {
+            "key": "r",
+            "cells": {
+              "a": "x"
+            }
+          }
+        ]
+      }
+    }
   ]
 }
