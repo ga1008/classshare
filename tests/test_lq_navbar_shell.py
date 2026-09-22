@@ -130,8 +130,9 @@ class NavbarShellRenderingTests(unittest.TestCase):
     def assert_single_preferences(self, doc):
         self.assertEqual(1, len(doc.attr('data-ui-preferences-details')))
         self.assertEqual(1, len(doc.attr('data-ui-palette-select')))
-        self.assertEqual({'appearance', 'glass'}, {node.attrs['data-ui-preference-select'] for node in doc.attr('data-ui-preference-select')})
-        self.assertEqual(2, len(doc.attr('data-ui-preference-select')))
+        self.assertEqual({'appearance', 'glass', 'backdrop'}, {node.attrs['data-ui-preference-select'] for node in doc.attr('data-ui-preference-select')})
+        self.assertEqual(3, len(doc.attr('data-ui-preference-select')))
+        self.assertEqual(['backdrop_color'], [node.attrs['data-ui-preference-input'] for node in doc.attr('data-ui-preference-input')])
         self.assertEqual(1, len(doc.scripts('js/user_ui_preferences.js')))
 
     def test_navbar_default_off_unknown_flags_and_missing_helper_retain_legacy(self):

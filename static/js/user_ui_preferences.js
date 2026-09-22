@@ -3,14 +3,94 @@ import { initTheme } from './lq/theme.js';
 /** SSR is authoritative. No browser cache crosses account boundaries. */
 export const PALETTE_KEYS = Object.freeze(['teal', 'indigo', 'sky', 'mint', 'violet', 'rose']);
 export const normalizePalette = value => PALETTE_KEYS.includes(value) ? value : 'indigo';
-const FIELDS = Object.freeze(['palette_key', 'appearance', 'glass']);
-const LABELS = { palette_key: '配色', appearance: '外观', glass: '玻璃效果' };
-const VALUE_LABELS = { auto: '跟随系统', light: '浅色', dark: '深色', tinted: '柔和玻璃', off: '关闭玻璃', teal: '青碧', indigo: '靛蓝', sky: '晴空', mint: '薄荷', violet: '紫罗兰', rose: '玫瑰' };
+// Mirrors BACKDROP_CATEGORIES in user_ui_preferences_service.py; the parity is
+// asserted by tests/test_user_ui_preferences_backdrop.py so the two cannot drift.
+export const BACKDROP_CATEGORY_KEYS = Object.freeze(['academic-rules', 'thesis', 'teaching', 'career', 'research', 'postgrad', 'life', 'wellbeing', 'internship', 'industry', 'civil-service', 'graduation', 'scholarship', 'interview', 'contract']);
+export const BACKDROP_MODES = Object.freeze(['scene', 'off', ...BACKDROP_CATEGORY_KEYS.map(key => `scene-${key}`)]);
+// A colour only ever reaches a style through this exact shape. Anything else is
+// replaced by the default; no arbitrary string is written to a custom property.
+export const BACKDROP_COLOR = /^#[0-9a-f]{6}$/;
+export const DEFAULT_BACKDROP_COLOR = '#' + 'f'.repeat(6);
+const BACKDROP_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(?:webp|jpg|jpeg|png)$/;
+const FIELDS = Object.freeze(['palette_key', 'appearance', 'glass', 'backdrop', 'backdrop_color']);
+const LABELS = { palette_key: '配色', appearance: '外观', glass: '玻璃效果', backdrop: '页面背景', backdrop_color: '背景纯色' };
+const VALUE_LABELS = { auto: '跟随系统', light: '浅色', dark: '深色', tinted: '柔和玻璃', off: '关闭玻璃', teal: '青碧', indigo: '靛蓝', sky: '晴空', mint: '薄荷', violet: '紫罗兰', rose: '玫瑰', scene: '开屏大图' };
 const normalize = value => ({
     palette_key: normalizePalette(value.palette_key),
     appearance: ['auto', 'light', 'dark'].includes(value.appearance) ? value.appearance : 'auto',
     glass: value.glass === 'off' ? 'off' : 'tinted',
+    backdrop: BACKDROP_MODES.includes(value.backdrop) ? value.backdrop : 'scene',
+    backdrop_color: BACKDROP_COLOR.test(String(value.backdrop_color || '')) ? value.backdrop_color : DEFAULT_BACKDROP_COLOR,
 });
+
+/** FNV-1a, byte for byte with the server so a preview shows the saved image. */
+export function stableIndex(seed, size) {
+    if (!(size > 0)) return 0;
+    let digest = 2166136261;
+    for (const byte of new TextEncoder().encode(String(seed))) {
+        digest = Math.imul(digest ^ byte, 16777619) >>> 0;
+    }
+    return digest % size;
+}
+
+/** Pick the same library file the server would for this account-day and mode. */
+export function pickBackdropFile(images, { mode, seed, label = null }) {
+    if (mode === 'off') return null;
+    const library = images.filter(item => item && BACKDROP_FILE.test(String(item.file || '')))
+        .map(item => ({ file: item.file, categories: Array.isArray(item.categories) ? item.categories : [] }))
+        .sort((first, second) => first.file < second.file ? -1 : first.file > second.file ? 1 : 0);
+    const pool = label ? library.filter(item => item.categories.includes(label)) : library;
+    const source = pool.length ? pool : library;
+    return source.length ? source[stableIndex(`${seed}|${mode}`, source.length)].file : null;
+}
+
+/** The fixed viewport-bottom layer. It is the surface glass is seen against,
+ * so it never gains a backdrop-filter and never becomes a blur host itself. */
+export function createBackdropLayer(root = document) {
+    // Hosts without the SSR layer (or without a DOM at all) stay inert.
+    const find = selector => (typeof root?.querySelector === 'function' ? root.querySelector(selector) : null);
+    const layer = find('[data-lq-page-backdrop]');
+    let catalog = [];
+    try { catalog = JSON.parse(find('[data-lq-backdrop-catalog]')?.textContent || '[]'); }
+    catch (_) { catalog = []; }
+    const labelOf = mode => (Array.isArray(catalog) ? catalog : []).find(item => item?.key === mode)?.name || null;
+    let library = null;
+    let disposed = false;
+    let generation = 0;
+
+    function images() {
+        if (!library) {
+            const url = layer?.dataset.lqBackdropManifest;
+            library = !url ? Promise.resolve([]) : fetch(url, { credentials: 'same-origin', cache: 'force-cache' })
+                .then(response => response.ok ? response.json() : null)
+                .then(data => Array.isArray(data?.images) ? data.images : [])
+                .catch(() => []);
+        }
+        return library;
+    }
+    function paint(file) {
+        layer.dataset.lqBackdropImageUrl = file ? layer.dataset.lqBackdropBase + file : '';
+        // Only whitelisted library file names reach this property.
+        layer.style.setProperty('--lq-backdrop-image', file ? `url(${layer.dataset.lqBackdropBase}${file})` : 'none');
+    }
+    return {
+        layer,
+        apply(values) {
+            if (!layer || disposed) return;
+            const mine = ++generation;
+            layer.dataset.lqBackdropMode = values.backdrop;
+            layer.dataset.lqBackdropColor = values.backdrop_color;
+            layer.style.setProperty('--lq-backdrop-color', values.backdrop_color);
+            if (values.backdrop === 'off') { paint(null); return; }
+            void images().then(list => {
+                // A later choice already repainted; a slow manifest never wins.
+                if (disposed || mine !== generation) return;
+                paint(pickBackdropFile(list, { mode: values.backdrop, seed: layer.dataset.lqBackdropSeed || '', label: labelOf(values.backdrop) }));
+            });
+        },
+        dispose() { disposed = true; },
+    };
+}
 
 /** Per-field user intent, with a single serialized whole-row CAS queue. */
 export function createUIPreferencesController({ initial, request, onPreview = () => {}, onStatus = () => {}, onConfirmed = () => {}, debounceMs = 240 }) {
@@ -19,7 +99,7 @@ export function createUIPreferencesController({ initial, request, onPreview = ()
     const desired = normalize(initial);
     const dirty = new Set();
     const conflicts = new Map();
-    const intents = { palette_key: 0, appearance: 0, glass: 0 };
+    const intents = Object.fromEntries(FIELDS.map(field => [field, 0]));
     let busy = false;
     let needsRecovery = initial.available === false;
     let uncertain = null;
@@ -167,7 +247,8 @@ export function initUserUIPreferences(documentRoot = document) {
     // queue; a Profile section must never mount a second preferences owner.
     const inputs = [...scope.querySelectorAll('[data-ui-preference-input]')].filter(node =>
         (node.dataset.uiPreferenceInput === 'appearance' && node.type === 'radio' && ['auto', 'light', 'dark'].includes(node.value)) ||
-        (node.dataset.uiPreferenceInput === 'glass' && node.type === 'checkbox'));
+        (node.dataset.uiPreferenceInput === 'glass' && node.type === 'checkbox') ||
+        (node.dataset.uiPreferenceInput === 'backdrop_color' && node.type === 'color'));
     const choices = [...scope.querySelectorAll('[data-ui-preference-choice]')].filter(node =>
         node.tagName === 'BUTTON' && node.type === 'button' && node.dataset.uiPreferenceChoice === 'palette_key' && PALETTE_KEYS.includes(node.dataset.uiPreferenceValue));
     const controls = [...selects, ...inputs, ...choices];
@@ -190,9 +271,14 @@ export function initUserUIPreferences(documentRoot = document) {
             cleanups.push(() => { if (live === null) node.removeAttribute('aria-live'); else node.setAttribute('aria-live', live); });
         });
     }
+    const backdrop = createBackdropLayer(scope);
+    cleanups.push(() => backdrop.dispose());
     function syncControls(values) {
         selects.forEach(node => { node.value = values[fieldOf(node)]; });
-        inputs.forEach(node => { node.checked = node.type === 'radio' ? node.value === values.appearance : values.glass === 'tinted'; });
+        inputs.forEach(node => {
+            if (node.type === 'color') node.value = values.backdrop_color;
+            else node.checked = node.type === 'radio' ? node.value === values.appearance : values.glass === 'tinted';
+        });
         choices.forEach(node => node.setAttribute('aria-pressed', String(node.dataset.uiPreferenceValue === values.palette_key)));
     }
     function status(kind, message) {
@@ -233,6 +319,8 @@ export function initUserUIPreferences(documentRoot = document) {
             palette_key: scope.dataset.uiPalette,
             appearance: scope.dataset.appearancePreference,
             glass: scope.dataset.glassPreference,
+            backdrop: backdrop.layer?.dataset.lqBackdropMode,
+            backdrop_color: backdrop.layer?.dataset.lqBackdropColor,
             version: Number(scope.dataset.uiPaletteVersion || 0),
             context_token: context,
             available: scope.dataset.uiPaletteAvailable !== 'false',
@@ -243,7 +331,9 @@ export function initUserUIPreferences(documentRoot = document) {
             scope.dataset.appearancePreference = values.appearance;
             scope.dataset.glassPreference = values.glass;
             syncControls(values);
-            theme?.refresh(values);
+            backdrop.apply(values);
+            // The theme runtime owns only these three; backdrop is our layer.
+            theme?.refresh({ palette_key: values.palette_key, appearance: values.appearance, glass: values.glass });
             if (paletteChanged) scope.dispatchEvent(new documentRoot.defaultView.CustomEvent('lanshare:ui-palette-change', { detail: { palette_key: values.palette_key }, bubbles: true }));
         },
         onConfirmed(preferences) { scope.dataset.uiPaletteVersion = String(preferences.version); scope.dataset.uiPaletteAvailable = 'true'; },
@@ -253,7 +343,7 @@ export function initUserUIPreferences(documentRoot = document) {
     [...selects, ...inputs].forEach(node => {
         listen(node, 'change', () => {
             if (node.disabled || (node.type === 'radio' && !node.checked)) return;
-            const value = node.dataset.uiPreferenceInput === 'glass' ? (node.checked ? 'tinted' : 'off') : node.value;
+            const value = node.dataset.uiPreferenceInput === 'glass' ? (node.checked ? 'tinted' : 'off') : String(node.value).toLowerCase();
             controller.select(fieldOf(node), value);
         });
         listen(node, 'keydown', event => {

@@ -7172,7 +7172,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -7630,7 +7630,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8081,7 +8081,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8303,7 +8303,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -9079,7 +9079,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -10215,7 +10215,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -11090,7 +11090,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -12557,7 +12557,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -13055,7 +13055,7 @@
           },
           {
             "path": "templates/manage/layout.html",
-            "sha256": "a19c58bd87eb5381c2a8888327283251fd00f117cb6d22966e36f66e9ef5a07f",
+            "sha256": "1964bc963a24b41c9fdb614dabd43b175ad4e7911857096eecc47a8f1d8d39fd",
             "scope": "显式 pilot/embedded 分支、head 单 module、LQ 顶栏/侧栏 partial、原 DOM 与 controller 排他所有权；旧分支继续保留。指纹覆盖全文件，SSR 验证 on/off/embedded、权限 canonical 链接和表单节点。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",

@@ -2,6 +2,8 @@
 
 {% macro user_palette_select(preferences) -%}
 {% if preferences.enabled|default(false) %}
+{% set backdrop_scene = preferences.backdrop_scene|default({}, true) %}
+{% set backdrop_categories = backdrop_scene.categories|default([], true) %}
 <details class="ui-palette-control" data-ui-preferences-details>
     <summary class="ui-preferences-toggle" data-ui-preferences-toggle>
         <span>外观</span>
@@ -27,6 +29,18 @@
                 <option value="tinted"{% if preferences.glass|default('tinted') == 'tinted' %} selected{% endif %}>柔和玻璃</option>
                 <option value="off"{% if preferences.glass|default('tinted') == 'off' %} selected{% endif %}>关闭玻璃</option>
             </select>
+        </label>
+        <label class="ui-preferences-field"><span>页面背景</span>
+            <select class="ui-palette-select" data-ui-preference-select="backdrop" aria-label="页面背景" {{ explain_attrs('页面背景', '底部铺一张减色的开屏大图，用来衬托磨砂玻璃。也可以关闭，改用纯色。') }}>
+                <option value="scene"{% if preferences.backdrop|default('scene') == 'scene' %} selected{% endif %}>开屏大图（随机）</option>
+                {% for category in backdrop_categories %}
+                <option value="{{ category.key }}"{% if category.key == preferences.backdrop|default('scene') %} selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+                <option value="off"{% if preferences.backdrop|default('scene') == 'off' %} selected{% endif %}>关闭（纯色）</option>
+            </select>
+        </label>
+        <label class="ui-preferences-field ui-preferences-field--backdrop-color"><span>背景纯色</span>
+            <input class="ui-backdrop-color" type="color" data-ui-preference-input="backdrop_color" value="{{ backdrop_scene.color|default(preferences.backdrop_color|default('', true), true) }}" aria-label="背景纯色" {{ explain_attrs('背景纯色', '关闭背景图后整页使用这个颜色。默认纯白。') }}>
         </label>
         <span class="ui-palette-status sr-only" data-ui-palette-status role="status" aria-live="polite"></span>
     </div>

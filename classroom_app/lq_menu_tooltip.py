@@ -23,6 +23,23 @@ def _flag(value):
     return value
 
 
+def _item_attrs(value):
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("LQ menu item attrs must be a mapping")
+    result = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not re.fullmatch(r"data-(?!lq-)[a-z0-9-]+", key):
+            raise ValueError("LQ menu item attrs allow only non-reserved data attributes")
+        if item is None:
+            continue
+        if not isinstance(item, (str, int, float, bool)) or isinstance(item, float) and item != item:
+            raise ValueError("LQ menu item attr value must be scalar")
+        result[key] = "" if item is True else ("" if item is False else str(item))
+    return result
+
+
 def lq_menu_props(**props):
     if props.keys() - {"id", "label", "items"}:
         raise ValueError("Invalid LQ menu props")
@@ -32,7 +49,7 @@ def lq_menu_props(**props):
         raise ValueError("LQ menu needs items")
     items, seen = [], set()
     for value in values:
-        if not isinstance(value, dict) or value.keys() - {"id", "label", "icon", "href", "target", "disabled", "danger", "group"}:
+        if not isinstance(value, dict) or value.keys() - {"id", "label", "icon", "href", "target", "disabled", "danger", "group", "attrs"}:
             raise ValueError("Invalid LQ menu item")
         item_id, item_label = _text(value.get("id")), _text(value.get("label"))
         if item_id in seen:
@@ -45,7 +62,11 @@ def lq_menu_props(**props):
             raise ValueError("Invalid menu href")
         if "target" in value and (not href or value["target"] not in ("_blank", "_self")):
             raise ValueError("Invalid menu target")
-        attrs = {"data-lq-menu-item": item_id}
+        # Pages need their own hooks on a menu item (the account menu opens two
+        # modals by data attribute). Caller keys are merged first so the ones the
+        # component owns always win, and `data-lq-` stays reserved for components.
+        attrs = dict(_item_attrs(value.get("attrs")))
+        attrs["data-lq-menu-item"] = item_id
         if danger:
             attrs["data-danger"] = "true"
         if "target" in value:

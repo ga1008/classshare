@@ -1,0 +1,14 @@
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% from 'macros/lq/menus.html' import lq_menu %}
+{# Trigger button plus the existing lq_menu panel, reused verbatim. #}
+{% macro lq_nav_menu(id, label, items, icon=none, variant='glass', tone='neutral', size='md', shape='capsule', align='start') -%}
+{%- set p = lq_props('nav_menu', id=id, label=label, items=items, icon=icon, variant=variant, tone=tone, size=size, shape=shape, align=align) -%}
+{%- set t = p.trigger -%}
+<div{% for key, value in p.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{#- the caret rotates with aria-expanded and stays decorative -#}
+<button class="{{ t.classes|forceescape }}"{% for key, value in t.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
+{%- if t.icon %}<span class="lq-btn__icon" aria-hidden="true">{{ lq_icon(t.icon) }}</span>{% endif -%}
+<span class="lq-btn__label">{{ t.label|forceescape }}</span><span class="lq-nav-menu__caret" aria-hidden="true">{{ lq_icon(p.caret) }}</span></button>
+{{- lq_menu(p.id, p.label, items) -}}
+</div>
+{%- endmacro %}

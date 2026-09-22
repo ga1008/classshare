@@ -1,0 +1,87 @@
+/* 页面背景图：视口底部固定层。它是被透视的底，不是玻璃，所以永远不加
+   backdrop-filter，也不参与模糊宿主预算。减色由 filter + opacity + 面纱共同完成。 */
+.lq-page-backdrop {
+    --lq-backdrop-band: min(46vh, 34rem);
+    --lq-backdrop-saturation: 0.45;
+    --lq-backdrop-opacity: 0.55;
+    --lq-backdrop-veil-top: 0.38;
+    --lq-backdrop-veil-bottom: 0;
+    position: fixed;
+    inset: 0;
+    z-index: var(--ls-z-material-sheen);
+    pointer-events: none;
+    overflow: hidden;
+    contain: layout paint style;
+}
+
+/* 关闭形态是一块纯色：它盖住页面原有渐变，回到纯白或用户自定义的纯色。 */
+.lq-page-backdrop[data-lq-backdrop-mode="off"] {
+    background-color: var(--lq-backdrop-color, hsl(var(--ls-background)));
+}
+
+.lq-page-backdrop[data-lq-backdrop-mode="off"] .lq-page-backdrop__image,
+.lq-page-backdrop[data-lq-backdrop-mode="off"] .lq-page-backdrop__veil {
+    display: none;
+}
+
+/* 嵌合在视口底部：高度随视口变化，contain 保证原图比例不被拉伸。 */
+.lq-page-backdrop__image {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: var(--lq-backdrop-band);
+    background-image: var(--lq-backdrop-image, none);
+    background-repeat: no-repeat;
+    background-position: bottom center;
+    background-size: contain;
+    filter: saturate(var(--lq-backdrop-saturation));
+    opacity: var(--lq-backdrop-opacity);
+}
+
+.lq-page-backdrop__veil {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: var(--lq-backdrop-band);
+    background-image: linear-gradient(
+        to bottom,
+        hsl(var(--ls-background) / var(--lq-backdrop-veil-top)),
+        hsl(var(--ls-background) / var(--lq-backdrop-veil-bottom))
+    );
+}
+
+:root[data-appearance="dark"] .lq-page-backdrop {
+    --lq-backdrop-saturation: 0.35;
+    --lq-backdrop-opacity: 0.42;
+    --lq-backdrop-veil-top: 0.5;
+    --lq-backdrop-veil-bottom: 0.08;
+}
+
+/* 无障碍与降级：高对比、强制配色、打印一律不铺图，只留纯色或页面原样。 */
+@media (prefers-contrast: more) {
+    .lq-page-backdrop__image {
+        --lq-backdrop-opacity: 0.12;
+        --lq-backdrop-saturation: 0.2;
+    }
+}
+
+@media (forced-colors: active) {
+    .lq-page-backdrop {
+        display: none;
+    }
+}
+
+@media print {
+    .lq-page-backdrop {
+        display: none;
+    }
+}
+
+/* 外观面板里的背景图控件与既有偏好字段并列。 */
+.ui-preferences-field--backdrop-color {
+    align-items: center;
+}
+
+.ui-backdrop-color {
+    block-size: 2rem;
+    inline-size: 3rem;
+    padding: 0;
+}

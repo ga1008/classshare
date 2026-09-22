@@ -61,7 +61,7 @@ describe('LQ Profile appearance adapters share the existing preferences owner', 
   it('initializes SSR radio, switch and six chips without requiring hidden selects or requests', () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     const env = fixture({ selects: false }); const owner = env.mount();
-    expect(owner.snapshot().desired).toEqual({ palette_key: 'indigo', appearance: 'auto', glass: 'tinted' });
+    expect(owner.snapshot().desired).toEqual({ palette_key: 'indigo', appearance: 'auto', glass: 'tinted', backdrop: 'scene', backdrop_color: '#ffffff' });
     expect(env.radios.map(node => node.checked)).toEqual([true, false, false]);
     expect(env.glass.checked).toBe(true);
     expect(env.chips.filter(node => node.getAttribute('aria-pressed') === 'true')).toEqual([env.chips[1]]);
@@ -87,7 +87,7 @@ describe('LQ Profile appearance adapters share the existing preferences owner', 
     expect(env.radios.map(node => node.checked)).toEqual([false, true, false]); expect(env.glass.checked).toBe(false);
     expect(env.chips[3].getAttribute('aria-pressed')).toBe('true');
     change(env.radios[0], false); env.chips[0].disabled = true; env.chips[0].dispatchEvent(new Event('click'));
-    expect(owner.snapshot().intents).toEqual({ appearance: 1, glass: 1, palette_key: 1 });
+    expect(owner.snapshot().intents).toEqual({ appearance: 1, glass: 1, palette_key: 1, backdrop: 0, backdrop_color: 0 });
   });
   it('keeps the latest radio intent while an older CAS reply is in flight', async () => {
     let release: (value: unknown) => void = () => {};

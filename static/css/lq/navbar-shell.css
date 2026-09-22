@@ -128,10 +128,10 @@
     :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools .lq-btn { white-space: normal; min-width: 0; }
 }
 
-/* Student navbar grouping (2026-09-22). The三 groups previously floated as bare
-   rows inside one wide bar, so the eye found no edges. Give each the same radius
-   and the header's own glass material. No nested backdrop-filter: the header is
-   already the blur host, and a second one would add a layer for no visual gain. */
+/* Student navbar condensed to one row (2026-09-22, S7 T). Six top-level entries
+   only: 学习 / 职业 / 我的 are lq_nav_menu triggers, 博客 / 通知 / 外观 stay
+   direct. Two panels give the eye its edges. No nested backdrop-filter: the
+   header is already the blur host, and a second one adds a layer for no gain. */
 [data-lq-navbar-topbar] .lq-topbar__lead,
 [data-lq-navbar-topbar] .lq-report-card-utilities,
 [data-lq-navbar-topbar] .lq-report-card-tools {
@@ -153,19 +153,29 @@
 [data-lq-navbar-topbar] .lq-topbar__actions { align-items: center; gap: var(--ls-s-2); }
 [data-lq-navbar-topbar] .lq-report-card-tools { font-size: var(--ls-t-footnote); }
 /* Inside a group the buttons are the content, not competing surfaces. */
-[data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) .lq-btn--ghost {
+[data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) :is(.lq-btn--ghost, .lq-nav-menu__trigger) {
     border-radius: var(--ls-r-md);
 }
 [data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) .lq-btn:hover {
     background: hsl(var(--ls-surface-1) / .72);
 }
+/* The component keeps its trigger on one line; the row it sits in must agree. */
+[data-lq-navbar-topbar] .lq-nav-menu { display: inline-flex; flex: 0 0 auto; }
 @media (min-width: 1024px) {
-    /* Shared rule gives this group a full-width row, which is what spread the
-       links across the bar. Let it size to its content and sit beside the rest. */
+    /* Shared rule gives this group a full-width row, which is what forced the
+       second row. Both panels size to their content and share one line. */
     [data-lq-navbar-topbar] .lq-report-card-tools { flex-basis: auto; }
-    [data-lq-navbar-topbar] .lq-topbar__actions { max-width: min(72vw, 1100px); }
+    [data-lq-navbar-topbar] .lq-topbar__actions { max-width: none; flex-wrap: nowrap; justify-content: flex-end; }
+    [data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) { flex-wrap: nowrap; }
+    /* The title column is the one that yields; the entries never wrap. */
+    [data-lq-navbar-topbar] .lq-topbar__title { min-width: 0; }
 }
 @media (max-width: 1023px) {
-    [data-lq-navbar-topbar] .lq-report-card-tools { gap: var(--ls-s-1); }
+    /* Inside the 更多 drawer the six entries stack instead of squeezing, and the
+       shared two-column grid would cut the menu triggers in half. */
+    [data-lq-navbar-topbar] .lq-report-card-tools { display: flex; grid-template-columns: none; gap: var(--ls-s-1); }
+    [data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) { flex-wrap: wrap; width: 100%; }
+    [data-lq-navbar-topbar] .lq-nav-menu { flex: 1 1 auto; }
+    [data-lq-navbar-topbar] .lq-nav-menu__trigger { width: 100%; justify-content: flex-start; }
 }
 

@@ -9,6 +9,7 @@ from .lq_navigation import NAVIGATION_KINDS, lq_navigation_props
 from .lq_collapsible import COLLAPSIBLE_KINDS, lq_collapsible_props
 from .lq_content import CONTENT_KINDS, lq_content_props
 from .lq_menu_tooltip import MENU_TOOLTIP_KINDS, lq_menu_tooltip_props
+from .lq_nav_menu import NAV_MENU_KINDS, lq_nav_menu_kind_props
 from .lq_status import STATUS_KINDS, lq_status_props
 from .lq_tables import TABLE_KINDS, lq_table_props
 from .lq_selection import SELECTION_KINDS, lq_selection_props
@@ -40,6 +41,8 @@ def lq_props(component, **props):
         return lq_selection_props(component, **props)
     if isinstance(component, str) and component in BUSINESS_KINDS:
         return lq_business_props(component, **props)
+    if isinstance(component, str) and component in NAV_MENU_KINDS:
+        return lq_nav_menu_kind_props(component, **props)
     if isinstance(component, str) and component in MENU_TOOLTIP_KINDS:
         return lq_menu_tooltip_props(component, **props)
     if isinstance(component, str) and component in STATUS_KINDS:

@@ -21,6 +21,7 @@
   侧栏 = 六域手风琴：域标题即折叠开关，一次只开一个域；域内分组只做小标题。
 #}
 <body class="{% if _lq_manage_pilot %}lq-manage-pilot {% elif _lq_manage_shell %}lq-manage-shell {% endif %}{% if embedded_mode %}manage-embedded-page{% endif %} manage-domain-{{ manage_nav.active_domain|default('teaching') }} {% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %} {{ body_attrs(ui_palette) }}>
+    {% include 'partials/lq_page_backdrop.html' with context %}
     {% if _lq_manage_shell %}<a class="lq-manage-skip" href="#manage-pilot-main">跳转到主要内容</a>{% endif %}
     {% if not embedded_mode %}
     {% from "macros/manage_icons.html" import manage_icon %}

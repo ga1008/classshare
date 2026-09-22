@@ -1,6 +1,8 @@
 {% from 'macros/lq/button.html' import lq_btn %}
 {% from 'macros/lq/icons.generated.html' import lq_icon %}
 {% from 'macros/user_ui_preferences.html' import user_palette_select %}
+{%- from 'macros/lq/nav-menu.html' import lq_nav_menu %}
+{%- set navbar_shell_condensed = lq_family_enabled is defined and lq_family_enabled('navbar-shell') %}
 {# Authored page composition of the S2 Shell contract. Legacy scene hooks stay
    on these exact nodes; one Shell controller owns the native overflow dialog. #}
 <header id="{{ navbar_shell_id }}" class="app-topbar role-{{ user_info.role }} lq-topbar lq-topbar--standard lq-glass lq-scroll-edge" data-lq-shell="topbar" {% if navbar_shell_report %}data-lq-report-card-topbar{% else %}data-lq-navbar-topbar{% endif %} data-lq-lock-nav="false" data-lq-view-transition="false" aria-label="全局导航">
@@ -15,6 +17,7 @@
             <header class="lq-shell-pane__head"><strong>更多操作</strong><button type="button" class="lq-shell-pane__close" data-lq-pane-close aria-label="关闭更多操作">{{ lq_icon('x') }}</button></header>
             <div class="lq-topbar__actions">
                 {% if navbar_shell_actions|default('')|trim %}<div class="lq-navbar-context-actions">{{ navbar_shell_actions }}</div>{% endif %}
+                {%- if not navbar_shell_condensed %}
                 <div class="lq-report-card-utilities" role="group" aria-label="常用入口">
                     <div class="message-center-bell-anchor" data-message-center-bell-shell>
                         <a href="/profile?section=notifications#profile-message-center" class="message-center-bell lq-btn lq-btn--soft lq-btn--md" data-message-center-bell aria-label="打开通知中心">
@@ -40,7 +43,48 @@
                     {% if user_info.role == 'student' %}{{ lq_btn('修改密码',variant='ghost',attrs={'data-open-student-security':''}) }}{% endif %}
                     {{ lq_btn('退出登录',href='/logout',variant='ghost') }}
                 </div>
+                {%- else %}
+                {#- One row, two panels, at most two levels: a trigger and one menu.
+                    `lq_menu` items own a closed attribute vocabulary, so the two
+                    modal openers keep their controller hooks through an explicit
+                    server-side injection on the frozen `data-lq-menu-item` token.
+                    Both hooks are asserted by tests/e2e/specs/lq-s7-topbar.spec.ts. -#}
+                {%- set account_items = [{'id':'profile','label':'个人中心','href':'/profile','icon':'user'}] %}
+                {%- if user_info.role == 'student' %}{% set _ = account_items.append({'id':'security','label':'修改密码','icon':'lock','attrs':{'data-open-student-security':true}}) %}{% endif %}
+                {%- set _ = account_items.append({'id':'feedback','label':'问题反馈','icon':'message-circle','attrs':{'data-open-feedback':true}}) %}
+                {%- set _ = account_items.append({'id':'logout','label':'退出登录','href':'/logout','icon':'external-link','danger':true}) %}
+                <div class="lq-report-card-utilities" role="group" aria-label="学习与内容入口">
+                    {%- if user_info.role == 'student' %}
+                    {{ lq_nav_menu(navbar_shell_id ~ '--study', '学习', [
+                        {'id':'learning-path','label':'学习路径','href':'/learning-path','icon':'book-open'},
+                        {'id':'wrong-book','label':'错题本','href':'/wrong-book','icon':'circle-alert'},
+                        {'id':'feedback-review','label':'反馈复盘','href':'/feedback-review','icon':'refresh'}], icon='book-open', variant='ghost') }}
+                    {{ lq_nav_menu(navbar_shell_id ~ '--career', '职业', [
+                        {'id':'career-path','label':'职业路径','href':'/career-path','icon':'layout-dashboard'},
+                        {'id':'resume','label':'个人简历','href':'/resume','icon':'file-text'}], icon='layout-dashboard', variant='ghost') }}
+                    {%- else %}
+                    {{ lq_btn('管理中心',href='/manage',variant='ghost',icon='layout-dashboard') }}
+                    {%- endif %}
+                    <a href="/blog" class="lq-btn lq-btn--ghost lq-btn--md" data-blog-topbar-entry aria-label="打开博客"><span data-blog-topbar-caption>博客</span><span class="lq-badge" data-tone="info" data-blog-today-count hidden>+0</span></a>
+                </div>
+                <div class="lq-report-card-tools" role="group" aria-label="通知与账号">
+                    <div class="message-center-bell-anchor" data-message-center-bell-shell>
+                        <a href="/profile?section=notifications#profile-message-center" class="message-center-bell lq-btn lq-btn--soft lq-btn--md" data-message-center-bell aria-label="打开通知中心">
+                            {{ lq_icon('bell') }}<span data-message-center-bell-caption>通知</span><span class="lq-badge" data-tone="danger" data-message-center-bell-count hidden>0</span>
+                        </a>
+                        <div class="message-center-bell-toast" data-message-center-bell-toast hidden><strong>新消息提醒</strong><div data-message-center-bell-toast-body>你有一条新消息。</div><div data-message-center-bell-toast-meta>点击消息入口进入通知中心</div></div>
+                    </div>
+                    {{ lq_nav_menu(navbar_shell_id ~ '--account', '我的', account_items, icon='user', variant='ghost') }}
+                    {{ user_palette_select(ui_palette) }}
+                </div>
+                {%- endif %}
             </div>
         </section>
     </dialog>
 </header>
+{%- if navbar_shell_condensed %}
+<script type="module">
+    import { enhanceNavMenus } from "{{ asset_url('js/lq/nav-menu.js') }}";
+    enhanceNavMenus(document);
+</script>
+{%- endif %}

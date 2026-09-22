@@ -18,17 +18,20 @@ def ensure_user_ui_preferences_schema(conn: Any, *, engine: str | None = None) -
             palette_key TEXT NOT NULL DEFAULT 'indigo',
             appearance TEXT NULL,
             glass TEXT NULL,
+            backdrop TEXT NULL,
+            backdrop_color TEXT NULL,
             version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (user_role, user_pk)
         )
         """
     )
+    optional = ("appearance", "glass", "backdrop", "backdrop_color")
     if engine == "postgres":
-        for column in ("appearance", "glass"):
+        for column in optional:
             conn.execute(f'ALTER TABLE "user_ui_preferences" ADD COLUMN IF NOT EXISTS "{column}" TEXT NULL')
     else:
         columns = {str(row[1]) for row in conn.execute('PRAGMA table_info("user_ui_preferences")').fetchall()}
-        for column in ("appearance", "glass"):
+        for column in optional:
             if column not in columns:
                 conn.execute(f'ALTER TABLE "user_ui_preferences" ADD COLUMN "{column}" TEXT NULL')

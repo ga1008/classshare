@@ -1,0 +1,18 @@
+{# 页面背景图层：登录态才渲染，未登录页完全不受影响。
+   它固定在视口底部、不随滚动、保持原图比例，颜色与图片只经受控的自定义属性写入。 #}
+{% set preferences = ui_palette|default({}) %}
+{% set backdrop = preferences.backdrop_scene|default(none) if preferences.enabled|default(false) else none %}
+{% if backdrop %}
+<div class="lq-page-backdrop" data-lq-page-backdrop aria-hidden="true"
+     data-lq-backdrop-mode="{{ backdrop.mode }}"
+     data-lq-backdrop-seed="{{ backdrop.seed }}"
+     data-lq-backdrop-color="{{ backdrop.color }}"
+     data-lq-backdrop-base="{{ backdrop.base }}"
+     data-lq-backdrop-manifest="{{ backdrop.manifest }}"
+     data-lq-backdrop-image-url="{{ backdrop.image|default('', true) }}"
+     style="--lq-backdrop-color: {{ backdrop.color }}; --lq-backdrop-image: {{ backdrop.image_css }}">
+    <div class="lq-page-backdrop__image" data-lq-backdrop-image></div>
+    <div class="lq-page-backdrop__veil"></div>
+</div>
+<script type="application/json" data-lq-backdrop-catalog>{{ backdrop.categories|tojson }}</script>
+{% endif %}

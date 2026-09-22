@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {"id":"nav-default","label":"默认分组","items":[{"id":"a","label":"作业"},{"id":"b","label":"测验"}]},
+    {"id":"nav-study","label":"学习","icon":"book-open","variant":"soft","tone":"primary","size":"lg","shape":"rounded","align":"end",
+     "items":[{"id":"homework","label":"我的作业","icon":"check"},{"id":"paused","label":"暂不可用","disabled":true},
+              {"id":"outside","label":"校外资源","href":"/details","target":"_blank"},
+              {"id":"drop","label":"退出课程","danger":true,"group":"risk","icon":"trash-2"}]},
+    {"id":"nav-ghost","label":"更多","icon":"ellipsis","variant":"ghost","tone":"danger","size":"sm","shape":"capsule","align":"start",
+     "items":[{"id":"one","label":"第一项","group":"常用"},{"id":"two","label":"第二项","group":"归档"}]},
+    {"id":"nav-escaped","label":"<script>","tone":"info","items":[{"id":"<x>","label":"<img onerror=alert(1)>","href":"/a?x=%22","icon":"info"}]}
+  ],
+  "invalid": [
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"href":"/somewhere"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"variant":"prominent"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"variant":"destructive"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"variant":true},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"tone":"teal"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"size":"xl"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"shape":"pill"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"align":"center"},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"}],"icon":"Book Open"},
+    {"id":"nav a","label":"标题","items":[{"id":"a","label":"项"}]},
+    {"id":"nav-a","label":"  ","items":[{"id":"a","label":"项"}]},
+    {"id":"nav-a","label":"标题","items":[]},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项"},{"id":"a","label":"另一项"}]},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项","html":"<b>x</b>"}]},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项","href":"javascript:alert(1)"}]},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项","target":"_blank"}]},
+    {"id":"nav-a","label":"标题","items":[{"id":"a","label":"项","disabled":"false"}]}
+  ]
+}

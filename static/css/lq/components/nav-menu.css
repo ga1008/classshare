@@ -1,0 +1,49 @@
+/* Navigation menu button. The panel is .lq-menu and keeps its own material:
+   the top bar is already a blur host, so no backdrop-filter is created here. */
+.lq-nav-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.lq-nav-menu__trigger {
+    --lq-nav-glow: var(--ls-tone-neutral-soft);
+    gap: calc(var(--ls-s-1) + var(--ls-s-1) / 2);
+    max-width: 100%;
+    /* A nav label is one line; a cramped bar scrolls instead of stacking
+       letters vertically. The host owns that overflow, the button does not. */
+    white-space: nowrap;
+}
+.lq-nav-menu__trigger[data-tone="primary"] { --lq-nav-glow: var(--ls-primary-soft); }
+.lq-nav-menu__trigger[data-tone="success"] { --lq-nav-glow: var(--ls-tone-success-soft); }
+.lq-nav-menu__trigger[data-tone="warning"] { --lq-nav-glow: var(--ls-tone-warning-soft); }
+.lq-nav-menu__trigger[data-tone="danger"] { --lq-nav-glow: var(--ls-tone-danger-soft); }
+.lq-nav-menu__trigger[data-tone="info"] { --lq-nav-glow: var(--ls-tone-info-soft); }
+.lq-nav-menu__trigger[data-lq-nav-shape="capsule"] { border-radius: var(--ls-r-capsule); }
+.lq-nav-menu__trigger[data-lq-nav-shape="rounded"] { border-radius: var(--ls-r-md); }
+/* Only the hovered or expanded trigger glows; sibling triggers are untouched
+   because every selector here is scoped to the element's own state. */
+.lq-nav-menu__trigger:hover,
+.lq-nav-menu__trigger:focus-visible,
+.lq-nav-menu__trigger[aria-expanded="true"] {
+    box-shadow: 0 0 0 1px hsl(var(--lq-nav-glow)), 0 0 var(--ls-s-3) var(--ls-s-1) hsl(var(--lq-nav-glow));
+}
+.lq-nav-menu__caret {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    transition: transform var(--ls-dur-fast) var(--ls-ease-out);
+}
+.lq-nav-menu__caret .lq-icon {
+    width: var(--lq-btn-icon-size);
+    height: var(--lq-btn-icon-size);
+}
+.lq-nav-menu__trigger[aria-expanded="true"] .lq-nav-menu__caret { transform: rotate(180deg); }
+/* The panel's own opacity/scale transition lives in components/menus.css. */
+@media (prefers-reduced-motion: reduce) {
+    .lq-nav-menu__caret { transition: none; }
+}
+@media (forced-colors: active) {
+    .lq-nav-menu__trigger:hover,
+    .lq-nav-menu__trigger:focus-visible,
+    .lq-nav-menu__trigger[aria-expanded="true"] { box-shadow: none; }
+}

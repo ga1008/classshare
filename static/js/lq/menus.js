@@ -7,6 +7,20 @@ const ROOTS = Symbol.for('lanshare.lq.menu-roots.v1');
 const IDS = Symbol.for('lanshare.lq.menu-identities');
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new TypeError(`LQ menu ${name} must be text`); return value.trim(); };
 const flag = value => { if (value === undefined) return false; if (typeof value !== 'boolean') throw new TypeError('Invalid LQ menu flag'); return value; };
+// Pages need their own hooks on a menu item. Caller keys are spread first so
+// component-owned ones always win, and `data-lq-` stays reserved for components.
+function itemAttrs(value) {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) throw new TypeError('LQ menu item attrs must be a mapping');
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!/^data-(?!lq-)[a-z0-9-]+$/.test(key)) throw new TypeError('LQ menu item attrs allow only non-reserved data attributes');
+    if (item === null || item === undefined) continue;
+    if (!['string', 'number', 'boolean'].includes(typeof item) || (typeof item === 'number' && !Number.isFinite(item))) throw new TypeError('LQ menu item attr value must be scalar');
+    result[key] = typeof item === 'boolean' ? '' : String(item);
+  }
+  return result;
+}
 export function menuProps(props = {}, doc) {
     if (!props || typeof props !== 'object' || Array.isArray(props) || Object.keys(props).some(key => !['id', 'label', 'items'].includes(key))) throw new TypeError('Invalid LQ menu props');
     let id = props.id;
@@ -16,14 +30,14 @@ export function menuProps(props = {}, doc) {
     if (!Array.isArray(props.items) || !props.items.length) throw new TypeError('LQ menu needs items');
     const seen = new Set();
     const items = props.items.map(value => {
-        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['id', 'label', 'icon', 'href', 'target', 'disabled', 'danger', 'group'].includes(key))) throw new TypeError('Invalid LQ menu item');
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['id', 'label', 'icon', 'href', 'target', 'disabled', 'danger', 'group', 'attrs'].includes(key))) throw new TypeError('Invalid LQ menu item');
         const item = { id: required(value.id, 'item id'), label: required(value.label, 'item label'), disabled: flag(value.disabled), danger: flag(value.danger), group: value.group === undefined ? '' : required(value.group, 'group') };
         if (seen.has(item.id)) throw new TypeError('Duplicate LQ menu item'); seen.add(item.id);
         const href = value.href === undefined ? null : safeUrl(value.href);
         if (value.href !== undefined && href === null) throw new TypeError('Invalid menu href');
         if (value.target !== undefined && (!href || !['_blank', '_self'].includes(value.target))) throw new TypeError('Invalid menu target');
         item.button = { label: item.label, variant: 'ghost', ...(value.icon === undefined ? {} : { icon: required(value.icon, 'icon') }), ...(href ? { href } : {}), ariaDisabled: item.disabled,
-            attrs: { 'data-lq-menu-item': item.id, ...(item.danger ? { 'data-danger': 'true' } : {}), ...(value.target ? { target: value.target } : {}) } };
+            attrs: { ...itemAttrs(value.attrs), 'data-lq-menu-item': item.id, ...(item.danger ? { 'data-danger': 'true' } : {}), ...(value.target ? { target: value.target } : {}) } };
         // The shared button renderer owns its validation, icon and safe URL rules.
         componentMarkup('button', item.button);
         return item;

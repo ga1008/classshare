@@ -178,7 +178,7 @@ describe('three-field preference intent and whole-row CAS', () => {
     pending.resolve(saved({ palette_key: 'sky', appearance: 'dark' }, 2));
     await vi.advanceTimersByTimeAsync(240);
     expect(request).toHaveBeenLastCalledWith('PATCH', { appearance: 'light', glass: 'off', version: 2 });
-    expect(onPreview).toHaveBeenLastCalledWith({ palette_key: 'sky', appearance: 'light', glass: 'off' });
+    expect(onPreview).toHaveBeenLastCalledWith({ palette_key: 'sky', appearance: 'light', glass: 'off', backdrop: 'scene', backdrop_color: '#ffffff' });
     expect(controller.snapshot().dirty).toBe(false);
   });
   it('does not confirm a conflicted appearance when the user chooses glass', async () => {

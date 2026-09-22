@@ -287,3 +287,31 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 - `.lq-table__colhead` 纵向排列，否则插槽内容会与列标签挤在同一行。
 - `.lq-table-shell--matrix` 的行表头列改为吸附（sticky），背景取 `--ls-surface-1`。矩阵横向滚动时行表头必须留在视野内；它替代的旧选择器把浅色背景写死，在暗色下会造成缺陷。实测亮色 `rgb(255,255,255)`、暗色 `rgb(24,27,37)`，跟随主题。
 
+## NavMenu 与 Menu 条目属性通道（2026-09-22）
+
+### `lq_nav_menu`：导航菜单按钮（触发器 + 一级下拉）
+
+`classroom_app/lq_nav_menu.py` / `templates/macros/lq/nav-menu.html` / `static/js/lq/nav-menu.js` / `static/css/lq/components/nav-menu.css`。
+
+签名：`lq_nav_menu(id, label, items, icon=none, variant='glass', tone='neutral', size='md', shape='capsule', align='start')`。条目结构与 `lq_menu` **完全相同**，校验直接委托 `lq_menu_props`；面板就是 `lq_menu` 的产物，不另造一套。
+
+**严格两层**：触发按钮 → 一级菜单为止，不支持再嵌套。
+
+客户端 `enhanceNavMenus(root, { hoverOpenDelay = 120, hoverCloseDelay = 220 })`：
+- 键盘、焦点、层级协调**全部复用** `menus.js` 的 `bindMenu`，组件自身零 `keydown` 监听。
+- 悬停开合只在 `(hover: hover) and (pointer: fine)` 生效；从触发器移动到面板的途中不关闭。
+- **悬停打开不抢焦点**：用 `layer.js` 的 `onInitialFocus` / `onReturnFocus` 两个可取消钩子，在悬停路径上阻止「聚焦首项」与「关闭时还焦点」，否则鼠标划过顶栏会夺走用户正在编辑的输入框焦点。点击与键盘路径行为不变。
+- 面板**不加** `backdrop-filter`：宿主壳已是模糊宿主。
+
+已知项：裸组件夹具页打开菜单时，axe 的 `region`（moderate，最佳实践）会命中 `#lq-layers`。根因是 `layer.js` 把传送宿主挂在 `<body>` 直下，页面地标是它的兄弟而非祖先，**真实页面同样存在**。用例把它钉死为「恰好一条」，不是过滤。
+
+### Menu 条目新增受限的 `attrs` 通道
+
+`lq_menu` 与 `lq_nav_menu` 的条目新增可选 `attrs`，两端同步：
+
+- 只接受 `data-` 开头且**不以 `data-lq-` 开头**的属性名；`aria-*`、事件属性、任意其他名称一律报错。
+- 值必须是标量；`true` 渲染为空字符串。
+- 调用方的键先展开，**组件自有键（`data-lq-menu-item`、`data-danger`、`target`）总是覆盖它**。
+
+动因：学生顶栏「我的」菜单里的修改密码与问题反馈由页面脚本按 data 属性打开弹窗。此前的做法是对冻结组件的输出做字符串替换注入属性——依赖渲染出的属性顺序，任何组件内部调整都会静默失效。改为正规通道后那处替换已删除，对应断言也改为「钩子与菜单项落在同一元素上」的 DOM 断言，不再依赖属性顺序。
+
