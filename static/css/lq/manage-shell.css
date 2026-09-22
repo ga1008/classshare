@@ -1,6 +1,9 @@
 /* Shared management navigation and geometry. S3 pilot remains a compatible consumer.
    The zero-height mobile sidebar must not create a stacking context below the topbar.
    Page-specific colors and business controls remain in manage-pilot.css. */
+/* body 是画布，不是面板：页面背景图层 .lq-page-backdrop 以 fixed 铺在它之上，
+   所以这里保持不透明纯色，玻璃只发生在它上面的壳与面板上。
+   .lq-manage-skip 同理保持不透明：只在键盘聚焦时出现，必须恒可读。 */
 body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)); color: hsl(var(--ls-ink)); }
 :is(.lq-manage-pilot,.lq-manage-shell) [hidden] { display: none !important; }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-layout { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; min-height: 100dvh; gap: var(--ls-s-4); padding: var(--ls-s-3); }
@@ -50,7 +53,7 @@ body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-logout { flex: none; padding: var(--ls-s-2); }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions, :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); min-width: 0; max-width: 100%; }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions:empty { display: none; }
-:is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); height: auto; background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+:is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); height: auto; background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action--primary { background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); border-color: hsl(var(--ls-primary)); }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action :is(strong,small,.app-topbar-action__icon) { color: inherit; }
 :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-message { position: relative; }
@@ -109,7 +112,7 @@ body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)
 @media (max-width:767px) {
   :root[data-lq-shell-fallback="inline"] :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar { padding-inline-start: var(--ls-s-2); }
 }
-@media (hover:hover) and (pointer:fine) { :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-nav .manage-nav-item:hover { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink)); } }
+@media (hover:hover) and (pointer:fine) { :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-nav .manage-nav-item:hover { background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink)); } }
 @media (prefers-reduced-motion:reduce) { :is(.lq-manage-pilot,.lq-manage-shell) :is(.lq-manage-sidebar,.lq-manage-nav .manage-nav-item,.lq-manage-context-actions .app-topbar-action) { animation: none; transition: none; } }
 @media (forced-colors:active) {
   :is(.lq-manage-pilot,.lq-manage-shell) :is(.lq-manage-sidebar-pane,.lq-manage-brand__home,.lq-manage-context-actions .app-topbar-action,.lq-manage-skip) { background: Canvas; color: CanvasText; border-color: CanvasText; }

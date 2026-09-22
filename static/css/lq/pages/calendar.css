@@ -7,10 +7,15 @@
    (sticky first column depends on overflow:auto set by semester_calendar.js /
    the legacy stylesheet) and `.semester-sticky-cell` must stay untouched. */
 
+/* 面板根同时带 .lq-surface（见 partials/semester_calendar_panel.html），但遗留的
+   .semester-calendar-panel 规则在 ui-system.src.css 里、排在 lq 之后且同特指度，
+   删掉这里的填充会让旧的不透明底重新胜出，所以按内容级材质显式写一遍。
+   描边保持 --ls-line：--ls-glass-line 是为彩色背景上的玻璃准备的白线，
+   在这块浅色面板上看不见。 */
 [data-lq-calendar] {
     border-radius: var(--ls-r-lg);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-content));
     padding: var(--ls-s-5);
 }
 
@@ -31,7 +36,7 @@
     border-radius: var(--ls-r-capsule);
     padding: var(--ls-s-1) var(--ls-s-3);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-control));
 }
 [data-lq-calendar] .semester-calendar-panel__actions .btn-primary {
     background: hsl(var(--ls-primary));

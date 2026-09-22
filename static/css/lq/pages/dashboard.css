@@ -20,15 +20,13 @@
     display: contents;
 }
 
-/* -- 需要处理: agenda list -------------------------------------------- */
+/* -- 需要处理: agenda list --------------------------------------------
+   列表根同时带 `lq-list`（dashboard.html / dashboard_teacher.html），几何、描边、
+   overflow 都由组件给足，这里原先是逐条重复，已删。只剩材质一项：组件里的
+   `.lq-list` 至今仍是不透明 surface-1（components/content.css，不属本包），
+   已在报告里交给主任务收口；在那之前由这条把它拉回内容级玻璃。 */
 [data-lq-dashboard] .ls-focus-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border: 1px solid hsl(var(--ls-line));
-    border-radius: var(--ls-r-lg);
-    background: hsl(var(--ls-surface-1));
-    overflow: clip;
+    background: hsl(var(--lq-page-content));
 }
 [data-lq-dashboard] .ls-focus-item {
     display: flex;
@@ -69,15 +67,16 @@
     gap: 2px;
     padding: 2px;
     border-radius: var(--ls-r-capsule);
-    background: hsl(var(--ls-surface-2));
+    background: hsl(var(--lq-page-control));
 }
 [data-lq-dashboard] [data-group-mode-tabs] .ls-filter {
     border-radius: var(--ls-r-capsule);
     padding: var(--ls-s-1) var(--ls-s-3);
     transition: background var(--ls-dur-fast) var(--ls-ease-out), color var(--ls-dur-fast) var(--ls-ease-out);
 }
+[data-lq-dashboard] /* 选中的一格要浮在轨道之上，所以比轨道的 control 高一级到 content。 */
 [data-lq-dashboard] [data-group-mode-tabs] .ls-filter[aria-pressed="true"] {
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-content));
     color: hsl(var(--ls-primary));
     box-shadow: var(--ls-shadow-1);
 }
@@ -88,11 +87,13 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--ls-s-4);
 }
+/* `lq-card--interactive` 只给悬停行为，不给填充（components/content.css 里
+   `.lq-card` 本身没有 background），所以卡片的内容级材质必须由页面层提供。 */
 [data-lq-dashboard] .ls-course-row {
     position: relative;
     border-radius: var(--ls-r-lg);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-content));
     padding: var(--ls-s-4) var(--ls-s-4) var(--ls-s-4) calc(var(--ls-s-4) + 4px);
     overflow: clip;
     transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
@@ -114,7 +115,7 @@
 [data-lq-dashboard] .ls-domain-card {
     border-radius: var(--ls-r-lg);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-content));
     transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
 }
 @media (hover: hover) {
@@ -124,15 +125,16 @@
 [data-lq-dashboard] .ls-tool-link {
     border-radius: var(--ls-r-md);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-control));
     padding: var(--ls-s-2) var(--ls-s-3);
 }
 
 /* -- evaluation menu -> lq-menu look ----------------------------------- */
+/* 这是个真的浮层，按 raised 走，和 lq-menu 同级。 */
 [data-lq-dashboard] .dashboard-evaluation-menu__popover {
     border-radius: var(--ls-r-lg);
     border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-raised));
     box-shadow: var(--ls-shadow-3);
 }
 
@@ -161,20 +163,19 @@
    only the <=767px viewport actually folds. The .lq-surface chrome would
    otherwise double up with the page background, so it is flattened on
    desktop and only rendered as a card on narrow screens. */
-[data-lq-dashboard] .lq-collapsible {
-    border: none;
-    background: none;
-    box-shadow: none;
+@media (min-width: 768px) {
+    [data-lq-dashboard] .lq-collapsible {
+        border: none;
+        background: none;
+        box-shadow: none;
+    }
 }
 [data-lq-dashboard] .lq-collapsible > .lq-collapsible__content { padding: 0; }
 [data-lq-dashboard] .lq-collapsible > .lq-collapsible__summary { padding-inline: 0; }
 [data-lq-dashboard] .lq-collapsible__title { font-size: var(--ls-t-title3); }
 @media (max-width: 767px) {
-    [data-lq-dashboard] .lq-collapsible {
-        border: 1px solid hsl(var(--ls-line));
-        border-radius: var(--ls-r-lg);
-        background: hsl(var(--ls-surface-1));
-    }
+    /* 窄屏这里原本手工补一层不透明卡片；现在把桌面端的抹平限制在 >=768px，
+       .lq-surface 自己就是那张卡，页面层不再复述边框与填充。 */
     [data-lq-dashboard] .lq-collapsible > .lq-collapsible__summary { padding-inline: var(--ls-s-4); }
     [data-lq-dashboard] .lq-collapsible > .lq-collapsible__content { padding: 0 var(--ls-s-4) var(--ls-s-4); }
 }

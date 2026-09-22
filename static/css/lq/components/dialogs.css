@@ -8,7 +8,15 @@
     pointer-events: none;
 }
 .lq-dialog-root[hidden] { display: none; }
-.lq-dialog-root > .lq-scrim { pointer-events: auto; }
+/* The scrim is the boundary between the layer world and the page, so it is the
+   one place a dialog blurs what is behind it: the panel above it then only has
+   to carry its own tint. Darkness comes from --ls-scrim (light .28 / dark .50),
+   which is shared with every other scrim in the product. */
+.lq-dialog-root > .lq-scrim {
+    pointer-events: auto;
+    -webkit-backdrop-filter: blur(var(--ls-blur-scrim));
+    backdrop-filter: blur(var(--ls-blur-scrim));
+}
 .lq-dialog__surface {
     display: flex;
     flex-direction: column;
@@ -130,4 +138,11 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .lq-dialog__surface { transition: none; }
+}
+
+/* Transparency is not available here, so the scrim becomes an opaque canvas
+   and separation falls back to the panel stroke. */
+:root[data-lq-forced-colors="true"] .lq-dialog-root > .lq-scrim { background: Canvas; }
+@media (forced-colors: active) {
+    .lq-dialog-root > .lq-scrim { background: Canvas; }
 }

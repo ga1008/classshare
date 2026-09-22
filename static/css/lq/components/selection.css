@@ -28,7 +28,9 @@
 .lq-selection__popup[hidden] { display: none; }
 .lq-selection__popup[data-ui-overlay-state="closed"] { opacity: 0; transform: scale(.96); }
 .lq-selection__list { min-width: 0; max-height: 300px; overflow: auto; overscroll-behavior: contain; }
-.lq-selection--listbox > .lq-selection__list { border: 1px solid hsl(var(--ls-line-strong)); border-radius: 12px; background: hsl(var(--ls-surface-1)); padding: 6px; }
+/* An inline listbox is a control, not an overlay: control fill, glass rim,
+   no blur of its own. The floating popup is the overlay package's material. */
+.lq-selection--listbox > .lq-selection__list { border: 1px solid hsl(var(--ls-glass-line)); border-radius: 12px; background: hsl(var(--ls-glass-fill-control)); -webkit-backdrop-filter: none; backdrop-filter: none; padding: 6px; }
 .lq-selection__option {
     min-height: 40px;
     padding: 9px 12px;
@@ -39,10 +41,11 @@
     overflow-wrap: anywhere;
     cursor: pointer;
 }
-.lq-selection__option[aria-selected="true"] { background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); font-weight: 600; }
+.lq-selection__option[aria-selected="true"] { background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control)); color: hsl(var(--ls-ink)); font-weight: 600; }
 .lq-selection__option[data-active] { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
-.lq-selection__option[aria-disabled="true"] { color: hsl(var(--ls-ink-3)); cursor: not-allowed; }
+.lq-selection__option[aria-disabled="true"] { color: hsl(var(--ls-ink-2)); cursor: not-allowed; }
 .lq-selection__status { margin: 0; padding: 6px 12px; color: hsl(var(--ls-ink-2)); font-size: 13px; overflow-wrap: anywhere; }
+.lq-selection__toggle { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .lq-selection__status:empty { display: none; }
 .lq-selection__input[aria-invalid="true"], .lq-selection__list[aria-invalid="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }
 .lq-selection__list:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }

@@ -7,7 +7,7 @@
     overflow: auto;
     overscroll-behavior: contain;
     padding: 6px;
-    border-radius: 16px;
+    border-radius: var(--ls-r-lg);
     opacity: 1;
     transform: none;
     transition: opacity 160ms var(--ls-ease-out), transform 160ms var(--ls-ease-out);

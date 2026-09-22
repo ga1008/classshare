@@ -16,7 +16,9 @@
 .lq-card--flat { box-shadow: none; }
 .lq-card--hero { padding: var(--ls-s-6); background: hsl(var(--ls-surface-2)); }
 .lq-card__value { margin: var(--ls-s-3) 0 0; font-size: calc(var(--ls-t-title1) + var(--ls-s-1)); line-height: var(--ls-leading-title1); font-weight: var(--ls-weight-title1); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.lq-list { margin: 0; padding: 0; list-style: none; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); overflow: clip; }
+/* Content material, like every other panel. It carried an opaque surface and
+   was the last content component still out of the scale. */
+.lq-list { margin: 0; padding: 0; list-style: none; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-glass-fill-content)); overflow: clip; }
 .lq-row { position: relative; display: flex; align-items: center; gap: var(--ls-s-3); min-height: calc(var(--ls-s-12) + var(--ls-s-2)); padding: var(--ls-s-3) var(--ls-s-4); min-width: 0; --lq-row-main-offset: var(--ls-s-4); }
 .lq-row:has(> .lq-row__lead:not(:empty)) { --lq-row-main-offset: calc(var(--ls-s-4) + var(--ls-s-8) + var(--ls-s-1) + var(--ls-s-3)); }
 .lq-row + .lq-row::before { content: ''; position: absolute; top: 0; inset-inline-start: var(--lq-row-main-offset); inset-inline-end: 0; border-top: 1px solid hsl(var(--ls-line)); }
@@ -44,7 +46,7 @@
 }
 .lq-empty { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-3); min-height: var(--ls-s-12); padding: var(--ls-s-3); }
 .lq-empty__title { font-size: var(--ls-t-body); line-height: var(--ls-leading-body); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
-.lq-empty--card { min-height: calc(var(--ls-s-10) * 3); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); padding: var(--ls-s-6); background: hsl(var(--ls-surface-1)); }
+.lq-empty--card { min-height: calc(var(--ls-s-10) * 3); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); padding: var(--ls-s-6); background: hsl(var(--ls-glass-fill-content)); }
 .lq-empty--page { align-items: flex-start; flex-direction: column; justify-content: center; min-height: calc(var(--ls-s-16) * 3); padding: var(--ls-s-8); }
 .lq-empty[data-reason="error"] .lq-empty__title, .lq-empty[data-reason="forbidden"] .lq-empty__title { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--ls-s-4); padding-block: var(--ls-s-4); }

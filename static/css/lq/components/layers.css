@@ -21,3 +21,43 @@
 [data-ui-dialog-root][data-lq-layer-state] > [data-ui-dialog-overlay] {
     pointer-events: auto;
 }
+
+/* ---------------------------------------------------------------------------
+ * Overlay material (S8 OVL). Every layer sits at the raised step of the scale
+ * (--ls-glass-fill-strong). The tiers below differ only in radius, shadow
+ * weight and blur ownership; rim, sheen and stroke are identical everywhere so
+ * a menu and a dialog read as the same substance.
+ *
+ * Declared here because layers.css is imported directly after materials.css,
+ * which leaves every per-component file free to refine a single overlay after
+ * the shared recipe has landed.
+ * ------------------------------------------------------------------------- */
+.lq-dialog__surface,
+.lq-menu,
+.lq-toast,
+.lq-tooltip {
+    --lq-material-fill: var(--ls-glass-fill-strong);
+    border: 1px solid hsl(var(--ls-glass-line));
+}
+
+/* O1 focus layers and O2 floating panels share the deepest shadow: both are
+   detached from the page and need the same amount of lift to read as such. */
+.lq-dialog__surface,
+.lq-menu,
+.lq-toast {
+    box-shadow: var(--ls-glass-shadow-strong);
+}
+
+/* O3 is a hint, not a surface you act on, so it keeps the lighter shadow. */
+.lq-tooltip {
+    box-shadow: var(--ls-glass-shadow);
+}
+
+/* Blur ownership. A layer is a material boundary, so the panels that own the
+   screen host the thick blur. Toasts stack without bound and a tooltip is
+   control-sized, so neither earns a compositing layer: they take the raised
+   fill and stop there (see components/toast.css and components/tooltips.css). */
+.lq-dialog__surface,
+.lq-menu {
+    --lq-material-blur: var(--ls-blur-thick);
+}

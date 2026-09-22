@@ -1,0 +1,58 @@
+/* 页面层材质别名（S8 PAGE 包）。
+ *
+ * 页面里还有大量不属于任何组件的遗留 DOM（.ls-course-row、.pts-panel、
+ * .profile-band ……）：它们拿不到 .lq-surface / .lq-material-control 这两个类，
+ * 却必须和组件用同一套材质标度。这里把 content / control / raised 三级填充取成
+ * 别名，页面规则只写 `background: hsl(var(--lq-page-content))`，
+ * 降级出口集中在本文件一处，与 materials.css 对 .lq-glass / .lq-surface 的
+ * 对外契约保持一致。
+ *
+ * 本层永不声明 backdrop-filter：模糊只在组件的材质边界出现（§12.1 原则 1）。
+ * 这些别名不是设计令牌，不进 tokens.css，也不参与 test_lq_tokens 的标度断言；
+ * 它们的取值永远是 --ls-* 令牌，标度本身仍由 tokens.css 独家定义。
+ */
+:root {
+    --lq-page-content: var(--ls-glass-fill-content);
+    --lq-page-control: var(--ls-glass-fill-control);
+    --lq-page-raised: var(--ls-glass-fill-strong);
+}
+
+/* 关掉玻璃的子树与低端档：页面层跟着组件一起回到不透明表面。 */
+:root[data-lq-tier="C"],
+[data-lq-glass="off"] {
+    --lq-page-content: var(--ls-surface-1);
+    --lq-page-control: var(--ls-surface-2);
+    --lq-page-raised: var(--ls-surface-1);
+}
+
+/* 用户要求更高对比度时，透明度本身就是被拒绝的那一项。 */
+:root[data-lq-contrast="more"] {
+    --lq-page-content: var(--ls-surface-1);
+    --lq-page-control: var(--ls-surface-2);
+    --lq-page-raised: var(--ls-surface-1);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    :root {
+        --lq-page-content: var(--ls-surface-1);
+        --lq-page-control: var(--ls-surface-2);
+        --lq-page-raised: var(--ls-surface-1);
+    }
+}
+
+@media (prefers-contrast: more) {
+    :root {
+        --lq-page-content: var(--ls-surface-1);
+        --lq-page-control: var(--ls-surface-2);
+        --lq-page-raised: var(--ls-surface-1);
+    }
+}
+
+/* 打印永远是纸：半透明填充在纸上只会变成灰底，费墨且更难读。 */
+@media print {
+    :root {
+        --lq-page-content: var(--ls-surface-1);
+        --lq-page-control: var(--ls-surface-1);
+        --lq-page-raised: var(--ls-surface-1);
+    }
+}

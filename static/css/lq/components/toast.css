@@ -1,4 +1,6 @@
-/* Notifications are an opaque surface: never add another backdrop blur. */
+/* Notifications take the raised fill like every other layer, but never a blur:
+   a toast stack has no upper bound, so one compositing layer per toast would
+   multiply the cost by N for a tint that is already .78/.80 opaque. */
 .lq-toasts {
     position: fixed;
     z-index: var(--ls-z-toast);
@@ -17,17 +19,30 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    position: relative;
+    isolation: isolate;
     min-width: 0;
     min-height: 48px;
     padding: 10px 10px 10px 14px;
-    border-radius: 16px;
-    box-shadow: var(--ls-glass-shadow);
+    border-radius: var(--ls-r-lg);
     pointer-events: auto;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     opacity: 1;
     transform: none;
     transition: opacity 160ms var(--ls-ease-out), transform 160ms var(--ls-ease-out);
+}
+/* .lq-surface has no rim of its own; a layer must read like the other layers. */
+.lq-toast::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: var(--ls-z-material-sheen);
+    border-radius: inherit;
+    border-top: 1px solid hsl(var(--ls-glass-rim));
+    border-bottom: 1px solid hsl(var(--ls-glass-rim-bottom));
+    background-image: var(--ls-glass-sheen);
+    pointer-events: none;
 }
 .lq-toast[hidden] { display: none; }
 .lq-toast[data-ui-overlay-state="closed"] { opacity: 0; transform: translateY(-8px); }
@@ -47,7 +62,6 @@
 .lq-toast__message { font-size: 14px; line-height: 1.5; font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lq-toast__content > .lq-btn { margin-top: 4px; min-height: 32px; max-width: 100%; white-space: normal; }
 .lq-toast__close { flex: none; min-width: 44px; min-height: 44px; }
-.lq-toast[data-action-error="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }
 .lq-toast-fallback { position: fixed; inset: 16px 16px auto auto; z-index: var(--ls-z-toast); max-width: min(400px, calc(100vw - 32px)); padding: 16px; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); overflow-wrap: anywhere; }
 .lq-toast-fallback > button { display: block; min-height: 44px; margin-block-start: 8px; }
 @media (max-width: 640px) {
@@ -55,3 +69,22 @@
     .lq-toast__content > .lq-btn { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .lq-toast { transition: none; } }
+/* The opt-outs materials.css spells out for .lq-glass, restated for this
+   .lq-surface host so a toast goes opaque with everything else. */
+[data-lq-glass="off"] .lq-toast,
+:root[data-lq-tier="C"] .lq-toast {
+    background: hsl(var(--ls-surface-1));
+    border-color: hsl(var(--ls-line-strong));
+}
+[data-lq-glass="off"] .lq-toast::before,
+:root[data-lq-tier="C"] .lq-toast::before { background-image: none; }
+@media (prefers-reduced-transparency: reduce) {
+    .lq-toast { background: hsl(var(--ls-surface-1)); border-color: hsl(var(--ls-line-strong)); }
+    .lq-toast::before { background-image: none; }
+}
+:root[data-lq-forced-colors="true"] .lq-toast::before { background-image: none; border-color: CanvasText; }
+@media (forced-colors: active) {
+    .lq-toast::before { background-image: none; border-color: CanvasText; }
+}
+/* Last, so the opaque opt-outs above cannot swallow the failed-action stroke. */
+.lq-toast[data-action-error="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }

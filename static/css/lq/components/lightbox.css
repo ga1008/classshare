@@ -6,10 +6,17 @@
     backdrop-filter: none;
     padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
 }
-/* White clear-glass text needs a dark scene even when the underlying image is white. */
+/* White clear-glass text needs a dark scene even when the underlying image is
+   white, so this is the one scrim that keeps --ls-scrim-login instead of the
+   shared --ls-scrim. At 80% black there is nothing left to blur, which is why
+   this scrim stays a flat veil and the bar remains the scene's only host. */
 .lq-lightbox > .lq-lightbox__bg.lq-scrim { background: hsl(var(--ls-scrim-login)); }
 .lq-lightbox .lq-lightbox__blob { display: none; animation: none; }
 .lq-lightbox .lq-lightbox__shell { gap: var(--ls-s-3); min-width: 0; }
+/* The toolbar is a clear-material panel floating on the image (the scale's
+   "图上浮层" case), not a raised layer: its ink is fixed white, so lifting the
+   fill to the raised step would put white text on a near-white panel. The
+   raised language stops at the scene boundary here on purpose. */
 .lq-lightbox .lq-lightbox__bar.lq-glass {
     flex: none;
     padding: var(--ls-s-3) var(--ls-s-4);

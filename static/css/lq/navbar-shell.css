@@ -1,8 +1,9 @@
 /* Shared navbar composition, including S3 scene contrast and reserved chip geometry. */
 .lq-navbar-title { margin: 0; font-size: var(--ls-t-headline); line-height: var(--ls-leading-body); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
 .lq-navbar-context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); min-width: 0; max-width: 100%; }
-.lq-navbar-context-actions .app-topbar-action { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); height: auto; background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.lq-navbar-context-actions .app-topbar-action { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); height: auto; background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .lq-navbar-context-actions .app-topbar-action :is(strong,small,.app-topbar-action__icon) { color: inherit; }
+/* 跳转链接保持不透明：只在键盘聚焦时短暂出现，必须在任何背景上可读。 */
 .lq-navbar-skip { position: fixed; left: var(--ls-s-3); top: var(--ls-s-3); padding: var(--ls-s-3); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-on-primary-soft)); z-index: var(--ls-z-toast); transform: translateY(-200%); }
 .lq-navbar-skip:focus { transform: none; }
 .lq-navbar-skip:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
@@ -10,7 +11,7 @@
    additional software blur so topbar and Dock are the two persistent layers. */
 [data-lq-navbar-topbar] > .app-topbar__scene > i { filter: none; }
 [data-lq-navbar-content] { min-width: 0; }
-[data-lq-back-to-top].back-to-top { backdrop-filter: none; -webkit-backdrop-filter: none; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-on-primary-soft)); border-color: hsl(var(--ls-line)); box-shadow: var(--ls-shadow-1); }
+[data-lq-back-to-top].back-to-top { backdrop-filter: none; -webkit-backdrop-filter: none; background: hsl(var(--lq-page-raised)); color: hsl(var(--ls-on-primary-soft)); border-color: hsl(var(--ls-line)); box-shadow: var(--ls-shadow-1); }
 @media (max-width:767px) {
   /* Stable no-JS compensation. The enhancer replaces this with the measured dock height. */
   [data-lq-navbar-content][data-lq-dock-content] { --lq-dock-h: calc(var(--ls-s-16) + var(--ls-s-6)); }
@@ -35,6 +36,9 @@
     color: hsl(var(--ls-ink));
     isolation: isolate;
 }
+/* 这块板是顶栏自己那张场景照（cultivation_identity.js 注入 <i><b>）的对比底，
+   而不是一处漏改的表面：照片内容不可控，.96 是让 --ls-ink-3 级别的小字在最暗
+   的图上仍然过 4.5:1 的保证值。没有场景照时 <b> 根本不存在，顶栏就是纯玻璃。 */
 :root[data-appearance] :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) > .app-topbar__scene > b {
     background: hsl(var(--ls-surface-1) / .96);
 }
@@ -99,7 +103,7 @@
     color: hsl(var(--ls-on-primary-soft));
     box-shadow: none;
 }
-:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .message-center-bell-toast { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
+:is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .message-center-bell-toast { background: hsl(var(--lq-page-raised)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
 :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [hidden] { display: none; }
 @media (max-width: 1023px) {
     :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) [data-lq-pane-mode="drawer"] details.ui-palette-control[open],

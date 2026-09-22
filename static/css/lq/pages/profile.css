@@ -4,10 +4,12 @@
 .lq-profile[data-profile-role="teacher"] .profile-workspace { grid-template-columns: minmax(0, 1fr); }
 .lq-profile .profile-main { min-width: 0; }
 .lq-profile .profile-sidebar { min-width: 0; position: static; }
-/* Legacy profile cards also supplied blur; content and in-page navigation
-   remain opaque even when their original hook classes are retained. */
+/* 遗留 profile 卡片自带模糊，这里一律关掉：模糊只在组件的材质边界出现，
+   页面层永不当模糊宿主。填充改走 --lq-page-* 别名（pages/page-material.css），
+   和组件同一套标度。保留 .profile-avatar-card img 的不透明底——头像可能是带
+   透明通道的 PNG，半透明底会让页面背景图直接透过人脸。 */
 .lq-profile :is(.profile-band, .profile-hero, .profile-metric-card, .profile-chart-card, .profile-portfolio-switcher) { backdrop-filter: none; -webkit-backdrop-filter: none; }
-.lq-profile-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ls-s-4); padding: var(--ls-s-5); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); }
+.lq-profile-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ls-s-4); padding: var(--ls-s-5); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--lq-page-content)); }
 .lq-profile-head__identity { display: flex; align-items: center; gap: var(--ls-s-4); min-width: 0; }
 .lq-profile-head__avatar { flex: 0 0 var(--ls-s-16); width: var(--ls-s-16); height: var(--ls-s-16); object-fit: cover; border-radius: var(--ls-r-capsule); border: 1px solid hsl(var(--ls-line)); }
 .lq-profile-head__copy { min-width: 0; overflow-wrap: anywhere; }
@@ -26,7 +28,7 @@
 .lq-profile-head__growth-counts dd { margin: 0; font-weight: var(--ls-weight-headline); }
 .lq-profile-reminder { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-3); padding: var(--ls-s-3) var(--ls-s-4); border-radius: var(--ls-r-md); background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
 .lq-profile-reminder p { margin: 0; font-size: var(--ls-t-callout); }
-.lq-profile .lq-profile-nav { display: grid; gap: var(--ls-s-1); padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); box-shadow: none; }
+.lq-profile .lq-profile-nav { display: grid; gap: var(--ls-s-1); padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--lq-page-content)); box-shadow: none; }
 .lq-profile-nav .profile-nav__link { display: flex; gap: var(--ls-s-2); align-items: center; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid transparent; border-radius: var(--ls-r-sm); background: transparent; color: hsl(var(--ls-ink-2)); box-shadow: none; transform: none; }
 .lq-profile-nav .profile-nav__link[aria-current="page"] { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--ls-primary-soft)); border-color: hsl(var(--ls-primary) / .35); }
 .lq-profile-nav .profile-nav__link[aria-current="page"] strong { text-decoration: underline; text-underline-offset: .2em; }
@@ -36,7 +38,7 @@
 .lq-profile-nav .profile-nav__copy :is(strong, small) { color: inherit; }
 .lq-profile-nav .profile-nav__badge { color: hsl(var(--ls-on-primary)); background: hsl(var(--ls-primary)); box-shadow: none; }
 .lq-profile [data-lq-profile-content] { display: grid; align-content: start; gap: var(--ls-s-5); }
-.lq-profile [data-lq-profile-content] :is(.profile-band, .profile-metric-card, .profile-chart-card, .profile-portfolio-dashboard, .profile-portfolio-candidate, .profile-portfolio-item, .profile-portfolio-feature-card, .profile-portfolio-event) { min-width: 0; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); box-shadow: none; }
+.lq-profile [data-lq-profile-content] :is(.profile-band, .profile-metric-card, .profile-chart-card, .profile-portfolio-dashboard, .profile-portfolio-candidate, .profile-portfolio-item, .profile-portfolio-feature-card, .profile-portfolio-event) { min-width: 0; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--lq-page-content)); color: hsl(var(--ls-ink)); box-shadow: none; }
 .lq-profile [data-lq-profile-content] .profile-band { padding: var(--ls-s-5); }
 .lq-profile [data-lq-profile-content] :is(.profile-section-head h2, .profile-band__head h3, .profile-form-section__head h3, .profile-summary-row strong, .profile-metric-card strong) { color: hsl(var(--ls-ink)); }
 .lq-profile [data-lq-profile-content] .profile-summary-row strong span { color: inherit; }
@@ -50,22 +52,22 @@
 .lq-profile [data-lq-profile-content] .profile-form-section { margin: 0; padding: 0 0 var(--ls-s-5); border-bottom: 1px solid hsl(var(--ls-line)); }
 .lq-profile [data-lq-profile-content] .profile-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ls-s-4); }
 .lq-profile [data-lq-profile-content] .profile-form-grid > .profile-form-grid__wide { grid-column: 1 / -1; }
-.lq-profile [data-lq-profile-content] :is(.form-control, .lq-input, .lq-select, .lq-textarea) { min-width: 0; width: 100%; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-sm); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); font-size: var(--ls-t-callout); box-shadow: none; }
+.lq-profile [data-lq-profile-content] :is(.form-control, .lq-input, .lq-select, .lq-textarea) { min-width: 0; width: 100%; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-sm); background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink)); font-size: var(--ls-t-callout); box-shadow: none; }
 .lq-profile [data-lq-profile-content] :is(.form-control, .lq-input, .lq-select, .lq-textarea)::placeholder { color: hsl(var(--ls-ink-3)); opacity: 1; }
-.lq-profile [data-lq-profile-content] :is(.form-control, .lq-input)[readonly] { color: hsl(var(--ls-ink-2)); background: hsl(var(--ls-surface-2)); }
+.lq-profile [data-lq-profile-content] :is(.form-control, .lq-input)[readonly] { color: hsl(var(--ls-ink-2)); background: hsl(var(--lq-page-content)); }
 .lq-profile [data-lq-profile-content] textarea { resize: vertical; }
 .lq-profile [data-lq-profile-content] :is(.profile-form-actions, .profile-section-head__actions, .profile-portfolio-actions) { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
 .lq-profile [data-lq-profile-content] .profile-mood-custom { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--ls-s-2); }
 .lq-profile [data-lq-profile-content] .profile-mood-custom > label { grid-column: 1 / -1; }
 .lq-profile [data-lq-profile-content] .profile-mood-options { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
-.lq-profile [data-lq-profile-content] .profile-mood-option { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-capsule); color: hsl(var(--ls-ink-2)); background: hsl(var(--ls-surface-2)); box-shadow: none; }
+.lq-profile [data-lq-profile-content] .profile-mood-option { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-capsule); color: hsl(var(--ls-ink-2)); background: hsl(var(--lq-page-control)); box-shadow: none; }
 .lq-profile [data-lq-profile-content] .profile-mood-option[aria-pressed="true"] { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--ls-primary-soft)); border-color: hsl(var(--ls-primary)); text-decoration: underline; text-underline-offset: .2em; }
 .lq-profile [data-lq-profile-content] .profile-avatar-card img { background: hsl(var(--ls-surface-2)); border-color: hsl(var(--ls-line)); }
 .lq-profile [data-lq-profile-content] .lq-profile-identity-row { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); align-items: center; margin-bottom: var(--ls-s-2); }
 .lq-profile [data-lq-profile-content] .lq-profile-identity-row > :is(input, select) { flex: 1 1 8rem; width: auto; min-width: 0; }
 .lq-profile [data-lq-profile-content] .lq-profile-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
 .lq-profile [data-lq-profile-content] .lq-profile-identity-expired { padding: var(--ls-s-1) var(--ls-s-2); border-radius: var(--ls-r-capsule); color: hsl(var(--ls-tone-warning-fg)); background: hsl(var(--ls-tone-warning-soft)); font-size: var(--ls-t-sub); }
-.lq-profile [data-lq-profile-content] .profile-email-card { min-width: 0; background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink)); border: 1px solid hsl(var(--ls-line)); box-shadow: none; }
+.lq-profile [data-lq-profile-content] .profile-email-card { min-width: 0; background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink)); border: 1px solid hsl(var(--ls-line)); box-shadow: none; }
 .lq-profile [data-lq-profile-content] .profile-email-card.is-active { background: hsl(var(--ls-primary-soft)); border-color: hsl(var(--ls-primary)); }
 .lq-profile [data-lq-profile-content] .profile-email-card :is(strong, span) { color: inherit; }
 .lq-profile [data-lq-profile-content] .profile-email-card :is(em, small) { color: hsl(var(--ls-ink-2)); }
@@ -73,12 +75,12 @@
 .lq-profile [data-lq-profile-content] .profile-email-status.is-ok { color: hsl(var(--ls-tone-success-fg)); background: hsl(var(--ls-tone-success-soft)); }
 .lq-profile [data-lq-profile-content] .profile-email-status.is-failed { color: hsl(var(--ls-tone-danger-fg)); background: hsl(var(--ls-tone-danger-soft)); }
 .lq-profile [data-lq-profile-content] .profile-email-status.is-testing { color: hsl(var(--ls-tone-info-fg)); background: hsl(var(--ls-tone-info-soft)); }
-.lq-profile [data-lq-profile-content] :is(.profile-email-provider-hint, .profile-email-advanced, .profile-summary-row) { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }
+.lq-profile [data-lq-profile-content] :is(.profile-email-provider-hint, .profile-email-advanced, .profile-summary-row) { background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }
 .lq-profile [data-lq-profile-content] .profile-email-advanced > summary { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-3); color: hsl(var(--ls-ink)); }
 .lq-profile [data-lq-profile-content] .profile-email-toggle-row label { display: inline-flex; align-items: center; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); gap: var(--ls-s-2); color: hsl(var(--ls-ink-2)); }
 .lq-profile [data-lq-profile-content] .profile-email-toggle-row input { accent-color: hsl(var(--ls-primary)); }
 /* Existing signature controller and content remain owned by that subsystem. */
-.lq-profile [data-lq-profile-content="signatures"] .psig-empty { color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); background: hsl(var(--ls-surface-1)); }
+.lq-profile [data-lq-profile-content="signatures"] .psig-empty { color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); background: hsl(var(--lq-page-content)); }
 .lq-profile :is(.lq-profile-head, .lq-profile-nav, [data-lq-profile-content]) :is(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .lq-profile-nav .profile-nav__link:hover { background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); } }
 @media (max-width: 1023px) {
@@ -103,7 +105,7 @@
     padding: var(--ls-s-6);
     border: 1px solid hsl(var(--ls-line));
     border-radius: var(--ls-r-lg);
-    background: hsl(var(--ls-surface-1));
+    background: hsl(var(--lq-page-content));
     color: hsl(var(--ls-ink));
     font-family: var(--ls-font-sans);
     overflow-wrap: anywhere;
@@ -116,7 +118,7 @@
 .lq-profile-appearance__segment > .lq-tabs__list { display: flex; width: 100%; flex-wrap: wrap; overflow: visible; padding: var(--ls-s-1); gap: var(--ls-s-1); border-radius: var(--ls-r-md); }
 .lq-profile-appearance__segment > .lq-tabs__list > .lq-tabs__tab { flex: 1 1 auto; min-width: 0; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); margin: 0; border-radius: var(--ls-r-sm); white-space: normal; cursor: pointer; }
 .lq-profile-appearance__radio { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-.lq-profile-appearance__radio:checked + .lq-tabs__tab { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--ls-surface-1)); box-shadow: var(--ls-shadow-1); font-weight: var(--ls-weight-headline); text-decoration: underline; text-underline-offset: .2em; }
+.lq-profile-appearance__radio:checked + .lq-tabs__tab { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--lq-page-content)); box-shadow: var(--ls-shadow-1); font-weight: var(--ls-weight-headline); text-decoration: underline; text-underline-offset: .2em; }
 .lq-profile-appearance__radio:focus-visible + .lq-tabs__tab { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 1px; }
 .lq-profile-appearance__radio:disabled + .lq-tabs__tab { opacity: .45; cursor: not-allowed; }
 .lq-profile-appearance__palettes { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
@@ -131,7 +133,7 @@
 .lq-profile-appearance [data-ui-preference-value="mint"] { --lq-profile-swatch: var(--ls-c-teal-500); }
 .lq-profile-appearance [data-ui-preference-value="violet"] { --lq-profile-swatch: var(--ls-c-violet-600); }
 .lq-profile-appearance [data-ui-preference-value="rose"] { --lq-profile-swatch: var(--ls-c-rose-700); }
-.lq-profile-appearance__preview { padding: var(--ls-s-4); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-md); background: hsl(var(--ls-surface-2)); }
+.lq-profile-appearance__preview { padding: var(--ls-s-4); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-md); background: hsl(var(--lq-page-control)); }
 .lq-profile-appearance__samples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-3); margin-top: var(--ls-s-3); }
 .lq-profile-appearance__sample { padding: var(--ls-s-2) var(--ls-s-3); border-radius: var(--ls-r-capsule); color: hsl(var(--ls-on-primary)); background: hsl(var(--ls-primary)); font-size: var(--ls-t-callout); }
 .lq-profile-appearance .lq-profile-appearance__status { margin: 0; min-height: calc(var(--ls-t-callout) * var(--ls-leading-body)); }

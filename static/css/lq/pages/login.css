@@ -11,6 +11,13 @@ body.lq-centered-page {
     padding: var(--ls-s-8) var(--ls-s-4);
     min-width: 0;
 }
+/* 以下四处刻意保持不透明，不是漏网：
+   1) body 是页面画布本身，不是面板；背景图/场景图是它上面的层。
+   2) 跳转链接只在键盘聚焦时出现，必须在任何背景上一眼可读。
+   3) .lq-login-feedback 与 .student-identity-chip 位于登录卡内，而登录卡在有
+      合格背景图时是 clear 级（.22）玻璃；这两块要在照片上承载错误信息与身份
+      信息，半透明会直接击穿 D 包那 1264 项实卡对比结论。
+   4) .site-record-footer 是备案信息，法务要求恒可读。 */
 .lq-centered-page .lq-skip-link {
     position: fixed;
     top: var(--ls-s-2);

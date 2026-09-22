@@ -53,9 +53,29 @@
     color: hsl(var(--lq-material-muted));
 }
 
+/* Content material. Every panel is glass now, at a higher fill than the chrome
+   so body text keeps its contrast over the page backdrop. Blur stays thin: a
+   content panel sits close to what is behind it, and a wide radius here costs
+   far more than it shows. */
+.lq-surface {
+    --lq-material-fill: var(--ls-glass-fill-content);
+    --lq-material-blur: var(--ls-blur-thin);
+}
+
 .lq-surface--frost {
     --lq-material-fill: var(--ls-glass-fill-strong);
     --lq-material-blur: var(--ls-blur-thin);
+}
+
+/* Control material. Buttons, chips and fields are small and numerous, so they
+   take the tint and the rim but never their own blur host: at that size the
+   blur is invisible and the compositing cost is not. */
+.lq-material-control {
+    --lq-material-fill: var(--ls-glass-fill-control);
+    background: hsl(var(--lq-material-fill));
+    border-color: hsl(var(--ls-glass-line));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
 }
 
 .lq-scrim {
@@ -82,6 +102,7 @@
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .lq-glass,
+    .lq-surface,
     .lq-surface--frost {
         background: hsl(var(--lq-material-fill));
         -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
@@ -102,9 +123,15 @@
     }
 }
 
-/* Nested material classes cannot create a second blur host. */
+/* Nested material classes cannot create a second blur host. A panel inside a
+   panel already sees a blurred backdrop, so a second filter would cost a layer
+   and change nothing on screen. */
 .lq-glass .lq-glass,
-.lq-glass .lq-surface--frost {
+.lq-glass .lq-surface,
+.lq-glass .lq-surface--frost,
+.lq-surface .lq-glass,
+.lq-surface .lq-surface,
+.lq-surface .lq-surface--frost {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
 }

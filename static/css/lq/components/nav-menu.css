@@ -1,5 +1,7 @@
-/* Navigation menu button. The panel is .lq-menu and keeps its own material:
-   the top bar is already a blur host, so no backdrop-filter is created here. */
+/* Navigation menu button. The panel is .lq-menu, so its material comes from the
+   shared overlay recipe (components/layers.css) and nothing is declared here:
+   LQ.layer portals the panel out of the top bar, which makes it a layer in its
+   own right rather than a second host nested inside the bar. */
 .lq-nav-menu {
     position: relative;
     display: inline-flex;

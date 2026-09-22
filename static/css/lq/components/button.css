@@ -1,4 +1,9 @@
-/* P1 opt-in controls: no material host or backdrop-filter is created here. */
+/* S8 control material. Buttons take the control-level glass fill, the glass
+   rim and nothing else: a control never hosts its own blur, because at this
+   size the radius is invisible while the extra composited layer is not free.
+   The nested rule in materials.css already forces this off inside a material;
+   the explicit declaration also covers a button on a plain page and defends
+   against a late module injecting its own filter. */
 .lq-btn {
     --lq-btn-height: var(--ls-s-10);
     --lq-btn-icon-size: calc(var(--ls-s-4) + var(--ls-s-1) / 2);
@@ -21,6 +26,8 @@
     text-decoration: none;
     vertical-align: middle;
     cursor: pointer;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     transition: transform var(--ls-dur-fast) var(--ls-spring-snappy),
         box-shadow var(--ls-dur-fast) var(--ls-ease-out), background-color var(--ls-dur-fast) var(--ls-ease-out);
 }
@@ -67,27 +74,48 @@
 }
 .lq-btn--icon .lq-btn__spinner { inset-inline: 0; justify-content: center; }
 .lq-btn--icon.is-loading .lq-btn__icon { opacity: 0; }
+/* The call to action stays opaque: its fill is --ls-primary at full alpha,
+   above the .92 floor a prominent control needs. A translucent CTA would give
+   up both the guaranteed --ls-on-primary contrast and the one-glance
+   affordance that makes it the primary action, and the fixture contract in
+   tests/e2e/components/lq-presentation.spec.ts asserts this exact token.
+   The glass language reaches it through the specular top rim and through the
+   tinted control siblings around it, not through transparency. */
 .lq-btn--prominent {
     background: hsl(var(--ls-primary));
     color: hsl(var(--ls-on-primary));
+    border-color: hsl(var(--ls-primary));
+    border-top-color: hsl(var(--ls-glass-rim));
     box-shadow: var(--ls-shadow-1);
 }
+/* The translucent variants share one base: the control fill, plus their own
+   tint as a flat gradient layer on top of it. Compositing the tint this way
+   keeps the glass underneath instead of replacing it with an opaque surface.
+   Their labels use --ls-ink, the token that
+   tests/test_lq_tokens.py::GlassMaterialContrastTests guarantees on the
+   control fill; the accent survives in the tint and the border, which is
+   where a translucent control can afford to carry it. */
 .lq-btn--glass {
-    background: hsl(var(--ls-glass-fill-strong));
-    color: hsl(var(--ls-glass-ink));
+    background: hsl(var(--ls-glass-fill-control));
+    color: hsl(var(--ls-ink));
     border-color: hsl(var(--ls-glass-line));
 }
 .lq-btn--soft {
-    background: hsl(var(--ls-primary-soft));
-    color: hsl(var(--ls-on-primary-soft));
+    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control));
+    color: hsl(var(--ls-ink));
+    border-color: hsl(var(--ls-primary));
 }
+/* Ghost keeps no fill at rest -- a ghost with a resting fill is no longer the
+   quiet variant, and transparent is further from opaque than any glass level.
+   Its interactive surfaces below use the control fill. */
 .lq-btn--ghost {
     background: transparent;
     color: hsl(var(--ls-ink-2));
 }
 .lq-btn--destructive {
-    background: hsl(var(--ls-tone-danger-soft));
+    background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-glass-fill-control));
     color: hsl(var(--ls-tone-danger-fg));
+    border-color: hsl(var(--ls-tone-danger-fg));
 }
 .lq-btn--link {
     background: transparent;
@@ -95,11 +123,12 @@
     text-underline-offset: calc(var(--ls-s-1) / 2);
 }
 .lq-glass :is(.lq-btn--ghost, .lq-btn--link) { color: hsl(var(--lq-material-ink, var(--ls-glass-ink))); }
-.lq-glass .lq-btn--soft {
-    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-surface-1));
-}
-.lq-glass .lq-btn--destructive {
-    background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-surface-1));
+.lq-glass .lq-btn--glass { color: hsl(var(--lq-material-ink, var(--ls-glass-ink))); }
+/* A dark-toned or image-backed host lets far more through than the guarded
+   page backdrop, so a control on it keeps the raised fill to stay readable. */
+.lq-glass--clear .lq-btn--glass,
+.lq-glass[data-lq-tone="dark"] .lq-btn--glass {
+    background: hsl(var(--ls-glass-fill-strong));
 }
 .lq-btn:focus-visible {
     outline: 2px solid hsl(var(--ls-ring));
@@ -107,12 +136,27 @@
     box-shadow: var(--ls-shadow-focus);
 }
 .lq-btn:active:not([data-lq-disabled="true"]) { transform: scale(.97); }
-.lq-btn:is(:disabled, .is-disabled) { opacity: .45; cursor: not-allowed; }
+/* Disabled is a named colour pair, not a fade. Halving the alpha of an
+   already translucent control fades the label and the fill together and the
+   label is what has to stay readable, so the state names its own muted ink on
+   the same control fill and keeps a visible edge. */
+.lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    background: hsl(var(--ls-glass-fill-control));
+    color: hsl(var(--ls-ink-2));
+    border-color: hsl(var(--ls-line-strong));
+    border-style: dashed;
+    box-shadow: none;
+    opacity: 1;
+    cursor: not-allowed;
+}
+/* Busy keeps its variant fill and ink: the label still reads as the action. */
 .lq-btn.is-loading { cursor: progress; }
 @media (hover: hover) and (pointer: fine) {
-    .lq-btn:hover:not([data-lq-disabled="true"]) { box-shadow: var(--ls-shadow-2); }
-    .lq-btn--ghost:hover:not([data-lq-disabled="true"]) { background: hsl(var(--ls-ink) / .06); }
-    .lq-btn--link:hover:not([data-lq-disabled="true"]) { text-decoration: underline; }
+    .lq-btn:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) { box-shadow: var(--ls-shadow-2); }
+    .lq-btn--ghost:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) {
+        background: hsl(var(--ls-glass-fill-control));
+    }
+    .lq-btn--link:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) { text-decoration: underline; }
 }
 @media (pointer: coarse) {
     .lq-btn { min-width: calc(var(--ls-s-10) + var(--ls-s-1)); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); }
@@ -125,5 +169,5 @@
 @media (forced-colors: active) {
     .lq-btn, .lq-glass .lq-btn { background: ButtonFace; color: ButtonText; border-color: ButtonText; box-shadow: none; }
     .lq-btn:focus-visible { outline-color: Highlight; box-shadow: none; }
-    .lq-btn:is(:disabled, .is-disabled) { opacity: 1; color: GrayText; border-color: GrayText; }
+    .lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { opacity: 1; background: ButtonFace; color: GrayText; border-color: GrayText; }
 }

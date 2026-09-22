@@ -1,3 +1,5 @@
+/* S8 control material: the chip takes the control fill and the glass rim and
+   never hosts a blur of its own. */
 .lq-chip {
     display: inline-flex;
     align-items: center;
@@ -6,10 +8,12 @@
     min-height: calc(var(--ls-s-6) + var(--ls-s-1));
     max-width: 100%;
     padding: calc(var(--ls-s-1) / 2) var(--ls-s-3);
-    border: 1px solid hsl(var(--ls-line));
+    border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--ls-r-capsule);
-    background: hsl(var(--ls-surface-1) / .7);
+    background: hsl(var(--ls-glass-fill-control));
     color: hsl(var(--ls-ink-2));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     font-family: var(--ls-font-sans);
     font-size: var(--ls-t-sub);
     font-weight: var(--ls-weight-title3);
@@ -19,15 +23,17 @@
 .lq-chip--sm { min-height: var(--ls-s-6); padding-inline: var(--ls-s-2); }
 .lq-chip__label { min-width: 0; overflow-wrap: anywhere; }
 .lq-chip--filter { cursor: pointer; }
+/* Selected and status tints layer over the same control fill instead of
+   replacing it, so a chip reads as tinted glass rather than flat paint. */
 .lq-chip--filter[aria-pressed="true"] {
-    background: hsl(var(--ls-primary-soft));
-    color: hsl(var(--ls-on-primary-soft));
-    border-color: hsl(var(--ls-primary) / .35);
+    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control));
+    color: hsl(var(--ls-ink));
+    border-color: hsl(var(--ls-primary));
 }
 .lq-chip--status {
-    background: hsl(var(--lq-tone-soft));
+    background: linear-gradient(hsl(var(--lq-tone-soft)), hsl(var(--lq-tone-soft))), hsl(var(--ls-glass-fill-control));
     color: hsl(var(--lq-tone-fg));
-    border-color: transparent;
+    border-color: hsl(var(--ls-glass-line));
 }
 .lq-chip__dot {
     flex: 0 0 var(--ls-s-2);
@@ -54,17 +60,20 @@
 .lq-chip__remove .lq-icon { width: var(--ls-s-4); height: var(--ls-s-4); }
 .lq-chip--filter:focus-visible,
 .lq-chip__remove:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+/* Disabled names its own muted ink instead of fading an already translucent
+   control, which would take the label down with the fill. */
 .lq-chip--filter:disabled,
-.lq-chip__remove:disabled { opacity: .45; cursor: not-allowed; }
-.lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]) {
+.lq-chip:has(> .lq-chip__remove:disabled),
+.lq-chip__remove:disabled { opacity: 1; cursor: not-allowed; color: hsl(var(--ls-ink-2)); }
+.lq-chip--filter:disabled { border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
+/* Inside a material the chip keeps the control fill and only inherits the
+   host ink; a second, heavier fill would break the scale. */
+.lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]):not(:disabled) {
+    color: hsl(var(--lq-material-ink, var(--ls-glass-ink)));
+}
+.lq-glass--clear .lq-chip:not(.lq-chip--status),
+.lq-glass[data-lq-tone="dark"] .lq-chip:not(.lq-chip--status) {
     background: hsl(var(--ls-glass-fill-strong));
-    color: hsl(var(--ls-glass-ink));
-}
-.lq-glass .lq-chip--status {
-    background: linear-gradient(hsl(var(--lq-tone-soft)), hsl(var(--lq-tone-soft))), hsl(var(--ls-surface-1));
-}
-.lq-glass .lq-chip--filter[aria-pressed="true"] {
-    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-surface-1));
 }
 @media (hover: hover) and (pointer: fine) {
     .lq-chip--filter:hover:not(:disabled),
@@ -77,8 +86,8 @@
     .lq-chip, .lq-chip__remove { transition: none; }
 }
 @media (forced-colors: active) {
-    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-glass .lq-chip--status { background: Canvas; color: CanvasText; border-color: CanvasText; }
-    .lq-chip--filter[aria-pressed="true"], .lq-glass .lq-chip--filter[aria-pressed="true"] { background: Highlight; color: HighlightText; border-color: Highlight; }
+    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-chip--status { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-chip--filter[aria-pressed="true"] { background: Highlight; color: HighlightText; border-color: Highlight; }
     .lq-chip--filter:focus-visible, .lq-chip__remove:focus-visible { outline-color: Highlight; }
-    .lq-chip--filter:disabled, .lq-chip__remove:disabled { opacity: 1; color: GrayText; }
+    .lq-chip--filter:disabled, .lq-chip__remove:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
 }

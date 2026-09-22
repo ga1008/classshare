@@ -1,10 +1,13 @@
+/* A tooltip is control-sized: a blur radius wider than the box itself cannot
+   be read, so it takes the raised fill and skips the compositing layer. */
 .lq-tooltip {
-    --lq-material-blur: var(--ls-blur-thin);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     position: fixed;
     width: max-content;
     max-width: min(280px, calc(100vw - 24px));
     padding: 6px 9px;
-    border-radius: 8px;
+    border-radius: var(--ls-r-sm);
     font-size: 12px;
     line-height: 1.5;
     font-weight: 500;

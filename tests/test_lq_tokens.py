@@ -136,7 +136,7 @@ class LqTokenTests(unittest.TestCase):
             dark = self.themes[palette, "dark"]
             self.assertEqual(dark["--ls-on-primary"], "222 47% 11%")
             self.assertNotEqual(dark["--ls-on-primary"], dark["--ls-ink"])
-            self.assertEqual(self.themes[palette, "light"]["--ls-ink-3"], "215 16% 45%")
+            self.assertEqual(self.themes[palette, "light"]["--ls-ink-3"], "215 16% 38%")
 
     def test_monitor_scope_is_not_exported_as_a_root_override(self):
         monitor = [item for item in read_definitions() if 'data-lq-scope="monitor"' in item["selector"]]
@@ -146,3 +146,64 @@ class LqTokenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlassMaterialContrastTests(unittest.TestCase):
+    """Every panel is glass now, so body and secondary text sit on a translucent
+    fill. Pure black or white behind a panel would need an alpha near .94, which
+    is no longer glass; what a panel can actually see is the page backdrop, whose
+    image layer has its own opacity over the page surface. Pin that bound."""
+
+    # image-layer opacity from static/css/lq/components/page-backdrop.css
+    IMAGE_OPACITY = {"light": .55, "dark": .42}
+    MATERIALS = (("--ls-glass-fill-content", "--ls-ink", "--ls-ink-3"),
+                 ("--ls-glass-fill-control", "--ls-ink", "--ls-ink-2"),
+                 ("--ls-glass-fill", "--ls-glass-ink", "--ls-glass-muted"),
+                 ("--ls-glass-fill-strong", "--ls-glass-ink", "--ls-glass-muted"))
+
+    def backdrop_bounds(self, theme, appearance):
+        page = rgb(theme["--ls-surface-0"])
+        opacity = self.IMAGE_OPACITY[appearance]
+        return [tuple(extreme * opacity + base * (1 - opacity) for extreme, base in zip(photo, page))
+                for photo in ((0., 0., 0.), (1., 1., 1.))]
+
+    def test_body_and_secondary_text_clear_aa_on_every_material(self):
+        for palette in PALETTES:
+            for appearance in APPEARANCES:
+                theme = resolve_theme(palette, appearance)
+                effective = "dark" if appearance == "dark" else "light"
+                for backing in self.backdrop_bounds(theme, effective):
+                    for fill, body, secondary in self.MATERIALS:
+                        surface = rgb(theme[fill], backing)
+                        for ink in (body, secondary):
+                            with self.subTest(palette=palette, appearance=appearance, material=fill, ink=ink):
+                                self.assertGreaterEqual(round(contrast(rgb(theme[ink]), surface), 2), 4.5)
+
+    def test_every_semantic_foreground_clears_aa_on_the_control_material(self):
+        """The first sweep only covered ink tokens, so the state colours kept
+        values tuned for an opaque surface and several failed once controls went
+        translucent. Control is the thinnest material that carries these."""
+        control = {"light": ("--ls-glass-fill-control",), "dark": ("--ls-glass-fill-control",)}
+        for palette in PALETTES:
+            for appearance in APPEARANCES:
+                theme = resolve_theme(palette, appearance)
+                effective = "dark" if appearance == "dark" else "light"
+                foregrounds = [name for name in theme
+                               if name.endswith("-fg") or name == "--ls-on-primary-soft"]
+                self.assertTrue(foregrounds, "no semantic foreground tokens were resolved")
+                for backing in self.backdrop_bounds(theme, effective):
+                    surface = rgb(theme[control[effective][0]], backing)
+                    for name in foregrounds:
+                        with self.subTest(palette=palette, appearance=appearance, token=name):
+                            self.assertGreaterEqual(round(contrast(rgb(theme[name]), surface), 2), 4.5)
+
+    def test_the_material_scale_stays_ordered_from_clear_to_opaque(self):
+        def alpha(value):
+            return float(re.findall(r"/\s*(\.?\d*\.?\d+)", value)[0])
+        for appearance in APPEARANCES:
+            theme = resolve_theme("indigo", appearance)
+            ladder = [alpha(theme[name]) for name in
+                      ("--ls-glass-fill-clear", "--ls-glass-fill-control", "--ls-glass-fill",
+                       "--ls-glass-fill-content", "--ls-glass-fill-strong")]
+            with self.subTest(appearance=appearance):
+                self.assertEqual(sorted(ladder), ladder, f"material ladder out of order: {ladder}")

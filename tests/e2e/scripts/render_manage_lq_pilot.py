@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[3]
 package = types.ModuleType('manage_lq_fixture')
 package.__path__ = [str(ROOT / 'classroom_app')]
 sys.modules[package.__name__] = package
+# The nav service does `from ..lq_migration import ...`, so it has to sit at the
+# same depth here as it does in the real package. Loading it one level shallower
+# made that relative import walk off the top and the fixture could not run.
+services = types.ModuleType('manage_lq_fixture.services')
+services.__path__ = [str(ROOT / 'classroom_app/services')]
+sys.modules[services.__name__] = services
 
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -21,7 +27,7 @@ def load(name, path):
     return module
 
 helper = load('manage_lq_fixture.lq', ROOT / 'classroom_app/lq.py')
-nav = load('manage_lq_fixture.nav', ROOT / 'classroom_app/services/manage_nav_service.py')
+nav = load('manage_lq_fixture.services.manage_nav_service', ROOT / 'classroom_app/services/manage_nav_service.py')
 partials = {f'partials/{name}.html': '' for name in ('lq_editor_head', 'ai_workspace_widget', 'vite_islands', 'feedback_modal', 'teacher_onboarding_modal', 'markdown_assets')}
 partials['fixture.html'] = '''{% extends 'manage/layout.html' %}
 {% block header_actions %}<form id="action-form" aria-label="原位操作表单"><label for="retained-input">原位草稿</label><input id="retained-input" name="draft" value="原值"><fieldset disabled><legend>服务端禁用</legend><input name="locked" value="locked" aria-label="锁定字段"><button id="locked-action" type="submit">禁止保存</button></fieldset><button type="button" id="business-open">打开原业务弹窗</button><button type="submit" id="business-submit" name="intent" value="save">提交原表单</button></form>

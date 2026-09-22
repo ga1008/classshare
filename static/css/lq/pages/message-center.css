@@ -121,13 +121,18 @@
     line-height: var(--ls-leading-caption);
 }
 
-/* Composer: glass capsule with auto-growing textarea and icon actions */
+/* Composer: glass capsule with auto-growing textarea and icon actions.
+   遗留的 .message-center-composer（ui-system.src.css:4040）用硬编码
+   rgba(255,255,255,.96) 压住了组件自己的 .lq-surface，暗色下这块输入区是一整块
+   白板。它排在 lq 之后、特指度相同，删不掉也躲不开，只能在页面层把材质交还给
+   内容级填充。 */
 .lq-messages .message-center-composer.lq-composer {
     display: flex;
     flex-direction: column;
     gap: var(--ls-s-2);
     padding: var(--ls-s-3) var(--ls-s-4);
     border-radius: var(--ls-r-xl);
+    background: hsl(var(--lq-page-content));
 }
 
 .lq-messages .message-center-composer__editor {
@@ -177,7 +182,7 @@
     padding: var(--ls-s-1) var(--ls-s-3);
     border: 1px solid hsl(var(--ls-line));
     border-radius: var(--ls-r-capsule);
-    background: hsl(var(--ls-surface-2));
+    background: hsl(var(--lq-page-control));
     font-size: var(--ls-t-sub);
     max-width: 100%;
 }
