@@ -127,3 +127,45 @@
     :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
     :is([data-lq-report-card-topbar],[data-lq-navbar-topbar]) .lq-report-card-tools .lq-btn { white-space: normal; min-width: 0; }
 }
+
+/* Student navbar grouping (2026-09-22). The三 groups previously floated as bare
+   rows inside one wide bar, so the eye found no edges. Give each the same radius
+   and the header's own glass material. No nested backdrop-filter: the header is
+   already the blur host, and a second one would add a layer for no visual gain. */
+[data-lq-navbar-topbar] .lq-topbar__lead,
+[data-lq-navbar-topbar] .lq-report-card-utilities,
+[data-lq-navbar-topbar] .lq-report-card-tools {
+    box-sizing: border-box;
+    align-items: center;
+    gap: var(--ls-s-1);
+    padding: var(--ls-s-1);
+    /* The glass line and fill are white by design, for glass over a colourful
+       backdrop. This bar is already light, so they would be invisible here; the
+       neutral hairline and the second surface keep the edge readable. */
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--ls-surface-2) / .72);
+    /* The top rim is what reads as glass; the header behind is already the blur
+       host, so a translucent fill picks up its frost without a second one. */
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim));
+}
+[data-lq-navbar-topbar] .lq-topbar__lead { width: fit-content; }
+[data-lq-navbar-topbar] .lq-topbar__actions { align-items: center; gap: var(--ls-s-2); }
+[data-lq-navbar-topbar] .lq-report-card-tools { font-size: var(--ls-t-footnote); }
+/* Inside a group the buttons are the content, not competing surfaces. */
+[data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) .lq-btn--ghost {
+    border-radius: var(--ls-r-md);
+}
+[data-lq-navbar-topbar] :is(.lq-report-card-utilities, .lq-report-card-tools) .lq-btn:hover {
+    background: hsl(var(--ls-surface-1) / .72);
+}
+@media (min-width: 1024px) {
+    /* Shared rule gives this group a full-width row, which is what spread the
+       links across the bar. Let it size to its content and sit beside the rest. */
+    [data-lq-navbar-topbar] .lq-report-card-tools { flex-basis: auto; }
+    [data-lq-navbar-topbar] .lq-topbar__actions { max-width: min(72vw, 1100px); }
+}
+@media (max-width: 1023px) {
+    [data-lq-navbar-topbar] .lq-report-card-tools { gap: var(--ls-s-1); }
+}
+
