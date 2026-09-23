@@ -1395,7 +1395,7 @@
           },
           {
             "path": "templates/dashboard.html",
-            "sha256": "44ff15f3f3609803ea36254d6dcf71aafd259cf06b2bc0e2ed5d56f3c11b1264",
+            "sha256": "cf8a641014996978ef79ec1ad06cf73c1cf3db1bff7193f92052dbadfbfae669",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_navbar_shell.py",
@@ -1403,7 +1403,8 @@
               "tests/e2e/specs/lq-s4-shell.spec.ts",
               "tests/e2e/specs/lq-s4-shell-visual.spec.ts",
               "tests/e2e/specs/lq-unified-material.spec.ts",
-              "tests/e2e/components/lq-layout-surfaces.spec.ts"
+              "tests/e2e/components/lq-layout-surfaces.spec.ts",
+              "tests/e2e/components/dashboard-course-layout.spec.ts"
             ]
           }
         ]
@@ -8094,7 +8095,7 @@
           },
           {
             "path": "templates/dashboard_teacher.html",
-            "sha256": "a9ee6bab6c3240ec81f0cd2e35333365301e9091537300f80d25cdcd35c9c95a",
+            "sha256": "d9eeea1081e09e11bd8f55c2e15ec161479bb8c89b9a856c766a17b1e17e2159",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8102,7 +8103,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/lq-s4-shell.spec.ts",
               "tests/e2e/specs/lq-unified-material.spec.ts",
-              "tests/e2e/components/lq-layout-surfaces.spec.ts"
+              "tests/e2e/components/lq-layout-surfaces.spec.ts",
+              "tests/e2e/components/dashboard-course-layout.spec.ts"
             ]
           }
         ]

@@ -38,6 +38,26 @@ const more = (page: Page) => page.locator('#manage-pilot-topbar > [data-lq-pane-
 const pane = (page: Page) => page.locator('#manage-pilot-topbar--lq-actions');
 
 test.describe('LQ manage pilot presentation adapter', () => {
+  for (const width of [1024, 1440]) test(`desktop navigation stays expanded until explicit collapse at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await mount(page);
+    await page.evaluate(() => { document.documentElement.dataset.lqGlass = 'tinted'; document.documentElement.dataset.lqTier = 'A'; });
+    const sidebar = page.locator('#sidebar'), toggle = page.locator('#sidebarCollapseBtn'), search = page.locator('#manageNavSearch');
+    await page.mouse.move(width - 5, 895);
+    expect((await sidebar.boundingBox())!.width).toBe(264);
+    await expect(search).toBeVisible();
+    const glass = await search.evaluate(node => { const style = getComputedStyle(node); return { fill: style.backgroundColor, radius: style.borderRadius }; });
+    expect(glass.radius).toBe('999px'); expect(glass.fill).toMatch(/rgba\(.+, 0\.\d+\)/);
+    await toggle.click(); await expect(toggle).toHaveAttribute('aria-label', '展开菜单');
+    expect((await sidebar.boundingBox())!.width).toBe(72);
+    await sidebar.hover(); expect((await sidebar.boundingBox())!.width).toBe(72);
+    await page.reload(); await expect(sidebar).toHaveAttribute('data-lq-compact', 'true');
+    expect((await sidebar.boundingBox())!.width).toBe(72);
+    await toggle.click(); expect((await sidebar.boundingBox())!.width).toBe(264);
+    await search.fill('不存在的菜单'); await expect(page.locator('#manageNavEmpty')).toBeVisible();
+    await search.press('Escape'); await expect(search).toHaveValue('');
+    expect(await toggle.evaluate(node => getComputedStyle(node).borderRadius)).toBe('999px');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  });
   test.describe('real legacy stylesheet mobile navigation hit area', () => {
     test.use({ hasTouch: true });
     for (const width of [320, 390, 768]) test(`native nav tap survives topbar stacking at ${width}`, async ({ page }, info) => {

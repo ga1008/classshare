@@ -33,7 +33,7 @@
 .classroom-workspace-v2 .cw-topbar .classroom-topbar-activity-count { position: static; inset: auto; margin: 0; transform: none; }
 .classroom-workspace-v2 .cw-topbar .cw-back-mark { width: 30px; height: 30px; border-radius: 8px; }
 .classroom-workspace-v2 .cw-topbar .app-topbar__scene b { background: hsl(var(--lq-page-control)); }
-.cw-classroom-identity { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 0 2px 14px; min-width: 0; }
+.cw-classroom-identity { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: var(--ls-s-4); min-width: 0; }
 .cw-identity-class { min-width: 0; font-size: 13px; color: var(--cw-muted); overflow-wrap: anywhere; }
 .cw-identity-actions { display: flex; align-items: center; flex-shrink: 0; gap: 8px; }
 .cw-group-qr { gap: 4px; }
@@ -464,10 +464,6 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
     .classroom-workspace-v2 .classroom-activity-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
     .classroom-workspace-v2 .classroom-activity-tab { width: 100%; min-width: 0; min-height: 44px; padding: 6px 3px; gap: 3px; white-space: nowrap; }
     .classroom-workspace-v2 .classroom-activity-tab__copy strong { font-size: 12px; }
-    .classroom-workspace-v2 #discussion-room .chat-message-header { width: 100%; min-height: 0; flex-wrap: wrap; gap: 4px 6px; padding-left: 0; padding-right: 0; }
-    .classroom-workspace-v2 #discussion-room .chat-message-header .sender { flex: 0 1 auto; min-width: 0; max-width: calc(100% - 3.25rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .classroom-workspace-v2 #discussion-room .chat-message-header .time { flex: 0 0 auto; white-space: nowrap; }
-    .classroom-workspace-v2 #discussion-room .chat-message-actions { top: calc(100% + 4px); flex-basis: 100%; transform: none; }
 }
 @media (pointer: coarse) {
     .classroom-workspace-v2 .cw-button, .classroom-workspace-v2 .teaching-session-action,

@@ -50,6 +50,15 @@
 .lq-empty--page { align-items: flex-start; flex-direction: column; justify-content: center; min-height: calc(var(--ls-s-16) * 3); padding: var(--ls-s-8); }
 .lq-empty[data-reason="error"] .lq-empty__title, .lq-empty[data-reason="forbidden"] .lq-empty__title { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--ls-s-4); padding-block: var(--ls-s-4); }
+/* Page-level copy needs its own local carrier over an arbitrary photograph.
+   Use the shared content material, never a second full-page veil. */
+.lq-scene-heading.lq-surface {
+    --lq-material-fill: var(--ls-glass-fill-strong);
+    padding: var(--ls-s-4) var(--ls-s-5);
+    color: hsl(var(--ls-ink));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom));
+}
+.lq-page-head.lq-scene-heading .page-head__desc, .lq-scene-heading .lq-scene-heading__meta { color: hsl(var(--ls-ink-2)); }
 .lq-page-head .page-head__copy { flex: 1 1 16rem; min-width: 0; }
 .lq-page-head__title-row { align-items: center; justify-content: flex-start; }
 .lq-page-head__title { margin: 0; min-width: 0; font-size: var(--ls-t-title1); line-height: var(--ls-leading-title1); font-weight: var(--ls-weight-title1); overflow-wrap: anywhere; }

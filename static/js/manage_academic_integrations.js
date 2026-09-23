@@ -218,7 +218,7 @@ function renderCapabilities() {
             ? `<span>已同步</span>${syncedAt ? `<span>${escapeHtml(syncedAt)}</span>` : ''}`
             : '<span class="is-muted">未同步</span>';
         return `
-            <button type="button" class="edu-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
+            <button type="button" data-lq-shape="surface" class="edu-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
                 <div class="edu-sync-card-meta">${statusMeta}</div>
                 <h4>${escapeHtml(item.label || '同步功能')}</h4>
                 <p>${escapeHtml(item.description || '')}</p>

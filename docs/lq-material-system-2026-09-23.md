@@ -26,6 +26,10 @@
 
 `components/control-states.css` 统一原生、Jinja、React 和保留入口的按下、选中、展开、聚焦、加载与禁用。色对在同一帧切换，动画只处理位移、边框和阴影；加载保留按钮文案，不能用透明文字冒充 spinner。危险动作继续使用危险语义色对。
 
+`components/control-geometry.css` 统一所有原生操作按钮、操作链接和内嵌分段按钮的胶囊圆角；选择框和选项也采用同一圆角令牌。整张可点击内容卡片使用 `data-lq-shape="surface"` 声明卡片语义，内部操作仍为胶囊，避免将课次、课程或图库卡裁成椭圆。页面不得再独立定义按钮圆角。
+
+共享 `page_head` 的 Python/Jinja、HTML/DOM 及 React 入口统一输出 `lq-surface lq-scene-heading`，用局部玻璃承载标题与副标题；课堂班级信息复用同一组合。阅读信息不得直接放在任意亮度的背景图上。侧栏在桌面端默认展开，用户明确收缩后保留账号内偏好，悬停和聚焦不改变整页宽度。
+
 ```html
 <section data-lq-material="content" aria-labelledby="task-title">
   <h2 id="task-title">本周任务</h2>

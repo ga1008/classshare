@@ -14,9 +14,9 @@ const app = document.querySelector('[data-message-center-app]');
 
 if (app) {
     const lqEnabled = app.hasAttribute('data-lq-messages');
-    const [lqPresentation, lqContent, lqForms] = lqEnabled
-        ? await Promise.all([import('./lq/components.js'), import('./lq/content.js'), import('./lq/forms.js')])
-        : [null, null, null];
+    const [lqPresentation, lqContent, lqForms, lqSelection] = lqEnabled
+        ? await Promise.all([import('./lq/components.js'), import('./lq/content.js'), import('./lq/forms.js'), import('./lq/selection.js')])
+        : [null, null, null, null];
     const PRIVATE_TAB = 'private_message';
     const WORKSPACE_EVENT = 'lanshare:message-center-workspace-change';
     const WORKSPACE_COMMAND_EVENT = 'lanshare:message-center-workspace-command';
@@ -55,6 +55,9 @@ if (app) {
     const recentContactsEl = lqEnabled ? document.getElementById('message-center-recent-contacts') : null;
     // Forms only measures this input; the original controller owns submission.
     const formPresentation = lqEnabled ? lqForms.enhanceForms(composeFormEl) : null;
+    // Keep the native select as the controller's value owner. The shared
+    // selection only supplies keyboard navigation and the glass popup.
+    const filterPresentation = lqEnabled ? lqSelection.bindSelection(filterEl, { label: '阅读状态' }) : null;
     const unreadTotalEl = document.getElementById('message-center-unread-total');
     const currentTabLabelEl = document.getElementById('message-center-current-tab-label');
     const contactTotalEl = document.getElementById('message-center-contact-total');
@@ -902,6 +905,7 @@ if (app) {
             <option value="${escapeHtml(filter.value)}">${escapeHtml(filter.label)}</option>
         `).join('');
         filterEl.value = state.filterKey;
+        filterPresentation?.refresh();
     }
 
     function renderEmpty(container, title, text) {
@@ -2159,6 +2163,7 @@ if (app) {
         if (event.persisted) return;
         state.alive = false;
         formPresentation?.dispose();
+        filterPresentation?.destroy();
         state.actionLease = null;
         state.navigationIntent++;
         window.clearTimeout(state.searchTimer);

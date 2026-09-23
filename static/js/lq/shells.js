@@ -44,8 +44,8 @@ function itemTree(item, className = 'lq-nav-item', command = false) {
   return node(tag, a, [...(item.icon ? [{ icon: item.icon }] : []), node('span', { class: 'lq-nav-item__label' }, [item.label])]);
 }
 const action = (item, prominent = false) => ({ button: { label: item.label, icon: item.icon, href: item.href, variant: prominent ? 'prominent' : 'glass', size: 'sm', disabled: item.disabled, attrs: { 'data-lq-command': item.key } } });
-const pane = (id, key, label, name) => node('div', { id: `${id}--lq-${key}`, class: 'lq-shell-pane', 'data-lq-pane': key, 'data-lq-pane-label': label }, [node('div', { class: 'lq-shell-pane__scrim', 'data-lq-pane-close': '', 'aria-hidden': 'true' }), node('section', { class: 'lq-shell-pane__surface lq-surface', 'aria-label': label }, [node('header', { class: 'lq-shell-pane__head' }, [node('strong', {}, [label]), node('button', { type: 'button', class: 'lq-shell-pane__close', 'data-lq-pane-close': '', 'aria-label': `关闭${label}` }, [{ icon: 'x' }])]), slot(name)])]);
-const trigger = (id, key, label) => node('button', { type: 'button', class: 'lq-shell-pane__trigger', 'data-lq-pane-open': key, 'aria-controls': `${id}--lq-${key}`, 'aria-expanded': 'false' }, [label]);
+const pane = (id, key, label, name) => node('div', { id: `${id}--lq-${key}`, class: 'lq-shell-pane', 'data-lq-pane': key, 'data-lq-pane-label': label }, [node('div', { class: 'lq-shell-pane__scrim', 'data-lq-pane-close': '', 'aria-hidden': 'true' }), node('section', { class: 'lq-shell-pane__surface lq-surface', 'aria-label': label }, [node('header', { class: 'lq-shell-pane__head' }, [node('strong', {}, [label]), node('button', { type: 'button', class: 'lq-shell-pane__close lq-btn lq-btn--glass lq-btn--icon', 'data-lq-pane-close': '', 'aria-label': `关闭${label}` }, [{ icon: 'x' }])]), slot(name)])]);
+const trigger = (id, key, label) => node('button', { type: 'button', class: 'lq-shell-pane__trigger lq-btn lq-btn--glass', 'data-lq-pane-open': key, 'aria-controls': `${id}--lq-${key}`, 'aria-expanded': 'false' }, [label]);
 
 export function shellProps(kind, p = {}) {
   if (!shellKinds.includes(kind) || !object(p)) throw new TypeError('Unknown shell component');
@@ -102,7 +102,7 @@ export function shellProps(kind, p = {}) {
       if (values.some(v => [...v].length > 256 || /[\x00-\x1f\x7f]/.test(v))) throw new TypeError('Invalid scoped persistence key'); a['data-lq-persist'] = JSON.stringify(values);
     }
     const panel = pane(id, 'nav', label, 'user'), surface = panel.children[1]; surface.attrs.class += ' lq-sidebar__surface';
-    surface.children.splice(1, 0, slot('brand'), node('label', { class: 'lq-sidebar__search' }, [node('span', {}, ['搜索菜单']), node('input', { type: 'search', 'data-lq-nav-search-input': '', 'aria-label': '搜索菜单', autocomplete: 'off' })]), node('nav', { 'aria-label': label }, details), node('p', { 'data-lq-nav-empty': '', hidden: '' }, ['没有匹配的菜单']));
+    surface.children.splice(1, 0, slot('brand'), node('label', { class: 'lq-sidebar__search' }, [node('span', {}, ['搜索菜单']), node('input', { type: 'search', class: 'lq-input', 'data-lq-nav-search-input': '', 'aria-label': '搜索菜单', autocomplete: 'off' })]), node('nav', { 'aria-label': label }, details), node('p', { 'data-lq-nav-empty': '', hidden: '' }, ['没有匹配的菜单']));
     return node('div', a, [trigger(id, 'nav', label), panel]);
   }
   if (kind === 'editor') {

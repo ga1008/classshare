@@ -106,6 +106,7 @@ export function contentProps(kind, p = {}) {
     const heading = [block('lq-page-head__title', [title], 'h2', p.titleId ? { id: identity(p.titleId) } : {})];
     if (explain) heading.push(action({ label: '', icon: 'circle-help', variant: 'ghost', attrs: { 'aria-label': text(p.explainLabel) || `${title}说明`, 'aria-haspopup': 'dialog', 'data-explain': '', 'data-explain-toggle': '', 'data-explain-title': title, 'data-explain-text': explain, 'data-explain-placement': 'bottom' } }));
     attrs['data-page-head'] = '';
+    attrs.class += ' lq-surface lq-scene-heading';
     const pageActions = Array.isArray(p.actions) ? p.actions.map(item => item && typeof item === 'object' && !Array.isArray(item) ? { ...item, variant: ({ primary: 'prominent', outline: 'soft' })[item.variant] || (item.variant === undefined ? 'soft' : item.variant) } : item) : p.actions;
     return node('header', attrs, [block('page-head__copy', [block('lq-page-head__title-row', heading), ...(description ? [block('page-head__desc', [description], 'p')] : [])]), slot('aside', 'page-head__aside'), block('page-head__actions', [...actions(pageActions), { slot: 'actions' }], 'div', { 'data-lq-slot': 'actions' })]);
   }

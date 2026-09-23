@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { getLayerSystem } from './lq/layer.js';
+import { bindSelection } from './lq/selection.js';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const dayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -493,6 +494,15 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         todoSummary: root.querySelector('[data-semester-todo-summary]'),
         todoDetail: root.querySelector('[data-semester-todo-detail]'),
     };
+    let semesterSelection = null;
+    function refreshSemesterSelection() {
+        if (!root.hasAttribute('data-lq-calendar') || !elements.select?.isConnected) return;
+        if (!elements.select.hasAttribute('aria-label')) elements.select.setAttribute('aria-label', '当前查看学期');
+        const binding = bindSelection(elements.select);
+        if (semesterSelection !== binding) binding.input.addEventListener('click', () => binding.open());
+        semesterSelection = binding;
+        binding.refresh();
+    }
 
     const onChange = typeof options.onChange === 'function' ? options.onChange : null;
     const onMessage = typeof options.onMessage === 'function' ? options.onMessage : null;
@@ -725,6 +735,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             option.textContent = '暂无学期';
             elements.select.appendChild(option);
             elements.select.disabled = true;
+            refreshSemesterSelection();
             return;
         }
 
@@ -741,6 +752,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (state.activeSemesterId != null) {
             elements.select.value = String(state.activeSemesterId);
         }
+        refreshSemesterSelection();
     }
 
     function renderOverview(semester, model) {

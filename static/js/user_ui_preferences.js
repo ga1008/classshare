@@ -287,7 +287,7 @@ export function initUserUIPreferences(documentRoot = document) {
             const visible = list.filter(item => !filter.value || item.categories?.includes(filter.value));
             grid.replaceChildren();
             visible.forEach((item, index) => {
-                const button = documentRoot.createElement('button'); button.type = 'button'; button.dataset.uiBackdropFile = item.file;
+                const button = documentRoot.createElement('button'); button.type = 'button'; button.dataset.uiBackdropFile = item.file; button.dataset.lqShape = 'surface';
                 button.setAttribute('aria-pressed', String(controller.snapshot().desired.backdrop === `image:${item.file}`));
                 const label = `${(item.categories || []).join(' · ') || '风景'} ${index + 1}`;
                 button.setAttribute('aria-label', `选择背景：${label}`);

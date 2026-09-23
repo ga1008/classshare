@@ -205,6 +205,7 @@ def lq_content_props(component, **p):
         if explain:
             heading += [_action({"label": "", "icon": "circle-help", "variant": "ghost", "attrs": {"aria-label": _text(p.get("explain_label")) or title + "说明", "aria-haspopup": "dialog", "data-explain": "", "data-explain-toggle": "", "data-explain-title": title, "data-explain-text": explain, "data-explain-placement": "bottom"}})]
         attrs["data-page-head"] = ""
+        attrs["class"] += " lq-surface lq-scene-heading"
         page_actions = p.get("actions")
         if isinstance(page_actions, (list, tuple)):
             page_actions = [{**item, "variant": {"primary": "prominent", "outline": "soft"}.get(item.get("variant"), item.get("variant", "soft"))} if isinstance(item, Mapping) else item for item in page_actions]

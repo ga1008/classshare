@@ -65,7 +65,7 @@ function renderCard(poll) {
     const meta = statusMeta(poll.effective_status);
     const typeLabel = poll.vote_type === 'multiple' ? '多选' : '单选';
     return `
-        <button type="button" class="poll-card ${meta.tone}" data-poll-open="${poll.id}">
+        <button type="button" data-lq-shape="surface" class="poll-card ${meta.tone}" data-poll-open="${poll.id}">
             <div class="poll-card__top">
                 <span class="poll-status-badge ${meta.tone}">${meta.label}</span>
                 <span class="poll-type-badge">${typeLabel}</span>

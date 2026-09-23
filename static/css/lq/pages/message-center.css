@@ -12,17 +12,82 @@
     min-width: 0;
 }
 
-.lq-messages__heading {
-    padding-block: var(--ls-s-2) var(--ls-s-1);
+.lq-messages .lq-messages__overview,
+.lq-messages .message-center-toolbar {
+    padding: var(--ls-s-5);
+    border: 1px solid hsl(var(--ls-glass-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--lq-page-content));
+    color: hsl(var(--ls-ink));
+}
+
+.lq-messages__overview {
+    display: grid;
+    gap: var(--ls-s-3);
+    min-width: 0;
+}
+
+.lq-messages .lq-messages__heading {
+    margin: 0;
+    padding: 0;
+}
+
+.lq-messages .lq-message-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--ls-s-4);
+}
+
+.lq-messages .lq-message-workspace__status {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+    overflow-wrap: anywhere;
+}
+
+.lq-messages .lq-message-workspace__counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-4) var(--ls-s-8);
+    margin: 0;
+    min-width: 0;
+}
+
+.lq-messages .lq-message-workspace__counts > div {
+    display: grid;
+    gap: var(--ls-s-1);
+}
+
+.lq-messages .lq-message-workspace__counts dt {
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-caption);
+}
+
+.lq-messages .lq-message-workspace__counts dd {
+    margin: 0;
+    color: hsl(var(--ls-ink));
+    font-size: var(--ls-t-title2);
+    font-weight: var(--ls-weight-title3);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--ls-leading-title2);
+}
+
+.lq-messages .lq-message-workspace__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2);
+    min-width: 0;
 }
 
 /* Toolbar: tabs group + search/filter/mark-read controls */
 .lq-messages .message-center-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--ls-s-3);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ls-s-4);
 }
 
 .lq-messages #message-center-tabs {
@@ -34,16 +99,38 @@
 }
 
 .lq-messages .message-center-controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--ls-s-2);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) auto;
+    align-items: end;
+    gap: var(--ls-s-3);
     min-width: 0;
-    margin-inline-start: auto;
+    margin: 0;
+    width: 100%;
 }
 
 .lq-messages .message-center-search.lq-input {
-    min-width: 12rem;
+    min-width: 0;
+}
+
+.lq-messages .message-center-controls > .lq-field {
+    min-width: 0;
+}
+
+.lq-messages .message-center-controls :is(.lq-input, .lq-select, .lq-btn) {
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1));
+}
+
+/* Preserve selection's clipped native owner; legacy form-control width/height
+   must not leave an invisible full-width element overflowing the panel. */
+.lq-messages .message-center-filter.lq-selection-native {
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+}
+
+.lq-messages #message-center-mark-read {
+    white-space: nowrap;
 }
 
 /* Notification rows: extra copy line under the lq-row title/meta */
@@ -220,13 +307,30 @@
     }
 
     .lq-messages .message-center-controls {
-        margin-inline-start: 0;
-        width: 100%;
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 
-    .lq-messages .message-center-search.lq-input {
-        min-width: 0;
-        flex: 1 1 auto;
+    .lq-messages .lq-messages__search-field {
+        grid-column: 1 / -1;
+    }
+
+    .lq-messages .lq-message-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 479px) {
+    .lq-messages .lq-messages__overview,
+    .lq-messages .message-center-toolbar {
+        padding: var(--ls-s-4);
+    }
+
+    .lq-messages .message-center-controls {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lq-messages #message-center-mark-read {
+        width: 100%;
     }
 }
 
@@ -251,6 +355,9 @@
 }
 
 .lq-messages .message-center-feed {
+    /* Keep the loading viewport stable without stretching a short list card
+       across the legacy 420px minimum-height grid. */
+    align-content: start;
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
                 inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
                 var(--ls-glass-shadow);

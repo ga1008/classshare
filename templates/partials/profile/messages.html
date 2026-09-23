@@ -6,6 +6,7 @@
                     data-island-id="message-center-page-profile-{{ active_section }}"
                     hidden
                 ></div>
+                {% if _messages_lq %}<section class="lq-messages__overview lq-surface" data-lq-material="content" aria-label="{{ '私信概览' if active_section == 'private' else '通知概览' }}">{% endif %}
                 <section class="{% if _messages_lq %}lq-page-head lq-messages__heading{% else %}profile-band profile-stream-head profile-reveal{% endif %}">
                     <div>
                         <h2{% if _messages_lq %} class="lq-page-head__title"{% endif %} data-explain data-explain-title="{{ '私信' if active_section == 'private' else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
@@ -23,12 +24,24 @@
                     data-lanshare-island="message-center-workspace-sync"
                     data-island-id="message-center-workspace-profile-{{ active_section }}"
                 ></div>
+                {% if _messages_lq %}</section>{% endif %}
 
-                <section class="message-center-toolbar profile-message-toolbar{% if not _messages_lq %} profile-reveal{% endif %}">
+                <section class="message-center-toolbar profile-message-toolbar{% if _messages_lq %} lq-surface{% else %} profile-reveal{% endif %}"{% if _messages_lq %} data-lq-material="content" aria-label="消息筛选与操作"{% endif %}>
                     <div class="message-center-tabs" id="message-center-tabs"{% if _messages_lq %} role="group" aria-label="通知分类筛选"{% endif %}></div>
                     <div class="message-center-controls">
-                        <input id="message-center-search" class="message-center-search{% if _messages_lq %} lq-input{% endif %}" type="search" placeholder="搜索关键词"{% if _messages_lq %} aria-label="搜索消息"{% endif %}>
-                        <select id="message-center-filter" class="message-center-filter{% if _messages_lq %} lq-select{% endif %}"{% if _messages_lq %} aria-label="消息筛选条件"{% endif %}></select>
+                        {% if _messages_lq %}
+                        <div class="lq-field lq-messages__search-field">
+                            <label class="lq-field__label" for="message-center-search">搜索消息</label>
+                            <input id="message-center-search" class="message-center-search lq-input" type="search" placeholder="搜索标题或内容关键词">
+                        </div>
+                        <div class="lq-field lq-messages__filter-field">
+                            <label class="lq-field__label" for="message-center-filter">阅读状态</label>
+                            <select id="message-center-filter" class="message-center-filter lq-select" aria-label="阅读状态"></select>
+                        </div>
+                        {% else %}
+                        <input id="message-center-search" class="message-center-search" type="search" placeholder="搜索关键词">
+                        <select id="message-center-filter" class="message-center-filter"></select>
+                        {% endif %}
                         {% if _messages_lq %}{{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}{% else %}<button type="button" id="message-center-mark-read" class="btn btn-outline">标记当前已读</button>{% endif %}
                     </div>
                 </section>

@@ -3,6 +3,7 @@ import { createScheduleDeck, countScheduleLessons } from '/static/js/course_sche
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
+import { bindSelection } from './lq/selection.js';
 
 const root = document.querySelector('[data-dashboard-root]');
 initStudentDashboardSchedule(root);
@@ -146,6 +147,19 @@ if (root) {
         }
         semesterSelect.value = activeSemesterKey;
     }
+    function enhanceSemesterSelect(select, label) {
+        if (!root.hasAttribute('data-lq-dashboard') || !select?.isConnected) return null;
+        if (!select.hasAttribute('aria-label')) select.setAttribute('aria-label', label);
+        const binding = bindSelection(select);
+        const wrapper = binding.input.parentElement;
+        if (!wrapper.classList.contains('dashboard-semester-selection')) {
+            wrapper.classList.add('dashboard-semester-selection');
+            binding.input.addEventListener('click', () => binding.open());
+        }
+        binding.refresh();
+        return binding;
+    }
+    const semesterSelection = enhanceSemesterSelect(semesterSelect, '课堂筛选学期');
 
     function semesterKeyToTerm(key) {
         // 规范学期 key = identity.code，如 "2025-2026-2"（学年区间 + 学期号）。
@@ -337,6 +351,7 @@ if (root) {
     };
 
     const applyFilters = ({ syncUrl = true } = {}) => {
+        semesterSelection?.refresh();
         // Student collection filtering lives inside the course schedule only.
         // The teacher's legacy classroom filters still scope their workspace.
         if (dashboardRole === 'student') return;
@@ -861,6 +876,10 @@ if (root) {
         if (groupModeButtons.length && activeGroupMode === 'schedule3d') {
             offeringList.classList.add('is-schedule3d');
             offeringList.appendChild(getScheduleDeckPanel());
+            // The portable deck can be detached while another view is active.
+            // Enhance only after reconnecting, reusing its native option/change
+            // owner and re-binding if the shared selection cleaned up on detach.
+            enhanceSemesterSelect(scheduleDeckPanel.querySelector('[data-csd-term]'), '学年学期');
             updateScheduleDeckScope();
             return;
         }

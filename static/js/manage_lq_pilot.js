@@ -44,7 +44,11 @@ export function initManageLqPilot(doc = document) {
     } catch { /* Storage is optional; the visible navigation remains usable. */ }
     const syncCompact = () => {
         set(sidebar, 'data-lq-compact', String(compact));
-        if (collapse) set(collapse, 'aria-expanded', String(!compact));
+        if (collapse) {
+            set(collapse, 'aria-expanded', String(!compact));
+            set(collapse, 'aria-label', compact ? '展开菜单' : '收起菜单');
+            set(collapse, 'title', compact ? '展开菜单' : '收起菜单');
+        }
     };
     syncCompact();
     if (collapse) listen(collapse, 'click', () => {

@@ -678,7 +678,7 @@ function renderEmailConfigs() {
         const stats = config.stats || {};
         const statusClass = String(config.last_status || 'unchecked').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'unchecked';
         return `
-            <button type="button" class="profile-email-card ${Number(config.id) === Number(emailState.activeId) ? 'is-active' : ''}" data-profile-email-select="${Number(config.id)}">
+            <button type="button" data-lq-shape="surface" class="profile-email-card ${Number(config.id) === Number(emailState.activeId) ? 'is-active' : ''}" data-profile-email-select="${Number(config.id)}">
                 <span class="profile-email-card__top">
                     <strong>${escapeHtml(config.label || config.from_email)}</strong>
                     <em>${config.enabled ? '启用' : '停用'}${config.is_default ? ' / 默认' : ''}</em>

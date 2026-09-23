@@ -1,5 +1,6 @@
 import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
+import { bindSelection } from './lq/selection.js';
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const termKey = (term) => term?.year ? `${term.year}|${term.term}` : '';
@@ -10,6 +11,10 @@ export function initStudentDashboardSchedule(root) {
   if (!panel || panel.dataset.initialized) return;
   panel.dataset.initialized = 'true';
   const find = name => panel.querySelector(`[data-student-${name}]`);
+  // The native owner and enhanced control share this field's visibility.
+  const scheduleTermField = find('schedule-term').parentElement;
+  const selections = new Map();
+  const refreshSelections = () => selections.forEach(binding => binding.refresh());
   const buttons = [...panel.querySelectorAll('[data-student-schedule-mode]')];
   const panes = { '3d': find('schedule-deck'), agenda: find('schedule-agenda'), courses: find('schedule-courses') };
   const key = `dashboard-schedule:v3:student:${root.dataset.dashboardUserId}`;
@@ -31,6 +36,7 @@ export function initStudentDashboardSchedule(root) {
   };
   const courseURL = course => `/classroom/${Number(course.id)}`;
   const renderCourses = () => {
+    refreshSelections();
     const query = find('course-search').value.trim().toLocaleLowerCase();
     const semester = find('course-term').value;
     const state = find('course-state').value;
@@ -79,7 +85,7 @@ export function initStudentDashboardSchedule(root) {
       else button.setAttribute('aria-pressed', String(isActive));
     });
     find('week-nav').hidden = next === 'courses';
-    find('schedule-term').parentElement.hidden = next === 'courses';
+    scheduleTermField.hidden = next === 'courses';
     find('schedule-hint').hidden = next !== '3d';
     const reveal = () => {
       if (ticket !== transition) return;
@@ -107,6 +113,7 @@ export function initStudentDashboardSchedule(root) {
     find('schedule-feedback').textContent = '正在读取课程安排…';
     find('schedule-retry').hidden = true;
     find('schedule-term').disabled = !(overview?.terms?.length);
+    refreshSelections();
     if (overview && selected !== termKey(overview.selected_term)) deck.setOverview(null);
     try {
       const [year, term] = selected.split('|');
@@ -138,6 +145,7 @@ export function initStudentDashboardSchedule(root) {
       if (ticket === sequence) {
         panes['3d'].setAttribute('aria-busy', 'false');
         find('schedule-term').disabled = !(overview?.terms?.length);
+        refreshSelections();
       }
     }
   };
@@ -173,7 +181,15 @@ export function initStudentDashboardSchedule(root) {
   window.addEventListener('pagehide', event => {
     if (event.persisted) return;
     controller?.abort(); document.removeEventListener('visibilitychange', onVisible); deck.destroy();
+    selections.forEach(binding => binding.destroy());
   });
+  if (root.hasAttribute('data-lq-dashboard')) {
+    ['schedule-term', 'course-term', 'course-state'].forEach(name => {
+      const binding = bindSelection(find(name));
+      binding.input.addEventListener('click', () => binding.open());
+      selections.set(name, binding);
+    });
+  }
   updateCourseOptions();
   applyMode(root.dataset.initialSearch ? 'courses' : mode, false);
   void load(typeof saved.term === 'string' ? saved.term : '');

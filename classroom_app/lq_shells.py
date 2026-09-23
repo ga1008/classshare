@@ -112,11 +112,11 @@ def _pane(identity, key, label, slot):
     return _node('div', {'id': f'{identity}--lq-{key}', 'class': 'lq-shell-pane', 'data-lq-pane': key, 'data-lq-pane-label': label}, [
         _node('div', {'class': 'lq-shell-pane__scrim', 'data-lq-pane-close': '', 'aria-hidden': 'true'}),
         _node('section', {'class': 'lq-shell-pane__surface lq-surface', 'aria-label': label}, [
-            _node('header', {'class': 'lq-shell-pane__head'}, [_node('strong', {}, [label]), _node('button', {'type': 'button', 'class': 'lq-shell-pane__close', 'data-lq-pane-close': '', 'aria-label': '关闭' + label}, [{'icon': 'x'}])]), _slot(slot)])])
+            _node('header', {'class': 'lq-shell-pane__head'}, [_node('strong', {}, [label]), _node('button', {'type': 'button', 'class': 'lq-shell-pane__close lq-btn lq-btn--glass lq-btn--icon', 'data-lq-pane-close': '', 'aria-label': '关闭' + label}, [{'icon': 'x'}])]), _slot(slot)])])
 
 
 def _trigger(identity, key, label):
-    return _node('button', {'type': 'button', 'class': 'lq-shell-pane__trigger', 'data-lq-pane-open': key, 'aria-controls': f'{identity}--lq-{key}', 'aria-expanded': 'false'}, [label])
+    return _node('button', {'type': 'button', 'class': 'lq-shell-pane__trigger lq-btn lq-btn--glass', 'data-lq-pane-open': key, 'aria-controls': f'{identity}--lq-{key}', 'aria-expanded': 'false'}, [label])
 
 
 def lq_shell_props(component, **p):
@@ -228,7 +228,7 @@ def lq_shell_props(component, **p):
         pane = _pane(identity, 'nav', label, 'user')
         surface = pane['children'][1]
         surface['attrs']['class'] += ' lq-sidebar__surface'
-        surface['children'][1:1] = [_slot('brand'), _node('label', {'class': 'lq-sidebar__search'}, [_node('span', {}, ['搜索菜单']), _node('input', {'type': 'search', 'data-lq-nav-search-input': '', 'aria-label': '搜索菜单', 'autocomplete': 'off'})]), _node('nav', {'aria-label': label}, details), _node('p', {'data-lq-nav-empty': '', 'hidden': ''}, ['没有匹配的菜单'])]
+        surface['children'][1:1] = [_slot('brand'), _node('label', {'class': 'lq-sidebar__search'}, [_node('span', {}, ['搜索菜单']), _node('input', {'type': 'search', 'class': 'lq-input', 'data-lq-nav-search-input': '', 'aria-label': '搜索菜单', 'autocomplete': 'off'})]), _node('nav', {'aria-label': label}, details), _node('p', {'data-lq-nav-empty': '', 'hidden': ''}, ['没有匹配的菜单'])]
         return _node('div', a, [_trigger(identity, 'nav', label), pane])
     if component == 'editor':
         kind = _choice(p.get('kind', 'exam'), ('exam', 'take', 'lesson-plan', 'assessment', 'evaluation'))

@@ -1548,7 +1548,7 @@ class BlogCenter {
     spotlightPostHtml(post, index) {
         const cover = this.postCoverMediaHtml(post);
         return `
-            <button type="button" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
+            <button type="button" data-lq-shape="surface" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
                 <div class="blog-spotlight-card__media">${cover}</div>
                 <div class="blog-spotlight-card__body">
                     ${this.sectionBadgeHtml(post.section_key, 'blog-section-badge--spotlight')}

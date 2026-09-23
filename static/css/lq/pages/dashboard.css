@@ -76,14 +76,37 @@
 }
 
 /* -- 课堂卡: interactive grid ------------------------------------------ */
-[data-lq-dashboard] .ls-course-list {
+[data-lq-dashboard] .ls-course-list,
+[data-lq-dashboard] .dashboard-group-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
     gap: var(--ls-s-4);
 }
+/* A grouped board is a full-width section, not one cell of the flat card grid. */
+[data-lq-dashboard] .ls-course-list:is(.is-grouped, .is-schedule3d) { display: block; }
+/* Grouping changes structure, not the material palette. Legacy green/white
+   gradients made dark-mode groups much lighter than their white labels. */
+[data-lq-dashboard] .dashboard-group-section {
+    background: hsl(var(--lq-page-control));
+    border-color: hsl(var(--ls-line));
+    border-inline-start-color: hsl(var(--ls-primary) / .5);
+}
+[data-lq-dashboard] .dashboard-group-header { border-block-end-color: hsl(var(--ls-line)); }
+[data-lq-dashboard] .dashboard-group-header:hover { background: hsl(var(--lq-page-content)); }
+[data-lq-dashboard] .dashboard-group-header h3 { color: hsl(var(--ls-ink)); }
+[data-lq-dashboard] .dashboard-group-header p { color: hsl(var(--ls-ink-2)); }
 /* `lq-card--interactive` 只给悬停行为，不给填充（components/content.css 里
    `.lq-card` 本身没有 background），所以卡片的内容级材质必须由页面层提供。 */
 [data-lq-dashboard] .ls-course-row {
+    /* The legacy list uses three fixed side-by-side columns. Inside the new
+       280px cards that leaves the title only one glyph wide. Every view reuses
+       these same cards, so define their inner layout once, independently of
+       viewport-sized legacy grid rules. */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--ls-s-4);
+    min-width: 0;
     position: relative;
     border-radius: var(--ls-r-lg);
     border: 1px solid hsl(var(--ls-line));
@@ -91,6 +114,44 @@
     padding: var(--ls-s-4) var(--ls-s-4) var(--ls-s-4) calc(var(--ls-s-4) + 4px);
     overflow: clip;
     transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
+}
+/* Keep the server's current-semester filtering intact before enhancement. */
+[data-lq-dashboard] :is(.ls-course-row, .ls-course-list)[hidden] { display: none; }
+/* View panes and retry actions must obey the controller's hidden state even
+   when their legacy class declares flex/grid/inline-flex. */
+[data-lq-dashboard] [data-student-schedule] [hidden] { display: none !important; }
+[data-lq-dashboard] .ls-course-copy { min-width: 0; }
+[data-lq-dashboard] .ls-course-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ls-s-2) var(--ls-s-3);
+    text-align: start;
+}
+[data-lq-dashboard] .ls-course-state a { justify-content: flex-start; }
+[data-lq-dashboard] .ls-course-actions {
+    margin-block-start: auto;
+    padding-block-start: var(--ls-s-3);
+    border-block-start: 1px solid hsl(var(--ls-line));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--ls-s-2) var(--ls-s-3);
+    white-space: normal;
+}
+/* Both semester selectors keep their native value owners, with the shared
+   selection control taking the visible slot. */
+[data-lq-dashboard] .dashboard-semester-selection { min-width: 0; flex: 1; }
+[data-lq-dashboard] .cs-deck-head > .dashboard-semester-selection { flex: 0 1 280px; max-width: 100%; }
+[data-lq-dashboard] :is(.ls-field select, .cs-deck-term, .ls-schedule-term select, .ls-course-collection-filters select).lq-selection-native {
+    width: 1px;
+    min-width: 0;
+    max-width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
 }
 [data-lq-dashboard] .ls-course-row::before {
     content: "";

@@ -65,6 +65,24 @@ test('Escape without a chat layer preserves external focus and the ordinary chat
   expect(await page.evaluate(() => (window as any).lastEscapeConsumed)).toBe(false);
 });
 
+test('completed AI streams use the same single action footer as regular messages', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    const chat = (window as any).chat;
+    chat.handleDiscussionAiStreamStart({ stream_id: 'layout-stream', sender: '课堂助教', role: 'assistant' });
+    chat.handleDiscussionAiStreamDone({ stream_id: 'layout-stream', id: 42, sender: '课堂助教', role: 'assistant', message: '完整回答' });
+    // A repeated lifecycle completion must not duplicate the footer.
+    chat.ensureMessageActions(document.querySelector('[data-message-id="42"]'), 42);
+    chat.appendChatMessage({ id: 43, sender: '课堂同学', role: 'student', message: '收到' });
+  });
+  for (const id of [42, 43]) {
+    const message = page.locator(`.chat-message[data-message-id="${id}"]`);
+    await expect(message.locator('.chat-message-main > .chat-message-actions')).toHaveCount(1);
+    await expect(message.locator('.chat-message-header .chat-message-actions')).toHaveCount(0);
+    await expect(message.locator('.chat-message-main > :last-child')).toHaveClass('chat-message-actions');
+  }
+});
+
 test('an external dialog keeps its restored focus without closing background chat panels', async ({ page }) => {
   await mount(page);
   await page.evaluate(() => {

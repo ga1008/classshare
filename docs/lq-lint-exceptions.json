@@ -2,6 +2,14 @@
   "schemaVersion": 1,
   "exceptions": [
     {
+      "path": "static/css/lq/components/control-geometry.css",
+      "rules": ["legacy-class"],
+      "reason": "User-requested single capsule geometry must also reach retained legacy action links; existing business markup and handlers stay intact.",
+      "owner": "Shared LQ control geometry",
+      "scope": "Only border-radius aliases for existing ls-button and app-topbar-action controls. No colour, event, layout or business changes are waived.",
+      "reviewAt": "Remove legacy aliases when the corresponding action-link consumers use lq-btn; desktop shell and nested control checks cover this adapter."
+    },
+    {
       "path": "static/css/lq/manage-shell.css",
       "rules": ["legacy-class"],
       "reason": "The S3 adapter has been extracted unchanged for the S4 shell. Existing header_actions nodes keep their original business hooks and form/iframe identity; this CSS only pairs their current app-topbar-action foreground and background with LQ tokens.",

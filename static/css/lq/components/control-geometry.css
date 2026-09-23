@@ -1,0 +1,16 @@
+/* One geometry contract for native, legacy, Jinja and React actions, including
+   nested segments. !important intentionally defeats old page/inline corner
+   overrides; it changes neither dimensions nor the control's state colours.
+   A whole clickable content card explicitly declares surface semantics. */
+:root :is(button, input[type="button"], input[type="submit"], input[type="reset"],
+    a[role="button"], [role="tab"], .btn, .lq-btn, .lq-nav-item,
+    .ls-button, .ls-filter, .cw-button, .cw-text-button, .cw-nav-link, .assignment-card-primary-link,
+    .app-topbar-action, .ls-tool-link, summary):not([data-lq-shape="surface"]) {
+    border-radius: var(--ls-r-capsule) !important;
+}
+/* The moving selection thumb and its outer track follow the same geometry. */
+:root :is(.lq-segment > .lq-tabs__list, .lq-tabs--pill > .lq-tabs__list,
+    .cw-task-filters, .classroom-activity-tabs, .discussion-room-tabs),
+:root .lq-segment > .lq-tabs__list[data-lq-thumb]::before {
+    border-radius: var(--ls-r-capsule) !important;
+}

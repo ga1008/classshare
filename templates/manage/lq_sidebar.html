@@ -3,16 +3,16 @@
 {% from 'macros/ui_explanation.html' import explain_attrs %}
 {# Authored in-place pane. Navigation payload and permissions remain server-owned. #}
 <aside id="sidebar" class="manage-sidebar lq-sidebar-root lq-manage-sidebar" data-lq-shell="sidebar" data-lq-manage-sidebar data-lq-manage-identity="{{ user_info.role }}:{{ user_info.id }}" aria-label="教师工作台导航区">
-    <button type="button" class="lq-shell-pane__trigger mobile-toggle" data-lq-pane-open="nav" aria-controls="manage-pilot-nav" aria-expanded="false" aria-label="展开菜单" hidden>{{ lq_icon('menu') }}</button>
+    <button type="button" class="lq-btn lq-btn--glass lq-shell-pane__trigger mobile-toggle" data-lq-pane-open="nav" aria-controls="manage-pilot-nav" aria-expanded="false" aria-label="展开菜单" hidden>{{ lq_icon('menu') }}</button>
     <dialog id="manage-pilot-nav" class="lq-shell-pane lq-manage-sidebar-pane" data-lq-pane="nav" aria-label="教师工作台导航" open>
         <div class="lq-shell-pane__scrim" data-lq-pane-close aria-hidden="true"></div>
         <div class="lq-shell-pane__surface lq-sidebar__surface lq-surface">
-            <div class="lq-shell-pane__head"><strong>教师工作台</strong><button type="button" class="lq-shell-pane__close" data-lq-pane-close aria-label="关闭菜单">{{ lq_icon('x') }}</button></div>
+            <div class="lq-shell-pane__head"><strong>教师工作台</strong><button type="button" class="lq-btn lq-btn--glass lq-btn--icon lq-shell-pane__close" data-lq-pane-close aria-label="关闭菜单">{{ lq_icon('x') }}</button></div>
             <div class="lq-manage-brand">
                 <a href="/dashboard" class="lq-manage-brand__home" aria-label="返回首页">{{ lq_icon('book-open') }}<span class="lq-manage-sidebar__copy">课堂互动平台</span></a>
-                <button type="button" id="sidebarCollapseBtn" class="lq-shell-pane__close lq-manage-collapse" aria-label="折叠或展开菜单" aria-controls="manageNav" aria-expanded="true">{{ lq_icon('chevron-left') }}</button>
+                <button type="button" id="sidebarCollapseBtn" class="lq-btn lq-btn--glass lq-btn--icon lq-shell-pane__close lq-manage-collapse" aria-label="折叠或展开菜单" aria-controls="manageNav" aria-expanded="true">{{ lq_icon('chevron-left') }}</button>
             </div>
-            <label class="lq-sidebar__search"><span>搜索菜单</span><input type="search" id="manageNavSearch" data-lq-nav-search-input placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项"></label>
+            <label class="lq-sidebar__search"><span>搜索菜单</span><input type="search" class="lq-input" id="manageNavSearch" data-lq-nav-search-input placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项"></label>
             <nav id="manageNav" class="lq-manage-nav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}" aria-label="教师工作台导航">
                 {% for domain in manage_nav.domains %}
                 {% if domain.key == 'home' %}

@@ -778,7 +778,10 @@ export class ClassroomChat {
             this.removeEmptyState();
         }
 
-        messages.forEach((item) => {
+        // The server sends chronological batches. Prepending visits the newest
+        // entry first so the resulting DOM preserves that same chronology.
+        const orderedMessages = isOlderBatch ? [...messages].reverse() : messages;
+        orderedMessages.forEach((item) => {
             if (item.type === 'chat') {
                 this.appendChatMessage(item, { prepend: isOlderBatch, scrollToBottom: false });
             } else if (item.type === 'system') {
@@ -998,13 +1001,12 @@ export class ClassroomChat {
             return;
         }
 
-        const header = node.querySelector('.chat-message-header');
-        if (!(header instanceof HTMLElement) || header.querySelector('.chat-message-actions')) {
+        const main = node.querySelector('.chat-message-main');
+        if (!(main instanceof HTMLElement) || main.querySelector('.chat-message-actions')) {
             return;
         }
 
-        header.classList.add('has-actions');
-        header.appendChild(this.createMessageActionBar(normalizedId));
+        main.appendChild(this.createMessageActionBar(normalizedId));
     }
 
     updateDisplayName(payload) {
@@ -2226,10 +2228,6 @@ export class ClassroomChat {
         timeNode.textContent = String(normalizedMessage.timestamp || '');
         header.appendChild(timeNode);
 
-        if (messageId) {
-            header.classList.add('has-actions');
-            header.appendChild(this.createMessageActionBar(messageId));
-        }
         main.appendChild(header);
 
         if (normalizedMessage.quote) {
@@ -2256,6 +2254,12 @@ export class ClassroomChat {
         const customEmojis = Array.isArray(normalizedMessage.custom_emojis) ? normalizedMessage.custom_emojis : [];
         if (customEmojis.length) {
             main.appendChild(this.renderMessageCustomEmojis(customEmojis));
+        }
+
+        // History, live messages and completed AI streams share an in-flow
+        // action footer. Its actual height belongs to the scroll/anchor layout.
+        if (messageId) {
+            main.appendChild(this.createMessageActionBar(messageId));
         }
 
         row.appendChild(main);
@@ -2711,7 +2715,7 @@ export class ClassroomChat {
 
         const quoteButton = document.createElement('button');
         quoteButton.type = 'button';
-        quoteButton.className = 'chat-message-action-btn';
+        quoteButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
         quoteButton.dataset.messageAction = 'quote';
         quoteButton.dataset.messageId = String(normalizedId);
         quoteButton.textContent = DISCUSSION_UI_TEXT.quoteActionLabel;
@@ -2722,7 +2726,7 @@ export class ClassroomChat {
         if (this.canMarkMessageUseful(message)) {
             const usefulButton = document.createElement('button');
             usefulButton.type = 'button';
-            usefulButton.className = 'chat-message-action-btn';
+            usefulButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
             usefulButton.dataset.messageAction = 'mark-useful';
             usefulButton.dataset.messageId = String(normalizedId);
             usefulButton.textContent = DISCUSSION_UI_TEXT.usefulActionLabel;
@@ -2732,7 +2736,7 @@ export class ClassroomChat {
 
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
-        copyButton.className = 'chat-message-action-btn';
+        copyButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
         copyButton.dataset.messageAction = 'copy';
         copyButton.dataset.messageId = String(normalizedId);
         copyButton.textContent = DISCUSSION_UI_TEXT.copyActionLabel;

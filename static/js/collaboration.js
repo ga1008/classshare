@@ -93,7 +93,7 @@ function renderGroupCard(group, selectedGroup) {
     const title = group.assignment_title || '自主学习小组';
     return `
         <article class="collaboration-group-card${isSelected ? ' is-selected' : ''}" data-collab-group-card="${group.id}">
-            <button type="button" class="collaboration-group-card__body" data-collab-select-group="${group.id}">
+            <button type="button" data-lq-shape="surface" class="collaboration-group-card__body" data-collab-select-group="${group.id}">
                 <span class="collaboration-group-card__status">${escapeHtml(statusLabel(group))}</span>
                 <strong>${escapeHtml(group.name)}</strong>
                 <small>${escapeHtml(title)}</small>

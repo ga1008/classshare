@@ -10,7 +10,7 @@
     border: 0;
 }
 .lq-selection { position: relative; min-width: 0; }
-.lq-selection__input { width: 100%; padding-inline-end: 48px; }
+.lq-selection__input { width: 100%; padding-inline-end: 48px; border-radius: var(--ls-r-capsule); }
 .lq-selection__toggle { position: absolute; inset-inline-end: 0; top: 0; width: 40px; min-height: 40px; }
 .lq-selection__popup {
     position: fixed;
@@ -34,7 +34,7 @@
 .lq-selection__option {
     min-height: 40px;
     padding: 9px 12px;
-    border-radius: 8px;
+    border-radius: var(--ls-r-capsule);
     font-size: 14px;
     line-height: 1.5;
     color: hsl(var(--ls-ink));
