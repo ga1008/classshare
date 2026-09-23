@@ -67,6 +67,10 @@
     --lq-material-blur: var(--ls-blur-thin);
 }
 
+/* Opt-in boundary for a content panel that sits directly on the page backdrop.
+   Regions declare it once; the items inside them stay plain translucent. */
+.lq-surface--boundary { --lq-material-blur: var(--ls-blur-thin); }
+
 /* Control material. Buttons, chips and fields are small and numerous, so they
    take the tint and the rim but never their own blur host: at that size the
    blur is invisible and the compositing cost is not. */
@@ -101,10 +105,23 @@
 }
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    /* .lq-surface is deliberately not in this list. Every lq_card carries it, so
+       blurring it made the host count follow the data: a wall of forty cards was
+       forty compositing layers. Content panels get fill and rim, and the
+       boundary that actually frosts the backdrop is declared once, per region. */
+    /* Fill and blur are separate decisions. Every material is translucent;
+       only a boundary blurs. Merging the two is how removing .lq-surface from
+       the blur list also took away its translucency. */
     .lq-glass,
     .lq-surface,
-    .lq-surface--frost {
+    .lq-surface--frost,
+    .lq-surface--boundary {
         background: hsl(var(--lq-material-fill));
+    }
+
+    .lq-glass,
+    .lq-surface--frost,
+    .lq-surface--boundary {
         -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
         backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
     }
@@ -313,5 +330,114 @@
     }
     :root .lq-glass::before { background-image: none; border-color: CanvasText; }
     :root .lq-material-muted { color: CanvasText !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Material module. One material, five levels, adopted by attribute.
+
+   A block, a button or a menu sets `data-lq-material="<level>"` and gets the
+   whole recipe: fill, blur at the boundary, rim, radius, border and the shared
+   interaction. Size and tint stay the block's own business through the custom
+   properties below, so nothing here has to be re-tuned per element.
+
+       --lq-material-fill      the level's fill; override to tint a block
+       --lq-material-radius    defaults to --ls-r-lg
+       --lq-material-blur      set by the level; never set it on a nested block
+   ───────────────────────────────────────────────────────────────────────── */
+[data-lq-material] {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid hsl(var(--ls-glass-line));
+    border-radius: var(--lq-material-radius, var(--ls-r-lg));
+    background: hsl(var(--lq-material-fill));
+    color: hsl(var(--ls-ink));
+    /* The rim is what reads as glass. An inset shadow instead of a pseudo
+       element, because legacy blocks already use ::before for their own
+       decoration and a second one would fight them. */
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--lq-material-shadow, var(--ls-glass-shadow));
+}
+
+[data-lq-material="clear"] { --lq-material-fill: var(--ls-glass-fill-clear); --lq-material-blur: var(--ls-blur-regular); }
+[data-lq-material="control"] { --lq-material-fill: var(--ls-glass-fill-control); --lq-material-radius: var(--ls-r-md); --lq-material-shadow: none; }
+[data-lq-material="chrome"] { --lq-material-fill: var(--ls-glass-fill); --lq-material-blur: var(--ls-blur-regular); }
+[data-lq-material="content"] { --lq-material-fill: var(--ls-glass-fill-content); --lq-material-blur: var(--ls-blur-thin); }
+[data-lq-material="raised"] { --lq-material-fill: var(--ls-glass-fill-strong); --lq-material-blur: var(--ls-blur-thick); --lq-material-shadow: var(--ls-glass-shadow-strong); }
+
+/* The content material had fill and blur but no rim, which is why panels read
+   as flat translucent boxes rather than glass. */
+.lq-surface {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--lq-material-shadow, var(--ls-glass-shadow));
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    /* Control is the one level that never becomes a blur host: at that size the
+       blur is invisible and the compositing is not. */
+    [data-lq-material]:not([data-lq-material="control"]) {
+        -webkit-backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+        backdrop-filter: blur(var(--lq-material-blur)) saturate(var(--ls-glass-saturate)) brightness(var(--lq-material-brightness, 1));
+    }
+}
+
+/* Same boundary rule as the classes: a material inside a material already sees
+   a blurred backdrop, so a second filter costs a layer and shows nothing. */
+:is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary)
+:is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* ── Shared interaction. Every material that can be acted on animates the same
+   way, so a card, a button and a menu item never disagree about timing. ── */
+[data-lq-interactive] {
+    /* The lift travels in a custom property rather than in the hover rule, so
+       the reduced-motion cancel below cannot lose on specificity. A `:not()`
+       added to the hover selector later would otherwise silently outrank it and
+       the motion would come back for users who asked for none. */
+    --lq-lift: -1px;
+    transition: transform var(--ls-dur-fast) var(--ls-ease-out),
+                box-shadow var(--ls-dur-fast) var(--ls-ease-out),
+                background-color var(--ls-dur-fast) var(--ls-ease-out),
+                border-color var(--ls-dur-fast) var(--ls-ease-out);
+}
+
+[data-lq-interactive]:hover {
+    border-color: hsl(var(--ls-primary) / .35);
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                0 0 0 3px hsl(var(--ls-primary-soft)),
+                var(--lq-material-shadow, var(--ls-glass-shadow));
+    transform: translateY(var(--lq-lift));
+}
+
+[data-lq-interactive]:active { transform: translateY(0) scale(var(--lq-press, .995)); }
+
+[data-lq-interactive]:focus-visible {
+    outline: 2px solid hsl(var(--ls-ring));
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-lq-interactive] { --lq-lift: 0px; --lq-press: 1; transition: none; }
+}
+
+/* Degradation follows the classes exactly: no transparency, no glass. */
+:root[data-lq-tier="C"] [data-lq-material],
+[data-lq-glass="off"] [data-lq-material],
+:root[data-lq-contrast="more"] [data-lq-material] {
+    background: hsl(var(--ls-surface-1));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    [data-lq-material] { background: hsl(var(--ls-surface-1)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+@media (forced-colors: active) {
+    [data-lq-material] { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
 }
 

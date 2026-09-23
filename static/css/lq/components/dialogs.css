@@ -1,4 +1,10 @@
-/* Structure only: one material surface, one coordinating layer/presence owner. */
+/* Structure only: one material surface, one coordinating layer/presence owner.
+   S9 U1: nothing here joins the shared control interaction. A dialog surface
+   is not something a pointer acts on -- the things inside it that are (its
+   close button, its footer actions) are .lq-btn and already carry the shared
+   rim, timing, halo, press and ring. The opacity/scale transitions below are
+   presence, owned by the layer system, not the hover language, so they stay.
+   The material itself is the overlay package's (components/layers.css). */
 .lq-dialog-root {
     position: fixed;
     inset: 0;

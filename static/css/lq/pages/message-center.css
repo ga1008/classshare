@@ -229,3 +229,42 @@
         flex: 1 1 auto;
     }
 }
+
+/* ── 顶层面板的填充与嵌套守卫（S9 U2）─────────────────────────────────────
+   私信面板是这一页的顶层面板，模糊由 pages/page-material.css 末尾主任务那段提供。
+   但它的填充仍被 ui-system.src.css:3636 的 `hsl(var(--ls-surface-1) / 0.94)` 压着
+   —— 实测计算值 alpha 0.94，几乎不透明，材质标度在这一页失真（内容级是 .74/.76）。
+   这里把填充交还内容级别名；描边同样收回令牌，遗留那条 rgba(148,163,184,.16)
+   在暗色下几乎看不见。 */
+.lq-messages.profile-message-center .message-center-private-panel {
+    background: hsl(var(--lq-page-content));
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+}
+
+/* 通知流面板是「通知」这一档的顶层面板，和私信面板对称：填充回到内容级，模糊与
+   高光边在这里给出。它是版式里固定的一块（每页一个），不随通知条数增长；条目本身
+   （.lq-row / .lq-card）是数据项，由下面的守卫压平，不做宿主。 */
+.lq-messages.profile-message-center .message-center-feed {
+    background: hsl(var(--lq-page-content));
+    border: 1px solid hsl(var(--ls-line));
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lq-messages .message-center-feed {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+/* 嵌套守卫。私信面板不带材质类，materials.css 的「材质套材质」守卫够不着它，
+   面板里的 composer / 联系人列表 / 会话卡会各自再建一层合成层 —— 实测
+   .message-center-composer.lq-surface 就是这样变成第二个宿主的。 */
+.lq-messages .message-center-private-panel :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]),
+.lq-messages .message-center-feed :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}

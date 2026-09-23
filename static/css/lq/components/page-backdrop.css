@@ -1,7 +1,6 @@
 /* 页面背景图：视口底部固定层。它是被透视的底，不是玻璃，所以永远不加
    backdrop-filter，也不参与模糊宿主预算。减色由 filter + opacity + 面纱共同完成。 */
 .lq-page-backdrop {
-    --lq-backdrop-band: min(46vh, 34rem);
     --lq-backdrop-saturation: 0.45;
     --lq-backdrop-opacity: 0.55;
     --lq-backdrop-veil-top: 0.38;
@@ -24,23 +23,25 @@
     display: none;
 }
 
-/* 嵌合在视口底部：高度随视口变化，contain 保证原图比例不被拉伸。 */
+/* 铺满视口。`contain` 会把整张图塞进一条 46vh 的带里：16:9 的图按高度缩放后
+   只剩视口宽度的一半、居中成一条，那不是背景而是一张贴纸。`cover` 同样保持
+   原图比例，只是裁掉溢出部分，并且让玻璃在任何位置背后都有东西可透。 */
 .lq-page-backdrop__image {
     position: absolute;
-    inset: auto 0 0 0;
-    height: var(--lq-backdrop-band);
+    inset: 0;
     background-image: var(--lq-backdrop-image, none);
     background-repeat: no-repeat;
-    background-position: bottom center;
-    background-size: contain;
+    background-position: center center;
+    background-size: cover;
     filter: saturate(var(--lq-backdrop-saturation));
     opacity: var(--lq-backdrop-opacity);
 }
 
+/* 面纱现在也铺满：内容最密的上半部压得重一些，往下逐渐让开，
+   这样正文始终坐在足够的底色上，而底部仍能看清图。 */
 .lq-page-backdrop__veil {
     position: absolute;
-    inset: auto 0 0 0;
-    height: var(--lq-backdrop-band);
+    inset: 0;
     background-image: linear-gradient(
         to bottom,
         hsl(var(--ls-background) / var(--lq-backdrop-veil-top)),

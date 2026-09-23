@@ -138,7 +138,7 @@ const DECK_CSS = `
     z-index: 400;
     font-size: 0.72rem;
     color: var(--text-muted, #64748b);
-    background: rgba(255, 255, 255, 0.78);
+    background: hsl(var(--ls-surface-1) / 0.78);
     border-radius: 999px;
     padding: 4px 12px;
     pointer-events: none;
@@ -150,7 +150,7 @@ const DECK_CSS = `
     width: min(680px, 82%);
     height: 380px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.97);
+    background: hsl(var(--ls-surface-1) / 0.97);
     border: 1px solid rgba(148, 163, 184, 0.35);
     box-shadow: 0 22px 44px rgba(30, 41, 59, 0.22);
     transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.4s ease;
@@ -175,7 +175,7 @@ const DECK_CSS = `
     margin-left: auto;
     font-size: 0.7rem;
     font-weight: 900;
-    background: rgba(255, 255, 255, 0.22);
+    background: hsl(var(--ls-surface-1) / 0.22);
     border-radius: 999px;
     padding: 3px 10px;
 }
@@ -260,8 +260,8 @@ const DECK_CSS = `
     width: 100%; height: 100%; min-width: 0; min-height: 0; box-sizing: border-box;
     border-radius: inherit; padding: 7px 8px; gap: 4px; overflow: hidden;
     background-color: var(--cs-accent, #6366f1);
-    background-image: linear-gradient(145deg, rgba(255,255,255,.20), rgba(255,255,255,.03) 48%, rgba(255,255,255,.10));
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 0 0 1px rgba(255,255,255,.22), 0 2px 6px rgba(15,23,42,.08);
+    background-image: linear-gradient(145deg, hsl(var(--ls-surface-1) / .20), hsl(var(--ls-surface-1) / .03) 48%, hsl(var(--ls-surface-1) / .10));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-surface-1) / .42), inset 0 0 0 1px hsl(var(--ls-surface-1) / .22), 0 2px 6px rgba(15,23,42,.08);
 }
 .cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited {
     display: block; align-self: center; min-width: 0; min-height: 0;
@@ -286,16 +286,16 @@ const DECK_CSS = `
 .cs-adjustment-label {
     position: relative; justify-self: end; align-self: end; z-index: 2;
     max-width: 100%; min-width: 0; min-height: 23px; box-sizing: border-box;
-    border: 1px solid rgba(255,255,255,.62); border-radius: 10px;
+    border: 1px solid hsl(var(--ls-surface-1) / .62); border-radius: 10px;
     padding: 3px 6px; color: inherit; font: 750 .67rem/1.25 Arial,sans-serif;
-    background: linear-gradient(145deg, rgba(255,255,255,.32), rgba(255,255,255,.12));
+    background: linear-gradient(145deg, hsl(var(--ls-surface-1) / .32), hsl(var(--ls-surface-1) / .12));
     backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 5px rgba(15,23,42,.12);
+    box-shadow: inset 0 1px 0 hsl(var(--ls-surface-1) / .45), 0 2px 5px rgba(15,23,42,.12);
     text-align: center; white-space: nowrap; cursor: pointer;
 }
 .cs-adjustment-label > span { font: inherit; line-height: inherit; }
 .cs-adjustment-label__full { display: none; }
-.cs-adjustment-label:is(:hover,:focus-visible) { background-color: rgba(255,255,255,.18); }
+.cs-adjustment-label:is(:hover,:focus-visible) { background-color: hsl(var(--ls-surface-1) / .18); }
 .cs-adjustment-label:active { box-shadow: inset 0 1px 4px rgba(15,23,42,.2); }
 .cs-lesson--mini { container: cs-lesson / size; --cs-radius: 11px; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .cs-lesson--mini .cs-lesson__surface { padding: 4px 5px; gap: 2px; }
@@ -310,7 +310,7 @@ const DECK_CSS = `
 .cs-lesson--cell { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 a.cs-lesson, a.cs-lesson:link, a.cs-lesson:visited, a.cs-lesson:hover, a.cs-lesson:focus { color: #fff; }
 a.cs-lesson--cell { cursor: pointer; }
-a.cs-lesson--create .cs-lesson__surface { box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+a.cs-lesson--create .cs-lesson__surface { box-shadow: inset 0 0 0 2px hsl(var(--ls-surface-1) / .55); }
 a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
 /* Pending frames keep a 4px gap; extremely narrow/short lanes use 2px below
    to retain readable title and action rows. */
@@ -318,7 +318,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson--pending .cs-lesson__surface { border-radius: max(6px, calc(var(--cs-radius) - 6px)); }
 .cs-lesson--pending.cs-lesson--proposed { color: #172554; }
 .cs-lesson--proposed .cs-lesson__surface { background-color: color-mix(in srgb, var(--cs-accent) 25%, #fff 75%); }
-.cs-lesson--proposed .cs-adjustment-label { border-color: rgba(23,37,84,.3); background-color: rgba(255,255,255,.35); }
+.cs-lesson--proposed .cs-adjustment-label { border-color: rgba(23,37,84,.3); background-color: hsl(var(--ls-surface-1) / .35); }
 /* Title gets the flexible space. The footer keeps the action at the right edge;
    the lower-priority room yields its width instead of pushing the action away. */
 .cs-lesson__footer:has(.cs-adjustment-label) .cs-adjustment-label { max-width: var(--cs-compact-action-width, 96px); }
@@ -451,8 +451,8 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-expand__bar span { font-size: 0.8rem; opacity: 0.92; }
 .cs-expand__nav { margin-left: auto; display: flex; gap: 8px; }
 .cs-expand__nav button {
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid hsl(var(--ls-surface-1) / 0.5);
+    background: hsl(var(--ls-surface-1) / 0.14);
     color: #fff;
     border-radius: 10px;
     padding: 6px 14px;
@@ -460,7 +460,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     font-weight: 800;
     cursor: pointer;
 }
-.cs-expand__nav button:hover { background: rgba(255, 255, 255, 0.28); }
+.cs-expand__nav button:hover { background: hsl(var(--ls-surface-1) / 0.28); }
 .cs-expand__body { padding: 16px 20px 20px; min-height: 0; position: relative; }
 /* Routing space belongs to the timetable's scrollable canvas. Endpoints follow
    the visible lesson bounds; previews stay above lines and remain clickable. */

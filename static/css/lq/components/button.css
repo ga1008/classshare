@@ -1,3 +1,84 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   S9 U1 — the one interaction every control shares.
+
+   materials.css owns the recipe: `[data-lq-material]` carries the rim and
+   `[data-lq-interactive]` carries the transition, the hover glow, the press
+   and the focus ring. Controls are rendered by server macros that this
+   package may not edit, so they cannot carry those attributes. The lists
+   below join them to the same recipe instead of each component file
+   restating a hover of its own — which is the whole point of the module: a
+   second copy is a second thing to drift.
+
+   Every value here is read from the same token materials.css reads, so
+   duration, easing, glow radius and ring are identical by construction, not
+   by coincidence. What stays each component's own business is size and
+   colour, expressed through these properties:
+
+       --lq-ctrl-rim         the specular edge; transparent where the
+                             component has no resting fill (ghost, link)
+       --lq-ctrl-glow-color  the hover/expanded halo tint
+       --lq-ctrl-edge        the hover border tint
+
+   This block lives in button.css only because index.css imports it first of
+   the eight control files; nothing in it is button specific.
+
+   Composition note: the three shadow slots are always present, transparent
+   when unused, so hover interpolates slot for slot instead of snapping
+   between lists of different length.
+   ───────────────────────────────────────────────────────────────────────── */
+:is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+    .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) {
+    --lq-ctrl-rim: 0 0 transparent;
+    --lq-ctrl-glow: 0 0 transparent;
+    --lq-ctrl-elev: 0 0 transparent;
+    --lq-ctrl-glow-color: var(--ls-primary-soft);
+    --lq-ctrl-edge: var(--ls-primary) / .35;
+    box-shadow: var(--lq-ctrl-rim), var(--lq-ctrl-glow), var(--lq-ctrl-elev);
+    transition: transform var(--ls-dur-fast) var(--ls-ease-out),
+        box-shadow var(--ls-dur-fast) var(--ls-ease-out),
+        background-color var(--ls-dur-fast) var(--ls-ease-out),
+        border-color var(--ls-dur-fast) var(--ls-ease-out);
+}
+/* The rim is what reads as glass, so it belongs to whatever has a resting
+   fill. A ghost or a link has none, and an edge with nothing behind it reads
+   as a stray line rather than a material. */
+:is(.lq-btn--prominent, .lq-btn--glass, .lq-btn--soft, .lq-btn--destructive,
+    .lq-chip, .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-range__value) {
+    --lq-ctrl-rim: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom));
+}
+/* Pointer-reactive controls. Fields and the switch are deliberately absent:
+   they answer to focus, not to the pointer, and a text box that lifts under
+   the cursor reads as a button. */
+@media (hover: hover) and (pointer: fine) {
+    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+        --lq-ctrl-glow: 0 0 0 3px hsl(var(--lq-ctrl-glow-color));
+        border-color: hsl(var(--lq-ctrl-edge));
+        transform: translateY(-1px);
+    }
+}
+:is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
+    :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    transform: translateY(0) scale(.995);
+}
+:is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+    .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value):focus-visible {
+    outline: 2px solid hsl(var(--ls-ring));
+    outline-offset: 2px;
+}
+/* The cancel has to repeat the `:not(...)` of the rules it cancels. Without it
+   the hover rule wins on specificity and the lift survives reduced motion --
+   measured, not assumed: tests/e2e/components/lq-u1-interaction.spec.ts caught
+   exactly that. */
+@media (prefers-reduced-motion: reduce) {
+    :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+        .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) { transition: none; }
+    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
+    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { transform: none; }
+}
+
 /* S8 control material. Buttons take the control-level glass fill, the glass
    rim and nothing else: a control never hosts its own blur, because at this
    size the radius is invisible while the extra composited layer is not free.
@@ -28,8 +109,7 @@
     cursor: pointer;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    transition: transform var(--ls-dur-fast) var(--ls-spring-snappy),
-        box-shadow var(--ls-dur-fast) var(--ls-ease-out), background-color var(--ls-dur-fast) var(--ls-ease-out);
+    /* Transition, rim, hover, press and ring come from the shared block above. */
 }
 .lq-btn--sm {
     --lq-btn-height: var(--ls-s-8);
@@ -86,7 +166,9 @@
     color: hsl(var(--ls-on-primary));
     border-color: hsl(var(--ls-primary));
     border-top-color: hsl(var(--ls-glass-rim));
-    box-shadow: var(--ls-shadow-1);
+    /* Elevation is the prominent button's own colour decision; it goes into
+       the shared block's third shadow slot so hover still interpolates. */
+    --lq-ctrl-elev: var(--ls-shadow-1);
 }
 /* The translucent variants share one base: the control fill, plus their own
    tint as a flat gradient layer on top of it. Compositing the tint this way
@@ -116,6 +198,10 @@
     background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-glass-fill-control));
     color: hsl(var(--ls-tone-danger-fg));
     border-color: hsl(var(--ls-tone-danger-fg));
+    /* Same halo, its own colour: a destructive action that glows accent-blue
+       on hover contradicts the one thing its palette is there to say. */
+    --lq-ctrl-glow-color: var(--ls-tone-danger-soft);
+    --lq-ctrl-edge: var(--ls-tone-danger-fg) / .5;
 }
 .lq-btn--link {
     background: transparent;
@@ -130,12 +216,8 @@
 .lq-glass[data-lq-tone="dark"] .lq-btn--glass {
     background: hsl(var(--ls-glass-fill-strong));
 }
-.lq-btn:focus-visible {
-    outline: 2px solid hsl(var(--ls-ring));
-    outline-offset: 2px;
-    box-shadow: var(--ls-shadow-focus);
-}
-.lq-btn:active:not([data-lq-disabled="true"]) { transform: scale(.97); }
+/* Focus ring and press live in the shared block: a button that rings 2px
+   while a field rings 3px is exactly the drift this package removes. */
 /* Disabled is a named colour pair, not a fade. Halving the alpha of an
    already translucent control fades the label and the fill together and the
    label is what has to stay readable, so the state names its own muted ink on
@@ -151,8 +233,9 @@
 }
 /* Busy keeps its variant fill and ink: the label still reads as the action. */
 .lq-btn.is-loading { cursor: progress; }
+/* Only what is genuinely this variant's own: a resting fill for the ghost and
+   an underline for the link. The lift, the halo and the timing are shared. */
 @media (hover: hover) and (pointer: fine) {
-    .lq-btn:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) { box-shadow: var(--ls-shadow-2); }
     .lq-btn--ghost:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) {
         background: hsl(var(--ls-glass-fill-control));
     }
@@ -162,10 +245,7 @@
     .lq-btn { min-width: calc(var(--ls-s-10) + var(--ls-s-1)); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); }
     .lq-btn--icon { width: max(var(--lq-btn-height), calc(var(--ls-s-10) + var(--ls-s-1))); }
 }
-@media (prefers-reduced-motion: reduce) {
-    .lq-btn { transition: none; }
-    .lq-btn:active:not([data-lq-disabled="true"]) { transform: none; }
-}
+/* Reduced motion is handled once, in the shared block. */
 @media (forced-colors: active) {
     .lq-btn, .lq-glass .lq-btn { background: ButtonFace; color: ButtonText; border-color: ButtonText; box-shadow: none; }
     .lq-btn:focus-visible { outline-color: Highlight; box-shadow: none; }

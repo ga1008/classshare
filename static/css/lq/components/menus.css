@@ -30,7 +30,10 @@
 .lq-menu__item .lq-icon { width: 18px; height: 18px; }
 .lq-menu > .lq-menu__item[data-danger="true"] { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-menu > .lq-menu__item[aria-disabled="true"] { color: hsl(var(--ls-ink-3)); cursor: not-allowed; opacity: 1; }
-.lq-menu > .lq-menu__item:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
+/* A menu item is a .lq-btn, so its hover, press, timing and focus ring come
+   from the shared control block in components/button.css; the ring declared
+   here differed from every other control only in offset. */
+.lq-menu > .lq-menu__item[data-danger="true"] { --lq-ctrl-glow-color: var(--ls-tone-danger-soft); --lq-ctrl-edge: var(--ls-tone-danger-fg) / .5; }
 .lq-menu__separator { height: 1px; margin: 6px 8px; background: hsl(var(--ls-line-strong)); }
 @media (pointer: coarse) { .lq-menu > .lq-menu__item { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .lq-menu { transition: none; } }

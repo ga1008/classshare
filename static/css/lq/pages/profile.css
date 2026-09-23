@@ -153,3 +153,92 @@
     .lq-profile-appearance__preview { background: Canvas; border-color: CanvasText; }
     .lq-profile-appearance__sample { color: HighlightText; background: Highlight; }
 }
+
+/* ── 顶层面板即材质边界（S9 U2）──────────────────────────────────────────
+   个人中心的版式是「页头 + 侧边导航 + 正文分区」。直接坐在页面背景层之上的
+   只有三类外层面板：.lq-profile-head、.lq-profile-nav，以及正文区里的
+   .profile-band / .lq-profile-appearance / .profile-portfolio-dashboard。
+   把模糊与高光边给它们，面板才是玻璃而不是半透明白块。
+
+   两处刻意排除：
+   - .profile-section-head 按版式本来就是透明的标题带（本文件第 46 行），不是面板；
+   - .profile-metric-card / .profile-chart-card / .profile-portfolio-* 条目是模板
+     循环产出的数据项，数量由数据决定、没有上界。它们只取内容级填充与描边，不做
+     模糊宿主——预算必须由版式决定，不能由数据决定。图表卡另有一层理由：里面是
+     ECharts 画布，画布本身不透明，背后模糊一分钱也看不出来。 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lq-profile .lq-profile-head,
+    .lq-profile .lq-profile-nav,
+    .lq-profile .lq-profile-appearance,
+    .lq-profile [data-lq-profile-content] .profile-band:not(.profile-section-head),
+    .lq-profile [data-lq-profile-content] .profile-portfolio-dashboard {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+/* 嵌套守卫。materials.css 只拦得住「材质类套材质类」，这几个宿主自己不带材质类，
+   守卫够不着；面板里的 .lq-surface / [data-lq-material] 必须在这里压平，否则一个
+   面板里每张卡都会再建一层合成。 */
+.lq-profile :is(.lq-profile-head, .lq-profile-nav, .lq-profile-appearance,
+                .profile-band, .profile-portfolio-dashboard)
+    :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* 近期动态的类型标签用遗留的 --profile-accent/-soft 组合，暗色下这对值没有跟着
+   主题翻过来：真实 axe 扫描在 /profile?section=overview 暗色下读到 3.72:1
+   （#7c7ef4 / #2d314a，要求 4.5:1）。换成语义色令牌，两种外观都自洽。 */
+.lq-profile [data-lq-profile-content] .profile-activity-item > span {
+    background: hsl(var(--ls-tone-info-soft));
+    color: hsl(var(--ls-tone-info-fg));
+}
+.lq-profile [data-lq-profile-content] .profile-activity-item.is-unread > span {
+    background: hsl(var(--ls-tone-danger-soft));
+    color: hsl(var(--ls-tone-danger-fg));
+}
+
+/* 修炼阶段条原本是 overflow-x:auto 的横向滚动区，但既不可聚焦、内部也没有可聚焦
+   内容，键盘用户滚不动它——axe 在 390 宽下报 5 条 serious scrollable-region-focusable。
+   这一排是几枚固定宽度的小徽章，换行比滚动更合适，滚动区消失，问题随之消失。 */
+.lq-profile [data-lq-profile-content] .profile-cultivation-stages {
+    flex-wrap: wrap;
+    overflow-x: visible;
+}
+
+/* 修炼卡与阶段徽章来自共享组件，底色写的是 color-mix(..., white) 与遗留的
+   --text-muted：暗色下底不翻转、文字跟着主题翻转，于是浅底浅字。实测
+   /profile?section=overview 暗色 #6f7987 / #f2f3f5。底改 control 级，状态色改
+   语义令牌，两种外观都自洽。 */
+.lq-profile [data-lq-profile-content] .cultivation-card {
+    background: hsl(var(--lq-page-control));
+    color: hsl(var(--ls-ink));
+    border-color: hsl(var(--ls-line));
+}
+.lq-profile [data-lq-profile-content] .cultivation-card__mark {
+    background: hsl(var(--lq-page-control));
+    border-color: hsl(var(--ls-line));
+}
+.lq-profile [data-lq-profile-content] .cultivation-card__mark > span {
+    color: hsl(var(--ls-ink-2));
+}
+.lq-profile [data-lq-profile-content] .profile-cultivation-stages > span {
+    background: hsl(var(--ls-tone-neutral-soft));
+    color: hsl(var(--ls-tone-neutral-fg));
+}
+.lq-profile [data-lq-profile-content] .profile-cultivation-stages > span.is-passed {
+    background: hsl(var(--ls-tone-success-soft));
+    color: hsl(var(--ls-tone-success-fg));
+}
+.lq-profile [data-lq-profile-content] .profile-cultivation-stages > span:is(.is-challenge_ready, .is-in_exam) {
+    background: hsl(var(--ls-tone-warning-soft));
+    color: hsl(var(--ls-tone-warning-fg));
+}
+.lq-profile [data-lq-profile-content] .profile-cultivation-stages > span.is-generating {
+    background: hsl(var(--ls-tone-info-soft));
+    color: hsl(var(--ls-tone-info-fg));
+}

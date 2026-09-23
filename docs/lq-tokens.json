@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source": "static/css/lq/tokens.css",
-  "source_sha256": "466c54b4174beaa496586b53759cc5701f7fa7633faa61d89a7ae37fb738c128",
+  "source_sha256": "59825c99a1703fa9af9512dd798f59ecec55942e2982dc8fe6e054c482edbcc4",
   "tokens": {
     "--ls-surface-0": {
       "type": "hsl-channels",
@@ -16,79 +16,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 769
+          "line": 783
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "222 47% 97%",
-          "line": 866
+          "line": 880
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "223 47% 97%",
-          "line": 886
+          "line": 900
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "204 56% 97%",
-          "line": 906
+          "line": 920
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "150 30% 97%",
-          "line": 926
+          "line": 940
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 44% 97%",
-          "line": 946
+          "line": 960
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "343 54% 98%",
-          "line": 966
+          "line": 980
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 986
+          "line": 1000
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 1006
+          "line": 1020
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 1026
+          "line": 1040
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 1046
+          "line": 1060
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 1066
+          "line": 1080
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 28% 8%",
-          "line": 1086
+          "line": 1100
         }
       ]
     },
@@ -105,79 +105,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 770
+          "line": 784
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 867
+          "line": 881
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 887
+          "line": 901
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 907
+          "line": 921
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 927
+          "line": 941
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 947
+          "line": 961
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 967
+          "line": 981
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 987
+          "line": 1001
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 1007
+          "line": 1021
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 1027
+          "line": 1041
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 1047
+          "line": 1061
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 1067
+          "line": 1081
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 22% 12%",
-          "line": 1087
+          "line": 1101
         }
       ]
     },
@@ -194,79 +194,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 771
+          "line": 785
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 868
+          "line": 882
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 888
+          "line": 902
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 908
+          "line": 922
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 928
+          "line": 942
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 948
+          "line": 962
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "210 40% 98%",
-          "line": 968
+          "line": 982
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 988
+          "line": 1002
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 1008
+          "line": 1022
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 1028
+          "line": 1042
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 1048
+          "line": 1062
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 1068
+          "line": 1082
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "224 20% 16%",
-          "line": 1088
+          "line": 1102
         }
       ]
     },
@@ -283,79 +283,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 772
+          "line": 786
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 869
+          "line": 883
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 889
+          "line": 903
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 909
+          "line": 923
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 929
+          "line": 943
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 949
+          "line": 963
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 969
+          "line": 983
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 989
+          "line": 1003
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 1009
+          "line": 1023
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 1029
+          "line": 1043
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 1049
+          "line": 1063
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 1069
+          "line": 1083
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 1089
+          "line": 1103
         }
       ]
     },
@@ -372,79 +372,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 773
+          "line": 787
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 870
+          "line": 884
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 890
+          "line": 904
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 910
+          "line": 924
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 930
+          "line": 944
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 950
+          "line": 964
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "215 25% 27%",
-          "line": 970
+          "line": 984
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 990
+          "line": 1004
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 1010
+          "line": 1024
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 1030
+          "line": 1044
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 1050
+          "line": 1064
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 1070
+          "line": 1084
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 1090
+          "line": 1104
         }
       ]
     },
@@ -461,79 +461,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 774
+          "line": 788
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 871
+          "line": 885
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 891
+          "line": 905
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 911
+          "line": 925
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 931
+          "line": 945
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 951
+          "line": 965
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "215 16% 38%",
-          "line": 971
+          "line": 985
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 991
+          "line": 1005
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 1011
+          "line": 1025
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 1031
+          "line": 1045
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 1051
+          "line": 1065
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 1071
+          "line": 1085
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 62%",
-          "line": 1091
+          "line": 1105
         }
       ]
     },
@@ -550,7 +550,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 775
+          "line": 789
         }
       ]
     },
@@ -567,7 +567,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "258 89.5% 78%",
-          "line": 768
+          "line": 782
         }
       ]
     },
@@ -617,79 +617,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 776
+          "line": 790
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 872
+          "line": 886
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 892
+          "line": 906
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 912
+          "line": 926
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 932
+          "line": 946
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 952
+          "line": 966
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 972
+          "line": 986
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 992
+          "line": 1006
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1012
+          "line": 1026
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1032
+          "line": 1046
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1052
+          "line": 1066
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1072
+          "line": 1086
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1092
+          "line": 1106
         }
       ]
     },
@@ -706,79 +706,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 777
+          "line": 791
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 873
+          "line": 887
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 893
+          "line": 907
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 913
+          "line": 927
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 933
+          "line": 947
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 953
+          "line": 967
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "215 20% 80%",
-          "line": 973
+          "line": 987
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 993
+          "line": 1007
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 1013
+          "line": 1027
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 1033
+          "line": 1047
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 1053
+          "line": 1067
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 1073
+          "line": 1087
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 45%",
-          "line": 1093
+          "line": 1107
         }
       ]
     },
@@ -795,79 +795,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 778
+          "line": 792
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 874
+          "line": 888
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 894
+          "line": 908
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 914
+          "line": 928
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 934
+          "line": 948
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 954
+          "line": 968
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "215 16% 53%",
-          "line": 974
+          "line": 988
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 994
+          "line": 1008
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 1014
+          "line": 1028
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 1034
+          "line": 1048
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 1054
+          "line": 1068
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 1074
+          "line": 1088
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "215 16% 58%",
-          "line": 1094
+          "line": 1108
         }
       ]
     },
@@ -884,79 +884,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "239 84% 72%",
-          "line": 779
+          "line": 793
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "175 77% 26%",
-          "line": 875
+          "line": 889
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "243 75% 59%",
-          "line": 895
+          "line": 909
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "205 75% 36%",
-          "line": 915
+          "line": 929
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "172 69% 27%",
-          "line": 935
+          "line": 949
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 48% 47%",
-          "line": 955
+          "line": 969
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "341 49% 45%",
-          "line": 975
+          "line": 989
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "173 62% 52%",
-          "line": 995
+          "line": 1009
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "239 84% 72%",
-          "line": 1015
+          "line": 1029
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "205 65% 50%",
-          "line": 1035
+          "line": 1049
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "172 59% 41%",
-          "line": 1055
+          "line": 1069
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "274 38% 61%",
-          "line": 1075
+          "line": 1089
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "341 39% 59%",
-          "line": 1095
+          "line": 1109
         }
       ]
     },
@@ -973,79 +973,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 780
+          "line": 794
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 876
+          "line": 890
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 896
+          "line": 910
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 916
+          "line": 930
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 936
+          "line": 950
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 956
+          "line": 970
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "0 0% 100%",
-          "line": 976
+          "line": 990
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 996
+          "line": 1010
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 1016
+          "line": 1030
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 1036
+          "line": 1050
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 1056
+          "line": 1070
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 1076
+          "line": 1090
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 1096
+          "line": 1110
         }
       ]
     },
@@ -1062,79 +1062,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "var(--ls-primary) / .18",
-          "line": 781
+          "line": 795
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "175 77% 26% / .12",
-          "line": 877
+          "line": 891
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "243 75% 59% / .12",
-          "line": 897
+          "line": 911
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "205 75% 36% / .12",
-          "line": 917
+          "line": 931
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "172 69% 27% / .12",
-          "line": 937
+          "line": 951
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 48% 47% / .12",
-          "line": 957
+          "line": 971
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "341 49% 45% / .12",
-          "line": 977
+          "line": 991
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "173 62% 52% / .18",
-          "line": 997
+          "line": 1011
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "239 84% 72% / .18",
-          "line": 1017
+          "line": 1031
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "205 65% 50% / .18",
-          "line": 1037
+          "line": 1051
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "172 59% 41% / .18",
-          "line": 1057
+          "line": 1071
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "274 38% 61% / .18",
-          "line": 1077
+          "line": 1091
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "341 39% 59% / .18",
-          "line": 1097
+          "line": 1111
         }
       ]
     },
@@ -1151,79 +1151,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "239 74% 84%",
-          "line": 782
+          "line": 796
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "176 69% 19%",
-          "line": 878
+          "line": 892
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "245 58% 40%",
-          "line": 898
+          "line": 912
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "205 75% 27%",
-          "line": 918
+          "line": 932
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "172 70% 19%",
-          "line": 938
+          "line": 952
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 50% 37%",
-          "line": 958
+          "line": 972
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "341 54% 34%",
-          "line": 978
+          "line": 992
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "173 52% 84%",
-          "line": 998
+          "line": 1012
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "239 74% 84%",
-          "line": 1018
+          "line": 1032
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "205 55% 84%",
-          "line": 1038
+          "line": 1052
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "172 49% 84%",
-          "line": 1058
+          "line": 1072
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "274 28% 84%",
-          "line": 1078
+          "line": 1092
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "341 29% 84%",
-          "line": 1098
+          "line": 1112
         }
       ]
     },
@@ -1240,79 +1240,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "233.924981 28.063158% 22.800000%",
-          "line": 783
+          "line": 797
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "167 85% 89%",
-          "line": 880
+          "line": 894
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "247 100% 96%",
-          "line": 900
+          "line": 914
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "207 76% 95%",
-          "line": 920
+          "line": 934
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "156 43% 93%",
-          "line": 940
+          "line": 954
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 65% 96%",
-          "line": 960
+          "line": 974
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "337 73% 96%",
-          "line": 980
+          "line": 994
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "188.374165 37.128534% 18.575040%",
-          "line": 1000
+          "line": 1014
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "233.924981 28.063158% 22.800000%",
-          "line": 1020
+          "line": 1034
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "210.131906 42.541401% 18.840000%",
-          "line": 1040
+          "line": 1054
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "190.173985 35.688941% 16.639440%",
-          "line": 1060
+          "line": 1074
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "253.175093 19.886266% 21.397280%",
-          "line": 1080
+          "line": 1094
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "295.245283 13.103740% 19.070510%",
-          "line": 1100
+          "line": 1114
         }
       ]
     },
@@ -1329,79 +1329,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 784
+          "line": 798
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "214 32% 91%",
-          "line": 881
+          "line": 895
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "216 33% 86%",
-          "line": 901
+          "line": 915
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "207 45% 85%",
-          "line": 921
+          "line": 935
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "151 30% 84%",
-          "line": 941
+          "line": 955
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "273 35% 86%",
-          "line": 961
+          "line": 975
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "337 40% 86%",
-          "line": 981
+          "line": 995
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1001
+          "line": 1015
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1021
+          "line": 1035
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1041
+          "line": 1055
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1061
+          "line": 1075
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1081
+          "line": 1095
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "220 14% 22%",
-          "line": 1101
+          "line": 1115
         }
       ]
     },
@@ -1418,79 +1418,79 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "123.624, 125.6232, 243.576",
-          "line": 785
+          "line": 799
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "15.249, 117.351, 108.8425",
-          "line": 879
+          "line": 893
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "79.87875, 72.0375, 228.8625",
-          "line": 899
+          "line": 913
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "22.95, 103.275, 160.65",
-          "line": 919
+          "line": 933
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "21.3435, 116.3565, 103.6881",
-          "line": 939
+          "line": 953
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "127.5204, 62.322, 177.378",
-          "line": 959
+          "line": 973
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "170.9775, 58.5225, 94.13325",
-          "line": 979
+          "line": 993
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "56.712, 208.488, 190.7808",
-          "line": 999
+          "line": 1013
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "123.624, 125.6232, 243.576",
-          "line": 1019
+          "line": 1033
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "44.625, 141.3125, 210.375",
-          "line": 1039
+          "line": 1053
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "42.8655, 166.2345, 149.7853",
-          "line": 1059
+          "line": 1073
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "160.5888, 117.759, 193.341",
-          "line": 1079
+          "line": 1093
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "191.2245, 109.6755, 135.49935",
-          "line": 1099
+          "line": 1113
         }
       ]
     },
@@ -1540,7 +1540,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 30% 12% / .62",
-          "line": 786
+          "line": 800
         }
       ]
     },
@@ -1557,7 +1557,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 30% 12% / .80",
-          "line": 787
+          "line": 801
         }
       ]
     },
@@ -1574,7 +1574,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 30% 12% / .22",
-          "line": 788
+          "line": 802
         }
       ]
     },
@@ -1591,7 +1591,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 30% 12% / .76",
-          "line": 789
+          "line": 803
         }
       ]
     },
@@ -1608,7 +1608,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "224 30% 12% / .54",
-          "line": 790
+          "line": 804
         }
       ]
     },
@@ -1625,7 +1625,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 0% 100% / .14",
-          "line": 791
+          "line": 805
         }
       ]
     },
@@ -1642,7 +1642,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 0% 100% / .18",
-          "line": 792
+          "line": 806
         }
       ]
     },
@@ -1659,7 +1659,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 0% 100% / .06",
-          "line": 793
+          "line": 807
         }
       ]
     },
@@ -1676,7 +1676,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "214 32% 94%",
-          "line": 794
+          "line": 808
         }
       ]
     },
@@ -1693,7 +1693,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "215 20% 75%",
-          "line": 795
+          "line": 809
         }
       ]
     },
@@ -1710,7 +1710,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 0% 0% / .5",
-          "line": 796
+          "line": 810
         }
       ]
     },
@@ -1804,7 +1804,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "140%",
-          "line": 797
+          "line": 811
         }
       ]
     },
@@ -1821,7 +1821,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "linear-gradient(135deg, hsl(0 0% 100% / .06) 0%, hsl(0 0% 100% / .015) 38%, transparent 60%, hsl(var(--ls-primary) / .05) 100%)",
-          "line": 798
+          "line": 812
         }
       ]
     },
@@ -1838,7 +1838,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 20px 60px hsl(0 0% 0% / .28), 0 2px 6px hsl(0 0% 0% / .18)",
-          "line": 799
+          "line": 813
         }
       ]
     },
@@ -1855,7 +1855,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 24px 70px hsl(0 0% 0% / .38), 0 4px 10px hsl(0 0% 0% / .24)",
-          "line": 800
+          "line": 814
         }
       ]
     },
@@ -2391,7 +2391,7 @@
             "(max-width: 640px)"
           ],
           "value": "28px",
-          "line": 1119
+          "line": 1133
         }
       ]
     },
@@ -2432,7 +2432,7 @@
             "(max-width: 640px)"
           ],
           "value": "22px",
-          "line": 1120
+          "line": 1134
         }
       ]
     },
@@ -2473,7 +2473,7 @@
             "(max-width: 640px)"
           ],
           "value": "19px",
-          "line": 1121
+          "line": 1135
         }
       ]
     },
@@ -2514,7 +2514,7 @@
             "(max-width: 640px)"
           ],
           "value": "17px",
-          "line": 1122
+          "line": 1136
         }
       ]
     },
@@ -2555,7 +2555,7 @@
             "(max-width: 640px)"
           ],
           "value": "16px",
-          "line": 1123
+          "line": 1137
         }
       ]
     },
@@ -2596,7 +2596,7 @@
             "(max-width: 640px)"
           ],
           "value": "16px",
-          "line": 1124
+          "line": 1138
         }
       ]
     },
@@ -2637,7 +2637,7 @@
             "(max-width: 640px)"
           ],
           "value": "15px",
-          "line": 1125
+          "line": 1139
         }
       ]
     },
@@ -2678,7 +2678,7 @@
             "(max-width: 640px)"
           ],
           "value": "14px",
-          "line": 1126
+          "line": 1140
         }
       ]
     },
@@ -2719,7 +2719,7 @@
             "(max-width: 640px)"
           ],
           "value": "13px",
-          "line": 1127
+          "line": 1141
         }
       ]
     },
@@ -2760,7 +2760,7 @@
             "(max-width: 640px)"
           ],
           "value": "12px",
-          "line": 1128
+          "line": 1142
         }
       ]
     },
@@ -2854,7 +2854,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "152 52% 56%",
-          "line": 801
+          "line": 815
         }
       ]
     },
@@ -2871,7 +2871,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "152 55% 78%",
-          "line": 802
+          "line": 816
         }
       ]
     },
@@ -2888,7 +2888,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "152 52% 56% / 0.2",
-          "line": 803
+          "line": 817
         }
       ]
     },
@@ -2905,7 +2905,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 804
+          "line": 818
         }
       ]
     },
@@ -2922,7 +2922,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "152 52% 56%",
-          "line": 805
+          "line": 819
         }
       ]
     },
@@ -2939,7 +2939,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 806
+          "line": 820
         }
       ]
     },
@@ -2956,7 +2956,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "38 94% 62%",
-          "line": 807
+          "line": 821
         }
       ]
     },
@@ -2973,7 +2973,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "40 95% 80%",
-          "line": 808
+          "line": 822
         }
       ]
     },
@@ -2990,7 +2990,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "38 94% 62% / 0.2",
-          "line": 809
+          "line": 823
         }
       ]
     },
@@ -3007,7 +3007,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 810
+          "line": 824
         }
       ]
     },
@@ -3024,7 +3024,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "38 94% 62%",
-          "line": 811
+          "line": 825
         }
       ]
     },
@@ -3041,7 +3041,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 812
+          "line": 826
         }
       ]
     },
@@ -3058,7 +3058,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "4 82% 68%",
-          "line": 813
+          "line": 827
         }
       ]
     },
@@ -3075,7 +3075,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "4 88% 82%",
-          "line": 814
+          "line": 828
         }
       ]
     },
@@ -3092,7 +3092,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "4 82% 68% / 0.18",
-          "line": 815
+          "line": 829
         }
       ]
     },
@@ -3109,7 +3109,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 816
+          "line": 830
         }
       ]
     },
@@ -3126,7 +3126,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "4 82% 68%",
-          "line": 817
+          "line": 831
         }
       ]
     },
@@ -3143,7 +3143,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 818
+          "line": 832
         }
       ]
     },
@@ -3160,7 +3160,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "212 88% 66%",
-          "line": 819
+          "line": 833
         }
       ]
     },
@@ -3177,7 +3177,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "212 90% 82%",
-          "line": 820
+          "line": 834
         }
       ]
     },
@@ -3194,7 +3194,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "212 88% 66% / 0.2",
-          "line": 821
+          "line": 835
         }
       ]
     },
@@ -3211,7 +3211,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 822
+          "line": 836
         }
       ]
     },
@@ -3228,7 +3228,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "212 88% 66%",
-          "line": 823
+          "line": 837
         }
       ]
     },
@@ -3245,7 +3245,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 824
+          "line": 838
         }
       ]
     },
@@ -3262,7 +3262,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 10% 62%",
-          "line": 825
+          "line": 839
         }
       ]
     },
@@ -3279,7 +3279,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 12% 80%",
-          "line": 826
+          "line": 840
         }
       ]
     },
@@ -3296,7 +3296,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 10% 62% / 0.16",
-          "line": 827
+          "line": 841
         }
       ]
     },
@@ -3313,7 +3313,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 828
+          "line": 842
         }
       ]
     },
@@ -3330,7 +3330,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 10% 62%",
-          "line": 829
+          "line": 843
         }
       ]
     },
@@ -3347,7 +3347,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "222 47% 11%",
-          "line": 830
+          "line": 844
         }
       ]
     },
@@ -3364,7 +3364,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "243.396226 75.355450% 72.627451%",
-          "line": 831
+          "line": 845
         }
       ]
     },
@@ -3381,7 +3381,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "198.630137 88.663968% 62.431373%",
-          "line": 832
+          "line": 846
         }
       ]
     },
@@ -3398,7 +3398,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "161.379310 93.548387% 44.392157%",
-          "line": 833
+          "line": 847
         }
       ]
     },
@@ -3415,7 +3415,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "32.132701 94.618834% 57.725490%",
-          "line": 834
+          "line": 848
         }
       ]
     },
@@ -3432,7 +3432,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "333.333333 71.428571% 64.588235%",
-          "line": 835
+          "line": 849
         }
       ]
     },
@@ -3449,7 +3449,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "262.122905 83.255814% 71.843137%",
-          "line": 836
+          "line": 850
         }
       ]
     },
@@ -3466,7 +3466,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "191.647059 91.397849% 50.470588%",
-          "line": 837
+          "line": 851
         }
       ]
     },
@@ -3483,7 +3483,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "84.800000 85.227273% 48.509804%",
-          "line": 838
+          "line": 852
         }
       ]
     },
@@ -3500,7 +3500,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "20.540541 90.243902% 62.235294%",
-          "line": 839
+          "line": 853
         }
       ]
     },
@@ -3517,7 +3517,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "346.836735 77.165354% 63.803922%",
-          "line": 840
+          "line": 854
         }
       ]
     },
@@ -3534,7 +3534,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "199 70% 62%",
-          "line": 841
+          "line": 855
         }
       ]
     },
@@ -3551,7 +3551,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "221 70% 62%",
-          "line": 842
+          "line": 856
         }
       ]
     },
@@ -3568,7 +3568,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "152 70% 62%",
-          "line": 843
+          "line": 857
         }
       ]
     },
@@ -3585,7 +3585,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "21 70% 62%",
-          "line": 844
+          "line": 858
         }
       ]
     },
@@ -3602,7 +3602,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "4 70% 62%",
-          "line": 845
+          "line": 859
         }
       ]
     },
@@ -3619,7 +3619,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "262 70% 62%",
-          "line": 846
+          "line": 860
         }
       ]
     },
@@ -3636,7 +3636,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "220 12% 62%",
-          "line": 847
+          "line": 861
         }
       ]
     },
@@ -3653,7 +3653,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "43.255814 96.412556% 56.274510%",
-          "line": 848
+          "line": 862
         }
       ]
     },
@@ -3670,7 +3670,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "43.255814 96.412556% 56.274510%",
-          "line": 849
+          "line": 863
         }
       ]
     },
@@ -3687,7 +3687,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "43.255814 96.412556% 56.274510% / 0.18",
-          "line": 850
+          "line": 864
         }
       ]
     },
@@ -3704,7 +3704,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 90.604027% 70.784314%",
-          "line": 851
+          "line": 865
         }
       ]
     },
@@ -3721,7 +3721,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 93.548387% 81.764706%",
-          "line": 852
+          "line": 866
         }
       ]
     },
@@ -3738,7 +3738,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "0 90.604027% 70.784314% / 0.2",
-          "line": 853
+          "line": 867
         }
       ]
     },
@@ -3755,7 +3755,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "255.135135 91.735537% 76.274510%",
-          "line": 854
+          "line": 868
         }
       ]
     },
@@ -3772,7 +3772,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "252.500000 94.736842% 85.098039%",
-          "line": 855
+          "line": 869
         }
       ]
     },
@@ -3789,7 +3789,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "255.135135 91.735537% 76.274510% / 0.2",
-          "line": 856
+          "line": 870
         }
       ]
     },
@@ -3806,7 +3806,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "198.437500 93.203883% 59.607843%",
-          "line": 857
+          "line": 871
         }
       ]
     },
@@ -3823,7 +3823,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "199.370079 95.488722% 73.921569%",
-          "line": 858
+          "line": 872
         }
       ]
     },
@@ -3840,7 +3840,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "198.437500 93.203883% 59.607843% / 0.18",
-          "line": 859
+          "line": 873
         }
       ]
     },
@@ -3857,7 +3857,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "172.455090 66.007905% 50.392157%",
-          "line": 860
+          "line": 874
         }
       ]
     },
@@ -3874,7 +3874,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "170.571429 76.923077% 64.313725%",
-          "line": 861
+          "line": 875
         }
       ]
     },
@@ -3891,7 +3891,7 @@
           "selector": ":root[data-appearance=\"dark\"]",
           "media": [],
           "value": "172.455090 66.007905% 50.392157% / 0.18",
-          "line": 862
+          "line": 876
         }
       ]
     },
@@ -4106,73 +4106,73 @@
           "selector": ":root[data-ui-palette=\"teal\"]",
           "media": [],
           "value": "175 77% 26%",
-          "line": 882
+          "line": 896
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"]",
           "media": [],
           "value": "243 75% 59%",
-          "line": 902
+          "line": 916
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"]",
           "media": [],
           "value": "205 75% 36%",
-          "line": 922
+          "line": 936
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"]",
           "media": [],
           "value": "172 69% 27%",
-          "line": 942
+          "line": 956
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"]",
           "media": [],
           "value": "274 48% 47%",
-          "line": 962
+          "line": 976
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"]",
           "media": [],
           "value": "341 49% 45%",
-          "line": 982
+          "line": 996
         },
         {
           "selector": ":root[data-ui-palette=\"teal\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "173 62% 52%",
-          "line": 1002
+          "line": 1016
         },
         {
           "selector": ":root[data-ui-palette=\"indigo\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "239 84% 72%",
-          "line": 1022
+          "line": 1036
         },
         {
           "selector": ":root[data-ui-palette=\"sky\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "205 65% 50%",
-          "line": 1042
+          "line": 1056
         },
         {
           "selector": ":root[data-ui-palette=\"mint\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "172 59% 41%",
-          "line": 1062
+          "line": 1076
         },
         {
           "selector": ":root[data-ui-palette=\"violet\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "274 38% 61%",
-          "line": 1082
+          "line": 1096
         },
         {
           "selector": ":root[data-ui-palette=\"rose\"][data-appearance=\"dark\"]",
           "media": [],
           "value": "341 39% 59%",
-          "line": 1102
+          "line": 1116
         }
       ]
     },
@@ -5647,6 +5647,12 @@
           "media": [],
           "value": "#f8fafc",
           "line": 351
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-surface-0))",
+          "line": 772
         }
       ]
     },
@@ -5658,6 +5664,12 @@
           "media": [],
           "value": "#f1f5f9",
           "line": 352
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-surface-1))",
+          "line": 773
         }
       ]
     },
@@ -5669,6 +5681,12 @@
           "media": [],
           "value": "#e2e8f0",
           "line": 353
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-surface-2))",
+          "line": 774
         }
       ]
     },
@@ -5680,6 +5698,12 @@
           "media": [],
           "value": "#cbd5e1",
           "line": 354
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-line))",
+          "line": 775
         }
       ]
     },
@@ -5691,6 +5715,12 @@
           "media": [],
           "value": "#94a3b8",
           "line": 355
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-line-strong))",
+          "line": 776
         }
       ]
     },
@@ -5702,6 +5732,12 @@
           "media": [],
           "value": "#64748b",
           "line": 356
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-ink-3))",
+          "line": 777
         }
       ]
     },
@@ -5713,6 +5749,12 @@
           "media": [],
           "value": "#475569",
           "line": 357
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-ink-2))",
+          "line": 778
         }
       ]
     },
@@ -5724,6 +5766,12 @@
           "media": [],
           "value": "#334155",
           "line": 358
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(215 25% 85%)",
+          "line": 779
         }
       ]
     },
@@ -5735,6 +5783,12 @@
           "media": [],
           "value": "#1e293b",
           "line": 359
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(214 30% 90%)",
+          "line": 780
         }
       ]
     },
@@ -5746,6 +5800,12 @@
           "media": [],
           "value": "#0f172a",
           "line": 360
+        },
+        {
+          "selector": ":root[data-appearance=\"dark\"]",
+          "media": [],
+          "value": "hsl(var(--ls-ink))",
+          "line": 781
         }
       ]
     },
@@ -10200,7 +10260,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "198.437500 93.203883% 59.607843%",
-          "line": 1106
+          "line": 1120
         }
       ]
     },
@@ -10211,7 +10271,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "255.135135 91.735537% 76.274510%",
-          "line": 1107
+          "line": 1121
         }
       ]
     },
@@ -10222,7 +10282,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "158.113208 64.372470% 51.568627%",
-          "line": 1108
+          "line": 1122
         }
       ]
     },
@@ -10233,7 +10293,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "43.255814 96.412556% 56.274510%",
-          "line": 1109
+          "line": 1123
         }
       ]
     },
@@ -10244,7 +10304,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "351.304348 94.520548% 71.372549%",
-          "line": 1110
+          "line": 1124
         }
       ]
     },
@@ -10255,7 +10315,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "217.627119 33.714286% 65.686275%",
-          "line": 1111
+          "line": 1125
         }
       ]
     },
@@ -10266,7 +10326,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "220 48.837209% 8.431373%",
-          "line": 1112
+          "line": 1126
         }
       ]
     },
@@ -10277,7 +10337,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "220 60% 94.117647%",
-          "line": 1113
+          "line": 1127
         }
       ]
     },
@@ -10288,7 +10348,7 @@
           "selector": "[data-lq-scope=\"monitor\"]",
           "media": [],
           "value": "219.574468 41.964286% 56.078431% / .16",
-          "line": 1114
+          "line": 1128
         }
       ]
     }
@@ -11393,19 +11453,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",
@@ -12911,19 +12971,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",
@@ -14429,19 +14489,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",
@@ -15947,19 +16007,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",
@@ -17465,19 +17525,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",
@@ -18983,19 +19043,19 @@
         "--danger-light": "hsl(4 82% 68% / 0.18)",
         "--danger-dark": "hsl(4 88% 82%)",
         "--danger-hover": "hsl(4 88% 82%)",
-        "--gray-100": "#f1f5f9",
-        "--secondary-color": "#f1f5f9",
-        "--gray-200": "#e2e8f0",
-        "--secondary-hover": "#e2e8f0",
-        "--gray-600": "#475569",
-        "--secondary-dark": "#475569",
-        "--gray-50": "#f8fafc",
-        "--gray-300": "#cbd5e1",
-        "--gray-400": "#94a3b8",
-        "--gray-500": "#64748b",
-        "--gray-700": "#334155",
-        "--gray-800": "#1e293b",
-        "--gray-900": "#0f172a",
+        "--gray-100": "hsl(224 22% 12%)",
+        "--secondary-color": "hsl(224 22% 12%)",
+        "--gray-200": "hsl(224 20% 16%)",
+        "--secondary-hover": "hsl(224 20% 16%)",
+        "--gray-600": "hsl(215 20% 75%)",
+        "--secondary-dark": "hsl(215 20% 75%)",
+        "--gray-50": "hsl(224 28% 8%)",
+        "--gray-300": "hsl(220 14% 22%)",
+        "--gray-400": "hsl(215 20% 45%)",
+        "--gray-500": "hsl(215 16% 62%)",
+        "--gray-700": "hsl(215 25% 85%)",
+        "--gray-800": "hsl(214 30% 90%)",
+        "--gray-900": "hsl(214 32% 94%)",
         "--spacing-xs": "0.25rem",
         "--spacing-sm": "0.5rem",
         "--spacing-md": "1rem",

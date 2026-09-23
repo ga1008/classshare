@@ -179,3 +179,14 @@
     [data-lq-dashboard] .lq-collapsible > .lq-collapsible__summary { padding-inline: var(--ls-s-4); }
     [data-lq-dashboard] .lq-collapsible > .lq-collapsible__content { padding: 0 var(--ls-s-4) var(--ls-s-4); }
 }
+
+/* 首页面板内部的折叠区带 .lq-surface：materials.css 的「材质套材质」守卫只认
+   材质类做宿主，而 .ls-schedule / .ls-tools 这几个宿主是 page-material.css 末尾
+   按选择器声明的、自己不带材质类，守卫够不着——实测 /dashboard 上
+   `details.lq-collapsible.lq-surface` 因此成了面板里的第二个模糊宿主。
+   嵌套材质一律压平，这里把守卫补齐。 */
+[data-lq-dashboard] :is(.ls-schedule, .ls-tools, .ls-domains, .ls-focus-list, .ls-courses)
+    :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}

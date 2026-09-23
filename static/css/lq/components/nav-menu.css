@@ -7,8 +7,14 @@
     display: inline-flex;
     align-items: center;
 }
+/* The trigger is a .lq-btn, so its rim, timing, press and focus ring already
+   come from the shared control block in components/button.css. What is left
+   here is the trigger's own colour (per tone) and the one state a plain
+   button does not have: staying lit while its panel is expanded. */
 .lq-nav-menu__trigger {
     --lq-nav-glow: var(--ls-tone-neutral-soft);
+    --lq-ctrl-glow-color: var(--lq-nav-glow);
+    --lq-ctrl-edge: var(--ls-primary) / .35;
     gap: calc(var(--ls-s-1) + var(--ls-s-1) / 2);
     max-width: 100%;
     /* A nav label is one line; a cramped bar scrolls instead of stacking
@@ -22,12 +28,14 @@
 .lq-nav-menu__trigger[data-tone="info"] { --lq-nav-glow: var(--ls-tone-info-soft); }
 .lq-nav-menu__trigger[data-lq-nav-shape="capsule"] { border-radius: var(--ls-r-capsule); }
 .lq-nav-menu__trigger[data-lq-nav-shape="rounded"] { border-radius: var(--ls-r-md); }
-/* Only the hovered or expanded trigger glows; sibling triggers are untouched
-   because every selector here is scoped to the element's own state. */
-.lq-nav-menu__trigger:hover,
-.lq-nav-menu__trigger:focus-visible,
-.lq-nav-menu__trigger[aria-expanded="true"] {
-    box-shadow: 0 0 0 1px hsl(var(--lq-nav-glow)), 0 0 var(--ls-s-3) var(--ls-s-1) hsl(var(--lq-nav-glow));
+/* Only the expanded or focused trigger glows; sibling triggers are untouched
+   because every selector here is scoped to the element's own state. Hover is
+   not repeated here -- the shared control block already lights this element
+   through the same --lq-ctrl-glow slot, so the halo has one shape and one
+   duration across buttons, chips and triggers alike. Expanded is the state a
+   plain button has no equivalent of, which is why it is declared. */
+.lq-nav-menu__trigger:is(:focus-visible, [aria-expanded="true"]) {
+    --lq-ctrl-glow: 0 0 0 3px hsl(var(--lq-nav-glow));
 }
 .lq-nav-menu__caret {
     display: inline-flex;
@@ -45,7 +53,5 @@
     .lq-nav-menu__caret { transition: none; }
 }
 @media (forced-colors: active) {
-    .lq-nav-menu__trigger:hover,
-    .lq-nav-menu__trigger:focus-visible,
-    .lq-nav-menu__trigger[aria-expanded="true"] { box-shadow: none; }
+    .lq-nav-menu__trigger:is(:hover, :focus-visible, [aria-expanded="true"]) { box-shadow: none; }
 }

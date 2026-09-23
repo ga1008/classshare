@@ -48,6 +48,8 @@
 .lq-selection__toggle { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .lq-selection__status:empty { display: none; }
 .lq-selection__input[aria-invalid="true"], .lq-selection__list[aria-invalid="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }
-.lq-selection__list:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
+/* Same ring token as every other control. --ls-primary only happened to
+   resolve to the same colour, which is how two rings drift apart later. */
+.lq-selection__list:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
 @media (pointer: coarse) { .lq-selection__option, .lq-selection__toggle, .lq-selection__input { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .lq-selection__popup { transition: none; } }

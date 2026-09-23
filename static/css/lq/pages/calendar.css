@@ -66,3 +66,53 @@
     text-align: center;
     color: hsl(var(--ls-ink-2));
 }
+
+/* ── 材质边界（S9 U2）────────────────────────────────────────────────────
+   面板根同时带 .lq-surface，模糊与填充由组件材质提供，这里不再另造宿主。
+   只有两件事需要在页面层补：
+
+   1) 嵌在别的面板里时不当宿主。学生/教师首页把这块日历搬进 `.ls-calendar-host`
+      （即 `.ls-schedule` 面板内部），ui-system.src.css:61022 已经把它的底去掉，
+      让外层面板提供表面；但它带着 .lq-surface 的 backdrop-filter 一起进去，就成了
+      面板里的第二个宿主。嵌套材质不得再模糊，这里按契约压平。
+   2) 面板内部的材质同样压平：日历里的折叠区、概览卡都可能带材质类。 */
+.ls-calendar-host [data-lq-calendar],
+[data-lq-calendar] :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* 独立形态（管理端「学期」页）保留内容级填充与高光边，和其余顶层面板同一标度。
+   遗留的 .semester-calendar-panel 规则排在 lq 之后且同特指度，所以这里必须比
+   单个类更具体才压得住；`[data-lq-calendar]` 只在开关打开时出现，不会误伤旧形态。 */
+[data-lq-calendar][data-semester-calendar-root].lq-surface.semester-calendar-panel {
+    background: hsl(var(--lq-page-content));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
+}
+
+/* 但在宿主面板里，它既不该有底，也不该有高光边——那是外层面板的活。 */
+.ls-calendar-host [data-lq-calendar][data-semester-calendar-root].lq-surface.semester-calendar-panel {
+    background: transparent;
+    box-shadow: none;
+}
+
+/* 日期格与学期小标签继承的是遗留的浅色版灰阶，暗色下不跟主题翻转：真实 axe 扫描
+   在 /manage/semesters 暗色 1440 一屏读到 126 条 serious（#5e6676 / #212531 = 2.6:1，
+   #717986 / #202431 = 3.0:1）。次级信息统一取 --ls-ink-2。 */
+[data-lq-calendar] [data-date] > .date-meta,
+[data-lq-calendar] .date-meta,
+[data-lq-calendar] [data-date] .semester-mini-tag,
+[data-lq-calendar] .semester-mini-tag {
+    color: hsl(var(--ls-ink-2));
+}
+
+/* 学期外/补白周的日期靠 opacity: .56 变淡，合成后真的把对比度压到 2.9:1
+   （实测 #717986 / #212531）。淡化本身是对的，但应该用颜色表达而不是整体透明度：
+   透明度会把前景和背景一起拉向中间，颜色不会。 */
+[data-lq-calendar] .semester-day-cell:is(.is-outside, .is-padding-week)
+    :is(.date-number, .date-meta, .semester-mini-tag) {
+    opacity: 1;
+    color: hsl(var(--ls-ink-3));
+}

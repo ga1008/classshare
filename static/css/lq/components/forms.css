@@ -22,7 +22,9 @@
     font: inherit;
     font-size: var(--ls-t-callout);
     line-height: var(--ls-leading-callout);
-    transition: border-color var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
+    /* Rim, transition and focus ring come from the shared control block in
+       components/button.css. A field answers to focus, not to the pointer,
+       so it takes the shared timing without the shared hover lift. */
 }
 /* The placeholder sits on the control fill, where the pinned secondary token
    is --ls-ink-2, not --ls-ink-3 (that one is only guaranteed on the .74
@@ -58,7 +60,8 @@
 .lq-range::-webkit-slider-thumb { appearance: none; width: var(--ls-s-6); height: var(--ls-s-6); margin-top: calc(var(--ls-s-5) / -2); border: 1px solid hsl(var(--ls-primary)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-primary)); box-shadow: var(--ls-shadow-1); }
 .lq-range::-moz-range-thumb { width: var(--ls-s-6); height: var(--ls-s-6); border: 1px solid hsl(var(--ls-primary)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-primary)); box-shadow: var(--ls-shadow-1); }
 .lq-range__value { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: var(--ls-s-10); min-height: calc(var(--ls-s-8) - var(--ls-s-1)); padding-inline: var(--ls-s-2); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-capsule); background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control)); color: hsl(var(--ls-ink)); font-size: var(--ls-t-sub); font-variant-numeric: tabular-nums; text-align: center; }
-.lq-field :is(input, textarea, select, button):focus-visible { outline: calc(var(--ls-s-1) * .375) solid hsl(var(--ls-ring)); outline-offset: 2px; box-shadow: var(--ls-shadow-focus); }
+/* The ring is the shared one: a 3px ring plus a shadow halo on fields while
+   buttons and chips wore a 2px outline was the most visible drift of all. */
 .lq-field [aria-invalid="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }
 /* Disabled names a muted ink on the same control fill. Fading a translucent
    field with opacity would take its label and its value down with it. */
@@ -85,11 +88,14 @@
 @media (pointer: coarse) {
     .lq-input, .lq-select, .lq-input[type="search"], .lq-error-summary a { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); }
 }
+/* The controls themselves are covered by the shared block; only the switch
+   knob has a transition of its own. */
 @media (prefers-reduced-motion: reduce) {
-    .lq-input, .lq-textarea, .lq-select, .lq-switch::after { transition: none; }
+    .lq-switch::after { transition: none; }
 }
 @media (forced-colors: active) {
-    .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-error-summary, .lq-range__value { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-error-summary, .lq-range__value { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
+    .lq-checkbox, .lq-radio, .lq-range, .lq-field__clear { box-shadow: none; }
     .lq-field__error, .lq-field__required, .lq-field__help, .lq-field__count, .lq-form-actions__hint, .lq-form-section__description { color: CanvasText; }
     .lq-switch { appearance: auto; }
     .lq-switch::after { display: none; }

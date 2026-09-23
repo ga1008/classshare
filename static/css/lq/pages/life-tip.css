@@ -562,11 +562,15 @@ html.scene-cover-collapsing::before {
     gap: 6px;
     flex: none;
     padding: 5px 12px;
-    border: 1px solid rgba(15, 23, 42, 0.14);
+    /* 这枚胶囊挂在顶栏上、每个页面都命中，原本是写死的白底 + 自带 blur：暗色下
+       是一块白板，而且按 §12.1 原则 1，控件级永不做模糊宿主（尺寸太小，模糊看不见
+       而合成代价照付）。改成随主题翻转的 control 级材质，并去掉自带的模糊。 */
+    border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--radius-full);
-    background: rgba(255, 255, 255, 0.55);
-    backdrop-filter: blur(8px);
-    color: var(--gray-700);
+    background: hsl(var(--lq-page-control));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    color: hsl(var(--ls-ink));
     font-size: var(--text-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -575,8 +579,8 @@ html.scene-cover-collapsing::before {
     transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 .topbar-scene-chip:hover {
-    background: rgba(255, 255, 255, 0.85);
-    border-color: rgba(15, 23, 42, 0.24);
+    background: hsl(var(--lq-page-raised));
+    border-color: hsl(var(--ls-primary) / .35);
     transform: translateY(-1px);
 }
 .topbar-scene-chip:disabled { cursor: default; opacity: 0.7; }

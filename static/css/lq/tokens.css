@@ -765,6 +765,20 @@
 }
 
 :root[data-appearance="dark"] {
+    /* The grey ramp was fixed hex with no dark branch, while the text colours
+       layered on it do flip. That is how a panel ended up painting #0f172a on
+       #151927. Mirror it onto the dark ladder so a fill and the ink on it
+       always turn over together. */
+    --gray-50: hsl(var(--ls-surface-0)); /* @type color */
+    --gray-100: hsl(var(--ls-surface-1)); /* @type color */
+    --gray-200: hsl(var(--ls-surface-2)); /* @type color */
+    --gray-300: hsl(var(--ls-line)); /* @type color */
+    --gray-400: hsl(var(--ls-line-strong)); /* @type color */
+    --gray-500: hsl(var(--ls-ink-3)); /* @type color */
+    --gray-600: hsl(var(--ls-ink-2)); /* @type color */
+    --gray-700: hsl(215 25% 85%); /* @type color */
+    --gray-800: hsl(214 30% 90%); /* @type color */
+    --gray-900: hsl(var(--ls-ink)); /* @type color */
     --ls-chat-teacher: 258 89.5% 78%; /* @type hsl-channels */
     --ls-surface-0: 224 28% 8%; /* @type hsl-channels */
     --ls-surface-1: 224 22% 12%; /* @type hsl-channels */

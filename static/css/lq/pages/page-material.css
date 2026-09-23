@@ -56,3 +56,54 @@
         --lq-page-raised: var(--ls-surface-1);
     }
 }
+
+/* ── 顶层面板即材质边界 ──────────────────────────────────────────────────
+   页面主面板直接坐在背景层之上，是它们把背景磨成玻璃；内部的行、芯片、按钮
+   是嵌套元素，materials.css 的嵌套守卫已经禁止它们再成为宿主，所以这条列表
+   只列"外层面板"，不列其内容。没有这一层，面板只是半透明的白块。 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-lq-dashboard] .ls-schedule,
+    [data-lq-dashboard] .ls-tools,
+    [data-lq-dashboard] .ls-domains,
+    [data-lq-dashboard] .ls-focus-list,
+    [data-lq-dashboard] .ls-courses,
+    /* The attribute sits on the panel itself, so the descendant form of this
+       selector never matched anything. */
+    [data-lq-calendar],
+    [data-lq-scope="growth"] .pts-panel,
+    /* The card wall's carrier, not the cards: eight cards were eight hosts,
+       and that number follows the data. */
+    [data-lq-scope="growth"] .lq-grid--cards,
+    .lq-messages .message-center-private-panel {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+/* 嵌套在任一边界之内的任何材质都不得再成为宿主。此前这条只列了三个面板、
+   且只挡 [data-lq-material]，于是一个同时带 .lq-surface 的折叠块在首页成了
+   第二个宿主。用 :is() 覆盖全部边界与全部材质写法，避免逐条追加时再漏。 */
+:is([data-lq-dashboard] .ls-schedule,
+    [data-lq-dashboard] .ls-tools,
+    [data-lq-dashboard] .ls-domains,
+    [data-lq-dashboard] .ls-focus-list,
+    [data-lq-dashboard] .ls-courses,
+    [data-lq-scope="growth"] .pts-panel,
+    [data-lq-scope="growth"] .lq-grid--cards,
+    [data-lq-calendar],
+    .lq-messages .message-center-private-panel)
+:is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* The carrier needs to look like a panel, not an invisible grid. */
+[data-lq-scope="growth"] .lq-grid--cards {
+    padding: var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--lq-page-content));
+}

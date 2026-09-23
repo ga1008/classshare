@@ -297,7 +297,12 @@ class BackdropSSRTests(unittest.TestCase):
         self.assertNotIn("backdrop-filter", declarations)
         self.assertNotRegex(declarations, r"#[0-9a-fA-F]{3,8}\b")
         self.assertIn("position: fixed", declarations)
-        self.assertIn("background-size: contain", declarations)
+        # `contain` fit the whole image inside a short band, which on a wide
+        # viewport shrank a 16:9 photo to half the width and centred it as a
+        # strip. `cover` keeps the aspect ratio too and fills the viewport, so
+        # glass has something behind it everywhere.
+        self.assertIn("background-size: cover", declarations)
+        self.assertIn("inset: 0", declarations)
         self.assertIn('@import "./components/page-backdrop.css";',
                       (ROOT / "static/css/lq/index.css").read_text(encoding="utf-8"))
 

@@ -241,3 +241,196 @@
 [data-lq-scope="growth"] .review-action--primary { background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); border-color: transparent; }
 [data-lq-scope="growth"] .review-action--ghost { background: transparent; border-color: transparent; color: hsl(var(--ls-ink-2)); }
 [data-lq-scope="growth"] .review-empty { display: grid; gap: var(--ls-s-2); justify-items: center; text-align: center; padding: var(--ls-s-8); border-radius: var(--ls-r-lg); border: 1px dashed hsl(var(--ls-line)); color: hsl(var(--ls-ink-2)); }
+
+/* ── 顶层面板即材质边界（S9 U2）──────────────────────────────────────────
+   成长页族的版式是「英雄区 + 若干分区面板 + 数据项列表」。直接坐在页面背景层
+   之上、且数量由版式而非数据决定的外层面板是这几个：
+
+     learning_path   .path-focus-card（1）
+     points_shop     .pts-panel（3，主任务已在 page-material.css 声明）
+     wrong_book      .wrongbook-panel（2）
+     feedback_review .review-progress-card（1）
+     learning_path   .path-card（列表项，主任务已在 page-material.css 声明，见下）
+
+   刻意不列的：.path-stat / .path-ladder-step / .path-course-card / .wrongbook-stat /
+   .wrongbook-item / .pts-item / .review-stat / .review-card / 成就墙的 .lq-card。
+   它们都是模板循环产出的数据项，个数随数据增长、没有上界。它们仍然按内容级别名
+   取填充与描边（本文件上半部分已经这么写），只是不做模糊宿主：模糊预算必须由版式
+   决定，一旦跟着数据走就不可论证。高光边本来就是「读起来像玻璃」的那一半，没有
+   模糊它们照样是材质。 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-lq-scope="growth"] .path-focus-card,
+    [data-lq-scope="growth"] .wrongbook-panel {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+/* 嵌套守卫。这些宿主自己不带材质类，materials.css 的「材质套材质」守卫够不着，
+   面板里的 lq_card / lq_list / [data-lq-material] 会各自再建一层合成层。 */
+[data-lq-scope="growth"] :is(.path-card, .path-focus-card, .pts-panel, .wrongbook-panel)
+    :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* ── 文字色回到令牌（S9 U2）──────────────────────────────────────────────
+   面板变成半透明以后，压在上面的正文更不能糊。这些页面的子元素大量继承
+   ui-system.src.css 里的浅色版 slate 调色板（#64748b / #475569 / #0f172a），
+   暗色下不跟主题翻转，直接落在深色面板上：真实 axe 扫描在 /learning-path
+   暗色 1440 一屏读到 224 条 serious color-contrast，/feedback-review 53 条。
+
+   只接管「没有自己的类」的行内元素与几个具名文本节点——带类的块（.path-chip、
+   .wrongbook-badge、.pts-item__cost、tone-* 系列）各有自己的语义前景色，不在此列。 */
+[data-lq-scope="growth"] :is(.path-card, .path-focus-card, .path-ladder-step,
+                             .path-course-card, .review-card, .review-progress-card,
+                             .pts-panel, .wrongbook-panel, .wrongbook-item)
+    :is(p, span, small, em, b, strong, time, dd, summary, label):not([class]) {
+    color: hsl(var(--ls-ink-2));
+}
+[data-lq-scope="growth"] :is(.path-card__meta, .path-card__description,
+                             .path-visible-count, .review-visible-count,
+                             .review-card__meta, .cultivation-card__subtitle,
+                             .cultivation-card__hint) {
+    color: hsl(var(--ls-ink-2));
+}
+[data-lq-scope="growth"] :is(.path-card__title, .review-card__title,
+                             .cultivation-card__title) {
+    color: hsl(var(--ls-ink));
+}
+/* 计数器里的数字是强调文本，取正文色而不是次级色。 */
+[data-lq-scope="growth"] :is(.path-visible-count, .review-visible-count) strong {
+    color: hsl(var(--ls-ink));
+}
+
+/* 输入控件统一到 control 级：遗留规则给它们留的是浅色底 + slate-900 文字，
+   暗色下是 1.02:1，等于看不见。 */
+[data-lq-scope="growth"] :is(.path-card, .review-card, .path-toolbar, .review-toolbar,
+                             .wrongbook-panel, .path-search, .review-search,
+                             .path-course-filter, .review-course-filter)
+    :is(textarea, select, input[type="search"], input[type="text"]) {
+    background: hsl(var(--lq-page-control));
+    color: hsl(var(--ls-ink));
+    border: 1px solid hsl(var(--ls-line));
+}
+[data-lq-scope="growth"] :is(.path-card, .review-card, .path-toolbar, .review-toolbar,
+                             .wrongbook-panel, .path-search, .review-search,
+                             .path-course-filter, .review-course-filter)
+    :is(textarea, input[type="search"], input[type="text"])::placeholder {
+    color: hsl(var(--ls-ink-3));
+    opacity: 1;
+}
+
+/* 卡片里的来源链接原本是浅色胶囊 + 深青文字，暗色下底色没翻过来（实测
+   #0f756d / #cad4d4 = 3.1:1）。改成 control 级底 + 主题的柔和主色前景。
+   两个类叠写是为了压过 ui-system.src.css 里同名的 0,2,0 规则（lq 排在它之前）。 */
+[data-lq-scope="growth"] .path-source-link.path-source-link,
+[data-lq-scope="growth"] .review-source-link.review-source-link {
+    background: hsl(var(--lq-page-control));
+    color: hsl(var(--ls-on-primary-soft));
+    border: 1px solid hsl(var(--ls-line));
+}
+
+/* 主按钮：暗色下 --ls-primary 是亮紫，白字落在上面只有 2.5:1。--ls-on-primary
+   本来就是随主题翻转的那一个（暗色取深墨），遗留规则用了写死的 #fff 且特指度
+   更高，这里叠类压回来。 */
+[data-lq-scope="growth"] .path-action.path-action--primary,
+[data-lq-scope="growth"] .review-action.review-action--primary {
+    color: hsl(var(--ls-on-primary));
+}
+
+/* ── 分区容器也必须是面板（S9 U2，实测结论）─────────────────────────────
+   归因实验：同一页同一外观，只把背景图在 off / scene 之间切换（spec 里的
+   LQ_S9_BACKDROP 开关），/feedback-review 暗色 1440 的 axe serious 从 0 涨到 36，
+   /learning-path 从 0 涨到 17。失败的全都是**半透明但不是模糊宿主**的块：
+   .path-toolbar / .path-section-head / .path-search / .review-toolbar /
+   .review-feedback-grid 里的格子。规律很干净：
+
+     直接坐在背景图上的半透明块，必须自己是模糊宿主；
+     已经坐在面板里的块，看到的是面板不是照片，就不需要。
+
+   所以把这几个分区容器补成真正的面板——它们本来就是版式的一部分、每页各一个，
+   不随数据增长——而它们内部的条目（.path-ladder-step / .path-course-card /
+   .review-feedback-grid 的格子）因此落进面板内部，由下面的守卫压平。 */
+[data-lq-scope="growth"] :is(.path-toolbar, .path-ladder, .path-course-board,
+                             .review-toolbar) {
+    padding: var(--ls-s-4);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--lq-page-content));
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-lq-scope="growth"] .path-toolbar,
+    [data-lq-scope="growth"] .path-ladder,
+    [data-lq-scope="growth"] .path-course-board,
+    [data-lq-scope="growth"] .review-toolbar {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+/* 面板内部一律压平，含刚补成面板的这几个分区。 */
+[data-lq-scope="growth"] :is(.path-toolbar, .path-ladder, .path-course-board,
+                             .review-toolbar, .review-card)
+    :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* 错题条目上的课程徽章用 --ls-primary-soft/--ls-primary，暗色下主色本身就亮，
+   落在自己的 18% 柔和底上只有 3.95:1。换成随主题翻转的 on-primary-soft。 */
+[data-lq-scope="growth"] .wrongbook-badge.wrongbook-badge--course {
+    color: hsl(var(--ls-on-primary-soft));
+}
+
+/* ── 列表项不做模糊宿主（S9 U2，主任务 2026-09-23 通报）─────────────────
+   `.path-card` 的模糊由 pages/page-material.css 末尾主任务那段声明，但它是
+   `.path-card-list` 里的列表项：实测 /learning-path 整文档 22 个宿主，个数等于
+   卡片数、随数据增长。这与"顶层面板即材质边界"和本包论证的预算都冲突。
+   模糊上移到承载它们的外层容器 `.path-card-list`（每页一个），卡片自己只保留
+   半透明填充与高光边——高光边本来就是"读起来像玻璃"的那一半。 */
+/* 主任务已把 .path-card 从 page-material.css 的边界清单里删掉，所以这里
+   不再需要 !important 去压它，只留卡片自己的高光边。 */
+[data-lq-scope="growth"] .path-card-list .path-card,
+[data-lq-scope="growth"] .review-card-list .review-card {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom));
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-lq-scope="growth"] .path-card-list,
+    [data-lq-scope="growth"] .review-card-list {
+        padding: var(--ls-s-3);
+        border: 1px solid hsl(var(--ls-line));
+        border-radius: var(--ls-r-lg);
+        background: hsl(var(--lq-page-content));
+        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                    var(--ls-glass-shadow);
+    }
+}
+
+[data-lq-scope="growth"] :is(.path-card-list, .review-card-list)
+    :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+/* 修炼卡上的境界徽章底是 color-mix(..., white)，暗色下不翻转（实测 #eceef1），
+   里面的次级文字落上去只有 1.2:1。徽章改 control 级底，文字取次级墨色。 */
+[data-lq-scope="growth"] .cultivation-card__mark {
+    background: hsl(var(--lq-page-control));
+    border-color: hsl(var(--ls-line));
+}
+[data-lq-scope="growth"] .cultivation-card__mark > span {
+    color: hsl(var(--ls-ink-2));
+}

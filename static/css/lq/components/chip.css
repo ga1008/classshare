@@ -58,8 +58,10 @@
     cursor: pointer;
 }
 .lq-chip__remove .lq-icon { width: var(--ls-s-4); height: var(--ls-s-4); }
-.lq-chip--filter:focus-visible,
-.lq-chip__remove:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+/* Rim, transition, hover halo, press and focus ring: shared block in
+   components/button.css. A status chip is not pointer-reactive, so it needs
+   no colour override of its own; the filter chip's accent is already the
+   shared default. */
 /* Disabled names its own muted ink instead of fading an already translucent
    control, which would take the label down with the fill. */
 .lq-chip--filter:disabled,
@@ -75,18 +77,13 @@
 .lq-glass[data-lq-tone="dark"] .lq-chip:not(.lq-chip--status) {
     background: hsl(var(--ls-glass-fill-strong));
 }
-@media (hover: hover) and (pointer: fine) {
-    .lq-chip--filter:hover:not(:disabled),
-    .lq-chip__remove:hover:not(:disabled) { box-shadow: var(--ls-shadow-1); }
-}
 @media (pointer: coarse) {
     .lq-chip--filter { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); min-width: calc(var(--ls-s-10) + var(--ls-s-1)); }
 }
-@media (prefers-reduced-motion: reduce) {
-    .lq-chip, .lq-chip__remove { transition: none; }
-}
+/* Reduced motion is handled once, in the shared block. */
 @media (forced-colors: active) {
-    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-chip--status { background: Canvas; color: CanvasText; border-color: CanvasText; }
+    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-chip--status { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
+    .lq-chip__remove { box-shadow: none; }
     .lq-chip--filter[aria-pressed="true"] { background: Highlight; color: HighlightText; border-color: Highlight; }
     .lq-chip--filter:focus-visible, .lq-chip__remove:focus-visible { outline-color: Highlight; }
     .lq-chip--filter:disabled, .lq-chip__remove:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
