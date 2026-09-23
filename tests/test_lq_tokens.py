@@ -155,7 +155,10 @@ class GlassMaterialContrastTests(unittest.TestCase):
     image layer has its own opacity over the page surface. Pin that bound."""
 
     # image-layer opacity from static/css/lq/components/page-backdrop.css
-    IMAGE_OPACITY = {"light": .55, "dark": .42}
+    # Raised on 2026-09-23 to the ceiling this very assertion sets: the photo
+    # was three reductions deep and read as grey mush. Keep these in step with
+    # page-backdrop.css or the guarantee stops describing what ships.
+    IMAGE_OPACITY = {"light": .58, "dark": .47}
     MATERIALS = (("--ls-glass-fill-content", "--ls-ink", "--ls-ink-3"),
                  ("--ls-glass-fill-control", "--ls-ink", "--ls-ink-2"),
                  ("--ls-glass-fill", "--ls-glass-ink", "--ls-glass-muted"),

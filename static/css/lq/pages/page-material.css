@@ -75,8 +75,10 @@
        and that number follows the data. */
     [data-lq-scope="growth"] .lq-grid--cards,
     .lq-messages .message-center-private-panel {
-        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+        /* The photo is legible now, so the frost has something to smear. A thin
+           radius over a washed-out image read as nothing at all. */
+        -webkit-backdrop-filter: blur(var(--ls-blur-regular)) saturate(var(--ls-glass-saturate));
+        backdrop-filter: blur(var(--ls-blur-regular)) saturate(var(--ls-glass-saturate));
         box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
                     inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
                     var(--ls-glass-shadow);
