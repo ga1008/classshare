@@ -34,6 +34,17 @@
 - 原生 PostgreSQL 演练报告与 67 个迁移源匹配，备份摘要匹配；部署 DryRun 通过，3236 个文件的归档排除了运行数据。
 - 最终外观菜单实际渲染 `blur(24px) saturate(1.7)`、58% 基色，进入共享 portal；1440 视口实测矩形 x1106/y76/w300/h306，无越界。
 
-生产版本号、健康与 Git 确认待发布后补录。
+生产发布完成：
+
+- 产品提交 `8e97d7a06c231b4c4f245523dbf5b9169b8c1d77` 已推送 `origin/dev`，远端引用已确认。
+- 线上版本 `20260923-181346-27a18ab4983a`；容器与公网返回的版本一致，线上资源图与上述本地最终图完全一致。
+- 31 个变更生产源码文件逐文件 SHA-256 与容器一致；8 个关键公网资源逐字节哈希一致，包含背景所有者、菜单增强器、偏好、欢迎与登录模块。
+- 学生登录公网 200；新发布首次 HTML 仅清 HTTP cache，再次不重复清理，未清 cookie 或 storage。
+- 8 个 Compose 服务全部 running；app、AI、mailer、nginx、PostgreSQL、scheduler 的健康检查均 healthy。主服务与 AI health 均为 ok。
+- `background_tasks.ok=false` 仍来自 719 条既有失败记录，数量与前次发布一致；当前 11 类任务状态均 ok，stale=0，running=0，队列 26 条为已计划任务。保留历史记录，没有清除记录来制造绿色健康状态。
+- 上线前代码备份：`/tmp/lanshare-deploy-backups/code-20260923-181400.tgz`；停止业务写入后 PostgreSQL 备份：`/tmp/lanshare-deploy-backups/db-cutover-20260923-181400.sql.gz`。运行数据未被部署归档覆盖。
+- 本轮合成测试服务 8291、8295 已停止，报告保留。
+
+部署证据位于 `.codex-temp/glass2-deploy.log`、`glass2-postflight.json` 与 `glass2-services.json`；最终樱花背景菜单截图位于 `.codex-temp/glass2-bright-visual/desktop-appearance-menu-final.png`。
 
 本轮没有声称重新运行全部后端测试；前次全量测试的 Windows ACP 并发启动不稳定记录仍有效。触屏由 Chromium 模拟，未进行真实 iPhone/Safari 实机验收。
