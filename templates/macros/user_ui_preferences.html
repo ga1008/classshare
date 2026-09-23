@@ -5,45 +5,71 @@
 {% set backdrop_scene = preferences.backdrop_scene|default({}, true) %}
 {% set backdrop_categories = backdrop_scene.categories|default([], true) %}
 <details class="ui-palette-control" data-ui-preferences-details>
-    <summary class="ui-preferences-toggle" data-ui-preferences-toggle>
+    <summary class="ui-preferences-toggle lq-btn lq-btn--glass" data-ui-preferences-toggle>
         <span>外观</span>
         <span class="ui-preferences-summary-status" data-ui-preferences-summary-status aria-live="polite" hidden>未保存</span>
     </summary>
-    <div class="ui-preferences-panel" data-ui-preferences-panel>
+    <div class="ui-preferences-panel" data-ui-preferences-panel data-lq-material="raised" aria-label="界面外观设置">
         <label class="ui-preferences-field"><span>配色</span>
-            <select class="ui-palette-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
+            <select class="ui-palette-select lq-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
                 {% for preset in preferences.presets %}
                 <option value="{{ preset.key }}"{% if preset.key == preferences.palette_key %} selected{% endif %}>{{ preset.name }}</option>
                 {% endfor %}
             </select>
         </label>
         <label class="ui-preferences-field"><span>外观</span>
-            <select class="ui-palette-select" data-ui-preference-select="appearance" aria-label="界面外观" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>
+            <select class="ui-palette-select lq-select" data-ui-preference-select="appearance" aria-label="界面外观" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>
                 {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
                 <option value="{{ key }}"{% if key == preferences.appearance|default('auto') %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </label>
         <label class="ui-preferences-field"><span>玻璃效果</span>
-            <select class="ui-palette-select" data-ui-preference-select="glass" aria-label="玻璃效果" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>
+            <select class="ui-palette-select lq-select" data-ui-preference-select="glass" aria-label="玻璃效果" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>
                 <option value="tinted"{% if preferences.glass|default('tinted') == 'tinted' %} selected{% endif %}>柔和玻璃</option>
                 <option value="off"{% if preferences.glass|default('tinted') == 'off' %} selected{% endif %}>关闭玻璃</option>
             </select>
         </label>
-        <label class="ui-preferences-field"><span>页面背景</span>
-            <select class="ui-palette-select" data-ui-preference-select="backdrop" aria-label="页面背景" {{ explain_attrs('页面背景', '底部铺一张减色的开屏大图，用来衬托磨砂玻璃。也可以关闭，改用纯色。') }}>
-                <option value="scene"{% if preferences.backdrop|default('scene') == 'scene' %} selected{% endif %}>开屏大图（随机）</option>
-                {% for category in backdrop_categories %}
-                <option value="{{ category.key }}"{% if category.key == preferences.backdrop|default('scene') %} selected{% endif %}>{{ category.name }}</option>
-                {% endfor %}
-                <option value="off"{% if preferences.backdrop|default('scene') == 'off' %} selected{% endif %}>关闭（纯色）</option>
-            </select>
-        </label>
-        <label class="ui-preferences-field ui-preferences-field--backdrop-color"><span>背景纯色</span>
-            <input class="ui-backdrop-color" type="color" data-ui-preference-input="backdrop_color" value="{{ backdrop_scene.color|default(preferences.backdrop_color|default('', true), true) }}" aria-label="背景纯色" {{ explain_attrs('背景纯色', '关闭背景图后整页使用这个颜色。默认纯白。') }}>
-        </label>
+        {{ user_backdrop_fields(preferences) }}
         <span class="ui-palette-status sr-only" data-ui-palette-status role="status" aria-live="polite"></span>
     </div>
 </details>
 {% endif %}
+{%- endmacro %}
+
+
+{% macro user_backdrop_fields(preferences, gallery=false) -%}
+{% set scene = preferences.backdrop_scene|default({}, true) %}
+{% set mode = preferences.backdrop|default('scene') %}
+<div{% if gallery %} id="profile-backdrop" class="lq-profile-appearance__group"{% endif %}>
+    <label class="ui-preferences-field"><span>页面背景</span>
+        <select class="ui-palette-select lq-select" data-ui-preference-select="backdrop" aria-label="页面背景">
+            <option value="scene"{% if mode == 'scene' %} selected{% endif %}>跟随本次开屏</option>
+            {% for category in scene.categories|default([]) %}
+            <option value="{{ category.key }}"{% if category.key == mode %} selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+            <option data-ui-backdrop-selected-image value="{{ mode if mode.startswith('image:') else '' }}"{% if mode.startswith('image:') %} selected{% else %} hidden{% endif %}>已选图片</option>
+            <option value="off"{% if mode == 'off' %} selected{% endif %}>关闭（纯色）</option>
+        </select>
+    </label>
+    <label class="ui-preferences-field ui-preferences-field--backdrop-color"><span>背景纯色</span>
+        <input class="ui-backdrop-color" type="color" data-ui-preference-input="backdrop_color" value="{{ scene.color|default(preferences.backdrop_color|default('#ffffff', true), true) }}" aria-label="背景纯色">
+    </label>
+    {% if gallery %}
+    <p>背景铺满页面并柔和模糊。跟随开屏、选定分类或固定一张喜欢的图片，选择会保存到当前账号。</p>
+    <details class="ui-backdrop-gallery" data-ui-backdrop-gallery>
+        <summary>浏览背景图库</summary>
+        <label class="ui-preferences-field"><span>筛选图库</span>
+            <select class="ui-palette-select lq-select" data-ui-backdrop-category aria-label="筛选背景图库">
+                <option value="">全部图片</option>
+                {% for category in scene.categories|default([]) %}<option value="{{ category.name }}">{{ category.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <p data-ui-backdrop-gallery-status role="status">展开后加载图库。</p>
+        <div class="ui-backdrop-gallery__grid" data-ui-backdrop-grid aria-label="背景图片"></div>
+    </details>
+    {% else %}
+    <a class="ui-backdrop-gallery-link" href="/profile?section=appearance#profile-backdrop">浏览并选择图片</a>
+    {% endif %}
+</div>
 {%- endmacro %}

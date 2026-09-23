@@ -1,18 +1,14 @@
 /* 页面背景图：视口底部固定层。它是被透视的底，不是玻璃，所以永远不加
    backdrop-filter，也不参与模糊宿主预算。减色由 filter + opacity + 面纱共同完成。 */
 .lq-page-backdrop {
-    /* Three reductions used to stack here — 45% saturation, 55% opacity and a
-       veil over the whole viewport — and the photo came out as grey mush with
-       nothing for the panels to frost.
-       Saturation is free: contrast is a luminance calculation and chroma barely
-       enters it, so the colour comes back in full. Opacity is capped by the
-       contrast guarantee at .58 (solved against the material scale, see
-       test_lq_tokens). The veil is pure margin — the guarantee is computed
-       without it — so most of it can go. */
+    /* The shared thin materials are evaluated against this dimmed scene.
+       Keep one background source; panels no longer reconstruct its crop. */
     --lq-backdrop-saturation: 0.95;
-    --lq-backdrop-opacity: 0.58;
+    --lq-backdrop-opacity: var(--ls-scene-opacity, 0.50);
     --lq-backdrop-veil-top: 0.12;
     --lq-backdrop-veil-bottom: 0;
+    --lq-backdrop-fallback-blur: 24px;
+    --lq-backdrop-bleed: 48px;
     position: fixed;
     inset: 0;
     z-index: var(--ls-z-material-sheen);
@@ -37,7 +33,7 @@
 .lq-page-backdrop__image {
     position: absolute;
     inset: 0;
-    background-image: var(--lq-backdrop-image, none);
+    background-image: var(--lq-backdrop-paint, var(--lq-backdrop-image, none));
     background-repeat: no-repeat;
     background-position: center center;
     background-size: cover;
@@ -45,6 +41,27 @@
     opacity: var(--lq-backdrop-opacity);
     animation: lq-scene-arrive var(--ls-dur-enter) var(--ls-ease-out) both;
 }
+
+/* The shipped frost is already Gaussian-blurred. Only a missing derivative
+   falls back to one image filter, with overscan to keep its edges opaque. */
+.lq-page-backdrop[data-lq-backdrop-frost-state="fallback"] .lq-page-backdrop__image {
+    inset: calc(-1 * var(--lq-backdrop-bleed));
+    filter: blur(var(--lq-backdrop-fallback-blur)) saturate(var(--lq-backdrop-saturation));
+}
+
+/* Welcome hands a sharp, unchanged full-screen frame to the same scene below.
+   Opacity is the only animated property: no shrinking, sliding or re-cropping. */
+html.has-scene-cover::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: var(--ls-z-viewer);
+    background: var(--scene-cover-image) center / cover no-repeat;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 520ms ease;
+}
+html.scene-cover-dissolving::before { opacity: 0; }
 
 /* Opacity only: scaling the photo during entry would detach it from the cached
    frost painted by content panels. No permanent animation or GPU hint. */
@@ -54,6 +71,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .lq-page-backdrop__image { animation: none; }
+    html.has-scene-cover::before { transition: none; }
 }
 
 /* 面纱现在也铺满：内容最密的上半部压得重一些，往下逐渐让开，
@@ -69,10 +87,8 @@
 }
 
 :root[data-appearance="dark"] .lq-page-backdrop {
-    /* Dark mode's ceiling is .47 for the same reason; text there is light ink
-       and a bright photo behind a panel is what eats its contrast. */
+    /* Light text uses a quieter scene in the dark appearance. */
     --lq-backdrop-saturation: 0.85;
-    --lq-backdrop-opacity: 0.47;
     --lq-backdrop-veil-top: 0.22;
     --lq-backdrop-veil-bottom: 0.04;
 }
@@ -86,13 +102,13 @@
 }
 
 @media (forced-colors: active) {
-    .lq-page-backdrop {
+    .lq-page-backdrop, html.has-scene-cover::before {
         display: none;
     }
 }
 
 @media print {
-    .lq-page-backdrop {
+    .lq-page-backdrop, html.has-scene-cover::before {
         display: none;
     }
 }
@@ -107,3 +123,13 @@
     inline-size: 3rem;
     padding: 0;
 }
+
+.ui-backdrop-gallery { margin-block-start: 1rem; }
+.ui-backdrop-gallery summary, .ui-backdrop-gallery-link { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: hsl(var(--ls-primary)); }
+.ui-backdrop-gallery__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; max-height: 400px; overflow: auto; padding: 4px; }
+.ui-backdrop-gallery__grid button { border: 2px solid hsl(var(--ls-border)); border-radius: 14px; overflow: hidden; padding: 0; color: hsl(var(--ls-ink)); background: hsl(var(--ls-surface-1) / .6); cursor: pointer; }
+.ui-backdrop-gallery__grid button[aria-pressed="true"] { border-color: hsl(var(--ls-primary)); box-shadow: 0 0 0 2px hsl(var(--ls-primary) / .18); }
+.ui-backdrop-gallery__grid button:focus-visible { outline: 3px solid hsl(var(--ls-primary)); outline-offset: 2px; }
+.ui-backdrop-gallery__grid img { display: block; width: 100%; height: 96px; object-fit: cover; }
+.ui-backdrop-gallery__grid span { display: block; padding: 8px; font-size: .8rem; line-height: 1.5; }
+@media (forced-colors: active) { .ui-backdrop-gallery__grid button[aria-pressed="true"] { outline: 3px solid Highlight; } }

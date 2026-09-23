@@ -11,7 +11,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-control-muted: 215 18% 43%; /* @type hsl-channels */
     --ls-chat-teacher: var(--ls-c-violet-500); /* @type hsl-channels */
     --ls-fixed-deep-ink: 222 47% 4%; /* @type hsl-channels */
@@ -30,16 +30,26 @@
     --ls-ambient-a: var(--ls-primary) / .10; /* @type hsl-alpha-channels */
     --ls-ambient-b: 173 80% 40% / .08; /* @type hsl-alpha-channels */
     --ls-ambient-c: 274 48% 47% / .06; /* @type hsl-alpha-channels */
-    --ls-glass-fill: 0 0% 100% / .58; /* @type hsl-alpha-channels */
-    --ls-glass-fill-strong: 0 0% 100% / .78; /* @type hsl-alpha-channels */
+    --ls-glass-fill: 0 0% 100% / .46; /* @type hsl-alpha-channels */
+    --ls-glass-fill-strong: 0 0% 100% / .58; /* @type hsl-alpha-channels */
     --ls-glass-fill-clear: 0 0% 100% / .22; /* @type hsl-alpha-channels */
-    --ls-glass-fill-content: 0 0% 100% / .74; /* @type hsl-alpha-channels */
-    --ls-glass-fill-control: 0 0% 100% / .52; /* @type hsl-alpha-channels */
-    --ls-glass-line: 0 0% 100% / .85; /* @type hsl-alpha-channels */
-    --ls-glass-rim: 0 0% 100% / .95; /* @type hsl-alpha-channels */
-    --ls-glass-rim-bottom: 0 0% 100% / .35; /* @type hsl-alpha-channels */
+    --ls-glass-fill-content: 0 0% 100% / .50; /* @type hsl-alpha-channels */
+    --ls-glass-fill-control: 0 0% 100% / .44; /* @type hsl-alpha-channels */
+    --ls-glass-fill-inset: 0 0% 100% / .20; /* @type hsl-alpha-channels */
+    --ls-scene-opacity: .50; /* @type number */
+    --ls-glass-line: 0 0% 100% / .60; /* @type hsl-alpha-channels */
+    --ls-glass-rim: 0 0% 100% / .78; /* @type hsl-alpha-channels */
+    --ls-glass-rim-bottom: 0 0% 100% / .20; /* @type hsl-alpha-channels */
     --ls-glass-ink: 216 45% 16%; /* @type hsl-channels */
-    --ls-glass-muted: 215 18% 32%; /* @type hsl-channels */
+    --ls-glass-muted: 215 22% 25%; /* @type hsl-channels */
+    --ls-glass-scene-light-fill: 0 0% 100% / .38; /* @type hsl-alpha-channels */
+    --ls-glass-scene-light-ink: 222 47% 11%; /* @type hsl-channels */
+    --ls-glass-scene-light-muted: 215 25% 25%; /* @type hsl-channels */
+    --ls-glass-scene-light-control: 0 0% 100% / .22; /* @type hsl-alpha-channels */
+    --ls-glass-scene-dark-fill: 224 30% 12% / .38; /* @type hsl-alpha-channels */
+    --ls-glass-scene-dark-ink: 214 32% 98%; /* @type hsl-channels */
+    --ls-glass-scene-dark-muted: 215 20% 88%; /* @type hsl-channels */
+    --ls-glass-scene-dark-control: 224 30% 12% / .22; /* @type hsl-alpha-channels */
     --ls-scrim: 222 47% 11% / .28; /* @type hsl-alpha-channels */
     --ls-scrim-login: 0 0% 0% / .80; /* @type hsl-alpha-channels */
     --ls-glass-sheen-clear: linear-gradient(135deg, hsl(0 0% 100% / .04), transparent 60%); /* @type image */
@@ -49,7 +59,7 @@
     --ls-blur-thick: 24px; /* @type length */
     --ls-blur-scrim: 8px; /* @type length */
     --ls-glass-saturate: 170%; /* @type percentage */
-    --ls-glass-sheen: linear-gradient(135deg, hsl(0 0% 100% / .55) 0%, hsl(0 0% 100% / .08) 38%, transparent 60%, hsl(var(--ls-primary) / .05) 100%); /* @type image */
+    --ls-glass-sheen: linear-gradient(135deg, hsl(0 0% 100% / .20) 0%, hsl(0 0% 100% / .025) 38%, transparent 64%, hsl(0 0% 100% / .04) 100%); /* @type image */
     --ls-glass-shadow: 0 20px 60px hsl(215 43% 32% / .10), 0 2px 6px hsl(215 43% 32% / .05); /* @type shadow */
     --ls-glass-shadow-strong: 0 24px 70px hsl(215 43% 32% / .18), 0 4px 10px hsl(215 43% 32% / .08); /* @type shadow */
     --ls-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC", system-ui, sans-serif; /* @type font-family */
@@ -141,13 +151,13 @@
     --ls-tone-success-solid: 152 62% 27%; /* @type hsl-channels */
     --ls-tone-success-on-solid: 0 0% 100%; /* @type hsl-channels */
     --ls-tone-warning-base: 34 92% 50%; /* @type hsl-channels */
-    --ls-tone-warning-fg: 30 88% 23%; /* @type hsl-channels */
+    --ls-tone-warning-fg: 30 88% 22%; /* @type hsl-channels */
     --ls-tone-warning-soft: 34 92% 50% / 0.16; /* @type hsl-alpha-channels */
     --ls-tone-warning-on-base: 222 47% 4%; /* @type hsl-channels */
     --ls-tone-warning-solid: 30 88% 32%; /* @type hsl-channels */
     --ls-tone-warning-on-solid: 0 0% 100%; /* @type hsl-channels */
     --ls-tone-danger-base: 4 74% 54%; /* @type hsl-channels */
-    --ls-tone-danger-fg: 4 68% 32%; /* @type hsl-channels */
+    --ls-tone-danger-fg: 4 68% 31%; /* @type hsl-channels */
     --ls-tone-danger-soft: 4 74% 54% / 0.12; /* @type hsl-alpha-channels */
     --ls-tone-danger-on-base: 222 47% 4%; /* @type hsl-channels */
     --ls-tone-danger-solid: 4 68% 38%; /* @type hsl-channels */
@@ -159,7 +169,7 @@
     --ls-tone-info-solid: 212 82% 33%; /* @type hsl-channels */
     --ls-tone-info-on-solid: 0 0% 100%; /* @type hsl-channels */
     --ls-tone-neutral-base: 220 12% 50%; /* @type hsl-channels */
-    --ls-tone-neutral-fg: 220 16% 30%; /* @type hsl-channels */
+    --ls-tone-neutral-fg: 220 16% 29%; /* @type hsl-channels */
     --ls-tone-neutral-soft: 220 12% 50% / 0.1; /* @type hsl-alpha-channels */
     --ls-tone-neutral-on-base: 222 47% 4%; /* @type hsl-channels */
     --ls-tone-neutral-solid: 220 16% 34%; /* @type hsl-channels */
@@ -182,7 +192,7 @@
     --tone-attachment-archive: 262 70% 46%; /* @type hsl-channels */
     --tone-attachment-other: 220 12% 46%; /* @type hsl-channels */
     --tone-agenda-proctor: 38 92% 50%; /* @type hsl-channels */
-    --tone-agenda-proctor-fg: 25.964912 90.476190% 24%; /* @type hsl-channels */
+    --tone-agenda-proctor-fg: 25.964912 90.476190% 23%; /* @type hsl-channels */
     --tone-agenda-proctor-soft: 38 92% 50% / 0.16; /* @type hsl-alpha-channels */
     --tone-agenda-exam: 0 84% 60%; /* @type hsl-channels */
     --tone-agenda-exam-fg: 0 72.222222% 32%; /* @type hsl-channels */
@@ -194,7 +204,7 @@
     --tone-agenda-todo-fg: 200.406091 98.009950% 22%; /* @type hsl-channels */
     --tone-agenda-todo-soft: 199 89% 48% / 0.16; /* @type hsl-alpha-channels */
     --tone-agenda-class: 174.666667 83.850932% 31.568627%; /* @type hsl-channels */
-    --tone-agenda-class-fg: 175 77% 18%; /* @type hsl-channels */
+    --tone-agenda-class-fg: 175 77% 17%; /* @type hsl-channels */
     --tone-agenda-class-soft: 174.666667 83.850932% 31.568627% / 0.16; /* @type hsl-alpha-channels */
     --ls-background: var(--ls-surface-0); /* @type hsl-channels */
     --ls-foreground: var(--ls-ink); /* @type hsl-channels */
@@ -785,7 +795,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-control-muted: 215 20% 75%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
@@ -797,16 +807,18 @@
     --ls-palette-accent: 233.924981 28.063158% 22.800000%; /* @type hsl-channels */
     --ls-palette-border: 220 14% 22%; /* @type hsl-channels */
     --ls-primary-rgb: 123.624, 125.6232, 243.576; /* @type rgb-channels-comma */
-    --ls-glass-fill: 224 30% 12% / .62; /* @type hsl-alpha-channels */
-    --ls-glass-fill-strong: 224 30% 12% / .80; /* @type hsl-alpha-channels */
+    --ls-glass-fill: 224 30% 12% / .46; /* @type hsl-alpha-channels */
+    --ls-glass-fill-strong: 224 30% 12% / .58; /* @type hsl-alpha-channels */
     --ls-glass-fill-clear: 224 30% 12% / .22; /* @type hsl-alpha-channels */
-    --ls-glass-fill-content: 224 30% 12% / .76; /* @type hsl-alpha-channels */
-    --ls-glass-fill-control: 224 30% 12% / .54; /* @type hsl-alpha-channels */
-    --ls-glass-line: 0 0% 100% / .14; /* @type hsl-alpha-channels */
-    --ls-glass-rim: 0 0% 100% / .18; /* @type hsl-alpha-channels */
+    --ls-glass-fill-content: 224 30% 12% / .50; /* @type hsl-alpha-channels */
+    --ls-glass-fill-control: 224 30% 12% / .44; /* @type hsl-alpha-channels */
+    --ls-glass-fill-inset: 0 0% 100% / .06; /* @type hsl-alpha-channels */
+    --ls-scene-opacity: .38; /* @type number */
+    --ls-glass-line: 0 0% 100% / .20; /* @type hsl-alpha-channels */
+    --ls-glass-rim: 0 0% 100% / .30; /* @type hsl-alpha-channels */
     --ls-glass-rim-bottom: 0 0% 100% / .06; /* @type hsl-alpha-channels */
     --ls-glass-ink: 214 32% 94%; /* @type hsl-channels */
-    --ls-glass-muted: 215 20% 75%; /* @type hsl-channels */
+    --ls-glass-muted: 215 20% 82%; /* @type hsl-channels */
     --ls-scrim: 0 0% 0% / .5; /* @type hsl-alpha-channels */
     --ls-glass-saturate: 140%; /* @type percentage */
     --ls-glass-sheen: linear-gradient(135deg, hsl(0 0% 100% / .06) 0%, hsl(0 0% 100% / .015) 38%, transparent 60%, hsl(var(--ls-primary) / .05) 100%); /* @type image */
@@ -882,7 +894,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -902,7 +914,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -922,7 +934,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -942,7 +954,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -962,7 +974,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -982,7 +994,7 @@
     --ls-surface-2: 210 40% 98%; /* @type hsl-channels */
     --ls-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-ink-2: 215 25% 27%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 38%; /* @type hsl-channels */
+    --ls-ink-3: 215 22% 30%; /* @type hsl-channels */
     --ls-line: 214 32% 91%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 80%; /* @type hsl-channels */
     --ls-control-line: 215 16% 53%; /* @type hsl-channels */
@@ -1002,7 +1014,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */
@@ -1022,7 +1034,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */
@@ -1042,7 +1054,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */
@@ -1062,7 +1074,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */
@@ -1082,7 +1094,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */
@@ -1102,7 +1114,7 @@
     --ls-surface-2: 224 20% 16%; /* @type hsl-channels */
     --ls-ink: 214 32% 94%; /* @type hsl-channels */
     --ls-ink-2: 215 20% 75%; /* @type hsl-channels */
-    --ls-ink-3: 215 16% 62%; /* @type hsl-channels */
+    --ls-ink-3: 215 20% 78%; /* @type hsl-channels */
     --ls-line: 220 14% 22%; /* @type hsl-channels */
     --ls-line-strong: 215 20% 45%; /* @type hsl-channels */
     --ls-control-line: 215 16% 58%; /* @type hsl-channels */

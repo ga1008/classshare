@@ -3,14 +3,14 @@
 .lq-btn:is(.message-center-bell, .feedback-entry-button),
 .lq-avatar-link.profile-entry-button {
     border-color: hsl(var(--ls-line));
-    background: hsl(var(--ls-surface-1));
-    color: hsl(var(--ls-ink-2));
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
 }
 .lq-btn:is(.message-center-bell, .feedback-entry-button):hover,
 .lq-avatar-link.profile-entry-button:hover {
     border-color: hsl(var(--ls-control-line));
-    background: hsl(var(--ls-surface-2));
-    color: hsl(var(--ls-ink));
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink)));
 }
 .lq-avatar.profile-entry-button__avatar {
     display: inline-flex;

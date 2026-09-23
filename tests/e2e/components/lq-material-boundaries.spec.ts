@@ -20,23 +20,26 @@ const style = (page: Page, selector: string) => page.locator(selector).evaluate(
   return { blur: s.backdropFilter, image: s.backgroundImage, fill: s.backgroundColor, transform: s.transform };
 });
 
-test('LQ floating surfaces sample content; cached wallpaper belongs only to content', async ({ page }) => {
+test('LQ floating surfaces sample content; panels never duplicate the viewport wallpaper', async ({ page }) => {
   await mount(page);
   expect((await style(page, '#chrome')).blur).toContain('blur(16px)');
   expect((await style(page, '#menu')).blur).toContain('blur(24px)');
   expect((await style(page, '#menu')).image).not.toContain('url(');
+  expect((await style(page, '#content')).image).not.toContain('url(');
+  expect((await style(page, '#content')).blur).toBe('none');
   expect((await style(page, '#nested')).blur).toBe('none');
   expect((await style(page, '#off-content')).fill).toBe('rgb(255, 255, 255)');
   await page.locator('#disabled').hover({ force: true });
   expect((await style(page, '#disabled')).transform).toBe('none');
 });
 
-test('LQ touch has frost at boundaries without a blur layer for every child', async ({ browser }) => {
+test('LQ touch shares the viewport frost without a blur layer for every child', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   try {
     const page = await context.newPage();
     await mount(page);
-    expect((await style(page, '#content')).blur).toContain('blur(8px)');
+    expect((await style(page, '#content')).blur).toBe('none');
+    expect((await style(page, '#content')).image).not.toContain('url(');
     expect((await style(page, '#nested')).blur).toBe('none');
     expect((await style(page, '#disabled')).blur).toBe('none');
     await page.locator('html').evaluate(el => el.setAttribute('data-lq-glass', 'off'));

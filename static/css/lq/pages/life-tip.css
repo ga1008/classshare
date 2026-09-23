@@ -492,73 +492,6 @@ body.login-scene-active .site-record-footer {
     transition: transform 0.68s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
     will-change: transform;
 }
-/* 首页开场满屏背景（交棒图，绘制先于首屏，随后收缩进顶栏） */
-html.has-scene-cover { overflow: hidden; }
-html.has-scene-cover::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 100dvh;
-    z-index: 6000;
-    background-image: var(--scene-cover-image);
-    background-size: cover;
-    background-position: center;
-    pointer-events: none;
-    will-change: transform, opacity;
-}
-html.scene-cover-collapsing::before {
-    animation: scene-cover-collapse 0.82s cubic-bezier(0.3, 0.7, 0.25, 1) forwards;
-}
-@keyframes scene-cover-collapse {
-    0% { transform: translateY(0); opacity: 1; }
-    55% { opacity: 1; }
-    100% { transform: translateY(calc(-100dvh + var(--scene-cover-end, 64px))); opacity: 0; }
-}
-/* 收缩时一言文字缩小飞向顶栏左侧化作「人生一言」 */
-.scene-cover-tip {
-    position: fixed;
-    left: 50%;
-    top: 44%;
-    transform: translate(-50%, -50%);
-    z-index: 6002;
-    margin: 0;
-    max-width: min(680px, 86vw);
-    color: #fff;
-    font-size: clamp(15px, 2.2vw, 21px);
-    font-weight: 600;
-    line-height: 1.7;
-    text-align: center;
-    text-shadow: 0 2px 18px rgba(2, 6, 23, 0.7);
-    pointer-events: none;
-    transition: transform 0.8s cubic-bezier(0.3, 0.7, 0.25, 1), opacity 0.62s ease;
-}
-.scene-cover-tip.is-collapsing {
-    opacity: 0;
-    transform: translate(calc(-50% - 38vw), calc(-50% - 36vh)) scale(0.32);
-}
-/* 顶栏一言背景：模糊图 + 白纱，保证按钮可读 */
-.app-topbar__scene {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    overflow: hidden;
-    pointer-events: none;
-}
-.app-topbar__scene i {
-    position: absolute;
-    inset: -44px;
-    background-size: cover;
-    background-position: center 30%;
-    filter: blur(22px) saturate(1.12) brightness(1.05);
-    transform: scale(1.06);
-}
-.app-topbar__scene b {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.42));
-}
 /* 顶栏左侧「人生一言」小胶囊 */
 .topbar-scene-chip {
     display: inline-flex;
@@ -641,9 +574,7 @@ html.scene-cover-collapsing::before {
 }
 @media (prefers-reduced-motion: reduce) {
     .login-scene-backdrop__image { animation: none; }
-    .scene-cover-tip { transition: none; }
     .topbar-scene-chip { animation: none; }
-    html.scene-cover-collapsing::before { animation-duration: 0.01ms; }
     .cultivation-login-reveal--tip .life-tip-stage.life-tip-stage--morph { transition: none; }
 }
 
@@ -671,17 +602,6 @@ body[data-scene-tone="light"] .login-scene-backdrop__veil {
     animation: none;
     opacity: 0.9;
 }
-/* 首页开场编排：背景收缩的同时主内容自下方淡入上浮 */
-html.has-scene-cover .main-content {
-    opacity: 0;
-}
-html.scene-cover-collapsing .main-content {
-    animation: scene-main-in 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.28s forwards;
-}
-@keyframes scene-main-in {
-    from { opacity: 0; transform: translateY(18px); }
-    to { opacity: 1; transform: translateY(0); }
-}
 /* 浮窗标题行 */
 .topbar-scene-pop__title {
     display: block;
@@ -701,13 +621,12 @@ html.scene-cover-collapsing .main-content {
 }
 @media (prefers-reduced-motion: reduce) {
     .login-card.login-card--shake { animation: none; }
-    html.has-scene-cover .main-content { opacity: 1; }
-    html.scene-cover-collapsing .main-content { animation: none; }
 }
 
 /* ==== 登录场景性能层（2026-08-03）：动画全部合成器化，静态模糊一次成型 ==== */
 /* 一言浮层背景同样取消 ken-burns：玻璃卡 backdrop-filter 下背景必须静止 */
 .life-tip-backdrop {
+    inset: 0;
     animation: none;
-    transform: scale(1.02);
+    transform: none;
 }

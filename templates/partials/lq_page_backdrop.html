@@ -10,9 +10,39 @@
      data-lq-backdrop-base="{{ backdrop.base }}"
      data-lq-backdrop-manifest="{{ backdrop.manifest }}"
      data-lq-backdrop-image-url="{{ backdrop.image|default('', true) }}"
-     style="--lq-backdrop-color: {{ backdrop.color }}; --lq-backdrop-image: {{ backdrop.image_css }}">
+     data-lq-backdrop-frost-state="{{ 'ready' if backdrop.image else 'off' }}"
+     style="--lq-backdrop-color: {{ backdrop.color }}; --lq-backdrop-image: {{ backdrop.image_css }}; --lq-backdrop-paint: {{ backdrop.frost_css }}">
     <div class="lq-page-backdrop__image" data-lq-backdrop-image></div>
     <div class="lq-page-backdrop__veil"></div>
 </div>
 <script type="application/json" data-lq-backdrop-catalog>{{ backdrop.categories|tojson }}</script>
+<script>
+    // Prepaint only. The shared scene owner validates the manifest, loads the
+    // frost and releases this full-screen cover; it never targets a topbar.
+    (() => {
+        try {
+            const layer = document.querySelector('[data-lq-page-backdrop]');
+            const context = document.body.dataset.uiPaletteContext;
+            const read = key => { try { return JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (_) { return null; } };
+            const valid = value => /^\/static\/img\/life_tips\/[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(webp|jpg|jpeg|png)$/.test(value || '');
+            const handoff = read('lanshareLoginScene');
+            const age = Date.now() - Number(handoff?.t || 0);
+            const fresh = valid(handoff?.image) && age >= 0 && age < 45000;
+            const saved = read('lansharePageScene');
+            const scene = fresh ? handoff : saved?.context === context && valid(saved?.image) ? saved : null;
+            if (scene && layer.dataset.lqBackdropMode === 'scene') {
+                const frost = scene.image.replace('/life_tips/', '/life_tips/frost/').replace(/\.[^.]+$/, '.webp');
+                layer.dataset.lqBackdropImageUrl = scene.image;
+                layer.style.setProperty('--lq-backdrop-image', `url(${scene.image})`);
+                layer.style.setProperty('--lq-backdrop-paint', `url(${frost})`);
+            }
+            if (fresh) {
+                const html = document.documentElement;
+                html.style.setProperty('--scene-cover-image', `url(${handoff.image})`);
+                html.classList.add('has-scene-cover');
+                setTimeout(() => { html.classList.remove('has-scene-cover', 'scene-cover-dissolving'); html.style.removeProperty('--scene-cover-image'); }, 6000);
+            }
+        } catch (_) { /* Decoration never blocks content. */ }
+    })();
+</script>
 {% endif %}

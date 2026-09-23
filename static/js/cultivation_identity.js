@@ -1,3 +1,5 @@
+import { initPageBackdrop, writeSceneHandoff } from './page_backdrop.js';
+
 function clampPercent(value) {
     const number = Number(value || 0);
     if (!Number.isFinite(number)) return 0;
@@ -400,25 +402,28 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
             finished = true;
             if (autoTimer) window.clearTimeout(autoTimer);
             window.removeEventListener('keydown', onKeydown, true);
-            const topbar = document.querySelector('.app-topbar');
-            if (hasImage && imageUrl && topbar && !scene) {
-                // 首页 cookie 播放路径：背景不散场，收缩进顶栏成为菜单背景。
-                collapseRevealToTopbar(overlay, imageUrl, tip.text, onDone);
-                return;
-            }
-            if (hasImage && imageUrl && scene) {
-                // 登录页场景路径：把背景交棒给首页，由首页完成收缩动画。
-                writeSceneHandoff({ image: imageUrl, tip: tip.text, t: Date.now() });
-            }
-            overlay.classList.add('is-closing');
-            window.setTimeout(() => {
-                overlay.remove();
-                document.documentElement.classList.remove('has-cultivation-login-reveal');
-                document.body.classList.remove('has-cultivation-login-reveal');
-                onDone?.();
-            }, 320);
+            if (hasImage && imageUrl && scene) writeSceneHandoff({ image: imageUrl, tip: tip.text });
+            // Prepare the same full-screen frosted scene underneath before the
+            // welcome fades. Explicit account choices still take precedence.
+            const ready = !scene && hasImage && imageUrl
+                ? initPageBackdrop(document).adopt(imageUrl, tip.text)
+                : Promise.resolve();
+            void ready.finally(() => {
+                overlay.classList.add('is-closing');
+                window.setTimeout(() => {
+                    overlay.remove();
+                    document.documentElement.classList.remove('has-cultivation-login-reveal');
+                    document.body.classList.remove('has-cultivation-login-reveal');
+                    if (!scene) ensureTopbarChip(tip.text);
+                    onDone?.();
+                }, reducedMotion ? 0 : 320);
+            });
         };
-        const onKeydown = () => finish();
+        const onKeydown = event => {
+            if (event.key === 'Escape') { event.preventDefault(); finish(); return; }
+            if (event.target?.closest?.('button,a,input,select,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); finish(); }
+        };
 
         overlay.addEventListener('click', finish);
         const stage = overlay.querySelector('.life-tip-stage');
@@ -474,37 +479,7 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
     });
 }
 
-// ── 登录场景交棒（2026-08-03）：登录页背景 → 一言玻璃卡 → 首页顶栏 ──────
-
-const SCENE_HANDOFF_KEY = 'lanshareLoginScene';
-const TOPBAR_SCENE_KEY = 'lanshareTopbarScene';
-const SCENE_HANDOFF_MAX_AGE_MS = 45000;
-const SCENE_COLLAPSE_MS = 820;
-
-function readSessionJson(key) {
-    try {
-        const raw = window.sessionStorage.getItem(key);
-        return raw ? JSON.parse(raw) : null;
-    } catch (error) {
-        return null;
-    }
-}
-
-function writeSessionJson(key, value) {
-    try {
-        window.sessionStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-        // sessionStorage 不可用时放弃交棒，首页回落普通顶栏。
-    }
-}
-
-function writeSceneHandoff(state) {
-    writeSessionJson(SCENE_HANDOFF_KEY, state);
-}
-
-function persistTopbarScene(state) {
-    writeSessionJson(TOPBAR_SCENE_KEY, { ...state, t: Date.now() });
-}
+// ── 登录场景交棒：原图 → 全屏模糊背景；欢迎语入口独立保留 ──
 
 // 表单卡 → 一言玻璃卡的近似 FLIP 变形：从登录卡的位置/大小生长到居中。
 function morphStageFromRect(overlay, fromRect) {
@@ -527,22 +502,6 @@ function morphStageFromRect(overlay, fromRect) {
             stage.style.opacity = '';
         });
     });
-}
-
-function ensureTopbarSceneLayer(imageUrl) {
-    const topbar = document.querySelector('.app-topbar');
-    if (!topbar || !imageUrl) return;
-    let layer = topbar.querySelector('.app-topbar__scene');
-    if (!layer) {
-        layer = document.createElement('div');
-        layer.className = 'app-topbar__scene';
-        layer.setAttribute('aria-hidden', 'true');
-        layer.innerHTML = '<i></i><b></b>';
-        topbar.prepend(layer);
-    }
-    const imageNode = layer.querySelector('i');
-    if (imageNode) imageNode.style.backgroundImage = `url('${imageUrl}')`;
-    document.documentElement.classList.add('has-topbar-scene');
 }
 
 function ensureTopbarChip(tipText) {
@@ -619,35 +578,6 @@ function ensureTopbarChip(tipText) {
     }
 }
 
-// 首页 cookie 播放路径的收场：一言背景整体收缩进顶栏、化为模糊菜单背景。
-function collapseRevealToTopbar(overlay, imageUrl, tipText, onDone) {
-    const topbar = document.querySelector('.app-topbar');
-    const rect = topbar.getBoundingClientRect();
-    persistTopbarScene({ image: imageUrl, tip: tipText || '' });
-    ensureTopbarSceneLayer(imageUrl);
-
-    overlay.classList.add('is-scene-collapsing');
-    const backdrop = overlay.querySelector('.life-tip-backdrop');
-    if (backdrop) {
-        // 只动 transform/opacity（合成器动画）：逐帧改 inset/filter 会在低端机上掉帧。
-        backdrop.style.animation = 'none';
-        backdrop.style.willChange = 'transform, opacity';
-        backdrop.style.transition = `transform ${SCENE_COLLAPSE_MS}ms cubic-bezier(0.3, 0.7, 0.25, 1), opacity ${SCENE_COLLAPSE_MS}ms ease`;
-        window.requestAnimationFrame(() => {
-            const rise = Math.max(0, window.innerHeight - Math.max(56, rect.height + rect.top));
-            backdrop.style.transform = `translateY(-${rise}px)`;
-            backdrop.style.opacity = '0';
-        });
-    }
-    window.setTimeout(() => {
-        overlay.remove();
-        document.documentElement.classList.remove('has-cultivation-login-reveal');
-        document.body.classList.remove('has-cultivation-login-reveal');
-        ensureTopbarChip(tipText);
-        onDone?.();
-    }, SCENE_COLLAPSE_MS + 60);
-}
-
 // 场景选句：优先挑与登录背景图分类相配、且近期没看过的一句。
 function chooseSceneTip(loginTip, scene) {
     const tips = Array.isArray(loginTip?.tips) ? loginTip.tips.filter((tip) => tip && tip.text) : [];
@@ -678,7 +608,7 @@ export function playLoginSceneReveal(profile, options = {}) {
         if (scene?.imageUrl) {
             writeSceneHandoff({ image: scene.imageUrl, tip: '', t: Date.now() });
         }
-        window.setTimeout(() => onDone?.(), scene ? 560 : 420);
+        window.setTimeout(() => onDone?.(), window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : scene ? 560 : 420);
         return;
     }
     const others = (options.loginTip?.tips || []).filter((item) => item && item.id !== tip.id);
@@ -690,61 +620,12 @@ export function playLoginSceneReveal(profile, options = {}) {
     } : { imageUrl: null, tone: null, categories: [], fromRect });
 }
 
-// 首页开场：读取交棒状态，把满屏背景优雅收缩进顶栏。
+// Every authenticated root shares the backdrop owner, including teacher and
+// standalone editors. The tip chip is navigation, not a background container.
 function runSceneEntrance() {
-    const root = document.documentElement;
-    const handoff = readSessionJson(SCENE_HANDOFF_KEY);
-    try {
-        window.sessionStorage.removeItem(SCENE_HANDOFF_KEY);
-    } catch (error) {
-        // 忽略。
-    }
-    const hasCover = root.classList.contains('has-scene-cover');
-    const fresh = handoff?.image && Date.now() - (handoff.t || 0) < SCENE_HANDOFF_MAX_AGE_MS;
-
-    if (!fresh) {
-        root.classList.remove('has-scene-cover');
-        const persisted = readSessionJson(TOPBAR_SCENE_KEY);
-        if (persisted?.image) {
-            ensureTopbarSceneLayer(persisted.image);
-            ensureTopbarChip(persisted.tip);
-        }
-        return false;
-    }
-
-    persistTopbarScene({ image: handoff.image, tip: handoff.tip || '' });
-    ensureTopbarSceneLayer(handoff.image);
-
-    const topbar = document.querySelector('.app-topbar');
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
-    if (!hasCover || !topbar || reducedMotion) {
-        root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
-        ensureTopbarChip(handoff.tip);
-        return true;
-    }
-
-    const rect = topbar.getBoundingClientRect();
-    root.style.setProperty('--scene-cover-end', `${Math.max(56, Math.round(rect.height + rect.top))}px`);
-
-    let label = null;
-    if (handoff.tip) {
-        label = document.createElement('p');
-        label.className = 'scene-cover-tip';
-        label.textContent = handoff.tip;
-        document.body.appendChild(label);
-    }
-
-    window.setTimeout(() => {
-        root.classList.add('scene-cover-collapsing');
-        label?.classList.add('is-collapsing');
-        // 合成器动画在主线程忙时也能满帧跑，无需等首页脚本空闲。
-        window.setTimeout(() => {
-            root.classList.remove('has-scene-cover', 'scene-cover-collapsing');
-            label?.remove();
-            ensureTopbarChip(handoff.tip);
-        }, SCENE_COLLAPSE_MS + 80);
-    }, 140);
-    return true;
+    const backdrop = initPageBackdrop(document);
+    if (backdrop.scene?.tip) ensureTopbarChip(backdrop.scene.tip);
+    return backdrop.entered;
 }
 
 // ── 纯修为卡（无提示语时的兜底展示） ──────────────────────────────
@@ -847,7 +728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (document.body?.dataset.authenticatedUser !== 'true') {
         return;
     }
-    // 登录页交棒的背景收缩开场优先；播过就不再走 cookie 浮层，避免二次打断。
+    // 登录页交棒优先；播过就不再走 cookie 浮层，避免二次打断。
     const sceneEntered = runSceneEntrance();
     if (sceneEntered) {
         clearRevealCookie();

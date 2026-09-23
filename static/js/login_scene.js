@@ -104,12 +104,15 @@ export function initLoginScene() {
     const deadline = performance.now() + IMAGE_PRELOAD_TIMEOUT_MS;
     const timer = window.setTimeout(() => abort.abort(), IMAGE_PRELOAD_TIMEOUT_MS);
     const refresh = () => {
-        const clear = loaded && card.dataset.lqLoginCard === 'student'
-            && root.dataset.lqTier === 'A' && root.dataset.lqGlass === 'tinted'
+        // Both roles share the scene material. Readability comes from the
+        // sampled tone's paired fill/ink, not a second black sheet behind it.
+        const sceneMaterial = loaded
+            && ['A', 'B'].includes(root.dataset.lqTier) && root.dataset.lqGlass === 'tinted'
             && root.dataset.lqContrast !== 'more' && root.dataset.lqForcedColors !== 'true';
+        const clear = sceneMaterial && root.dataset.lqTier === 'A';
         card.classList.toggle('lq-glass--clear', clear);
         card.classList.toggle('lq-glass--thick', !clear);
-        if (clear) card.dataset.lqTone = scene.tone;
+        if (sceneMaterial) card.dataset.lqTone = scene.tone;
         else delete card.dataset.lqTone;
         if (frame) frame.dataset.lqLoginMaterial = clear ? 'clear' : 'thick';
     };

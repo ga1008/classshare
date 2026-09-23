@@ -11,8 +11,15 @@ import { initUserUIPreferences } from '../../../static/js/user_ui_preferences.js
 const bootstrap = readFileSync('templates/partials/lq_theme_core.js', 'utf8');
 class ElementDouble extends EventTarget {
   attrs = new Map<string, string>();
-  style: Record<string, string> = {};
+  style: any = { getPropertyValue: (name: string) => this.style[name] || '', getPropertyPriority: () => '',
+    setProperty: (name: string, value: string) => { this.style[name] = value; }, removeProperty: (name: string) => { delete this.style[name]; } };
   ownerDocument: any;
+  nodeType = 1;
+  tagName = 'DIV';
+  isConnected = true;
+  parentNode: ElementDouble | null = null;
+  get parentElement() { return this.parentNode; }
+  get nextSibling(): ElementDouble | null { return this.parentNode?.children[this.parentNode.children.indexOf(this) + 1] || null; }
   contentWindow: any;
   dataset: Record<string, string> = {};
   classList = { add: vi.fn(), remove: vi.fn(), toggle: vi.fn() };
@@ -24,6 +31,23 @@ class ElementDouble extends EventTarget {
   children: ElementDouble[] = [];
   querySelectorAll(_query: string): ElementDouble[] { return []; }
   querySelector(_query: string): ElementDouble | null { return null; }
+  append(node: ElementDouble) { this.insertBefore(node, null); }
+  insertBefore(node: ElementDouble, next: ElementDouble | null) {
+    node.remove(); node.parentNode = this;
+    const index = next ? this.children.indexOf(next) : -1;
+    if (index < 0) this.children.push(node); else this.children.splice(index, 0, node);
+  }
+  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(child => child !== this); this.parentNode = null; }
+  matches(query: string): boolean {
+    if (query === ':disabled') return this.disabled;
+    if (query === 'dialog[open]') return this.tagName === 'DIALOG' && this.open;
+    if (query.includes('[hidden]')) return this.hidden || this.hasAttribute('inert') || this.getAttribute('aria-hidden') === 'true';
+    return ['INPUT', 'SELECT', 'BUTTON', 'SUMMARY'].includes(this.tagName) || this.hasAttribute('tabindex');
+  }
+  closest(query: string): ElementDouble | null { return this.matches(query) ? this : this.parentNode?.closest(query) || null; }
+  getClientRects() { return [{}]; }
+  getBoundingClientRect() { return { x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 40, width: 100, height: 40 }; }
+  toggleAttribute(name: string, on: boolean) { if (on) this.setAttribute(name, ''); else this.removeAttribute(name); }
   contains(node: any): boolean { return this === node || this.children.some(child => child.contains(node)); }
   focus() { this.ownerDocument.activeElement = this; }
   constructor(attrs: Record<string, string> = {}) {
@@ -50,7 +74,11 @@ function environment({ attributes = {}, media = {}, full = true, nav = {}, cssTh
   const storage = vi.fn(() => { throw new Error('No account cache access'); });
   Object.defineProperty(win, 'localStorage', { get: storage });
   const fetch = vi.fn();
-  Object.assign(win, { document: doc, CustomEvent, navigator: nav, location: { origin: 'https://school.test', href: 'https://school.test/dashboard' }, fetch, postMessage: vi.fn() });
+  Object.assign(win, { document: doc, Event, CustomEvent, navigator: nav, location: { origin: 'https://school.test', href: 'https://school.test/dashboard' }, fetch, postMessage: vi.fn(),
+    innerWidth: 1280, innerHeight: 900, getComputedStyle: () => ({ visibility: 'visible', transitionDuration: '0s', animationDuration: '0s' }),
+    MutationObserver: class { observe() {} disconnect() {} } });
+  doc.getElementById = () => null;
+  doc.createElement = (tag: string) => { const node = new ElementDouble(); node.tagName = tag.toUpperCase(); node.ownerDocument = doc; return node; };
   win.parent = win;
   if (full) {
     win.CSS = { supports: () => { if (cssThrows) throw new Error('unsupported API'); return true; } };
@@ -256,13 +284,16 @@ describe('preference controls lifecycle and collapsed failure feedback', () => {
     const appearance = new ElementDouble(); appearance.dataset.uiPreferenceSelect = 'appearance';
     const glass = new ElementDouble(); glass.dataset.uiPreferenceSelect = 'glass';
     const select = [palette, appearance, glass];
+    select.forEach(node => { node.tagName = 'SELECT'; });
     const details = new ElementDouble();
-    const toggle = new ElementDouble();
+    const toggle = new ElementDouble(); toggle.tagName = 'SUMMARY';
+    const panel = new ElementDouble();
     const badge = new ElementDouble();
     const status = new ElementDouble();
-    details.children = [toggle, ...select];
-    details.querySelector = () => toggle;
-    [details, toggle, badge, status, ...select].forEach(node => { node.ownerDocument = env.doc; });
+    details.append(toggle); details.append(panel); select.forEach(node => panel.append(node));
+    details.querySelector = query => query.includes('toggle') ? toggle : query.includes('panel') ? panel : null;
+    panel.querySelectorAll = query => query.includes('select') ? select : [];
+    [details, toggle, panel, badge, status, ...select].forEach(node => { node.ownerDocument = env.doc; });
     env.body.children = [details, badge, status];
     env.body.dataset = { uiPalette: 'teal', appearancePreference: 'auto', glassPreference: 'tinted', uiPaletteVersion: '0', uiPaletteContext: 'account-a' };
     env.body.querySelectorAll = query => query.includes('select') ? select : query.includes('summary-status') ? [badge] : query.includes('palette-status') ? [status] : query.includes('details') ? [details] : [];
@@ -308,17 +339,23 @@ describe('preference controls lifecycle and collapsed failure feedback', () => {
     expect(env.status.classList.toggle).toHaveBeenLastCalledWith('is-visible', true);
     expect(env.appearance.getAttribute('aria-invalid')).toBe('true');
   });
-  it('closes on Escape with focus return and does not steal an outside target focus', () => {
+  it('closes on Escape with focus return and does not steal an outside target focus', async () => {
     const env = controls();
     env.details.open = true;
+    env.details.dispatchEvent(new Event('toggle'));
     env.appearance.focus();
-    env.details.dispatchEvent(Object.assign(new Event('keydown', { cancelable: true }), { key: 'Escape' }));
+    env.doc.dispatchEvent(Object.assign(new Event('keydown', { cancelable: true }), { key: 'Escape' }));
+    await vi.waitFor(() => expect(env.details.open).toBe(false));
+    await vi.waitFor(() => expect(env.doc.activeElement).toBe(env.toggle));
     expect(env.details.open).toBe(false);
     expect(env.doc.activeElement).toBe(env.toggle);
     const outside = new ElementDouble(); outside.ownerDocument = env.doc;
     env.details.open = true;
+    env.details.dispatchEvent(new Event('toggle'));
     outside.focus();
+    env.doc.dispatchEvent(Object.assign(new Event('pointerdown'), { button: 0 }));
     env.doc.dispatchEvent(new Event('click'));
+    await vi.waitFor(() => expect(env.details.open).toBe(false));
     expect(env.details.open).toBe(false);
     expect(env.doc.activeElement).toBe(outside);
   });

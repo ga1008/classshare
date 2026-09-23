@@ -82,6 +82,17 @@ class BackdropValueTests(unittest.TestCase):
 
 
 class BackdropLibraryTests(unittest.TestCase):
+    def test_fixed_image_is_a_manifest_key_and_does_not_reshuffle(self):
+        file = svc.backdrop_library()[0][0]
+        mode = f"image:{file}"
+        self.assertEqual(svc.validate_preference_changes({"backdrop": mode}), {"backdrop": mode})
+        for seed in ("account-a-day-1", "account-b-day-2"):
+            self.assertEqual(svc.backdrop_image_for(mode, seed), svc.BACKDROP_LIBRARY_BASE + file)
+            self.assertEqual(svc.resolve_backdrop({"backdrop": mode}, seed=seed)["mode"], mode)
+        for mode in ("image:missing.webp", "image:../../private.webp", "image:https://example.org/x.webp", "image:x.webp);color:red"):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                svc.validate_preference_changes({"backdrop": mode})
+
     def test_library_only_exposes_safe_file_names_and_is_deterministic(self):
         library = svc.backdrop_library()
         self.assertTrue(library)
@@ -173,6 +184,17 @@ class BackdropPersistenceTests(unittest.TestCase):
         current = svc.get_ui_preferences(self.conn, self.student)
         self.assertEqual((current["backdrop"], current["backdrop_color"]), ("scene", "#ffffff"))
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM user_ui_preferences").fetchone()[0], 0)
+
+    def test_fixed_image_saves_through_the_real_api_and_shares_the_cas_lock(self):
+        mode = f"image:{svc.backdrop_library()[0][0]}"
+        headers = {"X-UI-Preferences-Context": svc.preference_context_token(self.student)}
+        with patch.object(router_mod, "get_db_connection", side_effect=self.database), self.client() as client:
+            response = client.patch("/api/profile/ui-preferences", json={"version": 0, "backdrop": mode}, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(client.get("/api/profile/ui-preferences").json()["preferences"]["backdrop"], mode)
+            self.assertEqual(client.patch("/api/profile/ui-preferences", json={"version": 0, "backdrop": "off"}, headers=headers).status_code, 409)
+            self.assertEqual(client.patch("/api/profile/ui-preferences", json={"version": 1, "backdrop": "image:missing.webp"}, headers=headers).status_code, 422)
+        self.assertEqual(svc.get_ui_preferences(self.conn, self.teacher)["backdrop"], "scene")
 
     def test_first_write_and_later_writes_share_the_existing_cas_version(self):
         first = svc.update_ui_preferences(self.conn, self.student, changes={"backdrop": "off", "backdrop_color": "#123456"}, version=0)
@@ -290,6 +312,16 @@ class BackdropSSRTests(unittest.TestCase):
         payload = json.loads(re.search(r'data-lq-backdrop-catalog>(.*?)</script>', html, re.S)[1])
         self.assertEqual(payload, [{"key": f"scene-{key}", "name": name} for key, name in svc.BACKDROP_CATEGORIES])
 
+    def test_fixed_choice_is_rendered_and_no_topbar_background_is_bootstrapped(self):
+        file = svc.backdrop_library()[0][0]
+        svc.update_ui_preferences(self.conn, self.student, changes={"backdrop": f"image:{file}"}, version=0)
+        html = self.render(self.student)
+        self.assertIn(f'data-lq-backdrop-mode="image:{file}"', html)
+        self.assertIn(f'--lq-backdrop-paint: url({svc.BACKDROP_FROST_BASE}{file.rsplit(".", 1)[0]}.webp)', html)
+        self.assertIn('data-ui-backdrop-selected-image', html)
+        self.assertNotIn('lanshareTopbarScene', html)
+        self.assertNotIn('has-topbar-scene', html)
+
     def test_backdrop_layer_style_sheet_is_not_a_blur_host(self):
         css = (ROOT / "static/css/lq/components/page-backdrop.css").read_text(encoding="utf-8")
         declarations = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
@@ -353,18 +385,15 @@ class BackdropFrostTests(unittest.TestCase):
         # the account picked, and dimming it toward the theme would be wrong.
         self.assertEqual(off["frost_base"], "#0a1b2c")
 
-    def test_content_frost_has_a_cached_recipe_and_optional_media_features_do_not_gate_it(self):
+    def test_only_the_full_page_background_paints_the_cached_scene(self):
         css = (ROOT / "static/css/lq/materials.css").read_text(encoding="utf-8")
         declarations = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-        # Cached content frost stays separate from the live floating layer.
-        self.assertNotIn("backdrop-filter: blur(", declarations)
-        self.assertIn("--lq-frost-image", declarations)
-        self.assertIn("background-attachment: scroll, scroll, fixed", declarations)
-        # Unsupported optional media features must not silently disable frost.
-        # Runtime tests assert the important opt-outs on all material roles.
-        query = re.search(r"@media \(hover: hover\)[^{]*\{", declarations)
-        self.assertIsNotNone(query)
-        self.assertNotIn("prefers-reduced-transparency: no-preference", query.group(0))
+        self.assertNotIn("--lq-frost-image", declarations)
+        self.assertNotIn("background-attachment: scroll, scroll, fixed", declarations)
+        background = (ROOT / "static/css/lq/components/page-backdrop.css").read_text(encoding="utf-8")
+        self.assertIn("--lq-backdrop-paint", background)
+        self.assertIn("blur(var(--lq-backdrop-fallback-blur))", background)
+        self.assertIn("--ls-scene-opacity", background)
         boundary = (ROOT / "static/css/lq/components/material-boundaries.css").read_text(encoding="utf-8")
         self.assertIn("prefers-reduced-transparency: reduce", boundary)
         self.assertIn("backdrop-filter: none !important", boundary)

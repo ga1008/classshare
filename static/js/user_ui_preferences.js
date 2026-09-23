@@ -1,4 +1,7 @@
 import { initTheme } from './lq/theme.js';
+import { initPageBackdrop, isBackdropImageMode, BACKDROP_BASE } from './page_backdrop.js';
+import { enhancePreferencesPanels } from './ui_preferences_panel.js';
+export { createBackdropLayer, stableIndex, pickBackdropFile } from './page_backdrop.js';
 
 /** SSR is authoritative. No browser cache crosses account boundaries. */
 export const PALETTE_KEYS = Object.freeze(['teal', 'indigo', 'sky', 'mint', 'violet', 'rose']);
@@ -11,7 +14,6 @@ export const BACKDROP_MODES = Object.freeze(['scene', 'off', ...BACKDROP_CATEGOR
 // replaced by the default; no arbitrary string is written to a custom property.
 export const BACKDROP_COLOR = /^#[0-9a-f]{6}$/;
 export const DEFAULT_BACKDROP_COLOR = '#' + 'f'.repeat(6);
-const BACKDROP_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(?:webp|jpg|jpeg|png)$/;
 const FIELDS = Object.freeze(['palette_key', 'appearance', 'glass', 'backdrop', 'backdrop_color']);
 const LABELS = { palette_key: '配色', appearance: '外观', glass: '玻璃效果', backdrop: '页面背景', backdrop_color: '背景纯色' };
 const VALUE_LABELS = { auto: '跟随系统', light: '浅色', dark: '深色', tinted: '柔和玻璃', off: '关闭玻璃', teal: '青碧', indigo: '靛蓝', sky: '晴空', mint: '薄荷', violet: '紫罗兰', rose: '玫瑰', scene: '开屏大图' };
@@ -19,94 +21,9 @@ const normalize = value => ({
     palette_key: normalizePalette(value.palette_key),
     appearance: ['auto', 'light', 'dark'].includes(value.appearance) ? value.appearance : 'auto',
     glass: value.glass === 'off' ? 'off' : 'tinted',
-    backdrop: BACKDROP_MODES.includes(value.backdrop) ? value.backdrop : 'scene',
+    backdrop: BACKDROP_MODES.includes(value.backdrop) || isBackdropImageMode(value.backdrop) ? value.backdrop : 'scene',
     backdrop_color: BACKDROP_COLOR.test(String(value.backdrop_color || '')) ? value.backdrop_color : DEFAULT_BACKDROP_COLOR,
 });
-
-/** FNV-1a, byte for byte with the server so a preview shows the saved image. */
-export function stableIndex(seed, size) {
-    if (!(size > 0)) return 0;
-    let digest = 2166136261;
-    for (const byte of new TextEncoder().encode(String(seed))) {
-        digest = Math.imul(digest ^ byte, 16777619) >>> 0;
-    }
-    return digest % size;
-}
-
-/** Pick the same library file the server would for this account-day and mode. */
-export function pickBackdropFile(images, { mode, seed, label = null }) {
-    if (mode === 'off') return null;
-    const library = images.filter(item => item && BACKDROP_FILE.test(String(item.file || '')))
-        .map(item => ({ file: item.file, categories: Array.isArray(item.categories) ? item.categories : [] }))
-        .sort((first, second) => first.file < second.file ? -1 : first.file > second.file ? 1 : 0);
-    const pool = label ? library.filter(item => item.categories.includes(label)) : library;
-    const source = pool.length ? pool : library;
-    return source.length ? source[stableIndex(`${seed}|${mode}`, source.length)].file : null;
-}
-
-/** The fixed viewport-bottom layer. It is the surface glass is seen against,
- * so it never gains a backdrop-filter and never becomes a blur host itself. */
-export function createBackdropLayer(root = document) {
-    // Hosts without the SSR layer (or without a DOM at all) stay inert.
-    const find = selector => (typeof root?.querySelector === 'function' ? root.querySelector(selector) : null);
-    const layer = find('[data-lq-page-backdrop]');
-    let catalog = [];
-    try { catalog = JSON.parse(find('[data-lq-backdrop-catalog]')?.textContent || '[]'); }
-    catch (_) { catalog = []; }
-    const labelOf = mode => (Array.isArray(catalog) ? catalog : []).find(item => item?.key === mode)?.name || null;
-    let library = null;
-    let disposed = false;
-    let generation = 0;
-
-    function images() {
-        if (!library) {
-            const url = layer?.dataset.lqBackdropManifest;
-            library = !url ? Promise.resolve([]) : fetch(url, { credentials: 'same-origin', cache: 'force-cache' })
-                .then(response => response.ok ? response.json() : null)
-                .then(data => Array.isArray(data?.images) ? data.images : [])
-                .catch(() => []);
-        }
-        return library;
-    }
-    function paint(file, color) {
-        layer.dataset.lqBackdropImageUrl = file ? layer.dataset.lqBackdropBase + file : '';
-        // Only whitelisted library file names reach this property.
-        layer.style.setProperty('--lq-backdrop-image', file ? `url(${layer.dataset.lqBackdropBase}${file})` : 'none');
-        paintFrost(file, color);
-    }
-
-    /* The frost pair mirrors the pick onto the document root, where every
-     * material reads it. Preview has to write it too: a panel paints the
-     * pre-blurred slice itself, so a scene the account is still trying out
-     * would otherwise keep frosting the previous image. Derivatives are
-     * always .webp, whatever the source container was. */
-    function paintFrost(file, color) {
-        const root = layer.ownerDocument?.documentElement;
-        if (!root) return;
-        const name = file ? `${file.replace(/\.[^.]+$/, '')}.webp` : '';
-        root.style.setProperty('--lq-frost-image', name ? `url(${layer.dataset.lqBackdropBase}frost/${name})` : 'none');
-        // With no image there is nothing behind the glass but the chosen colour.
-        root.style.setProperty('--lq-frost-base', file ? 'hsl(var(--ls-background))' : color);
-        root.dataset.lqFrost = file ? 'on' : 'off';
-    }
-    return {
-        layer,
-        apply(values) {
-            if (!layer || disposed) return;
-            const mine = ++generation;
-            layer.dataset.lqBackdropMode = values.backdrop;
-            layer.dataset.lqBackdropColor = values.backdrop_color;
-            layer.style.setProperty('--lq-backdrop-color', values.backdrop_color);
-            if (values.backdrop === 'off') { paint(null, values.backdrop_color); return; }
-            void images().then(list => {
-                // A later choice already repainted; a slow manifest never wins.
-                if (disposed || mine !== generation) return;
-                paint(pickBackdropFile(list, { mode: values.backdrop, seed: layer.dataset.lqBackdropSeed || '', label: labelOf(values.backdrop) }), values.backdrop_color);
-            });
-        },
-        dispose() { disposed = true; },
-    };
-}
 
 /** Per-field user intent, with a single serialized whole-row CAS queue. */
 export function createUIPreferencesController({ initial, request, onPreview = () => {}, onStatus = () => {}, onConfirmed = () => {}, debounceMs = 240 }) {
@@ -256,6 +173,7 @@ export function createPaletteController(options) {
 export function initUserUIPreferences(documentRoot = document) {
     // Most pages have no controls but still follow system/accessibility changes.
     const theme = initTheme(documentRoot);
+    const backdrop = initPageBackdrop(documentRoot);
     const scope = documentRoot.body;
     if (!scope?.hasAttribute('data-ui-palette') || scope.dataset.uiPaletteMounted === 'true') return null;
     const selects = [...scope.querySelectorAll('[data-ui-palette-select], [data-ui-preference-select]')];
@@ -287,15 +205,18 @@ export function initUserUIPreferences(documentRoot = document) {
             cleanups.push(() => { if (live === null) node.removeAttribute('aria-live'); else node.setAttribute('aria-live', live); });
         });
     }
-    const backdrop = createBackdropLayer(scope);
-    cleanups.push(() => backdrop.dispose());
     function syncControls(values) {
-        selects.forEach(node => { node.value = values[fieldOf(node)]; });
+        selects.forEach(node => {
+            const selectedImage = node.querySelector('[data-ui-backdrop-selected-image]');
+            if (selectedImage) { selectedImage.hidden = !isBackdropImageMode(values.backdrop); selectedImage.value = selectedImage.hidden ? '' : values.backdrop; }
+            node.value = values[fieldOf(node)];
+        });
         inputs.forEach(node => {
             if (node.type === 'color') node.value = values.backdrop_color;
             else node.checked = node.type === 'radio' ? node.value === values.appearance : values.glass === 'tinted';
         });
         choices.forEach(node => node.setAttribute('aria-pressed', String(node.dataset.uiPreferenceValue === values.palette_key)));
+        scope.querySelectorAll('[data-ui-backdrop-file]').forEach(node => node.setAttribute('aria-pressed', String(`image:${node.dataset.uiBackdropFile}` === values.backdrop)));
     }
     function status(kind, message) {
         clearTimeout(statusTimer);
@@ -356,6 +277,33 @@ export function initUserUIPreferences(documentRoot = document) {
         onStatus: status,
     });
     syncControls(controller.snapshot().desired);
+    scope.querySelectorAll('[data-ui-backdrop-gallery]').forEach(gallery => {
+        let loaded = false;
+        const grid = gallery.querySelector('[data-ui-backdrop-grid]'), filter = gallery.querySelector('[data-ui-backdrop-category]'), message = gallery.querySelector('[data-ui-backdrop-gallery-status]');
+        const render = async () => {
+            const list = await backdrop.images();
+            if (domDisposed) return;
+            loaded = true;
+            const visible = list.filter(item => !filter.value || item.categories?.includes(filter.value));
+            grid.replaceChildren();
+            visible.forEach((item, index) => {
+                const button = documentRoot.createElement('button'); button.type = 'button'; button.dataset.uiBackdropFile = item.file;
+                button.setAttribute('aria-pressed', String(controller.snapshot().desired.backdrop === `image:${item.file}`));
+                const label = `${(item.categories || []).join(' · ') || '风景'} ${index + 1}`;
+                button.setAttribute('aria-label', `选择背景：${label}`);
+                const image = documentRoot.createElement('img'); image.src = BACKDROP_BASE + item.file; image.alt = ''; image.loading = 'lazy'; image.decoding = 'async'; image.width = 192; image.height = 108;
+                const text = documentRoot.createElement('span'); text.textContent = label;
+                button.append(image, text); grid.append(button);
+            });
+            message.textContent = list.length ? `共 ${visible.length} 张图片，点击即可预览并保存。` : '图库暂时不可用，请稍后重新展开。';
+        };
+        listen(gallery, 'toggle', () => { if (gallery.open && (!loaded || !grid.children.length)) void render(); });
+        listen(filter, 'change', () => { void render(); });
+        listen(grid, 'click', event => {
+            const button = event.target.closest('[data-ui-backdrop-file]');
+            if (button && grid.contains(button) && !controller.snapshot().identityChanged) controller.select('backdrop', `image:${button.dataset.uiBackdropFile}`);
+        });
+    });
     [...selects, ...inputs].forEach(node => {
         listen(node, 'change', () => {
             if (node.disabled || (node.type === 'radio' && !node.checked)) return;
@@ -370,20 +318,7 @@ export function initUserUIPreferences(documentRoot = document) {
         });
     });
     choices.forEach(node => listen(node, 'click', () => { if (!node.disabled) controller.select(fieldOf(node), node.dataset.uiPreferenceValue); }));
-    const details = [...scope.querySelectorAll('[data-ui-preferences-details]')];
-    details.forEach(panel => listen(panel, 'keydown', event => {
-        if (event.key !== 'Escape' || !panel.open) return;
-        event.preventDefault(); event.stopPropagation();
-        panel.open = false;
-        panel.querySelector('[data-ui-preferences-toggle]')?.focus({ preventScroll: true });
-    }));
-    if (details.length) listen(documentRoot, 'click', event => {
-        details.forEach(panel => {
-            if (!panel.open || panel.contains(event.target)) return;
-            panel.open = false;
-            if (panel.contains(documentRoot.activeElement)) panel.querySelector('[data-ui-preferences-toggle]')?.focus({ preventScroll: true });
-        });
-    });
+    cleanups.push(enhancePreferencesPanels(scope));
     const ready = () => { if (!domDisposed) scope.classList.add('ui-palette-ready'); };
     const frame = documentRoot.defaultView.requestAnimationFrame?.(ready);
     if (frame === undefined) ready();

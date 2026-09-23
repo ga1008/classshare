@@ -3,8 +3,8 @@
    placeholder ink are pinned to the two tokens that
    tests/test_lq_tokens.py::GlassMaterialContrastTests guarantees at 4.5:1 on
    --ls-glass-fill-control over both extremes of the page backdrop. */
-.lq-field { display: grid; gap: var(--ls-s-1); min-width: 0; width: 100%; color: hsl(var(--ls-ink)); font-family: var(--ls-font-sans); }
-.lq-field__label { color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-sub); line-height: var(--ls-leading-sub); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
+.lq-field { display: grid; gap: var(--ls-s-1); min-width: 0; width: 100%; color: hsl(var(--lq-control-ink, var(--ls-ink))); font-family: var(--ls-font-sans); }
+.lq-field__label { color: hsl(var(--lq-control-ink, var(--ls-ink-2))); font-size: var(--ls-t-sub); line-height: var(--ls-leading-sub); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
 .lq-field__required { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-field__control { display: flex; align-items: center; gap: var(--ls-s-2); min-width: 0; }
 .lq-input, .lq-textarea, .lq-select {
@@ -15,8 +15,8 @@
     padding: var(--ls-s-2) var(--ls-s-3);
     border: 1px solid hsl(var(--ls-input));
     border-radius: var(--ls-r-sm);
-    background: hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink));
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink)));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     font: inherit;
@@ -29,28 +29,30 @@
 /* The placeholder sits on the control fill, where the pinned secondary token
    is --ls-ink-2, not --ls-ink-3 (that one is only guaranteed on the .74
    content material). The opacity reset keeps Firefox from thinning it. */
-.lq-input::placeholder, .lq-textarea::placeholder { color: hsl(var(--ls-ink-2)); opacity: 1; }
+.lq-input::placeholder, .lq-textarea::placeholder { color: hsl(var(--lq-control-ink, var(--ls-ink-2))); opacity: 1; }
 .lq-control--sm { min-height: var(--ls-s-8); padding-block: var(--ls-s-1); }
 .lq-control--lg { min-height: var(--ls-s-12); font-size: var(--ls-t-body); }
 .lq-input[type="search"] { min-height: calc(var(--ls-s-8) + var(--ls-s-1)); border-radius: var(--ls-r-capsule); }
 .lq-input[type="search"]::-webkit-search-cancel-button { appearance: none; }
 .lq-textarea { min-height: calc(var(--ls-s-12) * 2); resize: vertical; }
 .lq-select { cursor: pointer; }
+/* Native popup options have their own OS surface, outside the scene carrier. */
+.lq-select option { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); }
 .lq-input[readonly], .lq-textarea[readonly] { background: transparent; border-color: transparent; border-bottom-color: hsl(var(--ls-input)); border-bottom-style: dashed; border-radius: 0; }
 .lq-field__help, .lq-field__error, .lq-field__count, .lq-form-actions__hint, .lq-form-section__description { margin: 0; font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
 .lq-field__help, .lq-field__count, .lq-form-actions__hint, .lq-form-section__description { color: hsl(var(--ls-ink-3)); }
 .lq-field__error { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-field__count { text-align: end; font-variant-numeric: tabular-nums; }
-.lq-field__prefix, .lq-field__suffix { flex: 0 0 auto; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-sub); }
-.lq-field__clear { display: inline-flex; flex: 0 0 calc(var(--ls-s-10) + var(--ls-s-1)); align-items: center; justify-content: center; min-width: calc(var(--ls-s-10) + var(--ls-s-1)); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); border: 1px solid transparent; border-radius: var(--ls-r-capsule); background: transparent; color: hsl(var(--ls-ink-2)); cursor: pointer; font-size: var(--ls-t-title2); }
+.lq-field__prefix, .lq-field__suffix { flex: 0 0 auto; color: hsl(var(--lq-control-ink, var(--ls-ink-2))); font-size: var(--ls-t-sub); }
+.lq-field__clear { display: inline-flex; flex: 0 0 calc(var(--ls-s-10) + var(--ls-s-1)); align-items: center; justify-content: center; min-width: calc(var(--ls-s-10) + var(--ls-s-1)); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); border: 1px solid transparent; border-radius: var(--ls-r-capsule); background: transparent; color: hsl(var(--lq-control-ink, var(--ls-ink-2))); cursor: pointer; font-size: var(--ls-t-title2); }
 .lq-field__clear[hidden] { display: none; }
 .lq-choice { display: flex; align-items: center; gap: var(--ls-s-2); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); width: fit-content; max-width: 100%; cursor: pointer; }
 .lq-checkbox, .lq-radio { flex: 0 0 var(--ls-s-5); width: var(--ls-s-5); height: var(--ls-s-5); min-height: 0; margin: 0; padding: 0; accent-color: hsl(var(--ls-primary)); cursor: pointer; }
 .lq-choice__text { min-width: 0; overflow-wrap: anywhere; }
 /* Off is control glass; on stays a solid primary track. A two-state control
    has to be unmistakable at a glance, so only one of its states is glass. */
-.lq-switch { appearance: none; position: relative; flex: 0 0 calc(var(--ls-s-12) + var(--ls-s-1) * .75); width: calc(var(--ls-s-12) + var(--ls-s-1) * .75); height: calc(var(--ls-s-8) - 1px); min-height: 0; margin: 0; padding: 0; border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-glass-fill-control)); -webkit-backdrop-filter: none; backdrop-filter: none; cursor: pointer; }
-.lq-switch::after { content: ''; position: absolute; top: calc(var(--ls-s-1) / 2); inset-inline-start: calc(var(--ls-s-1) / 2); width: var(--ls-s-6); height: var(--ls-s-6); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-ink-2)); transition: transform var(--ls-dur-fast) var(--ls-ease-out); }
+.lq-switch { appearance: none; position: relative; flex: 0 0 calc(var(--ls-s-12) + var(--ls-s-1) * .75); width: calc(var(--ls-s-12) + var(--ls-s-1) * .75); height: calc(var(--ls-s-8) - 1px); min-height: 0; margin: 0; padding: 0; border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-capsule); background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); -webkit-backdrop-filter: none; backdrop-filter: none; cursor: pointer; }
+.lq-switch::after { content: ''; position: absolute; top: calc(var(--ls-s-1) / 2); inset-inline-start: calc(var(--ls-s-1) / 2); width: var(--ls-s-6); height: var(--ls-s-6); border-radius: var(--ls-r-capsule); background: hsl(var(--lq-control-ink, var(--ls-ink-2))); transition: transform var(--ls-dur-fast) var(--ls-ease-out); }
 .lq-switch:checked { background: hsl(var(--ls-primary)); border-color: hsl(var(--ls-primary)); }
 .lq-switch:checked::after { background: hsl(var(--ls-on-primary)); transform: translateX(var(--ls-s-5)); }
 [dir="rtl"] .lq-switch:checked::after { transform: translateX(calc(var(--ls-s-5) * -1)); }
@@ -59,19 +61,19 @@
 .lq-range::-moz-range-track { height: var(--ls-s-1); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-input)); }
 .lq-range::-webkit-slider-thumb { appearance: none; width: var(--ls-s-6); height: var(--ls-s-6); margin-top: calc(var(--ls-s-5) / -2); border: 1px solid hsl(var(--ls-primary)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-primary)); box-shadow: var(--ls-shadow-1); }
 .lq-range::-moz-range-thumb { width: var(--ls-s-6); height: var(--ls-s-6); border: 1px solid hsl(var(--ls-primary)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-primary)); box-shadow: var(--ls-shadow-1); }
-.lq-range__value { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: var(--ls-s-10); min-height: calc(var(--ls-s-8) - var(--ls-s-1)); padding-inline: var(--ls-s-2); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-capsule); background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control)); color: hsl(var(--ls-ink)); font-size: var(--ls-t-sub); font-variant-numeric: tabular-nums; text-align: center; }
+.lq-range__value { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: var(--ls-s-10); min-height: calc(var(--ls-s-8) - var(--ls-s-1)); padding-inline: var(--ls-s-2); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-capsule); background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); color: hsl(var(--lq-control-ink, var(--ls-ink))); font-size: var(--ls-t-sub); font-variant-numeric: tabular-nums; text-align: center; }
 /* The ring is the shared one: a 3px ring plus a shadow halo on fields while
    buttons and chips wore a 2px outline was the most visible drift of all. */
 .lq-field [aria-invalid="true"] { border-color: hsl(var(--ls-tone-danger-fg)); }
 /* Disabled names a muted ink on the same control fill. Fading a translucent
    field with opacity would take its label and its value down with it. */
-.lq-field :is(input, textarea, select, button):disabled { opacity: 1; cursor: not-allowed; color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
-.lq-field :is(.lq-input, .lq-textarea):disabled::placeholder { color: hsl(var(--ls-ink-2)); }
+.lq-field :is(input, textarea, select, button):disabled:not(.is-loading, [aria-busy="true"]) { opacity: 1; cursor: not-allowed; color: hsl(var(--lq-control-ink, var(--ls-ink-2))); border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
+.lq-field :is(.lq-input, .lq-textarea):disabled::placeholder { color: hsl(var(--lq-control-ink, var(--ls-ink-2))); }
 .lq-field :is(.lq-checkbox, .lq-radio, .lq-switch, .lq-range):disabled { opacity: .65; }
-.lq-choice:has(:disabled) .lq-choice__text { color: hsl(var(--ls-ink-2)); }
+.lq-choice:has(:disabled) .lq-choice__text { color: hsl(var(--lq-control-ink, var(--ls-ink-2))); }
 .lq-form-section { min-width: 0; margin: 0 0 var(--ls-s-8); padding: 0; border: 0; }
 .lq-form-section.lq-surface { padding: var(--ls-s-6); border: 1px solid hsl(var(--ls-line)); }
-.lq-form-section__title { max-width: 100%; padding: 0; color: hsl(var(--ls-ink)); font-size: var(--ls-t-headline); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
+.lq-form-section__title { max-width: 100%; padding: 0; color: hsl(var(--lq-control-ink, var(--ls-ink))); font-size: var(--ls-t-headline); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
 .lq-form-section__description { margin-bottom: var(--ls-s-4); }
 .lq-form-section__content { display: grid; gap: var(--ls-s-4); min-width: 0; }
 .lq-form-actions { display: grid; gap: var(--ls-s-2); margin-top: var(--ls-s-6); }
@@ -83,7 +85,7 @@
 .lq-error-summary a { display: inline-block; padding-block: var(--ls-s-2); color: inherit; text-decoration: underline; text-underline-offset: calc(var(--ls-s-1) / 2); }
 .lq-error-summary:focus-visible, .lq-error-summary a:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
-    .lq-field__clear:hover:not(:disabled) { background: hsl(var(--ls-glass-fill-control)); }
+    .lq-field__clear:hover:not(:disabled) { background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); }
 }
 @media (pointer: coarse) {
     .lq-input, .lq-select, .lq-input[type="search"], .lq-error-summary a { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); }

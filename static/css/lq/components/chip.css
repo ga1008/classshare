@@ -10,8 +10,8 @@
     padding: calc(var(--ls-s-1) / 2) var(--ls-s-3);
     border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--ls-r-capsule);
-    background: hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink-2));
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     font-family: var(--ls-font-sans);
@@ -66,17 +66,8 @@
    control, which would take the label down with the fill. */
 .lq-chip--filter:disabled,
 .lq-chip:has(> .lq-chip__remove:disabled),
-.lq-chip__remove:disabled { opacity: 1; cursor: not-allowed; color: hsl(var(--ls-ink-2)); }
-.lq-chip--filter:disabled { border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
-/* Inside a material the chip keeps the control fill and only inherits the
-   host ink; a second, heavier fill would break the scale. */
-.lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]):not(:disabled) {
-    color: hsl(var(--lq-material-ink, var(--ls-glass-ink)));
-}
-.lq-glass--clear .lq-chip:not(.lq-chip--status),
-.lq-glass[data-lq-tone="dark"] .lq-chip:not(.lq-chip--status) {
-    background: hsl(var(--ls-glass-fill-strong));
-}
+.lq-chip__remove:disabled { opacity: 1; cursor: not-allowed; color: hsl(var(--lq-control-ink, var(--ls-ink-2))); }
+.lq-chip--filter:disabled { background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
 @media (pointer: coarse) {
     .lq-chip--filter { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); min-width: calc(var(--ls-s-10) + var(--ls-s-1)); }
 }

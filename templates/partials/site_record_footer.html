@@ -1,5 +1,5 @@
 {% if site_record and (site_record.icp_number or site_record.owner_statement) %}
-<footer class="site-record-footer" aria-label="备案信息与网站所有权声明">
+<footer class="site-record-footer" aria-label="备案信息与网站所有权声明"{% if _lq_centered|default(false) %} data-lq-material="raised"{% endif %}>
     {% if site_record.icp_number %}
     <div class="site-record-footer__meta">
         <a

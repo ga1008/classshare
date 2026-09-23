@@ -178,13 +178,13 @@
    control fill; the accent survives in the tint and the border, which is
    where a translucent control can afford to carry it. */
 .lq-btn--glass {
-    background: hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink));
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink)));
     border-color: hsl(var(--ls-glass-line));
 }
 .lq-btn--soft {
-    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink));
+    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink)));
     border-color: hsl(var(--ls-primary));
 }
 /* Ghost keeps no fill at rest -- a ghost with a resting fill is no longer the
@@ -192,7 +192,7 @@
    Its interactive surfaces below use the control fill. */
 .lq-btn--ghost {
     background: transparent;
-    color: hsl(var(--ls-ink-2));
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
 }
 .lq-btn--destructive {
     background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-glass-fill-control));
@@ -208,23 +208,18 @@
     color: hsl(var(--ls-on-primary-soft));
     text-underline-offset: calc(var(--ls-s-1) / 2);
 }
-.lq-glass :is(.lq-btn--ghost, .lq-btn--link) { color: hsl(var(--lq-material-ink, var(--ls-glass-ink))); }
-.lq-glass .lq-btn--glass { color: hsl(var(--lq-material-ink, var(--ls-glass-ink))); }
-/* A dark-toned or image-backed host lets far more through than the guarded
-   page backdrop, so a control on it keeps the raised fill to stay readable. */
-.lq-glass--clear .lq-btn--glass,
-.lq-glass[data-lq-tone="dark"] .lq-btn--glass {
-    background: hsl(var(--ls-glass-fill-strong));
-}
+/* A scene owns a paired control fill and ink; do not mix its light ink with
+   the root theme's light fill. Filled actions keep their own colour pair. */
+.lq-glass :is(.lq-btn--ghost, .lq-btn--link) { color: hsl(var(--lq-control-ink, var(--ls-ink))); }
 /* Focus ring and press live in the shared block: a button that rings 2px
    while a field rings 3px is exactly the drift this package removes. */
 /* Disabled is a named colour pair, not a fade. Halving the alpha of an
    already translucent control fades the label and the fill together and the
    label is what has to stay readable, so the state names its own muted ink on
    the same control fill and keeps a visible edge. */
-.lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
-    background: hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink-2));
+.lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]):not(.is-loading, [aria-busy="true"]) {
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
     border-color: hsl(var(--ls-line-strong));
     border-style: dashed;
     box-shadow: none;
@@ -237,7 +232,7 @@
    an underline for the link. The lift, the halo and the timing are shared. */
 @media (hover: hover) and (pointer: fine) {
     .lq-btn--ghost:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) {
-        background: hsl(var(--ls-glass-fill-control));
+        background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
     }
     .lq-btn--link:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) { text-decoration: underline; }
 }

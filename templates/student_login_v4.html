@@ -210,7 +210,7 @@
 
 
 {% block card_content %}
-{% if _lq_centered %}<div class="lq-login-frame" data-lq-login-material="thick"><div class="lq-scrim" aria-hidden="true"></div>{% endif %}
+{% if _lq_centered %}<div class="lq-login-frame" data-lq-login-material="thick">{% endif %}
 <div class="login-card{% if _lq_centered %} lq-login-card lq-glass lq-glass--thick{% endif %}"{% if _lq_centered %} data-lq-login-card="student"{% endif %} data-student-login-root data-default-mode="password">
     <div class="login-logo logo-student">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">

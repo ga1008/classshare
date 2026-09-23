@@ -1,5 +1,6 @@
 /* S4 centered family only. The original branch continues to use centered.css. */
 body.lq-centered-page {
+    --lq-login-width: 448px;
     min-height: 100svh;
     background: hsl(var(--ls-surface-0));
     color: hsl(var(--ls-ink));
@@ -11,13 +12,9 @@ body.lq-centered-page {
     padding: var(--ls-s-8) var(--ls-s-4);
     min-width: 0;
 }
-/* 以下四处刻意保持不透明，不是漏网：
-   1) body 是页面画布本身，不是面板；背景图/场景图是它上面的层。
-   2) 跳转链接只在键盘聚焦时出现，必须在任何背景上一眼可读。
-   3) .lq-login-feedback 与 .student-identity-chip 位于登录卡内，而登录卡在有
-      合格背景图时是 clear 级（.22）玻璃；这两块要在照片上承载错误信息与身份
-      信息，半透明会直接击穿 D 包那 1264 项实卡对比结论。
-   4) .site-record-footer 是备案信息，法务要求恒可读。 */
+/* The scene's material owns fill, frost and the paired foreground. The page
+   only owns spacing; it never adds a second scrim underneath the glass. Error
+   feedback and identity details keep their guarded semantic surface. */
 .lq-centered-page .lq-skip-link {
     position: fixed;
     top: var(--ls-s-2);
@@ -34,18 +31,12 @@ body.lq-centered-page {
     position: relative;
     isolation: isolate;
     width: 100%;
-    max-width: 420px;
+    max-width: var(--lq-login-width);
     border-radius: var(--ls-r-2xl);
 }
-.lq-login-frame > .lq-scrim {
-    display: none;
-    border-radius: inherit;
-    background: hsl(var(--ls-scrim-login));
-}
-.lq-login-frame[data-lq-login-material="clear"] > .lq-scrim { display: block; }
 body.lq-centered-page .lq-login-card {
     width: 100%;
-    max-width: 420px;
+    max-width: var(--lq-login-width);
     padding: var(--ls-s-8);
     border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--ls-r-2xl);
@@ -53,7 +44,7 @@ body.lq-centered-page .lq-login-card {
     color: hsl(var(--lq-material-ink));
     box-shadow: var(--ls-glass-shadow-strong);
     animation: none;
-    /* Material fill, scrim and foreground must change in the same frame. */
+    /* Material fill and foreground must change in the same frame. */
     transition: border-color var(--ls-dur-base) var(--ls-ease-out);
 }
 .lq-centered-page .lq-login-card h1 {
@@ -63,14 +54,16 @@ body.lq-centered-page .lq-login-card {
     font-weight: var(--ls-weight-display);
     line-height: var(--ls-leading-display);
     overflow-wrap: anywhere;
+    letter-spacing: -.025em;
 }
 .lq-centered-page .lq-login-card .subtitle {
     margin: 0 0 var(--ls-s-6);
-    color: inherit;
+    color: hsl(var(--lq-material-muted));
     font-size: var(--ls-t-footnote);
     line-height: var(--ls-leading-body);
+    text-wrap: balance;
 }
-.lq-centered-page .login-logo { width: var(--ls-s-16); height: var(--ls-s-16); margin-bottom: var(--ls-s-4); background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
+.lq-centered-page .login-logo { width: var(--ls-s-16); height: var(--ls-s-16); margin-bottom: var(--ls-s-4); background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); color: inherit; border: 1px solid hsl(var(--ls-glass-line)); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)); }
 .lq-centered-page .lq-login-card form,
 .lq-centered-page .modal-body form { display: grid; gap: var(--ls-s-4); text-align: start; }
 .lq-centered-page .lq-login-card form > .lq-btn,
@@ -80,7 +73,7 @@ body.lq-centered-page .lq-login-card {
 .lq-centered-page .login-panel { text-align: start; }
 .lq-centered-page .login-panel[hidden] { display: none; }
 .lq-centered-page :is(.login-panel-copy,.identity-panel-note) { margin: 0 0 var(--ls-s-4); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); color: hsl(var(--ls-ink-2)); }
-.lq-centered-page .lq-login-card .identity-panel-note { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: var(--ls-r-sm); padding: var(--ls-s-3); }
+.lq-centered-page .lq-login-card .identity-panel-note { color: hsl(var(--lq-material-muted)); background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-md); padding: var(--ls-s-3); }
 .lq-centered-page .identity-panel-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2); margin-bottom: var(--ls-s-3); }
 .lq-centered-page .identity-panel-title { margin: 0; font-size: var(--ls-t-headline); color: inherit; }
 .lq-centered-page .login-inline-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2); margin-top: var(--ls-s-3); }
@@ -100,7 +93,7 @@ body.lq-centered-page .lq-login-card {
 .lq-centered-page .lq-login-feedback { margin: 0; padding: var(--ls-s-3); background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-surface-1)); color: hsl(var(--ls-tone-danger-fg)); border: 1px solid hsl(var(--ls-tone-danger-fg)); border-radius: var(--ls-r-sm); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
 .lq-centered-page .lq-login-feedback[hidden] { display: none; }
 .lq-centered-page :is(.link-button,.footer-links a,.lq-login-feedback):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
-.lq-centered-page .lq-login-card.lq-glass--clear :is(.link-button,.footer-links a):focus-visible { outline-color: hsl(var(--ls-fixed-white)); }
+.lq-centered-page .lq-login-card :is(.link-button,.footer-links a):focus-visible { outline-color: hsl(var(--lq-material-ink)); }
 .lq-centered-page .student-identity-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--ls-s-2); margin-bottom: var(--ls-s-4); }
 .lq-centered-page .student-identity-chip { min-width: 0; padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-sm); background: hsl(var(--ls-surface-2)); }
 .lq-centered-page .student-identity-chip span { display: block; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); }
@@ -110,9 +103,12 @@ body.lq-centered-page .lq-login-card {
 .lq-centered-page .forgot-class-field .lq-input { flex: 1; width: 0; min-width: 0; text-align: center; }
 .lq-centered-page .forgot-class-affix { max-width: 32%; overflow-wrap: anywhere; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); }
 .lq-centered-page .forgot-class-affix:empty { display: none; }
-body.lq-centered-page .site-record-footer { background: hsl(var(--ls-surface-0)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.lq-centered-page .site-record-footer { width: fit-content; max-width: calc(100% - 2rem); background: hsl(var(--lq-material-fill)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-glass-line)); }
 body.lq-centered-page .site-record-footer :is(a,span,p) { color: inherit; }
 .lq-centered-page .login-scene-backdrop { transition-duration: var(--ls-dur-base); }
+/* Keep the photo's viewport crop identical to the welcome and page backdrops,
+   so the glass handoff never enlarges or shifts the scene underneath it. */
+.lq-centered-page .login-scene-backdrop__image { inset: 0; transform: none; background-position: center; background-size: cover; }
 @media (max-width: 480px) {
     .lq-centered-page .lq-centered-main { padding-block: var(--ls-s-4); }
     body.lq-centered-page .lq-login-card { padding: var(--ls-s-6); }
@@ -126,8 +122,7 @@ body.lq-centered-page .site-record-footer :is(a,span,p) { color: inherit; }
     .lq-centered-page .login-scene-backdrop { transition: none; animation: none; }
 }
 @media (forced-colors: active) {
-    .lq-centered-page .login-scene-backdrop,
-    .lq-login-frame > .lq-scrim { display: none; }
+    .lq-centered-page .login-scene-backdrop { display: none; }
     .lq-centered-page :is(.lq-login-feedback,.login-logo,.student-identity-chip,.identity-entry-link.is-attention) { background: Canvas; color: CanvasText; border-color: CanvasText; }
     .lq-centered-page :is(.link-button,.footer-links a) { color: LinkText; }
 }

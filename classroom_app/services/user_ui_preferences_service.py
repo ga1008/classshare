@@ -78,11 +78,24 @@ class ConstrainedFormat:
 # Lowercase six-digit hex only: no names, functions, variables or whitespace.
 HEX_COLOR = ConstrainedFormat(r"#[0-9a-f]{6}")
 
+
+class BackdropSelection:
+    """Built-in modes or one shipped image; never an arbitrary URL or path."""
+
+    def __contains__(self, value: Any) -> bool:
+        return isinstance(value, str) and (
+            value in BACKDROP_MODES
+            or (value.startswith("image:") and value[6:] in dict(backdrop_library()))
+        )
+
+
+BACKDROP_VALUES = BackdropSelection()
+
 PREFERENCE_VALUES = {
     "palette_key": PALETTE_KEYS,
     "appearance": frozenset({"light", "dark", "auto"}),
     "glass": frozenset({"tinted", "off"}),
-    "backdrop": BACKDROP_MODES,
+    "backdrop": BACKDROP_VALUES,
     "backdrop_color": HEX_COLOR,
 }
 
@@ -214,8 +227,10 @@ def _stable_index(seed: str, size: int) -> int:
 
 def backdrop_file_for(mode: str, seed: str) -> str | None:
     """The library key alone; the callers below turn it into the two URLs."""
-    if mode not in BACKDROP_MODES or mode == "off":
+    if mode not in BACKDROP_VALUES or mode == "off":
         return None
+    if mode.startswith("image:"):
+        return mode[6:]
     label = BACKDROP_CATEGORY_LABELS.get(mode)
     library = backdrop_library()
     pool = [file for file, categories in library if label is None or label in categories]
@@ -238,7 +253,7 @@ def backdrop_seed(role: str, user_pk: int, today: date | None = None) -> str:
 
 
 def resolve_backdrop(preferences: Mapping[str, Any], *, seed: str) -> dict[str, Any]:
-    mode = preferences.get("backdrop") if preferences.get("backdrop") in BACKDROP_MODES else DEFAULT_BACKDROP
+    mode = preferences.get("backdrop") if preferences.get("backdrop") in BACKDROP_VALUES else DEFAULT_BACKDROP
     color = preferences.get("backdrop_color") if preferences.get("backdrop_color") in HEX_COLOR else DEFAULT_BACKDROP_COLOR
     file = backdrop_file_for(mode, seed)
     image = BACKDROP_LIBRARY_BASE + file if file else None

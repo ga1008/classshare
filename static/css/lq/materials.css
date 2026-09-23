@@ -1,4 +1,4 @@
-/* Four material roles. The fallback is opaque until backdrop-filter is supported. */
+/* Shared glass recipes and the opaque accessibility fallback. */
 .lq-glass,
 .lq-surface {
     font-family: var(--ls-font-sans);
@@ -39,7 +39,7 @@
     box-shadow: var(--ls-glass-shadow-strong);
 }
 
-/* Clear is an image-backed exception. Its enclosing scene must supply a scrim. */
+/* Image-backed clear uses the shared scene tone to pair fill and foreground. */
 .lq-glass--clear {
     --lq-material-fill: var(--ls-glass-fill-clear);
     --ls-glass-sheen: var(--ls-glass-sheen-clear);
@@ -53,10 +53,8 @@
     color: hsl(var(--lq-material-muted));
 }
 
-/* Content material. Every panel is glass now, at a higher fill than the chrome
-   so body text keeps its contrast over the page backdrop. Blur stays thin: a
-   content panel sits close to what is behind it, and a wide radius here costs
-   far more than it shows. */
+/* Content is a thin tint over the viewport's Gaussian scene. Floating chrome
+   owns live blur; ordinary panels and their repeated rows do not need one. */
 .lq-surface {
     --lq-material-fill: var(--ls-glass-fill-content);
     --lq-material-blur: var(--ls-blur-thin);
@@ -112,12 +110,6 @@
 .lq-surface--frost,
 .lq-surface--boundary {
     background: hsl(var(--lq-material-fill));
-}
-
-.lq-glass--clear,
-.lq-glass[data-lq-tone="dark"] {
-    --lq-material-ink: var(--ls-fixed-white);
-    --lq-material-muted: var(--ls-fixed-white);
 }
 
 /* Nested material classes cannot create a second blur host. A panel inside a
@@ -345,6 +337,34 @@
 [data-lq-material="content"] { --lq-material-fill: var(--ls-glass-fill-content); --lq-material-blur: var(--ls-blur-thin); }
 [data-lq-material="raised"] { --lq-material-fill: var(--ls-glass-fill-strong); --lq-material-blur: var(--ls-blur-thick); --lq-material-shadow: var(--ls-glass-shadow-strong); }
 
+/* Controls sit within their carrier's glass, so their inset tint can be thin.
+   The stand-alone control fallback remains readable directly on the scene. */
+:where(.lq-glass, .lq-surface, [data-lq-material]):not([data-lq-material="control"]) {
+    --lq-control-fill: var(--ls-glass-fill-inset);
+    --lq-control-ink: var(--ls-ink);
+}
+
+/* An image-backed surface may adapt to the photograph independently of the
+   account theme. Fill and every foreground switch together, never white text
+   merely because the surface is labelled clear. Components consume this API. */
+[data-lq-tone="light"] {
+    --lq-material-fill: var(--ls-glass-scene-light-fill);
+    --lq-material-ink: var(--ls-glass-scene-light-ink);
+    --lq-material-muted: var(--ls-glass-scene-light-muted);
+    --lq-control-fill: var(--ls-glass-scene-light-control);
+    --lq-control-ink: var(--ls-glass-scene-light-ink);
+}
+[data-lq-tone="dark"] {
+    --lq-material-fill: var(--ls-glass-scene-dark-fill);
+    --lq-material-ink: var(--ls-glass-scene-dark-ink);
+    --lq-material-muted: var(--ls-glass-scene-dark-muted);
+    --lq-control-fill: var(--ls-glass-scene-dark-control);
+    --lq-control-ink: var(--ls-glass-scene-dark-ink);
+}
+:is([data-lq-tone="light"], [data-lq-tone="dark"]) {
+    color: hsl(var(--lq-material-ink));
+}
+
 /* The content material had fill and blur but no rim, which is why panels read
    as flat translucent boxes rather than glass. */
 .lq-surface {
@@ -353,53 +373,9 @@
                 var(--lq-material-shadow, var(--ls-glass-shadow));
 }
 
-/* ── The frost. One recipe, every material, no per-element tuning. ──────────
-   The page backdrop is a fixed layer holding a library image, so the blur a
-   panel needs is the same on every paint and for every account. `backdrop-
-   filter` recomputed it anyway, and once every top-level panel became a
-   material the dashboard carried six 16px hosts over 88% of the viewport —
-   a repaint storm on real hardware.
-
-   So the blur is pre-rendered (tools/tips/compress_images.py) and each panel
-   paints the slice behind it directly. `background-attachment: fixed` with
-   `cover` sizes and positions that layer against the viewport, exactly as the
-   backdrop layer sizes itself, so the slice lines up with what is actually
-   behind the panel — including while the page scrolls.
-
-   Three layers, top to bottom:
-     1. the material's own fill — the level's tint, the only per-block value
-     2. the dim veil — reproduces the backdrop layer's opacity, because a
-        panel's own background paints over the backdrop instead of through it
-     3. the pre-blurred image, viewport-aligned
-   and under them the page base, since layer 3 is `none` when the account
-   turned the image off. */
-:root { --lq-frost-dim: 0.42; }
-:root[data-appearance="dark"] { --lq-frost-dim: 0.53; }
-/* No image, nothing to dim: the veil would otherwise tint the solid colour
-   the account picked toward the page background. */
-:root[data-lq-frost="off"] { --lq-frost-dim: 0; }
-
-/* Coarse pointers are excluded, not because of cost but because iOS Safari
-   and Chrome Android drop `background-attachment: fixed` to `scroll`: the
-   slice would then size to the panel and scroll with it, showing a zoomed
-   photo per block. Those devices use live frost at explicit panel boundaries.
-   Optional accessibility media features must not gate the default: browsers
-   that do not recognize them would lose frost entirely. Explicit important
-   opt-outs live in components/material-boundaries.css. */
-@media (hover: hover) and (pointer: fine) {
-    /* The second half of this list is page-level: legacy panels that sit
-       directly on the backdrop but cannot carry a material class. They are
-       named here, in the module, rather than each page module repeating the
-       recipe for them — repeating it is how thirty-seven separate blur
-       declarations grew across eight files, which is the per-element tuning
-       this module exists to end. A new boundary is one line here. */
-    /* The root conditions carry their own weight, and that is the point. The
-       legacy page rules these panels also match use the `background`
-       shorthand, which resets background-image: `.ls-page.role-student
-       .ls-tools` is three classes and simply outranked the recipe, so that one
-       panel silently lost its frost while its neighbour kept it. Naming the
-       three states in which frost is wrong states the intent *and* puts the
-       module above page CSS, instead of leaving it to luck. */
+/* The viewport owns the blurred photograph. Content only contributes tint and
+   a rim; never repaint an opaque wallpaper slice inside each panel.
+   Compatibility selectors keep existing page adapters on the same recipe. */
     :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
     :is([data-lq-material="content"],
         .lq-surface:not(.lq-glass, .lq-toast, .lq-tooltip), .lq-surface--frost, .lq-surface--boundary,
@@ -417,35 +393,10 @@
         .lq-profile [data-lq-profile-content] .profile-portfolio-dashboard,
         .lq-messages .message-center-feed,
         .lq-messages .message-center-private-panel) {
-        background-color: var(--lq-frost-base, hsl(var(--ls-background)));
-        background-image:
-            /* The page boundaries never set --lq-material-fill; they tint
-               through the --lq-page-* aliases. Without this fallback the whole
-               list is invalid at computed-value time and collapses to `none`,
-               and because the fill lands from its own declaration the panel
-               still looks finished — the frost is just silently absent. */
-            linear-gradient(hsl(var(--lq-material-fill, var(--lq-page-content))),
-                            hsl(var(--lq-material-fill, var(--lq-page-content)))),
-            linear-gradient(hsl(var(--ls-background) / var(--lq-frost-dim)),
-                            hsl(var(--ls-background) / var(--lq-frost-dim))),
-            var(--lq-frost-image, none);
-        background-repeat: no-repeat;
-        background-position: 0 0, 0 0, center center;
-        background-size: auto, auto, cover;
-        background-attachment: scroll, scroll, fixed;
+        background-color: hsl(var(--lq-material-fill, var(--lq-page-content)));
+        background-image: var(--ls-glass-sheen);
+        background-attachment: scroll;
     }
-
-    /* A material inside a material sits on frost that its parent already
-       painted. It contributes only its own tint — repainting the base would
-       hide the parent's frost behind an opaque colour. */
-    :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
-    :is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary)
-    :is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary) {
-        background-color: transparent;
-        background-image: linear-gradient(hsl(var(--lq-material-fill, var(--lq-page-content))),
-                                          hsl(var(--lq-material-fill, var(--lq-page-content))));
-    }
-}
 
 /* A nested panel consumes its parent's frost; data size must never multiply
    backdrop-filter layers. Floating menus are portalled by LQ.layer. */

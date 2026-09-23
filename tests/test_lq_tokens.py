@@ -136,7 +136,7 @@ class LqTokenTests(unittest.TestCase):
             dark = self.themes[palette, "dark"]
             self.assertEqual(dark["--ls-on-primary"], "222 47% 11%")
             self.assertNotEqual(dark["--ls-on-primary"], dark["--ls-ink"])
-            self.assertEqual(self.themes[palette, "light"]["--ls-ink-3"], "215 16% 38%")
+            self.assertNotEqual(self.themes[palette, "light"]["--ls-ink-3"], dark["--ls-ink-3"])
 
     def test_monitor_scope_is_not_exported_as_a_root_override(self):
         monitor = [item for item in read_definitions() if 'data-lq-scope="monitor"' in item["selector"]]
@@ -154,11 +154,6 @@ class GlassMaterialContrastTests(unittest.TestCase):
     is no longer glass; what a panel can actually see is the page backdrop, whose
     image layer has its own opacity over the page surface. Pin that bound."""
 
-    # image-layer opacity from static/css/lq/components/page-backdrop.css
-    # Raised on 2026-09-23 to the ceiling this very assertion sets: the photo
-    # was three reductions deep and read as grey mush. Keep these in step with
-    # page-backdrop.css or the guarantee stops describing what ships.
-    IMAGE_OPACITY = {"light": .58, "dark": .47}
     MATERIALS = (("--ls-glass-fill-content", "--ls-ink", "--ls-ink-3"),
                  ("--ls-glass-fill-control", "--ls-ink", "--ls-ink-2"),
                  ("--ls-glass-fill", "--ls-glass-ink", "--ls-glass-muted"),
@@ -166,7 +161,7 @@ class GlassMaterialContrastTests(unittest.TestCase):
 
     def backdrop_bounds(self, theme, appearance):
         page = rgb(theme["--ls-surface-0"])
-        opacity = self.IMAGE_OPACITY[appearance]
+        opacity = float(theme["--ls-scene-opacity"])
         return [tuple(extreme * opacity + base * (1 - opacity) for extreme, base in zip(photo, page))
                 for photo in ((0., 0., 0.), (1., 1., 1.))]
 

@@ -15,6 +15,7 @@ class NodeDouble extends EventTarget {
   getAttribute(key: string) { return this.attrs.get(key) ?? null; }
   setAttribute(key: string, value: string) { this.attrs.set(key, value); }
   removeAttribute(key: string) { this.attrs.delete(key); }
+  querySelector(_query: string) { return null; }
 }
 const owned: Array<{ dispose(): void }> = [];
 const initial = { palette_key: 'indigo', appearance: 'auto', glass: 'tinted', version: 7, context_token: 'person-a' };

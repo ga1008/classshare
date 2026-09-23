@@ -77,7 +77,11 @@ class LqProfilePresentationTests(unittest.TestCase):
     def test_appearance_exists_in_ssr_before_global_auto_init_without_a_second_form(self):
         for role in ('student', 'teacher'):
             html, doc, _ = self.render(role, 'appearance')
-            self.assertEqual(len(doc.with_attr('data-ui-preference-input')), 4)
+            inputs = doc.with_attr('data-ui-preference-input')
+            self.assertEqual(len(inputs), 5)
+            self.assertEqual({a['data-ui-preference-input'] for _, a in inputs},
+                             {'appearance', 'glass', 'backdrop_color'})
+            self.assertEqual(len(doc.with_attr('data-ui-backdrop-gallery')), 1)
             self.assertEqual(len(doc.with_attr('data-ui-preference-choice')), 6)
             self.assertEqual(len(doc.with_attr('data-ui-preference-primary-status')), 1)
             self.assertFalse([(tag, a) for tag, a in doc.profile_tags if tag == 'form'])

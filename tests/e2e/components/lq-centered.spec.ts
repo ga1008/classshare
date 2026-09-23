@@ -12,7 +12,7 @@ const origin = 'https://centered-lq.test';
 const assetRoot = path.resolve(process.env.LQ_CENTERED_ASSET_ROOT || 'static');
 if (assetRoot !== path.resolve('static') && !assetRoot.startsWith(path.resolve('static/assets') + path.sep)) throw new Error('Centered fixture assets must be local source or an immutable graph.');
 
-async function mount(page: Page, name = 'student_login_v4', options: { image?: 'success'|'failure'|'held', sceneFill?: 'black'|'white', manifestHeld?: boolean, legacy?: boolean, modules?: boolean } = {}) {
+async function mount(page: Page, name = 'student_login_v4', options: { image?: 'success'|'failure'|'held', sceneFill?: 'black'|'white', sceneFile?: string, manifestHeld?: boolean, legacy?: boolean, modules?: boolean } = {}) {
   expect(fixture.isolated).toBe(true);
   let releaseImage!: () => void;
   const imageWait = new Promise<void>(resolve => { releaseImage = resolve; });
@@ -29,7 +29,7 @@ async function mount(page: Page, name = 'student_login_v4', options: { image?: '
     if (url.origin !== origin) return route.abort();
     if (url.pathname === '/static/img/life_tips/manifest.json') {
       if (options.manifestHeld) await imageWait;
-      return route.fulfill({ json: { images: [{ file: 'scene-sunny-fixture.svg', categories: [] }] } });
+      return route.fulfill({ json: { images: [{ file: options.sceneFile || 'scene-sunny-fixture.svg', categories: [] }] } });
     }
     if (url.pathname.endsWith('scene-sunny-fixture.svg')) {
       if (options.image === 'held') await imageWait;
@@ -129,12 +129,12 @@ test.describe('LQ centered actual templates and native owners', () => {
       // No reduced-motion shortcut, animation fast-forward, or settling sleep.
       const frames = await page.evaluate(async values => {
         const card = document.querySelector<HTMLElement>('[data-lq-login-card]')!;
-        const scrim = document.querySelector<HTMLElement>('.lq-login-frame > .lq-scrim')!;
+        const host = document.querySelector<HTMLElement>('.lq-login-frame')!;
         const texts = [...card.querySelectorAll<HTMLElement>('h1,.subtitle,.lq-field__label,.lq-btn__label,.link-button,.footer-links a')].filter(el => !el.closest('[hidden]') && el.getClientRects().length && !el.children.length);
         texts.forEach(el => el.setAttribute('data-lq-pixel-text', ''));
         const read = () => {
-          const c = getComputedStyle(card), s = getComputedStyle(scrim);
-          return { background: c.backgroundColor, foreground: c.color, sheen: getComputedStyle(card, '::before').backgroundImage, scrim: [s.display,s.backgroundColor], text: texts.map(el => ({ color: getComputedStyle(el).color, fill: getComputedStyle(el).webkitTextFillColor })), transition: c.transitionProperty };
+          const c = getComputedStyle(card);
+          return { background: c.backgroundColor, foreground: c.color, sheen: getComputedStyle(card, '::before').backgroundImage, material: host.dataset.lqLoginMaterial, tone: card.dataset.lqTone, text: texts.map(el => ({ color: getComputedStyle(el).color, fill: getComputedStyle(el).webkitTextFillColor })), transition: c.transitionProperty };
         };
         const w = window as any;
         w.LanShareTheme.applyTheme({ preferences: { palette_key: 'indigo', appearance: values.appearance, glass: values.glass }, capabilities: w.LanShareTheme.detectCapabilities(window) });
@@ -149,7 +149,7 @@ test.describe('LQ centered actual templates and native owners', () => {
       for (const frame of frames) expect(frame).toEqual(endpoint);
       const pixels = await inspectTextPixels(page);
       expect(pixels.samples.length).toBe(8);
-      expect(pixels.status, JSON.stringify(pixels.samples.filter((s: any) => s.status !== 'passed'))).toBe('passed');
+      expect(pixels.status, `${glass}/${tier}/${appearance}/${sceneFill}: ${JSON.stringify(pixels.samples.filter((s: any) => s.status !== 'passed'))}`).toBe('passed');
       expect(await page.locator('.lq-login-card').boundingBox()).toEqual(original);
       records.push({ glass, tier, frames, pixels });
     }
@@ -233,13 +233,75 @@ test.describe('LQ centered actual templates and native owners', () => {
     await expect(form.locator('[data-login-feedback]')).toBeVisible();
   });
 
-  test('teacher scene remains present while the card always uses thick', async ({ page }) => {
+  test('teacher and student share the clear scene material without an extra scrim', async ({ page }) => {
     await mount(page, 'teacher_login_v4');
     await expect(page.locator('.lq-login-card')).toHaveAttribute('data-lq-scene-state', 'ready');
     await theme(page);
     await expect(page.locator('.login-scene-backdrop')).toHaveCount(1);
-    await expect(page.locator('.lq-login-card')).toHaveClass(/lq-glass--thick/);
+    await expect(page.locator('.lq-login-card')).toHaveClass(/lq-glass--clear/);
+    await expect(page.locator('.lq-login-frame')).toHaveAttribute('data-lq-login-material', 'clear');
+    await expect(page.locator('.lq-login-frame > .lq-scrim')).toHaveCount(0);
   });
+
+  const photos = [
+    ['sunny-campus', 'biye-sunny-lawn-reunion02-9204e697.webp', 'light'],
+    ['sunny-bay', 'chengshi-sunny-azure-bay02-b3842a14.webp', 'light'],
+    ['rain-platform', 'biye-rain-platform04-f30cae6e.webp', 'dark'],
+    ['snow-platform', 'chengshi-snow-platform08-5c837636.webp', 'dark'],
+  ] as const;
+  for (const role of ['student', 'teacher']) test(`tier B preserves photo tone independently of the account theme ${role}`, async ({ page }, info) => {
+    test.setTimeout(60000);
+    await page.setViewportSize({ width: 390, height: 900 });
+    for (const [label, file, tone] of photos) {
+      await page.unrouteAll({ behavior: 'wait' });
+      await mount(page, `${role}_login_v4`, { sceneFile: file });
+      const card = page.locator('.lq-login-card');
+      await expect(card).toHaveAttribute('data-lq-scene-state', 'ready');
+      await theme(page, 'indigo', tone === 'light' ? 'dark' : 'light', 'tinted', 'B');
+      await expect(card).toHaveClass(/lq-glass--thick/);
+      await expect(card).toHaveAttribute('data-lq-tone', tone);
+      await card.evaluate(node => node.querySelectorAll<HTMLElement>('h1,.subtitle,.lq-field__label,.lq-btn__label,.link-button,.footer-links a').forEach(el => {
+        if (el.getClientRects().length && !el.children.length) el.setAttribute('data-lq-pixel-text', '');
+      }));
+      const pixels = await inspectTextPixels(page);
+      expect(pixels.status, `${label}: ${JSON.stringify(pixels.samples)}`).toBe('passed');
+      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+      await page.screenshot({ path: info.outputPath(`${label}-tier-b.png`), fullPage: true });
+    }
+  });
+  for (const role of ['student', 'teacher']) for (const width of [390, 1440]) {
+    test(`actual scene photos preserve paired glass and readable login ${role} ${width}`, async ({ page }, info) => {
+      test.setTimeout(120000);
+      await page.setViewportSize({ width, height: 900 });
+      const records = [];
+      for (const [label, file, tone] of photos) {
+        await page.unrouteAll({ behavior: 'wait' });
+        await mount(page, `${role}_login_v4`, { sceneFile: file });
+        const card = page.locator('.lq-login-card');
+        await expect(card).toHaveAttribute('data-lq-scene-state', 'ready');
+        for (const appearance of ['light', 'dark']) {
+          await theme(page, 'indigo', appearance);
+          await expect(card).toHaveClass(/lq-glass--clear/);
+          await expect(card).toHaveAttribute('data-lq-tone', tone);
+          await expect(page.locator('.lq-login-frame > .lq-scrim')).toHaveCount(0);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          await card.evaluate(node => node.querySelectorAll<HTMLElement>('h1,.subtitle,.lq-field__label,.lq-btn__label,.link-button,.footer-links a').forEach(el => {
+            if (el.getClientRects().length && !el.children.length) el.setAttribute('data-lq-pixel-text', '');
+          }));
+          await page.locator('.site-record-footer :is(a,p,span)').evaluateAll(nodes => nodes.forEach(node => node.setAttribute('data-lq-pixel-text', '')));
+          const pixels = await inspectTextPixels(page);
+          expect(pixels.status, `${label}/${appearance}: ${JSON.stringify(pixels.samples)}`).toBe('passed');
+          expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+          const material = await card.evaluate(node => ({ fill: getComputedStyle(node).backgroundColor, ink: getComputedStyle(node).color, filter: getComputedStyle(node).backdropFilter }));
+          records.push({ label, file, appearance, tone, material, pixels });
+          await page.screenshot({ path: info.outputPath(`${label}-${appearance}.png`), fullPage: true });
+        }
+      }
+      const evidence = info.outputPath('photo-material-pixels.json');
+      fs.writeFileSync(evidence, JSON.stringify({ assetRoot, role, width, records }, null, 2));
+      await info.attach('photo-material-pixels', { path: evidence, contentType: 'application/json' });
+    });
+  }
 
   test('disabled JavaScript and failed modules retain SSR fields and native POST without a scene', async ({ browser }) => {
     for (const script of [false, true]) {

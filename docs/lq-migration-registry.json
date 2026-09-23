@@ -1143,7 +1143,7 @@
           },
           {
             "path": "templates/student_login_v4.html",
-            "sha256": "f50423b1c99e15498abc274db2430610caba3d4bc1fc210da9c995eb7c1cecbd",
+            "sha256": "d963889bd25017d67bd76d26dfa823bef6e5e61cdae45afeabb1d06744550b80",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -1154,7 +1154,7 @@
           },
           {
             "path": "templates/teacher_login_v4.html",
-            "sha256": "58720fe7fcc6b8811166861dbb6dd775262ad77a0ddcb2228aa5b2aad5013553",
+            "sha256": "dabce2d58699c38207e1f3c692b77e6d68af58c5220d19d20238aec84dbc1f8e",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -1220,7 +1220,7 @@
           },
           {
             "path": "static/js/login_scene.js",
-            "sha256": "338d3cc1fa632e19cdc4d6544007c37b916c068ef9d4ea976b3d3cab49c4bf04",
+            "sha256": "d18e23c9d38e0fbdefd1fa7f4a4747a379e174a6b9d1f2ea9d741c4baa669a55",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -18560,13 +18560,14 @@
           },
           {
             "path": "static/js/cultivation_identity.js",
-            "sha256": "75848a9b38d6355b6c37f813fbe1eb4efe8f555995acf0095fa4a8e5f6af809f",
+            "sha256": "3c6ccdd7222da79f6855049f325d27ebe24764387edb50b8ebcb46b06ef3b2e4",
             "scope": "仅 ensureTopbarChip 单一浮层关闭所有者：原 click/Esc/toggle 同一幂等释放，捕获外部 pointerdown 兼容 WebKit 触控，无迟注册 timer；保留场景、登录交棒、修为业务与其他弹层呈现。",
             "tests": [
               "tests/test_lq_report_card_pilot.py",
               "tests/e2e/specs/pilot-compat.spec.ts",
               "tests/e2e/specs/pilot-rollback.spec.ts",
-              "tests/e2e/specs/pilot-fallback.spec.ts"
+              "tests/e2e/specs/pilot-fallback.spec.ts",
+              "tests/e2e/specs/lq-background.spec.ts"
             ]
           }
         ]

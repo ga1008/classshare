@@ -1,0 +1,84 @@
+/* The shared state contract for native, Jinja and React controls.
+ * A state changes fill and foreground together, without fading the label.
+ * Keep this after component/page adapters: an old header hover rule must not
+ * restore a light fill while a pressed control still has its light label.
+ * The scene can supply --lq-control-fill/ink for resting neutral controls;
+ * semantic actions and their states always own an independent colour pair.
+ */
+:root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab) {
+    --lq-state-fill: var(--ls-primary);
+    --lq-state-ink: var(--ls-on-primary);
+    /* Keep foreground/fill changes atomic; animate geometry and the rim. */
+    transition-property: transform, box-shadow, border-color;
+}
+:root :is(.lq-btn--destructive, .btn-danger, .btn-danger-solid, .lq-menu__item[data-danger="true"]) {
+    --lq-state-fill: var(--ls-tone-danger-solid);
+    --lq-state-ink: var(--ls-tone-danger-on-solid);
+}
+
+/* Busy is blocked by the existing JS/native semantics; it is not the muted
+ * unavailable state. Keep its original colour pair and visible action text. */
+:root :is(.lq-btn, .btn):is(.is-loading, .loading, [aria-busy="true"]) {
+    opacity: 1;
+    cursor: progress;
+}
+
+/* Selected links use aria-current while toggle buttons use aria-pressed.
+ * Both come from the same component factory and must look equally selected. */
+:root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], [aria-expanded="true"]):not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
+:root .lq-menu > .lq-menu__item:focus-visible:not([aria-disabled="true"]) {
+    background: hsl(var(--lq-state-fill));
+    color: hsl(var(--lq-state-ink));
+    border-color: hsl(var(--lq-state-fill));
+}
+
+/* Real pointer/Space presses use the same pair as selected controls. The
+ * prominent action reverses its existing pair so its response remains clear. */
+:root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):active:not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    background: hsl(var(--lq-state-fill));
+    color: hsl(var(--lq-state-ink));
+    border-color: hsl(var(--lq-state-fill));
+}
+:root :is(.lq-btn--prominent, .btn-primary):active:not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    background: hsl(var(--ls-on-primary));
+    color: hsl(var(--ls-primary));
+    border-color: hsl(var(--ls-primary));
+}
+
+/* A selected segment owns its fill instead of showing the moving neutral
+ * thumb underneath. The thumb still supplies its existing motion/geometry. */
+:root .lq-segment > .lq-tabs__list[data-lq-thumb] > .lq-tabs__tab[aria-selected="true"] {
+    background: hsl(var(--ls-primary));
+    color: hsl(var(--ls-on-primary));
+}
+:root .lq-tabs__tab:is(:disabled, [aria-disabled="true"]) {
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    opacity: 1;
+    border-style: dashed;
+}
+
+/* Compatibility controls keep their size and business classes. Their neutral
+ * surfaces consume the same local scene pair as .lq-btn--glass and fields. */
+:root .btn:is(.btn-secondary, .btn-ghost, .btn-outline):not(:active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+    color: hsl(var(--lq-control-ink, var(--ls-ink)));
+}
+:root .btn.btn-secondary:not(:active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+}
+:root .btn:is(:disabled, .disabled, [aria-disabled="true"]):not(.loading, .is-loading, [aria-busy="true"]) {
+    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    border-color: hsl(var(--ls-line-strong));
+    border-style: dashed;
+    opacity: 1;
+}
+
+@media (forced-colors: active) {
+    :root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):is(:active, [aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], [aria-expanded="true"]):not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
+    :root .lq-menu > .lq-menu__item:focus-visible,
+    :root .lq-segment > .lq-tabs__list[data-lq-thumb] > .lq-tabs__tab[aria-selected="true"] {
+        background: Highlight;
+        color: HighlightText;
+        border-color: Highlight;
+    }
+}

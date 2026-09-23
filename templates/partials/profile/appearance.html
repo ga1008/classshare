@@ -1,3 +1,4 @@
+{% from 'macros/user_ui_preferences.html' import user_backdrop_fields %}
 {% from 'macros/lq/forms.html' import lq_switch %}
 {% from 'macros/lq/chip.html' import lq_chip %}
 <section class="lq-profile-appearance" aria-labelledby="profile-appearance-title" data-profile-appearance data-lq-material="content">
@@ -31,6 +32,7 @@
             {% endfor %}
         </div>
     </fieldset>
+    {{ user_backdrop_fields(ui_palette, gallery=true) }}
     <div class="lq-profile-appearance__preview" aria-labelledby="profile-appearance-preview-title">
         <h3 id="profile-appearance-preview-title">配色预览</h3>
         <p>正文、辅助说明与强调色会一起更新。</p>

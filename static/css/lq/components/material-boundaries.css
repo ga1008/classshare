@@ -1,5 +1,5 @@
 /* Rendering policy for the material API. Page CSS owns layout, never frost.
- * Content: cached wallpaper frost on a fine pointer; one live boundary on touch.
+ * Content: translucent tint above the one viewport-owned Gaussian scene.
  * Chrome/raised: sample actual content beneath them, including scrolling text.
  * Controls: inherit the containing frost, avoiding a filter per button/row.
  * Keep this after page adapters so their background shorthands cannot erase it.
@@ -16,17 +16,6 @@
             -webkit-backdrop-filter: blur(var(--lq-material-blur, var(--ls-blur-regular))) saturate(var(--ls-glass-saturate));
             backdrop-filter: blur(var(--lq-material-blur, var(--ls-blur-regular))) saturate(var(--ls-glass-saturate));
         }
-        /* Mobile browsers cannot align background-attachment:fixed. Explicit
-         * panel boundaries sample the real scene instead. Repeated lq-cards
-         * intentionally do not join this list; their carrier owns the blur. */
-        @media (pointer: coarse), (hover: none) {
-            :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
-            :is([data-lq-material="content"], .lq-surface--boundary) {
-                background: hsl(var(--lq-material-fill, var(--ls-glass-fill-content)));
-                -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-                backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-            }
-        }
     }
 }
 
@@ -37,6 +26,7 @@
     --ls-glass-fill: var(--ls-surface-1);
     --ls-glass-fill-content: var(--ls-surface-1);
     --ls-glass-fill-control: var(--ls-surface-2);
+    --ls-glass-fill-inset: var(--ls-surface-2);
     --ls-glass-fill-strong: var(--ls-surface-1);
     --ls-glass-fill-clear: var(--ls-surface-1);
 }
@@ -53,6 +43,7 @@
         --ls-glass-fill: var(--ls-surface-1);
         --ls-glass-fill-content: var(--ls-surface-1);
         --ls-glass-fill-control: var(--ls-surface-2);
+        --ls-glass-fill-inset: var(--ls-surface-2);
         --ls-glass-fill-strong: var(--ls-surface-1);
         --ls-glass-fill-clear: var(--ls-surface-1);
     }

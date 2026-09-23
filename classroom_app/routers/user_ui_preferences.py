@@ -30,7 +30,7 @@ class UIPreferencesUpdate(BaseModel):
     palette_key: str | None = Field(default=None, min_length=1, max_length=20)
     appearance: str | None = Field(default=None, min_length=1, max_length=20)
     glass: str | None = Field(default=None, min_length=1, max_length=20)
-    backdrop: str | None = Field(default=None, min_length=1, max_length=32)
+    backdrop: str | None = Field(default=None, min_length=1, max_length=136)
     backdrop_color: str | None = Field(default=None, min_length=1, max_length=20)
     version: StrictInt = Field(ge=0, le=MAX_PREFERENCE_VERSION)
 
