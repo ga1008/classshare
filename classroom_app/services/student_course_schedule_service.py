@@ -2,7 +2,7 @@
 
 Membership and semester discovery are shared with the homepage. This adapter
 never reads a teacher's imported schedule: every lesson has an authorized
-platform offering and an actual session date. Its four batch SELECTs do not
+platform offering and an actual session date. Its batch SELECTs do not
 grow with the number of offerings; reading a deck cannot synchronize schedules.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ from .academic_service import china_now
 from .dashboard_calendar_service import load_web_calendar_base
 from .dashboard_service import _load_student_offerings, _match_semester_for_offering
 from .semester_identity_service import parse_semester_identity
+from .schedule_lesson_metadata import explicit_lesson_time, load_offering_class_labels
 from .smart_classroom_schedule_sync_service import (
     _build_course_stats,
     _build_week_deck,
@@ -68,6 +69,7 @@ def build_student_course_schedule_overview(
         key=lambda identity: identity.sort_key, default=None)
     # This is the complete membership projection, not a deduplication of lessons.
     # Keep it even when no semester/date/section can be positioned in a week.
+    class_labels = load_offering_class_labels(conn, [offering['id'] for offering in offerings])
     authorized_courses = []
     for offering in offerings:
         semester = _match_semester_for_offering(semesters, offering)
@@ -76,7 +78,7 @@ def build_student_course_schedule_overview(
         identity = parse_semester_identity(offering.get("semester"))
         authorized_courses.append({
             "id": int(offering["id"]), "course_name": str(offering.get("course_name") or "课程"),
-            "class_name": str(offering.get("combined_class_names") or offering.get("class_name") or ""),
+            "class_name": class_labels.get(int(offering['id'])) or str(offering.get("class_name") or ""),
             "teacher_name": str(offering.get("teacher_name") or ""),
             "semester": str(offering.get("semester") or (semester or {}).get("name") or "未配置学期"),
             "year": key[0], "term": key[1], "is_history": bool(end and today > end) or bool(
@@ -102,8 +104,7 @@ def build_student_course_schedule_overview(
         })
     ids = sorted(int(offering["id"]) for offering in offerings)
     all_rows = conn.execute(
-        f"""SELECT s.id, s.class_offering_id, s.session_date, s.order_index, s.academic_section_text,
-            s.academic_location, s.schedule_metadata_json, o.combined_class_names
+        f"""SELECT s.*, o.combined_class_names
             FROM class_offering_sessions s JOIN class_offerings o ON o.id = s.class_offering_id
             WHERE s.class_offering_id IN ({','.join('?' for _ in ids)})
             AND COALESCE(s.schedule_status, 'scheduled') NOT IN ('cancelled', 'canceled')
@@ -184,7 +185,7 @@ def build_student_course_schedule_overview(
         sections = list(range(section_start, section_end + 1))
         offering_id = int(row["class_offering_id"])
         offering = selected_offerings[offering_id]
-        class_label = str(row["combined_class_names"] or offering.get("class_name") or "")
+        class_label = class_labels.get(offering_id) or str(offering.get("class_name") or "")
         room = str(row["academic_location"] or "")
         item = {
             "id": int(row["id"]), "weekday": on_date.weekday() + 1,
@@ -198,6 +199,7 @@ def build_student_course_schedule_overview(
             "single_or_double_label": "", "student_count": 0,
             "hours_per_meeting": len(sections), "total_hours": len(sections),
         }
+        item.update(explicit_lesson_time(item, dict(row)))
         items.append(item)
         session_map[(item["id"], week)] = (int(row["order_index"] or 0), totals[offering_id])
     from .academic_schedule_prediction_service import load_authorized_prediction_lessons
@@ -207,7 +209,8 @@ def build_student_course_schedule_overview(
     covered = set(projection.get('covered_offering_ids') or []) & set(selected_offerings)
     if covered:
         items = [i for i in items if i['class_offering_id'] not in covered]
-        items.extend(prediction_lesson_items([i for i in projection['lessons'] if i['class_offering_id'] in covered]))
+        items.extend(prediction_lesson_items([i for i in projection['lessons'] if i['class_offering_id'] in covered],
+            class_labels=class_labels, sessions={int(row['id']): dict(row) for row in rows}))
     official_items = [i for i in items if i.get('counts_towards_total', True)]
     max_week = min(104, max(selected["max_week"], max((item["weeks"][0] for item in items), default=0)))
     live_week = ((today - monday).days // 7 + 1) if monday and selected["status"] == "current" else 0

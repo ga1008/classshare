@@ -1013,10 +1013,17 @@ def _build_week_deck(
                 "single_or_double_label": item["single_or_double_label"],
                 "student_count": item["student_count"],
                 "hours": item["hours_per_meeting"],
+                "actual_date": item.get('actual_date') or (
+                    (week1_monday + timedelta(weeks=week_index - 1, days=item['weekday'] - 1)).isoformat()
+                    if week1_monday else ''),
+                "start_time": item.get('start_time', ''),
+                "end_time": item.get('end_time', ''),
+                "time_label": item.get('time_label', ''),
                 **{key: item[key] for key in (
                     'event_key', 'session_id', 'actual_date', 'adjustment', 'counts_towards_total',
                     'binding_status', 'session_no', 'session_total',
                 ) if key in item},
+                **item.get('_occurrence_metadata', {}).get(week_index, {}),
             }
             for item in items
             if week_index in item["weeks"]
@@ -1279,7 +1286,7 @@ def _load_platform_offering_terms(conn, teacher_id: int) -> list[dict[str, Any]]
 
 
 def _load_platform_offering_schedule_items(
-    conn, teacher_id: int, *, semester_id: int, year: str, term: str
+    conn, teacher_id: int, *, semester_id: int, year: str, term: str, week1_monday: date | None = None
 ) -> list[dict[str, Any]]:
     """平台课堂课次 → 3D 课表条目（智慧课表该学期无数据时的回退源）。
 
@@ -1291,7 +1298,7 @@ def _load_platform_offering_schedule_items(
     try:
         rows = conn.execute(
             """
-            SELECT cos.class_offering_id, cos.weekday, cos.week_index,
+            SELECT cos.*,
                    COALESCE(cos.academic_section_text, '') AS section_text,
                    COALESCE(cos.slot_section_count, cos.section_count, 2) AS slot_sections,
                    COALESCE(cos.academic_location, '') AS location,
@@ -1310,9 +1317,16 @@ def _load_platform_offering_schedule_items(
         ).fetchall()
     except Exception:  # noqa: BLE001 — 课堂表不可用时静默降级（回退源尽力而为）
         return []
+    from .schedule_lesson_metadata import explicit_lesson_time, load_offering_class_labels
+    class_labels = load_offering_class_labels(conn, [row['class_offering_id'] for row in rows], teacher_id=teacher_id)
+    totals = {}
+    for row in rows:
+        oid = int(row['class_offering_id'])
+        totals[oid] = max(totals.get(oid, 0), int(row['order_index'] or 0))
     grouped: dict[tuple, dict[str, Any]] = {}
     for row in rows:
-        weekday = _coerce_int(row["weekday"]) + 1  # 平台 0=周一 → 课表 1=周一
+        on_date = _parse_iso_date(row['session_date'])
+        weekday = on_date.isoweekday() if on_date else _coerce_int(row["weekday"]) + 1
         group_key = (
             _coerce_int(row["class_offering_id"]),
             weekday,
@@ -1326,16 +1340,26 @@ def _load_platform_offering_schedule_items(
                 "offering_id": _coerce_int(row["class_offering_id"]),
                 "course_name": _clean_text(row["course_name"]),
                 "course_code": _clean_text(row["course_code"]),
-                "class_label_name": _clean_text(row["class_label_name"]),
+                "class_label_name": class_labels.get(int(row['class_offering_id'])) or _clean_text(row["class_label_name"]),
                 "weekday": weekday,
                 "sections": sections,
                 "location": _clean_text(row["location"]),
                 "weeks": [],
+                "occurrence_metadata": {},
             }
             grouped[group_key] = entry
-        week_index = _coerce_int(row["week_index"])
+        week_index = (on_date - week1_monday).days // 7 + 1 if on_date and week1_monday else _coerce_int(row["week_index"])
         if week_index > 0 and week_index not in entry["weeks"]:
             entry["weeks"].append(week_index)
+            metadata = {
+                'session_id': int(row['id']), 'session_no': int(row['order_index'] or 0),
+                'session_total': totals[int(row['class_offering_id'])],
+                'classroom_url': f"/classroom/{row['class_offering_id']}?session_id={row['id']}",
+            }
+            if on_date:
+                metadata['actual_date'] = on_date.isoformat()
+            metadata.update(explicit_lesson_time({**metadata, 'sections': entry['sections']}, dict(row)))
+            entry['occurrence_metadata'][week_index] = metadata
 
     items: list[dict[str, Any]] = []
     for index, entry in enumerate(grouped.values(), start=1):
@@ -1366,6 +1390,7 @@ def _load_platform_offering_schedule_items(
             "hours_per_meeting": len(entry["sections"]),
             "total_hours": len(entry["sections"]) * len(weeks),
             "synced_at": "",
+            "_occurrence_metadata": entry['occurrence_metadata'],
         }
         _apply_class_label(item)
         items.append(item)
@@ -1481,6 +1506,7 @@ def build_teacher_course_schedule_overview(
             semester_id=_coerce_int(fallback_anchor.get("semester_id")),
             year=selected["year"],
             term=selected["term"],
+            week1_monday=fallback_anchor.get('week1_monday'),
         )
         if all_items and not _coerce_int(selected.get("max_week")):
             selected["max_week"] = max(

@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { serveScheduleModule } from './schedule-fixture-modules';
+import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
 async function mount(page: Page) {
   await page.route('http://academic-schedule.test/**', async route => {
     if (await serveScheduleModule(route)) return;
-    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:20px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><meta charset="utf-8"><link rel="stylesheet" href="/schedule-tokens.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:20px;font-family:Arial,sans-serif;background:hsl(var(--ls-surface-0));color:hsl(var(--ls-ink))}</style><div id="outside-schedule">课表外页面内容</div><div id="deck"></div><script type="module">
     import { createScheduleDeck } from '/deck.js';
     window.navigations=[];
     const move={request_id:'R1',kind:'move',phase:'pending',endpoint:'original',counterpart_event_key:'new-A',counterpart_week_index:3,original:{date:'2026-08-31',sections:[2,3],room:'B416-1'},proposed:{date:'2026-09-17',sections:[6,7],room:'B210'}};
@@ -20,10 +20,10 @@ async function mount(page: Page) {
   await page.goto('http://academic-schedule.test/');
   await page.locator('.cs-card.is-active .cs-card__bar').click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.locator('.cs-expand__card').evaluate(async card => { await Promise.allSettled(card.getAnimations().map(animation => animation.finished)); });
+  await settleScheduleMotion(page);
 }
 
-test('pending cards keep a 4px transparent gap and proposed previews use an opaque readable tint', async ({ page }, testInfo) => {
+test('pending cards keep a 4px transparent gap and proposed previews use a readable glass tint', async ({ page }, testInfo) => {
   await mount(page);
   const old = page.locator('.cs-expand [data-event-key="old-A"]');
   const metrics = await old.evaluate(node => {
@@ -32,7 +32,7 @@ test('pending cards keep a 4px transparent gap and proposed previews use an opaq
     return { gap: inner.left - outer.left - parseFloat(css.borderLeftWidth), border: css.borderStyle, background: css.backgroundColor, surface: getComputedStyle(surface).backgroundColor };
   });
   expect(metrics.gap).toBeCloseTo(4, 0); expect(metrics.border).toBe('dashed');
-  expect(metrics.background).toBe('rgba(0, 0, 0, 0)'); expect(metrics.surface).toBe('rgb(79, 70, 229)');
+  expect(metrics.background).toBe('rgba(0, 0, 0, 0)');
   await old.getByRole('button').click();
   const target = page.locator('.cs-expand [data-event-key="new-A"]');
   await expect(target).toHaveClass(/is-counterpart-focus/);
@@ -46,12 +46,15 @@ test('pending cards keep a 4px transparent gap and proposed previews use an opaq
     const context = canvas.getContext('2d')!;
     const rgba = (color: string) => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return Array.from(context.getImageData(0, 0, 1, 1).data); };
     const background = rgba(surface.backgroundColor), foreground = rgba(text.color);
+    // Measure the tint composited over the fixture's light page, rather than
+    // treating an alpha channel as an opaque colour.
+    const composited = background.slice(0, 3).map(channel => channel * background[3] / 255 + 255 * (1 - background[3] / 255));
     const luminance = (rgb: number[]) => rgb.slice(0, 3).map(value => { const v = value / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
-    return { opacity: getComputedStyle(node).opacity, textOpacity: text.opacity, background, contrast: (luminance(background) + .05) / (luminance(foreground) + .05) };
+    return { opacity: getComputedStyle(node).opacity, textOpacity: text.opacity, background, contrast: (luminance(composited) + .05) / (luminance(foreground) + .05) };
   });
   expect(colors.opacity).toBe('1'); expect(colors.textOpacity).toBe('1');
-  expect(colors.background[3]).toBe(255);
-  expect(Math.min(...colors.background.slice(0, 3))).toBeGreaterThan(190);
+  expect(colors.background[3]).toBeGreaterThan(0);
+  expect(colors.background[3]).toBeLessThan(255);
   expect(colors.contrast).toBeGreaterThanOrEqual(7);
   await page.screenshot({ path: testInfo.outputPath('pending-tint-desktop.png') });
   await expect(page.locator('[data-csd-expand-sub]')).toContainText('1 节安排 · 2 课时');
@@ -141,4 +144,69 @@ test('unassociated sessions are readable without a false classroom link and reta
   await expect(create.locator('a')).toHaveAttribute('href', '/manage/courses/new?course_id=1');
   await expect(create).toContainText('创建后请再次同步关联课次');
   await expect(page.locator('[data-csd-feedback]')).toContainText('有课次需核对，请同步关联');
+});
+
+for (const appearance of ['light', 'dark']) test(`mini and expanded schedules share all six ${appearance} glass palettes without blurring the outside page`, async ({ page }, testInfo) => {
+  await mount(page);
+  const results: any[] = [];
+  for (const palette of ['teal', 'indigo', 'sky', 'mint', 'violet', 'rose']) {
+    await page.evaluate(({ appearance, palette }) => {
+      document.documentElement.dataset.appearance = appearance;
+      document.documentElement.dataset.uiPalette = palette;
+    }, { appearance, palette });
+    await settleScheduleMotion(page);
+    const result = await page.evaluate(() => {
+      const context = document.createElement('canvas').getContext('2d')!;
+      const rgba = (color: string) => {
+        context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data];
+      };
+      const luminance = (rgb: number[]) => rgb.slice(0, 3).map(channel => {
+        const value = channel / 255;
+        return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4;
+      }).reduce((sum, value, i) => sum + value * [.2126, .7152, .0722][i], 0);
+      const read = (selector: string, pseudo?: string) => {
+        const node = document.querySelector<HTMLElement>(selector)!, style = getComputedStyle(node, pseudo);
+        const chain: Element[] = []; for (let el: Element | null = node; el; el = el.parentElement) chain.unshift(el);
+        const composite = chain.reduce((under, el) => {
+          // The panel's glass is painted on its behind-content pseudo layer so
+          // the panel itself does not isolate a lesson's backdrop sampling.
+          const painted = getComputedStyle(el, el.matches('.cs-expand__card') ? '::before' : undefined);
+          const fill = rgba(painted.backgroundColor), alpha = fill[3] / 255;
+          return under.map((channel, i) => fill[i] * alpha + channel * (1 - alpha));
+        }, [255, 255, 255]);
+        const ink = luminance(rgba(style.color)), fill = luminance(composite);
+        return { fill: style.backgroundColor, alpha: rgba(style.backgroundColor)[3] / 255, ink: style.color,
+          blur: style.backdropFilter, filter: style.filter, contrast: (Math.max(ink, fill) + .05) / (Math.min(ink, fill) + .05) };
+      };
+      return { mini: read('.cs-card.is-active'), miniBar: read('.cs-card.is-active .cs-card__bar'),
+        expanded: read('.cs-expand__card', '::before'), expandedOwner: read('.cs-expand__card'), expandedBar: read('.cs-expand__bar'),
+        lesson: read('.cs-expand [data-event-key="old-A"] .cs-lesson__surface'),
+        overlay: read('.cs-expand'), outside: read('#outside-schedule'), body: read('body') };
+    });
+    for (const name of ['mini', 'expanded', 'lesson'] as const) {
+      expect(result[name].alpha, `${palette} ${name} retains transparent material`).toBeGreaterThan(0);
+      expect(result[name].alpha).toBeLessThan(1);
+      expect(result[name].contrast, `${palette} ${name} paired foreground`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(result.miniBar.fill).toBe(result.expandedBar.fill);
+    expect(result.miniBar.ink).toBe(result.expandedBar.ink);
+    expect(result.expandedBar.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(result.mini.blur).toContain('blur(');
+    expect(result.expanded.blur).not.toBe('none');
+    expect(result.expandedOwner.alpha).toBe(0);
+    expect(result.overlay.alpha).toBe(0);
+    for (const name of ['expandedOwner', 'overlay', 'outside', 'body'] as const) {
+      expect(result[name].blur).toBe('none'); expect(result[name].filter).toBe('none');
+    }
+    results.push({ palette, ...result });
+  }
+  expect(new Set(results.map(result => result.expandedBar.fill)).size).toBe(6);
+  const preview = page.locator('.cs-expand [data-event-key="old-A"]');
+  await preview.locator('.cs-lesson__main').focus();
+  await settleScheduleMotion(page);
+  await expect(preview).toHaveAttribute('data-preview-state', 'open');
+  expect(await preview.evaluate(node => getComputedStyle(node).backdropFilter)).toContain('blur(');
+  await testInfo.attach('palette-glass', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
+  await page.screenshot({ path: testInfo.outputPath(`schedule-glass-${appearance}.png`) });
 });

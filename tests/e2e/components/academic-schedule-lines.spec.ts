@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { serveScheduleModule } from './schedule-fixture-modules';
+import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
 type Position = { date: string; sections: number[]; room: string };
 const oldPosition = (date: string, sections: number[], room = 'B416-1'): Position => ({ date, sections, room });
@@ -40,7 +40,7 @@ function fixture() {
 async function mount(page: Page) {
   await page.route('http://schedule-lines.test/**', async route => {
     if (await serveScheduleModule(route)) return;
-    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="/schedule-tokens.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
       import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=fixture';
       window.navigations=[]; window.fixture=${JSON.stringify(fixture())};
       window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url)});
@@ -54,10 +54,7 @@ async function mount(page: Page) {
 }
 
 async function settle(page: Page) {
-  await page.locator('.cs-expand__card').evaluate(async node => {
-    await Promise.allSettled(node.getAnimations({ subtree: true }).map(animation => animation.finished));
-    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-  });
+  await settleScheduleMotion(page);
 }
 
 function change(page: Page, source: string) {
@@ -187,7 +184,7 @@ test('opening and closing previews keep the endpoint attached throughout the vis
           const ports = [[card.left + card.width / 2, card.top], [card.right, card.top + card.height / 2], [card.left + card.width / 2, card.bottom], [card.left, card.top + card.height / 2], [card.left, card.top], [card.right, card.top], [card.left, card.bottom], [card.right, card.bottom]];
           error = Math.min(...ports.map(([x, y]) => Math.hypot(screen.x - x, screen.y - y)));
         }
-        const animated = cell.getAnimations().some(animation => animation.playState === 'running');
+        const animated = cell.matches('.is-preview-moving,[data-preview-state="opening"],[data-preview-state="closing"]') || cell.getAnimations({ subtree: true }).some(animation => animation.playState === 'running');
         const boxes = [...document.querySelectorAll('.cs-expand .cs-lesson-slot > [data-event-key]')].map(node => node.getBoundingClientRect());
         let collisionCount = 0;
         for (const path of document.querySelectorAll<SVGPathElement>('.cs-expand .cs-change-line')) {
@@ -380,12 +377,18 @@ test('hover previews retain readable interactive text while paths avoid the actu
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
     const foreground = getComputedStyle(text);
     const surface = getComputedStyle(card.querySelector('.cs-lesson__surface')!);
-    return { targetOwnsHit: !!hit && card.contains(hit), opacity: foreground.opacity, color: foreground.color, background: surface.backgroundColor };
+    const probe = document.createElement('span'); probe.style.color = 'hsl(var(--ls-ink))'; card.append(probe);
+    const expectedInk = getComputedStyle(probe).color; probe.remove();
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.fillStyle = surface.backgroundColor; context.fillRect(0, 0, 1, 1);
+    return { targetOwnsHit: !!hit && card.contains(hit), opacity: foreground.opacity, color: foreground.color, expectedInk,
+      backgroundAlpha: context.getImageData(0, 0, 1, 1).data[3] / 255 };
   });
   expect(visibleText.targetOwnsHit).toBe(true);
   expect(visibleText.opacity).toBe('1');
-  expect(visibleText.color).not.toBe('rgb(255, 255, 255)');
-  expect(visibleText.background).not.toContain('0.5');
+  expect(visibleText.color).toBe(visibleText.expectedInk);
+  expect(visibleText.backgroundAlpha).toBeGreaterThan(0);
+  expect(visibleText.backgroundAlpha).toBeLessThan(1);
   expect((await geometry(page)).collisions).toEqual([]);
 });
 

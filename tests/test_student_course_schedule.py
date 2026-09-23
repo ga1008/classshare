@@ -203,9 +203,9 @@ class StudentCourseScheduleTests(unittest.TestCase):
         self.conn.set_trace_callback(statements.append)
         result = build_student_course_schedule_overview(self.conn, 7, now=datetime(2026, 9, 5, 10))
         self.conn.set_trace_callback(None)
-        # One constant metadata query checks whether snapshot storage is present;
-        # adding classrooms must never add one query per classroom.
-        self.assertEqual(5, len(statements), statements)
+        # Snapshot discovery and complete combined-class labels each use one
+        # batch query; adding classrooms must never add one query per classroom.
+        self.assertEqual(6, len(statements), statements)
         self.assertTrue(all(query.lstrip().upper().startswith("SELECT") for query in statements))
         lessons = [lesson for week in result["weeks"] for lesson in week["lessons"]]
         self.assertEqual({1, *range(10, 30)}, {lesson["class_offering_id"] for lesson in lessons})

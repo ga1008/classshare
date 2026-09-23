@@ -25,6 +25,8 @@ import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_ch
 
 import { compactClassroomName, adjustmentActionText } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 
+import { DECK_CSS } from './course_schedule_styles.js';
+
 const STYLE_ID = 'course-schedule-deck-style';
 let changeMapSequence = 0;
 
@@ -36,11 +38,6 @@ export function scheduleWheelIntent({ deltaY = 0, deltaMode = 0, ctrlKey = false
     const total = (Math.sign(pending) === direction ? pending : 0) + pixels;
     return Math.abs(total) >= 32 ? { consume: true, step: direction, pending: 0 } : { consume: true, step: 0, pending: total };
 }
-
-const COURSE_PALETTE = [
-    '#4f46e5', '#0ea5e9', '#059669', '#d97706', '#db2777',
-    '#7c3aed', '#0891b2', '#65a30d', '#ea580c', '#e11d48',
-];
 
 const BAND_LABELS = { dawn: '早读', am: '上午', pm: '下午', eve: '晚上' };
 
@@ -83,425 +80,6 @@ export function scheduleChangeLabel(lesson) {
     return ({ move: '调课待审', cancel: '停课待审', room: '更换教室待审' })[change.kind];
 }
 
-const DECK_CSS = `
-.cs-deck { display: grid; gap: 12px; }
-/* 头部悬于后排堆叠卡片之上，避免被 Flip3D 上浮的卡片遮住 */
-.cs-deck-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: relative; z-index: 520; }
-.cs-deck-head__copy h3 { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary, #0f172a); }
-.cs-deck-head__copy p { margin: 0; font-size: 0.78rem; color: var(--text-muted, #64748b); }
-.cs-deck-term {
-    min-width: 190px;
-    padding: 8px 12px;
-    border: 1px solid rgba(148, 163, 184, 0.4);
-    border-radius: 10px;
-    background: #fff;
-    font-size: 0.86rem;
-    font-weight: 700;
-    color: var(--text-primary, #0f172a);
-}
-.cs-deck-nav { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cs-deck-nav__btn {
-    width: 34px; height: 34px;
-    border-radius: 50%;
-    border: 1px solid rgba(148, 163, 184, 0.4);
-    background: #fff;
-    color: var(--text-secondary, #334155);
-    font-size: 1rem;
-    cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-.cs-deck-nav__btn:hover { border-color: #6366f1; color: #4f46e5; }
-.cs-deck-nav__btn:disabled { opacity: 0.4; cursor: default; }
-.cs-week-indicator { font-size: 0.86rem; font-weight: 800; color: #312e81; min-width: 120px; text-align: center; }
-.cs-week-indicator small { display: block; font-weight: 600; color: var(--text-muted, #64748b); font-size: 0.7rem; }
-.cs-deck-slider { width: 180px; accent-color: #6366f1; }
-
-.cs-stage {
-    position: relative;
-    /* 后排 3D 投影只能留在画布内，避免窄屏出现整页横向滚动。
-       clip 不创建滚动容器；头部控件和独立整周对话框不受此裁切影响。 */
-    overflow: clip;
-    height: 460px;
-    perspective: 1500px;
-    perspective-origin: 50% 38%;
-    border-radius: 16px;
-    background:
-        radial-gradient(1200px 400px at 70% -10%, rgba(99, 102, 241, 0.14), transparent 60%),
-        radial-gradient(900px 380px at 10% 110%, rgba(14, 165, 233, 0.12), transparent 55%),
-        linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    touch-action: pan-y;
-}
-.cs-stage__hint {
-    position: absolute;
-    left: 14px; bottom: 10px;
-    z-index: 400;
-    font-size: 0.72rem;
-    color: var(--text-muted, #64748b);
-    background: hsl(var(--ls-surface-1, 0 0% 100%) / 0.78);
-    border-radius: 999px;
-    padding: 4px 12px;
-    pointer-events: none;
-}
-
-.cs-card {
-    position: absolute;
-    left: 50%; top: 50%;
-    width: min(680px, 82%);
-    height: 380px;
-    border-radius: 14px;
-    background: hsl(var(--ls-surface-1, 0 0% 100%) / 0.97);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    box-shadow: 0 22px 44px rgba(30, 41, 59, 0.22);
-    transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.4s ease;
-    transform-style: preserve-3d;
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    will-change: transform, opacity;
-}
-.cs-card[hidden] { display: none; }
-.cs-card__bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    background: linear-gradient(120deg, #4f46e5, #6366f1 55%, #0ea5e9);
-    color: #fff;
-}
-.cs-card__bar strong { font-size: 0.98rem; font-weight: 900; letter-spacing: 0.04em; }
-.cs-card__bar span { font-size: 0.74rem; opacity: 0.92; font-weight: 700; }
-.cs-card__badge {
-    margin-left: auto;
-    font-size: 0.7rem;
-    font-weight: 900;
-    background: hsl(var(--ls-surface-1, 0 0% 100%) / 0.22);
-    border-radius: 999px;
-    padding: 3px 10px;
-}
-.cs-card__badge.is-current { background: #fbbf24; color: #713f12; }
-.cs-card__body { padding: 10px 12px 12px; min-height: 0; position: relative; }
-.cs-card.is-active { cursor: zoom-in; }
-.cs-card.is-active:hover { box-shadow: 0 28px 56px rgba(30, 41, 59, 0.32); }
-/* 无排课周的水印 */
-.cs-week-empty-mark {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    pointer-events: none;
-    font-size: clamp(1.2rem, 4vw, 2rem);
-    font-weight: 900;
-    letter-spacing: 0.3em;
-    color: rgba(100, 116, 139, 0.18);
-    transform: rotate(-8deg);
-    user-select: none;
-}
-
-/* ---- 课表网格（迷你卡片与放大视图共用） ---- */
-/* 网格用绝对定位铺满 body 的内容区（inset 精确等于各 body 的 padding）。
-   这样网格拿到一个明确的高度（body 内容盒），grid-template-rows 的 fr 就
-   按这个真实高度定轨、绝不溢出。之前用 height:100% 或 flex 都失败：前者在
-   border-box 下把 padding 算进高度、后者 flex-basis 取内容高（如 745px）作
-   定轨基准却渲染在被压缩的实际盒（605px）里，最后几行按错误高度溢出被裁
-   （"挤压的下面看不见了"）。绝对定位 + 明确 inset 从根上消除这个歧义。 */
-.cs-grid { display: grid; position: absolute; gap: 3px; overflow: hidden; }
-.cs-card__body > .cs-grid { inset: 10px 12px 12px; }
-.cs-expand__body > .cs-grid { inset: 16px 20px 20px; }
-.cs-grid__corner, .cs-grid__day, .cs-grid__section {
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 800;
-    color: var(--text-muted, #64748b);
-    background: rgba(148, 163, 184, 0.1);
-    border-radius: 6px;
-    font-size: 0.68rem;
-}
-.cs-grid__cellbg { background: rgba(148, 163, 184, 0.06); border-radius: 6px; }
-/* 周末列弱化、今天列强调 */
-.cs-grid__day--weekend { color: rgba(100, 116, 139, 0.6); background: rgba(148, 163, 184, 0.06); }
-.cs-grid__cellbg--weekend { filter: saturate(0.35) opacity(0.75); }
-.cs-grid__day--today { background: #4f46e5; color: #fff; box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35); }
-.cs-grid__day--today small { font-weight: 700; opacity: 0.9; margin-left: 4px; }
-.cs-grid__cellbg--today { background-image: linear-gradient(rgba(99, 102, 241, 0.12), rgba(99, 102, 241, 0.12)); }
-/* 早读 / 上午 / 下午 / 晚上分区背景 */
-.cs-grid__cellbg--dawn { background: rgba(251, 191, 36, 0.12); }
-.cs-grid__cellbg--am { background: rgba(14, 165, 233, 0.09); }
-.cs-grid__cellbg--pm { background: rgba(99, 102, 241, 0.09); }
-.cs-grid__cellbg--eve { background: rgba(51, 65, 85, 0.12); }
-.cs-grid__section--dawn { background: rgba(251, 191, 36, 0.2); color: #92400e; }
-.cs-grid__section--am { background: rgba(14, 165, 233, 0.16); color: #075985; }
-.cs-grid__section--pm { background: rgba(99, 102, 241, 0.16); color: #3730a3; }
-.cs-grid__section--eve { background: rgba(51, 65, 85, 0.2); color: #1e293b; }
-.cs-grid__band {
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 6px;
-    font-weight: 900;
-    font-size: 0.72rem;
-    letter-spacing: 0.24em;
-    writing-mode: vertical-lr;
-    text-orientation: upright;
-}
-.cs-grid__band--dawn { background: rgba(251, 191, 36, 0.24); color: #92400e; }
-.cs-grid__band--am { background: rgba(14, 165, 233, 0.18); color: #075985; }
-.cs-grid__band--pm { background: rgba(99, 102, 241, 0.18); color: #3730a3; }
-.cs-grid__band--eve { background: rgba(51, 65, 85, 0.24); color: #f8fafc; }
-/* Glass is applied to the surface, never as opacity on its text. The proposed
-   arrangement retains an opaque white tint so underlying lessons cannot bleed. */
-.cs-lesson {
-    --cs-radius: 14px;
-    border-radius: var(--cs-radius); color: #fff; background: transparent;
-    min-width: 0; min-height: 0; padding: 0; box-sizing: border-box;
-    text-decoration: none; overflow: hidden;
-    backdrop-filter: blur(14px) saturate(1.15);
-    -webkit-backdrop-filter: blur(14px) saturate(1.15);
-}
-.cs-lesson__surface {
-    position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto;
-    width: 100%; height: 100%; min-width: 0; min-height: 0; box-sizing: border-box;
-    border-radius: inherit; padding: 7px 8px; gap: 4px; overflow: hidden;
-    background-color: var(--cs-accent, #6366f1);
-    background-image: linear-gradient(145deg, hsl(var(--ls-surface-1, 0 0% 100%) / .20), hsl(var(--ls-surface-1, 0 0% 100%) / .03) 48%, hsl(var(--ls-surface-1, 0 0% 100%) / .10));
-    box-shadow: inset 0 1px 0 hsl(var(--ls-surface-1, 0 0% 100%) / .42), inset 0 0 0 1px hsl(var(--ls-surface-1, 0 0% 100%) / .22), 0 2px 6px rgba(15,23,42,.08);
-}
-.cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited {
-    display: block; align-self: center; min-width: 0; min-height: 0;
-    color: inherit; text-decoration: none; overflow: hidden;
-}
-.cs-lesson__title {
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    font-size: .86rem; line-height: 1.3; font-weight: 850; margin: 0;
-    min-width: 0; overflow: hidden; overflow-wrap: anywhere; white-space: normal;
-}
-.cs-lesson__details { display: none; opacity: 0; min-width: 0; }
-.cs-lesson__details > span { display: block; font-size: .82rem; line-height: 1.55; overflow-wrap: anywhere; }
-.cs-lesson__link-hint { font-weight: 750; }
-.cs-lesson__footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; min-width: 0; gap: 5px; }
-.cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0, 1fr) auto; }
-.cs-lesson__room {
-    display: block; min-width: 0; font-size: .68rem; line-height: 1.35;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 1;
-}
-.cs-lesson__room-short, .cs-lesson__room-full { font: inherit; line-height: inherit; }
-.cs-lesson__room-full { display: none; }
-.cs-adjustment-label {
-    position: relative; justify-self: end; align-self: end; z-index: 2;
-    max-width: 100%; min-width: 0; min-height: 23px; box-sizing: border-box;
-    border: 1px solid hsl(var(--ls-surface-1, 0 0% 100%) / .62); border-radius: 10px;
-    padding: 3px 6px; color: inherit; font: 750 .67rem/1.25 Arial,sans-serif;
-    background: linear-gradient(145deg, hsl(var(--ls-surface-1, 0 0% 100%) / .32), hsl(var(--ls-surface-1, 0 0% 100%) / .12));
-    backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3);
-    box-shadow: inset 0 1px 0 hsl(var(--ls-surface-1, 0 0% 100%) / .45), 0 2px 5px rgba(15,23,42,.12);
-    text-align: center; white-space: nowrap; cursor: pointer;
-}
-.cs-adjustment-label > span { font: inherit; line-height: inherit; }
-.cs-adjustment-label__full { display: none; }
-.cs-adjustment-label:is(:hover,:focus-visible) { background-color: hsl(var(--ls-surface-1, 0 0% 100%) / .18); }
-.cs-adjustment-label:active { box-shadow: inset 0 1px 4px rgba(15,23,42,.2); }
-.cs-lesson--mini { container: cs-lesson / size; --cs-radius: 11px; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.cs-lesson--mini .cs-lesson__surface { padding: 4px 5px; gap: 2px; }
-.cs-lesson--mini .cs-lesson__title { font-size: .76rem; }
-.cs-lesson--mini .cs-lesson__room { font-size: .64rem; }
-.cs-lesson--mini .cs-adjustment-label { min-height: 19px; padding: 2px 4px; font-size: .6rem; border-radius: 8px; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.cs-grid--expanded { overflow: visible; }
-.cs-grid--expanded .cs-grid__corner,
-.cs-grid--expanded .cs-grid__day,
-.cs-grid--expanded .cs-grid__section { font-size: .84rem; }
-.cs-lesson-slot { position: relative; min-width: 0; min-height: 0; container: cs-lesson / size; }
-.cs-lesson--cell { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-a.cs-lesson, a.cs-lesson:link, a.cs-lesson:visited, a.cs-lesson:hover, a.cs-lesson:focus { color: #fff; }
-a.cs-lesson--cell { cursor: pointer; }
-a.cs-lesson--create .cs-lesson__surface { box-shadow: inset 0 0 0 2px hsl(var(--ls-surface-1, 0 0% 100%) / .55); }
-a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; text-underline-offset: 3px; }
-/* Pending frames keep a 4px gap; extremely narrow/short lanes use 2px below
-   to retain readable title and action rows. */
-.cs-lesson.cs-lesson--pending { border: 2px dashed var(--cs-accent); padding: 4px; }
-.cs-lesson--pending .cs-lesson__surface { border-radius: max(6px, calc(var(--cs-radius) - 6px)); }
-.cs-lesson--pending.cs-lesson--proposed { color: #172554; }
-.cs-lesson--proposed .cs-lesson__surface { background-color: color-mix(in srgb, var(--cs-accent) 25%, #fff 75%); }
-.cs-lesson--proposed .cs-adjustment-label { border-color: rgba(23,37,84,.3); background-color: hsl(var(--ls-surface-1, 0 0% 100%) / .35); }
-/* Title gets the flexible space. The footer keeps the action at the right edge;
-   the lower-priority room yields its width instead of pushing the action away. */
-.cs-lesson__footer:has(.cs-adjustment-label) .cs-adjustment-label { max-width: var(--cs-compact-action-width, 96px); }
-@container cs-lesson (max-height: 92px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 3px 5px; gap: 2px; }
-}
-@container cs-lesson (max-height: 72px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__title { -webkit-line-clamp: 1; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 1px 4px; gap: 1px; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { min-height: 20px; padding: 2px 4px; font-size: .64rem; }
-}
-@container cs-lesson (max-width: 100px) {
-    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0, 1fr); }
-    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) .cs-lesson__room { grid-area: 1/1; }
-    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-adjustment-label { grid-area: 1/1; max-width: 100%; white-space: normal; }
-    .cs-lesson:not(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) .cs-lesson__room { visibility: hidden; }
-}
-@container cs-lesson (max-height: 52px) {
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); gap: 3px; }
-    .cs-lesson--cell.cs-lesson--pending:not(.is-preview,.is-preview-closing) .cs-lesson__room { display: none; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__room { max-width: 76px; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__title { -webkit-line-clamp: 1; }
-}
-@container cs-lesson (max-width: 80px) and (min-height: 53px) and (max-height: 72px) {
-    .cs-lesson--cell.cs-lesson--pending:not(.is-preview,.is-preview-closing) { padding: 2px; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-lesson__surface { padding: 0 3px; gap: 1px; }
-    .cs-lesson--cell:not(.is-preview,.is-preview-closing) .cs-adjustment-label { padding: 0 3px; line-height: 1.1; }
-}
-@container cs-lesson (max-height: 57px) {
-    .cs-lesson--mini .cs-lesson__surface { padding: 1px 3px; gap: 1px; }
-    .cs-lesson--mini.cs-lesson--pending .cs-lesson__title { -webkit-line-clamp: 1; }
-}
-@container cs-lesson (max-height: 39px) {
-    .cs-lesson--mini .cs-lesson__title { -webkit-line-clamp: 1; }
-}
-@container cs-lesson (max-height: 30px) {
-    .cs-lesson--mini .cs-lesson__surface { grid-template-columns: minmax(0,1fr) auto; grid-template-rows: minmax(0,1fr); }
-    .cs-lesson--mini .cs-lesson__room { display: none; }
-}
-.cs-lesson-slot.is-preview { z-index: 60; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) {
-    --cs-radius: 22px;
-    top: var(--cs-preview-top, 0px); left: var(--cs-preview-left, 0px);
-    width: max-content; height: auto;
-    min-width: var(--cs-preview-min-width, 240px); max-width: var(--cs-preview-max-width, 420px);
-    max-height: var(--cs-preview-max-height, 80vh);
-    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
-    box-shadow: 0 18px 42px rgba(15,23,42,.32), 0 2px 8px rgba(15,23,42,.15);
-}
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__surface {
-    display: flex; flex-direction: column; width: auto; height: auto; min-height: 0;
-    padding: 13px 14px; gap: 10px; overflow: visible;
-}
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__main { align-self: stretch; overflow: visible; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__title {
-    display: block; font-size: 1.02rem; line-height: 1.3; overflow: visible; -webkit-line-clamp: unset;
-}
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__details { display: grid; gap: 3px; opacity: 1; padding-top: 8px; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__footer { flex: 0 0 auto; grid-template-columns: minmax(0,1fr); gap: 10px; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room { font-size: .8rem; line-height: 1.5; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room-short { display: none; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__room-full { display: inline; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label { border-radius: 13px; font-size: .78rem; line-height: 1.4; padding: 6px 8px; max-width: 100%; text-align: left; white-space: normal; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label__short { display: none; }
-.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-adjustment-label__full { display: inline; }
-.cs-adjustment-details { font-size: .75rem; line-height: 1.6; padding-top: 6px; border-top: 1px solid currentColor; }
-.cs-adjustment-details[hidden], .cs-lesson:not(.is-preview,.is-preview-closing) .cs-adjustment-details { display: none; }
-/* During the 120ms transition, independent text boxes travel inside the moving
-   card. Their text is never scaled; anchors, buttons and event identities stay. */
-.cs-lesson.is-preview-moving .cs-lesson__surface { position: static; display: block; height: 100%; padding: 0; }
-.cs-lesson.is-preview-moving .cs-lesson__main, .cs-lesson.is-preview-moving .cs-lesson__footer { position: static; display: block; padding: 0; }
-.cs-lesson.is-preview-moving .cs-lesson__title { display: block; -webkit-line-clamp: unset; overflow: hidden; }
-.cs-lesson.is-preview-moving .cs-lesson__room-short, .cs-lesson.is-preview-moving .cs-lesson__room-full,
-.cs-lesson.is-preview-moving .cs-adjustment-label__short, .cs-lesson.is-preview-moving .cs-adjustment-label__full {
-    display: block; position: absolute; inset: 0; white-space: normal; overflow: hidden;
-}
-.cs-lesson.is-preview-moving .cs-adjustment-label > span { inset: 4px 6px; }
-.cs-lesson--cell.is-preview-closing { pointer-events: none; }
-.cs-lesson--cell:focus-visible, .cs-lesson__main:focus-visible, .cs-adjustment-label:focus-visible { outline: 2px solid #fbbf24; outline-offset: 1px; }
-.cs-lesson.is-counterpart-focus { outline: 3px solid #f59e0b; outline-offset: 1px; }
-.cs-lesson.is-counterpart-focus::after { content: '已定位'; position: absolute; right: 0; top: -18px; background: #713f12; color: #fff; padding: 1px 4px; border-radius: 6px; font-size: 10px; pointer-events: none; }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-    .cs-lesson, .cs-adjustment-label { backdrop-filter: none; -webkit-backdrop-filter: none; }
-    .cs-lesson__surface { background-image: none; }
-    .cs-adjustment-label { background: var(--cs-accent); color: #fff; border-color: currentColor; }
-    .cs-lesson--proposed .cs-adjustment-label { background: #fff; color: #172554; }
-}
-.cs-deck-feedback { font-size: .8rem; color: var(--text-muted,#64748b); line-height: 1.6; }
-.cs-deck-feedback:empty { display: none; }
-.cs-lesson__main:focus-visible,.cs-adjustment-label:focus-visible { outline: 3px solid #fbbf24; outline-offset: 1px; }
-.cs-lesson-slot[data-cs-lanes] { padding-right: 2px; }
-
-/* ---- 放大视图 ---- */
-.cs-expand {
-    position: fixed;
-    inset: 0;
-    z-index: 1200;
-    background: rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(6px);
-    display: grid;
-    place-items: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.25s ease;
-}
-.cs-expand.is-open { opacity: 1; pointer-events: auto; }
-.cs-expand[hidden] { display: none; }
-.cs-expand__card {
-    width: min(1240px, 94vw);
-    height: min(86vh, 900px);
-    border-radius: 18px;
-    background: #fff;
-    box-shadow: 0 40px 90px rgba(2, 6, 23, 0.5);
-    display: grid;
-    grid-template-rows: auto 1fr;
-    overflow: hidden;
-    transform: scale(0.82) rotateX(8deg);
-    transition: transform 0.32s cubic-bezier(0.22, 0.8, 0.3, 1);
-}
-.cs-expand.is-open .cs-expand__card { transform: scale(1) rotateX(0deg); }
-.cs-expand__bar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 14px 20px;
-    background: linear-gradient(120deg, #4f46e5, #6366f1 55%, #0ea5e9);
-    color: #fff;
-    flex-wrap: wrap;
-}
-.cs-expand__bar strong { font-size: 1.15rem; font-weight: 900; }
-.cs-expand__bar span { font-size: 0.8rem; opacity: 0.92; }
-.cs-expand__nav { margin-left: auto; display: flex; gap: 8px; }
-.cs-expand__nav button {
-    border: 1px solid hsl(var(--ls-surface-1, 0 0% 100%) / 0.5);
-    background: hsl(var(--ls-surface-1, 0 0% 100%) / 0.14);
-    color: #fff;
-    border-radius: 10px;
-    padding: 6px 14px;
-    font-size: 0.82rem;
-    font-weight: 800;
-    cursor: pointer;
-}
-.cs-expand__nav button:hover { background: hsl(var(--ls-surface-1, 0 0% 100%) / 0.28); }
-.cs-expand__body { padding: 16px 20px 20px; min-height: 0; position: relative; }
-/* Routing space belongs to the timetable's scrollable canvas. Endpoints follow
-   the visible lesson bounds; previews stay above lines and remain clickable. */
-.cs-expand__body:has(.cs-change-map) { overflow: auto; overscroll-behavior: contain; }
-.cs-change-map { position: absolute; inset: 0 8px; min-height: 580px; }
-.cs-change-map > .cs-grid { inset: 32px 48px 28px; gap: 12px; min-width: 0; }
-.cs-change-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 2; pointer-events: none; }
-.cs-change-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.cs-change-line-label { pointer-events: all; cursor: pointer; outline: none; }
-.cs-change-line-label rect { fill: #fff; stroke: currentColor; stroke-width: 1; }
-.cs-change-line-label text { fill: #172554; font: 600 12px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
-.cs-change-line-label:is(:hover,:focus-visible) rect { fill: #eef2ff; stroke-width: 2; }
-.cs-change-line-origin { fill: #fff; stroke-width: 1.7; }
-.cs-change-line-fallback { position: absolute; top: 3px; left: 100px; right: 48px; font-size: 11px; color: #475569; pointer-events: none; }
-@media (prefers-reduced-motion: reduce) {
-    .cs-card, .cs-expand, .cs-expand__card { transition: none; }
-}
-
-.cs-empty {
-    display: grid;
-    place-items: center;
-    gap: 8px;
-    padding: 60px 20px;
-    text-align: center;
-    color: var(--text-muted, #64748b);
-}
-.cs-empty strong { color: var(--text-secondary, #334155); font-size: 1rem; }
-.cs-empty a { color: #4f46e5; font-weight: 800; }
-
-@media (max-width: 860px) {
-    .cs-stage { height: 400px; }
-    .cs-card { height: 330px; }
-    .cs-deck-slider { width: 110px; }
-    .cs-expand__body { overflow: auto; overscroll-behavior: contain; }
-    .cs-grid--expanded { min-width: 850px; }
-    .cs-grid--expanded.cs-grid--overlaps { min-width: 1100px; }
-    .cs-change-map { min-width: 960px; }
-    .cs-change-map.cs-change-map--overlaps { min-width: 1210px; }
-    .cs-change-map > .cs-grid--expanded { min-width: 0; }
-}
-`;
 
 function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -519,11 +97,9 @@ function escapeHtml(value) {
         .replaceAll('"', '&quot;');
 }
 
-/** 与课程筛选下拉一致的稳定配色：按 course_options 顺序取色。 */
-export function courseAccentFor(overview, courseName) {
-    const options = overview?.filters?.course_options || [];
-    const index = options.indexOf(courseName);
-    return COURSE_PALETTE[(index >= 0 ? index : 0) % COURSE_PALETTE.length];
+/** A live token keeps cards, their previews and course filters in the same palette. */
+export function courseAccentFor() {
+    return 'hsl(var(--ls-primary, 243 75% 59%))';
 }
 
 /** 节次 → 时段：1=早读，2-5=上午，6-9=下午，10+=晚上。 */
@@ -647,14 +223,9 @@ export function createScheduleDeck(container, options = {}) {
 
     /**
      * 课程卡片三态：
-     * - 3D 缩略（!expanded）：最简内容（课程/教室/班级·第N次），无交互，
-     *   直接以网格定位的单个 div 呈现。
-     * - 放大课表内（expanded 基态）：卡片绝对定位**填满**格子槽（cs-lesson-slot
-     *   才是网格定位并作为稳定的悬停锚点；卡片尺寸变化不影响锚点，杜绝
-     *   反复放大缩小的"抽风箱"闪烁）。内容**始终完整渲染**、顶对齐，格子
-     *   放得下就全部显示，放不下才逐行省略号——不再无谓隐藏内容。
-     * - 悬停 / 聚焦 / 触屏首次轻点：仍展开同一链接，宽高由内容决定，
-     *   尽量围绕格子展开并向课表内部避让；只有超出可用高度才内部滚动。
+     * Compact cards share the course/room summary. A stable grid slot anchors
+     * the same link while its glass surface grows proportionally. Full metadata
+     * appears only after expansion; unusually long details scroll inside it.
      */
     function lessonHtml(lesson, { expanded, minSection, maxSection, columnBase, lane = { lane: 0, count: 1 }, eventKey = '' }) {
         const sections = lesson.sections || [];
@@ -677,10 +248,11 @@ export function createScheduleDeck(container, options = {}) {
             : isCreate ? '尚无对应课堂 · 点击创建；创建后请再次同步关联课次' : href ? '点击进入课堂 →' : '';
         const sessionText = lesson.session_no ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}` : '';
         const weekday = lesson.weekday_label || `星期${['一','二','三','四','五','六','日'][Math.min(6, Math.max(0, Number(lesson.weekday || 1) - 1))]}`;
+        const time = [lesson.actual_date, weekday, lesson.time_label || [lesson.start_time, lesson.end_time].filter(Boolean).join('–'), lesson.section_label].filter(Boolean).join(' · ');
         const details = [
-            lesson.actual_date ? `<span class="cs-lesson__meta">${escapeHtml(lesson.actual_date)} · ${escapeHtml(weekday)} · ${escapeHtml(lesson.section_label || '')}</span>` : '',
-            lesson.class_label ? `<span class="cs-lesson__meta">班级 ${escapeHtml(lesson.class_label)}${lesson.student_count ? ` · ${escapeHtml(lesson.student_count)}人` : ''}</span>` : '',
+            `<span class="cs-lesson__meta">${escapeHtml(time)}</span>`,
             sessionText ? `<span class="cs-lesson__meta">${escapeHtml(sessionText)}${lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : ''}</span>` : '',
+            lesson.class_label ? `<span class="cs-lesson__meta">班级 ${escapeHtml(lesson.class_label)}${lesson.student_count ? ` · ${escapeHtml(lesson.student_count)}人` : ''}</span>` : '',
             linkHint ? `<span class="cs-lesson__meta cs-lesson__link-hint">${escapeHtml(linkHint)}</span>` : '',
         ].filter(Boolean).join('');
         let button = '', comparison = '';
@@ -858,7 +430,7 @@ export function createScheduleDeck(container, options = {}) {
 
     function renderCompactWeek(week) {
         const lessons = week.lessons || [];
-        return `<div class="cs-card__compact">${lessons.length ? `<ol>${lessons.slice(0, 3).map(lesson => `<li><span>${escapeHtml(lesson.weekday_label)} · ${escapeHtml(lesson.section_label)}</span><strong>${escapeHtml(lesson.course_name)}</strong></li>`).join('')}</ol><small>${lessons.length > 3 ? `还有 ${lessons.length - 3} 次安排 · ` : ''}点击放大查看整周课表</small>` : '<strong>这一周没有已排定课程</strong><small>其他课堂可从“全部课程”进入</small>'}</div>`;
+        return `<div class="cs-card__compact">${lessons.length ? `<ol>${lessons.slice(0, 3).map(lesson => `<li><span>${escapeHtml(lesson.weekday_label)} · ${escapeHtml(lesson.section_label)} · ${escapeHtml(compactClassroomName(lesson.classroom || lesson.classroom_short || '教室待定'))}</span><strong>${escapeHtml(lesson.course_name)}</strong></li>`).join('')}</ol><small>${lessons.length > 3 ? `还有 ${lessons.length - 3} 次安排 · ` : ''}点击放大查看整周课表</small>` : '<strong>这一周没有已排定课程</strong><small>其他课堂可从“全部课程”进入</small>'}</div>`;
     }
 
     function layoutDeck() {
@@ -928,9 +500,9 @@ export function createScheduleDeck(container, options = {}) {
         layoutDeck();
     }
 
-    function announce(message) {
+    function announce(message, expanded = true) {
         refs.feedback.textContent = message;
-        refs.expandFeedback.textContent = message;
+        refs.expandFeedback.textContent = expanded ? message : '';
     }
 
     function focusLesson(eventKey, weekIndex) {
@@ -1000,25 +572,10 @@ export function createScheduleDeck(container, options = {}) {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     function lessonFrame(cell) {
-        const style = getComputedStyle(cell);
-        const rect = cell.getBoundingClientRect();
-        const bodyRect = refs.expandBody.getBoundingClientRect();
-        const scaleX = bodyRect.width / refs.expandBody.offsetWidth || 1;
-        const scaleY = bodyRect.height / refs.expandBody.offsetHeight || 1;
-        const properties = ['width', 'height', 'left', 'top', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow'];
-        const parts = [...cell.querySelectorAll('.cs-lesson__title, .cs-lesson__details, .cs-lesson__room, .cs-adjustment-label, .cs-adjustment-details')].map(node => {
-            const css = getComputedStyle(node), box = node.getBoundingClientRect();
-            const visible = box.width > 0 && box.height > 0 && css.display !== 'none' && css.visibility !== 'hidden';
-            return { node, visible, box: { left: `${(box.left - rect.left) / scaleX - parseFloat(style.borderLeftWidth)}px`, top: `${(box.top - rect.top) / scaleY - parseFloat(style.borderTopWidth)}px`,
-                width: `${box.width / scaleX}px`, height: `${box.height / scaleY}px`, fontSize: css.fontSize, lineHeight: css.lineHeight },
-                opacity: visible ? Number(css.opacity) : 0 };
-        });
-        const labels = [...cell.querySelectorAll('.cs-lesson__room-short, .cs-lesson__room-full, .cs-adjustment-label__short, .cs-adjustment-label__full')].map(node => {
-            const css = getComputedStyle(node);
-            return { node, opacity: css.display === 'none' ? 0 : Number(css.opacity) };
-        });
-        return { card: Object.fromEntries(properties.map(key => [key, style[key]])), parts, labels,
-            surfaceRadius: getComputedStyle(cell.querySelector('.cs-lesson__surface')).borderRadius };
+        return {
+            rect: cell.getBoundingClientRect(),
+            opacity: Number(getComputedStyle(cell.querySelector('.cs-lesson__main')).opacity),
+        };
     }
 
     function cancelLessonMotion(cell) {
@@ -1028,7 +585,7 @@ export function createScheduleDeck(container, options = {}) {
         cell.classList.remove('is-preview-moving');
     }
 
-    /** The comparison text is part of the preview: it opens with it and never outlives it. */
+    /** The comparison belongs to the preview and shares its reveal/close phases. */
     function setChangeDetail(cell, open) {
         const detail = cell?.querySelector('.cs-adjustment-details');
         if (!detail) return;
@@ -1050,7 +607,6 @@ export function createScheduleDeck(container, options = {}) {
         if (!previewCell) return;
         const cell = previewCell;
         previewCell = null;
-        setChangeDetail(cell, false);
         animateLessonPreview(cell, false);
     }
 
@@ -1059,84 +615,90 @@ export function createScheduleDeck(container, options = {}) {
         const slot = cell.parentElement;
         const bodyRect = body.getBoundingClientRect();
         const slotRect = slot.getBoundingClientRect();
-        // offset 尺寸处于 CSS 坐标系，避免打开动画中的 scale 影响边界计算。
         const scaleX = bodyRect.width / body.offsetWidth || 1;
         const scaleY = bodyRect.height / body.offsetHeight || 1;
         const availableWidth = Math.max(1, body.clientWidth - 24);
         const availableHeight = Math.max(1, body.clientHeight - 24);
-        const maxWidth = Math.min(420, availableWidth);
-        const minWidth = Math.min(maxWidth, Math.max(240, slot.offsetWidth));
-        cell.style.setProperty('--cs-preview-min-width', `${minWidth}px`);
-        cell.style.setProperty('--cs-preview-max-width', `${maxWidth}px`);
-        cell.style.setProperty('--cs-preview-max-height', `${availableHeight}px`);
-        const width = cell.offsetWidth;
-        const height = cell.offsetHeight;
+        const baseWidth = Math.max(1, slot.clientWidth);
+        const baseHeight = Math.max(1, slot.clientHeight);
+        // Size the readable layout once, then fit ONE scale to both dimensions.
+        // Content never changes the slot's aspect ratio; excess text scrolls.
+        const desiredWidth = Math.min(380, availableWidth);
+        cell.style.setProperty('--cs-preview-width', `${desiredWidth}px`);
+        cell.style.setProperty('--cs-preview-height', `${baseHeight * desiredWidth / baseWidth}px`);
+        const naturalHeight = cell.querySelector('.cs-lesson__surface').scrollHeight;
+        const desiredScale = Math.max(1.25, desiredWidth / baseWidth, naturalHeight / baseHeight);
+        const scale = Math.min(desiredScale, Math.min(600, availableWidth) / baseWidth, availableHeight / baseHeight);
+        const width = baseWidth * scale;
+        const height = baseHeight * scale;
+        cell.style.setProperty('--cs-preview-width', `${width}px`);
+        cell.style.setProperty('--cs-preview-height', `${height}px`);
         const slotLeft = (slotRect.left - bodyRect.left) / scaleX;
         const slotTop = (slotRect.top - bodyRect.top) / scaleY;
         const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
-        const left = clamp(slotLeft + (slot.offsetWidth - width) / 2, 12, body.clientWidth - width - 12);
-        const top = clamp(slotTop + (slot.offsetHeight - height) / 2, 12, body.clientHeight - height - 12);
+        const left = clamp(slotLeft + (baseWidth - width) / 2, 12, body.clientWidth - width - 12);
+        const top = clamp(slotTop + (baseHeight - height) / 2, 12, body.clientHeight - height - 12);
         cell.style.setProperty('--cs-preview-left', `${left - slotLeft}px`);
         cell.style.setProperty('--cs-preview-top', `${top - slotTop}px`);
     }
 
     function animateLessonPreview(cell, opening) {
         if (!cell.isConnected) return;
-        // Snapshot the currently painted boxes before cancelling. Rapid reversal
-        // starts from these positions and opacity values, not either endpoint.
+        // Capture the actual painted surface before cancellation, so reversal
+        // continues from the current point rather than snapping to an endpoint.
         const from = lessonFrame(cell);
         const priorScroll = previewMotions.get(cell)?.openScroll;
         const openScroll = priorScroll || { left: cell.scrollLeft, top: cell.scrollTop };
         cancelLessonMotion(cell);
         cell.classList.remove('is-preview-closing');
-        cell.classList.toggle('is-preview', opening);
+        cell.classList.add('is-preview');
         if (opening) {
+            setChangeDetail(cell, true);
             measureLessonPreview(cell);
-            if (priorScroll) { cell.scrollLeft = priorScroll.left; cell.scrollTop = priorScroll.top; }
         }
-        const to = lessonFrame(cell);
-        const targetScroll = { left: cell.scrollLeft, top: cell.scrollTop };
+        const layout = cell.getBoundingClientRect();
+        const target = opening ? layout : cell.parentElement.getBoundingClientRect();
+        const bodyRect = refs.expandBody.getBoundingClientRect();
+        const bodyScale = bodyRect.width / refs.expandBody.offsetWidth || 1;
+        const transformFor = rect => `translate(${(rect.left - layout.left) / bodyScale}px, ${(rect.top - layout.top) / bodyScale}px) scale(${rect.width / layout.width})`;
+        const moved = Math.abs(from.rect.width - target.width) + Math.abs(from.rect.height - target.height)
+            + Math.abs(from.rect.left - target.left) + Math.abs(from.rect.top - target.top) > 1;
         const finish = () => {
-            cell.classList.remove('is-preview-closing');
             cancelLessonMotion(cell);
-            cell.scrollLeft = previewCell === cell ? targetScroll.left : 0;
-            cell.scrollTop = previewCell === cell ? targetScroll.top : 0;
-            cell.parentElement?.classList.toggle('is-preview', previewCell === cell);
-            if (previewCell === cell) cell.dataset.previewState = 'open';
+            cell.classList.remove('is-preview-closing');
+            cell.classList.toggle('is-preview', opening);
+            setChangeDetail(cell, opening);
+            cell.scrollLeft = opening ? openScroll.left : 0;
+            cell.scrollTop = opening ? openScroll.top : 0;
+            cell.parentElement?.classList.toggle('is-preview', opening);
+            if (opening) cell.dataset.previewState = 'open';
             else delete cell.dataset.previewState;
             scheduleChangeLines();
         };
-        if (reducedMotion.matches || typeof cell.animate !== 'function') { finish(); return; }
-        if (!opening) cell.classList.add('is-preview-closing');
+        if (reducedMotion.matches || typeof cell.animate !== 'function' || !moved) { finish(); return; }
+        if (!opening) {
+            cell.classList.remove('is-preview');
+            cell.classList.add('is-preview-closing');
+        }
         cell.classList.add('is-preview-moving');
         cell.dataset.previewState = opening ? 'opening' : 'closing';
-        const timing = { duration: 120, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
-        const fadeTiming = { duration: 80, easing: 'linear', fill: 'both' };
-        const moving = { minWidth: '0px', maxWidth: 'none', minHeight: '0px', maxHeight: 'none', overflow: 'hidden' };
-        const animations = [cell.animate([{ ...from.card, ...moving }, { ...to.card, ...moving }], timing)];
-        const absolute = { position: 'absolute', margin: '0px', right: 'auto', bottom: 'auto', minWidth: '0px', maxWidth: 'none',
-            minHeight: '0px', maxHeight: 'none', boxSizing: 'border-box', overflow: 'hidden', visibility: 'visible' };
-        to.parts.forEach((target, index) => {
-            const source = from.parts[index];
-            if (!source.visible && !target.visible) return;
-            // A newly revealed detail fades in at its destination; a disappearing
-            // detail fades out in place. The title/room/button travel continuously.
-            const startBox = source.visible ? source.box : target.box;
-            const endBox = target.visible ? target.box : source.box;
-            animations.push(target.node.animate([{ ...startBox, ...absolute }, { ...endBox, ...absolute }], timing));
-            animations.push(target.node.animate([{ opacity: source.opacity }, { opacity: target.opacity }], fadeTiming));
-        });
-        to.labels.forEach((target, index) => animations.push(target.node.animate([
-            { opacity: from.labels[index].opacity }, { opacity: target.opacity },
-        ], fadeTiming)));
-        animations.push(cell.querySelector('.cs-lesson__surface').animate([
-            { borderRadius: from.surfaceRadius }, { borderRadius: to.surfaceRadius },
-        ], timing));
-        // DOMRect snapshots describe painted (scrolled) coordinates. Animate in
-        // a zero-scroll coordinate space, then restore the open target scroll.
-        // This also covers a resize while a long preview is already scrolled.
-        cell.scrollLeft = 0; cell.scrollTop = 0;
-        const motion = { animations, openScroll: opening ? targetScroll : openScroll };
+        const fadeOut = opening || from.opacity < .01 ? 0 : 70;
+        const duration = opening ? 190 : 150;
+        const motionTiming = { duration, delay: fadeOut, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
+        const animations = [cell.animate([
+            { transform: transformFor(from.rect), transformOrigin: '0 0', overflow: 'hidden' },
+            { transform: transformFor(target), transformOrigin: '0 0', overflow: 'hidden' },
+        ], motionTiming)];
+        // No per-letter/line position or font-size interpolation: all text stays
+        // invisible during geometric motion, then resolves quickly at full size.
+        for (const part of cell.querySelector('.cs-lesson__surface').children) {
+            animations.push(part.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: from.opacity }, { opacity: 0 }], {
+                duration: opening ? 80 : fadeOut || 1,
+                delay: opening ? duration : 0,
+                easing: 'linear', fill: 'both',
+            }));
+        }
+        const motion = { animations, openScroll };
         previewMotions.set(cell, motion);
         scheduleChangeLines();
         Promise.allSettled(animations.map(animation => animation.finished)).then(() => {
@@ -1279,8 +841,7 @@ export function createScheduleDeck(container, options = {}) {
         if (refs.expandTitle) refs.expandTitle.textContent = week.label + (week.is_current ? '（本周）' : '');
         if (refs.expandSub) {
             const termLabel = state.overview?.selected_term?.label || '';
-            const dateRange = week.date_range_label ? ` · ${week.date_range_label}` : '';
-            refs.expandSub.textContent = `${termLabel}${dateRange} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时`;
+            refs.expandSub.innerHTML = `${week.date_range_label ? `<span class="cs-expand__dates">${escapeHtml(week.date_range_label)}</span>` : ''}<small>${escapeHtml(termLabel)} · ${week.lesson_count} 节安排 · ${week.total_hours} 课时</small>`;
         }
         const grid = renderWeekGrid(week, { expanded: true });
         const connections = scheduleChangeConnections(state.overview, week);
@@ -1614,10 +1175,9 @@ export function createScheduleDeck(container, options = {}) {
                 changeColors = scheduleChangeColors(state.overview, changeColorsByTerm.get(colorScope));
                 changeColorsByTerm.set(colorScope, changeColors);
                 const sync = state.overview.sync_state;
-                const when = sync?.last_success_at || state.overview.selected_term?.synced_at;
                 const pending = state.overview.weeks.reduce((sum, week) => sum + week.proposed_count, 0);
                 const warnings = state.overview.warnings || sync?.warnings || [];
-                announce([...new Set([state.overview.message, when ? `最近成功同步：${when}` : '', pending ? `${pending} 项待审预测不计入正式课时` : '', Array.isArray(warnings) ? warnings.map(item => typeof item === 'string' ? item : item.message || '').filter(Boolean).join('；') : ''].filter(Boolean))].join(' · '));
+                announce([...new Set([state.overview.message, pending ? `${pending} 项待审预测不计入正式课时` : '', Array.isArray(warnings) ? warnings.map(item => typeof item === 'string' ? item : item.message || '').filter(Boolean).join('；') : ''].filter(Boolean))].join(' · '), false);
             } else announce('');
             const weeks = state.overview?.weeks || [];
             // 打开定位：后端 focus_week（本周 / 假期→上学期最后教学周 / 未开学→第1周）

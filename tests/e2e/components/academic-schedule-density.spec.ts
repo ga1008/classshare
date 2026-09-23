@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { serveScheduleModule } from './schedule-fixture-modules';
+import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
 function densityFixture() {
   const original = { date: '2026-09-25', sections: [2, 3], room: '知新楼B416-1' };
@@ -32,7 +32,7 @@ async function mount(page: Page, options: { long?: boolean } = {}) {
   if (options.long) fixture.weeks[0].lessons.find(lesson => lesson.event_key === 'move-new')!.class_label = '人工智能2601班、软件工程2602班、计算机科学2603班；'.repeat(60);
   await page.route('http://schedule-density.test/**', async route => {
     if (await serveScheduleModule(route)) return;
-    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="/schedule-tokens.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
       import {createScheduleDeck} from '/static/js/course_schedule_deck.js';
       window.navigations=[];window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url)});
       window.deck.setOverview(${JSON.stringify(fixture)});window.deck.openExpanded();
@@ -44,10 +44,7 @@ async function mount(page: Page, options: { long?: boolean } = {}) {
 }
 
 async function settled(page: Page) {
-  await page.locator('.cs-expand__card').evaluate(async card => {
-    await Promise.allSettled(card.getAnimations({ subtree: true }).map(animation => animation.finished));
-    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-  });
+  await settleScheduleMotion(page);
 }
 
 function card(page: Page, key: string) { return page.locator(`.cs-expand [data-event-key="${key}"]`); }
@@ -63,7 +60,9 @@ async function readCard(card: Locator) {
     const container = title.parentElement!.getBoundingClientRect();
     const buttonBox = button?.getBoundingClientRect(), buttonContainer = button?.parentElement!.getBoundingClientRect();
     const roomBox = room.getBoundingClientRect(), surfaceBox = surface.getBoundingClientRect();
-    const detailsStyle = getComputedStyle(details), detailOpacity = parseFloat(detailsStyle.opacity);
+    const detailsStyle = getComputedStyle(details);
+    let detailOpacity = 1;
+    for (let ancestor: HTMLElement | null = details; ancestor && ancestor !== node; ancestor = ancestor.parentElement) detailOpacity *= Number(getComputedStyle(ancestor).opacity);
     const metadata = [...details.querySelectorAll<HTMLElement>('.cs-lesson__meta')];
     const visibleMetadata = metadata.filter(span => { const rect = span.getBoundingClientRect(); return detailOpacity > .01 && detailsStyle.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && getComputedStyle(span).visibility !== 'hidden'; });
     const buttonHit = buttonBox && document.elementFromPoint(buttonBox.left + buttonBox.width / 2, buttonBox.top + buttonBox.height / 2);
@@ -74,6 +73,8 @@ async function readCard(card: Locator) {
       detailOpacity, metadataCount: metadata.length, visibleMetadata: visibleMetadata.map(span => span.textContent),
       roomText: room.innerText.trim(), roomShortText: room.querySelector('.cs-lesson__room-short')?.textContent, roomVisible: roomBox.width > 0 && roomBox.height > 0 && getComputedStyle(room).visibility !== 'hidden', roomWidth: roomBox.width, roomFont: parseFloat(getComputedStyle(room).fontSize), titleFont: parseFloat(getComputedStyle(title).fontSize),
       roomAtLeftBottom: roomBox.left >= surfaceBox.left - 1 && roomBox.left <= surfaceBox.left + 18 && roomBox.bottom <= surfaceBox.bottom + 1 && roomBox.bottom >= surfaceBox.bottom - 18,
+      roomFits: roomBox.left >= surfaceBox.left - 1 && roomBox.right <= surfaceBox.right + 1 && roomBox.top >= surfaceBox.top - 1 && roomBox.bottom <= surfaceBox.bottom + 1,
+      roomComplete: room.scrollWidth <= room.clientWidth + 1 && room.scrollHeight <= room.clientHeight + 1,
       buttonText: button?.innerText.trim() || '', buttonLabel: button?.getAttribute('aria-label') || '',
       buttonAtRightBottom: !button || (buttonBox!.right <= surfaceBox.right + 1 && buttonBox!.right >= surfaceBox.right - 18 && buttonBox!.bottom <= surfaceBox.bottom + 1 && buttonBox!.bottom >= surfaceBox.bottom - 18),
       buttonWinsHit: !buttonOnscreen || !buttonHit || button === buttonHit || button!.contains(buttonHit),
@@ -146,9 +147,9 @@ test('preview restores all lesson information and complete button wording on the
   expect(metrics.buttonText).toContain('原位置');
   expect(metrics.titleFits).toBe(true);
   expect(metrics.titleAtTop).toBe(true);
-  expect(metrics.roomAtLeftBottom).toBe(true);
+  expect(metrics.roomFits).toBe(true);
+  expect(metrics.roomComplete).toBe(true);
   expect(metrics.buttonFits).toBe(true);
-  expect(metrics.buttonAtRightBottom).toBe(true);
   expect(await originalLink!.evaluate(link => link.isConnected)).toBe(true);
   expect(await target.locator('..').boundingBox()).toEqual(stableSlot);
   await page.screenshot({ path: testInfo.outputPath('density-expanded-details.png') });
@@ -228,70 +229,89 @@ test('the rounded glass action owns the lower-right hit area when its room text 
   const finish = await target.evaluate(node => {
     const button = getComputedStyle(node.querySelector('.cs-adjustment-label')!);
     const surface = getComputedStyle(node.querySelector('.cs-lesson__surface')!);
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.fillStyle = button.backgroundColor; context.fillRect(0, 0, 1, 1);
+    const alpha = context.getImageData(0, 0, 1, 1).data[3] / 255;
     return { radius: parseFloat(button.borderTopLeftRadius), blur: button.backdropFilter, highlight: button.backgroundImage,
+      alpha, rim: button.boxShadow, ink: button.color, surfaceInk: surface.color,
       opacity: button.opacity, surfaceRadius: parseFloat(surface.borderTopLeftRadius) };
   });
   expect(finish.radius).toBeGreaterThanOrEqual(8);
   expect(finish.surfaceRadius).toBeGreaterThanOrEqual(8);
-  expect(finish.blur).not.toBe('none');
-  expect(finish.highlight).not.toBe('none');
+  expect(finish.alpha).toBeGreaterThan(0);
+  expect(finish.alpha).toBeLessThan(1);
+  expect(finish.rim).not.toBe('none');
+  expect(finish.ink).toBe(finish.surfaceInk);
   expect(finish.opacity).toBe('1');
   await target.locator('.cs-adjustment-label').click();
   await expect(card(page, 'move-new')).toHaveClass(/is-counterpart-focus/);
   expect(await page.evaluate(() => (window as any).navigations)).toEqual([]);
 });
 
-test('120ms preview motion fades the middle details and reverses every visible part continuously', async ({ page }) => {
+test('preview grows proportionally with hidden text, reveals after arrival, then fades before shrinking', async ({ page }, testInfo) => {
   await mount(page);
   const result = await card(page, 'move-new').evaluate(async cell => {
     const main = cell.querySelector<HTMLElement>('.cs-lesson__main')!;
-    const details = cell.querySelector<HTMLElement>('.cs-lesson__details')!;
     const close = document.querySelector<HTMLElement>('[data-csd-expand-close]')!;
-    const parts = [cell, cell.querySelector('.cs-lesson__title')!, cell.querySelector('.cs-lesson__room')!, cell.querySelector('.cs-adjustment-label')!];
-    const boxes = () => parts.map(node => { const box = node.getBoundingClientRect(); return [box.x, box.y, box.width, box.height]; });
-    const durations = () => cell.getAnimations().map(animation => Number(animation.effect!.getComputedTiming().duration));
-    const opacity = () => Number(getComputedStyle(details).opacity);
-    const seek = async (progress: number) => {
-      for (const animation of cell.getAnimations({ subtree: true })) {
-        animation.pause(); animation.currentTime = Number(animation.effect!.getComputedTiming().duration) * progress;
-      }
+    const parts = [...cell.querySelector('.cs-lesson__surface')!.children];
+    const snapshot = () => {
+      const box = cell.getBoundingClientRect();
+      return { rect: [box.x, box.y, box.width, box.height], opacity: parts.map(part => Number(getComputedStyle(part).opacity)), state: (cell as HTMLElement).dataset.previewState || '' };
+    };
+    const motion = () => cell.getAnimations({ subtree: true });
+    const timing = () => motion().map(animation => ({ target: (animation.effect as KeyframeEffect).target === cell ? 'geometry' : 'text', ...animation.effect!.getTiming() }));
+    const seek = async (time: number) => {
+      for (const animation of motion()) { animation.pause(); animation.currentTime = time; }
+      await new Promise(requestAnimationFrame);
+      return snapshot();
+    };
+    const finish = async () => {
+      motion().forEach(animation => animation.finish());
       await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
     };
+    const compact = snapshot();
     main.focus();
-    const openingDurations = durations();
-    await seek(0);
-    const hidden = opacity();
-    await seek(.25);
-    const openingQuarter = opacity();
-    await seek(.6);
-    const openingLater = opacity(), beforeReverse = boxes();
-    close.focus();
-    const afterReverse = boxes(), closingDurations = durations(), closingStart = opacity();
-    await seek(.35);
-    const closingMiddle = opacity(), beforeReopen = boxes();
-    main.focus();
-    const afterReopen = boxes();
-    const noScale = parts.slice(1).every(node => { const transform = getComputedStyle(node).transform; const matrix = new DOMMatrixReadOnly(transform === 'none' ? undefined : transform); return Math.abs(matrix.a - 1) < .001 && Math.abs(matrix.d - 1) < .001; });
-    cell.getAnimations({ subtree: true }).forEach(animation => animation.finish());
-    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-    return { openingDurations, closingDurations, hidden, openingQuarter, openingLater, closingStart, closingMiddle,
-      beforeReverse, afterReverse, beforeReopen, afterReopen, noScale, finalOpacity: opacity() };
+    const openingTiming = timing();
+    const opening = [await seek(0), await seek(95), await seek(190), await seek(230)];
+    await finish(); const expanded = snapshot();
+    close.focus(); const closingTiming = timing();
+    const closing = [await seek(0), await seek(35), await seek(70), await seek(145)];
+    const beforeReopen = snapshot(); main.focus(); const afterReopen = snapshot();
+    await seek(80); const beforeReverse = snapshot(); close.focus(); const afterReverse = snapshot();
+    const invisibleReverseTiming = timing();
+    await finish();
+    return { compact, expanded, openingTiming, opening, closingTiming, closing, beforeReopen, afterReopen,
+      beforeReverse, afterReverse, invisibleReverseTiming, closed: snapshot(), remainingAnimations: motion().length };
   });
-  expect(result.openingDurations).toContain(120);
-  expect(result.closingDurations).toContain(120);
-  expect(result.hidden).toBeLessThanOrEqual(.01);
-  expect(result.openingQuarter).toBeGreaterThan(result.hidden);
-  expect(result.openingQuarter).toBeLessThan(1);
-  expect(result.openingLater).toBeGreaterThan(result.openingQuarter);
-  expect(result.closingMiddle).toBeLessThan(result.closingStart);
-  for (const [before, after] of [[result.beforeReverse, result.afterReverse], [result.beforeReopen, result.afterReopen]]) {
-    before.forEach((box, index) => box.forEach((value, axis) => expect(Math.abs(after[index][axis] - value), 'title, room and button reverse from the current rendered rectangle').toBeLessThan(1)));
+  await testInfo.attach('preview-phases', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+  expect(result.openingTiming.find(item => item.target === 'geometry')).toMatchObject({ duration: 190, delay: 0 });
+  for (const text of result.openingTiming.filter(item => item.target === 'text')) expect(text).toMatchObject({ duration: 80, delay: 190 });
+  expect(result.closingTiming.find(item => item.target === 'geometry')).toMatchObject({ duration: 150, delay: 70 });
+  for (const text of result.closingTiming.filter(item => item.target === 'text')) expect(text).toMatchObject({ duration: 70, delay: 0 });
+  for (const sample of result.opening.slice(0, 3)) expect(Math.max(...sample.opacity)).toBeLessThanOrEqual(.01);
+  expect(Math.min(...result.opening[3].opacity)).toBeGreaterThan(.4);
+  expect(Math.max(...result.opening[3].opacity)).toBeLessThan(.6);
+  expect(result.opening[3].rect[2]).toBeCloseTo(result.expanded.rect[2], 0);
+  expect(result.expanded.opacity.every(value => value === 1)).toBe(true);
+  for (const sample of result.closing.slice(0, 3)) expect(sample.rect[2]).toBeCloseTo(result.expanded.rect[2], 0);
+  expect(Math.min(...result.closing[1].opacity)).toBeGreaterThan(.4);
+  expect(Math.max(...result.closing[1].opacity)).toBeLessThan(.6);
+  for (const sample of result.closing.slice(2)) expect(Math.max(...sample.opacity)).toBeLessThanOrEqual(.01);
+  expect(result.closing[3].rect[2]).toBeLessThan(result.expanded.rect[2] - 1);
+  const ratio = result.compact.rect[2] / result.compact.rect[3];
+  for (const sample of [...result.opening, result.expanded, ...result.closing, result.closed]) {
+    expect(Math.abs(sample.rect[2] / sample.rect[3] - ratio)).toBeLessThan(.02);
   }
-  expect(result.noScale).toBe(true);
-  expect(result.finalOpacity).toBe(1);
+  for (const [before, after] of [[result.beforeReopen, result.afterReopen], [result.beforeReverse, result.afterReverse]]) {
+    before.rect.forEach((value, axis) => expect(Math.abs(after.rect[axis] - value), 'reversal preserves the painted glass rectangle').toBeLessThan(1));
+  }
+  expect(result.invisibleReverseTiming.find(item => item.target === 'geometry')).toMatchObject({ duration: 150, delay: 0 });
+  expect(result.closed.rect[2]).toBeCloseTo(result.compact.rect[2], 0);
+  expect(result.closed.state).toBe('');
+  expect(result.remainingAnimations).toBe(0);
 });
 
-test('a scrolled long preview retains its view through resize and reversal without jumping its text or footer', async ({ page }, testInfo) => {
+test('a scrolled long preview preserves its reading position through hidden-text resize and reversal', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1182, height: 650 });
   await mount(page, { long: true });
   const target = card(page, 'move-new');
@@ -333,7 +353,7 @@ test('a scrolled long preview retains its view through resize and reversal witho
   expect(result.initialScroll).toBeGreaterThan(100);
   expect(result.resizeFrames.length).toBeGreaterThan(0);
   const transitions = [...result.resizeFrames, { before: result.beforeClose, after: result.afterClose }, { before: result.beforeReopen, after: result.afterReopen }];
-  for (const transition of transitions) transition.before.forEach((box: number[], index: number) => box.forEach((value, axis) => expect(Math.abs(transition.after[index][axis] - value), 'scrolled title, room and button keep their painted position at the first frame').toBeLessThan(1)));
+  for (const transition of transitions) transition.before[0].forEach((value: number, axis: number) => expect(Math.abs(transition.after[0][axis] - value), 'the glass rectangle retains its painted position at the first frame').toBeLessThan(1));
   expect(result.scrollAfterResize).toBeCloseTo(Math.min(result.initialScroll, result.maxScroll), 0);
   expect(result.scrollAfterReopen).toBeCloseTo(result.scrollAfterResize, 0);
   expect(result.finalScroll).toBe(0);

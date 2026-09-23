@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import patch
 
 from classroom_app import config
@@ -152,6 +152,64 @@ class AcademicScheduleOverviewTests(unittest.TestCase):
         result = build_student_course_schedule_overview(self.conn, 1, now=datetime(2026, 9, 19))
         self.assertEqual([], self.lessons(result))
         self.assertEqual(0, result['summary']['total_hours'])
+
+    def test_full_combined_classes_and_explicit_clock_do_not_leak_to_proposed_slot(self):
+        snapshot = base_snapshot([request()])
+        for item in [*snapshot['official'], *snapshot['requests']]:
+            item['class_label'] = '远端教学班代号'
+        self.publish(snapshot)
+        self.conn.execute("ALTER TABLE class_offering_sessions ADD COLUMN academic_time_text TEXT DEFAULT ''")
+        self.conn.execute("UPDATE class_offering_sessions SET academic_time_text='第2-3节 09:15–10:50' WHERE id=101")
+        # Complete linked classes remain available even when cached text omits one.
+        self.conn.execute("UPDATE class_offerings SET combined_class_names='甲班' WHERE id=10")
+        for result in [self.teacher(), build_student_course_schedule_overview(self.conn, 2, now=datetime(2026, 9, 19))]:
+            pair = [lesson for lesson in self.lessons(result) if lesson.get('adjustment')]
+            self.assertEqual({'甲班、乙班'}, {lesson['class_label'] for lesson in pair})
+            original = next(lesson for lesson in pair if lesson['adjustment']['endpoint'] == 'original')
+            proposed = next(lesson for lesson in pair if lesson['adjustment']['endpoint'] == 'proposed')
+            self.assertEqual(('09:15', '10:50', '09:15–10:50'), tuple(original[key] for key in ('start_time', 'end_time', 'time_label')))
+            self.assertEqual('', proposed['time_label'])
+            self.assertEqual(original['session_no'], proposed['session_no'])
+            self.assertEqual(original['classroom_url'], proposed['classroom_url'])
+            self.assertNotIn('其他班', str(result))
+
+    def test_platform_teacher_and_student_metadata_agree_after_dated_session_move(self):
+        from classroom_app.services.smart_classroom_schedule_sync_service import _load_platform_offering_schedule_items, _build_week_deck
+        self.conn.execute("ALTER TABLE class_offering_sessions ADD COLUMN academic_time_text TEXT DEFAULT ''")
+        self.conn.execute("UPDATE class_offerings SET combined_class_names='' WHERE id=10")
+        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-09-21', academic_time_text='09:15-10:50', academic_location='（知新楼B416）网络实验室' WHERE id=101")
+        items = _load_platform_offering_schedule_items(self.conn, 1, semester_id=1, year='2026-2027', term='1', week1_monday=date(2026, 8, 31))
+        teacher = {'weeks': _build_week_deck(items, max_week=19, cur_week=3, week1_monday=date(2026, 8, 31))}
+        student = build_student_course_schedule_overview(self.conn, 2, now=datetime(2026, 9, 19))
+        for result in [teacher, student]:
+            lesson = next(item for item in self.lessons(result) if item.get('session_id') == 101)
+            self.assertEqual(('2026-09-21', 1, 1, 3, '09:15–10:50'), tuple(lesson[key] for key in ('actual_date', 'weekday', 'session_no', 'session_total', 'time_label')))
+            self.assertEqual('/classroom/10?session_id=101', lesson['classroom_url'])
+            self.assertEqual('甲班、乙班', lesson['class_label'])
+            self.assertEqual('（知新楼B416）网络实验室', lesson['classroom'])
+            self.assertIn('B416', lesson['classroom_short'])
+            self.assertEqual([101], [item['session_id'] for item in result['weeks'][3]['lessons'] if item['weekday'] == 1])
+            self.assertNotIn('秘密', str(result))
+        # Ordinary imported recurring rows gain a date from the known week anchor,
+        # but a period-only source never invents a clock time.
+        items[0].pop('_occurrence_metadata')
+        recurring = _build_week_deck([items[0]], max_week=19, cur_week=3, week1_monday=date(2026, 8, 31))
+        lesson = next(week['lessons'][0] for week in recurring if week['lessons'])
+        self.assertTrue(lesson['actual_date'])
+        self.assertEqual('', lesson['time_label'])
+
+    def test_stale_period_metadata_and_ambiguous_clock_ranges_stay_unknown(self):
+        from classroom_app.services.schedule_lesson_metadata import explicit_lesson_time
+        lesson = {'actual_date': '2026-09-20', 'sections': [8, 9]}
+        session = {'session_date': '2026-09-20', 'academic_section_text': '8-9',
+                   'academic_time_text': '09:15-10:50', 'schedule_metadata_json': '{"section_text":"2-3"}'}
+        self.assertEqual('', explicit_lesson_time(lesson, session)['time_label'])
+        session.update(schedule_metadata_json='{}', academic_time_text='09:15-10:50 或 14:00-15:40')
+        self.assertEqual('', explicit_lesson_time(lesson, session)['time_label'])
+        session['academic_time_text'] = '第2-3节 09:15-10:50'
+        self.assertEqual('', explicit_lesson_time(lesson, session)['time_label'])
+        session['academic_time_text'] = '第8-9节'
+        self.assertEqual('', explicit_lesson_time(lesson, session)['time_label'])
 
 
 if __name__ == '__main__':

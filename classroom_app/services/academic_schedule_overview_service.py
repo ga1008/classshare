@@ -5,9 +5,10 @@ from datetime import date, timedelta
 
 from .academic_service import china_now, load_teacher_semester_rows
 from .semester_identity_service import identity_from_semester_record
+from .schedule_lesson_metadata import explicit_lesson_time, load_offering_class_labels
 
 
-def prediction_lesson_items(lessons: list[dict]) -> list[dict]:
+def prediction_lesson_items(lessons: list[dict], *, class_labels=None, sessions=None) -> list[dict]:
     from .smart_classroom_schedule_sync_service import _section_label, _short_classroom, _weekday_label
     items = []
     for index, lesson in enumerate(lessons, 1):
@@ -31,6 +32,8 @@ def prediction_lesson_items(lessons: list[dict]) -> list[dict]:
             'counts_towards_total': item.get('counts_towards_total', True),
         })
         item['classroom_short'] = _short_classroom(item['classroom'])
+        item['class_label'] = (class_labels or {}).get(item.get('class_offering_id')) or item['class_label']
+        item.update(explicit_lesson_time(item, (sessions or {}).get(item.get('session_id'))))
         items.append(item)
     return items
 
@@ -79,7 +82,19 @@ def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='
     snapshot = load_teacher_prediction_snapshot(conn, teacher_id, selected['semester_id'])
     if snapshot is None:
         return None
-    all_items = prediction_lesson_items(snapshot['lessons'])
+    offering_ids = {item.get('class_offering_id') for item in snapshot['lessons'] if item.get('class_offering_id')}
+    class_labels = load_offering_class_labels(conn, offering_ids, teacher_id=teacher_id)
+    # Batch reads remain inside this teacher's scope; no snapshot or session is
+    # modified just to display a clock label or a combined-class name.
+    sessions = {}
+    if class_labels:
+        rows = conn.execute(
+            f"""SELECT s.* FROM class_offering_sessions s JOIN class_offerings o ON o.id=s.class_offering_id
+                WHERE o.teacher_id=? AND o.id IN ({','.join('?' for _ in class_labels)})""",
+            (int(teacher_id), *class_labels),
+        ).fetchall()
+        sessions = {int(row['id']): dict(row) for row in rows}
+    all_items = prediction_lesson_items(snapshot['lessons'], class_labels=class_labels, sessions=sessions)
     for item in all_items:
         item['create_url'] = '' if item.get('class_offering_id') else _offering_create_url(item, selected['year'], selected['term'])
     course_options = sorted({i['course_name'] for i in all_items})

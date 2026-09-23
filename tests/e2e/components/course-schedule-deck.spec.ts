@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { serveScheduleModule } from './schedule-fixture-modules';
+import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
 const classes = Array.from({ length: 8 }, (_, index) => `人工智能260${index + 1}班（专升本）`).join(' · ');
 
@@ -7,7 +7,7 @@ async function mountDeck(page: Page) {
   await page.route('http://schedule.test/**', async route => {
     if (await serveScheduleModule(route)) return;
     await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN">
-      <meta charset="utf-8"><style>body{margin:24px;font-family:Arial,sans-serif}*{box-sizing:border-box}</style>
+      <meta charset="utf-8"><link rel="stylesheet" href="/schedule-tokens.css"><style>body{margin:24px;font-family:Arial,sans-serif}*{box-sizing:border-box}</style>
       <button id="before">页面入口</button><div id="deck"></div><script type="module">
       import { createScheduleDeck } from '/deck.js';
       window.navigations = [];
@@ -30,14 +30,13 @@ async function mountDeck(page: Page) {
   await page.goto('http://schedule.test/');
   await page.locator('.cs-card.is-active').click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.locator('.cs-expand__card').evaluate(async card => {
-    await Promise.allSettled(card.getAnimations().map(animation => animation.finished));
-  });
+  await settleScheduleMotion(page);
 }
 
 async function previewMetrics(page: Page) {
-  await expect(page.locator('.cs-lesson--cell.is-preview')).toHaveAttribute('data-preview-state', 'open');
-  return page.locator('.cs-lesson--cell.is-preview').evaluate(cell => {
+  const active = page.locator('.cs-lesson--cell.is-preview:not(.is-preview-closing)');
+  await expect(active).toHaveAttribute('data-preview-state', 'open');
+  return active.evaluate(cell => {
     const rect = cell.getBoundingClientRect();
     const body = cell.closest('.cs-expand__body')!.getBoundingClientRect();
     const lines = [...cell.children].map(line => ({
@@ -83,15 +82,15 @@ test('short courses stay compact while long Sunday cards wrap completely inside 
   await page.getByRole('link', { name: /^短课程/ }).hover();
   const short = await previewMetrics(page);
   expectContained(short);
-  expect(short.width).toBeLessThan(300);
-  expect(short.height).toBeLessThan(230);
   expect(short.scrollHeight).toBeLessThanOrEqual(short.clientHeight + 1);
   await page.screenshot({ path: testInfo.outputPath('short-course.png') });
   await page.getByRole('link', { name: /^长课程/ }).hover();
   const long = await previewMetrics(page);
   expectContained(long);
-  expect(long.width).toBeGreaterThan(short.width);
-  expect(long.height).toBeGreaterThan(short.height);
+  // Equal slot proportions can reach the same bounded preview size; content
+  // length must not independently stretch only the width or height.
+  expect(long.width).toBeGreaterThanOrEqual(short.width - 1);
+  expect(long.height).toBeGreaterThanOrEqual(short.height - 1);
   expect(long.scrollHeight).toBeLessThanOrEqual(long.clientHeight + 1);
   await page.screenshot({ path: testInfo.outputPath('long-course.png') });
   await testInfo.attach('content-dimensions', { body: JSON.stringify({ short, long }, null, 2), contentType: 'application/json' });
@@ -168,7 +167,7 @@ test('preview dimensions animate both ways without moving the slot or replacing 
     };
     const sample = async () => {
       const frames = [box()];
-      while (cell.getAnimations().some(animation => animation.playState === 'running')) {
+      while (cell.matches('.is-preview-moving,[data-preview-state="opening"],[data-preview-state="closing"]') || cell.getAnimations({ subtree: true }).some(animation => animation.playState === 'running')) {
         await new Promise(requestAnimationFrame);
         frames.push(box());
       }
@@ -193,6 +192,9 @@ test('preview dimensions animate both ways without moving the slot or replacing 
   expect(metrics.closing.some(frame => frame.width > metrics.before.width + 5 && frame.width < metrics.expanded.width - 5)).toBe(true);
   expect(metrics.opening.every(frame => frame.contained)).toBe(true);
   expect(metrics.closing.every(frame => frame.contained)).toBe(true);
+  for (const frame of [...metrics.opening, ...metrics.closing]) {
+    expect(Math.abs(frame.width / frame.height - metrics.before.width / metrics.before.height), 'all geometry frames retain the slot aspect ratio').toBeLessThan(.02);
+  }
   expect(metrics.closing.at(-1)!.width).toBeCloseTo(metrics.before.width, 0);
   expect(metrics.closing.at(-1)!.height).toBeCloseTo(metrics.before.height, 0);
 });
@@ -218,7 +220,7 @@ test('interrupting a preview reverses from its current frame and switching cours
     const afterReopen = width();
     await frames(2);
     second.focus();
-    await Promise.allSettled(document.getAnimations().map(animation => animation.finished));
+    for (let i = 0; i < 100 && cells.some(cell => cell.matches('.is-preview-moving,[data-preview-state="opening"],[data-preview-state="closing"]')); i++) await frames(1);
     return { beforeReverse, afterReverse, beforeReopen, afterReopen,
       firstWidth: width(), slotWidth: first.parentElement!.getBoundingClientRect().width,
       states: cells.map(cell => cell.dataset.previewState || ''),

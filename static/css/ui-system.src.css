@@ -60648,9 +60648,8 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 .ls-schedule-stage { --ls-schedule-stage-height: 420px; min-height: var(--ls-schedule-stage-height); }
 .ls-schedule-stage.cs-deck { gap: 0; }
 .ls-schedule-stage .cs-deck-head, .ls-schedule-stage .cs-stage__hint { display: none; }
-.ls-schedule-stage .cs-stage { height: var(--ls-schedule-stage-height); background: radial-gradient(ellipse at 65% 5%, hsl(var(--ls-primary) / .12), transparent 65%), linear-gradient(160deg, hsl(var(--ls-accent) / .5), hsl(var(--ls-background))); border-color: hsl(var(--ls-border)); }
+.ls-schedule-stage .cs-stage { height: var(--ls-schedule-stage-height); }
 .ls-schedule-stage .cs-card { height: 330px; width: min(680px, 82%); }
-.ls-schedule-stage .cs-card__bar { background: linear-gradient(120deg, hsl(var(--ls-primary)), hsl(var(--ls-primary) / .82)); }
 .ls-schedule-hint { margin: 12px 0 0; font-size: 12px; line-height: 1.5; text-align: center; color: hsl(var(--ls-muted-foreground)); }
 .ls-week-lessons { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; }
 .ls-week-lessons li { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 16px; border: 1px solid hsl(var(--ls-border)); border-radius: 12px; transition: border-color 180ms, background-color 180ms, box-shadow 180ms; }
@@ -60977,7 +60976,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .ls-schedule-stage .cs-card__body > .cs-grid, .ls-schedule-stage .cs-week-empty-mark { display: none; }
     .ls-schedule-stage .cs-card__compact { display: grid; align-content: start; gap: 10px; padding: 3px 0; }
     .ls-schedule-stage .cs-card__compact ol { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
-    .ls-schedule-stage .cs-card__compact li { display: grid; gap: 4px; padding: 8px 10px; border-radius: 9px; border-left: 3px solid hsl(var(--ls-primary)); background: hsl(var(--ls-accent) / .5); }
+    .ls-schedule-stage .cs-card__compact li { display: grid; gap: 4px; padding: 8px 10px; border-radius: var(--ls-r-sm); border: 1px solid hsl(var(--ls-glass-line)); border-left: 3px solid hsl(var(--ls-primary)); background: var(--cs-inset-fill); }
     .ls-schedule-stage .cs-card__compact li strong { font-size: 13px; color: hsl(var(--ls-foreground)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .ls-schedule-stage .cs-card__compact span, .ls-schedule-stage .cs-card__compact small { font-size: 11px; line-height: 1.4; color: hsl(var(--ls-muted-foreground)); }
 }
@@ -61503,7 +61502,7 @@ body.ls-lightbox-open { overflow: hidden; }
     :root[data-appearance="dark"] :is(.app-topbar-action:not(.app-topbar-action--primary),
         .profile-section-pill, .profile-chip, .profile-summary-row, .profile-activity-item,
         .profile-activity-item:hover, .class-card-metrics div, .offering-hub-agenda li,
-        .cs-deck-term, .cs-deck-nav__btn, .exam-ai-policy-card, .question-ai-toggle,
+        .exam-ai-policy-card, .question-ai-toggle,
         .exam-topbar-status__item, .exam-section-card, .q-nav-item,
         .assignment-submit-sync, .assignment-submit-sync__meta span) {
         background: hsl(var(--ls-surface-2));
@@ -61529,7 +61528,7 @@ body.ls-lightbox-open { overflow: hidden; }
         .exam-ai-policy-card small, .assignment-submit-sync p,
         .assignment-submit-sync__meta span) { color: hsl(var(--ls-control-muted)); }
     :root[data-appearance="dark"] :is(.profile-chip--role, .profile-chip--link,
-        .cs-week-indicator, .msw-sidebar .msw-eyebrow) { color: hsl(var(--ls-on-primary-soft)); }
+        .msw-sidebar .msw-eyebrow) { color: hsl(var(--ls-on-primary-soft)); }
     :root[data-appearance="dark"] :is(.class-import-head span) { color: hsl(var(--ls-tone-success-fg)); }
     :root[data-appearance="dark"] :is(.class-card-status.is-warning, .class-student-avatar.is-warning) {
         background: hsl(var(--ls-tone-warning-soft));
