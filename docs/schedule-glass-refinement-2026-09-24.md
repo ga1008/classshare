@@ -25,4 +25,10 @@
 
 ## 发布
 
-部署与远端校验结果待发布完成补录。
+- 产品提交：`e9232914b20d940cf06a800247c7c9be8cfa2c37`。
+- 线上发布：`20260924-020233-b0d6bf8b4203`，服务器构建、容器、公网与本地资源图一致。
+- 8 个变更生产源码逐文件 SHA-256 校验一致，9 个关键公网资源逐字节匹配，包含新玻璃样式模块与课表交互模块。
+- 8 个服务全部运行，6 个配置健康检查的服务均 healthy；主服务和 AI health 为 ok。学生登录公网 200，首次 HTML 仅清 cache，未清 cookie/storage，再次请求不重复清理。
+- 后台历史失败统计仍为 734，与上一版相同；当前 11 类任务状态均 ok，running=0、stale=0，26 条为既有计划任务。未清除历史记录。
+- 发布前代码备份：`/tmp/lanshare-deploy-backups/code-20260924-020245.tgz`；停止写入后数据库备份：`/tmp/lanshare-deploy-backups/db-cutover-20260924-020245.sql.gz`。运行数据未被部署归档覆盖。
+- 发布日志：`.codex-temp/schedule6-deploy.log`；上线核对：`.codex-temp/schedule6-postflight.json`；最终不可变资源截图与参数：`.codex-temp/schedule6-visual/evidence.json`。
