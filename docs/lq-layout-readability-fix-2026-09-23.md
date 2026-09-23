@@ -1,6 +1,6 @@
 # 玻璃界面布局与可读性修正
 
-本记录涵盖本轮实现与本地验收。用户随后已明确授权部署和 Git 推送，正式发布结果完成后追加。
+本记录涵盖本轮实现、本地验收及用户明确授权后的正式发布。
 
 ## 改动
 
@@ -26,3 +26,17 @@
 本地证据保存在 `.codex-temp/glass5-*`、`.codex-temp/lq-scene-heading-final/` 和 `.codex-temp/lq-message-layout-results/`。这些定向检查不代表逐个执行业务系统所有功能，也不替代真实 iPhone/Safari 性能验收。临时合成服务已停止。
 
 最终本地资源图：`e593b12f4700ca437c7042638824b03255b6802f5c7ca625db9901b65b55fcd3`。最后补齐的学生/日历选择与显隐回归 5/5 通过，胶囊轨道及通知输入框明暗样式检查通过；LQ 阻断检查与差异检查通过。此前的实际页面截图图版本为 `f1a94add…4fc5`，最后一轮的选择控件截图在 `.codex-temp/glass5-closing-selection/`，不得将较早截图标作最终资源图截图。
+
+## 正式发布
+
+- 产品提交：`f160dbe62e8fb71c9d462be7a98acb61a667e99d`。
+- 生产版本：`20260923-223824-495c3aa1238c`。规范部署脚本完成 DryRun、原生 PostgreSQL 演练校验、停写备份、迁移初始化和服务恢复，返回 `DEPLOY_DONE`。
+- 迁移校验：174/174 必需表存在，索引失败和跳过步骤均为 0；保留生产数据与运行时配置。
+- 本地、容器和公网资源图均为上述 `e593b12f…fcd3`；37 个改动生产源码与容器逐字节相符，14 个关键公网资源与本地产物 SHA-256 相符。
+- 8 个 Compose 服务 running，配置健康探针的 6 个服务 healthy；主服务与 AI 均 ok。公网学生登录页 200，公开与容器 release 一致，首次 HTML 只清理 HTTP cache，同会话第二次不再发送清理头。
+- 后台聚合仍 `ok=false`，累计失败计数为 734；本次发布完成与随后核对时计数相同。11 类当前任务状态均为 ok，运行与 stale 均为 0，排队 26 项来自定时任务；未清除失败记录。近期主服务、AI 和邮件服务日志未检出错误。
+- 代码备份：`/tmp/lanshare-deploy-backups/code-20260923-223836.tgz`。
+- 停写数据库备份：`/tmp/lanshare-deploy-backups/db-cutover-20260923-223836.sql.gz`。
+- 无关的 Python 小说文档未加入提交或发布包。
+
+发布证据：`.codex-temp/glass5-release-pg-gate.json`、`glass5-deploy-dryrun.log`、`glass5-deploy.log`、`glass5-postflight.json`。后续记录提交仅更新本文件，线上产品源码保持上述验证结果。
