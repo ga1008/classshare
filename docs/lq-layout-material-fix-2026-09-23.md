@@ -23,4 +23,18 @@
 
 最终资源图：`17f2a308e14205fbd543201948cd000f6c44938fe22d1d8489b46bffcc78330c`。
 
-生产发布结果在发布后补录。触屏由 Chromium 模拟，未声称完成真实 iPhone/Safari 实机验收。
+触屏由 Chromium 模拟，未声称完成真实 iPhone/Safari 实机验收。
+
+## 发布验收
+
+- 产品提交：`8a5ce9c74ca388c639311d843602ae5dd537021e`。
+- 生产版本：`20260923-190257-8f3ea6bb76d3`；线上资源图与上述最终图一致。
+- PostgreSQL 演练报告、备份摘要及 67 个迁移源匹配；3238 文件部署归档通过保护路径检查。
+- 12 个变更生产源码文件与容器逐文件 SHA-256 一致，8 个关键公网资源逐字节一致。
+- 公网学生登录返回 200；发布后的首次 HTML 仅清 HTTP cache，随后不重复清理，不清除 cookie 或 storage。
+- 8 个服务全部 running，配置健康检查的 6 个服务均 healthy；主服务与 AI health 均为 ok，未发现近期错误日志。
+- `background_tasks.ok=false` 仍为 719 条既有失败历史，数量未增加；当前 11 类任务状态均 ok，stale=0、running=0，26 条队列项为计划任务。历史记录完整保留。
+- 上线前代码备份：`/tmp/lanshare-deploy-backups/code-20260923-190311.tgz`；停写后的 PostgreSQL 备份：`/tmp/lanshare-deploy-backups/db-cutover-20260923-190311.sql.gz`。
+- 合成测试服务 8291、8293、8295 均已关闭。
+
+证据保存在 `.codex-temp/glass3-deploy.log`、`glass3-postflight.json`、`glass3-services.json`、`glass3-final-pages/`、`lq-wrapper-final/` 及 `layout-surfaces-immutable-final/`、`layout-surfaces-contrast-final/`。
