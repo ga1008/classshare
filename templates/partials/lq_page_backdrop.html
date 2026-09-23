@@ -11,9 +11,8 @@
      data-lq-backdrop-manifest="{{ backdrop.manifest }}"
      data-lq-backdrop-image-url="{{ backdrop.image|default('', true) }}"
      data-lq-backdrop-frost-state="{{ 'ready' if backdrop.image else 'off' }}"
-     style="--lq-backdrop-color: {{ backdrop.color }}; --lq-backdrop-image: {{ backdrop.image_css }}; --lq-backdrop-paint: {{ backdrop.frost_css }}">
+     style="--lq-backdrop-color: {{ backdrop.color }}; --lq-backdrop-image: {{ backdrop.image_css }}; --lq-backdrop-paint: {{ backdrop.image_css }}">
     <div class="lq-page-backdrop__image" data-lq-backdrop-image></div>
-    <div class="lq-page-backdrop__veil"></div>
 </div>
 <script type="application/json" data-lq-backdrop-catalog>{{ backdrop.categories|tojson }}</script>
 <script>
@@ -31,10 +30,9 @@
             const saved = read('lansharePageScene');
             const scene = fresh ? handoff : saved?.context === context && valid(saved?.image) ? saved : null;
             if (scene && layer.dataset.lqBackdropMode === 'scene') {
-                const frost = scene.image.replace('/life_tips/', '/life_tips/frost/').replace(/\.[^.]+$/, '.webp');
                 layer.dataset.lqBackdropImageUrl = scene.image;
                 layer.style.setProperty('--lq-backdrop-image', `url(${scene.image})`);
-                layer.style.setProperty('--lq-backdrop-paint', `url(${frost})`);
+                layer.style.setProperty('--lq-backdrop-paint', `url(${scene.image})`);
             }
             if (fresh) {
                 const html = document.documentElement;

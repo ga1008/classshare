@@ -149,10 +149,9 @@ if __name__ == "__main__":
 
 
 class GlassMaterialContrastTests(unittest.TestCase):
-    """Every panel is glass now, so body and secondary text sit on a translucent
-    fill. Pure black or white behind a panel would need an alpha near .94, which
-    is no longer glass; what a panel can actually see is the page backdrop, whose
-    image layer has its own opacity over the page surface. Pin that bound."""
+    """Check palette contrast on the plain canvas. Full-colour photo backgrounds
+    are intentionally unwashed; they no longer have a globally bounded luminance.
+    Actual photo/panel combinations need their own browser visual assessment."""
 
     MATERIALS = (("--ls-glass-fill-content", "--ls-ink", "--ls-ink-3"),
                  ("--ls-glass-fill-control", "--ls-ink", "--ls-ink-2"),
@@ -160,12 +159,13 @@ class GlassMaterialContrastTests(unittest.TestCase):
                  ("--ls-glass-fill-strong", "--ls-glass-ink", "--ls-glass-muted"))
 
     def backdrop_bounds(self, theme, appearance):
-        page = rgb(theme["--ls-surface-0"])
-        opacity = float(theme["--ls-scene-opacity"])
-        return [tuple(extreme * opacity + base * (1 - opacity) for extreme, base in zip(photo, page))
-                for photo in ((0., 0., 0.), (1., 1., 1.))]
+        return [rgb(theme["--ls-surface-0"])]
 
-    def test_body_and_secondary_text_clear_aa_on_every_material(self):
+    def test_scene_keeps_full_colour_in_both_appearances(self):
+        for appearance in APPEARANCES:
+            self.assertEqual(float(resolve_theme("indigo", appearance)["--ls-scene-opacity"]), 1)
+
+    def test_body_and_secondary_text_clear_aa_on_plain_canvas(self):
         for palette in PALETTES:
             for appearance in APPEARANCES:
                 theme = resolve_theme(palette, appearance)

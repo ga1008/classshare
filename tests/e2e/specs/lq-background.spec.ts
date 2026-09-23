@@ -49,7 +49,15 @@ async function fullScene(page: Page, image?: string) {
       fixed: getComputedStyle(node).position, source: getComputedStyle(image).backgroundImage, transform: getComputedStyle(image).transform };
   })).toMatchObject({ x: 0, y: 0, fixed: 'fixed', transform: 'none' });
   const rect = await page.locator(layer).boundingBox(); expect(rect!.width).toBe(page.viewportSize()!.width); expect(rect!.height).toBe(page.viewportSize()!.height);
-  expect(await page.locator('[data-lq-backdrop-image]').evaluate(node => getComputedStyle(node).backgroundImage)).toContain('/frost/');
+  const paint = await page.locator('[data-lq-backdrop-image]').evaluate(node => {
+    const style = getComputedStyle(node);
+    return { source: style.backgroundImage, opacity: style.opacity, filter: style.filter };
+  });
+  expect(paint.source).not.toContain('/frost/');
+  await expect.poll(() => page.locator('[data-lq-backdrop-image]').evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+  expect(paint.filter).toBe('blur(24px)');
+  expect(await page.locator('body').evaluate(node => getComputedStyle(node).isolation)).toBe('isolate');
+  await expect(page.locator('.lq-page-backdrop__veil')).toHaveCount(0);
 }
 
 test('real login welcome feedback and skip hand the unchanged full viewport scene to every page', async ({ page }, info) => {
@@ -113,37 +121,37 @@ test('explicit pure colour survives replay and session image cannot cross accoun
   expect(await page.locator(layer).getAttribute('data-lq-backdrop-image-url')).not.toContain('unknown.webp');
 });
 
-test('missing frost falls back to one Gaussian image with bleed and off cancels late loading', async ({ page }) => {
+test('original image uses one Gaussian filter with bleed and off cancels late loading', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }); await loginStudent(page, readFixture());
   const file = manifest[1].file; await save(page, { backdrop: `image:${file}` });
-  await page.route('**/img/life_tips/frost/**', route => route.fulfill({ status: 404, body: '' }));
   await page.goto('/profile?section=appearance');
-  await expect(page.locator(layer)).toHaveAttribute('data-lq-backdrop-frost-state', 'fallback');
+  await expect(page.locator(layer)).toHaveAttribute('data-lq-backdrop-frost-state', 'ready');
   const image = page.locator('[data-lq-backdrop-image]');
   expect(await image.evaluate(node => getComputedStyle(node).filter)).toContain('blur(24px)');
   expect((await image.boundingBox())!.x).toBeLessThan(0);
   const scope = page.locator('[data-profile-appearance]');
-  await page.unroute('**/img/life_tips/frost/**');
   let requested: () => void = () => {}, release: () => void = () => {};
   const loading = new Promise<void>(resolve => { requested = resolve; });
   const held = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/img/life_tips/frost/**', async route => { requested(); await held; await route.continue(); });
-  await scope.locator('[data-ui-preference-select="backdrop"]').selectOption('scene-career');
+  await page.route('**/img/life_tips/*.webp', async route => { requested(); await held; await route.continue(); });
+  const change = (value: string) => scope.locator('[data-ui-preference-select="backdrop"]').evaluate((select: HTMLSelectElement, value) => {
+    select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+  await change('scene-career');
   await loading;
-  await scope.locator('[data-ui-preference-select="backdrop"]').selectOption('off');
+  await change('off');
   await expect(page.locator(layer)).toHaveAttribute('data-lq-backdrop-frost-state', 'off');
   release();
   await expect(scope.locator('[data-ui-preference-primary-status]')).toHaveAttribute('data-ui-preference-status', 'saved');
   await save(page, { backdrop: 'scene' });
 });
 
-test('unavailable or invalid manifest can retry and a doubly missing replacement preserves the usable scene', async ({ page }) => {
+test('unavailable or invalid manifest can retry and a missing replacement preserves the usable scene', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }); await loginStudent(page, readFixture());
   await save(page, { backdrop: 'scene' });
   const usable = manifest[0].file, missing = manifest[1].file;
   // Install before the gallery renders its thumbnail; a previously decoded
   // thumbnail legitimately satisfies Image preloading without a new request.
-  await page.route(`**/img/life_tips/frost/${missing}`, route => route.fulfill({ status: 404, body: '' }));
   await page.route(`**/img/life_tips/${missing}`, route => route.fulfill({ status: 404, body: '' }));
   let attempts = 0;
   await page.route('**/img/life_tips/manifest.json', route => {

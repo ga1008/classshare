@@ -1,12 +1,11 @@
-/* 页面背景图：视口底部固定层。它是被透视的底，不是玻璃，所以永远不加
-   backdrop-filter，也不参与模糊宿主预算。减色由 filter + opacity + 面纱共同完成。 */
+/* One full-colour Gaussian scene below every page. Readability belongs to
+   individual glass surfaces, never a white veil over the whole photograph. */
+/* Keep the negative-z scene above the body's canvas, including classroom pages
+   with their own opaque body colour. Isolation does not move fixed overlays. */
+body:has(> .lq-page-backdrop) { isolation: isolate; }
+
 .lq-page-backdrop {
-    /* The shared thin materials are evaluated against this dimmed scene.
-       Keep one background source; panels no longer reconstruct its crop. */
-    --lq-backdrop-saturation: 0.95;
-    --lq-backdrop-opacity: var(--ls-scene-opacity, 0.50);
-    --lq-backdrop-veil-top: 0.12;
-    --lq-backdrop-veil-bottom: 0;
+    --lq-backdrop-opacity: var(--ls-scene-opacity, 1);
     --lq-backdrop-fallback-blur: 24px;
     --lq-backdrop-bleed: 48px;
     position: fixed;
@@ -15,6 +14,7 @@
     pointer-events: none;
     overflow: hidden;
     contain: layout paint style;
+    transition: background-color var(--ls-dur-enter) var(--ls-ease-out);
 }
 
 /* 关闭形态是一块纯色：它盖住页面原有渐变，回到纯白或用户自定义的纯色。 */
@@ -22,8 +22,7 @@
     background-color: var(--lq-backdrop-color, hsl(var(--ls-background)));
 }
 
-.lq-page-backdrop[data-lq-backdrop-mode="off"] .lq-page-backdrop__image,
-.lq-page-backdrop[data-lq-backdrop-mode="off"] .lq-page-backdrop__veil {
+.lq-page-backdrop[data-lq-backdrop-mode="off"] .lq-page-backdrop__image:not([data-lq-backdrop-outgoing]) {
     display: none;
 }
 
@@ -32,22 +31,18 @@
    原图比例，只是裁掉溢出部分，并且让玻璃在任何位置背后都有东西可透。 */
 .lq-page-backdrop__image {
     position: absolute;
-    inset: 0;
+    inset: calc(-1 * var(--lq-backdrop-bleed));
     background-image: var(--lq-backdrop-paint, var(--lq-backdrop-image, none));
     background-repeat: no-repeat;
     background-position: center center;
     background-size: cover;
-    filter: saturate(var(--lq-backdrop-saturation));
+    filter: blur(var(--lq-backdrop-fallback-blur));
     opacity: var(--lq-backdrop-opacity);
     animation: lq-scene-arrive var(--ls-dur-enter) var(--ls-ease-out) both;
 }
 
-/* The shipped frost is already Gaussian-blurred. Only a missing derivative
-   falls back to one image filter, with overscan to keep its edges opaque. */
-.lq-page-backdrop[data-lq-backdrop-frost-state="fallback"] .lq-page-backdrop__image {
-    inset: calc(-1 * var(--lq-backdrop-bleed));
-    filter: blur(var(--lq-backdrop-fallback-blur)) saturate(var(--lq-backdrop-saturation));
-}
+/* One Gaussian filter on the original image, with overscan to avoid pale edges.
+   Tiny legacy frost thumbnails are not the full-page rendering source. */
 
 /* Welcome hands a sharp, unchanged full-screen frame to the same scene below.
    Opacity is the only animated property: no shrinking, sliding or re-cropping. */
@@ -70,34 +65,15 @@ html.scene-cover-dissolving::before { opacity: 0; }
     to { opacity: var(--lq-backdrop-opacity); }
 }
 @media (prefers-reduced-motion: reduce) {
+    .lq-page-backdrop { transition: none; }
     .lq-page-backdrop__image { animation: none; }
     html.has-scene-cover::before { transition: none; }
-}
-
-/* 面纱现在也铺满：内容最密的上半部压得重一些，往下逐渐让开，
-   这样正文始终坐在足够的底色上，而底部仍能看清图。 */
-.lq-page-backdrop__veil {
-    position: absolute;
-    inset: 0;
-    background-image: linear-gradient(
-        to bottom,
-        hsl(var(--ls-background) / var(--lq-backdrop-veil-top)),
-        hsl(var(--ls-background) / var(--lq-backdrop-veil-bottom))
-    );
-}
-
-:root[data-appearance="dark"] .lq-page-backdrop {
-    /* Light text uses a quieter scene in the dark appearance. */
-    --lq-backdrop-saturation: 0.85;
-    --lq-backdrop-veil-top: 0.22;
-    --lq-backdrop-veil-bottom: 0.04;
 }
 
 /* 无障碍与降级：高对比、强制配色、打印一律不铺图，只留纯色或页面原样。 */
 @media (prefers-contrast: more) {
     .lq-page-backdrop__image {
         --lq-backdrop-opacity: 0.12;
-        --lq-backdrop-saturation: 0.2;
     }
 }
 

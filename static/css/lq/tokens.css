@@ -36,7 +36,7 @@
     --ls-glass-fill-content: 0 0% 100% / .50; /* @type hsl-alpha-channels */
     --ls-glass-fill-control: 0 0% 100% / .44; /* @type hsl-alpha-channels */
     --ls-glass-fill-inset: 0 0% 100% / .20; /* @type hsl-alpha-channels */
-    --ls-scene-opacity: .50; /* @type number */
+    --ls-scene-opacity: 1; /* @type number */
     --ls-glass-line: 0 0% 100% / .60; /* @type hsl-alpha-channels */
     --ls-glass-rim: 0 0% 100% / .78; /* @type hsl-alpha-channels */
     --ls-glass-rim-bottom: 0 0% 100% / .20; /* @type hsl-alpha-channels */
@@ -813,7 +813,7 @@
     --ls-glass-fill-content: 224 30% 12% / .50; /* @type hsl-alpha-channels */
     --ls-glass-fill-control: 224 30% 12% / .44; /* @type hsl-alpha-channels */
     --ls-glass-fill-inset: 0 0% 100% / .06; /* @type hsl-alpha-channels */
-    --ls-scene-opacity: .38; /* @type number */
+    --ls-scene-opacity: 1; /* @type number */
     --ls-glass-line: 0 0% 100% / .20; /* @type hsl-alpha-channels */
     --ls-glass-rim: 0 0% 100% / .30; /* @type hsl-alpha-channels */
     --ls-glass-rim-bottom: 0 0% 100% / .06; /* @type hsl-alpha-channels */

@@ -4,13 +4,16 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const python = process.env.LQ_TEST_PYTHON || (process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python');
-const markup = execFileSync(python, ['-c', `
-import sys
+const fixture = JSON.parse(execFileSync(python, ['-c', `
+import json, sys
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 sys.stdout.reconfigure(encoding='utf-8')
 env = Environment(loader=FileSystemLoader('templates'), autoescape=True, undefined=StrictUndefined)
-print(env.get_template('macros/user_ui_preferences.html').module.user_palette_select({'enabled': True, 'presets': [{'key': 'indigo', 'name': '靛蓝'}, {'key': 'teal', 'name': '青绿'}], 'palette_key': 'indigo'}))
-`], { encoding: 'utf8' });
+macros = env.get_template('macros/user_ui_preferences.html').module
+preferences = {'enabled': True, 'presets': [{'key': 'indigo', 'name': '靛蓝'}, {'key': 'teal', 'name': '青绿'}], 'palette_key': 'indigo'}
+print(json.dumps({'topbar': str(macros.user_palette_select(preferences)), 'profile': str(macros.user_backdrop_fields(preferences, gallery=True))}, ensure_ascii=False))
+`], { encoding: 'utf8' }));
+const markup = fixture.topbar;
 let css: string;
 function source(file: string): string {
   return fs.readFileSync(file, 'utf8').replace(/@import\s+["']([^"']+)["'];/g,
@@ -23,7 +26,7 @@ test.beforeAll(async () => {
   css += '\n' + fs.readFileSync('static/css/user_ui_preferences.css', 'utf8');
 });
 
-async function mount(page: Page, appearance: string, enhanced = true) {
+async function mount(page: Page, appearance: string, enhanced = true, profile = false) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.route('**/*', route => {
     const url = new URL(route.request().url());
@@ -40,7 +43,7 @@ async function mount(page: Page, appearance: string, enhanced = true) {
       header{position:fixed!important;top:16px;left:16px;right:16px;display:flex;justify-content:flex-end;padding:8px 16px;z-index:30}
       main{max-width:680px;padding:30px;border-radius:28px;background:linear-gradient(130deg,hsl(var(--ls-primary)/.18),hsl(var(--ls-primary)/.04))}
       #outside{position:fixed;bottom:24px;left:24px}</style></head>
-      <body><header data-lq-material="chrome">${markup}</header><main><h1>课堂与学习</h1><p>共享外观菜单 · 柔和玻璃与清晰交互</p><button id="outside" class="lq-btn lq-btn--glass">返回课堂</button></main>
+      <body><header data-lq-material="chrome">${markup}</header><main><h1>课堂与学习</h1><p>共享外观菜单 · 柔和玻璃与清晰交互</p>${profile ? fixture.profile : ''}<button id="outside" class="lq-btn lq-btn--glass">返回课堂</button></main>
       ${enhanced ? `<script type="module">import {enhancePreferencesPanels} from '/static/js/ui_preferences_panel.js';
       window.originalSelect=document.querySelector('[data-ui-palette-select]');window.changes=0;window.originalSelect.addEventListener('change',()=>window.changes++);
       window.enhance=()=>enhancePreferencesPanels(document.body);window.dispose=window.enhance();window.ready=true;</script>` : ''}</body></html>` });
@@ -61,9 +64,9 @@ for (const appearance of ['light', 'dark']) for (const width of [1280, 390]) {
       const style = getComputedStyle(node); return { blur: style.backdropFilter, color: style.color, fill: style.backgroundColor };
     });
     expect(material.blur).toContain('blur('); expect(material.fill).toMatch(/^rgba\(/);
-    const select = panel.locator('[data-ui-palette-select]');
-    await expect(select).toBeFocused();
-    const contrast = await select.evaluate(node => {
+    const select = panel.locator('[data-ui-palette-select]'), control = panel.getByRole('combobox', { name: '界面配色', exact: true });
+    await expect(control).toBeFocused();
+    const contrast = await control.evaluate(node => {
       const rgb = (value: string) => value.match(/[\d.]+/g)!.map(Number);
       const composite = (a: number[], b: number[]) => a.slice(0, 3).map((v, i) => v * (a[3] ?? 1) + b[i] * (1 - (a[3] ?? 1)));
       const style = getComputedStyle(node), panel = getComputedStyle(node.closest('[data-ui-preferences-panel]')!);
@@ -79,7 +82,18 @@ for (const appearance of ['light', 'dark']) for (const width of [1280, 390]) {
     expect(rect.x).toBeGreaterThanOrEqual(12); expect(rect.x + rect.width).toBeLessThanOrEqual(width - 12);
     expect(rect.y).toBeGreaterThanOrEqual(12); expect(rect.y + rect.height).toBeLessThanOrEqual(844 - 12);
     if (width === 390) { expect(rect.x).toBe(16); expect(rect.width).toBe(358); expect(rect.y).toBe(72); }
-    await select.selectOption('teal'); expect(await page.evaluate(() => (window as any).changes)).toBe(1);
+    await control.click();
+    const popup = page.locator('.lq-selection__popup');
+    await expect(popup).toBeVisible();
+    expect(await popup.evaluate(node => getComputedStyle(node).backdropFilter)).toContain('blur(');
+    await page.getByRole('option', { name: '青绿', exact: true }).click();
+    await expect(select).toHaveValue('teal');
+    await expect(control).toHaveValue('青绿');
+    await expect(panel).toBeVisible();
+    expect(await page.evaluate(() => (window as any).changes)).toBe(1);
+    await control.press('ArrowDown'); await expect(popup).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(popup).toBeHidden();
+    await expect(panel).toBeVisible(); await expect(control).toBeFocused();
     const togglePair = () => toggle.evaluate(node => {
       const token = (name: string) => {
         const probe = document.createElement('i'); probe.style.color = `hsl(var(${name}))`; node.append(probe);
@@ -121,4 +135,44 @@ test('appearance remains a native disclosure without enhancement', async ({ page
   await expect(panel).toBeHidden(); await toggle.focus(); await page.keyboard.press('Enter'); await expect(panel).toBeVisible();
   await panel.locator('[data-ui-palette-select]').selectOption('teal');
   await toggle.focus(); await page.keyboard.press('Enter'); await expect(panel).toBeHidden();
+});
+
+test('Profile and topbar comboboxes keep one native CAS owner, status and conflict retry', async ({ page }) => {
+  await mount(page, 'light', false, true);
+  let preferences = { palette_key: 'indigo', appearance: 'auto', glass: 'tinted', backdrop: 'scene', backdrop_color: '#ffffff', version: 0, context_token: 'fixture', available: true };
+  const patches: any[] = [];
+  let conflict = true;
+  await page.route('**/api/profile/ui-preferences', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { preferences } });
+    const payload = route.request().postDataJSON(); patches.push(payload);
+    if ('backdrop' in payload && conflict) { conflict = false; return route.fulfill({ status: 409, json: { message: 'conflict' } }); }
+    preferences = { ...preferences, ...payload, version: preferences.version + 1 };
+    return route.fulfill({ json: { preferences } });
+  });
+  await page.evaluate(async () => {
+    const { initUserUIPreferences } = await import('/static/js/user_ui_preferences.js');
+    Object.assign(document.body.dataset, { uiPalette: 'indigo', appearancePreference: 'auto', glassPreference: 'tinted', uiPaletteContext: 'fixture', uiPaletteVersion: '0' });
+    (window as any).preferencesOwner = initUserUIPreferences(document);
+  });
+  await expect(page.locator('input[role="combobox"]')).toHaveCount(6);
+  await page.locator('[data-ui-preferences-toggle]').click();
+  const palette = page.getByRole('combobox', { name: '界面配色', exact: true });
+  await palette.press('ArrowDown'); await palette.press('End'); await palette.press('Enter');
+  await expect.poll(() => patches.length).toBe(1);
+  expect(patches[0]).toEqual({ version: 0, palette_key: 'teal' });
+  await page.keyboard.press('Escape');
+  const profile = page.locator('#profile-backdrop'), backdrop = profile.getByRole('combobox', { name: '页面背景', exact: true });
+  await backdrop.click(); await page.getByRole('option', { name: '关闭（纯色）', exact: true }).click();
+  await expect(backdrop).toHaveAttribute('aria-invalid', 'true');
+  await expect(backdrop).toHaveValue('关闭（纯色）');
+  await expect(page.locator('select[data-ui-preference-select="backdrop"]').first()).toHaveValue('off');
+  await backdrop.press('Enter'); // same value is explicit consent to retry conflict
+  await expect.poll(() => patches.length).toBe(3);
+  expect(patches.slice(1)).toEqual([{ version: 1, backdrop: 'off' }, { version: 1, backdrop: 'off' }]);
+  await expect(backdrop).toHaveAttribute('aria-invalid', 'false');
+  await page.locator('[data-ui-preferences-toggle]').click();
+  await expect(page.locator('[data-ui-preferences-panel]').getByRole('combobox', { name: '页面背景', exact: true })).toHaveValue('关闭（纯色）');
+  await page.evaluate(() => (window as any).preferencesOwner.dispose());
+  await expect(page.locator('input[role="combobox"]')).toHaveCount(0);
+  await expect(profile.locator('select[data-ui-preference-select="backdrop"]')).toBeVisible();
 });

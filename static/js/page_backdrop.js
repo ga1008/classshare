@@ -50,6 +50,11 @@ export function createBackdropLayer(root = document) {
     let catalog = [];
     try { catalog = JSON.parse(find('[data-lq-backdrop-catalog]')?.textContent || '[]'); } catch { /* Empty catalog. */ }
     let library = null, libraryAbort = null, disposed = false, generation = 0, scene = null;
+    let outgoing = null, fade = null;
+    function clearFade() {
+        fade?.cancel(); fade = null;
+        outgoing?.remove(); outgoing = null;
+    }
     const context = doc.body?.dataset.uiPaletteContext || '';
     const handoff = win && read(win, HANDOFF_KEY);
     const age = Date.now() - Number(handoff?.t || 0);
@@ -91,11 +96,36 @@ export function createBackdropLayer(root = document) {
         if (win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { done(); return; }
         win.requestAnimationFrame(() => { html.classList.add('scene-cover-dissolving'); win.setTimeout(done, 560); });
     }
-    function paint(file, color, rendered, fallback = false) {
+    function paint(file, color, rendered) {
+        const image = layer.querySelector('[data-lq-backdrop-image]');
+        const paintValue = rendered ? `url(${rendered})` : 'none';
+        const changed = layer.style.getPropertyValue('--lq-backdrop-paint').trim() !== paintValue;
+        // Keep the decoded outgoing frame above the next scene while it fades.
+        // This also animates turning the picture off, without a white flash.
+        if (changed) {
+            clearFade();
+            if (image && layer.dataset.lqBackdropFrostState !== 'off' &&
+                !win.matchMedia?.('(prefers-reduced-motion: reduce)').matches && image.animate) {
+                const style = win.getComputedStyle(image);
+                outgoing = image.cloneNode(false);
+                outgoing.removeAttribute('data-lq-backdrop-image');
+                outgoing.setAttribute('data-lq-backdrop-outgoing', '');
+                Object.assign(outgoing.style, {
+                    backgroundImage: style.backgroundImage, filter: style.filter,
+                    inset: style.inset, opacity: style.opacity, animation: 'none',
+                });
+                layer.append(outgoing);
+            }
+        }
         layer.dataset.lqBackdropImageUrl = file ? BACKDROP_BASE + file : '';
-        layer.dataset.lqBackdropFrostState = file ? (fallback ? 'fallback' : 'ready') : 'off';
+        layer.dataset.lqBackdropFrostState = file ? 'ready' : 'off';
         layer.style.setProperty('--lq-backdrop-image', file ? `url(${BACKDROP_BASE}${file})` : 'none');
-        layer.style.setProperty('--lq-backdrop-paint', rendered ? `url(${rendered})` : 'none');
+        layer.style.setProperty('--lq-backdrop-paint', paintValue);
+        if (changed && outgoing) {
+            const frame = outgoing;
+            fade = frame.animate([{ opacity: frame.style.opacity }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' });
+            fade.finished.then(() => { if (outgoing === frame) clearFade(); }).catch(() => {});
+        }
         // Legacy consumers remain in sync until every material uses this layer.
         const html = doc.documentElement;
         html.style.setProperty('--lq-frost-image', file ? `url(${BACKDROP_BASE}frost/${file.replace(/\.[^.]+$/, '')}.webp)` : 'none');
@@ -119,17 +149,14 @@ export function createBackdropLayer(root = document) {
         // A unavailable manifest keeps the safe SSR image; it never blanks an
         // already usable page while an optional preference library is offline.
         if (!file) { finishCover(); return; }
-        const frost = `${BACKDROP_BASE}frost/${file.replace(/\.[^.]+$/, '')}.webp`;
-        const ready = await preload(win, frost);
+        const original = BACKDROP_BASE + file;
+        const ready = await preload(win, original);
         if (disposed || mine !== generation) return;
         if (!ready) {
-            const originalReady = await preload(win, BACKDROP_BASE + file);
-            if (disposed || mine !== generation) return;
-            // Neither source can be painted. Keep the last usable scene rather
-            // than replacing it with an empty CSS image while the network fails.
-            if (!originalReady) { finishCover(); return; }
+            // Keep the last usable scene when a replacement cannot be decoded.
+            finishCover(); return;
         }
-        paint(file, values.backdrop_color, ready ? frost : BACKDROP_BASE + file, !ready);
+        paint(file, values.backdrop_color, original);
         if (validScene && context) write(win, SESSION_KEY, { ...scene, context });
         finishCover();
     }
@@ -142,7 +169,7 @@ export function createBackdropLayer(root = document) {
             scene = { image, tip: String(tip), t: Date.now() };
             await apply({ backdrop: layer?.dataset.lqBackdropMode || 'scene', backdrop_color: layer?.dataset.lqBackdropColor || '#ffffff' });
         },
-        dispose() { disposed = true; generation++; libraryAbort?.abort(); finishCover(); },
+        dispose() { disposed = true; generation++; libraryAbort?.abort(); clearFade(); finishCover(); },
     };
 }
 export function initPageBackdrop(doc = document) {
