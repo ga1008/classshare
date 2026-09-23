@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
+import { serveProcessMaterialModule } from './process-material-fixture-modules';
 
 const source = fs.readFileSync('static/js/grade_publication_controls.js', 'utf8');
 const modal = fs.readFileSync('static/js/process_material_modal.js', 'utf8');
@@ -15,6 +16,7 @@ async function mount(page: Page, failure: 'none' | 'conflict' | 'unknown' | 'sou
     const modules: Record<string, string> = { '/grade_publication_controls.js': source, '/process_material_modal.js': modal, '/api.js': api, '/ui.js': ui };
     if (url.pathname.endsWith('/grade_publication.css')) return route.fulfill({ contentType: 'text/css', body: styles });
     if (modules[url.pathname]) return route.fulfill({ contentType: 'text/javascript', body: modules[url.pathname] });
+    if (await serveProcessMaterialModule(route)) return;
     const current = version ? { publication_id: version, version, status: 'active', published_at: '2026-09-07', source_stale: false } : null;
     if (url.pathname.endsWith('/grade-publication')) return route.fulfill({ json: { current, history: current ? [current] : [] } });
     if (url.pathname.endsWith('/preview') && failure === 'source-removed') throw new Error('Classroom management must not depend on source material');

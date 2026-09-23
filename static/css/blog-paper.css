@@ -1,5 +1,5 @@
 /*
- * Blog Center — "纸感阅读台" (Paper Desk) skin
+ * Blog Center — shared glass materials, reading typography
  * ------------------------------------------------------------------
  * 设计语言：简约 / 易用 / 轻拟物。
  * - 轻拟物 = 分层柔影 + 触感反馈（hover 上浮、按下收紧），无纹理无霓虹。
@@ -12,15 +12,15 @@
 
 .blog-shell {
     /* 皮肤级令牌 */
-    --blog-paper: hsl(var(--ls-card));
-    --blog-ink: hsl(var(--ls-foreground));
-    --blog-ink-soft: hsl(var(--ls-muted-foreground));
-    --blog-line: hsl(var(--ls-border) / 0.8);
+    --blog-paper: hsl(var(--lq-page-content));
+    --blog-ink: hsl(var(--ls-ink));
+    --blog-ink-soft: hsl(var(--ls-ink-3));
+    --blog-line: hsl(var(--ls-glass-line));
     --blog-shadow-sm: 0 1px 2px hsl(var(--ls-foreground) / 0.06), 0 1px 1px hsl(var(--ls-foreground) / 0.04);
     --blog-shadow-md: 0 1px 2px hsl(var(--ls-foreground) / 0.05), 0 4px 12px hsl(var(--ls-foreground) / 0.08);
     --blog-shadow-lift: 0 2px 4px hsl(var(--ls-foreground) / 0.06), 0 12px 24px hsl(var(--ls-foreground) / 0.1);
     --blog-shadow-inset: inset 0 1px 2px hsl(var(--ls-foreground) / 0.06);
-    --blog-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --blog-ease: var(--ls-ease-out);
 
     max-width: 1200px;
     margin: 0 auto;
@@ -32,6 +32,7 @@
 .blog-shell [hidden] {
     display: none !important;
 }
+.blog-feed:empty { display: none; }
 
 /* ── 页头 ─────────────────────────────────────────────────────── */
 
@@ -321,7 +322,7 @@
     align-items: center;
     gap: var(--spacing-md);
     background: hsl(var(--ls-card) / 0.92);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(var(--ls-blur-regular));
     border: 1px solid var(--blog-line);
     border-radius: var(--radius-xl);
     box-shadow: var(--blog-shadow-md);
@@ -1502,7 +1503,7 @@
     border: 1px solid var(--blog-line);
     border-radius: var(--radius-xl);
     background: hsl(var(--ls-card) / 0.9);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(var(--ls-blur-regular));
     box-shadow: var(--blog-shadow-sm);
     z-index: 20;
 }
@@ -2143,7 +2144,7 @@
     justify-content: center;
     padding: var(--spacing-md);
     background: hsl(var(--ls-foreground) / 0.35);
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(var(--ls-blur-scrim));
 }
 
 .blog-modal {
@@ -2497,7 +2498,7 @@ body.blog-composer-open {
 
 .blog-report-dialog::backdrop {
     background: hsl(220 30% 10% / 0.35);
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(var(--ls-blur-scrim));
 }
 
 .blog-report-dialog form {

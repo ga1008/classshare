@@ -72,7 +72,7 @@
     {% endif %}
 
     <div class="pts-grid">
-        <section class="pts-panel">
+        <section class="pts-panel" data-lq-material="content">
             <h2>兑换商店</h2>
             <p class="pts-panel__subtitle">兑换即时生效；条件不满足不会扣币。</p>
             {% for item in home['items'] %}
@@ -97,7 +97,7 @@
         </section>
 
         <aside class="{{ 'pts-aside' if growth_on else '' }}" {% if not growth_on %}style="display:grid;gap:18px;"{% endif %}>
-            <section class="pts-panel">
+            <section class="pts-panel" data-lq-material="content">
                 <h2>怎么赚学分币</h2>
                 <p class="pts-panel__subtitle">全自动记账，无需手动领取。</p>
                 {% for rule in home.earn_rules %}
@@ -107,7 +107,7 @@
                 </div>
                 {% endfor %}
             </section>
-            <section class="pts-panel">
+            <section class="pts-panel" data-lq-material="content">
                 <h2>最近流水</h2>
                 <p class="pts-panel__subtitle">最近 {{ home.ledger|length }} 条记录。</p>
                 {% if home.ledger %}

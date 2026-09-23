@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const controller = fs.readFileSync('static/js/submission_grading.js', 'utf8');
 const template = fs.readFileSync('templates/submission_detail.html', 'utf8');
 const globalCss = fs.readFileSync('static/css/tailwind-app.css', 'utf8');
-const pageCss = template.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+const pageCss = fs.readFileSync('static/css/submission_detail.css', 'utf8');
 // The conflict panel is the production HTML, so missing recovery controls fail here.
 const panel = template.slice(template.indexOf('    <div class="status-card warning mb-md" id="grade-conflict"'),
   template.indexOf('    {% if submission.resubmission_allowed %}', template.indexOf('<!-- Grading Section')));

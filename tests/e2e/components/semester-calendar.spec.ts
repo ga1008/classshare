@@ -1,13 +1,17 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { serveProcessMaterialModule as serveLayerModule } from './process-material-fixture-modules';
 
 const calendarSource = fs.readFileSync(path.resolve('static/js/semester_calendar.js'), 'utf8');
-const sharedCss = fs.readFileSync(path.resolve('static/css/ui-system.src.css'), 'utf8');
+// Use the same resolved tokens and utilities as the application. Browsers
+// cannot compile the source stylesheet's @tailwind and nested @import tree.
+const sharedCss = fs.readFileSync(path.resolve('static/css/tailwind-app.css'), 'utf8');
 
 async function mountCalendar(page: Page) {
   await page.route('http://calendar.test/**', async route => {
     const url = new URL(route.request().url());
+    if (await serveLayerModule(route)) return;
     if (url.pathname === '/calendar.js') {
       await route.fulfill({ contentType: 'text/javascript', body: calendarSource });
     } else if (url.pathname === '/static/js/api.js') {

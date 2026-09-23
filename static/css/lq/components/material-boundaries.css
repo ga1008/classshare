@@ -1,0 +1,80 @@
+/* Rendering policy for the material API. Page CSS owns layout, never frost.
+ * Content: cached wallpaper frost on a fine pointer; one live boundary on touch.
+ * Chrome/raised: sample actual content beneath them, including scrolling text.
+ * Controls: inherit the containing frost, avoiding a filter per button/row.
+ * Keep this after page adapters so their background shorthands cannot erase it.
+ */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    /* Defaults must work even when a browser does not recognize an optional
+       accessibility media feature; explicit opt-outs below win with important. */
+    @media screen {
+        :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
+        :is(.lq-glass:not(.lq-toast, .lq-tooltip), [data-lq-material="chrome"], [data-lq-material="raised"], [data-lq-material="clear"]) {
+            background-color: hsl(var(--lq-material-fill, var(--ls-glass-fill)));
+            background-image: var(--ls-glass-sheen);
+            background-attachment: scroll;
+            -webkit-backdrop-filter: blur(var(--lq-material-blur, var(--ls-blur-regular))) saturate(var(--ls-glass-saturate));
+            backdrop-filter: blur(var(--lq-material-blur, var(--ls-blur-regular))) saturate(var(--ls-glass-saturate));
+        }
+        /* Mobile browsers cannot align background-attachment:fixed. Explicit
+         * panel boundaries sample the real scene instead. Repeated lq-cards
+         * intentionally do not join this list; their carrier owns the blur. */
+        @media (pointer: coarse), (hover: none) {
+            :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
+            :is([data-lq-material="content"], .lq-surface--boundary) {
+                background: hsl(var(--lq-material-fill, var(--ls-glass-fill-content)));
+                -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+                backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
+            }
+        }
+    }
+}
+
+/* A surface's own opacity preference must also cover plain content, controls
+ * and nested opt-out islands. Previously only .lq-glass/.lq-surface--frost were
+ * made opaque, so turning transparency off left most panels translucent. */
+[data-lq-glass="off"], :root[data-lq-tier="C"], :root[data-lq-contrast="more"] {
+    --ls-glass-fill: var(--ls-surface-1);
+    --ls-glass-fill-content: var(--ls-surface-1);
+    --ls-glass-fill-control: var(--ls-surface-2);
+    --ls-glass-fill-strong: var(--ls-surface-1);
+    --ls-glass-fill-clear: var(--ls-surface-1);
+}
+[data-lq-glass="off"]:is(.lq-glass, .lq-surface, [data-lq-material]),
+[data-lq-glass="off"] :is(.lq-glass, .lq-surface, [data-lq-material]),
+:root[data-lq-tier="C"] :is(.lq-glass, .lq-surface, [data-lq-material]),
+:root[data-lq-contrast="more"] :is(.lq-glass, .lq-surface, [data-lq-material]) {
+    background: hsl(var(--ls-surface-1)) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    :root {
+        --ls-glass-fill: var(--ls-surface-1);
+        --ls-glass-fill-content: var(--ls-surface-1);
+        --ls-glass-fill-control: var(--ls-surface-2);
+        --ls-glass-fill-strong: var(--ls-surface-1);
+        --ls-glass-fill-clear: var(--ls-surface-1);
+    }
+    :root :is(.lq-glass, .lq-surface, [data-lq-material]) {
+        background: hsl(var(--ls-surface-1)) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+}
+@media (forced-colors: active) {
+    :root :is(.lq-glass, .lq-surface, [data-lq-material]) {
+        background: Canvas !important;
+        color: CanvasText !important;
+        border-color: CanvasText !important;
+    }
+}
+
+@media print {
+    :root :is(.lq-glass, .lq-surface, [data-lq-material]) {
+        background: hsl(var(--ls-surface-1)) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        box-shadow: none !important;
+    }
+}

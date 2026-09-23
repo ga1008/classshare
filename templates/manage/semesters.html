@@ -2,6 +2,10 @@
 {% from "macros/manage_page.html" import page_head %}
 {% from "macros/ui_explanation.html" import explain_button %}
 
+{% block extra_head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ asset_url('css/manage_semesters.css') }}">
+{% endblock %}
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}

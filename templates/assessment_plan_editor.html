@@ -7,10 +7,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>编辑考核计划表 · {{ plan.title }}</title>
     {% include "partials/lq_editor_head.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/teacher_editors.css') }}">
     <link rel="stylesheet" href="{{ asset_url('css/signature_point_workflow.css') }}">
 </head>
 <body class="lp-editor-body" {{ body_attrs(ui_palette) }}>
-    <header class="lp-editor__header">
+    {% include "partials/lq_page_backdrop.html" %}
+    <header class="lp-editor__header" data-lq-material="chrome">
         <a class="lp-btn lp-btn--ghost" href="/manage/archive/assessment-plans">← 返回考核计划表库</a>
         <strong class="lp-editor__title" id="ap-editor-title">{{ plan.title }}</strong>
         <div class="lp-editor__header-actions">
@@ -22,7 +24,7 @@
     </header>
 
     <main class="lp-editor">
-        <section class="lp-editor__form" id="ap-editor-form">
+        <section data-lq-material="content" class="lp-editor__form" id="ap-editor-form">
             <details class="lp-editor__cover" open>
                 <summary>基础信息</summary>
                 <div class="ap-field-grid" id="ap-field-grid"></div>
@@ -49,7 +51,7 @@
             </details>
         </section>
 
-        <section class="lp-editor__preview">
+        <section class="lp-editor__preview" data-lq-material="content">
             <div class="lp-editor__preview-bar">
                 <span>当前保存版预览</span>
                 <button type="button" class="lp-btn lp-btn--ghost" id="ap-refresh-preview">保存并刷新预览</button>

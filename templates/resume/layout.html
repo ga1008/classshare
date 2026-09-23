@@ -24,8 +24,11 @@
   'files': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v5h5"></path></svg>'
 } %}
 <body class="rz-body" data-student-id="{{ user_info.id }}" {{ body_attrs(ui_palette) }}>
+    {% include 'partials/lq_page_backdrop.html' with context %}
     <div class="rz-layout">
-        <aside class="rz-sidebar" id="rzSidebar">
+        <div class="rz-sidebar-layer" id="rzSidebarLayer">
+        <div class="rz-sidebar-scrim" aria-hidden="true"></div>
+        <aside class="rz-sidebar" id="rzSidebar" data-lq-material="chrome" aria-label="简历导航">
             <a href="/career-path" class="rz-brand">
                 <span class="rz-brand__mark">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h6"></path></svg>
@@ -53,11 +56,12 @@
                 <a href="/dashboard" style="margin-left:auto">首页</a>
             </div>
         </aside>
+        </div>
 
         <main class="rz-main">
-            <header class="rz-topbar">
+            <header class="rz-topbar" data-lq-material="chrome">
                 <div style="display:flex;align-items:center;gap:12px;min-width:0">
-                    <button type="button" class="rz-mobile-toggle" onclick="document.getElementById('rzSidebar').classList.toggle('open')" aria-label="菜单">
+                    <button type="button" class="rz-mobile-toggle lq-btn lq-btn--glass" id="rzSidebarToggle" aria-label="打开简历导航" aria-controls="rzSidebar" aria-expanded="false">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"></path></svg>
                     </button>
                     <h1>{{ page_title }}</h1>
@@ -78,6 +82,7 @@
     <div id="toast-container" class="toast-container"></div>
     <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
     <script src="{{ asset_url('js/career_tools_client.js') }}"></script>
+    <script type="module" src="{{ asset_url('js/resume_shell.js') }}"></script>
     {% block page_script %}{% endblock %}
 </body>
 </html>

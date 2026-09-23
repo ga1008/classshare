@@ -9,7 +9,10 @@
 .lq-navbar-skip:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
 /* The image remains behind its contrast surface. Avoid the legacy image's
    additional software blur so topbar and Dock are the two persistent layers. */
-[data-lq-navbar-topbar] > .app-topbar__scene > i { filter: none; }
+/* The shared viewport scene already sits behind this glass. The older topbar
+   photo/white scrim doubled the scene, left square corners outside the radius
+   and hid the material beneath a 96% white plate. Keep its DOM handoff hook. */
+:is([data-lq-navbar-topbar], [data-lq-report-card-topbar]) > .app-topbar__scene { display: none; }
 [data-lq-navbar-content] { min-width: 0; }
 [data-lq-back-to-top].back-to-top { backdrop-filter: none; -webkit-backdrop-filter: none; background: hsl(var(--lq-page-raised)); color: hsl(var(--ls-on-primary-soft)); border-color: hsl(var(--ls-line)); box-shadow: var(--ls-shadow-1); }
 @media (max-width:767px) {

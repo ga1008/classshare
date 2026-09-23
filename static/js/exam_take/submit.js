@@ -6,6 +6,9 @@
 export function createExamSubmissionController({ context, state, live, ports }) {
     // The opened round and start time must never follow a later server response.
     const { assignmentId, submissionVersion, examStartedAt, submissionExists, localDraftKey, restoreSyncDelayMs } = context;
+    // Two page controls call this operation. Disabling their current DOM nodes
+    // is insufficient when navigation renders a new footer during a request.
+    let submissionInFlight = false;
 
     async function loadServerDraft() {
         if (submissionExists && !live.isEditingResubmission) return;
@@ -130,7 +133,7 @@ export function createExamSubmissionController({ context, state, live, ports }) 
     }
 
     async function handleSubmission() {
-        if (live.submissionSucceeded) return;
+        if (live.submissionSucceeded || submissionInFlight) return;
         if (!live.assignmentAcceptingSubmissions) {
             ports.showMessage('已超过允许提交时间，系统正在以服务器时间为准拦截交卷。', 'warning');
             return;
@@ -170,6 +173,7 @@ export function createExamSubmissionController({ context, state, live, ports }) 
             if (!ports.confirm(confirmText)) return;
         }
 
+        submissionInFlight = true;
         ports.setSubmitBusy(true);
 
         try {
@@ -282,6 +286,8 @@ export function createExamSubmissionController({ context, state, live, ports }) 
         } catch(e) {
             ports.showMessage(ports.getApiFailureMessage(e, '提交失败，请按提示调整后重试。'), 'error');
             ports.setSubmitBusy(false);
+        } finally {
+            submissionInFlight = false;
         }
     }
 

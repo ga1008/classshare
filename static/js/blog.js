@@ -2982,7 +2982,7 @@ class BlogCenter {
             : '';
 
         return `
-            <article class="blog-detail">
+            <article class="blog-detail" data-lq-material="content">
                 ${metaBadges.length ? `<div class="blog-detail__badges">${metaBadges.join('')}</div>` : ''}
                 <h1 class="blog-detail__title">${escapeHtml(post.title || '')}</h1>
                 <div class="blog-detail__reading-meta">

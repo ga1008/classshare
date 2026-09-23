@@ -106,7 +106,7 @@
 
     {% if wrong_book['items'] or wrong_book.knowledge_mastery %}
     <div class="wrongbook-grid">
-        <section class="wrongbook-panel">
+        <section class="wrongbook-panel" data-lq-material="content">
             <h2>错题清单</h2>
             <p class="wrongbook-panel__subtitle">
                 共 {{ wrong_book['items']|length }} 道{% if wrong_book.items_truncated %}（仅展示最近 {{ wrong_book['items']|length }} 道）{% endif %}，点“回顾原卷”可回到试卷与批改反馈。
@@ -168,7 +168,7 @@
             </div>
         </section>
 
-        <aside class="wrongbook-panel">
+        <aside class="wrongbook-panel" data-lq-material="content">
             <h2>知识点掌握度</h2>
             <p class="wrongbook-panel__subtitle">按你的历次作答统计，越靠上越需要优先补强。</p>
             {% if wrong_book.knowledge_mastery %}
@@ -202,7 +202,7 @@
         {% endif %}
     {% endcall %}
     {% else %}
-    <section class="wrongbook-panel">
+    <section class="wrongbook-panel" data-lq-material="content">
         <div class="wrongbook-empty">
             <strong>暂无错题</strong>
             <p>批改后做错的题自动收进这里。</p>

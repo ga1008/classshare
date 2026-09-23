@@ -1395,13 +1395,14 @@
           },
           {
             "path": "templates/dashboard.html",
-            "sha256": "2ecd7405754d090e3098a0294d4cd708ccfe9ac0ab2582ad5cb9b5a8f13f60ce",
+            "sha256": "aa1d2e766303d9b568c0f4755e96d913c7e61285ced50a923782eaca72815e68",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_navbar_shell.py",
               "tests/test_lq_report_card_pilot.py",
               "tests/e2e/specs/lq-s4-shell.spec.ts",
-              "tests/e2e/specs/lq-s4-shell-visual.spec.ts"
+              "tests/e2e/specs/lq-s4-shell-visual.spec.ts",
+              "tests/e2e/specs/lq-unified-material.spec.ts"
             ]
           }
         ]
@@ -8092,13 +8093,14 @@
           },
           {
             "path": "templates/dashboard_teacher.html",
-            "sha256": "86355ae3fd42867cdde1340b9f3c13f9f0dade47d86ab653a8f9d408645f067e",
+            "sha256": "cc352ee394f29a942d372dcbc8a9bdaa8166e412d00492ab2fb9aa833875e720",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/test_lq_navbar_shell.py",
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
-              "tests/e2e/specs/lq-s4-shell.spec.ts"
+              "tests/e2e/specs/lq-s4-shell.spec.ts",
+              "tests/e2e/specs/lq-unified-material.spec.ts"
             ]
           }
         ]
@@ -11080,12 +11082,13 @@
         "sharedSources": [
           {
             "path": "templates/manage/semesters.html",
-            "sha256": "8d9603bdae9e97b422c99130227b1dcd4fc319b5758c761fa6f68ceb3e717f0e",
+            "sha256": "95705d42aa64f5497c0f826baa4db694a170f2b3f82b80ece1adfa088718c334",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
-              "tests/e2e/specs/manage-pilot.spec.ts"
+              "tests/e2e/specs/manage-pilot.spec.ts",
+              "tests/e2e/specs/lq-teacher-materials.spec.ts"
             ]
           },
           {

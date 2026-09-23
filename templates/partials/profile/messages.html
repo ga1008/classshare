@@ -34,8 +34,8 @@
                 </section>
 
                 <section class="message-center-body profile-message-body{% if not _messages_lq %} profile-reveal{% endif %}">
-                    <div id="message-center-feed" class="message-center-feed"{% if _messages_lq %} role="region" aria-label="通知列表"{% endif %}></div>
-                    <div id="message-center-private-panel" class="message-center-private-panel" hidden>
+                    <div id="message-center-feed" class="message-center-feed"{% if _messages_lq %} role="region" aria-label="通知列表"{% endif %} data-lq-material="content"></div>
+                    <div id="message-center-private-panel" class="message-center-private-panel" hidden data-lq-material="content">
                         <aside class="message-center-sidebar">
                             <div class="message-center-pane-header">
                                 <h2 class="message-center-pane-title">私信会话</h2>

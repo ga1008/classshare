@@ -353,20 +353,21 @@ class BackdropFrostTests(unittest.TestCase):
         # the account picked, and dimming it toward the theme would be wrong.
         self.assertEqual(off["frost_base"], "#0a1b2c")
 
-    def test_the_recipe_replaces_live_blur_and_accessibility_cannot_lose_it(self):
+    def test_content_frost_has_a_cached_recipe_and_optional_media_features_do_not_gate_it(self):
         css = (ROOT / "static/css/lq/materials.css").read_text(encoding="utf-8")
         declarations = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-        # No material is a blur host any more; that is the whole point.
+        # Cached content frost stays separate from the live floating layer.
         self.assertNotIn("backdrop-filter: blur(", declarations)
         self.assertIn("--lq-frost-image", declarations)
         self.assertIn("background-attachment: scroll, scroll, fixed", declarations)
-        # The cancels live in the query, not in a later rule. `:is()` here
-        # carries two attribute selectors and the cancels carry one, so a
-        # reduced-transparency user would have lost the tie and kept the frost.
+        # Unsupported optional media features must not silently disable frost.
+        # Runtime tests assert the important opt-outs on all material roles.
         query = re.search(r"@media \(hover: hover\)[^{]*\{", declarations)
         self.assertIsNotNone(query)
-        self.assertIn("prefers-reduced-transparency: no-preference", query.group(0))
-        self.assertIn("forced-colors: none", query.group(0))
+        self.assertNotIn("prefers-reduced-transparency: no-preference", query.group(0))
+        boundary = (ROOT / "static/css/lq/components/material-boundaries.css").read_text(encoding="utf-8")
+        self.assertIn("prefers-reduced-transparency: reduce", boundary)
+        self.assertIn("backdrop-filter: none !important", boundary)
 
 
 class BackdropShellCoverageTests(unittest.TestCase):
@@ -374,7 +375,11 @@ class BackdropShellCoverageTests(unittest.TestCase):
     extend base.html, so it was missed once and the backdrop simply never
     appeared for teachers or on any /manage page."""
 
-    ROOTS = ("templates/base.html", "templates/manage/layout.html")
+    ROOTS = (
+        "templates/base.html", "templates/manage/layout.html", "templates/resume/layout.html",
+        "templates/exam_take.html", "templates/exam_editor.html", "templates/lesson_plan_editor.html",
+        "templates/assessment_plan_editor.html", "templates/teacher_evaluation_editor.html",
+    )
 
     def test_every_document_root_includes_the_backdrop_exactly_once(self):
         repo = Path(__file__).resolve().parents[1]

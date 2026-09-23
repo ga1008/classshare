@@ -12,299 +12,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/classroom_members.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
 {% endif %}
-<style>
-    .assignment-card-action-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        width: 100%;
-        min-width: 0;
-    }
-
-    .assignment-board__head [data-explain] {
-        cursor: help;
-    }
-
-    .assignment-wrong-summary-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        min-height: 30px;
-        padding: 5px 9px;
-        border: 1px solid rgba(14, 165, 233, 0.24);
-        border-radius: 8px;
-        background: rgba(240, 249, 255, 0.86);
-        color: #0369a1;
-        font-size: 0.76rem;
-        font-weight: 850;
-        white-space: nowrap;
-        transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
-    }
-
-    .assignment-wrong-summary-link:hover,
-    .assignment-wrong-summary-link:focus-visible {
-        border-color: rgba(14, 165, 233, 0.42);
-        background: rgba(224, 242, 254, 0.96);
-        color: hsl(var(--ls-info-strong));
-        outline: none;
-        transform: translateY(-1px);
-    }
-
-    .assignment-wrong-summary-link svg {
-        width: 14px;
-        height: 14px;
-    }
-
-    .assignment-group-config-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        min-height: 30px;
-        padding: 5px 9px;
-        border: 1px solid rgba(124, 58, 237, 0.24);
-        border-radius: 8px;
-        background: rgba(245, 243, 255, 0.86);
-        color: #6d28d9;
-        font-size: 0.76rem;
-        font-weight: 850;
-        white-space: nowrap;
-        cursor: pointer;
-        transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
-    }
-
-    .assignment-group-config-link:hover,
-    .assignment-group-config-link:focus-visible {
-        border-color: rgba(124, 58, 237, 0.45);
-        background: rgba(237, 233, 254, 0.96);
-        color: #5b21b6;
-        outline: none;
-        transform: translateY(-1px);
-    }
-
-    .assignment-group-config-link svg {
-        width: 15px;
-        height: 15px;
-    }
-
-    .student-security-summary {
-        display: grid;
-        gap: var(--spacing-sm);
-        margin-bottom: var(--spacing-lg);
-    }
-
-    .student-security-summary-row {
-        display: flex;
-        justify-content: space-between;
-        gap: var(--spacing-md);
-        padding: var(--spacing-sm) var(--spacing-md);
-        border-radius: var(--radius-md);
-        background: var(--bg-color);
-        border: 1px solid var(--border-color);
-    }
-
-    .student-security-summary-row span {
-        color: var(--text-muted);
-        font-size: 0.875rem;
-    }
-
-    .student-security-summary-row strong {
-        color: var(--text-primary);
-        text-align: right;
-    }
-
-    .teaching-timeline-detail-top {
-        align-items: flex-start;
-        gap: var(--spacing-md);
-    }
-
-    .teaching-timeline-detail-actions {
-        display: flex;
-        gap: var(--spacing-sm);
-        flex-wrap: wrap;
-        justify-content: flex-end;
-    }
-
-    .classroom-page .teaching-timeline-segment.is-academic-exam {
-        border-color: rgba(217, 119, 6, 0.42);
-        background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(240, 253, 250, 0.9));
-    }
-
-    .classroom-page .teaching-timeline-segment.is-academic-exam.is-selected {
-        box-shadow: 0 18px 42px -30px rgba(180, 83, 9, 0.8), inset 0 0 0 1px rgba(217, 119, 6, 0.28);
-    }
-
-    .classroom-page .teaching-timeline-segment-doc.is-exam {
-        background: hsl(var(--ls-warning) / 0.16);
-        color: #92400e;
-    }
-
-    .academic-course-exam-section {
-        display: grid;
-        gap: 12px;
-    }
-
-    .academic-course-exam-head {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 12px;
-    }
-
-    .academic-course-exam-kicker {
-        display: inline-flex;
-        width: fit-content;
-        padding: 4px 9px;
-        border-radius: 999px;
-        background: hsl(var(--ls-warning) / 0.14);
-        color: #92400e;
-        font-size: 0.72rem;
-        font-weight: 850;
-    }
-
-    .academic-course-exam-head h4 {
-        margin-top: 6px;
-    }
-
-    .academic-course-exam-message {
-        margin: 0;
-        color: var(--text-muted);
-        font-size: 0.86rem;
-        line-height: 1.55;
-    }
-
-    .academic-course-exam-list {
-        display: grid;
-        gap: 10px;
-    }
-
-    .academic-course-exam-card {
-        display: grid;
-        gap: 8px;
-        padding: 12px;
-        border: 1px solid hsl(var(--ls-warning) / 0.22);
-        border-radius: 8px;
-        background: linear-gradient(135deg, rgba(255, 251, 235, 0.92), rgba(255, 255, 255, 0.92));
-    }
-
-    .academic-course-exam-card strong {
-        color: var(--text-primary);
-    }
-
-    .academic-course-exam-card small,
-    .academic-course-exam-card span {
-        color: var(--text-muted);
-        font-size: 0.82rem;
-        line-height: 1.45;
-    }
-
-    .classroom-page .semester-gantt-row.is-academic_exam .semester-gantt-bar {
-        background: linear-gradient(90deg, hsl(var(--ls-warning)), hsl(var(--ls-teal-bright)));
-    }
-
-    .classroom-page .semester-todo-item.is-academic_exam .semester-todo-source-dot {
-        background: hsl(var(--ls-warning) / 0.18);
-        box-shadow: inset 0 0 0 6px hsl(32 95% 44%);
-    }
-
-    .assignment-time-strip {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 4px 10px;
-        align-items: center;
-        margin-top: var(--spacing-md);
-        padding: 10px 12px;
-        border: 1px solid rgba(14, 165, 233, 0.2);
-        border-radius: 8px;
-        background: linear-gradient(135deg, rgba(236, 253, 245, 0.82), rgba(239, 246, 255, 0.9));
-    }
-
-    .assignment-time-strip__label,
-    .assignment-time-strip__detail {
-        min-width: 0;
-        color: var(--text-muted);
-        font-size: 0.78rem;
-        font-weight: 700;
-        line-height: 1.35;
-    }
-
-    .assignment-time-strip__value {
-        color: hsl(var(--ls-teal));
-        font-size: 1rem;
-        font-weight: 850;
-        line-height: 1.1;
-        white-space: nowrap;
-    }
-
-    .assignment-time-strip__detail {
-        grid-column: 1 / -1;
-        font-weight: 600;
-    }
-
-    .assignment-time-strip.is-urgent {
-        border-color: hsl(var(--ls-warning) / 0.32);
-        background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 247, 237, 0.88));
-    }
-
-    .assignment-time-strip.is-urgent .assignment-time-strip__value {
-        color: var(--warning-dark);
-    }
-
-    .assignment-time-strip.is-late {
-        border-color: rgba(239, 68, 68, 0.28);
-        background: linear-gradient(135deg, rgba(254, 242, 242, 0.92), rgba(255, 251, 235, 0.86));
-    }
-
-    .assignment-time-strip.is-late .assignment-time-strip__value,
-    .assignment-time-strip.is-expired .assignment-time-strip__value {
-        color: var(--danger-hover);
-    }
-
-    .late-policy-toggle-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        border-radius: 8px;
-        background: rgba(248, 250, 252, 0.82);
-    }
-
-    .late-policy-toggle-row input {
-        margin-top: 3px;
-    }
-
-    .late-policy-mini-panel {
-        margin: 0 0 var(--spacing-md);
-        padding: 12px;
-        border: 1px solid hsl(var(--ls-warning) / 0.28);
-        border-radius: 8px;
-        background: rgba(255, 251, 235, 0.72);
-    }
-
-    .late-policy-fields {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--spacing-md);
-    }
-
-    @media (max-width: 720px) {
-        .assignment-time-strip {
-            grid-template-columns: 1fr;
-        }
-
-        .assignment-time-strip__value {
-            white-space: normal;
-        }
-
-        .late-policy-fields {
-            grid-template-columns: 1fr;
-        }
-    }
-
-</style>
+<link rel="stylesheet" href="{{ asset_url('css/classroom_extras.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_workspace.css') }}">
 {% endblock %}
 
@@ -338,7 +46,7 @@
     data-island-id="classroom-page-main"
     hidden
 ></div>
-<header class="app-topbar cw-topbar role-{{ user_info.role }}" aria-label="课堂导航">
+<header data-lq-material="chrome" class="app-topbar cw-topbar role-{{ user_info.role }}" aria-label="课堂导航">
     <a href="/dashboard" class="app-topbar-brand cw-topbar-brand" aria-label="返回教学首页">
         <span class="cw-back-mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
         <span class="cw-brand-copy">
@@ -383,7 +91,7 @@
                         <strong>更多</strong>
                     </span>
                 </summary>
-                <div class="classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
+                <div data-lq-material="raised" class="classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
                     <div class="classroom-topbar-menu__label">课堂入口</div>
             {% if has_learning_entry and user_info.role == 'teacher' %}
             <button type="button" class="classroom-topbar-menu__item classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
@@ -429,7 +137,7 @@
                         <strong>个人</strong>
                     </span>
                 </summary>
-                <div class="classroom-topbar-menu__panel" role="menu" aria-label="个人入口">
+                <div data-lq-material="raised" class="classroom-topbar-menu__panel" role="menu" aria-label="个人入口">
                     <div class="classroom-topbar-menu__label">常用入口</div>
                     <a href="/profile?section=notifications#profile-message-center" class="classroom-topbar-menu__item message-center-bell" data-message-center-bell title="通知中心" aria-label="打开通知中心" role="menuitem">
                         {{ app_topbar_icon('message') }}
@@ -495,7 +203,7 @@
             {% if teaching_plan and teaching_plan.session_count %}
             {% set timeline_entries = teaching_plan.timeline_entries if teaching_plan.timeline_entries else teaching_plan.sessions %}
             {% set selected_session = teaching_plan.anchor_session if teaching_plan.anchor_session else timeline_entries[0] %}
-            <section class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
+            <section data-lq-material="content" class="embedded-teaching-plan" id="timeline-panel" data-workspace-section data-anchor-order="{{ selected_session.order_index }}">
                 <div class="embedded-teaching-plan-head">
                     <div class="embedded-teaching-plan-heading">
                         <h2>课次导航</h2>
@@ -899,7 +607,7 @@
         {% endif %}
 
         <div class="cw-primary-flow" aria-label="课堂任务主线">
-        <section class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div></section>
+        <section data-lq-material="content" class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div></section>
         <section class="workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
             <div class="section-header">
                 <div class="section-heading">
@@ -1171,7 +879,7 @@
         {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
         <div class="cw-primary-flow" aria-label="课堂活动">
     <aside class="cw-activity-section" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动">
-        <div class="classroom-activity-dock">
+        <div data-lq-material="content" class="classroom-activity-dock">
             <header class="classroom-activity-header">
                 <div class="classroom-activity-heading">
                     <h2>课堂活动</h2>

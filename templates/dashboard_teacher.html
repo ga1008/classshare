@@ -70,7 +70,7 @@
                 </div>
             </div>
             {% set focus_items = inbox['items']|default([]) %}
-            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}">
+            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}" data-lq-material="content">
                 {% for item in focus_items %}
                 {% set source = item.agenda_data|default({}) %}
                 <li class="ls-focus-item{% if loop.first %} is-primary{% endif %}">
@@ -87,7 +87,7 @@
     </div>
 
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}
-    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title">{% set lq_courses_body %}
+    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title" data-lq-material="content">{% set lq_courses_body %}
         <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a class="ls-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
         {% if lq_family_enabled('dashboard') %}
         {% from "macros/lq/content.html" import lq_filter_bar %}
@@ -186,7 +186,7 @@
     </section>
 
     {# ── 去哪里：六域卡 ───────────────────────────────────────────── #}
-    <section class="ls-domains" aria-labelledby="ls-domains-title">{% set lq_domains_body %}
+    <section class="ls-domains" aria-labelledby="ls-domains-title" data-lq-material="content">{% set lq_domains_body %}
         <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-domains-title">去哪里</h2>{% endif %}</div>
         <div class="ls-domain-grid{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}">
             {% for domain in dashboard_domain_cards %}

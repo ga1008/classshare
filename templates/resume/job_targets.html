@@ -1,14 +1,14 @@
 {% extends "resume/layout.html" %}
 
 {% block content %}
-<section class="rz-job-hero">
+<section class="rz-job-hero" data-lq-material="content">
     <span class="rz-home-eyebrow">先读懂岗位，再改简历</span>
     <h2 data-explain data-explain-title="岗位分析" data-explain-text="粘贴岗位描述后，系统会核对岗位条件、现有资料证据和待补充内容，并提示经历的改进动作。">岗位分析</h2>
     <p>粘贴职责和任职要求，系统会标出当前资料已有的证据、仍需补充的内容，并逐段提示经历该怎么写得更具体。</p>
 </section>
 
 <div class="rz-job-layout">
-    <section class="rz-card rz-job-form-card">
+    <section class="rz-card rz-job-form-card" data-lq-material="content">
         <div class="rz-job-section-head">
             <div><span>01</span><h3>粘贴岗位描述</h3></div>
             <small>内容仅用于你的求职分析</small>
@@ -32,7 +32,7 @@
         </form>
     </section>
 
-    <section class="rz-card rz-job-result" id="rzJobResult" aria-live="polite">
+    <section class="rz-card rz-job-result" data-lq-material="content" id="rzJobResult" aria-live="polite">
         <div class="rz-job-result__empty">
             <span>02</span>
             <h3 data-explain data-explain-title="分析结果" data-explain-text="你会看到核心要求、已有证据、真实缺口和每段经历的改进动作。">等待分析</h3>
@@ -40,7 +40,7 @@
     </section>
 </div>
 
-<section class="rz-home-section rz-job-history">
+<section class="rz-home-section rz-job-history" data-lq-material="content">
     <div class="rz-home-section__head">
         <div><span>历史分析</span><h3>继续准备最近关注的岗位</h3></div>
     </div>

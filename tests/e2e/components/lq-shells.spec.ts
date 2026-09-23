@@ -205,6 +205,25 @@ test.describe('LQ Shells and seven layouts', () => {
     await expect(page.locator('#sidebar [data-lq-nav-group="teaching"]')).toHaveAttribute('open');
   });
 
+  test('sidebar queued search restoration cannot override the next native group choice',async({page})=>{
+    await mount(page,{live:false});
+    await page.evaluate(item=>{const w=window as any,root=w.api.createShell(item.kind,item.props);document.querySelector('main')!.append(root);w.sidebar=w.api.enhanceShell(root);},fixture.cases.find((x:any)=>x.kind==='sidebar'));
+    await page.locator('#sidebar input[type=search]').fill('材料');
+    await expect(page.locator('#sidebar a[href="/files"]')).toBeVisible();
+    // Queue the restored teaching group's toggle and the user's archive choice
+    // in one task, before either native toggle event has been delivered.
+    await page.evaluate(()=>{const root=document.querySelector('#sidebar')!,search=root.querySelector('input')!;search.value='';search.dispatchEvent(new Event('input',{bubbles:true}));(root.querySelector('[data-lq-nav-group="archive"] summary') as HTMLElement).click();});
+    await expect(page.locator('#sidebar [data-lq-nav-group="teaching"]')).not.toHaveAttribute('open');
+    await expect(page.locator('#sidebar [data-lq-nav-group="archive"]')).toHaveAttribute('open');
+    await expect.poll(()=>page.evaluate(()=>localStorage.getItem('lq.sidebar:["teacher:1","manage","navigation"]'))).toBe('archive');
+    await page.locator('#sidebar input[type=search]').fill('课堂');await page.locator('#sidebar input[type=search]').fill('');
+    await expect(page.locator('#sidebar a[href="/files"]')).toBeVisible();
+    await expect(page.locator('#sidebar [data-lq-nav-group="teaching"]')).not.toHaveAttribute('open');
+    await page.evaluate(()=>(window as any).sidebar.destroy());
+    await expect(page.locator('#sidebar [data-lq-nav-group="teaching"]')).toHaveAttribute('open');
+    await expect(page.locator('#sidebar [data-lq-nav-group="archive"]')).not.toHaveAttribute('open');
+  });
+
   test('Dock keyboard detection requires a live equivalent command and releases shared subscriptions',async({page})=>{
     await page.setViewportSize({width:390,height:844});await mount(page,{live:false});
     const result=await page.evaluate(item=>{
@@ -310,6 +329,7 @@ test.describe('LQ Shells and seven layouts', () => {
     expect(await page.locator('#live-topbar').evaluate(el=>el.classList.contains('lq-glass'))).toBe(false);
     await page.locator('#topbar-draft').focus();await page.evaluate(()=>{(document.querySelector('#topbar-draft') as HTMLInputElement).setSelectionRange(0,2);});
     await page.setViewportSize({width:1024,height:980});
+    await expect(page.locator('#live-topbar--lq-actions')).toHaveAttribute('data-lq-pane-mode','inline');
     expect(await page.locator('#live-topbar--lq-actions').evaluate(el=>el.matches(':modal'))).toBe(false);
     await expect(page.locator('#topbar-draft')).toBeFocused();expect(await page.locator('#topbar-draft').evaluate((el:HTMLInputElement)=>[el.selectionStart,el.selectionEnd])).toEqual([0,2]);
     await page.evaluate(()=>{(document.querySelector('#host') as HTMLElement).removeAttribute('style');});

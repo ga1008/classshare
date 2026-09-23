@@ -61,10 +61,6 @@ for (const [id, route] of ROUTES) {
         console.log(`OFFENDER ${id} ${violation.id} ${JSON.stringify(node.target)} :: ${(node.any[0]?.message || '').slice(0, 130)}`);
       }
     }
-    // Pinned, not filtered: the semester rows wrap focusable controls in a div
-    // that carries aria-current, which predates the material work and needs a
-    // template change to fix. Anything beyond this exact signature fails.
-    const KNOWN: Record<string, string[]> = { 'manage-semesters': ['nested-interactive:2'] };
-    expect(severe, `${id}: 暗色下的严重无障碍违规`).toEqual(KNOWN[id] ?? []);
+    expect(severe, `${id}: 暗色下的严重无障碍违规`).toEqual([]);
   });
 }

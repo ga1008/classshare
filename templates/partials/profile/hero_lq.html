@@ -2,7 +2,7 @@
 {% from 'macros/lq/indicators.html' import lq_progress %}
 {% set overview_href = _profile_hrefs.get('overview', '/manage/me' if profile_in_shell|default(false) else '/profile?section=overview') %}
 {% set settings_href = _profile_hrefs.get('settings', _sec ~ 'settings') %}
-<header class="lq-profile-head">
+<header class="lq-profile-head" data-lq-material="content">
     <div class="lq-profile-head__identity">
         <img class="lq-profile-head__avatar profile-identity__avatar" src="{{ profile.avatar_url }}" alt="当前头像">
         <div class="lq-profile-head__copy">

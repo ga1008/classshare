@@ -382,15 +382,11 @@
 /* Coarse pointers are excluded, not because of cost but because iOS Safari
    and Chrome Android drop `background-attachment: fixed` to `scroll`: the
    slice would then size to the panel and scroll with it, showing a zoomed
-   photo per block. Those devices keep the flat tint.
-
-   The two accessibility conditions are part of the query rather than a cancel
-   further down, because `:is()` here carries two attribute selectors and the
-   cancels carry one: a reduced-transparency user would have lost the tie and
-   got the frost anyway. A rule that never applies cannot be outranked. */
-@media (hover: hover) and (pointer: fine)
-   and (prefers-reduced-transparency: no-preference)
-   and (forced-colors: none) {
+   photo per block. Those devices use live frost at explicit panel boundaries.
+   Optional accessibility media features must not gate the default: browsers
+   that do not recognize them would lose frost entirely. Explicit important
+   opt-outs live in components/material-boundaries.css. */
+@media (hover: hover) and (pointer: fine) {
     /* The second half of this list is page-level: legacy panels that sit
        directly on the backdrop but cannot carry a material class. They are
        named here, in the module, rather than each page module repeating the
@@ -405,8 +401,8 @@
        three states in which frost is wrong states the intent *and* puts the
        module above page CSS, instead of leaving it to luck. */
     :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
-    :is([data-lq-material]:not([data-lq-material="control"]),
-        .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary,
+    :is([data-lq-material="content"],
+        .lq-surface:not(.lq-glass, .lq-toast, .lq-tooltip), .lq-surface--frost, .lq-surface--boundary,
         [data-lq-dashboard] .ls-schedule, [data-lq-dashboard] .ls-tools,
         [data-lq-dashboard] .ls-domains, [data-lq-dashboard] .ls-focus-list,
         [data-lq-dashboard] .ls-courses, [data-lq-calendar],
@@ -451,8 +447,8 @@
     }
 }
 
-/* Nothing creates a blur host any more. The guard stays because late modules
-   and legacy hosts still ship their own filters. */
+/* A nested panel consumes its parent's frost; data size must never multiply
+   backdrop-filter layers. Floating menus are portalled by LQ.layer. */
 :is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary)
 :is([data-lq-material], .lq-glass, .lq-surface, .lq-surface--frost, .lq-surface--boundary) {
     -webkit-backdrop-filter: none !important;
@@ -473,7 +469,8 @@
                 border-color var(--ls-dur-fast) var(--ls-ease-out);
 }
 
-[data-lq-interactive]:hover {
+@media (hover: hover) and (pointer: fine) {
+[data-lq-interactive]:hover:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
     border-color: hsl(var(--ls-primary) / .35);
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
                 inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
@@ -481,8 +478,9 @@
                 var(--lq-material-shadow, var(--ls-glass-shadow));
     transform: translateY(var(--lq-lift));
 }
+}
 
-[data-lq-interactive]:active { transform: translateY(0) scale(var(--lq-press, .995)); }
+[data-lq-interactive]:active:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { transform: translateY(0) scale(var(--lq-press, .995)); }
 
 [data-lq-interactive]:focus-visible {
     outline: 2px solid hsl(var(--ls-ring));

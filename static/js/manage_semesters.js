@@ -175,23 +175,21 @@ function renderSemesterList() {
         <div
             class="academic-list-item academic-list-item-selectable${semester.id === state.activeSemesterId ? ' is-active' : ''}"
             data-semester-id="${semester.id}"
-            role="button"
-            tabindex="0"
-            aria-current="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
-            aria-label="切换当前焦点到 ${escapeHtml(semester.name || '该学期')}"
             aria-busy="${isSyncing ? 'true' : 'false'}"
         >
-            <div class="academic-list-main">
+            <button type="button" class="academic-list-main semester-select" data-action="select" data-semester-id="${semester.id}"
+                aria-pressed="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
+                aria-label="切换当前焦点到 ${escapeHtml(semester.name || '该学期')}">
                 <strong>${escapeHtml(semester.name || '未命名学期')}</strong>
-                <p>${escapeHtml(semester.start_date || '--')} 至 ${escapeHtml(semester.end_date || '--')} · ${semester.week_count || 0} 周</p>
-                <div class="academic-badge-row">
+                <span class="semester-select-dates">${escapeHtml(semester.start_date || '--')} 至 ${escapeHtml(semester.end_date || '--')} · ${semester.week_count || 0} 周</span>
+                <span class="academic-badge-row">
                     <span class="academic-badge ${temporal.className}">${escapeHtml(temporal.label)}</span>
                     <span class="academic-badge">开学首周自动计为第 1 周</span>
                     <span class="academic-badge ${sync.className}">${sync.label}</span>
                     ${semester.is_shared_semester ? '<span class="academic-badge is-accent">同校共享</span>' : ''}
                     ${semester.organization_label ? `<span class="academic-badge">${escapeHtml(semester.organization_label)}</span>` : ''}
-                </div>
-            </div>
+                </span>
+            </button>
             <div class="academic-list-side">
                 ${config.embeddedMode ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>`}
                 ${canManage ? `<button type="button" class="btn btn-outline btn-sm${isSyncing ? ' is-loading' : ''}" data-action="sync-calendar" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true"' : ''}>${isSyncing ? '<span class="semester-button-spinner" aria-hidden="true"></span><span>正在同步</span>' : '同步校历'}</button>` : ''}
@@ -250,6 +248,11 @@ function renderSummary() {
 }
 
 function setActiveSemester(semesterId, { scrollCalendar = false } = {}) {
+    // Rendering the list replaces its controls. Preserve the user's location
+    // instead of dropping keyboard focus to the document after every selection.
+    const focused = elements.list?.contains(document.activeElement) ? document.activeElement : null;
+    const focusedId = focused?.dataset?.semesterId;
+    const focusedAction = focused?.dataset?.action;
     const semester = getSemesterById(semesterId);
     state.activeSemesterId = semester ? semester.id : (state.semesters[0]?.id ?? null);
 
@@ -258,6 +261,9 @@ function setActiveSemester(semesterId, { scrollCalendar = false } = {}) {
     } else {
         renderSemesterList();
         renderSummary();
+    }
+    if (focusedId && focusedAction) {
+        elements.list?.querySelector(`[data-semester-id="${Number(focusedId)}"][data-action="${focusedAction}"]`)?.focus({ preventScroll: true });
     }
     if (scrollCalendar && elements.calendarRoot) {
         window.requestAnimationFrame(() => {
@@ -577,8 +583,8 @@ function initEvents() {
             return;
         }
 
-        if (actionButton.dataset.action === 'focus') {
-            setActiveSemester(semesterId, { scrollCalendar: true });
+        if (actionButton.dataset.action === 'select' || actionButton.dataset.action === 'focus') {
+            setActiveSemester(semesterId, { scrollCalendar: actionButton.dataset.action === 'focus' });
             return;
         }
         if (actionButton.dataset.action === 'edit') {
@@ -595,15 +601,6 @@ function initEvents() {
         if (actionButton.dataset.action === 'delete') {
             await handleDeleteSemester(semesterId, actionButton);
         }
-    });
-    elements.list?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        if (event.target.closest('[data-action]')) return;
-        const row = event.target.closest('.academic-list-item[data-semester-id]');
-        const semesterId = Number(row?.dataset.semesterId || 0);
-        if (!semesterId) return;
-        event.preventDefault();
-        setActiveSemester(semesterId);
     });
 
     elements.startInput?.addEventListener('change', updateWeekPreview);

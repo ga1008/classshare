@@ -147,7 +147,7 @@ async function forceSceneBackdrop(page: import('@playwright/test').Page) {
     headers: { 'Content-Type': 'application/json', 'X-UI-Preferences-Context': context },
     // LQ_S9_BACKDROP=off 用于归因：同一页同一外观下比较开/关两态的 axe 结果，
     // 分清"材质本身对比度不够"和"背景层参与了合成"。默认永远是 scene。
-    data: { backdrop: process.env.LQ_S9_BACKDROP === 'off' ? 'off' : 'scene', version },
+    data: { backdrop: process.env.LQ_S9_BACKDROP === 'off' ? 'off' : 'scene', appearance: 'auto', version },
   });
   return { status: response.status(), body: await response.text(), context };
 }

@@ -7,9 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>编辑教案 · {{ plan.title }}</title>
     {% include "partials/lq_editor_head.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/teacher_editors.css') }}">
 </head>
 <body class="lp-editor-body" {{ body_attrs(ui_palette) }}>
-    <header class="lp-editor__header">
+    {% include "partials/lq_page_backdrop.html" %}
+    <header class="lp-editor__header" data-lq-material="chrome">
         <a class="lp-btn lp-btn--ghost" href="/manage/library/lesson-plans">← 返回教案库</a>
         <strong class="lp-editor__title" id="lp-editor-title">{{ plan.title }}</strong>
         <div class="lp-editor__header-actions">
@@ -21,7 +23,7 @@
     </header>
 
     <main class="lp-editor">
-        <section class="lp-editor__form" id="lp-editor-form">
+        <section data-lq-material="content" class="lp-editor__form" id="lp-editor-form">
             <details class="lp-editor__cover" open>
                 <summary>封面信息</summary>
                 <div class="lp-editor__cover-grid" id="lp-cover-grid"></div>
@@ -32,7 +34,7 @@
             </details>
             <div class="lp-editor__sessions" id="lp-sessions"></div>
         </section>
-        <section class="lp-editor__preview">
+        <section class="lp-editor__preview" data-lq-material="content">
             <div class="lp-editor__preview-bar">
                 <span>当前保存版预览</span>
                 <button type="button" class="lp-btn lp-btn--ghost" id="lp-refresh-preview">保存并刷新预览</button>

@@ -328,7 +328,7 @@ export function ClassroomWorkspace() {
       </div>
     </>, taskTarget)}
     <Dialog open={panel !== null} onOpenChange={value => { if (!value) close(); }}>
-      <DialogContent className="cw-dialog classroom-page classroom-workspace-v2" onOpenAutoFocus={event => {
+      <DialogContent data-lq-material="raised" className="cw-dialog classroom-page classroom-workspace-v2" onOpenAutoFocus={event => {
         if (panel === 'tasks') {
           if (saved.current.taskId) { const card = document.querySelector<HTMLElement>(`.cw-dialog [data-assignment-task-card][data-assignment-id="${saved.current.taskId}"]`); if (card && !card.hidden) { event.preventDefault(); card.focus({ preventScroll: true }); saved.current.taskId = undefined; return; } }
           const filterControl = document.querySelector<HTMLElement>('.cw-dialog .cw-filterbar select');

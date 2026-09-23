@@ -58,7 +58,7 @@
         <section class="ls-focus{% if user_info.role == 'student' %} ls-focus--student{% endif %}" aria-labelledby="ls-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
             <div class="ls-section-head"><h2 id="ls-focus-title">需要处理</h2><button type="button" class="ls-button" data-agenda-add-todo>＋ 新增待办</button></div>
             {% set focus_items = workspace.attention_items|default([]) if user_info.role == 'student' else workspace.focus_items|default([]) %}
-            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}">
+            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}" data-lq-material="content">
                 {% for item in focus_items %}
                 {% set source = item.agenda_data|default({}) %}
                 <li class="ls-focus-item{% if loop.first %} is-primary{% endif %}">
@@ -73,7 +73,7 @@
     {% if user_info.role == 'student' %}</div>{% endif %}
 
     {% if user_info.role == 'teacher' %}
-    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title">{% set lq_courses_body %}
+    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title" data-lq-material="content">{% set lq_courses_body %}
         <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂</span>{% endif %}</div>
         {% if lq_family_enabled('dashboard') %}
         {% from "macros/lq/content.html" import lq_filter_bar %}
@@ -145,7 +145,7 @@
     </section>
     {% endif %}
 
-    <section class="ls-tools" aria-labelledby="ls-tools-title">{% set lq_tools_body %}<div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-tools-title">{{ '教学工具' if user_info.role == 'teacher' else '学习与成长' }}</h2>{% endif %}</div>
+    <section class="ls-tools" aria-labelledby="ls-tools-title" data-lq-material="content">{% set lq_tools_body %}<div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-tools-title">{{ '教学工具' if user_info.role == 'teacher' else '学习与成长' }}</h2>{% endif %}</div>
         {% if user_info.role == 'teacher' and dashboard_domain_cards %}<nav class="ls-domain-nav{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}" aria-label="管理中心">{% for domain in dashboard_domain_cards %}<a href="{{ domain.href }}" class="ls-domain-link dashboard-domain-card{% if lq_family_enabled('dashboard') %} lq-card--interactive{% endif %}" data-domain="{{ domain.domain }}" {{ explain_attrs(domain.title, domain.description) }}><strong>{{ domain.label }}</strong></a>{% endfor %}</nav>{% endif %}
         <div class="ls-tool-links{% if lq_family_enabled('dashboard') and user_info.role == 'student' %} lq-grid--cards{% endif %}">
             {% for action in dashboard_quick_actions %}{% if user_info.role != 'student' or action.href in ['/wrong-book', '/report-card', '/achievements'] %}{% if action.mode == 'link' %}<a href="{{ action.href }}" class="ls-tool-link{% if lq_family_enabled('dashboard') and user_info.role == 'student' %} lq-card--interactive{% endif %}" {{ explain_attrs(action.label, action.description) }}>{{ action.label }}{% if action.badge %}<span class="ls-count">{{ action.badge }}</span>{% endif %}</a>{% else %}<button type="button" class="ls-tool-link{% if lq_family_enabled('dashboard') and user_info.role == 'student' %} lq-card--interactive{% endif %}"{% for attr, value in action.button_attrs.items() %} {{ attr }}="{{ value }}"{% endfor %} {{ explain_attrs(action.label, action.description) }}>{{ action.label }}{% if action.badge %}<span class="ls-count">{{ action.badge }}</span>{% endif %}</button>{% endif %}{% endif %}{% endfor %}

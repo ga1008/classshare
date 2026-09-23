@@ -16,7 +16,7 @@
      data-current-user-nickname="{{ user_info.nickname }}"
      data-initial-section="{{ request.query_params.get('section', '') }}">
     {% set blog_total_posts = (blog_sections | map(attribute='post_count') | sum) if blog_sections else 0 %}
-    <header class="blog-header" data-blog-header aria-label="博客中心导航">
+    <header class="blog-header" data-lq-material="content" data-blog-header aria-label="博客中心导航">
         <div class="blog-header__top">
             <div class="blog-header__brand">
                 <h1>博客中心</h1>
@@ -61,7 +61,7 @@
     </header>
 
     <section class="blog-main" aria-label="博客内容">
-        <div class="blog-detail-topbar" data-blog-detail-topbar hidden>
+        <div class="blog-detail-topbar" data-lq-material="chrome" data-blog-detail-topbar hidden>
             <span class="blog-reading-progress" aria-hidden="true"></span>
             <button class="blog-detail-topbar__back" data-blog-action="back-detail-context" type="button" aria-label="返回上一阅读位置">
                 <span class="blog-detail-topbar__back-icon" aria-hidden="true">
@@ -92,7 +92,7 @@
                     <input class="blog-sort-bar__search" type="search" placeholder="搜标题、正文或标签..." data-blog-search aria-label="搜索博客文章">
                 </div>
 
-                <section class="blog-career-tools" data-blog-career-filters hidden aria-label="就业机会筛选">
+                <section class="blog-career-tools" data-lq-material="content" data-blog-career-filters hidden aria-label="就业机会筛选">
                     <div class="blog-career-tools__intro">
                         <strong>把机会变成下一步</strong>
                         <span>优先展示仍可报名、来源可核验的信息</span>
@@ -153,7 +153,7 @@
                 </div>
 
                 <!-- Post feed list -->
-                <div class="blog-feed" data-blog-feed></div>
+                <div class="blog-feed" data-lq-material="content" data-blog-feed></div>
 
                 <!-- Load more -->
                 <div class="blog-load-more" data-blog-load-more hidden>
@@ -207,7 +207,7 @@
             <button class="blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
             <button class="blog-sort-tab" data-blog-myposts-filter="moderated">已隐藏</button>
         </div>
-        <div class="blog-feed" data-blog-my-feed></div>
+        <div class="blog-feed" data-lq-material="content" data-blog-my-feed></div>
         <div class="blog-load-more" data-blog-my-load-more hidden>
             <button class="btn btn-outline btn-sm">加载更多</button>
         </div>
@@ -215,7 +215,7 @@
 
     <!-- Bookmarks View -->
     <div data-blog-view="bookmarks" hidden>
-        <div class="blog-feed" data-blog-bookmarks-feed></div>
+        <div class="blog-feed" data-lq-material="content" data-blog-bookmarks-feed></div>
         <div class="blog-load-more" data-blog-bookmarks-load-more hidden>
             <button class="btn btn-outline btn-sm">加载更多</button>
         </div>
@@ -224,7 +224,7 @@
 
     <!-- Composer Modal (inside shell for proper event delegation) -->
     <div class="blog-modal-overlay" data-blog-composer-modal hidden>
-        <div class="blog-modal" role="dialog" aria-modal="true" aria-labelledby="blog-composer-dialog-title" tabindex="-1">
+        <div class="blog-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="blog-composer-dialog-title" tabindex="-1">
             <div class="blog-modal__header">
                 <div>
                     <h3 id="blog-composer-dialog-title" data-blog-composer-title>写帖子</h3>
@@ -356,7 +356,7 @@
         </div>
     </div>
 
-    <dialog class="blog-report-dialog" data-blog-report-dialog aria-labelledby="blog-report-title">
+    <dialog class="blog-report-dialog" data-lq-material="raised" data-blog-report-dialog aria-labelledby="blog-report-title">
         <form method="dialog" data-blog-report-form>
             <div class="blog-report-dialog__header">
                 <div>
@@ -385,7 +385,7 @@
         </form>
     </dialog>
 
-    <div class="blog-user-popover" data-blog-user-popover hidden></div>
+    <div class="blog-user-popover" data-lq-material="raised" data-blog-user-popover hidden></div>
 </div>
 
 {% endblock %}

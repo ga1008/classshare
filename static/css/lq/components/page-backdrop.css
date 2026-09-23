@@ -43,6 +43,17 @@
     background-size: cover;
     filter: saturate(var(--lq-backdrop-saturation));
     opacity: var(--lq-backdrop-opacity);
+    animation: lq-scene-arrive var(--ls-dur-enter) var(--ls-ease-out) both;
+}
+
+/* Opacity only: scaling the photo during entry would detach it from the cached
+   frost painted by content panels. No permanent animation or GPU hint. */
+@keyframes lq-scene-arrive {
+    from { opacity: 0; }
+    to { opacity: var(--lq-backdrop-opacity); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lq-page-backdrop__image { animation: none; }
 }
 
 /* 面纱现在也铺满：内容最密的上半部压得重一些，往下逐渐让开，

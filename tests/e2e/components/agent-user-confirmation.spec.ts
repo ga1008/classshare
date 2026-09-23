@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
+import { serveProcessMaterialModule } from './process-material-fixture-modules';
 
 const source = fs.readFileSync('static/js/agent_user_confirmation.js', 'utf8');
 const modal = fs.readFileSync('static/js/process_material_modal.js', 'utf8');
@@ -44,6 +45,7 @@ async function mount(page: Page, mode: 'normal' | 'retry' | 'conflict' | 'roster
     const modules: Record<string, string> = { '/agent_user_confirmation.js': source, '/process_material_modal.js': modal, '/ui.js': ui,
       '/teaching_lifecycle_review.js': teaching, '/api.js': 'export async function apiFetch(){throw new Error("Unexpected ordinary Web API call in C fixture")}' };
     if (modules[path]) return route.fulfill({ contentType: 'text/javascript', body: modules[path] });
+    if (await serveProcessMaterialModule(route)) return;
     if (path.endsWith('/grade_publication.css')) return route.fulfill({ contentType: 'text/css', body: styles });
     if (path.endsWith('/preview')) return route.fulfill({ json: preview() });
     if (path.endsWith('/execute')) {

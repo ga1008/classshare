@@ -78,7 +78,7 @@
     </section>
     {% endif %}
 
-    <section class="review-toolbar" aria-label="复盘筛选">
+    <section class="review-toolbar" aria-label="复盘筛选" data-lq-material="content">
         <div class="review-filter-tabs" role="tablist" aria-label="状态筛选">
             {% for item in review_context.filters %}
             <a
@@ -117,7 +117,7 @@
     {% if review_context['items'] %}
     {% set review_status_tone = {'open': 'warning', 'reviewing': 'info', 'mastered': 'success'} %}
     {% set review_severity_tone = {'high': 'danger', 'medium': 'warning', 'low': 'neutral'} %}
-    <section class="review-card-list" aria-label="复盘卡列表">
+    <section class="review-card-list" aria-label="复盘卡列表" data-lq-material="content">
         {% for item in review_context['items'] %}
         <article
             class="review-card review-card--{{ item.status }} review-card--{{ item.severity }}"

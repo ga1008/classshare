@@ -68,6 +68,17 @@ async function mount(page: Page) {
   await expect(page.locator(TRIGGER).first()).toBeVisible();
 }
 
+// Scan resolved theme colours, not a frame midway through the shared 180ms
+// colour transition. Flush style first so newly created transitions are visible.
+async function settleTheme(page: Page) {
+  await page.evaluate(async () => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await Promise.all(document.getAnimations()
+      .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
+}
+
 const styleOf = (page: Page, selector: string, keys: string[]) =>
   page.locator(selector).first().evaluate((node, keys) => {
     const computed = getComputedStyle(node);
@@ -213,7 +224,7 @@ test.describe('S9 U1 shared control interaction', () => {
         document.documentElement.dataset.uiPalette = palette;
         document.documentElement.dataset.appearance = appearance;
       }, { palette, appearance });
-      await page.waitForTimeout(120);
+      await settleTheme(page);
       const scan = await new AxeBuilder({ page }).analyze();
       const serious = scan.violations.filter(item => ['serious', 'critical'].includes(item.impact || ''));
       expect(serious.map(item => ({ id: item.id, impact: item.impact, nodes: item.nodes.map(node => node.target) })), `${palette}/${appearance}`).toEqual([]);
@@ -228,7 +239,7 @@ test.describe('S9 U1 shared control interaction', () => {
     fs.mkdirSync(OUT, { recursive: true });
     for (const appearance of APPEARANCES) {
       await page.evaluate(value => { document.documentElement.dataset.appearance = value; }, appearance);
-      await page.waitForTimeout(120);
+      await settleTheme(page);
       await page.screenshot({ path: `${OUT}/controls-390-${appearance}.png`, fullPage: true });
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

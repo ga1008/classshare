@@ -1,0 +1,96 @@
+/* Student workspaces share the material contract, not their business logic.
+ * Layout lives in assignment-student.css / exam-take.css; explicit material
+ * attributes select the reusable recipe in lq/materials.css. No local blur. */
+
+/* Fixed/sticky positioning is a layout responsibility. Material attributes
+ * deliberately do not change it. The top bar keeps a continuous screen edge. */
+.assignment-header[data-lq-material],
+.exam-topbar[data-lq-material] { border-radius: 0; }
+.exam-page .exam-main { background: transparent; }
+.exam-sidebar[data-lq-material] { border-radius: 0 0 var(--ls-r-lg) var(--ls-r-lg); }
+.exam-page .exam-paper-container { max-width: 880px; }
+.exam-page .q-nav-item.active { --lq-material-fill: var(--ls-primary-soft); }
+.exam-page .exam-section-card.is-expanded { --lq-material-fill: var(--ls-primary-soft); }
+.exam-page .exam-layout { gap: var(--ls-s-4); padding-inline: var(--ls-s-4); }
+.exam-page .exam-main { padding-inline: 0; }
+
+/* Child surfaces tint the one material boundary. They must not inherit its
+ * fill custom property or create another filtered surface. */
+:is(.assignment-student-page, .exam-page) :is(
+    .card-header, .answer-form-header, .exam-sidebar-header, .exam-sidebar-footer,
+    .paper-header, .paper-footer, .exam-progress, .submit-action-bar
+) {
+    background: hsl(var(--lq-page-control));
+    border-color: hsl(var(--ls-line));
+    color: hsl(var(--ls-ink));
+}
+.assignment-student-page .answer-form-header h2 { color: hsl(var(--ls-ink)); }
+.assignment-student-page .assignment-upload-panel { padding: var(--ls-s-5); }
+.assignment-student-page .submit-action-bar { gap: var(--ls-s-3); flex-wrap: wrap; }
+.assignment-student-page .back-link {
+    min-height: 44px;
+    padding-inline: var(--ls-s-3);
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--lq-page-control));
+    border: 1px solid hsl(var(--ls-glass-line));
+    color: hsl(var(--ls-ink-2));
+}
+
+/* A long section must remain scrollable: the old max-height + hidden rule
+ * clipped later questions and made them impossible to reach from the card. */
+.exam-page .exam-section-card.is-expanded .exam-section-questions {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.exam-page .question-card { scroll-margin-top: calc(var(--exam-topbar-offset) + var(--ls-s-4)); }
+.exam-page .exam-topbar-more-menu { max-height: min(70dvh, 28rem); overflow-y: auto; }
+
+/* Semantic tints are defined once in the shared tone scale and follow both
+ * appearances, including server sync, deadline and grading states. */
+:is(.assignment-student-page, .exam-page) .grading-question-feedback.is-structured {
+    background: hsl(var(--ls-tone-warning-soft));
+    border-color: hsl(var(--ls-tone-warning-base) / .35);
+}
+:is(.assignment-student-page, .exam-page) .grading-feedback-field {
+    background: hsl(var(--lq-page-control));
+}
+.assignment-student-page .assignment-submit-sync--success { background: hsl(var(--ls-tone-success-soft)); }
+.assignment-student-page .assignment-submit-sync--warning { background: hsl(var(--ls-tone-warning-soft)); }
+.assignment-student-page .assignment-submit-sync--danger { background: hsl(var(--ls-tone-danger-soft)); }
+:is(.assignment-student-page, .exam-page) :is(button, a, summary, textarea, input):focus-visible {
+    outline: 2px solid hsl(var(--ls-primary));
+    outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+    .exam-page .exam-layout { padding-inline: 0; gap: 0; }
+    .exam-page .exam-topbar-nav { overflow: visible; }
+    .exam-page .exam-topbar-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
+    .exam-page .exam-topbar-actions .app-topbar-action { min-width: 0; width: 100%; padding-inline: 4px; }
+    .exam-page .exam-topbar-more-dropdown { min-width: 0; }
+    .exam-page .exam-sidebar { border-radius: 0 var(--ls-r-lg) var(--ls-r-lg) 0; }
+}
+@media (max-width: 640px) {
+    .assignment-student-page .assignment-header { padding: var(--ls-s-3); }
+    .assignment-student-page .workspace-container { padding-inline: var(--ls-s-3); }
+    .assignment-student-page .submit-action-bar > span { flex-basis: 100%; }
+    .assignment-student-page .submit-action-bar > button { width: 100%; }
+    .exam-page .exam-main { padding: var(--ls-s-3); }
+    .exam-page .paper-content { padding-inline: var(--ls-s-3); }
+    .exam-page .question-card { padding-inline: var(--ls-s-3); }
+    .exam-page .submit-section, .exam-page .upload-panel { padding: var(--ls-s-3); }
+    .exam-page :is(#topbarPrevBtn, #topbarNextBtn) .app-topbar-action__icon { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    :is(.assignment-student-page, .exam-page) :is(
+        .exam-sidebar, .exam-section-questions, .question-card, .q-nav-item,
+        .q-status-indicator, .progress-bar-fill, .upload-dropzone
+    ) { transition: none; }
+}
+@media print {
+    :is(.assignment-student-page, .exam-page) [data-lq-material] {
+        background: white !important;
+        box-shadow: none;
+    }
+}

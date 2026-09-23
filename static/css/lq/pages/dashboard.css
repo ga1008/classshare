@@ -164,6 +164,11 @@
    otherwise double up with the page background, so it is flattened on
    desktop and only rendered as a card on narrow screens. */
 @media (min-width: 768px) {
+    /* These sections now own a content-material boundary. Give its body the
+       same inset as other panels; the desktop disclosure itself stays flat. */
+    [data-lq-dashboard] > :is(.ls-courses, .ls-domains)[data-lq-material="content"] {
+        padding: var(--ls-s-6);
+    }
     [data-lq-dashboard] .lq-collapsible {
         border: none;
         background: none;

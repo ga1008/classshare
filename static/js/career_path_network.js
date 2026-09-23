@@ -337,7 +337,10 @@
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
           + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
           + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + esc(n.tag) + '" data-i="' + i + '"/>'
-          + '<text class="cn-rolelab" x="' + x + '" y="' + (yy + coreR + 4) + '" text-anchor="middle" dominant-baseline="hanging">' + esc(st[1] || n.name) + '</text>'
+          // Reserve the core's 1.5x hover radius plus a text-bearing margin.
+          // Fitting tall catalogues enlarges role type relative to the SVG, so
+          // anchoring to the resting radius made the clicked core hit its title.
+          + '<text class="cn-rolelab" x="' + x + '" y="' + (yy + coreR * 1.5 + 6) + '" text-anchor="middle" dominant-baseline="hanging">' + esc(st[1] || n.name) + '</text>'
           + '</g>';
       });
     });

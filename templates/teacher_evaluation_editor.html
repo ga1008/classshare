@@ -7,9 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>编辑教师评学表 · {{ evaluation.title }}</title>
     {% include "partials/lq_editor_head.html" %}
+    <link rel="stylesheet" href="{{ asset_url('css/teacher_editors.css') }}">
 </head>
 <body class="lp-editor-body" {{ body_attrs(ui_palette) }}>
-    <header class="lp-editor__header">
+    {% include "partials/lq_page_backdrop.html" %}
+    <header class="lp-editor__header" data-lq-material="chrome">
         <a class="lp-btn lp-btn--ghost" href="/manage/archive/teacher-evaluations">← 返回教师评学表库</a>
         <strong class="lp-editor__title" id="te-editor-title">{{ evaluation.title }}</strong>
         <div class="lp-editor__header-actions">
@@ -21,7 +23,7 @@
     </header>
 
     <main class="lp-editor">
-        <section class="lp-editor__form" id="te-editor-form">
+        <section data-lq-material="content" class="lp-editor__form" id="te-editor-form">
             <div class="te-incomplete" id="te-incomplete" hidden></div>
 
             <details class="lp-editor__cover" open>
@@ -58,7 +60,7 @@
             </details>
         </section>
 
-        <section class="lp-editor__preview">
+        <section class="lp-editor__preview" data-lq-material="content">
             <div class="lp-editor__preview-bar">
                 <span>当前保存版预览</span>
                 <button type="button" class="lp-btn lp-btn--ghost" id="te-refresh-preview">保存并刷新预览</button>

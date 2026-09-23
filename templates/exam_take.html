@@ -8,1500 +8,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>{{ paper.title }} - 在线考试</title>
     {% include "partials/lq_editor_head.html" %}
-    <style>
-        :root {
-            --exam-topbar-offset: 88px;
-        }
-
-        body {
-            background-color: var(--bg-color);
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-
-        body.exam-page {
-            color: var(--text-primary);
-        }
-
-        .exam-topbar {
-            --app-topbar-accent: #4f46e5;
-            --app-topbar-accent-dark: #4338ca;
-            --app-topbar-accent-rgb: 79, 70, 229;
-            --app-topbar-accent-soft: rgba(79, 70, 229, 0.1);
-            position: sticky;
-            top: 0;
-            z-index: 1020;
-            min-height: 68px;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 0.52rem 0.72rem;
-            padding: 0.58rem clamp(0.85rem, 1.8vw, 1.35rem);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 18px 40px -34px rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-        }
-
-        .exam-topbar-brand {
-            flex: 1 1 17rem;
-            min-width: min(17rem, 100%);
-            max-width: min(32rem, 34vw);
-        }
-
-        .exam-topbar-brand .app-topbar-brand__copy {
-            min-width: 0;
-        }
-
-        .exam-topbar-brand .app-topbar-brand__copy strong,
-        .exam-topbar-brand .app-topbar-brand__copy small {
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .exam-topbar-brand .app-topbar-brand__copy small {
-            display: flex;
-            align-items: center;
-            gap: 0.35rem;
-            white-space: nowrap;
-        }
-
-        .exam-topbar-brand .app-topbar-brand__copy small span:not(:last-child)::after {
-            content: "/";
-            margin-left: 0.35rem;
-            color: rgba(100, 116, 139, 0.58);
-        }
-
-        .exam-topbar-status {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.38rem;
-            align-items: stretch;
-            flex: 0 1 auto;
-        }
-
-        .exam-topbar-status__item {
-            display: flex;
-            align-items: center;
-            gap: 0.38rem;
-            min-width: 0;
-            min-height: 38px;
-            padding: 0.34rem 0.58rem;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            border-radius: 9px;
-            background: rgba(248, 250, 252, 0.86);
-            color: var(--text-primary);
-            line-height: 1.2;
-        }
-
-        .exam-topbar-status__item span {
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 700;
-        }
-
-        .exam-topbar-status__item strong {
-            overflow: hidden;
-            font-size: 0.86rem;
-            font-weight: 800;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .exam-topbar-clock {
-            border-color: rgba(14, 165, 233, 0.22);
-            background: linear-gradient(135deg, rgba(236, 253, 245, 0.86), rgba(239, 246, 255, 0.92));
-        }
-
-        .exam-topbar-clock strong {
-            color: #0f766e;
-        }
-
-        .exam-topbar-clock small {
-            overflow: hidden;
-            color: var(--text-muted);
-            font-size: 0.68rem;
-            font-weight: 650;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .exam-topbar-clock.is-urgent {
-            border-color: rgba(245, 158, 11, 0.34);
-            background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(255, 247, 237, 0.9));
-        }
-
-        .exam-topbar-clock.is-urgent strong {
-            color: #b45309;
-        }
-
-        .exam-topbar-clock.is-late {
-            border-color: rgba(239, 68, 68, 0.3);
-            background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(255, 251, 235, 0.88));
-        }
-
-        .exam-topbar-clock.is-late strong,
-        .exam-topbar-clock.is-expired strong {
-            color: #dc2626;
-        }
-
-        .exam-topbar-nav {
-            flex: 999 1 30rem;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.42rem;
-            min-width: 0;
-        }
-
-        .exam-topbar-actions {
-            justify-content: flex-end;
-            gap: 0.38rem;
-            min-width: 0;
-        }
-
-        .exam-topbar-actions .app-topbar-action {
-            min-width: 74px;
-            min-height: 42px;
-            border-radius: 9px;
-            padding: 0.36rem 0.5rem;
-        }
-
-        .exam-topbar-actions .app-topbar-action--primary,
-        .exam-topbar-submit {
-            min-width: 96px;
-        }
-
-        .exam-topbar-actions .app-topbar-action:disabled {
-            cursor: not-allowed;
-            border-color: rgba(148, 163, 184, 0.2);
-            background: rgba(248, 250, 252, 0.78);
-            color: var(--text-muted);
-            opacity: 1;
-            transform: none;
-            box-shadow: none;
-        }
-
-        .exam-topbar-actions .app-topbar-action:disabled:hover,
-        .exam-topbar-actions .app-topbar-action:disabled:focus-visible {
-            border-color: rgba(148, 163, 184, 0.2);
-            background: rgba(248, 250, 252, 0.78);
-            color: var(--text-muted);
-        }
-
-        .exam-topbar-actions .app-topbar-action:disabled .app-topbar-action__icon {
-            background: rgba(148, 163, 184, 0.14);
-            color: #94a3b8;
-        }
-
-        .exam-topbar-submit {
-            --app-topbar-accent: #16a34a;
-            --app-topbar-accent-dark: #15803d;
-            --app-topbar-accent-rgb: 22, 163, 74;
-            --app-topbar-accent-soft: rgba(34, 197, 94, 0.12);
-        }
-
-        .exam-topbar-clear-all {
-            --app-topbar-accent: #be123c;
-            --app-topbar-accent-dark: #9f1239;
-            --app-topbar-accent-rgb: 190, 18, 60;
-            --app-topbar-accent-soft: rgba(244, 63, 94, 0.1);
-        }
-
-        .exam-topbar .exam-icon-next svg {
-            transform: rotate(180deg);
-        }
-
-        .exam-topbar-more-dropdown {
-            position: relative;
-            display: inline-flex;
-        }
-
-        .exam-topbar-more-dropdown > summary {
-            list-style: none;
-        }
-
-        .exam-topbar-more-dropdown > summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .exam-topbar-more-dropdown[open] > summary {
-            border-color: rgba(var(--app-topbar-accent-rgb), 0.3);
-            background: rgba(var(--app-topbar-accent-rgb), 0.1);
-            color: var(--app-topbar-accent);
-        }
-
-        .exam-topbar-more-menu {
-            position: absolute;
-            top: calc(100% + 8px);
-            right: 0;
-            z-index: 1120;
-            min-width: 190px;
-            overflow: hidden;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            background: var(--surface-color);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .exam-topbar-menu-label {
-            padding: 9px 12px 7px;
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 800;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-            background: rgba(248, 250, 252, 0.72);
-        }
-
-        .exam-topbar-menu-item {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            gap: 9px;
-            padding: 10px 12px;
-            border: 0;
-            background: transparent;
-            color: var(--text-primary);
-            cursor: pointer;
-            font-size: 0.88rem;
-            font-weight: 720;
-            text-align: left;
-        }
-
-        .exam-topbar-menu-item:hover,
-        .exam-topbar-menu-item:focus-visible {
-            background: var(--surface-hover);
-            outline: none;
-        }
-
-        .exam-topbar-menu-item svg {
-            width: 16px;
-            height: 16px;
-            color: var(--app-topbar-accent);
-        }
-
-        .exam-topbar-menu-item.is-danger {
-            color: #be123c;
-        }
-
-        .exam-topbar-menu-item.is-danger svg {
-            color: #be123c;
-        }
-
-        .exam-topbar-menu-item:disabled {
-            cursor: not-allowed;
-            color: var(--text-muted);
-            opacity: 0.58;
-        }
-
-        .exam-topbar-menu-item:disabled svg {
-            color: #94a3b8;
-        }
-
-        .exam-is-submitted .exam-edit-action {
-            display: none;
-        }
-
-        /* === Exam Layout === */
-        .exam-layout {
-            display: flex;
-            max-width: 1400px;
-            margin: 0 auto;
-            min-height: calc(100vh - var(--exam-topbar-offset));
-        }
-
-        /* === Sidebar Navigation === */
-        .exam-sidebar {
-            width: 280px;
-            min-width: 280px;
-            background: var(--surface-color);
-            border-right: 1px solid var(--border-color);
-            position: sticky;
-            top: var(--exam-topbar-offset);
-            height: calc(100vh - var(--exam-topbar-offset));
-            display: flex;
-            flex-direction: column;
-            z-index: 40;
-            transition: transform 0.3s ease;
-        }
-
-        .exam-sidebar-header {
-            padding: var(--spacing-4) var(--spacing-5);
-            border-bottom: 1px solid var(--border-color);
-            background: var(--surface-color);
-        }
-
-        .exam-paper-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            line-height: 1.4;
-            margin-bottom: var(--spacing-2);
-            word-break: break-all;
-        }
-
-        .exam-progress-summary {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .answered-count-badge {
-            background: var(--primary-light);
-            color: var(--primary-color);
-            padding: 2px 8px;
-            border-radius: var(--radius-full);
-            font-weight: 600;
-            font-size: 0.75rem;
-        }
-
-        .answered-count-badge.complete {
-            background: var(--success-light);
-            color: var(--success-color);
-        }
-
-        .exam-sidebar-body {
-            flex: 1;
-            overflow-y: auto;
-            padding-bottom: var(--spacing-4);
-        }
-
-        /* Scrollbar for sidebar */
-        .exam-sidebar-body::-webkit-scrollbar { width: 4px; }
-        .exam-sidebar-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
-
-        .exam-section-list {
-            display: grid;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) var(--spacing-4);
-        }
-
-        .exam-section-card {
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            border-radius: var(--radius-md);
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 10px 24px -22px rgba(15, 23, 42, 0.45);
-            cursor: pointer;
-            overflow: hidden;
-            transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
-        }
-
-        .exam-section-card:hover,
-        .exam-section-card:focus-visible {
-            border-color: rgba(79, 70, 229, 0.28);
-            background: var(--surface-color);
-            box-shadow: 0 16px 34px -26px rgba(79, 70, 229, 0.45);
-            outline: none;
-        }
-
-        .exam-section-card.is-expanded {
-            border-color: rgba(79, 70, 229, 0.36);
-            background: linear-gradient(180deg, rgba(238, 242, 255, 0.78), rgba(255, 255, 255, 0.96));
-        }
-
-        .exam-section-card__summary {
-            display: grid;
-            gap: 8px;
-            min-height: 74px;
-            padding: 12px;
-        }
-
-        .exam-section-card__top {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 10px;
-            align-items: start;
-        }
-
-        .exam-section-card__eyebrow {
-            display: block;
-            margin-bottom: 3px;
-            color: var(--text-muted);
-            font-size: 0.68rem;
-            font-weight: 800;
-            line-height: 1;
-        }
-
-        .exam-section-card__title {
-            display: -webkit-box;
-            overflow: hidden;
-            color: var(--text-primary);
-            font-size: 0.86rem;
-            font-weight: 750;
-            line-height: 1.45;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-        }
-
-        .exam-section-card__count {
-            min-width: 42px;
-            padding: 3px 7px;
-            border-radius: var(--radius-full);
-            background: rgba(79, 70, 229, 0.1);
-            color: var(--primary-color);
-            font-size: 0.72rem;
-            font-weight: 800;
-            text-align: center;
-            white-space: nowrap;
-        }
-
-        .exam-section-dots {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            min-height: 14px;
-        }
-
-        .exam-section-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 999px;
-            background: #cbd5e1;
-            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
-        }
-
-        .exam-section-dot.is-answered {
-            background: var(--success-color);
-        }
-
-        .exam-section-questions {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.26s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .exam-section-card.is-expanded .exam-section-questions {
-            max-height: min(48vh, 460px);
-        }
-
-        .q-nav-list {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            padding: 0 10px 12px;
-        }
-
-        .q-nav-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 9px;
-            min-height: 44px;
-            padding: 8px 9px;
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: all var(--transition-fast);
-            color: var(--text-secondary);
-            font-size: 0.78rem;
-            position: relative;
-            background: rgba(248, 250, 252, 0.72);
-            border: 1px solid rgba(148, 163, 184, 0.14);
-        }
-
-        .q-nav-item:hover {
-            background: var(--bg-color);
-            color: var(--text-primary);
-        }
-
-        .q-nav-item.active {
-            background: var(--primary-light);
-            color: var(--primary-color);
-            font-weight: 500;
-        }
-
-        .q-nav-item.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 3px;
-            height: 60%;
-            background: var(--primary-color);
-            border-radius: 0 4px 4px 0;
-        }
-
-        .q-status-indicator {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.65rem;
-            flex-shrink: 0;
-            transition: all var(--transition-fast);
-            margin-top: 2px;
-        }
-
-        .q-status-indicator.unanswered {
-            background: var(--bg-color);
-            border: 1px solid var(--border-color);
-            color: transparent;
-        }
-
-        .q-status-indicator.answered {
-            background: var(--success-color);
-            border: 1px solid var(--success-color);
-            color: white;
-        }
-
-        .q-nav-item.active .q-status-indicator.unanswered {
-            border-color: var(--primary-color);
-            background: white;
-        }
-
-        .q-nav-label {
-            flex: 1;
-            min-width: 0;
-            line-height: 1.35;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .q-nav-id {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 20px;
-            height: 20px;
-            padding: 0 6px;
-            border-radius: 7px;
-            background: rgba(255, 255, 255, 0.9);
-            color: var(--text-primary);
-            font-size: 0.72rem;
-            font-weight: 800;
-            margin-right: 4px;
-        }
-
-        .exam-sidebar-footer {
-            margin-top: auto;
-            padding: var(--spacing-4);
-            border-top: 1px solid var(--border-color);
-            background: var(--surface-color);
-            text-align: center;
-        }
-
-        .save-status {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .save-status.saved { color: var(--success-color); }
-        .save-status.syncing { color: var(--primary-color); }
-        .save-status.error { color: var(--danger-color); }
-
-        /* === Main Exam Area === */
-        .exam-main {
-            flex: 1;
-            min-width: 0;
-            padding: var(--spacing-6);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: var(--bg-color);
-        }
-
-        .exam-paper-container {
-            width: 100%;
-            max-width: 800px;
-            background: var(--surface-color);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-sm);
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Exam Header inside Paper */
-        .paper-header {
-            padding: var(--spacing-5) var(--spacing-6);
-            border-bottom: 1px solid var(--border-color);
-            background: var(--surface-color);
-            text-align: center;
-        }
-
-        .paper-header h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: var(--spacing-2);
-        }
-
-        .paper-sub-title {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-        }
-
-        /* Progress Bar */
-        .exam-progress {
-            padding: var(--spacing-3) var(--spacing-6);
-            background: var(--bg-color);
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .progress-bar-bg {
-            background: var(--border-color);
-            border-radius: var(--radius-full);
-            height: 6px;
-            width: 100%;
-            overflow: hidden;
-        }
-
-        .progress-bar-fill {
-            background: var(--primary-color);
-            height: 100%;
-            border-radius: var(--radius-full);
-            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .progress-labels {
-            display: flex;
-            justify-content: space-between;
-            margin-top: var(--spacing-2);
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            font-weight: 500;
-        }
-
-        /* Page Content */
-        .paper-content {
-            padding: var(--spacing-6);
-            min-height: 50vh;
-        }
-
-        .page-heading {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: var(--spacing-5);
-            padding-bottom: var(--spacing-3);
-            border-bottom: 2px solid var(--bg-color);
-        }
-
-        /* Questions */
-        .question-list {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-6);
-        }
-
-        .question-card {
-            background: var(--surface-color);
-            border-radius: var(--radius-md);
-            padding: var(--spacing-5);
-            border: 1px solid var(--border-color);
-            transition: all var(--transition-normal);
-            scroll-margin-top: calc(var(--exam-topbar-offset) + 24px);
-        }
-
-        .question-card:hover {
-            border-color: var(--border-hover);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .question-card.answered {
-            border-left: 4px solid var(--success-color);
-        }
-
-        .question-card.highlight {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px var(--primary-light);
-        }
-
-        .q-header {
-            display: flex;
-            align-items: flex-start;
-            gap: var(--spacing-3);
-            margin-bottom: var(--spacing-4);
-        }
-
-        .q-number {
-            background: var(--bg-color);
-            color: var(--text-secondary);
-            flex: 0 0 auto;
-            padding: 4px 8px;
-            border-radius: var(--radius-sm);
-            font-size: 0.8rem;
-            font-weight: 600;
-            white-space: nowrap;
-            border: 1px solid var(--border-color);
-        }
-
-        .q-body {
-            min-width: 0;
-            font-weight: 500;
-            color: var(--text-primary);
-            line-height: 1.6;
-            flex: 1;
-        }
-
-        .exam-question-md,
-        .exam-option-md,
-        .exam-answer-md {
-            color: inherit;
-        }
-
-        .exam-question-md > :first-child,
-        .exam-option-md > :first-child,
-        .exam-answer-md > :first-child {
-            margin-top: 0;
-        }
-
-        .exam-question-md > :last-child,
-        .exam-option-md > :last-child,
-        .exam-answer-md > :last-child {
-            margin-bottom: 0;
-        }
-
-        .exam-option-md p {
-            margin: 0;
-        }
-
-        .q-options {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-2);
-            padding-left: calc(var(--spacing-3) + 35px); /* Align with text, skipping number badge */
-        }
-
-        .option-label {
-            display: flex;
-            align-items: flex-start;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) var(--spacing-4);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-color);
-            transition: all var(--transition-fast);
-            cursor: pointer;
-            background: var(--surface-color);
-        }
-
-        .option-label:hover {
-            background: var(--bg-color);
-            border-color: var(--border-hover);
-        }
-
-        .option-label.selected {
-            background: var(--primary-light);
-            border-color: var(--primary-color);
-        }
-
-        .option-label input[type="radio"],
-        .option-label input[type="checkbox"] {
-            margin-top: 4px;
-        }
-
-        .q-text-input {
-            padding-left: calc(var(--spacing-3) + 35px);
-        }
-
-        .drawing-answer-panel {
-            margin-top: var(--spacing-3);
-            padding: var(--spacing-3);
-            border: 1px dashed var(--border-color);
-            border-radius: var(--radius-md);
-            background: var(--bg-color);
-        }
-
-        .question-attachment-panel {
-            margin-top: var(--spacing-3);
-            padding: var(--spacing-3);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            background: var(--bg-color);
-        }
-
-        .question-attachment-head {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: var(--spacing-2);
-            margin-bottom: var(--spacing-2);
-        }
-
-        .question-attachment-head strong {
-            color: var(--text-primary);
-            font-size: 0.9rem;
-        }
-
-        .question-attachment-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 3px 8px;
-            border-radius: var(--radius-full);
-            background: var(--surface-color);
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .question-attachment-badge.required {
-            background: var(--warning-light);
-            color: var(--warning-color);
-        }
-
-        .question-attachment-hint {
-            margin-bottom: var(--spacing-2);
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            line-height: 1.55;
-        }
-
-        .drawing-answer-actions {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: var(--spacing-2);
-            margin-bottom: var(--spacing-2);
-        }
-
-        .drawing-answer-status {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
-
-        .drawing-preview {
-            display: none;
-            gap: var(--spacing-3);
-            align-items: flex-start;
-            padding: var(--spacing-2);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-color);
-            background: var(--surface-color);
-        }
-
-        .drawing-preview.has-drawing {
-            display: flex;
-        }
-
-        .drawing-preview img {
-            width: min(180px, 44vw);
-            aspect-ratio: 4 / 3;
-            object-fit: contain;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-color);
-            background: #fff;
-        }
-
-        .drawing-preview-meta {
-            min-width: 0;
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            line-height: 1.5;
-            word-break: break-all;
-        }
-
-        .readonly-answer-attachments {
-            margin-left: calc(var(--spacing-3) + 35px);
-            margin-top: var(--spacing-3);
-            display: grid;
-            gap: var(--spacing-3);
-        }
-
-        .answer-attachment-card {
-            padding: var(--spacing-3);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            background: var(--surface-color);
-        }
-
-        .answer-attachment-card img {
-            display: block;
-            width: 100%;
-            max-height: 360px;
-            object-fit: contain;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-color);
-            background: #fff;
-        }
-
-        .answer-attachment-card--image {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-2);
-        }
-
-        .answer-attachment-thumb {
-            display: block;
-            width: fit-content;
-            max-width: 100%;
-            padding: 0;
-            border: 0;
-            background: transparent;
-            cursor: zoom-in;
-            border-radius: var(--radius-sm);
-        }
-
-        .answer-attachment-thumb img {
-            width: auto;
-            max-width: 100%;
-            max-height: 220px;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .answer-attachment-thumb:hover img {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 24px rgba(46, 74, 115, 0.16);
-        }
-
-        .answer-attachment-meta {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: var(--spacing-2);
-            margin-bottom: var(--spacing-2);
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        .exam-drawing-whiteboard-root .teacher-whiteboard-toolbar {
-            right: max(16px, calc(env(safe-area-inset-right) + 16px));
-        }
-
-        .exam-drawing-whiteboard-root .exam-drawing-title {
-            flex: 1 1 280px;
-            min-width: min(320px, 42vw);
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 2px;
-        }
-
-        .exam-drawing-whiteboard-root .exam-drawing-title span {
-            max-width: 100%;
-            color: #64748b;
-            font-size: 0.75rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        /* Navigation Footer */
-        .paper-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--spacing-4) var(--spacing-6);
-            background: var(--bg-color);
-            border-top: 1px solid var(--border-color);
-        }
-
-        .submit-section {
-            padding: var(--spacing-6);
-            text-align: center;
-            background: var(--surface-color);
-            border-top: 1px dashed var(--border-color);
-            margin-top: var(--spacing-4);
-        }
-
-        .upload-panel {
-            margin-bottom: var(--spacing-5);
-            padding: var(--spacing-4);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            background: var(--bg-color);
-            text-align: left;
-        }
-
-        .upload-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: var(--spacing-2);
-            align-items: center;
-            margin-bottom: var(--spacing-3);
-        }
-
-        .upload-dropzone {
-            border: 2px dashed var(--border-color);
-            border-radius: var(--radius-md);
-            padding: var(--spacing-5);
-            text-align: center;
-            background: var(--surface-color);
-            transition: all var(--transition-fast);
-        }
-
-        .upload-dropzone.dragover,
-        .upload-dropzone:hover {
-            border-color: var(--primary-color);
-            background: var(--primary-light);
-        }
-
-        .question-upload-dropzone {
-            padding: var(--spacing-3);
-            min-height: 88px;
-        }
-
-        .file-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: var(--spacing-2);
-            margin-top: var(--spacing-3);
-        }
-
-        .file-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 10px;
-            border-radius: var(--radius-sm);
-            background: var(--surface-color);
-            border: 1px solid var(--border-color);
-            font-size: 0.85rem;
-        }
-
-        .server-draft-files {
-            margin-top: var(--spacing-2);
-        }
-
-        .file-chip.server-draft {
-            border-color: rgba(99, 102, 241, 0.24);
-            background: rgba(238, 242, 255, 0.62);
-        }
-
-        .submitted-files {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-2);
-            margin-top: var(--spacing-4);
-        }
-
-        .submitted-file-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) var(--spacing-4);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-color);
-            background: var(--surface-color);
-        }
-
-        /* Result View */
-        .result-banner {
-            padding: var(--spacing-6);
-            text-align: center;
-            border-radius: var(--radius-md);
-            margin-bottom: var(--spacing-6);
-        }
-
-        .result-banner.success {
-            background: var(--success-light);
-            border: 1px solid var(--success-color);
-            color: var(--success-dark);
-        }
-
-        .result-banner.warning {
-            background: var(--warning-light);
-            border: 1px solid var(--warning-color);
-            color: var(--warning-dark);
-        }
-
-        .result-icon {
-            font-size: 2.5rem;
-            margin-bottom: var(--spacing-3);
-        }
-
-        .result-banner h3 {
-            font-size: 1.25rem;
-            margin-bottom: var(--spacing-2);
-            color: inherit;
-        }
-
-        .result-score {
-            font-size: 3rem;
-            font-weight: 800;
-            margin: var(--spacing-3) 0;
-            line-height: 1;
-        }
-        .result-feedback-overview {
-            max-width: 620px;
-            margin: var(--spacing-4) auto 0;
-            padding: var(--spacing-4);
-            text-align: left;
-            border: 1px solid rgba(99, 102, 241, 0.16);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.76);
-            animation: feedback-rise 0.32s ease both;
-        }
-        .result-feedback-overview__title,
-        .grading-question-feedback__label {
-            margin-bottom: 8px;
-            color: var(--text-primary);
-            font-size: 0.82rem;
-            font-weight: 700;
-        }
-        .result-feedback-note {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            margin: 0 0 var(--spacing-4);
-            padding: 10px 12px;
-            border: 1px solid rgba(148, 163, 184, 0.24);
-            border-radius: 8px;
-            background: rgba(248, 250, 252, 0.9);
-            color: var(--text-muted);
-            font-size: 0.88rem;
-            line-height: 1.55;
-        }
-        .grading-question-feedback {
-            margin: var(--spacing-4) 0 0 calc(var(--spacing-3) + 35px);
-            padding: 12px 14px;
-            border: 1px solid rgba(99, 102, 241, 0.18);
-            border-left: 3px solid var(--primary-color);
-            border-radius: 8px;
-            background: rgba(238, 242, 255, 0.56);
-            animation: feedback-rise 0.28s ease both;
-        }
-        .grading-question-feedback__body {
-            font-size: 0.92rem;
-        }
-        .grading-question-feedback__body > :last-child,
-        .result-feedback-overview .md-content > :last-child {
-            margin-bottom: 0;
-        }
-        .grading-question-feedback.is-structured {
-            border-color: rgba(245, 158, 11, 0.28);
-            border-left-color: #f59e0b;
-            background: linear-gradient(135deg, rgba(255, 251, 235, 0.9), rgba(255, 255, 255, 0.96));
-            box-shadow: 0 12px 30px -24px rgba(120, 53, 15, 0.5);
-            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-        }
-        .grading-question-feedback.is-structured:hover,
-        .grading-question-feedback.is-structured:focus-visible {
-            transform: translateY(-2px);
-            border-color: rgba(245, 158, 11, 0.48);
-            box-shadow: 0 18px 36px -26px rgba(120, 53, 15, 0.62);
-            outline: none;
-        }
-        .grading-feedback-grid {
-            display: grid;
-            grid-template-columns: minmax(98px, auto) minmax(0, 1fr);
-            gap: 8px;
-        }
-        .grading-feedback-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            min-width: 0;
-            padding: 8px 10px;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.72);
-        }
-        .grading-feedback-field__name {
-            color: var(--text-muted);
-            font-size: 0.74rem;
-            font-weight: 700;
-        }
-        .grading-feedback-score {
-            font-size: 1rem;
-            line-height: 1.1;
-        }
-        .grading-feedback-score.is-full { color: #047857; }
-        .grading-feedback-score.is-partial { color: #b45309; }
-        .grading-feedback-score.is-zero { color: #dc2626; }
-        .grading-feedback-deduction,
-        .grading-feedback-evaluation {
-            overflow-wrap: anywhere;
-            line-height: 1.45;
-        }
-        .grading-feedback-deduction.has-deduction {
-            color: #dc2626;
-            font-weight: 800;
-        }
-        .grading-feedback-deduction.is-none {
-            color: #047857;
-            font-weight: 800;
-        }
-        .grading-feedback-evaluation {
-            color: var(--text-primary);
-            font-weight: 650;
-        }
-        .result-feedback-overview .md-content {
-            color: #334155;
-        }
-        .result-feedback-overview .md-content h1,
-        .result-feedback-overview .md-content h2,
-        .result-feedback-overview .md-content h3 {
-            color: #0f172a;
-        }
-        @keyframes feedback-rise {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .readonly-answer {
-            padding: var(--spacing-3) var(--spacing-4);
-            background: var(--bg-color);
-            border-radius: var(--radius-md);
-            white-space: pre-wrap;
-            color: var(--text-primary);
-            font-size: 0.95rem;
-            margin-left: calc(var(--spacing-3) + 35px);
-            border: 1px solid var(--border-color);
-        }
-
-        .readonly-answer.empty {
-            color: var(--text-muted);
-            font-style: italic;
-        }
-        .readonly-answer .md-content {
-            white-space: normal;
-        }
-        @media (max-width: 768px) {
-            .grading-question-feedback {
-                margin-left: 0;
-            }
-            .grading-feedback-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .result-feedback-overview,
-            .grading-question-feedback {
-                animation: none;
-            }
-            .grading-question-feedback.is-structured:hover,
-            .grading-question-feedback.is-structured:focus-visible {
-                transform: none;
-            }
-        }
-
-        /* Mobile Controls */
-        .mobile-nav-bar {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 56px;
-            background: var(--surface-color);
-            border-bottom: 1px solid var(--border-color);
-            z-index: 30;
-            align-items: center;
-            padding: 0 var(--spacing-4);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .sidebar-toggle-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: var(--spacing-2);
-            margin-left: -var(--spacing-2);
-        }
-
-        .mobile-title {
-            flex: 1;
-            font-weight: 600;
-            font-size: 1rem;
-            text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 0 var(--spacing-4);
-        }
-
-        .sidebar-backdrop {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            backdrop-filter: blur(2px);
-            z-index: 35;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        @media (max-width: 900px) {
-            .exam-topbar {
-                align-items: flex-start;
-                padding: 0.62rem 0.75rem;
-                gap: 0.46rem;
-            }
-
-            .exam-topbar-brand {
-                width: 100%;
-                max-width: none;
-                flex-basis: 100%;
-            }
-
-            .exam-topbar-brand .app-topbar-brand__copy small span:last-child {
-                display: none;
-            }
-
-            .exam-topbar-status {
-                width: 100%;
-                display: flex;
-                flex-wrap: nowrap;
-                overflow-x: auto;
-                padding-bottom: 0.08rem;
-                scrollbar-width: thin;
-            }
-
-            .exam-topbar-nav {
-                display: flex;
-                width: 100%;
-                flex-basis: 100%;
-                gap: 0.38rem;
-                justify-content: flex-start;
-                margin-left: 0;
-                overflow-x: auto;
-                padding-bottom: 0.08rem;
-                scrollbar-width: thin;
-            }
-
-            .exam-topbar-actions {
-                display: flex;
-                flex-wrap: nowrap;
-                width: max-content;
-                justify-content: flex-start;
-                align-items: stretch;
-            }
-
-            .exam-topbar-actions .app-topbar-action {
-                width: auto;
-                min-width: 4.75rem;
-                justify-content: center;
-                flex: 0 0 auto;
-            }
-
-            .exam-topbar-actions .app-topbar-action--primary,
-            .exam-topbar-submit {
-                min-width: 5.6rem;
-            }
-
-            .exam-topbar-more-dropdown {
-                flex: 0 0 auto;
-            }
-
-            .exam-topbar-more-menu {
-                right: 0;
-                left: auto;
-            }
-
-            .exam-main { padding: var(--spacing-4) var(--spacing-2); }
-
-            .exam-sidebar {
-                position: fixed;
-                left: 0;
-                top: 0;
-                bottom: 0;
-                height: 100vh;
-                transform: translateX(-100%);
-                width: 280px;
-                max-width: 85vw;
-                box-shadow: var(--shadow-lg);
-                z-index: 1040;
-            }
-
-            .exam-sidebar.show { transform: translateX(0); }
-            .sidebar-backdrop.show { display: block; opacity: 1; }
-            .sidebar-backdrop { z-index: 1030; }
-
-            .paper-content { padding: var(--spacing-4) var(--spacing-3); }
-            .paper-header { padding: var(--spacing-4) var(--spacing-3); }
-            .paper-footer { padding: var(--spacing-4) var(--spacing-3); flex-direction: column; gap: var(--spacing-3); }
-            .paper-footer .btn { width: 100%; justify-content: center; }
-
-            .q-options { padding-left: 0; margin-top: var(--spacing-3); }
-            .q-text-input { padding-left: 0; margin-top: var(--spacing-3); }
-            .readonly-answer { margin-left: 0; margin-top: var(--spacing-3); }
-            .readonly-answer-attachments { margin-left: 0; }
-            .exam-drawing-whiteboard-root .teacher-whiteboard-toolbar {
-                left: 8px;
-                right: 8px;
-                gap: 6px;
-            }
-            .exam-drawing-whiteboard-root .exam-drawing-title {
-                flex-basis: 100%;
-            }
-        }
-
-        @media (max-width: 560px) {
-            .exam-topbar-brand {
-                min-width: 0;
-            }
-
-            .exam-topbar-brand .app-topbar-brand__copy small,
-            .exam-topbar-actions .app-topbar-action__text small {
-                display: none;
-            }
-
-            .exam-topbar-status {
-                gap: 0.3rem;
-            }
-
-            .exam-topbar-status__item {
-                min-height: 34px;
-                padding: 0.28rem 0.48rem;
-            }
-
-            .exam-topbar-nav {
-                overflow: visible;
-                padding-bottom: 0;
-            }
-
-            .exam-topbar-actions {
-                width: 100%;
-                display: grid;
-                grid-template-columns: repeat(5, minmax(0, 1fr));
-                gap: 0.26rem;
-                overflow: visible;
-            }
-
-            .exam-topbar-actions .app-topbar-action {
-                width: 100%;
-                min-height: 40px;
-                min-width: 0;
-                gap: 0.22rem;
-                padding: 0.28rem 0.16rem;
-                flex-direction: row;
-                justify-content: center;
-                text-align: center;
-            }
-
-            .exam-topbar-actions .app-topbar-action--primary,
-            .exam-topbar-submit {
-                min-width: 0;
-            }
-
-            .exam-topbar-actions .app-topbar-action__icon {
-                width: 23px;
-                height: 23px;
-                border-radius: 7px;
-            }
-
-            .exam-topbar-actions .app-topbar-action__text strong {
-                font-size: 0.72rem;
-            }
-
-            .exam-topbar-more-dropdown,
-            .exam-topbar-more-dropdown > summary {
-                width: 100%;
-                min-width: 0;
-            }
-
-            .exam-topbar-more-menu {
-                min-width: min(84vw, 210px);
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ asset_url('css/exam-take.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-student-material.css') }}">
 </head>
 <body class="exam-page{% if submission %} exam-is-submitted{% endif %}" {{ body_attrs(ui_palette) }}>
 
-<header class="navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏">
+{% include "partials/lq_page_backdrop.html" with context %}
+
+<header class="navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏" data-lq-material="chrome">
     <a href="{{ assignment_back_url }}" class="navbar-brand app-topbar-brand exam-topbar-brand" aria-label="返回课堂">
         <span class="app-topbar-brand__mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
         <span class="app-topbar-brand__copy">
@@ -1542,7 +56,7 @@
     </div>
     <nav class="navbar-user app-topbar-nav exam-topbar-nav" aria-label="考试快捷操作">
         <div class="app-topbar-actions app-topbar-actions--primary exam-topbar-actions" aria-label="答题操作">
-            <button type="button" class="app-topbar-action app-topbar-action--tone-slate" id="topbarSidebarToggle" title="打开答题卡" aria-label="打开答题卡">
+            <button type="button" class="app-topbar-action app-topbar-action--tone-slate" id="topbarSidebarToggle" aria-controls="sidebar" aria-expanded="false" title="打开答题卡" aria-label="打开答题卡">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>题目</strong>
@@ -1563,26 +77,26 @@
                     <small>继续</small>
                 </span>
             </button>
-            <details class="exam-topbar-more-dropdown exam-edit-action">
-                <summary class="app-topbar-action app-topbar-action--tone-amber" title="整理答卷" aria-label="打开整理答卷菜单">
+            <div class="exam-topbar-more-dropdown exam-edit-action">
+                <button type="button" id="examMoreTrigger" class="app-topbar-action app-topbar-action--tone-amber" title="整理答卷" aria-label="打开整理答卷菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>整理</strong>
                         <small>清理答卷</small>
                     </span>
-                </summary>
-                <div class="exam-topbar-more-menu" role="menu" aria-label="整理答卷">
+                </button>
+                <div class="exam-topbar-more-menu lq-menu" id="examMoreMenu" role="menu" aria-label="整理答卷" data-lq-material="raised" tabindex="-1" hidden>
                     <div class="exam-topbar-menu-label">低频操作</div>
-                    <button type="button" class="exam-topbar-menu-item" id="topbarClearPageBtn" title="清空当前页" aria-label="清空当前页" role="menuitem">
+                    <button type="button" class="exam-topbar-menu-item" id="topbarClearPageBtn" data-lq-menu-item="clear-page" tabindex="-1" title="清空当前页" aria-label="清空当前页" role="menuitem">
                         {{ app_topbar_icon('refresh') }}
                         清空当前页
                     </button>
-                    <button type="button" class="exam-topbar-menu-item is-danger" id="topbarClearAllBtn" title="清空整张试卷" aria-label="清空整张试卷" role="menuitem">
+                    <button type="button" class="exam-topbar-menu-item is-danger" id="topbarClearAllBtn" data-lq-menu-item="clear-all" tabindex="-1" title="清空整张试卷" aria-label="清空整张试卷" role="menuitem">
                         {{ app_topbar_icon('refresh') }}
                         清空整张试卷
                     </button>
                 </div>
-            </details>
+            </div>
             <button type="button" class="app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
                 <span class="app-topbar-action__text">
@@ -1598,7 +112,7 @@
 
 <div class="exam-layout">
     <!-- Left Sidebar (Question Navigation) -->
-    <aside class="exam-sidebar" id="sidebar">
+    <aside class="exam-sidebar" id="sidebar" data-lq-material="chrome">
         <div class="exam-sidebar-header">
             <div class="exam-paper-title">{{ paper.title }}</div>
             <div class="exam-progress-summary">
@@ -1621,7 +135,7 @@
 
     <!-- Main Content Area -->
     <main class="exam-main">
-        <div class="exam-paper-container" id="app">
+        <div class="exam-paper-container" id="app" data-lq-material="content">
             {% include "partials/submission_retained_grade.html" %}
 
             <div class="paper-header">
@@ -1668,7 +182,7 @@
     </svg>
 </button>
 <div id="ai-chat-modal">
-    <div class="ai-chat-container">
+    <div class="ai-chat-container" data-lq-material="raised">
         <div class="ai-chat-header">
             <h3>考试 AI 助手</h3>
             <div class="header-buttons">
@@ -1709,6 +223,7 @@
 <script type="module">
     import { showMessage } from '{{ asset_url('js/ui.js') }}';
     import { apiFetch } from '{{ asset_url('js/api.js') }}';
+    import { bindMenu } from '{{ asset_url('js/lq/menus.js') }}';
     import { createExamSubmissionController } from '{{ asset_url('js/exam_take/submit.js') }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { createDuplicateImageGuard } from '{{ asset_url("js/submission_image_guard.js") }}';
@@ -2011,13 +526,10 @@
     function openQuestionNavigator() {
         elements.sidebar?.classList.add('show');
         elements.sidebarBackdrop?.classList.add('show');
+        elements.topbarSidebarToggle?.setAttribute('aria-expanded', 'true');
     }
 
-    function closeExamTopbarMenus() {
-        document.querySelectorAll('.exam-topbar-more-dropdown[open]').forEach((menu) => {
-            menu.removeAttribute('open');
-        });
-    }
+    let examMenuBinding = null;
 
     function initExamAiChat() {
         if (!EXAM_AI_ALLOWED || USER_ROLE !== 'student' || !CLASS_OFFERING_ID) return;
@@ -2596,7 +1108,7 @@
             const stats = getPageAnswerStats(page);
             const isExpanded = idx === state.currentPageIdx;
             html += `
-                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${idx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}">
+                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${idx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
                     <div class="exam-section-card__summary">
                         <div class="exam-section-card__top">
                             <div>
@@ -2613,7 +1125,7 @@
                                 const isDone = answerHasContent(q);
                                 const isActive = String(state.activeQuestionId || '') === String(q.id || '');
                                 return `
-                                    <div class="q-nav-item ${isActive ? 'active' : ''}" data-qid="${esc(q.id)}">
+                                    <div class="q-nav-item ${isActive ? 'active' : ''}" data-qid="${esc(q.id)}" data-lq-material="control">
                                         <div class="q-status-indicator ${isDone ? 'answered' : 'unanswered'}">
                                             ${isDone ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
                                         </div>
@@ -2665,7 +1177,7 @@
             const isAnswered = answerHasContent(q);
 
             html += `
-                <div class="question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}">
+                <div class="question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(getQuestionDisplayLabel(q))}</span>
                         <div class="q-body">${formatText(q.text)}</div>
@@ -3700,7 +2212,7 @@
             });
 
             html += `
-                <div class="question-card" id="q-${q.id}">
+                <div class="question-card" id="q-${q.id}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(String(index + 1))}</span>
                         <div class="q-body">${formatText(q.text)}</div>
@@ -3868,7 +2380,7 @@
             }, 0);
             const isExpanded = pageIdx === state.currentPageIdx || state.pages.length <= 1;
             html += `
-                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${pageIdx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}">
+                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${pageIdx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
                     <div class="exam-section-card__summary">
                         <div class="exam-section-card__top">
                             <div>
@@ -3891,7 +2403,7 @@
             const record = normalizeAnswerRecord(submittedAnswers[q.id]);
             const answered = (record.text && record.text.trim() !== '') || (record.attachments && record.attachments.length);
             html += `
-                <div class="q-nav-item" data-qid="${esc(q.id)}">
+                <div class="q-nav-item" data-qid="${esc(q.id)}" data-lq-material="control">
                     <div class="q-status-indicator ${answered ? 'answered' : 'unanswered'}">
                         ${answered ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
                     </div>
@@ -3945,34 +2457,31 @@
         if (elements.topbarPrevBtn) elements.topbarPrevBtn.addEventListener('click', () => goToPage(state.currentPageIdx - 1));
         if (elements.topbarNextBtn) elements.topbarNextBtn.addEventListener('click', () => goToPage(state.currentPageIdx + 1));
         if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.addEventListener('click', handleSubmission);
-        if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.addEventListener('click', () => {
-            closeExamTopbarMenus();
-            clearCurrentPage();
-        });
-        if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.addEventListener('click', () => {
-            closeExamTopbarMenus();
-            clearEntirePaper();
-        });
         if (elements.topbarSidebarToggle) elements.topbarSidebarToggle.addEventListener('click', openQuestionNavigator);
-        document.querySelectorAll('.exam-topbar-more-dropdown').forEach((menu) => {
-            menu.addEventListener('toggle', () => {
-                if (!menu.open) return;
-                document.querySelectorAll('.exam-topbar-more-dropdown[open]').forEach((otherMenu) => {
-                    if (otherMenu !== menu) otherMenu.removeAttribute('open');
-                });
+        const moreTrigger = document.getElementById('examMoreTrigger');
+        const moreMenu = document.getElementById('examMoreMenu');
+        if (moreTrigger && moreMenu) {
+            examMenuBinding = bindMenu(moreTrigger, moreMenu, {
+                onAction(action) {
+                    if (action === 'clear-page') clearCurrentPage();
+                    if (action === 'clear-all') clearEntirePaper();
+                },
+                onError(error) { showMessage(error.message || '操作失败，请重试。', 'error'); },
             });
-        });
+        }
 
         // Mobile sidebar
         if (elements.mobileToggle) elements.mobileToggle.addEventListener('click', () => {
             openQuestionNavigator();
         });
         if (elements.sidebarBackdrop) elements.sidebarBackdrop.addEventListener('click', closeMobileSidebar);
-        document.addEventListener('click', (event) => {
-            if (!event.target.closest?.('.exam-topbar-more-dropdown')) closeExamTopbarMenus();
-        });
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') closeExamTopbarMenus();
+            if (event.key === 'Escape') {
+                if (elements.sidebar?.classList.contains('show')) {
+                    closeMobileSidebar();
+                    elements.topbarSidebarToggle?.focus();
+                }
+            }
         });
         window.addEventListener('resize', syncExamTopbarOffset);
 
@@ -3984,6 +2493,7 @@
     function closeMobileSidebar() {
         elements.sidebar.classList.remove('show');
         elements.sidebarBackdrop.classList.remove('show');
+        elements.topbarSidebarToggle?.setAttribute('aria-expanded', 'false');
     }
 
     function esc(s) {

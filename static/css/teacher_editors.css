@@ -1,0 +1,60 @@
+/* Shared layout/material contract for lesson, assessment and evaluation editors.
+ * Preview iframes keep their document/paper renderer and attribution boundary. */
+.lp-editor-body {
+    height: 100dvh;
+    color: hsl(var(--ls-ink));
+    --surface-color: hsl(var(--lq-page-content));
+}
+.lp-editor-body .lp-editor__header {
+    min-height: 64px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    border-radius: 0;
+    background-color: hsl(var(--ls-glass-fill));
+}
+.lp-editor-body .lp-editor__title { min-width: 0; overflow-wrap: anywhere; }
+.lp-editor-body .lp-editor__header-actions { flex-wrap: wrap; }
+.lp-editor-body .lp-editor { min-height: 0; gap: var(--ls-s-3); padding: var(--ls-s-3); }
+.lp-editor-body :is(.lp-editor__form, .lp-editor__preview) { min-width: 0; min-height: 0; }
+.lp-editor-body :is(.lp-editor__preview-bar, .lp-editor__cover summary, .lp-editor__session summary) {
+    color: hsl(var(--ls-ink));
+    background: hsl(var(--lq-page-control));
+}
+.lp-editor-body .lp-editor__session { background: hsl(var(--lq-page-content)); }
+.lp-editor-body .lp-editor__preview-bar { flex-wrap: wrap; gap: var(--ls-s-2); }
+.lp-editor-body :is(.lp-btn, input, select, textarea) {
+    color: hsl(var(--ls-ink));
+    border-color: hsl(var(--ls-control-line));
+    background: hsl(var(--lq-page-control));
+}
+.lp-editor-body .lp-btn { min-height: 36px; border-radius: var(--ls-r-capsule); }
+.lp-editor-body .lp-btn--primary { color: hsl(var(--ls-on-primary)); background: hsl(var(--ls-primary)); }
+.lp-editor-body .lp-btn--danger { color: hsl(var(--ls-tone-danger-fg)); border-color: hsl(var(--ls-tone-danger-base) / .4); }
+.lp-editor-body .lp-btn--danger:hover { background: hsl(var(--ls-tone-danger-soft)); }
+.lp-editor-body .lp-editor__save-state.is-clean { color: hsl(var(--ls-tone-success-fg)); background: hsl(var(--ls-tone-success-soft)); }
+.lp-editor-body :is(.lp-editor__save-state.is-dirty, .lp-editor__export-gate) { color: hsl(var(--ls-tone-warning-fg)); background: hsl(var(--ls-tone-warning-soft)); border-color: hsl(var(--ls-tone-warning-base) / .4); }
+.lp-editor-body .lp-editor__export-gate strong { color: inherit; }
+.lp-editor-body .lp-editor__save-state.is-saving { color: hsl(var(--ls-tone-info-fg)); background: hsl(var(--ls-tone-info-soft)); }
+.lp-editor-body .ap-score-pill { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--ls-primary-soft)); }
+.lp-editor-body .ap-score-pill.is-ok { color: hsl(var(--ls-tone-success-fg)); background: hsl(var(--ls-tone-success-soft)); }
+.lp-editor-body .ap-score-pill.is-warn { color: hsl(var(--ls-tone-danger-fg)); background: hsl(var(--ls-tone-danger-soft)); }
+.lp-editor-body :is(.ap-items__total.is-warn, .ap-items__total.is-ok) { color: hsl(var(--ls-ink)); }
+.lp-editor-body :where(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+.lp-editor-body .te-ai-modal-backdrop { background: hsl(var(--ls-scrim)); backdrop-filter: none; }
+.lp-editor-body .te-ai-modal__header { color: hsl(var(--ls-ink)); background: hsl(var(--lq-page-control)); }
+.lp-editor-body .te-ai-modal__header p { color: hsl(var(--ls-on-primary-soft)); }
+.lp-editor-body .te-ai-modal__header h3 { color: hsl(var(--ls-ink)); }
+.lp-editor-body .te-ai-modal__close { color: hsl(var(--ls-ink-2)); background: hsl(var(--lq-page-control)); }
+.lp-editor-body .te-ai-modal__field { color: hsl(var(--ls-ink-2)); overflow-y: auto; overscroll-behavior: contain; }
+.lp-editor-body .te-ai-modal__field textarea { color: hsl(var(--ls-ink)); background: hsl(var(--lq-page-control)); border-color: hsl(var(--ls-control-line)); }
+.lp-editor-body .te-ai-modal__footer { background: hsl(var(--lq-page-control)); }
+@media (max-width: 900px) {
+    .lp-editor-body .lp-editor { padding: var(--ls-s-2); gap: var(--ls-s-2); }
+    .lp-editor-body .lp-editor__header { padding: var(--ls-s-3); gap: var(--ls-s-2); }
+    .lp-editor-body .lp-editor__title { flex-basis: 50%; }
+    .lp-editor-body .lp-editor__header-actions { width: 100%; }
+    .lp-editor-body .lp-editor__preview { max-height: 40dvh; overflow: auto; }
+}
+@media (pointer: coarse) {
+    .lp-editor-body :is(.lp-btn, input, select, summary) { min-height: 44px; }
+}

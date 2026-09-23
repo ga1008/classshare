@@ -133,6 +133,40 @@ test('successful final submission also carries the fixed page version', async ()
   assert.equal(f.calls[0].options.body.get('expected_submission_version'), 'opened-round-1');
 });
 
+test('simultaneous topbar and regenerated footer actions share one submission operation', async () => {
+  const sync = deferred();
+  let draftSaves = 0, confirmations = 0;
+  const f = fixture({
+    confirm: () => { confirmations++; return true; },
+    saveServerDraft: () => { draftSaves++; return sync.promise; },
+  });
+  const first = f.context.handleSubmission();
+  const second = f.context.handleSubmission();
+  await second;
+  assert.equal(confirmations, 1);
+  assert.equal(draftSaves, 1);
+  assert.deepEqual(f.busy, [true]);
+  sync.resolve({ files_by_question: {} });
+  await first;
+  assert.equal(f.calls.filter(call => call.url.endsWith('/submit')).length, 1);
+  assert.deepEqual(f.removed, ['exam_42']);
+});
+
+test('failed submission releases the operation lock for an explicit retry', async () => {
+  let attempts = 0;
+  const f = fixture({ apiFetch: async () => {
+    attempts++;
+    if (attempts === 1) throw new Error('temporarily unavailable');
+    return {};
+  } });
+  await f.context.handleSubmission();
+  assert.equal(f.context.submissionSucceeded, false);
+  assert.deepEqual(f.removed, []);
+  await f.context.handleSubmission();
+  assert.equal(attempts, 2);
+  assert.equal(f.context.submissionSucceeded, true);
+});
+
 test('production import touches no browser or network globals', () => {
   assert.equal(typeof createExamSubmissionController, 'function');
   assert.deepEqual(importTouches, []);

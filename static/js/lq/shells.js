@@ -264,20 +264,26 @@ export function enhanceShell(root, { paneGuards = {}, onError } = {}) {
   if (measured && win.ResizeObserver) { observer = new win.ResizeObserver(() => { if (!disposed) root.style.setProperty('--lq-topbar-h', `${measured.getBoundingClientRect().height}px`); }); observer.observe(measured); }
   if (mode === 'sidebar') {
     const search = root.querySelector('[data-lq-nav-search-input]'), groups = [...root.querySelectorAll('[data-lq-nav-group]')], entries = [...root.querySelectorAll('[data-lq-nav-search]')], empty = root.querySelector('[data-lq-nav-empty]');
-    let previous = null, writing = false, storageKey = null;
+    let previous = null, storageKey = null;
     if (root.dataset.lqPersist) try { storageKey = `lq.sidebar:${root.dataset.lqPersist}`; const value = win.localStorage.getItem(storageKey); if (groups.some(group => group.dataset.lqNavGroup === value)) for (const group of groups) set(group, 'open', group.dataset.lqNavGroup === value ? '' : null); } catch { /* Preferences are optional. */ }
+    // Native toggle events are queued and can be coalesced. Remember internal
+    // writes so a late search-restoration event cannot undo the next user choice.
+    const groupStates = new Map(groups.map(group => [group, group.open]));
+    const setGroupOpen = (group, open) => { groupStates.set(group, open); group.open = open; };
     for (const group of groups) {
       save(group, 'open');
       listen(group, 'toggle', () => {
-        if (disposed || writing || search.value) return;
-        if (group.open) { writing = true; for (const other of groups) if (other !== group) other.open = false; writing = false; if (storageKey) try { win.localStorage.setItem(storageKey, group.dataset.lqNavGroup); } catch { /* Optional. */ } }
+        if (disposed || group.open === groupStates.get(group)) return;
+        groupStates.set(group, group.open);
+        if (search.value.trim()) return;
+        if (group.open) { for (const other of groups) if (other !== group) setGroupOpen(other, false); if (storageKey) try { win.localStorage.setItem(storageKey, group.dataset.lqNavGroup); } catch { /* Optional. */ } }
       });
     }
     listen(search, 'input', () => {
       const query = search.value.trim().toLocaleLowerCase();
       if (query && !previous) previous = groups.map(group => group.open);
       for (const item of entries) set(item, 'hidden', !query || item.dataset.lqNavSearch.toLocaleLowerCase().includes(query) ? null : '');
-      for (let i = 0; i < groups.length; i++) { const group = groups[i], match = [...group.querySelectorAll('[data-lq-nav-search]')].some(item => !item.hidden); set(group, 'hidden', match ? null : ''); if (query) group.open = match; else if (previous) group.open = previous[i]; }
+      for (let i = 0; i < groups.length; i++) { const group = groups[i], match = [...group.querySelectorAll('[data-lq-nav-search]')].some(item => !item.hidden); set(group, 'hidden', match ? null : ''); if (query) setGroupOpen(group, match); else if (previous) setGroupOpen(group, previous[i]); }
       if (!query) previous = null; set(empty, 'hidden', entries.some(item => !item.hidden) ? '' : null);
     });
     listen(doc, 'keydown', event => {

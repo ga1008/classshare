@@ -81,7 +81,7 @@
     var root = document.createElement('div');
     root.className = 'rz-modal';
     root.innerHTML =
-      '<div class="rz-modal__panel ' + (opts.wide ? 'rz-modal__panel--wide' : '') + '">' +
+      '<div data-lq-material="raised" class="rz-modal__panel ' + (opts.wide ? 'rz-modal__panel--wide' : '') + '">' +
       '<div class="rz-modal__head"><h3>' + esc(opts.title || '') + '</h3>' +
       '<button type="button" class="rz-modal__close" aria-label="关闭">&times;</button></div>' +
       '<div class="rz-modal__body"></div>' +

@@ -1,0 +1,30 @@
+/* Selection is a native button beside management actions, never their parent. */
+.semester-select {
+    appearance: none;
+    display: block;
+    min-width: 0;
+    min-height: 44px;
+    padding: var(--ls-s-2);
+    margin: calc(-1 * var(--ls-s-2));
+    border: 0;
+    border-radius: var(--ls-r-md);
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.semester-select:focus-visible {
+    outline: 2px solid hsl(var(--ls-ring));
+    outline-offset: 2px;
+}
+
+.semester-select-dates { display: block; margin-top: var(--ls-s-1); color: hsl(var(--ls-ink-2)); font-size: var(--text-sm); }
+.semester-layout .academic-badge.is-success {
+    color: hsl(var(--ls-tone-success-fg));
+    background: hsl(var(--ls-tone-success-soft));
+}
+.semester-layout .academic-badge.is-accent {
+    color: hsl(var(--ls-tone-warning-fg));
+    background: hsl(var(--ls-tone-warning-soft));
+}

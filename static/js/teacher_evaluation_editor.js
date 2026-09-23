@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { showToast, escapeHtml } from './ui.js';
+import { getLayerSystem } from './lq/layer.js';
 import { enhancePromptPoolInput, isPromptShareEnabled } from './prompt_pool.js';
 import {
     closePendingPreviewWindow,
@@ -391,7 +392,7 @@ function ensureRewriteModal() {
     modal.className = 'te-ai-modal-backdrop';
     modal.hidden = true;
     modal.innerHTML = `
-        <section class="te-ai-modal" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">
+        <section class="te-ai-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">
             <header class="te-ai-modal__header">
                 <div>
                     <p>分析建议重写</p>
@@ -427,26 +428,26 @@ function ensureRewriteModal() {
     return modal;
 }
 
+let rewriteLayer = null;
+
 function openRewriteModal() {
     if (state.saving || state.analysisRewriting) return;
     const modal = ensureRewriteModal();
-    modal.hidden = false;
-    document.body.style.overflow = 'hidden';
-    requestAnimationFrame(() => {
-        modal.classList.add('is-open');
-        modal.querySelector('#te-ai-rewrite-prompt')?.focus();
+    if (rewriteLayer && !['closed', 'destroyed'].includes(rewriteLayer.state)) return;
+    modal.classList.add('is-open');
+    const release = () => { modal.classList.remove('is-open'); rewriteLayer = null; };
+    rewriteLayer = getLayerSystem().open(modal, {
+        type: 'modal', surface: modal.querySelector('.te-ai-modal'),
+        trigger: document.getElementById('te-analysis-rewrite'),
+        initialFocus: () => modal.querySelector('#te-ai-rewrite-prompt'),
+        beforeClose: () => !state.analysisRewriting,
+        onClose: release, onDestroy: release,
     });
 }
 
 function closeRewriteModal() {
     if (state.analysisRewriting) return;
-    const modal = document.getElementById('te-ai-rewrite-modal');
-    if (!modal) return;
-    modal.classList.remove('is-open');
-    document.body.style.overflow = '';
-    setTimeout(() => {
-        if (!modal.classList.contains('is-open')) modal.hidden = true;
-    }, 180);
+    if (rewriteLayer) void getLayerSystem().close(rewriteLayer, 'button');
 }
 
 function setAnalysisRewriteLoading(active) {
@@ -570,7 +571,6 @@ function bindEvents() {
     document.getElementById('te-analysis-rewrite').addEventListener('click', openRewriteModal);
 
     window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeRewriteModal();
         if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveContent(); }
     });
     window.addEventListener('beforeunload', (e) => {
