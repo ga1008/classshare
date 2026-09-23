@@ -311,6 +311,64 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class BackdropFrostTests(unittest.TestCase):
+    """The frost is pre-rendered, so the library and its derivatives have to
+    stay in step. They come from the same tool but are committed as separate
+    files, which is exactly the kind of pair that drifts silently: a missing
+    derivative raises nothing, it just leaves panels with no frost at all."""
+
+    def test_every_library_image_has_a_derivative(self):
+        library = ROOT / "static/img/life_tips"
+        manifest = json.loads((library / "manifest.json").read_text(encoding="utf-8"))
+        files = sorted({entry["file"] for entry in manifest["images"]})
+        self.assertTrue(files, "the library must not be empty")
+        missing = [name for name in files
+                   if not (library / "frost" / f"{name.rsplit('.', 1)[0]}.webp").is_file()]
+        self.assertEqual([], missing,
+                         "run: python tools/tips/compress_images.py --frost-only")
+
+    def test_derivatives_are_blurs_rather_than_photographs(self):
+        """Size is the property that matters. A derivative back at photo weight
+        would mean the downscale — which *is* the blur — stopped happening, and
+        every panel would start decoding a full image."""
+        frost = sorted((ROOT / "static/img/life_tips/frost").glob("*.webp"))
+        self.assertTrue(frost)
+        oversized = [path.name for path in frost if path.stat().st_size > 8192]
+        self.assertEqual([], oversized)
+
+    def test_frost_css_is_an_unquoted_url_beside_the_image_it_blurs(self):
+        resolved = svc.resolve_backdrop({"backdrop": "scene", "backdrop_color": "#0a1b2c"}, seed="seed")
+        self.assertEqual(resolved["frost_css"], f"url({resolved['frost']})")
+        self.assertNotIn('"', resolved["frost_css"])
+        self.assertNotIn("'", resolved["frost_css"])
+        self.assertTrue(resolved["frost"].startswith(svc.BACKDROP_FROST_BASE))
+        self.assertTrue((ROOT / resolved["frost"].lstrip("/")).is_file())
+        # Behind the frost is the page itself, so a panel reproduces that base.
+        self.assertEqual(resolved["frost_base"], "hsl(var(--ls-background))")
+
+    def test_turning_the_image_off_leaves_the_chosen_colour_and_no_frost(self):
+        off = svc.resolve_backdrop({"backdrop": "off", "backdrop_color": "#0a1b2c"}, seed="seed")
+        self.assertEqual((off["frost"], off["frost_css"]), (None, "none"))
+        # Not the page background: with no image the panel sits on the colour
+        # the account picked, and dimming it toward the theme would be wrong.
+        self.assertEqual(off["frost_base"], "#0a1b2c")
+
+    def test_the_recipe_replaces_live_blur_and_accessibility_cannot_lose_it(self):
+        css = (ROOT / "static/css/lq/materials.css").read_text(encoding="utf-8")
+        declarations = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        # No material is a blur host any more; that is the whole point.
+        self.assertNotIn("backdrop-filter: blur(", declarations)
+        self.assertIn("--lq-frost-image", declarations)
+        self.assertIn("background-attachment: scroll, scroll, fixed", declarations)
+        # The cancels live in the query, not in a later rule. `:is()` here
+        # carries two attribute selectors and the cancels carry one, so a
+        # reduced-transparency user would have lost the tie and kept the frost.
+        query = re.search(r"@media \(hover: hover\)[^{]*\{", declarations)
+        self.assertIsNotNone(query)
+        self.assertIn("prefers-reduced-transparency: no-preference", query.group(0))
+        self.assertIn("forced-colors: none", query.group(0))
+
+
 class BackdropShellCoverageTests(unittest.TestCase):
     """Every document root has to include the layer. The manage shell does not
     extend base.html, so it was missed once and the backdrop simply never

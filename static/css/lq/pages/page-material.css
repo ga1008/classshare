@@ -60,29 +60,26 @@
 /* ── 顶层面板即材质边界 ──────────────────────────────────────────────────
    页面主面板直接坐在背景层之上，是它们把背景磨成玻璃；内部的行、芯片、按钮
    是嵌套元素，materials.css 的嵌套守卫已经禁止它们再成为宿主，所以这条列表
-   只列"外层面板"，不列其内容。没有这一层，面板只是半透明的白块。 */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    [data-lq-dashboard] .ls-schedule,
-    [data-lq-dashboard] .ls-tools,
-    [data-lq-dashboard] .ls-domains,
-    [data-lq-dashboard] .ls-focus-list,
-    [data-lq-dashboard] .ls-courses,
-    /* The attribute sits on the panel itself, so the descendant form of this
-       selector never matched anything. */
-    [data-lq-calendar],
-    [data-lq-scope="growth"] .pts-panel,
-    /* The card wall's carrier, not the cards: eight cards were eight hosts,
-       and that number follows the data. */
-    [data-lq-scope="growth"] .lq-grid--cards,
-    .lq-messages .message-center-private-panel {
-        /* The photo is legible now, so the frost has something to smear. A thin
-           radius over a washed-out image read as nothing at all. */
-        -webkit-backdrop-filter: blur(var(--ls-blur-regular)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-regular)) saturate(var(--ls-glass-saturate));
-        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                    var(--ls-glass-shadow);
-    }
+   只列"外层面板"，不列其内容。没有这一层，面板只是半透明的白块。
+   这份名单现在住在 materials.css 的霜层配方里：配方只写一次，边界只是它的
+   选择器之一。本层只留这些面板「看起来像面板」的那部分——内外高光边，它与
+   材质无关，也不该逼着页面模块把配方再抄一遍。 */
+[data-lq-dashboard] .ls-schedule,
+[data-lq-dashboard] .ls-tools,
+[data-lq-dashboard] .ls-domains,
+[data-lq-dashboard] .ls-focus-list,
+[data-lq-dashboard] .ls-courses,
+/* The attribute sits on the panel itself, so the descendant form of this
+   selector never matched anything. */
+[data-lq-calendar],
+[data-lq-scope="growth"] .pts-panel,
+/* The card wall's carrier, not the cards: eight cards were eight hosts,
+   and that number follows the data. */
+[data-lq-scope="growth"] .lq-grid--cards,
+.lq-messages .message-center-private-panel {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
 }
 
 /* 嵌套在任一边界之内的任何材质都不得再成为宿主。此前这条只列了三个面板、

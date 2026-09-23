@@ -68,10 +68,26 @@ export function createBackdropLayer(root = document) {
         }
         return library;
     }
-    function paint(file) {
+    function paint(file, color) {
         layer.dataset.lqBackdropImageUrl = file ? layer.dataset.lqBackdropBase + file : '';
         // Only whitelisted library file names reach this property.
         layer.style.setProperty('--lq-backdrop-image', file ? `url(${layer.dataset.lqBackdropBase}${file})` : 'none');
+        paintFrost(file, color);
+    }
+
+    /* The frost pair mirrors the pick onto the document root, where every
+     * material reads it. Preview has to write it too: a panel paints the
+     * pre-blurred slice itself, so a scene the account is still trying out
+     * would otherwise keep frosting the previous image. Derivatives are
+     * always .webp, whatever the source container was. */
+    function paintFrost(file, color) {
+        const root = layer.ownerDocument?.documentElement;
+        if (!root) return;
+        const name = file ? `${file.replace(/\.[^.]+$/, '')}.webp` : '';
+        root.style.setProperty('--lq-frost-image', name ? `url(${layer.dataset.lqBackdropBase}frost/${name})` : 'none');
+        // With no image there is nothing behind the glass but the chosen colour.
+        root.style.setProperty('--lq-frost-base', file ? 'hsl(var(--ls-background))' : color);
+        root.dataset.lqFrost = file ? 'on' : 'off';
     }
     return {
         layer,
@@ -81,11 +97,11 @@ export function createBackdropLayer(root = document) {
             layer.dataset.lqBackdropMode = values.backdrop;
             layer.dataset.lqBackdropColor = values.backdrop_color;
             layer.style.setProperty('--lq-backdrop-color', values.backdrop_color);
-            if (values.backdrop === 'off') { paint(null); return; }
+            if (values.backdrop === 'off') { paint(null, values.backdrop_color); return; }
             void images().then(list => {
                 // A later choice already repainted; a slow manifest never wins.
                 if (disposed || mine !== generation) return;
-                paint(pickBackdropFile(list, { mode: values.backdrop, seed: layer.dataset.lqBackdropSeed || '', label: labelOf(values.backdrop) }));
+                paint(pickBackdropFile(list, { mode: values.backdrop, seed: layer.dataset.lqBackdropSeed || '', label: labelOf(values.backdrop) }), values.backdrop_color);
             });
         },
         dispose() { disposed = true; },

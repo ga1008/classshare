@@ -10,7 +10,9 @@ import { loginStudent, loginTeacher } from '../fixtures/p03';
 //  1) 背景图必须处在 scene 形态 —— 否则玻璃背后是一块纯色，测的是关闭态。
 //     用例开头显式 PATCH /api/profile/ui-preferences（带 X-UI-Preferences-Context
 //     与当前 version），不依赖默认值。
-//  2) 顶层面板确实是材质边界 —— 计算值 backdrop-filter 非 none，且背景色带 alpha。
+//  2) 顶层面板确实是材质边界 —— 画上了预渲染的霜层（background-image 含
+//     /frost/、background-attachment 含 fixed、材质填充带 alpha），且**不是**
+//     模糊宿主。背景层是固定图，模糊每帧重算没有意义。
 //  3) 整页模糊宿主数不超过 BLUR_HOST_CAP（论证见下），且每一个宿主都必须是
 //     "被声明过的顶层面板"，不是页面层随手造出来的。
 //  4) 正文与次级文字 axe 无 serious/critical（扫描前先等入场动画结束）。
@@ -34,10 +36,15 @@ function record(name: string, payload: unknown) {
 // 3 + 13 = 16，与 S8 PAGE 包 (lq-s8-page-material.spec.ts) 已经论证并落地的预算
 // 一致；超过它只可能是嵌套材质没被压平，或页面层新造了宿主。
 //
-// 本包的施工判据比这条更严：**只有结构固定、数量不随数据增长的外层面板才做宿主**。
-// 由模板循环产出的块（统计小卡、课程卡、错题条目、通知行、成就徽章）只取材质
-// 填充与高光边，不做宿主——它们的数量由数据决定，没有上界。
-const BLUR_HOST_CAP = 16;
+// 这条论证现在只剩历史意义：面板的玻璃改由预渲染霜层贴图承担，不再有宿主，所以
+// 预算不再是「一屏放得下几块面板」，而是「还有谁在用实时模糊」。
+//
+// 实测（12 个场景 × 明暗 × 1440/390）：视口内宿主最多 2 个，多数页面为 0。剩下的
+// 只有外壳与短暂浮层：顶栏 1 + 窄屏底部 Dock 1 + 至多一个浮层 = 3。对话框、灯箱、
+// toast 这类**短暂**浮层仍用实时模糊——它们盖的是页面内容而不是背景图，静态贴图
+// 在那里是错的，而且同时至多一两个。
+// 超过 3 就说明某个常驻面板又自己造了宿主，也就是这次改造要消除的那类重绘。
+const BLUR_HOST_CAP = 3;
 
 // 允许成为模糊宿主的元素：组件材质类 + 本包/主任务在 page-material.css 里声明的
 // 顶层面板。任何不在这份清单里的模糊宿主都是页面层新造的，属于违规。
@@ -158,11 +165,18 @@ async function measure(
         || (style as unknown as { webkitBackdropFilter?: string }).webkitBackdropFilter || 'none';
     };
 
-    let panel: { selector: string; background: string; backdrop: string } | null = null;
+    let panel: {
+      selector: string; background: string; backdrop: string;
+      image: string; attachment: string;
+    } | null = null;
     for (const selector of selectors) {
       const node = document.querySelector(selector);
       if (!node) continue;
-      panel = { selector, background: getComputedStyle(node).backgroundColor, backdrop: filterOf(node) };
+      const style = getComputedStyle(node);
+      panel = {
+        selector, background: style.backgroundColor, backdrop: filterOf(node),
+        image: style.backgroundImage, attachment: style.backgroundAttachment,
+      };
       break;
     }
 
@@ -305,12 +319,23 @@ for (const scenario of CASES) {
           expect.soft(data.backdropImage ?? '', `${scenario.id} ${scheme} ${width}: 背景图为空`).toContain('url(');
         }
 
-        // 2) 顶层面板是材质边界
+        // 2) 顶层面板是材质边界——现在靠静态霜层，不再靠 backdrop-filter。
+        //
+        // 背景层是固定的、来自随程序发布的图库，同一张图、同一种模糊，每帧重算
+        // 毫无意义；首页曾因此背着六个 16px 宿主铺满 88% 视口。面板改为直接画
+        // 它身后那一块预渲染的模糊图（background-attachment: fixed 让这一层按
+        // 视口定位，与背景层对齐）。所以判据反过来了：**必须不是模糊宿主**，
+        // 而且必须真的画上了霜层。
         expect.soft(data.panel, `${scenario.id} ${scheme} ${width}: 没有找到顶层面板`).not.toBeNull();
         expect.soft(data.panel?.backdrop ?? 'none',
-          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 不是模糊宿主`).not.toBe('none');
-        expect.soft(alpha ?? 1,
-          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 背景 ${data.panel?.background} 不带 alpha`).toBeLessThan(1);
+          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 仍是模糊宿主`).toBe('none');
+        expect.soft(data.panel?.image ?? '',
+          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 没有画上霜层`).toContain('/frost/');
+        expect.soft(data.panel?.attachment ?? '',
+          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 霜层没有按视口定位`).toContain('fixed');
+        // 材质填充仍然半透明：霜层之上压的是材质自己的底色，那一层必须透。
+        expect.soft(alphaOf((data.panel?.image.match(/rgba?\([^)]*\)/) ?? ['rgb(0,0,0)'])[0]) ?? 1,
+          `${scenario.id} ${scheme} ${width} ${data.panel?.selector} 材质填充 ${data.panel?.image.slice(0, 60)} 不带 alpha`).toBeLessThan(1);
 
         // 3) 宿主只能来自被声明的顶层面板，视口内数量有上界，且该压平的必须压平
         expect.soft(stray, `${scenario.id} ${scheme} ${width}: 出现了未声明的模糊宿主`).toEqual([]);

@@ -250,14 +250,10 @@
     border: 1px solid hsl(var(--ls-line));
 }
 
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .lq-messages .message-center-feed {
-        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                    var(--ls-glass-shadow);
-    }
+.lq-messages .message-center-feed {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
 }
 
 /* 嵌套守卫。私信面板不带材质类，materials.css 的「材质套材质」守卫够不着它，

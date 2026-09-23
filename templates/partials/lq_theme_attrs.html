@@ -1,6 +1,13 @@
-{# Explicit entry points: root owns the theme; body retains account metadata. #}
+{# Explicit entry points: root owns the theme; body retains account metadata.
+
+   The frost pair lives on root rather than on the backdrop element because
+   every material in the document reads it: a panel paints the pre-blurred
+   backdrop slice itself instead of running a live backdrop-filter. Both values
+   come from the service whitelists (a library file name, a six-digit hex), so
+   this stays a pure custom-property write with nothing to escape. #}
 {% macro root_attrs(preferences) -%}
-data-ui-palette="{{ preferences.palette_key|default('indigo') }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-appearance="{{ 'dark' if preferences.appearance|default('auto') == 'dark' else 'light' }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-lq-glass="off" data-lq-tier="C"
+{%- set scene = preferences.backdrop_scene|default(none) -%}
+data-ui-palette="{{ preferences.palette_key|default('indigo') }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-appearance="{{ 'dark' if preferences.appearance|default('auto') == 'dark' else 'light' }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-lq-glass="off" data-lq-tier="C"{% if scene %} data-lq-frost="{{ 'on' if scene.frost else 'off' }}" style="--lq-frost-image: {{ scene.frost_css }}; --lq-frost-base: {{ scene.frost_base }}"{% endif %}
 {%- endmacro %}
 
 {% macro body_attrs(preferences) -%}

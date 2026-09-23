@@ -31,6 +31,9 @@ MAX_PREFERENCE_VERSION = 2147483646
 
 # The page backdrop reuses the login library; the account never supplies files.
 BACKDROP_LIBRARY_BASE = "/static/img/life_tips/"
+# 霜层副本：同名的预模糊小图，由 tools/tips/compress_images.py 与背景图同批产出。
+# 全站毛玻璃面板拿它当静态贴图，替掉每帧重算的 backdrop-filter。
+BACKDROP_FROST_BASE = BACKDROP_LIBRARY_BASE + "frost/"
 BACKDROP_MANIFEST = Path(__file__).resolve().parents[2] / "static" / "img" / "life_tips" / "manifest.json"
 BACKDROP_CATEGORIES = (
     ("academic-rules", "学业规则"),
@@ -209,7 +212,8 @@ def _stable_index(seed: str, size: int) -> int:
     return digest % size
 
 
-def backdrop_image_for(mode: str, seed: str) -> str | None:
+def backdrop_file_for(mode: str, seed: str) -> str | None:
+    """The library key alone; the callers below turn it into the two URLs."""
     if mode not in BACKDROP_MODES or mode == "off":
         return None
     label = BACKDROP_CATEGORY_LABELS.get(mode)
@@ -219,7 +223,12 @@ def backdrop_image_for(mode: str, seed: str) -> str | None:
         pool = [file for file, _ in library]
     if not pool:
         return None
-    return BACKDROP_LIBRARY_BASE + pool[_stable_index(f"{seed}|{mode}", len(pool))]
+    return pool[_stable_index(f"{seed}|{mode}", len(pool))]
+
+
+def backdrop_image_for(mode: str, seed: str) -> str | None:
+    file = backdrop_file_for(mode, seed)
+    return BACKDROP_LIBRARY_BASE + file if file else None
 
 
 def backdrop_seed(role: str, user_pk: int, today: date | None = None) -> str:
@@ -231,15 +240,26 @@ def backdrop_seed(role: str, user_pk: int, today: date | None = None) -> str:
 def resolve_backdrop(preferences: Mapping[str, Any], *, seed: str) -> dict[str, Any]:
     mode = preferences.get("backdrop") if preferences.get("backdrop") in BACKDROP_MODES else DEFAULT_BACKDROP
     color = preferences.get("backdrop_color") if preferences.get("backdrop_color") in HEX_COLOR else DEFAULT_BACKDROP_COLOR
-    image = backdrop_image_for(mode, seed)
+    file = backdrop_file_for(mode, seed)
+    image = BACKDROP_LIBRARY_BASE + file if file else None
+    frost = BACKDROP_FROST_BASE + f"{file.rsplit('.', 1)[0]}.webp" if file else None
     return {
         "mode": mode,
         "color": color,
         "seed": seed,
         "image": image,
+        "frost": frost,
         # Only whitelisted library file names reach this value, so the url()
         # needs no quoting and the template stays a pure custom-property write.
         "image_css": f"url({image})" if image else "none",
+        # The same pick, pre-blurred. Panels paint this instead of running a
+        # live backdrop-filter, so the frost costs a texture rather than a
+        # re-blur of the page on every paint.
+        "frost_css": f"url({frost})" if frost else "none",
+        # Behind the frost sits the page itself — or, with the image off, the
+        # solid colour the account chose. A panel has to reproduce that base,
+        # because its own fill paints over the backdrop layer.
+        "frost_base": color if mode == "off" else "hsl(var(--ls-background))",
         "manifest": BACKDROP_LIBRARY_BASE + "manifest.json",
         "base": BACKDROP_LIBRARY_BASE,
         "categories": [{"key": f"scene-{key}", "name": name} for key, name in BACKDROP_CATEGORIES],

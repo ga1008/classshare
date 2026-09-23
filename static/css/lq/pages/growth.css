@@ -258,15 +258,13 @@
    取填充与描边（本文件上半部分已经这么写），只是不做模糊宿主：模糊预算必须由版式
    决定，一旦跟着数据走就不可论证。高光边本来就是「读起来像玻璃」的那一半，没有
    模糊它们照样是材质。 */
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    [data-lq-scope="growth"] .path-focus-card,
-    [data-lq-scope="growth"] .wrongbook-panel {
-        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                    var(--ls-glass-shadow);
-    }
+/* 玻璃由 materials.css 的霜层配方提供（这两个面板已登记在它的边界清单里）。
+   这里只留高光边——它是面板的轮廓，不是材质。 */
+[data-lq-scope="growth"] .path-focus-card,
+[data-lq-scope="growth"] .wrongbook-panel {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
 }
 
 /* 嵌套守卫。这些宿主自己不带材质类，materials.css 的「材质套材质」守卫够不着，
@@ -363,17 +361,13 @@
     background: hsl(var(--lq-page-content));
 }
 
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    [data-lq-scope="growth"] .path-toolbar,
-    [data-lq-scope="growth"] .path-ladder,
-    [data-lq-scope="growth"] .path-course-board,
-    [data-lq-scope="growth"] .review-toolbar {
-        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                    var(--ls-glass-shadow);
-    }
+[data-lq-scope="growth"] .path-toolbar,
+[data-lq-scope="growth"] .path-ladder,
+[data-lq-scope="growth"] .path-course-board,
+[data-lq-scope="growth"] .review-toolbar {
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
 }
 
 /* 面板内部一律压平，含刚补成面板的这几个分区。 */
@@ -404,19 +398,17 @@
                 inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom));
 }
 
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    [data-lq-scope="growth"] .path-card-list,
-    [data-lq-scope="growth"] .review-card-list {
-        padding: var(--ls-s-3);
-        border: 1px solid hsl(var(--ls-line));
-        border-radius: var(--ls-r-lg);
-        background: hsl(var(--lq-page-content));
-        -webkit-backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        backdrop-filter: blur(var(--ls-blur-thin)) saturate(var(--ls-glass-saturate));
-        box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                    inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                    var(--ls-glass-shadow);
-    }
+[data-lq-scope="growth"] .path-card-list,
+[data-lq-scope="growth"] .review-card-list {
+    padding: var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    /* 这条 background 是霜层不生效时的退路（窄屏、降低透明度、强制配色）：
+       配方赢不了的场合，面板仍要有自己的底。 */
+    background: hsl(var(--lq-page-content));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
 }
 
 [data-lq-scope="growth"] :is(.path-card-list, .review-card-list)

@@ -314,8 +314,12 @@
 /* ==== 文字底衬改磨砂玻璃（2026-07-24）：径向蒙版渐隐，亮图无硬边 ==== */
 .life-tip-stage::before {
     inset: -55% -35%;
-    background: rgba(2, 6, 23, 0.16);
-    backdrop-filter: blur(16px) brightness(0.86) saturate(1.02);
+    /* 这一层不再自带模糊。它是 .life-tip-stage 的子层，而 stage 本身已经是
+       26px 的模糊宿主——套在宿主里的宿主看到的本就是磨过的底，再磨一次只多
+       一个合成层。何况下面把它改成了 100vw 宽、184% 高，比视口还大：开屏动画
+       正在跑 opacity 时同时重绘两层超视口模糊，正是「开屏乱闪」的来源。原来
+       靠 brightness(0.86) 压出来的暗度，由加深的暗底接替。 */
+    background: rgba(2, 6, 23, 0.24);
     -webkit-mask-image: radial-gradient(50% 50% at 50% 50%, #000 22%, rgba(0, 0, 0, 0.55) 55%, transparent 82%);
     mask-image: radial-gradient(50% 50% at 50% 50%, #000 22%, rgba(0, 0, 0, 0.55) 55%, transparent 82%);
 }
