@@ -32,7 +32,7 @@
 
 后端全量两次最终复跑均执行 3797 项：3591 通过、205 跳过、1 个 Windows 专属 ACP 并发启动测试错误（`ACP stdout closed`）。同文件独立两种 Python 入口均 8/8；完整 discovery 后保留前序执行顺序的 294 项通过，追加复核合计 390 项通过。没有足够证据确定偶发错误根因，未修改生产进程安全代码、放宽断言或把全量报告改成全绿。线上 Linux 不执行该 Windows 专属用例。LQ 后端专项 193 项、偏好专项 54 项（7 skip）通过，教师后端 86 项及考试版本 4 项通过。
 
-线上发布结果在发布收口时补录。运行日志与截图位于 `.codex-temp`，不随业务代码上传。
+运行日志与截图位于 `.codex-temp`，不随业务代码上传。
 
 ## 验证边界
 
@@ -41,3 +41,19 @@
 ## 发布约束
 
 使用当前源码匹配的原生 PostgreSQL 演练报告与 dump，先 DryRun，再由规范脚本停写、备份、构建和恢复服务。保留 `/lanshare/data`、提交/草稿、运行时配置与登录状态。发布后核对公开和容器 release、完整资源图、关键资源字节及缓存仅清理 HTTP cache 一次。
+
+## 线上发布结果
+
+- 产品提交：`64b34150758e079bbd9b590a24c68ecd6d23d9be`。
+- 正式版本：`20260923-150344-1821ec213164`；公开 Nginx 与容器 health 的 release 一致，`DEPLOY_DONE`，8 个 Compose 服务均 running，带健康探针的 6 个服务均 healthy。
+- 本地/容器/公开资源图一致：`aea25996cc6fae62ccfaaaa55a85294510454051633811cc8869e2d5324c723b`，438 个文件，11972542 bytes。59 个改动源码逐字节匹配；公开下载 10 个关键构建资源与本地产物 SHA256 全部匹配。
+- 公开学生登录页 HTTP 200、加载本次共享登录材质；无登录态时按原契约保留欢迎页背景。首次 HTML `Clear-Site-Data: "cache"`，同会话第二次不再发送；未清理 cookies/storage。
+- 主服务、AI 均 `status=ok`；AI `grading_queue.pending=0`。近期日志 `NO_RECENT_ERROR_LOGS`。
+- 后台聚合仍 `ok=false`，由保留的 719 条失败记录触发。14:57、15:05、15:09 三个快照计数相同；11 类当前状态均 ok，stale=0，running=0，排队 26 项来自定时任务，未删除历史来改变健康结果。
+- 最终停写数据库备份：`/tmp/lanshare-deploy-backups/db-cutover-20260923-150355.sql.gz`；代码备份：`code-20260923-150355.tgz`；保留脚本当前默认最近 2 组。
+
+首轮发布发现服务器保留 48 个 Git 历史中已删除的前端文件（27 个静态源码、4 个模板、17 个前端源码），被构建扫描器重新计入，导致线上图与本地不一致。逐文件核对本地缺失及历史删除提交（`31cfbb6c`、`2ac3c9fb`、`987670cf`、`2a633c4f`、`9f1a3ed0`、`744c6db8`），限定在 `static/css`、`static/js`、`templates`、`frontend/src`，验证解析路径无符号链接且位于 `/lanshare` 内后处理。先归档并逐字节验证，再删除确切 48 个文件并完整重新部署；不操作运行时数据。
+
+遗留源码备份：`/tmp/lanshare-deploy-backups/retired-sources-20260923-1500.tgz`，SHA256 `c8956ab074bccd98e4f84e604d30ee782fb0d7f15239fc61a913b656eac9728a`。该操作补齐本次发布的已删除文件一致性，未将部署脚本冒称为会自动同步所有未来删除。
+
+证据：`.codex-temp/glass-unified-deploy-final.log`、`glass-unified-postflight.json`、`glass-unified-services.json`、`glass-stale-source-audit.json`。产品源码与验证后的本地产物保持一致；后续文档提交仅记录发布事实。
