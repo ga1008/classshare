@@ -92,9 +92,10 @@
                 var(--ls-glass-shadow);
 }
 
-/* 但在宿主面板里，它既不该有底，也不该有高光边——那是外层面板的活。 */
+/* The host owns the panel, including its opaque accessibility fallback.
+   An embedded calendar is layout, so the material cascade must not repaint it. */
 .ls-calendar-host [data-lq-calendar][data-semester-calendar-root].lq-surface.semester-calendar-panel {
-    background: transparent;
+    background: transparent !important;
     box-shadow: none;
 }
 

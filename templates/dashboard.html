@@ -58,7 +58,7 @@
         <section class="ls-focus{% if user_info.role == 'student' %} ls-focus--student{% endif %}" aria-labelledby="ls-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
             <div class="ls-section-head"><h2 id="ls-focus-title">需要处理</h2><button type="button" class="ls-button" data-agenda-add-todo>＋ 新增待办</button></div>
             {% set focus_items = workspace.attention_items|default([]) if user_info.role == 'student' else workspace.focus_items|default([]) %}
-            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}" data-lq-material="content">
+            {% if focus_items %}<ul class="ls-focus-list">
                 {% for item in focus_items %}
                 {% set source = item.agenda_data|default({}) %}
                 <li class="ls-focus-item{% if loop.first %} is-primary{% endif %}">

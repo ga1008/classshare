@@ -35,6 +35,8 @@
 
 重复数据列表把材质放在承载区；不能在每条数据上创建新的模糊边界。浮动菜单交给共享 layer 移出祖先的过滤/裁剪上下文。直接使用 `data-lq-interactive` 的可操作材质遵守统一 hover、press、focus；禁用态不抬升，触屏不保留悬停光晕。
 
+布局容器不等于材质表面：已有面板内的按钮排版层、卡片列表、卡片正文和页脚不再添加 `lq-surface`、`lq-list` 或 `data-lq-material`。桌面顶栏的 inline pane 保持透明，打开手机抽屉时才由共享 Shell 控制器添加玻璃；侧边栏材质放在内部圆角表面，SSR 与增强后的所有者一致。响应式折叠区的桌面展开形态、弹窗内嵌日历明确使用外层面板，关闭玻璃及低能力退路也不能给布局壳重新填色。高对比模式仍保留日历的辅助轮廓。
+
 ## 背景与性能
 
 所有 8 个用户文档根共用 `partials/lq_page_backdrop.html` 和 `page_backdrop.js`，每页只出现一次。背景复用开屏欢迎页图库与账号偏好，固定铺满视口，`cover` 保持比例并居中裁切。登录、欢迎和页面保持同一视口裁切；欢迎结束时全屏清晰图淡出，露出同一张图的高斯背景，绝不收缩到顶栏。
@@ -52,6 +54,7 @@
 全模板根/继承/消费者表见 `lq-route-audit-2026-09-23.md`。静态覆盖、浏览器行为与业务验收分开记录；旧迁移注册表的历史状态不自动升级为“全部验收”。
 
 - 共享边界：`tests/e2e/components/lq-material-boundaries.spec.ts`。
+- 布局壳不重复填色、SSR/React 一致、抽屉切换与降级：`tests/e2e/components/lq-layout-surfaces.spec.ts`。
 - 按住首帧/键盘/六色明暗/加载文字：`tests/e2e/components/lq-control-states.spec.ts`。
 - 欢迎全屏交接/具体图保存/账号隔离：`tests/e2e/specs/lq-background.spec.ts`。
 - 师生登录实际照片、像素对比和认证退路：`tests/e2e/components/lq-centered.spec.ts`。

@@ -13,7 +13,7 @@
     <button type="button" class="lq-shell-pane__trigger" data-lq-pane-open="actions" aria-controls="{{ navbar_shell_id }}--lq-actions" aria-expanded="false">更多</button>
     <dialog id="{{ navbar_shell_id }}--lq-actions" class="lq-shell-pane lq-topbar__overflow" data-lq-pane="actions" data-lq-pane-label="更多操作" aria-label="更多操作" open>
         <div class="lq-shell-pane__scrim" data-lq-pane-close aria-hidden="true"></div>
-        <section class="lq-shell-pane__surface lq-surface" aria-label="更多操作">
+        <section class="lq-shell-pane__surface" aria-label="更多操作">
             <header class="lq-shell-pane__head"><strong>更多操作</strong><button type="button" class="lq-shell-pane__close" data-lq-pane-close aria-label="关闭更多操作">{{ lq_icon('x') }}</button></header>
             <div class="lq-topbar__actions">
                 {% if navbar_shell_actions|default('')|trim %}<div class="lq-navbar-context-actions">{{ navbar_shell_actions }}</div>{% endif %}

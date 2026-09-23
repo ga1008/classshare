@@ -67,7 +67,7 @@
 [data-lq-dashboard] .ls-schedule,
 [data-lq-dashboard] .ls-tools,
 [data-lq-dashboard] .ls-domains,
-[data-lq-dashboard] .ls-focus-list,
+[data-lq-dashboard] .ls-focus,
 [data-lq-dashboard] .ls-courses,
 /* The attribute sits on the panel itself, so the descendant form of this
    selector never matched anything. */
@@ -88,7 +88,7 @@
 :is([data-lq-dashboard] .ls-schedule,
     [data-lq-dashboard] .ls-tools,
     [data-lq-dashboard] .ls-domains,
-    [data-lq-dashboard] .ls-focus-list,
+    [data-lq-dashboard] .ls-focus,
     [data-lq-dashboard] .ls-courses,
     [data-lq-scope="growth"] .pts-panel,
     [data-lq-scope="growth"] .lq-grid--cards,

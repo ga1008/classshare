@@ -80,6 +80,8 @@ export function shellProps(kind, p = {}) {
     Object.assign(a, { class: `lq-topbar lq-topbar--${variant} lq-glass lq-scroll-edge`, 'data-lq-lock-nav': String(flag(p, 'lockNav')), 'data-lq-view-transition': String(flag(p, 'viewTransition')) });
     const lead = [slot('lead')]; if (p.back != null) { const back = items([p.back])[0]; if (!back.href) throw new TypeError('Back navigation needs an href'); lead.unshift(itemTree(back)); }
     const panel = pane(id, 'actions', '更多操作', 'more'); panel.tag = 'dialog'; Object.assign(panel.attrs, { class: 'lq-shell-pane lq-topbar__overflow', open: '', 'aria-label': '更多操作' });
+    // Inline actions share the topbar's glass. Only an open drawer owns a surface.
+    panel.children[1].attrs.class = 'lq-shell-pane__surface';
     panel.children[1].children[1] = node('div', { class: 'lq-topbar__actions' }, [...list.map(item => action(item)), ...(p.primary == null ? [] : [action(items([p.primary])[0], true)]), slot('more')]);
     return node('header', a, [node('div', { class: 'lq-topbar__lead' }, lead), node('div', { class: 'lq-topbar__title' }, [node('h1', {}, [text(p.title, true)]), slot('status')]), trigger(id, 'actions', '更多'), panel]);
   }

@@ -380,7 +380,7 @@
     :is([data-lq-material="content"],
         .lq-surface:not(.lq-glass, .lq-toast, .lq-tooltip), .lq-surface--frost, .lq-surface--boundary,
         [data-lq-dashboard] .ls-schedule, [data-lq-dashboard] .ls-tools,
-        [data-lq-dashboard] .ls-domains, [data-lq-dashboard] .ls-focus-list,
+        [data-lq-dashboard] .ls-domains, [data-lq-dashboard] .ls-focus,
         [data-lq-dashboard] .ls-courses, [data-lq-calendar],
         [data-lq-scope="growth"] .pts-panel, [data-lq-scope="growth"] .lq-grid--cards,
         [data-lq-scope="growth"] .path-focus-card, [data-lq-scope="growth"] .wrongbook-panel,

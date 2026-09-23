@@ -70,7 +70,7 @@
                 </div>
             </div>
             {% set focus_items = inbox['items']|default([]) %}
-            {% if focus_items %}<ul class="ls-focus-list{% if lq_family_enabled('dashboard') %} lq-list{% endif %}" data-lq-material="content">
+            {% if focus_items %}<ul class="ls-focus-list">
                 {% for item in focus_items %}
                 {% set source = item.agenda_data|default({}) %}
                 <li class="ls-focus-item{% if loop.first %} is-primary{% endif %}">

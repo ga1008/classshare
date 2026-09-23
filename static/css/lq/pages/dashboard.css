@@ -20,14 +20,8 @@
     display: contents;
 }
 
-/* -- 需要处理: agenda list --------------------------------------------
-   列表根同时带 `lq-list`（dashboard.html / dashboard_teacher.html），几何、描边、
-   overflow 都由组件给足，这里原先是逐条重复，已删。只剩材质一项：组件里的
-   `.lq-list` 至今仍是不透明 surface-1（components/content.css，不属本包），
-   已在报告里交给主任务收口；在那之前由这条把它拉回内容级玻璃。 */
-[data-lq-dashboard] .ls-focus-list {
-    background: hsl(var(--lq-page-content));
-}
+/* Agenda lists only arrange rows/cards. The enclosing .ls-focus owns the
+   panel material, so the list must not paint a second rectangular backing. */
 [data-lq-dashboard] .ls-focus-item {
     display: flex;
     flex-wrap: wrap;
@@ -169,9 +163,11 @@
     [data-lq-dashboard] > :is(.ls-courses, .ls-domains)[data-lq-material="content"] {
         padding: var(--ls-s-6);
     }
-    [data-lq-dashboard] .lq-collapsible {
+    :root [data-lq-dashboard] .lq-collapsible.lq-surface {
         border: none;
-        background: none;
+        /* This responsive presentation is layout inside an existing panel,
+           including when the shared material fallback requests opaque glass. */
+        background: none !important;
         box-shadow: none;
     }
 }
@@ -190,7 +186,7 @@
    按选择器声明的、自己不带材质类，守卫够不着——实测 /dashboard 上
    `details.lq-collapsible.lq-surface` 因此成了面板里的第二个模糊宿主。
    嵌套材质一律压平，这里把守卫补齐。 */
-[data-lq-dashboard] :is(.ls-schedule, .ls-tools, .ls-domains, .ls-focus-list, .ls-courses)
+[data-lq-dashboard] :is(.ls-schedule, .ls-tools, .ls-domains, .ls-focus, .ls-courses)
     :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;

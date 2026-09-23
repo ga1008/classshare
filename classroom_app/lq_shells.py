@@ -193,6 +193,8 @@ def lq_shell_props(component, **p):
         panel = _pane(identity, 'actions', '更多操作', 'more')
         panel['tag'] = 'dialog'
         panel['attrs'].update({'class': 'lq-shell-pane lq-topbar__overflow', 'open': '', 'aria-label': '更多操作'})
+        # Inline actions share the topbar material; enhancement adds drawer glass.
+        panel['children'][1]['attrs']['class'] = 'lq-shell-pane__surface'
         panel['children'][1]['children'][1] = _node('div', {'class': 'lq-topbar__actions'}, [_action(item) for item in actions] + ([_action(_items([p['primary']])[0], True)] if p.get('primary') is not None else []) + [_slot('more')])
         return _node('header', a, [_node('div', {'class': 'lq-topbar__lead'}, lead), _node('div', {'class': 'lq-topbar__title'}, [_node('h1', {}, [_text(p.get('title'), True)]), _slot('status')]), _trigger(identity, 'actions', '更多'), panel])
     if component == 'sidebar':

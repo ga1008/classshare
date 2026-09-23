@@ -61579,12 +61579,11 @@ body.ls-lightbox-open { overflow: hidden; }
         --profile-card-border: hsl(var(--ls-line));
     }
     :root[data-appearance="dark"] :is(.lanshare-surface, .lanshare-page-band, .card, .panel, .status-card,
-        .navbar, .manage-topbar, .manage-sidebar, .manage-rail, .modal-content, .modal-box,
+        .navbar, .manage-topbar, .manage-sidebar:not(.lq-manage-sidebar), .manage-rail, .modal-content, .modal-box,
         .modal-header, .modal-body, .modal-footer, .profile-hero, .profile-section, .profile-card,
         .dashboard-hero, .dashboard-panel, .dashboard-card, .workspace-hero-main, .workspace-hero-aside,
         .learning-overview-panel, .discussion-room, .chat-composer-shell, .classroom-private-panel,
-        .assignment-card-unified, .assignment-card-unified .card-body, .assignment-card-top,
-        .assignment-time-strip, .assignment-card-feedback-preview, .assignment-card-footer) {
+        .assignment-card-unified, .assignment-time-strip, .assignment-card-feedback-preview) {
         background: hsl(var(--ls-surface-1));
         color: hsl(var(--ls-ink));
         border-color: hsl(var(--ls-line));
