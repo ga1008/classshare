@@ -33,11 +33,22 @@
 - API（`routers/manage_parts/schedule_editor.py`，前缀 `/api/manage/academic/course-schedule/editor`）：`GET` 编辑载荷、`POST /drafts`、`DELETE /drafts/{id}`、`POST /push`、`POST /drafts/{id}/withdraw`、`GET /rooms`。
 - 周表现在透传 `teaching_class_id`/`teaching_class_name`；学术总览的重复警告文案去重（修复「申请已通过…」三连显示）。
 
+## 可调时段（2026-09-25 第二轮，教务停机期间按正方经验实现，接口待联调）
+
+问题：调整时间/教室可能与其他老师的课、学生的课冲突，教务保存时才报错，反复试错效率低。
+
+- 数据层（`db/schema_schedule_availability.py`，运行时建表）：`academic_class_timetable_slots`（行政班/教学班整学期课表段）、`academic_room_timetable_slots`（教室课表段）、`academic_room_slot_checks`（按 周/星期/节次 的教室占用结论缓存）、`academic_availability_sync_state`。草稿表新增 `room_status`、`availability_json`。
+- 判定（`services/schedule_availability_service.py`）：`build_lesson_availability` 把 学生课表（教学班 → 名单表 `admin_class_code` 推出行政班 → 行政班课表，自动剔除该课次本身）、本人课表（总览）、教室占用（课表或逐时段查空结论）合成紧凑忙碌表；`check_slot` 四级结论 `block`（学生/本人有课，禁止）> `room`（学生有空但教室被占，允许但需换教室）> `unknown`（教室未查）> `ok`。`save_draft` 对学生有课直接 409，教室被占则保存并标记 `room_status=busy`。
+- 教务适配（`services/academic_availability_sync_service.py`）：**候选路径按序探测**、首个返回 `kbList` JSON 的生效并记入 `sources`；可用环境变量 `LANSHARE_ZF_CLASS_TIMETABLE_PATHS` / `LANSHARE_ZF_ROOM_TIMETABLE_PATHS` 覆盖。班级课表沿用教师课表的 `xszd[...]`+`kzlx=ck` 表单并附 `bj_id`；教室课表附 `cd_id`。全部候选未响应 → 状态 `endpoint_unverified`（界面提示“接口待联调”），不影响其他功能。二次搜索 `search_free_rooms` 复用现有空闲教室查询（`cdjy_cxKxcdlb`），并把原教室在该时段的结论写入缓存。
+- API：`GET editor/availability?event_key`、`POST editor/availability/sync`、`GET editor/free-rooms?week&weekday&sections&room_id`。`教室查询` 页的实时查空接口异常改为 502 可读提示（原为 500）。
+- 界面：选中/拖动课次即叠加热力层（红斜纹=学生/本人有课禁放，琥珀=教室已占用需换教室，绿=可放，灰=教室未查）+ 图例与覆盖说明；左侧周列表显示每周“N 可放”（学生与本人都有空的时段数）；放到琥珀格自动保存并弹出该时段空闲教室二次搜索，选中即换教室；抽屉内实时显示当前周/星期/节次的结论与「查询空闲教室」；变更清单显示教室状态与教务冲突明细；顶栏「同步可调时段」显示同步状态与时间。
+- 联调清单（教务恢复后）：① 班级课表查询真实路径与 `bj_id` 参数名；② 教室课表查询是否存在；③ `ttksq_cxConflictCtzt` 返回的 `ctxxList`/`conflictXs` 字段名（前端按 kcmc/jxbmc/jsxm/xm/cdmc 友好展示，其余原样列出）。
+
 ## 逆向依据
 
 教务 `index_ttksq.js`（`showSqView` 的「保存草稿」回调 → `getDatas()` → `saveDatas()` → `checkConflict()` → `ttksq_cxSaveTtksj.html`）与 `cxTtksqView.js`；用户提供的 DevTools 截图（`ttksq_tjTtksq.html` 仅在「提交申请」时调用）。
 
 ## 验证
 
-- 单测 `tests/test_schedule_editor.py`（16 项：校验、装饰、锁定、表单解析、位掩码、假教务传输的保存/冲突/强制/去重/撤回）；路由快照已更新。
+- 单测 `tests/test_schedule_availability.py`（7 项：忙碌表/四级结论/草稿阻断与标记/候选探测/待联调状态/二次搜索缓存）与 `tests/test_schedule_editor.py`（16 项：校验、装饰、锁定、表单解析、位掩码、假教务传输的保存/冲突/强制/去重/撤回）；路由快照已更新。
 - Playwright 审计（P03 运行时，注入合成教务快照）：首页入口、同周拖拽、抽屉教室搜索与原因保存、早读禁放、跨周摊开拖拽、保存确认与缺凭据提示、撤销、移动端布局，控制台零错误。

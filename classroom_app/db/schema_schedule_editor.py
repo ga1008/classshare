@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from .connection import get_configured_db_engine
+from .schema_schedule_availability import ensure_schedule_availability_schema
 
 _SCHEMA_READY = False
 
@@ -68,7 +69,26 @@ def ensure_schedule_editor_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_schedule_edit_drafts_term "
         "ON teacher_schedule_edit_drafts (teacher_id, academic_year, academic_term, status)"
     )
+    _ensure_extension_columns(conn, engine)
+    # 可调时段缓存表与草稿同生命周期，在同一连接上一并建好。
+    ensure_schedule_availability_schema(conn)
     _SCHEMA_READY = True
+
+
+def _ensure_extension_columns(conn: Any, engine: str) -> None:
+    """Columns added after the first release (可调时段 verdict per draft)."""
+    columns = (
+        ("room_status", "TEXT NOT NULL DEFAULT 'unknown'"),   # free | busy | unknown for the proposed slot
+        ("availability_json", "TEXT NOT NULL DEFAULT '{}'"),   # verdict snapshot at save time
+    )
+    if engine == "postgres":
+        for name, ddl_type in columns:
+            conn.execute(f"ALTER TABLE teacher_schedule_edit_drafts ADD COLUMN IF NOT EXISTS {name} {ddl_type}")
+        return
+    existing = {str(row[1]) for row in conn.execute("PRAGMA table_info(teacher_schedule_edit_drafts)").fetchall()}
+    for name, ddl_type in columns:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE teacher_schedule_edit_drafts ADD COLUMN {name} {ddl_type}")
 
 
 def reset_schema_ready_for_tests() -> None:

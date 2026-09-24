@@ -81,6 +81,8 @@ function init(boot) {
     const state = {
         payload: null, activeWeek: 0, selectedKey: '', drag: null, form: null, roomsTimer: null, roomsRequest: null,
         busy: false, lastPush: null, materials: { key: '', items: null, loading: false },
+        availability: { key: '', roomKey: '', data: null, loading: false },
+        freeRooms: { slotKey: '', items: [], status: '', roomStatus: '', loading: false, message: '' },
     };
     const refs = {
         termSelect: root.querySelector('[data-cse-term]'),
@@ -96,6 +98,9 @@ function init(boot) {
         drawer: root.querySelector('[data-cse-drawer]'),
         drafts: root.querySelector('[data-cse-drafts]'),
         feedback: root.querySelector('[data-cse-feedback]'),
+        availSync: root.querySelector('[data-cse-avail-sync]'),
+        availMeta: root.querySelector('[data-cse-avail-meta]'),
+        legend: root.querySelector('[data-cse-legend]'),
     };
 
     /* ------------------------------------------------------------------ data helpers */
@@ -107,6 +112,106 @@ function init(boot) {
     const activeWeekData = () => weeks().find(week => Number(week.week_index) === state.activeWeek) || null;
     const pendingDrafts = () => drafts().filter(d => ['draft', 'conflict', 'failed'].includes(d.status));
     const draftById = id => drafts().find(d => d.id === Number(id)) || null;
+
+    /* ------------------------------------------------------------------ 可调时段 (availability) */
+    const AVAIL_LABELS = { block: '学生有课', teacher: '本人有课', room: '教室已占用', ok: '可放置', unknown: '教室占用未查询' };
+
+    function availabilityData(sourceKey) {
+        return state.availability.data && state.availability.key === sourceKey ? state.availability.data : null;
+    }
+
+    function cellState(data, week, weekday, section) {
+        if (!data) return '';
+        const w = String(week), d = String(weekday), s = String(section);
+        const pick = map => ((map || {})[w] || {})[d]?.[s];
+        if (pick(data.students)) return 'block';
+        if (pick(data.teacher)) return 'teacher';
+        if (pick(data.room_busy)) return 'room';
+        if (pick(data.room_checked) === 'free' || data.room?.timetable_synced) return 'ok';
+        return 'unknown';
+    }
+
+    function cellReason(data, week, weekday, section) {
+        const w = String(week), d = String(weekday), s = String(section);
+        const pick = map => ((map || {})[w] || {})[d]?.[s];
+        return pick(data?.students) || pick(data?.teacher) || pick(data?.room_busy) || '';
+    }
+
+    /** Verdict for a candidate slot: block (students/teacher) > room > unknown > ok. */
+    function slotVerdict(data, week, weekday, sections) {
+        if (!data) return { level: 'unknown', reasons: ['尚未加载可调时段'] };
+        const reasons = [];
+        let level = 'ok';
+        for (const section of sections) {
+            const st = cellState(data, week, weekday, section);
+            if (st === 'block' || st === 'teacher') { level = 'block'; reasons.push(`第${section}节：${AVAIL_LABELS[st]}（${cellReason(data, week, weekday, section)}）`); }
+        }
+        if (level === 'block') return { level, reasons };
+        for (const section of sections) {
+            const st = cellState(data, week, weekday, section);
+            if (st === 'room') { level = 'room'; reasons.push(`第${section}节：教室已占用（${cellReason(data, week, weekday, section)}）`); }
+            else if (st === 'unknown' && level === 'ok') level = 'unknown';
+        }
+        return { level, reasons };
+    }
+
+    function freeStartCount(data, week, span) {
+        if (!data) return null;
+        const { min_section: minSection, max_section: maxSection } = rules();
+        let count = 0;
+        for (let weekday = 1; weekday <= 7; weekday += 1) {
+            for (let start = minSection; start + span - 1 <= maxSection; start += 1) {
+                const sections = Array.from({ length: span }, (_, i) => start + i);
+                // 学生/本人有空即计为可放（教室占用可在放置后二次搜索解决）
+                if (['ok', 'unknown', 'room'].includes(slotVerdict(data, week, weekday, sections).level)) count += 1;
+            }
+        }
+        return count;
+    }
+
+    async function loadAvailability(sourceKey, { roomId = '', roomName = '' } = {}) {
+        if (!sourceKey || !state.payload?.editable) return null;
+        const roomKey = `${roomId}|${roomName}`;
+        if (state.availability.key === sourceKey && state.availability.roomKey === roomKey && (state.availability.data || state.availability.loading)) return state.availability.data;
+        state.availability = { key: sourceKey, roomKey, data: null, loading: true };
+        try {
+            const params = new URLSearchParams({ year: term().year || '', term: term().term || '', event_key: sourceKey, room_id: roomId, room: roomName });
+            const data = await api(`${API}/availability?${params}`);
+            if (state.availability.key !== sourceKey || state.availability.roomKey !== roomKey) return null;
+            state.availability = { key: sourceKey, roomKey, data: data.availability || null, loading: false };
+        } catch (error) {
+            state.availability = { key: sourceKey, roomKey, data: null, loading: false };
+            toast(error.message, 'danger');
+        }
+        renderWeekRail(); renderStage(); renderLegend(); renderDrawerVerdict();
+        return state.availability.data;
+    }
+
+    function renderLegend() {
+        if (!refs.legend) return;
+        const selection = state.selectedKey ? resolveSelection(state.selectedKey) : null;
+        const data = selection ? availabilityData(selection.lesson.event_key) : null;
+        if (!selection) { refs.legend.hidden = true; refs.legend.innerHTML = ''; return; }
+        const coverage = data?.coverage || {};
+        const notes = [];
+        if (!data) notes.push(state.availability.loading ? '正在计算可调时段…' : '可调时段未加载');
+        else {
+            if (coverage.students === 'synced') notes.push(`学生课表：${(coverage.admin_classes || []).map(c => c.name).join('、') || '已同步'}`);
+            else if (coverage.students === 'no_scope') notes.push('学生课表：未同步班级名单，无法判断学生是否有课');
+            else notes.push('学生课表：未同步（点「同步可调时段」）');
+            notes.push(coverage.room === 'timetable' ? `教室 ${data.room?.name || ''}：整学期占用已同步` : coverage.room === 'checks' ? `教室 ${data.room?.name || ''}：已实时查询 ${data.room?.checked_slots || 0} 个时段` : `教室 ${data.room?.name || ''}：占用未查询，放置后可二次搜索空闲教室`);
+        }
+        refs.legend.hidden = false;
+        refs.legend.innerHTML = `<span class="cse-legend__item cse-legend__item--block">学生/本人有课 · 禁放</span><span class="cse-legend__item cse-legend__item--room">教室已占用 · 需换教室</span><span class="cse-legend__item cse-legend__item--ok">可放置</span><span class="cse-legend__item cse-legend__item--unknown">教室未查询</span><span class="cse-legend__note">${escapeHtml(notes.join(' · '))}</span>`;
+    }
+
+    function renderAvailMeta() {
+        if (!refs.availMeta) return;
+        const sync = state.payload?.availability_sync;
+        if (!sync || sync.status === 'never') { refs.availMeta.textContent = '可调时段：尚未同步学生课表与教室占用'; return; }
+        const when = sync.synced_at || sync.updated_at || '';
+        refs.availMeta.textContent = `可调时段：${sync.message || sync.status}${when ? `（${when.replace('T', ' ').slice(0, 16)}）` : ''}`;
+    }
 
     function findLesson(key) {
         for (const week of weeks()) {
@@ -145,9 +250,11 @@ function init(boot) {
     function renderAll() {
         renderTermSelect();
         renderMeta();
+        renderAvailMeta();
         renderWeekRail();
         renderStage();
         renderDrawer();
+        renderLegend();
         renderDrafts();
     }
 
@@ -173,6 +280,7 @@ function init(boot) {
             refs.pushBtn.innerHTML = `保存到教务 <span class="cse-btn__badge">${pending}</span>`;
         }
         if (refs.syncBtn) refs.syncBtn.disabled = state.busy;
+        if (refs.availSync) refs.availSync.disabled = state.busy || !state.payload?.editable;
         if (refs.backLink) {
             const t = term();
             refs.backLink.href = `/manage/academic/course-schedule${t.year ? `?year=${encodeURIComponent(t.year)}&term=${encodeURIComponent(t.term)}` : ''}`;
@@ -181,12 +289,16 @@ function init(boot) {
 
     function renderWeekRail() {
         if (!refs.weeks) return;
+        const selection = state.selectedKey ? resolveSelection(state.selectedKey) : null;
+        const availData = selection ? availabilityData(selection.lesson.event_key) : null;
+        const span = selection ? (selection.lesson.sections || []).length : 0;
         const items = weeks().map(week => {
+            const free = availData && span ? freeStartCount(availData, Number(week.week_index), span) : null;
             const draftCount = new Set((week.lessons || []).filter(l => l.edit_draft || l.edit_ghost).map(l => l.edit_draft ? l.edit_draft.id : l.edit_draft_id)).size;
             const classes = ['cse-week', Number(week.week_index) === state.activeWeek ? 'is-active' : '', week.is_current ? 'is-current' : ''].filter(Boolean).join(' ');
             return `<button type="button" class="${classes}" data-cse-week="${week.week_index}" aria-pressed="${Number(week.week_index) === state.activeWeek}">
                 <strong>${escapeHtml(week.label)}</strong>
-                <span class="cse-week__count">${draftCount ? `<span class="cse-week__draft" title="本周有 ${draftCount} 项调整">${draftCount}</span> ` : ''}${week.lesson_count} 节</span>
+                <span class="cse-week__count">${draftCount ? `<span class="cse-week__draft" title="本周有 ${draftCount} 项调整">${draftCount}</span> ` : ''}${free !== null ? `<span class="cse-week__free${free ? '' : ' is-none'}" title="本周学生与本人都有空的时段数（教室占用另查）">${free} 可放</span> ` : ''}${week.lesson_count} 节</span>
                 <small>${escapeHtml(week.date_range_label || '')}</small>
             </button>`;
         });
@@ -211,7 +323,8 @@ function init(boot) {
         const pendingChange = lesson.adjustment && lesson.counts_towards_total === false;
         const classes = ['cs-lesson', 'cs-lesson--cell', 'cse-lesson', ghost ? 'cse-lesson--ghost' : '', moved ? 'cse-lesson--moved' : '',
             selected ? 'is-selected' : '', dragging ? 'is-drag-source' : '', pendingChange ? 'cs-lesson--proposed' : ''].filter(Boolean).join(' ');
-        const tag = ghost ? `<span class="cse-tag cse-tag--${escapeHtml(status)}">${escapeHtml(statusLabel)}</span>`
+        const roomBusy = ghost ? lesson.edit_room_status === 'busy' : (moved && lesson.edit_draft.room_status === 'busy');
+        const tag = ghost ? `<span class="cse-tag cse-tag--${escapeHtml(status)}">${escapeHtml(statusLabel)}</span>${roomBusy ? '<span class="cse-tag cse-tag--room">需换教室</span>' : ''}`
             : moved ? `<span class="cse-tag cse-tag--muted">已计划调至 ${escapeHtml(lesson.edit_draft.proposed_label)}</span>`
                 : pendingChange ? '<span class="cse-tag cse-tag--muted">待审拟安排（不可编辑）</span>' : '';
         const time = [lesson.actual_date, lesson.section_label].filter(Boolean).join(' · ');
@@ -248,6 +361,8 @@ function init(boot) {
         const { min_section: minSection, max_section: maxSection } = rules();
         const sectionCount = maxSection;
         const columnBase = 3;
+        const overlaySelection = state.drag ? resolveSelection(state.drag.sourceKey) : (state.selectedKey ? resolveSelection(state.selectedKey) : null);
+        const availData = overlaySelection ? availabilityData(overlaySelection.lesson.event_key) : null;
         const todayColumn = week.is_current ? ((new Date().getDay() + 6) % 7) + 1 : 0;
         const dayHeads = DAY_NAMES.map((day, index) => {
             const weekday = index + 1;
@@ -262,9 +377,11 @@ function init(boot) {
             const section = 1 + Math.floor(cell / 7);
             const weekday = (cell % 7) + 1;
             const locked = section < minSection;
+            const avail = availData && !locked ? cellState(availData, week.week_index, weekday, section) : '';
+            const reason = avail ? cellReason(availData, week.week_index, weekday, section) : '';
             const classes = ['cs-grid__cellbg', `cs-grid__cellbg--${sectionBand(section)}`, weekday >= 6 ? 'cs-grid__cellbg--weekend' : '',
-                weekday === todayColumn ? 'cs-grid__cellbg--today' : '', locked ? 'cs-grid__cellbg--locked' : ''].filter(Boolean).join(' ');
-            return `<div class="${classes}" data-cse-cell data-weekday="${weekday}" data-section="${section}"${locked ? ' data-locked="1"' : ''} style="grid-column:${weekday - 1 + columnBase};grid-row:${section + 1};"></div>`;
+                weekday === todayColumn ? 'cs-grid__cellbg--today' : '', locked ? 'cs-grid__cellbg--locked' : '', avail ? `is-avail-${avail}` : ''].filter(Boolean).join(' ');
+            return `<div class="${classes}" data-cse-cell data-weekday="${weekday}" data-section="${section}"${locked ? ' data-locked="1"' : ''}${reason ? ` title="${escapeHtml(`${AVAIL_LABELS[avail] || ''}：${reason}`)}"` : ''} style="grid-column:${weekday - 1 + columnBase};grid-row:${section + 1};"></div>`;
         }).join('');
         const bands = [];
         let blockStart = 0;
@@ -345,6 +462,14 @@ function init(boot) {
                         <div class="cse-rooms__list" data-cse-rooms hidden></div>
                         <div class="cse-field__hint">${form.room_id ? `已选教务场地 ${escapeHtml(form.room_id)}` : '未选择教务场地时沿用原教室'}</div>
                     </div>
+                    <div class="cse-verdict" data-cse-verdict></div>
+                    <div class="cse-field cse-free-rooms" data-cse-free-rooms-panel>
+                        <div class="cse-free-rooms__head">
+                            <label>该时段空闲教室（二次搜索，实时查教务）</label>
+                            <button type="button" class="cse-btn cse-btn--sm" data-cse-free-rooms${locked ? ' disabled' : ''}>查询空闲教室</button>
+                        </div>
+                        <div class="cse-free-rooms__body" data-cse-free-rooms-list></div>
+                    </div>
                     <div class="cse-field">
                         <label for="cseReason">调课原因（随草稿一并写入教务，可在教务提交时修改）</label>
                         <textarea id="cseReason" class="cse-textarea" data-cse-field="reason" maxlength="400" placeholder="例如：国庆假期调休、参加学术会议…"${locked ? ' disabled' : ''}>${escapeHtml(form.reason)}</textarea>
@@ -359,6 +484,81 @@ function init(boot) {
                 ${lesson.classroom_url ? `<a class="cse-btn" href="${escapeHtml(lesson.classroom_url)}">进入课堂</a>` : ''}
             </div>`;
         if (lesson.class_offering_id && lesson.session_id) loadMaterials(lesson);
+        renderDrawerVerdict();
+        renderFreeRooms();
+        loadAvailability(lesson.event_key, { roomId: form.room_id, roomName: form.room_id ? form.room : '' });
+    }
+
+    function currentFormSections() {
+        const form = state.form;
+        return form ? Array.from({ length: form.span }, (_, i) => form.start + i) : [];
+    }
+
+    function renderDrawerVerdict() {
+        const box = refs.drawer?.querySelector('[data-cse-verdict]');
+        if (!box || !state.form) return;
+        const data = availabilityData(state.form.key);
+        const verdict = slotVerdict(data, state.form.week, state.form.weekday, currentFormSections());
+        const text = { block: '不可调整到此时段', room: '学生有空，但教室已占用：请在下方选择空闲教室', unknown: '学生时段可用；教室占用尚未查询，可点「查询空闲教室」确认', ok: '该时段可放置' }[verdict.level];
+        box.className = `cse-verdict cse-verdict--${verdict.level}`;
+        box.innerHTML = `<strong>${escapeHtml(text)}</strong>${verdict.reasons.length ? `<ul>${verdict.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : ''}`;
+    }
+
+    function freeRoomSlotKey() {
+        const form = state.form;
+        return form ? `${term().year}|${term().term}|${form.week}|${form.weekday}|${currentFormSections().join(',')}` : '';
+    }
+
+    function renderFreeRooms() {
+        const list = refs.drawer?.querySelector('[data-cse-free-rooms-list]');
+        if (!list || !state.form) return;
+        const fr = state.freeRooms;
+        if (fr.slotKey !== freeRoomSlotKey()) { list.innerHTML = '<div class="cse-materials__empty">选择目标时段后点击「查询空闲教室」，教务会返回该时段所有空闲教室。</div>'; return; }
+        if (fr.loading) { list.innerHTML = '<div class="cse-materials__empty">正在向教务查询空闲教室…</div>'; return; }
+        if (fr.status !== 'success') { list.innerHTML = `<div class="cse-materials__empty">${escapeHtml(fr.message || '查询失败')}</div>`; return; }
+        const roomLine = fr.roomStatus === 'busy' ? '<div class="cse-status cse-status--conflict">原教室该时段已被占用，请从下方选择一间空闲教室。</div>'
+            : fr.roomStatus === 'free' ? '<div class="cse-status cse-status--pushed">原教室该时段空闲，可直接保存。</div>' : '';
+        const items = fr.items.slice(0, 40).map(room => `<button type="button" class="cse-rooms__item" data-cse-room="${escapeHtml(room.place_id || room.room_code || '')}" data-cse-room-name="${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}"><span>${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}</span><small>${escapeHtml([room.campus_name, room.building_name, room.seat_count ? `${room.seat_count} 座` : '', room.room_type_name].filter(Boolean).join(' · '))}</small></button>`).join('');
+        list.innerHTML = `${roomLine}${items ? `<div class="cse-free-rooms__grid">${items}</div><div class="cse-field__hint">共 ${fr.items.length} 间空闲教室，点击即选用。</div>` : '<div class="cse-materials__empty">该时段没有空闲教室。</div>'}`;
+    }
+
+    async function searchFreeRooms() {
+        const form = state.form;
+        if (!form) return;
+        const key = freeRoomSlotKey();
+        const original = resolveSelection(form.key)?.lesson;
+        const roomId = form.room_id || '';
+        const roomName = form.room_id ? form.room : (original?.classroom || '');
+        state.freeRooms = { slotKey: key, items: [], status: '', roomStatus: '', loading: true, message: '' };
+        renderFreeRooms();
+        try {
+            const params = new URLSearchParams({ year: term().year || '', term: term().term || '', week: String(form.week), weekday: String(form.weekday), sections: currentFormSections().join(','), room_id: roomId, room: roomName });
+            const data = await api(`${API}/free-rooms?${params}`);
+            const result = data.result || {};
+            state.freeRooms = { slotKey: key, items: result.items || [], status: result.status || 'failed', roomStatus: result.room_status || 'unknown', loading: false, message: result.message || '' };
+            if (result.room_status && result.room_status !== 'unknown') {
+                state.availability = { ...state.availability, data: null };
+                await loadAvailability(form.key, { roomId, roomName: roomId ? roomName : '' });
+            }
+        } catch (error) {
+            state.freeRooms = { slotKey: key, items: [], status: 'failed', roomStatus: 'unknown', loading: false, message: error.message };
+        }
+        renderFreeRooms();
+    }
+
+    async function syncAvailability() {
+        if (state.busy) return;
+        setBusy(true);
+        try {
+            const data = await api(`${API}/availability/sync`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term }) });
+            state.availability = { key: '', roomKey: '', data: null, loading: false };
+            applyPayload(data);
+            const result = data.result || {};
+            if (result.status === 'missing_credential') LQ.toast(result.message, { tone: 'warning', duration: 8000, action: { label: '去设置教务账号', href: CREDENTIAL_URL } }).catch(() => {});
+            else toast(result.message || '已同步。', result.status === 'success' ? 'success' : 'warning');
+            if (state.selectedKey) { const sel = resolveSelection(state.selectedKey); if (sel) loadAvailability(sel.lesson.event_key); }
+        } catch (error) { toast(error.message, 'danger'); }
+        finally { setBusy(false); }
     }
 
     function renderMaterialsBlock(lesson) {
@@ -396,14 +596,28 @@ function init(boot) {
         }
     }
 
+    /** 教务冲突明细（ctxxList / conflictXs 结构未知，按常见字段友好展示，其余原样列出）。 */
+    function conflictDetailsHtml(conflict) {
+        const rows = Array.isArray(conflict?.details) ? conflict.details : [];
+        if (!rows.length) return '';
+        const known = [['kcmc', '课程'], ['jxbmc', '教学班'], ['jsxm', '教师'], ['xm', '学生'], ['xh', '学号'], ['cdmc', '教室'], ['sksj', '时间'], ['zcd', '周次'], ['xqj', '星期'], ['jc', '节次'], ['ctlx', '冲突类型']];
+        const lines = rows.slice(0, 8).map(row => {
+            if (!row || typeof row !== 'object') return escapeHtml(String(row));
+            const parts = known.filter(([k]) => row[k]).map(([k, label]) => `${label} ${escapeHtml(String(row[k]))}`);
+            return parts.length ? parts.join(' · ') : escapeHtml(Object.entries(row).filter(([, v]) => v !== '' && v !== null).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(' · '));
+        });
+        return `<div class="cse-draft__msg"><strong>教务冲突明细：</strong><ul class="cse-conflict-list">${lines.map(l => `<li>${l}</li>`).join('')}</ul>${rows.length > 8 ? `<span>… 共 ${rows.length} 条</span>` : ''}</div>`;
+    }
+
     function renderDrafts() {
         if (!refs.drafts) return;
         const list = drafts();
         const pushed = list.filter(d => d.status === 'pushed').length;
         const rows = list.map(draft => `<div class="cse-draft" data-cse-draft="${draft.id}">
-            <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}</div>
+            <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}${draft.room_status === 'busy' ? '<span class="cse-tag cse-tag--room">教室已占用 · 需换教室</span>' : draft.room_status === 'free' ? '<span class="cse-tag cse-tag--ok">教室空闲</span>' : ''}</div>
             <div class="cse-draft__route">${escapeHtml(draft.original_label)} → <b>${escapeHtml(draft.proposed_label)}</b>${draft.reason ? ` · 原因：${escapeHtml(draft.reason)}` : ''}</div>
             ${draft.remote_message || draft.remote_label ? `<div class="cse-draft__msg">${escapeHtml(draft.remote_label ? `教务：${draft.remote_label}` : '')}${draft.remote_label && draft.remote_message ? ' · ' : ''}${escapeHtml(draft.remote_message || '')}</div>` : ''}
+            ${conflictDetailsHtml(draft.remote_conflict)}
             <div class="cse-draft__actions">
                 <button type="button" class="cse-btn cse-btn--sm" data-cse-locate="${draft.id}">定位</button>
                 ${draft.status === 'pushed' ? `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-withdraw="${draft.id}">从教务撤回</button>` : `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-discard="${draft.id}">撤销</button>`}
@@ -530,7 +744,8 @@ function init(boot) {
         const selection = resolveSelection(key);
         state.selectedKey = selection ? selection.lesson.event_key : '';
         state.form = null;
-        renderStage(); renderDrawer();
+        renderStage(); renderDrawer(); renderLegend(); renderWeekRail();
+        if (selection) loadAvailability(selection.lesson.event_key);
     }
 
     /* ------------------------------------------------------------------ rooms search */
@@ -579,14 +794,20 @@ function init(boot) {
             });
             if (clash) { valid = false; reason = `与「${clash.course_name}」重叠`; }
         }
-        return { weekday, start, sections, valid, reason };
+        let roomBusy = false;
+        if (valid) {
+            const verdict = slotVerdict(availabilityData(state.drag.sourceKey), state.activeWeek, weekday, sections);
+            if (verdict.level === 'block') { valid = false; reason = verdict.reasons[0] || '学生有课'; }
+            else if (verdict.level === 'room') { roomBusy = true; reason = '学生有空但教室已占用，放置后请选择空闲教室'; }
+        }
+        return { weekday, start, sections, valid, reason, roomBusy };
     }
 
     function paintTarget(target) {
-        refs.stageBody?.querySelectorAll('.is-drop-ok, .is-drop-bad').forEach(node => node.classList.remove('is-drop-ok', 'is-drop-bad'));
+        refs.stageBody?.querySelectorAll('.is-drop-ok, .is-drop-bad, .is-drop-warn').forEach(node => node.classList.remove('is-drop-ok', 'is-drop-bad', 'is-drop-warn'));
         if (!target) return;
         for (const section of target.sections) {
-            refs.stageBody?.querySelector(`[data-cse-cell][data-weekday="${target.weekday}"][data-section="${section}"]`)?.classList.add(target.valid ? 'is-drop-ok' : 'is-drop-bad');
+            refs.stageBody?.querySelector(`[data-cse-cell][data-weekday="${target.weekday}"][data-section="${section}"]`)?.classList.add(!target.valid ? 'is-drop-bad' : target.roomBusy ? 'is-drop-warn' : 'is-drop-ok');
         }
     }
 
@@ -603,6 +824,7 @@ function init(boot) {
         document.body.classList.add('cse-dragging');
         card.classList.add('is-drag-source');
         moveGhost(pointer);
+        loadAvailability(lesson.event_key);
     }
 
     function moveGhost(pointer) {
@@ -634,7 +856,7 @@ function init(boot) {
         const target = cell && !cell.dataset.locked ? dropTarget(cell) : (cell ? { ...dropTarget(cell), valid: false, reason: '第 1 节为早读，不可放置' } : null);
         drag.target = target;
         paintTarget(target);
-        if (refs.feedback) refs.feedback.textContent = target ? (target.valid ? `放置到 ${activeWeekData()?.label || ''} 周${DAY_NAMES[target.weekday - 1]} ${sectionText(target.sections)}` : target.reason) : '拖到节次格子放置；拖到左侧周次可跨周调整';
+        if (refs.feedback) refs.feedback.textContent = target ? (target.valid ? `放置到 ${activeWeekData()?.label || ''} 周${DAY_NAMES[target.weekday - 1]} ${sectionText(target.sections)}${target.roomBusy ? ` · ${target.reason}` : ''}` : target.reason) : '拖到节次格子放置；拖到左侧周次可跨周调整';
     }
 
     async function onPointerUp(event) {
@@ -645,7 +867,11 @@ function init(boot) {
         if (refs.feedback) refs.feedback.textContent = '';
         if (!target) return;
         if (!target.valid) { toast(target.reason || '该位置不可放置。', 'warning'); return; }
-        await saveDraft({ event_key: drag.sourceKey, week: state.activeWeek, weekday: target.weekday, start_section: target.start });
+        const saved = await saveDraft({ event_key: drag.sourceKey, week: state.activeWeek, weekday: target.weekday, start_section: target.start });
+        if (saved && (target.roomBusy || saved.room_status === 'busy')) {
+            toast('该时段学生有空，但原教室已被占用；已为你查询该时段的空闲教室。', 'warning');
+            await searchFreeRooms();
+        }
     }
 
     function endDrag() {
@@ -697,6 +923,7 @@ function init(boot) {
     });
     refs.pushBtn?.addEventListener('click', () => pushDrafts());
     refs.syncBtn?.addEventListener('click', syncTerm);
+    refs.availSync?.addEventListener('click', syncAvailability);
     refs.weeks?.addEventListener('click', event => {
         const button = event.target.closest('[data-cse-week]');
         if (!button) return;
@@ -725,12 +952,15 @@ function init(boot) {
     });
     refs.drawer?.addEventListener('click', async event => {
         const close = event.target.closest('[data-cse-close]');
-        if (close) { state.selectedKey = ''; state.form = null; renderStage(); renderDrawer(); return; }
+        if (close) { state.selectedKey = ''; state.form = null; renderStage(); renderDrawer(); renderLegend(); renderWeekRail(); return; }
         const roomItem = event.target.closest('[data-cse-room]');
         if (roomItem && state.form) {
             state.form = { ...state.form, room_id: roomItem.dataset.cseRoom, room: roomItem.dataset.cseRoomName };
+            state.availability = { ...state.availability, data: null };
             renderDrawer(); return;
         }
+        const freeRooms = event.target.closest('[data-cse-free-rooms]');
+        if (freeRooms) { await searchFreeRooms(); return; }
         const save = event.target.closest('[data-cse-save]');
         if (save && state.form) {
             const form = state.form;
@@ -749,6 +979,7 @@ function init(boot) {
         if (name === 'room') { state.form = { ...state.form, room: field.value, room_id: '' }; searchRooms(field.value); return; }
         if (name === 'reason') { state.form = { ...state.form, reason: field.value }; return; }
         state.form = { ...state.form, [name]: Number(field.value) };
+        renderDrawerVerdict(); renderFreeRooms();
     });
     refs.drawer?.addEventListener('focusin', event => { if (event.target.matches('[data-cse-field="room"]')) searchRooms(event.target.value); });
     document.addEventListener('pointerdown', event => {

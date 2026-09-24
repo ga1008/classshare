@@ -398,7 +398,12 @@ async def api_query_free_classrooms(
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    result = await query_free_classrooms_from_academic_system(int(user["id"]), payload)
+    try:
+        result = await query_free_classrooms_from_academic_system(int(user["id"]), payload)
+    except HTTPException:
+        raise
+    except Exception as exc:  # 教务停机/升级期间返回可读错误而不是 500
+        raise HTTPException(502, f"教务系统暂时无法查询空闲教室，请稍后重试（{str(exc)[:120]}）。") from exc
     status = result.get("status")
     if status == "missing_credential":
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")

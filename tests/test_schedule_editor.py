@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import httpx
 
-from classroom_app.db import schema_schedule_editor
+from classroom_app.db import schema_schedule_availability, schema_schedule_editor
 from classroom_app.services import academic_schedule_draft_push_service as push
 from classroom_app.services import schedule_editor_service as editor
 
@@ -40,6 +40,7 @@ def overview(lessons_by_week, *, max_week=19, editable=True):
 class ScheduleEditorServiceTests(unittest.TestCase):
     def setUp(self):
         schema_schedule_editor.reset_schema_ready_for_tests()
+        schema_schedule_availability.reset_schema_ready_for_tests()
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self.addCleanup(self.conn.close)
@@ -195,6 +196,7 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         schema_schedule_editor.reset_schema_ready_for_tests()
+        schema_schedule_availability.reset_schema_ready_for_tests()
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         schema_schedule_editor.ensure_schedule_editor_schema(self.conn)

@@ -22,6 +22,7 @@ from typing import Any
 
 from ..db.schema_schedule_editor import ensure_schedule_editor_schema
 from ..db.connection import execute_insert_returning_id
+from .schedule_availability_service import build_lesson_availability, check_slot, load_sync_state
 
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 MIN_SECTION = 2          # 第 1 节是早读，不允许放置课次
@@ -132,6 +133,8 @@ def serialize_draft(row: Any) -> dict[str, Any]:
         "remote_label": data.get("remote_label", ""),
         "remote_message": data.get("remote_message", ""),
         "remote_conflict": _loads(data.get("remote_conflict_json"), {}) or {},
+        "room_status": _clean(data.get("room_status")) or "unknown",
+        "availability": _loads(data.get("availability_json"), {}) or {},
         "pushed_at": data.get("pushed_at", ""),
         "created_at": data.get("created_at", ""),
         "updated_at": data.get("updated_at", ""),
@@ -316,6 +319,15 @@ def save_draft(conn, teacher_id: int, overview: dict[str, Any], payload: dict[st
     conflicts = _find_conflicts(overview, drafts, event_key=event_key, proposed=proposed)
     if conflicts:
         raise ScheduleEditError("目标时段与您的其他课程重叠：" + "；".join(conflicts), status_code=409)
+    # 可调时段：学生有课 → 硬阻止；教室被占 → 允许但标记，需要换教室或二次搜索
+    availability = build_lesson_availability(conn, teacher_id, overview, event_key,
+                                             room_id=proposed["room_id"], room_name=proposed["room"])
+    verdict = check_slot(availability, week=proposed["week"], weekday=proposed["weekday"], sections=proposed["sections"])
+    if verdict["level"] == "block" and any("学生有课" in r for r in verdict["reasons"]):
+        raise ScheduleEditError("该时段学生有其他课程，不能调整到此：" + "；".join(verdict["reasons"]), status_code=409)
+    room_status = {"ok": "free", "room": "busy"}.get(verdict["level"], "unknown")
+    availability_snapshot = {"level": verdict["level"], "reasons": verdict["reasons"], "room": availability.get("room"),
+                             "coverage": availability.get("coverage"), "checked_at": _now_iso()}
     reason = _clean(payload.get("reason"))[:MAX_REASON_LENGTH]
     note = _clean(payload.get("note"))[:MAX_REASON_LENGTH]
     change_kind = "room" if same_time else "move"
@@ -326,15 +338,16 @@ def save_draft(conn, teacher_id: int, overview: dict[str, Any], payload: dict[st
     values = (
         teaching_class_id, _clean(lesson.get("teaching_class_name")), _clean(lesson.get("course_name")),
         _clean(lesson.get("class_label")), change_kind, json.dumps(original, ensure_ascii=False),
-        json.dumps(proposed, ensure_ascii=False), reason, note,
+        json.dumps(proposed, ensure_ascii=False), reason, note, room_status,
+        json.dumps(availability_snapshot, ensure_ascii=False),
     )
     if existing:
         conn.execute(
             """
             UPDATE teacher_schedule_edit_drafts
             SET teaching_class_id = ?, teaching_class_name = ?, course_name = ?, class_label = ?, change_kind = ?,
-                original_json = ?, proposed_json = ?, reason = ?, note = ?, status = 'draft',
-                remote_message = '', remote_conflict_json = '{}', updated_at = ?
+                original_json = ?, proposed_json = ?, reason = ?, note = ?, room_status = ?, availability_json = ?,
+                status = 'draft', remote_message = '', remote_conflict_json = '{}', updated_at = ?
             WHERE id = ?
             """,
             (*values, now, existing["id"]),
@@ -347,8 +360,8 @@ def save_draft(conn, teacher_id: int, overview: dict[str, Any], payload: dict[st
             INSERT INTO teacher_schedule_edit_drafts (
                 teacher_id, school_code, academic_year, academic_term, event_key,
                 teaching_class_id, teaching_class_name, course_name, class_label, change_kind,
-                original_json, proposed_json, reason, note, status, created_at, updated_at
-            ) VALUES (?, 'gxufl', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+                original_json, proposed_json, reason, note, room_status, availability_json, status, created_at, updated_at
+            ) VALUES (?, 'gxufl', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
             """,
             (int(teacher_id), context["year"], context["term"], event_key, *values, now, now),
         )
@@ -374,6 +387,7 @@ def decorate_overview_with_drafts(overview: dict[str, Any], drafts: list[dict[st
                 **lesson,
                 "id": f"draft-{draft['id']}", "event_key": f"draft:{draft['id']}", "edit_ghost": True,
                 "edit_draft_id": draft["id"], "edit_status": draft["status"], "source_event_key": draft["event_key"],
+                "edit_room_status": draft.get("room_status", "unknown"),
                 "weekday": proposed["weekday"], "weekday_label": weekday_label(int(proposed["weekday"])),
                 "sections": proposed["sections"], "section_label": section_label(proposed["sections"]),
                 "classroom": proposed.get("room") or lesson.get("classroom", ""),
@@ -390,6 +404,7 @@ def decorate_overview_with_drafts(overview: dict[str, Any], drafts: list[dict[st
             lessons.append({**lesson, "edit_draft": {
                 "id": draft["id"], "status": draft["status"], "status_label": draft["status_label"],
                 "change_kind": draft["change_kind"], "proposed": draft["proposed"], "proposed_label": draft["proposed_label"],
+                "room_status": draft.get("room_status", "unknown"),
             }} if draft else dict(lesson))
         lessons.extend(ghosts_by_week.get(week_index, []))
         lessons.sort(key=lambda item: (int(item.get("weekday") or 0), (item.get("sections") or [0])[0]))
@@ -406,6 +421,7 @@ def build_editor_payload(conn, teacher_id: int, overview: dict[str, Any]) -> dic
         "overview": decorated,
         "drafts": drafts,
         "editable": context["editable"],
+        "availability_sync": load_sync_state(conn, teacher_id, context["year"], context["term"]) if context["year"] else None,
         "rules": {"min_section": MIN_SECTION, "max_section": context["max_section"], "max_week": context["max_week"]},
         "zf_entry_url": ZF_ENTRY_URL,
         "status_labels": STATUS_LABELS,

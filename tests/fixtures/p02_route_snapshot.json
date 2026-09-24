@@ -3289,6 +3289,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/editor/availability",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_availability",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/availability/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_availability_sync",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/academic/course-schedule/editor/drafts",
     "methods": [
       "POST"
@@ -3310,6 +3326,14 @@
       "POST"
     ],
     "name": "api_schedule_editor_withdraw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/free-rooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_free_rooms",
     "include_in_schema": true
   },
   {

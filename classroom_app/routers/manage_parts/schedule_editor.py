@@ -14,6 +14,8 @@ from ...dependencies import get_current_teacher
 from ...services.academic_schedule_draft_push_service import (
     push_drafts_to_academic_system, withdraw_draft_from_academic_system,
 )
+from ...services.academic_availability_sync_service import search_free_rooms, sync_availability_for_term
+from ...services.schedule_availability_service import build_lesson_availability
 from ...services.schedule_editor_service import (
     ScheduleEditError, build_editor_payload, delete_draft, get_draft, save_draft, search_rooms,
 )
@@ -116,3 +118,48 @@ async def api_schedule_editor_rooms(q: str = "", limit: int = 30, user: dict = D
     with get_db_connection() as conn:
         rooms = search_rooms(conn, q, limit=max(1, min(int(limit or 30), 100)))
     return JSONResponse({"status": "success", "rooms": rooms}, headers=_NO_STORE)
+
+
+@router.get("/academic/course-schedule/editor/availability", response_class=JSONResponse)
+async def api_schedule_editor_availability(year: str = "", term: str = "", event_key: str = "", room_id: str = "",
+                                           room: str = "", user: dict = Depends(get_current_teacher)):
+    """某课次的可调时段：学生有课 / 本人有课 / 教室占用 的紧凑忙碌表。"""
+    if not event_key.strip():
+        raise HTTPException(status_code=400, detail="缺少课次标识。")
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        availability = build_lesson_availability(conn, int(user["id"]), overview, event_key.strip(),
+                                                 room_id=_term(room_id), room_name=_term(room))
+    return JSONResponse({"status": "success", "availability": availability}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/availability/sync", response_class=JSONResponse)
+async def api_schedule_editor_availability_sync(request: Request, user: dict = Depends(get_current_teacher)):
+    """从教务拉取本学期学生（行政班）课表与教室课表，刷新可调时段缓存。"""
+    payload = await _parse_json_request(request)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    if not year or not term:
+        raise HTTPException(status_code=400, detail="请先选择学年学期。")
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+    result = await sync_availability_for_term(int(user["id"]), year=year, term=term, overview=overview)
+    with get_db_connection() as conn:
+        editor = build_editor_payload(conn, int(user["id"]), overview)
+    return JSONResponse({**editor, "status": "success", "result": result}, headers=_NO_STORE)
+
+
+@router.get("/academic/course-schedule/editor/free-rooms", response_class=JSONResponse)
+async def api_schedule_editor_free_rooms(year: str = "", term: str = "", week: int = 0, weekday: int = 0, sections: str = "",
+                                         q: str = "", room_id: str = "", room: str = "", building: str = "",
+                                         room_type: str = "", user: dict = Depends(get_current_teacher)):
+    """二次搜索：目标时段的空闲教室（实时查教务），并记录原教室在该时段的占用结论。"""
+    try:
+        section_list = sorted({int(part) for part in sections.split(",") if part.strip()})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="节次格式错误。") from exc
+    if not year or not term or week < 1 or not 1 <= weekday <= 7 or not section_list:
+        raise HTTPException(status_code=400, detail="请提供学年学期、周次、星期和节次。")
+    result = await search_free_rooms(int(user["id"]), year=_term(year), term=_term(term), week=week, weekday=weekday,
+                                     sections=section_list, keyword=_term(q), room_id=_term(room_id), room_name=_term(room),
+                                     building=_term(building), room_type=_term(room_type))
+    return JSONResponse({"status": "success", "result": result}, headers=_NO_STORE)

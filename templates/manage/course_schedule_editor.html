@@ -23,8 +23,10 @@
         <div class="cse-toolbar__spacer"></div>
         <div class="cse-toolbar__actions">
             <button type="button" class="cse-btn" data-cse-sync>同步教务课表</button>
+            <button type="button" class="cse-btn" data-cse-avail-sync title="从教务拉取学生（行政班）课表与教室占用，用于标出可调时段">同步可调时段</button>
             <button type="button" class="cse-btn cse-btn--primary" data-cse-push disabled>保存到教务</button>
         </div>
+        <div class="cse-avail-meta" data-cse-avail-meta></div>
         <div class="cse-feedback" data-cse-feedback role="status" aria-live="polite"></div>
     </div>
 
@@ -36,6 +38,7 @@
                 <span data-cse-stage-sub></span>
                 <span class="cse-stage__hint">按住课次拖动 · 单击查看属性 · 拖到左侧周次可跨周</span>
             </div>
+            <div class="cse-legend" data-cse-legend hidden></div>
             <div class="cse-stage__body" data-cse-stage-body></div>
         </div>
         <aside class="cse-drawer" data-cse-drawer aria-label="课次属性" hidden></aside>
