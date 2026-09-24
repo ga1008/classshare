@@ -1547,6 +1547,13 @@ async def _profile_scheduler_loop(stop_event: asyncio.Event) -> None:
         try:
             available_slots = max(0, PROFILE_SCHEDULER_MAX_CONCURRENT - len(_profile_tasks))
             if available_slots > 0:
+                from .ai_workspace_service import claim_due_profile_candidates, run_profile_candidate
+
+                for candidate in claim_due_profile_candidates(available_slots):
+                    task = asyncio.create_task(run_profile_candidate(candidate))
+                    _track_background_profile_task(task)
+                available_slots = max(0, PROFILE_SCHEDULER_MAX_CONCURRENT - len(_profile_tasks))
+            if available_slots > 0:
                 for candidate in _claim_due_profile_candidates(available_slots):
                     task = asyncio.create_task(_run_profile_candidate(candidate))
                     _track_background_profile_task(task)

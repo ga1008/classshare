@@ -10,6 +10,7 @@ from .config import TEMPLATES_DIR, MAX_HISTORY_IN_MEMORY, AI_ASSISTANT_URL, SITE
 from .frontend_assets import asset_url, static_asset_revision, vite_entry_tags
 from .time_utils import format_local_datetime
 from .services.user_ui_preferences_service import resolve_user_ui_preferences
+from .services.ai_workspace_policy import ai_workspace_policy
 from .lq import lq_props
 from .lq_dialogs import lq_dialog_props
 from .lq_migration import lq_family_enabled
@@ -34,6 +35,7 @@ templates.env.globals["static_asset_revision"] = static_asset_revision
 templates.env.globals["vite_entry_tags"] = vite_entry_tags
 templates.env.globals["site_record"] = SITE_RECORD
 templates.env.globals["resolve_user_ui_preferences"] = resolve_user_ui_preferences
+templates.env.globals["ai_workspace_policy"] = ai_workspace_policy
 templates.env.globals["lq_props"] = lq_props
 templates.env.globals["lq_dialog_props"] = lq_dialog_props
 templates.env.globals["lq_family_enabled"] = lq_family_enabled

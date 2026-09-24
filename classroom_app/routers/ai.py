@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from ..config import (
     AI_DURABLE_JOBS_ENABLED,
@@ -32,6 +32,9 @@ from ..database import get_db_connection
 from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_current_teacher, get_current_user
 from ..services.behavior_tracking_service import record_behavior_event
+from ..services import ai_workspace_service as workspace_store
+from ..services.ai_workspace_policy import ensure_ai_workspace_access
+from ..services.ai_workspace_stream import durable_stream, ensure_capacity as ensure_workspace_capacity
 from ..services.message_center_service import (
     AI_ASSISTANT_LABEL,
     AI_ASSISTANT_ROLE,
@@ -799,7 +802,7 @@ async def _process_chat_file(file: UploadFile) -> dict:
     if content_type in image_types or ext in (_IMAGE_EXTENSIONS - {".svg"}):
         async with _CHAT_FILE_PROCESSING_SLOTS:
             data_url = await asyncio.to_thread(_validated_chat_image, contents, filename)
-        return {"type": "image", "data_url": data_url, "name": filename}
+        return {"type": "image", "data_url": data_url, "name": filename, "original_image": contents}
 
     # 文本/代码文件: 直接读取文本内容
     text_mime_types = {
@@ -839,11 +842,11 @@ async def _process_chat_file(file: UploadFile) -> dict:
     raise HTTPException(status_code=400, detail=f"不支持的文件类型: {filename}")
 
 
-async def _prepare_chat_uploads(files: List[UploadFile]) -> dict:
+async def _prepare_chat_uploads(files: List[UploadFile], *, preserve_images=False) -> dict:
     """One ordered manifest for text, direct images and document visuals."""
     if len(files) > 8:
         raise HTTPException(413, "每条消息最多上传 8 个文件，请分批发送")
-    image_inputs, file_texts, attachments = [], [], []
+    image_inputs, file_texts, attachments, private_images = [], [], [], []
     total_text = 0
     for file in files:
         result = await _process_chat_file(file)
@@ -861,8 +864,10 @@ async def _prepare_chat_uploads(files: List[UploadFile]) -> dict:
             image_inputs.append({"url": item["data_url"], "name": name, "source": "current_upload", "source_kind": "current_message_attachment"})
         if len(image_inputs) > _CHAT_MAX_IMAGES:
             raise HTTPException(413, "本条消息需要识别的图片超过 8 张，请拆分后发送")
+        if preserve_images and result['type'] == 'image':
+            private_images.append({'attachment_index': len(attachments), 'contents': result['original_image']})
         attachments.append({"type": result["type"], "name": result["name"], "image_count": len(images)})
-    return {"image_inputs": image_inputs, "base64_urls": [item["url"] for item in image_inputs], "file_texts": file_texts, "attachments": attachments}
+    return {"image_inputs": image_inputs, "base64_urls": [item["url"] for item in image_inputs], "file_texts": file_texts, "attachments": attachments, "private_images": private_images}
 
 
 def _exam_source_mime(filename: str, fallback: str = "") -> str:
@@ -2074,11 +2079,12 @@ System Prompt:
 
 
 @router.get("/ai/chat/sessions/{class_offering_id}", response_class=JSONResponse)
-async def get_ai_chat_sessions(class_offering_id: int, user: dict = Depends(get_current_user)):
+async def get_ai_chat_sessions(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     """获取当前用户在此课堂的所有 AI 聊天会话列表"""
     user_pk, user_role = _get_user_pk_role(user)
 
     with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
         _ensure_classroom_access(conn, class_offering_id, user_pk, user_role)
         cursor = conn.execute(
             """
@@ -2097,13 +2103,14 @@ async def get_ai_chat_sessions(class_offering_id: int, user: dict = Depends(get_
 
 
 @router.post("/ai/chat/session/new/{class_offering_id}", response_class=JSONResponse)
-async def create_new_ai_chat_session(class_offering_id: int, user: dict = Depends(get_current_user)):
+async def create_new_ai_chat_session(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     """为当前用户在此课堂创建一个新的 AI 聊天会话"""
     user_pk, user_role = _get_user_pk_role(user)
     new_uuid = str(uuid.uuid4())
     default_title = "新对话"
 
     with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
         _ensure_classroom_access(conn, class_offering_id, user_pk, user_role)
 
     # --- 新增：在创建会话时生成并缓存用户背景 ---
@@ -2141,11 +2148,12 @@ async def create_new_ai_chat_session(class_offering_id: int, user: dict = Depend
 
 
 @router.get("/ai/chat/history/{session_uuid}", response_class=JSONResponse)
-async def get_ai_chat_history(session_uuid: str, user: dict = Depends(get_current_user)):
+async def get_ai_chat_history(session_uuid: str, request: Request, user: dict = Depends(get_current_user)):
     """获取特定 AI 聊天会话的所有消息"""
     user_pk, user_role = _get_user_pk_role(user)
 
     with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
         # 1. 验证会话所有权
         session = conn.execute(
             """
@@ -2284,6 +2292,61 @@ def _build_material_knowledge_block(user: dict, extra_context: str) -> str:
     )
 
 
+@router.get("/ai/workspace/sessions", response_class=JSONResponse)
+async def get_workspace_sessions(request: Request, user: dict = Depends(get_current_user)):
+    from ..services.ai_workspace_legacy_service import list_legacy_sessions
+
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        return {"status": "success", "sessions": workspace_store.list_sessions(conn, user),
+                "legacy_sessions": list_legacy_sessions(conn, user)}
+
+
+@router.post("/ai/workspace/session/import/{legacy_uuid}", response_class=JSONResponse)
+def import_workspace_session(legacy_uuid: str, request: Request, user: dict = Depends(get_current_user)):
+    from ..services.ai_workspace_legacy_service import import_legacy_session
+
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        session = import_legacy_session(conn, legacy_uuid, user, message_decoder=_extract_message_text)
+        return {"status": "success", "session": session}
+
+
+@router.post("/ai/workspace/session/new", response_class=JSONResponse)
+async def create_workspace_session(request: Request, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        return {"status": "success", "session": workspace_store.create_session(conn, user)}
+
+
+@router.get("/ai/workspace/history/{session_uuid}", response_class=JSONResponse)
+async def get_workspace_history(session_uuid: str, request: Request, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        return workspace_store.load_history(conn, session_uuid, user)
+
+
+@router.delete("/ai/workspace/session/{session_uuid}", response_class=JSONResponse)
+def delete_workspace_session(session_uuid: str, request: Request, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        return workspace_store.delete_session(conn, session_uuid, user)
+
+
+@router.get("/ai/workspace/attachments/{session_uuid}/{opaque_name}", response_class=FileResponse)
+def get_workspace_attachment(session_uuid: str, opaque_name: str, request: Request, user: dict = Depends(get_current_user)):
+    from ..services.ai_workspace_attachment_service import resolve_image
+
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
+        workspace_store.owned_session(conn, session_uuid, user)
+    path, media_type = resolve_image(user, session_uuid, opaque_name)
+    return FileResponse(path, media_type=media_type, headers={
+        'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+    })
+
+
 @router.post("/ai/workspace-chat")
 async def handle_ai_workspace_chat(
         request: Request,
@@ -2292,19 +2355,67 @@ async def handle_ai_workspace_chat(
         user: dict = Depends(get_current_user),
         deep_thinking: bool = Form(False),
         context_prompt_extra: str = Form(""),
+        session_uuid: str = Form(...),
+        request_id: str = Form(""),
+        page_path: str = Form(""),
 ):
     """
-    Context-only AI assistant for global pages that are not bound to a classroom.
-    It keeps the same structured stream contract as /api/ai/chat but does not
-    create classroom chat sessions.
+    Account-owned assistant with history independent of the current classroom.
     """
     user_pk, user_role = _get_user_pk_role(user)
+    with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+        workspace_store.owned_session(conn, session_uuid, user)
     cleaned_message = str(message or "").strip()
     if not cleaned_message and not files:
         raise HTTPException(status_code=400, detail="请输入要发送给 AI 助手的内容。")
     cleaned_message = cleaned_message or "请根据当前附件回答，并说明图片中的关键内容。"
+    if len(cleaned_message) > 16000:
+        raise HTTPException(413, "消息过长，请拆分后发送")
 
-    uploads = await _prepare_chat_uploads(files or [])
+    uploads = await _prepare_chat_uploads(files or [], preserve_images=True)
+    ensure_workspace_capacity()
+
+    def begin_workspace_request():
+        # The quota scan and atomic image writes share the short account lock,
+        # but run off the event loop. Replays never write files a second time.
+        with get_db_connection() as conn:
+            return workspace_store.begin_request(conn, session_uuid, user, request_id, cleaned_message,
+                uploads["attachments"], {"message": cleaned_message, "deep_thinking": bool(deep_thinking),
+                                       "file_texts": uploads["file_texts"], "images": uploads["base64_urls"]},
+                image_uploads=uploads["private_images"])
+
+    begin_task = asyncio.create_task(asyncio.to_thread(begin_workspace_request))
+    try:
+        request_state = await asyncio.shield(begin_task)
+    except asyncio.CancelledError:
+        # Cancellation cannot stop the disk worker. Reconcile its committed
+        # admission before leaving, so a disconnected upload has no orphan lease.
+        while not begin_task.done():
+            try:
+                await asyncio.shield(begin_task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not begin_task.cancelled() and begin_task.exception() is None:
+            admitted = begin_task.result()
+            if not admitted.get('pending') and not admitted.get('replay'):
+                with get_db_connection() as conn:
+                    workspace_store.finish_request(conn, admitted['session_id'], admitted['request_id'], user,
+                        '发送已中断，请重试。', success=False)
+        raise
+    uploads.pop('private_images', None)
+    with get_db_connection() as conn:
+        if request_state.get("pending"):
+            return JSONResponse({"status": "pending", "request_id": request_state["request_id"]}, status_code=202)
+        if request_state.get("replay"):
+            answer = workspace_store.completed_reply(conn, request_state["session_id"], request_state["request_id"])
+            async def replay():
+                yield _encode_stream_event("answer_delta", delta=answer["final_answer"] or answer["message"])
+                yield _encode_stream_event("done", has_thinking=False)
+            return StreamingResponse(replay(), media_type=STREAM_EVENT_MEDIA_TYPE, headers=STREAM_RESPONSE_HEADERS)
+        ai_history = workspace_store.ai_history(conn, request_state["session_id"], request_state["request_id"])
     base64_urls = uploads["base64_urls"]
     file_texts = uploads["file_texts"]
     model_capability: Literal["standard", "thinking", "vision"] = "thinking" if deep_thinking else "standard"
@@ -2330,6 +2441,15 @@ async def handle_ai_workspace_chat(
         system_prompt += "当前用户是教师，可以提供备课、材料整理、作业设计和课堂运营建议。"
     else:
         system_prompt += "当前用户是学生，只提供学习支持和课堂答疑，不展示教师任务中心能力。"
+    explicit_profile, hidden_profile = "", None
+    try:
+        with get_db_connection() as _pk_conn:
+            explicit_profile = build_explicit_user_profile_prompt(load_explicit_user_profile(_pk_conn, user_pk, user_role))
+            hidden_profile = workspace_store.load_personal_hidden_profile(_pk_conn, user_pk, user_role)
+    except Exception as exc:
+        print(f"[AI_WORKSPACE_CHAT] 个人支持上下文暂不可用: {type(exc).__name__}")
+    system_prompt = build_classroom_chat_prompt(system_prompt, "", explicit_profile, hidden_profile,
+        classroom_context_prompt="平台个人助手：课堂、材料等上下文以当前页面授权信息为准。")
     try:
         platform_block = build_platform_overview_block(user_role)
         with get_db_connection() as _pk_conn:
@@ -2357,7 +2477,7 @@ async def handle_ai_workspace_chat(
 
     chat_payload = {
         "system_prompt": system_prompt,
-        "messages": [],
+        "messages": ai_history,
         "new_message": cleaned_message,
         "base64_urls": base64_urls,
         "image_inputs": uploads["image_inputs"],
@@ -2375,7 +2495,7 @@ async def handle_ai_workspace_chat(
         final_answer = ""
         answer_guard = HiddenProfileLeakGuard()
         thinking_guard = HiddenProfileLeakGuard()
-        done_sent = False
+        error_message = ""
 
         yield _encode_stream_event(
             "stream_start",
@@ -2394,12 +2514,10 @@ async def handle_ai_workspace_chat(
                     timeout=180.0,
             ) as response:
                 if not response.is_success:
-                    error_detail = await response.aread()
-                    error_message = (
-                        f"AI 助手服务连接失败 (状态码 {response.status_code}): "
-                        f"{error_detail.decode('utf-8', errors='ignore')}"
-                    )
+                    error_message = f"AI 助手暂时无法回复（服务状态 {response.status_code}），请稍后重试。"
                     yield _encode_stream_event("error", message=error_message)
+                    with get_db_connection() as conn:
+                        workspace_store.finish_request(conn, request_state["session_id"], request_state["request_id"], user, error_message, success=False)
                     yield _encode_stream_event("done", has_thinking=False)
                     return
 
@@ -2443,18 +2561,28 @@ async def handle_ai_workspace_chat(
                         if safe_tail:
                             final_answer += safe_tail
                             yield _encode_stream_event("answer_delta", delta=safe_tail)
-                        done_sent = True
+                        continue
+                    if event_type == "error":
+                        error_message = "AI 回复失败，请稍后重试。"
+                        yield _encode_stream_event("error", message=error_message)
+                        continue
 
                     yield _encode_stream_event(
                         event_type,
                         **{key: value for key, value in event.items() if key != "event"},
                     )
         except httpx.ConnectError:
+            error_message = "无法连接到 AI 助教服务。"
+            with get_db_connection() as conn:
+                workspace_store.finish_request(conn, request_state["session_id"], request_state["request_id"], user, error_message, success=False)
             yield _encode_stream_event("error", message="无法连接到 AI 助教服务。")
             yield _encode_stream_event("done", has_thinking=False)
             return
         except Exception as exc:
-            yield _encode_stream_event("error", message=f"AI 流式传输中发生未知错误：{exc}")
+            error_message = "AI 回复暂时失败，请稍后重试。"
+            with get_db_connection() as conn:
+                workspace_store.finish_request(conn, request_state["session_id"], request_state["request_id"], user, error_message, success=False)
+            yield _encode_stream_event("error", message=error_message)
             yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
             return
 
@@ -2466,11 +2594,24 @@ async def handle_ai_workspace_chat(
         if safe_tail:
             final_answer += safe_tail
             yield _encode_stream_event("answer_delta", delta=safe_tail)
-        if not done_sent:
-            yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
+        with get_db_connection() as conn:
+            workspace_store.finish_request(conn, request_state["session_id"], request_state["request_id"], user,
+                final_answer or error_message or "（AI 没有返回有效内容）", thinking_content,
+                success=bool(final_answer.strip()) and not error_message)
+        yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
 
+    def abort_workspace_request():
+        with get_db_connection() as conn:
+            workspace_store.finish_request(conn, request_state["session_id"], request_state["request_id"], user,
+                "AI 回复暂时失败，请稍后重试。", success=False)
+
+    try:
+        durable_response = durable_stream(stream_generator(), _encode_stream_event, on_error=abort_workspace_request)
+    except HTTPException:
+        abort_workspace_request()
+        raise
     return StreamingResponse(
-        stream_generator(),
+        durable_response,
         media_type=STREAM_EVENT_MEDIA_TYPE,
         headers=STREAM_RESPONSE_HEADERS,
     )
@@ -2485,7 +2626,8 @@ async def handle_ai_chat(
         class_offering_id: int = Form(...),  # (从 classroom 变量中获取)
         user: dict = Depends(get_current_user),
         deep_thinking: bool = Form(False),
-        context_prompt_extra: str = Form("")
+        context_prompt_extra: str = Form(""),
+        page_path: str = Form(""),
 ):
     """
     (V4.3 流式修改)
@@ -2496,6 +2638,7 @@ async def handle_ai_chat(
 
     # 1. 验证会话所有权并获取会话 DB ID
     with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
         _ensure_classroom_access(conn, class_offering_id, user_pk, user_role)
         session = conn.execute(
             """

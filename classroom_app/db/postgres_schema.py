@@ -15,6 +15,7 @@ from .schema_grade_publications import GRADE_PUBLICATION_POSTGRES_TABLES, GRADE_
 from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES
 from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
+from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -404,6 +405,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
+    **AI_WORKSPACE_POSTGRES_TABLES,
     **ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES,
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
     **GRADE_PUBLICATION_POSTGRES_TABLES,
@@ -772,6 +774,7 @@ REQUIRED_POSTGRES_TABLES = (
     *GRADE_PUBLICATION_REQUIRED_COLUMNS,
     *ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     *FEEDBACK_CONVERSATION_POSTGRES_TABLES,
+    *AI_WORKSPACE_POSTGRES_TABLES,
     "learning_stage_status",
     "learning_stage_exam_attempts",
     "learning_certificates",

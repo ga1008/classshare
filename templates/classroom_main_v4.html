@@ -1994,7 +1994,6 @@
 {% include "partials/learning_certificate_reveal.html" %}
 {% endif %}
 
-{% with ai_widget_deferred=true %}{% include "partials/ai_workspace_widget.html" %}{% endwith %}
 
 {% if user_info.role == 'teacher' %}
 {% include "partials/learning_material_selector.html" %}
@@ -2048,8 +2047,4 @@
 <script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_closeout.js') }}"></script>
 
 {% endif %}
-<script type="application/json" id="cw-deferred-assets">{{ {
-    'aiComponent': asset_url('js/ai_chat_component.js'),
-    'aiWorkspace': asset_url('js/ai_workspace_widget.js')
-} | tojson }}</script>
 {% endblock %}

@@ -39,6 +39,7 @@ async function previewMetrics(page: Page) {
   return active.evaluate(cell => {
     const rect = cell.getBoundingClientRect();
     const body = cell.closest('.cs-expand__body')!.getBoundingClientRect();
+    const footer = cell.querySelector('.cs-lesson__footer')!.getBoundingClientRect();
     const lines = [...cell.children].map(line => ({
       height: line.getBoundingClientRect().height,
       scrollHeight: line.scrollHeight,
@@ -46,7 +47,7 @@ async function previewMetrics(page: Page) {
     return { width: rect.width, height: rect.height, left: rect.left, right: rect.right,
       top: rect.top, bottom: rect.bottom, bodyLeft: body.left, bodyRight: body.right,
       bodyTop: body.top, bodyBottom: body.bottom, clientHeight: cell.clientHeight,
-      scrollHeight: cell.scrollHeight, scrollTop: cell.scrollTop, lines };
+      scrollHeight: cell.scrollHeight, scrollTop: cell.scrollTop, bottomGap: rect.bottom - footer.bottom, lines };
   });
 }
 
@@ -83,14 +84,15 @@ test('short courses stay compact while long Sunday cards wrap completely inside 
   const short = await previewMetrics(page);
   expectContained(short);
   expect(short.scrollHeight).toBeLessThanOrEqual(short.clientHeight + 1);
+  expect(short.bottomGap, 'short preview ends after its content and padding').toBeLessThanOrEqual(18);
+  expect(short.height).toBeLessThan(250);
   await page.screenshot({ path: testInfo.outputPath('short-course.png') });
   await page.getByRole('link', { name: /^长课程/ }).hover();
   const long = await previewMetrics(page);
   expectContained(long);
-  // Equal slot proportions can reach the same bounded preview size; content
-  // length must not independently stretch only the width or height.
-  expect(long.width).toBeGreaterThanOrEqual(short.width - 1);
-  expect(long.height).toBeGreaterThanOrEqual(short.height - 1);
+  expect(long.width).toBeCloseTo(short.width, 0);
+  expect(long.height, 'additional classes grow the content, not the slot ratio').toBeGreaterThan(short.height + 20);
+  expect(long.bottomGap).toBeLessThanOrEqual(18);
   expect(long.scrollHeight).toBeLessThanOrEqual(long.clientHeight + 1);
   await page.screenshot({ path: testInfo.outputPath('long-course.png') });
   await testInfo.attach('content-dimensions', { body: JSON.stringify({ short, long }, null, 2), contentType: 'application/json' });
@@ -161,7 +163,9 @@ test('preview dimensions animate both ways without moving the slot or replacing 
     const box = () => {
       const rect = cell.getBoundingClientRect();
       const bounds = body.getBoundingClientRect();
+      const transform = new DOMMatrixReadOnly(getComputedStyle(cell).transform);
       return { width: rect.width, height: rect.height, x: rect.x, y: rect.y,
+        scaleX: transform.a, scaleY: transform.d,
         contained: rect.left >= bounds.left + 10 && rect.right <= bounds.right - 10
           && rect.top >= bounds.top + 10 && rect.bottom <= bounds.bottom - 10 };
     };
@@ -193,10 +197,24 @@ test('preview dimensions animate both ways without moving the slot or replacing 
   expect(metrics.opening.every(frame => frame.contained)).toBe(true);
   expect(metrics.closing.every(frame => frame.contained)).toBe(true);
   for (const frame of [...metrics.opening, ...metrics.closing]) {
-    expect(Math.abs(frame.width / frame.height - metrics.before.width / metrics.before.height), 'all geometry frames retain the slot aspect ratio').toBeLessThan(.02);
+    expect(frame.scaleX, 'the transform remains uniform while the empty shell reflows').toBeCloseTo(frame.scaleY, 5);
   }
   expect(metrics.closing.at(-1)!.width).toBeCloseTo(metrics.before.width, 0);
   expect(metrics.closing.at(-1)!.height).toBeCloseTo(metrics.before.height, 0);
+});
+
+test('a tall original lesson slot does not force whitespace into its short preview', async ({ page }) => {
+  await mountDeck(page);
+  const card = page.getByRole('link', { name: /^短课程/ });
+  await card.locator('..').evaluate(slot => { (slot as HTMLElement).style.height = '310px'; });
+  await card.focus();
+  const metrics = await previewMetrics(page);
+  expectContained(metrics);
+  expect(metrics.height).toBeLessThan(250);
+  expect(metrics.bottomGap).toBeLessThanOrEqual(18);
+  await page.getByRole('button', { name: '返回 3D 视图' }).focus();
+  await settleScheduleMotion(page);
+  expect((await card.boundingBox())!.height).toBeCloseTo(310, 0);
 });
 
 test('interrupting a preview reverses from its current frame and switching courses leaves no stale motion', async ({ page }) => {

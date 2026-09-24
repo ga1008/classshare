@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% set markdown_assets = namespace(loaded=false, mermaid=false) %}
 {% set ui_palette = resolve_user_ui_preferences(request, user_info) %}
 {% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
 {% from 'macros/lq/shells.html' import lq_topbar, lq_sidebar, lq_editor, lq_page_layout, lq_dock, lq_fab, lq_crumbs, lq_steps %}
@@ -57,4 +58,5 @@
 {% if preview_layout == 'list' %}{{ lq_fab('shell-fab',{'key':'preview-fab','label':'演示浮动新增','icon':'plus'},variant='prominent') }}{% endif %}
 {% endif %}
 <script type="module" src="{{ asset_url('js/lq/preview-shell.js') }}"></script>
+{% include "partials/ai_workspace_mount.html" %}
 </body></html>

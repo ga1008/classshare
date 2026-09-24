@@ -59,14 +59,7 @@ async function initializeClassroomPage(app: HTMLElement) {
     import('./assignment-authoring-sync'),
     import('./exam-assign-sync'),
   ]);
-  const secondaryAssets = document.getElementById('cw-deferred-assets')?.textContent;
-  const aiWorkspace = (async () => {
-    if (!secondaryAssets) return;
-    const urls = JSON.parse(secondaryAssets) as { aiComponent: string; aiWorkspace: string };
-    await loadLegacyModule(urls.aiComponent);
-    await loadLegacyModule(urls.aiWorkspace);
-  })();
-  void Promise.all([secondaryIslands, aiWorkspace]).catch(error => {
+  void secondaryIslands.catch(error => {
     console.error('[classroom-page] secondary tools failed to load', error);
     window.UI?.showToast?.('课堂编辑工具加载失败，请刷新重试。', 'error');
   });

@@ -621,17 +621,18 @@ export function createScheduleDeck(container, options = {}) {
         const availableHeight = Math.max(1, body.clientHeight - 24);
         const baseWidth = Math.max(1, slot.clientWidth);
         const baseHeight = Math.max(1, slot.clientHeight);
-        // Size the readable layout once, then fit ONE scale to both dimensions.
-        // Content never changes the slot's aspect ratio; excess text scrolls.
-        const desiredWidth = Math.min(380, availableWidth);
-        cell.style.setProperty('--cs-preview-width', `${desiredWidth}px`);
-        cell.style.setProperty('--cs-preview-height', `${baseHeight * desiredWidth / baseWidth}px`);
-        const naturalHeight = cell.querySelector('.cs-lesson__surface').scrollHeight;
-        const desiredScale = Math.max(1.25, desiredWidth / baseWidth, naturalHeight / baseHeight);
-        const scale = Math.min(desiredScale, Math.min(600, availableWidth) / baseWidth, availableHeight / baseHeight);
-        const width = baseWidth * scale;
-        const height = baseHeight * scale;
+        // Measure a readable layout independently of the original timetable
+        // slot. A two-period slot can be very tall even for a short lesson;
+        // inheriting its ratio used to create an almost empty preview shell.
+        const width = Math.min(360, availableWidth);
         cell.style.setProperty('--cs-preview-width', `${width}px`);
+        cell.style.setProperty('--cs-preview-height', 'auto');
+        const surface = cell.querySelector('.cs-lesson__surface');
+        const css = getComputedStyle(cell);
+        const frameHeight = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+            .reduce((sum, property) => sum + (parseFloat(css[property]) || 0), 0);
+        const naturalHeight = surface.scrollHeight + frameHeight;
+        const height = Math.min(availableHeight, Math.ceil(naturalHeight));
         cell.style.setProperty('--cs-preview-height', `${height}px`);
         const slotLeft = (slotRect.left - bodyRect.left) / scaleX;
         const slotTop = (slotRect.top - bodyRect.top) / scaleY;
@@ -661,6 +662,10 @@ export function createScheduleDeck(container, options = {}) {
         const bodyRect = refs.expandBody.getBoundingClientRect();
         const bodyScale = bodyRect.width / refs.expandBody.offsetWidth || 1;
         const transformFor = rect => `translate(${(rect.left - layout.left) / bodyScale}px, ${(rect.top - layout.top) / bodyScale}px) scale(${rect.width / layout.width})`;
+        // Keep the transform uniform while the empty shell changes its layout
+        // height. Text fades only after geometry settles, never stretching its
+        // glyphs to force the content back into the timetable slot's ratio.
+        const heightFor = rect => `${rect.height / bodyScale / (rect.width / layout.width)}px`;
         const moved = Math.abs(from.rect.width - target.width) + Math.abs(from.rect.height - target.height)
             + Math.abs(from.rect.left - target.left) + Math.abs(from.rect.top - target.top) > 1;
         const finish = () => {
@@ -686,8 +691,8 @@ export function createScheduleDeck(container, options = {}) {
         const duration = opening ? 190 : 150;
         const motionTiming = { duration, delay: fadeOut, easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'both' };
         const animations = [cell.animate([
-            { transform: transformFor(from.rect), transformOrigin: '0 0', overflow: 'hidden' },
-            { transform: transformFor(target), transformOrigin: '0 0', overflow: 'hidden' },
+            { transform: transformFor(from.rect), height: heightFor(from.rect), transformOrigin: '0 0', overflow: 'hidden' },
+            { transform: transformFor(target), height: heightFor(target), transformOrigin: '0 0', overflow: 'hidden' },
         ], motionTiming)];
         // No per-letter/line position or font-size interpolation: all text stays
         // invisible during geometric motion, then resolves quickly at full size.

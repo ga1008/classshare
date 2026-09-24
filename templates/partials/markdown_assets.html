@@ -1,3 +1,7 @@
+{% if markdown_assets is not defined %}{% set markdown_assets = namespace(loaded=false, mermaid=false) %}{% endif %}
+{% set markdown_runtime_needed = not markdown_assets.loaded %}
+{% if markdown_runtime_needed %}
+{% set markdown_assets.loaded = true %}
 <script{% if defer_markdown_assets | default(false) %} defer fetchpriority="low"{% endif %} src="{{ asset_url('es2022_polyfills') }}"></script>
 <script{% if defer_markdown_assets | default(false) %} defer fetchpriority="low"{% endif %} src="{{ asset_url('marked') }}"></script>
 <script>
@@ -5,7 +9,12 @@
         mermaid: "{{ asset_url('mermaid') }}"
     });
 </script>
-{% if include_mermaid | default(false) %}
+{% endif %}
+{% if include_mermaid | default(false) and not markdown_assets.mermaid %}
+{% set markdown_assets.mermaid = true %}
 <script{% if defer_markdown_assets | default(false) %} defer fetchpriority="low"{% endif %} src="{{ asset_url('mermaid') }}"></script>
 {% endif %}
+
+{% if markdown_runtime_needed %}
 <script{% if defer_markdown_assets | default(false) %} defer fetchpriority="low"{% endif %} src="{{ asset_url('markdown_runtime') }}"></script>
+{% endif %}

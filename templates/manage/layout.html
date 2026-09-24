@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% set markdown_assets = namespace(loaded=false, mermaid=false) %}
 {% set ui_palette = resolve_user_ui_preferences(request, user_info|default(none)) if resolve_user_ui_preferences is defined else {'enabled': false} %}
 {% from 'partials/lq_theme_attrs.html' import root_attrs, body_attrs %}
 {% set _lq_manage_pilot = lq_pilot_enabled|default(false) %}
@@ -195,9 +196,6 @@
         </main>
     </div>
 
-    {% if not embedded_mode %}
-    {% include "partials/ai_workspace_widget.html" %}
-    {% endif %}
     <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
@@ -436,8 +434,7 @@
     {% if not embedded_mode %}
     <script type="module" src="{{ asset_url('js/teacher_onboarding.js') }}"></script>
     {% include "partials/markdown_assets.html" %}
-    <script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
-    <script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
     {% endif %}
+{% include "partials/ai_workspace_mount.html" %}
 </body>
 </html>

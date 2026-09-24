@@ -2,11 +2,6 @@
 
 {% block title %}{{ material.name }} | 课程材料预览{% endblock %}
 
-{% block css %}
-{% if user_info.role == 'teacher' %}
-{% endif %}
-{% endblock %}
-
 {% block head %}
 {% if reader_return %}
 <script>window.MATERIAL_READER_RETURN = {{ reader_return | tojson }};</script>
@@ -218,15 +213,8 @@
 {% endif %}
 
 {# 图片大图查看统一使用共享灯箱 static/js/ls_image_lightbox.js（material_viewer.js 内委托） #}
-{% if user_info.role == 'teacher' %}
-{% include "partials/ai_workspace_widget.html" %}
-{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="{{ asset_url('js/material_viewer.js') }}"></script>
-{% if user_info.role == 'teacher' %}
-<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
-<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
-{% endif %}
 {% endblock %}

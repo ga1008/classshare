@@ -57,6 +57,15 @@ window.renderAIChatMarkdown = renderAIChatMarkdown;
 
 class AIChatComponent {
     constructor(options) {
+        this.workspace = Boolean(options.workspace);
+        this.managedWindow = Boolean(options.managedWindow);
+        this.onSessionChange = options.onSessionChange;
+        this.onDraftChange = options.onDraftChange;
+        this.onRequestChange = options.onRequestChange;
+        this.pendingRequest = options.pendingRequest || null;
+        this.preferredSessionUUID = options.sessionUUID || null;
+        this.sessionLoadPromise = null;
+        this.historyPollTimer = null;
         this.classOfferingId = options.classOfferingId;
         this.contextOnly = Boolean(options.contextOnly || !options.classOfferingId);
         this.contextPromptExtra = String(options.contextPromptExtra || '').trim();
@@ -153,10 +162,12 @@ class AIChatComponent {
                 <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
             </svg>`;
 
-        this.bindWindowEvents();
+        if (!this.managedWindow) this.bindWindowEvents();
         this.bindChatEvents();
-        this.bindResizeEvents();
-        this.resetWindowLayout();
+        if (!this.managedWindow) {
+            this.bindResizeEvents();
+            this.resetWindowLayout();
+        }
     }
 
     /**
@@ -267,6 +278,7 @@ class AIChatComponent {
     }
 
     ensureWindowInViewport() {
+        if (this.windowManager) return this.windowManager.ensureVisible();
         if (this.modalContainer.classList.contains('fullscreen')) {
             return;
         }
@@ -306,6 +318,7 @@ class AIChatComponent {
         window.addEventListener('resize', this.handleViewportResize);
     }
     openChat() {
+        if (this.windowManager) return this.windowManager.open();
         if (this.lastWindowRect) {
             this.restoreWindowLayout();
         } else {
@@ -322,6 +335,7 @@ class AIChatComponent {
         this.textarea.focus();
     }
     closeChat() {
+        if (this.windowManager) return this.windowManager.close();
         this.modal.style.display = 'none';
         this.modal.setAttribute('aria-hidden', 'true');
         this.fab.style.display = 'block';
@@ -358,6 +372,7 @@ class AIChatComponent {
         }
     }
     toggleFullscreen() {
+        if (this.windowManager) return this.windowManager.toggleFullscreen();
         const willEnterFullscreen = !this.modalContainer.classList.contains('fullscreen');
         this.setFullscreenState(willEnterFullscreen);
     }
@@ -447,9 +462,7 @@ class AIChatComponent {
     // (bindChatEvents 保持不变)
     bindChatEvents() {
         this.newSessionBtn.addEventListener('click', () => {
-            if (confirm('确定要开始一个新对话吗？当前对话将被保存。')) {
-                this.startNewSession();
-            }
+            this.startNewSession();
         });
         this.sendBtn.addEventListener('click', this.handleSendMessage.bind(this));
         this.textarea.addEventListener('keypress', (e) => {
@@ -464,6 +477,7 @@ class AIChatComponent {
             this.textarea.style.height = 'auto';
             this.textarea.style.height = (this.textarea.scrollHeight) + 'px';
             this.updateSendButtonState();
+            this.onDraftChange?.();
         });
 
         // 新增: 深度思考按钮点击事件
@@ -474,7 +488,7 @@ class AIChatComponent {
     updateSendButtonState() {
         if (!this.sendBtn) return;
         const hasContent = Boolean(this.textarea?.value.trim()) || this.pendingFiles.length > 0;
-        const missingSession = !this.contextOnly && !this.currentSessionUUID;
+        const missingSession = (!this.contextOnly || this.workspace) && !this.currentSessionUUID;
         this.sendBtn.disabled = this.isLoading || missingSession || !hasContent;
     }
 
@@ -845,18 +859,25 @@ class AIChatComponent {
 
     // (loadOrCreateSession, loadSession, startNewSession 保持不变)
     async loadOrCreateSession() {
-        if (this.contextOnly) {
+        if (this.sessionLoadPromise) return this.sessionLoadPromise;
+        this.sessionLoadPromise = this.loadInitialSession().finally(() => { this.sessionLoadPromise = null; });
+        return this.sessionLoadPromise;
+    }
+    async loadInitialSession() {
+        if (this.contextOnly && !this.workspace) {
             this.currentSessionUUID = 'context-only';
             this.updateSendButtonState();
             return;
         }
         try {
-            const data = window.apiFetch
-                ? await window.apiFetch(`/api/ai/chat/sessions/${this.classOfferingId}`, { silent: true })
-                : null;
+            const url = this.workspace ? '/api/ai/workspace/sessions' : `/api/ai/chat/sessions/${this.classOfferingId}`;
+            const response = await fetch(url, { credentials: 'same-origin' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || '获取会话失败');
             if (!data) throw new Error('获取会话失败');
             if (data.sessions && data.sessions.length > 0) {
-                await this.loadSession(data.sessions[0].session_uuid);
+                const selected = data.sessions.find(session => session.session_uuid === this.preferredSessionUUID) || data.sessions[0];
+                await this.loadSession(selected.session_uuid);
             } else {
                 await this.startNewSession();
             }
@@ -865,18 +886,20 @@ class AIChatComponent {
         }
     }
     async loadSession(uuid) {
-        if (this.contextOnly) return;
+        if (this.contextOnly && !this.workspace) return;
         if (!uuid) return;
         this.currentSessionUUID = uuid;
+        this.onSessionChange?.(uuid);
         this.updateSendButtonState();
-        this.messagesBox.innerHTML = '';
         try {
-            const response = await fetch(`/api/ai/chat/history/${uuid}`);
+            const response = await fetch(this.workspace ? `/api/ai/workspace/history/${uuid}` : `/api/ai/chat/history/${uuid}`);
             const data = await response.json();
             if (!response.ok && window.handleAuthFailureResponse) {
                 await window.handleAuthFailureResponse(response, data);
             }
             if (!response.ok) throw new Error(data.detail || '加载历史失败');
+            if (this.currentSessionUUID !== uuid) return;
+            this.messagesBox.innerHTML = '';
 
             data.messages.forEach(msg => {
                 // 对于历史消息，我们需要检查是否有思考过程
@@ -912,12 +935,34 @@ class AIChatComponent {
                     thinkingState === 'none' ? '' : thinkingContent
                 );
             });
+            if (this.workspace) {
+                if (this.pendingRequest && data.messages.some(msg => msg.request_id === this.pendingRequest.id)) {
+                    if (this.draftFingerprint() === this.pendingRequest.fingerprint) {
+                        this.textarea.value = '';
+                        this.clearPendingFiles();
+                    }
+                    this.pendingRequest = null;
+                    this.onRequestChange?.(null);
+                }
+                this.isLoading = Boolean(data.pending);
+                this.updateSendButtonState();
+                clearTimeout(this.historyPollTimer);
+                this.historyPollTimer = null;
+                this.historyPaused = Boolean(data.pending);
+                if (data.pending && !document.hidden && (!this.windowManager || this.windowManager.isOpen)) {
+                    this.historyPaused = false;
+                    this.historyPollTimer = setTimeout(() => this.loadSession(uuid), 1800);
+                }
+            }
+            return data;
         } catch (err) {
             notifyAIChat(`加载历史失败: ${err.message}`, 'error');
         }
     }
     async startNewSession() {
-        if (this.contextOnly) {
+        if (this.isLoading) { notifyAIChat('当前回复完成后可开始新对话。', 'info'); return; }
+        clearTimeout(this.historyPollTimer);
+        if (this.contextOnly && !this.workspace) {
             this.currentSessionUUID = 'context-only';
             this.messagesBox.innerHTML = '';
             this.renderMessage('system', '已开始新的页面上下文对话。');
@@ -925,13 +970,14 @@ class AIChatComponent {
             return;
         }
         try {
-            const response = await fetch(`/api/ai/chat/session/new/${this.classOfferingId}`, { method: 'POST' });
+            const response = await fetch(this.workspace ? '/api/ai/workspace/session/new' : `/api/ai/chat/session/new/${this.classOfferingId}`, { method: 'POST' });
             const data = await response.json();
             if (!response.ok && window.handleAuthFailureResponse) {
                 await window.handleAuthFailureResponse(response, data);
             }
             if (!response.ok) throw new Error(data.detail || '创建新会话失败');
             this.currentSessionUUID = data.session.session_uuid;
+            this.onSessionChange?.(this.currentSessionUUID);
             this.messagesBox.innerHTML = '';
             this.renderMessage('system', '已开始新对话。');
             this.updateSendButtonState();
@@ -948,7 +994,7 @@ class AIChatComponent {
         const message = this.textarea.value.trim();
         if (!message && this.pendingFiles.length === 0) return;
         if (this.isLoading) return;
-        if (!this.contextOnly && !this.currentSessionUUID) {
+        if ((!this.contextOnly || this.workspace) && !this.currentSessionUUID) {
             notifyAIChat('请先开始一个新会话。', 'error');
             return;
         }
@@ -972,7 +1018,17 @@ class AIChatComponent {
         // 2. 准备 FormData (无变化)
         const formData = new FormData();
         formData.append('message', message);
-        if (!this.contextOnly) {
+        if (this.workspace) {
+            const fingerprint = this.draftFingerprint();
+            if (this.pendingRequest?.fingerprint !== fingerprint) {
+                this.pendingRequest = { id: crypto.randomUUID(), fingerprint };
+                this.onRequestChange?.(this.pendingRequest);
+            }
+            formData.append('session_uuid', this.currentSessionUUID);
+            formData.append('request_id', this.pendingRequest.id);
+            formData.append('page_path', window.location.pathname);
+        }
+        if (!this.contextOnly && !this.workspace) {
             formData.append('session_uuid', this.currentSessionUUID);
             formData.append('class_offering_id', this.classOfferingId);
         }
@@ -988,9 +1044,17 @@ class AIChatComponent {
         });
 
         // 3. 清空输入 (无变化)
-        this.textarea.value = '';
-        this.textarea.style.height = 'auto'; // (重置高度)
-        this.clearPendingFiles();
+        const submittedFingerprint = this.draftFingerprint();
+        const acceptDraft = () => {
+            if (this.draftFingerprint() === submittedFingerprint) {
+                this.textarea.value = '';
+                this.textarea.style.height = 'auto';
+                this.clearPendingFiles();
+            }
+            this.pendingRequest = null;
+            this.onRequestChange?.(null);
+        };
+        if (!this.workspace) acceptDraft();
 
         // 4. 创建流式占位符 (无变化)
         const aiMsgDiv = document.createElement('div');
@@ -1007,30 +1071,38 @@ class AIChatComponent {
         this.renderStreamState(aiBubble, streamState);
         let streamBuffer = '';
         const decoder = new TextDecoder("utf-8");
+        let recoverHistory = false;
+        let rejectedMessage = '';
 
         try {
             // 5. 发送 API (无变化)
-            const response = await fetch(this.contextOnly ? '/api/ai/workspace-chat' : '/api/ai/chat', {
+            const response = await fetch(this.workspace || this.contextOnly ? '/api/ai/workspace-chat' : '/api/ai/chat', {
                 method: 'POST',
                 body: formData,
                 credentials: 'same-origin'
             });
 
+            if (this.workspace && response.status === 202) {
+                acceptDraft();
+                recoverHistory = true;
+                await this.loadSession(this.currentSessionUUID);
+                return;
+            }
+
             if (!response.ok) {
                 const errorText = await response.text();
+                let errorJson = null;
                 try {
-                    const errorJson = JSON.parse(errorText);
-                    if (window.handleAuthFailureResponse) {
-                        await window.handleAuthFailureResponse(response, errorJson);
-                    }
-                    throw new Error(errorJson.detail || `服务器错误: ${response.status}`);
-                } catch (e) {
-                     throw new Error(errorText || `服务器错误: ${response.status}`);
-                }
+                    errorJson = JSON.parse(errorText);
+                } catch { /* Proxies may return HTML; do not show it as a message. */ }
+                if (window.handleAuthFailureResponse) await window.handleAuthFailureResponse(response, errorJson);
+                rejectedMessage = typeof errorJson?.detail === 'string' ? errorJson.detail : `请求未被接受（${response.status}）`;
+                throw new Error(rejectedMessage);
             }
             if (!response.body) {
                 throw new Error("浏览器不支持流式响应。");
             }
+            if (this.workspace) acceptDraft();
 
             const reader = response.body.getReader();
 
@@ -1094,11 +1166,28 @@ class AIChatComponent {
                 message: err.message
             });
             this.finalizeStreamMessage(aiMsgDiv, streamState);
+            if (this.workspace) {
+                const history = await this.loadSession(this.currentSessionUUID);
+                recoverHistory = Boolean(history?.pending);
+                if (rejectedMessage) notifyAIChat(`${rejectedMessage} 草稿已保留。`, 'error');
+                if (!history) notifyAIChat('连接中断，草稿已保留；重新打开助手可恢复回复。', 'info');
+            }
         } finally {
-            this.isLoading = false;
+            if (!recoverHistory) this.isLoading = false;
             this.updateSendButtonState();
-            this.textarea.focus();
+            if (this.modal.contains(document.activeElement)) this.textarea.focus();
         }
+    }
+
+    pauseHistory() {
+        if (!this.historyPollTimer) return;
+        clearTimeout(this.historyPollTimer);
+        this.historyPollTimer = null;
+        this.historyPaused = true;
+    }
+
+    draftFingerprint() {
+        return JSON.stringify([this.currentSessionUUID, this.textarea.value.trim(), this.pendingFiles.map(f => [f.name, f.size, f.type, f.lastModified])]);
     }
 
     /**
@@ -1302,6 +1391,10 @@ class AIChatComponent {
         const docExtensions = ['.docx', '.pptx', '.xlsx', '.xls', '.doc', '.ppt', '.pdf'];
 
         for (const file of e.target.files) {
+            if (file.size > 10 * 1024 * 1024 || this.pendingFiles.reduce((size, item) => size + item.size, file.size) > 20 * 1024 * 1024) {
+                notifyAIChat('单个附件不超过 10MB，全部附件不超过 20MB。', 'warning');
+                continue;
+            }
             if (this.pendingFiles.length >= 5) {
                 notifyAIChat('一次最多上传5个文件。', 'error');
                 break;
@@ -1332,6 +1425,8 @@ class AIChatComponent {
         this.updateSendButtonState();
     }
     renderPreviews() {
+        this.onDraftChange?.();
+        this.previewsBox.querySelectorAll('img[src^="blob:"]').forEach(img => URL.revokeObjectURL(img.src));
         this.previewsBox.innerHTML = '';
         this.pendingFiles.forEach((file, index) => {
             const item = document.createElement('div');
@@ -1352,17 +1447,21 @@ class AIChatComponent {
                         <line x1="16" y1="13" x2="8" y2="13"/>
                         <line x1="16" y1="17" x2="8" y2="17"/>
                     </svg>
-                    <span class="preview-file-name">${file.name}</span>
+                    <span class="preview-file-name"></span>
                 `;
+                fileDiv.querySelector('.preview-file-name').textContent = file.name;
                 item.appendChild(fileDiv);
             }
 
             const removeBtn = document.createElement('button');
             removeBtn.className = 'remove-preview';
+            removeBtn.type = 'button';
+            removeBtn.setAttribute('aria-label', `移除 ${file.name}`);
             removeBtn.innerHTML = '&times;';
             removeBtn.onclick = () => {
                 this.pendingFiles.splice(index, 1);
                 this.renderPreviews();
+                this.updateSendButtonState();
             };
             item.appendChild(removeBtn);
             this.previewsBox.appendChild(item);

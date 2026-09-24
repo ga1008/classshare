@@ -1,0 +1,4 @@
+{# Ordered classic dependencies must execute before the workspace module. #}
+{% with defer_markdown_assets=true %}{% include 'partials/markdown_assets.html' %}{% endwith %}
+<script defer src="{{ asset_url('js/ai_chat_component.js') }}"></script>
+<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>

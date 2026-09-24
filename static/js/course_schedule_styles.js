@@ -290,7 +290,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) {
     --cs-radius: var(--ls-r-lg);
     top: var(--cs-preview-top, 0px); left: var(--cs-preview-left, 0px);
-    width: var(--cs-preview-width, 280px); height: var(--cs-preview-height, 360px);
+    width: var(--cs-preview-width, 280px); height: var(--cs-preview-height, auto);
     max-width: var(--cs-preview-max-width, calc(100vw - 32px));
     max-height: var(--cs-preview-max-height, calc(100dvh - 32px));
     overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
@@ -298,7 +298,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     box-shadow: var(--ls-glass-shadow-strong);
 }
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__surface {
-    display: flex; flex-direction: column; width: auto; height: auto; min-height: 100%;
+    display: flex; flex-direction: column; width: auto; height: auto; min-height: 0;
     padding: 13px 14px; gap: 10px; overflow: visible;
 }
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__main { align-self: stretch; overflow: visible; }

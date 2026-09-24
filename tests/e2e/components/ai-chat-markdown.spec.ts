@@ -75,8 +75,9 @@ async function enqueue(page: Page, events: any[], close = false) {
 test('the material reader renders parser dependencies before chat initialization', async () => {
   const html = execFileSync('python', ['-X', 'utf8', '-c', `
 from jinja2 import Environment, FileSystemLoader
+from classroom_app.services.ai_workspace_policy import ai_workspace_policy
 env = Environment(loader=FileSystemLoader('templates'))
-env.globals.update(asset_url=lambda name: '/static/'+name, static_asset_revision=lambda: 'fixture', vite_entry_tags=lambda entry: '')
+env.globals.update(asset_url=lambda name: '/static/'+name, static_asset_revision=lambda: 'fixture', vite_entry_tags=lambda entry: '', ai_workspace_policy=ai_workspace_policy)
 shell = dict(entry_name='lesson_5.html', material_name='课程', entry_material_id=1, material_path='lesson_5.html', is_html_package=True, node_id=1, package_root_id=1, iframe_src='/fixture-lesson', lesson_number=5)
 print(env.get_template('material_render_shell.html').render(shell=shell, user_info={'id':1,'role':'teacher','name':'示例教师'}, learning_context={'class_offering_id':42,'session_id':5}, reader_return=None))
 `], { encoding: 'utf8' });

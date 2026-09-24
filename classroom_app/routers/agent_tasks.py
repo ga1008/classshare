@@ -14,6 +14,7 @@ from ..config import AGENT_DSH_ENABLED, AGENT_TASKS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.agent_actor_service import resolve_agent_actor
+from ..services.ai_workspace_policy import ensure_ai_workspace_access
 from ..services.agent_task_service import (
     AGENT_TASK_ATTACHMENT_MAX_FILE_BYTES,
     AGENT_TASK_ATTACHMENT_MAX_FILES,
@@ -41,10 +42,19 @@ from ..services.agent_task_service import (
 router = APIRouter(prefix="/api/agent-tasks", tags=["agent-tasks"])
 
 
-def _current_agent_user(user: dict = Depends(get_current_user)) -> dict:
+def _current_agent_user(request: Request, user: dict = Depends(get_current_user)) -> dict:
     with get_db_connection() as conn:
+        ensure_ai_workspace_access(conn, user, request)
         actor = resolve_agent_actor(conn, user.get("role"), user.get("id"))
     return {**user, **actor.as_user()}
+
+
+def _ensure_agent_page_context(conn, user: dict, request: Request, data: dict) -> None:
+    """Client context is an additional assessment restriction, never authority."""
+    ensure_ai_workspace_access(
+        conn, user, request, page_path=str(data.get("page_path") or ""),
+        extra_context=json.dumps(data.get("page_context") or {}, ensure_ascii=False),
+    )
 
 
 def _require_teacher_action(user: dict) -> None:
@@ -238,6 +248,7 @@ async def api_create_agent_task(
     for reserved in ("origin", "parent_task_id", "priority", "title_override", "extra_context", "attachments", "actor_role", "actor_id", "source_session_id", "source_session_hash", "source_session_key", "runtime_provider"):
         data.pop(reserved, None)
     with get_db_connection() as conn:
+        _ensure_agent_page_context(conn, user, request, data)
         task = create_agent_task(conn, user, data, source_session_id=_source_session_id(user))
         if attachment_items:
             from ..services.agent_task_service import save_task_attachments
@@ -268,6 +279,7 @@ async def api_set_agent_task_composer(request: Request, user: dict = Depends(_cu
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="请求格式错误。")
     with get_db_connection() as conn:
+        _ensure_agent_page_context(conn, user, request, data)
         queue_state = set_agent_task_composer(
             conn,
             user,
@@ -459,6 +471,7 @@ async def api_follow_up_agent_task(
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="请求格式错误。")
     with get_db_connection() as conn:
+        _ensure_agent_page_context(conn, user, request, data)
         current = get_agent_task(conn, task_id, teacher_id=_teacher_id(user), actor_role=user["role"])
         if current.get("is_active"):
             task = add_task_supplement(conn, user, task_id, str(data.get("instruction") or ""))
@@ -485,6 +498,7 @@ async def api_retry_agent_task(
     if not isinstance(data, dict):
         data = {}
     with get_db_connection() as conn:
+        _ensure_agent_page_context(conn, user, request, data)
         task = create_retry_task(
             conn,
             user,

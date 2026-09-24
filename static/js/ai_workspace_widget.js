@@ -1,4 +1,14 @@
+import { createWorkspaceState } from './ai_workspace_state.js';
+import { createAssistantWindow } from './ai_workspace_window.js';
+import { capturePageImage } from './ai_workspace_capture.js';
+import { createConversationHistory } from './ai_workspace_history.js';
+import { confirm as confirmGlass } from './lq/dialogs.js';
+
 const CONFIG = window.AI_WORKSPACE_WIDGET_CONFIG || {};
+const workspaceState = createWorkspaceState(CONFIG.userKey);
+let windowManager = null;
+let draftsReady = false;
+let conversationHistory = null;
 const TASK_REFRESH_MS = 5000;
 const TASK_EVENT_POLL_MS = 2500;
 const COMPOSER_HEARTBEAT_MS = 10000;
@@ -464,6 +474,7 @@ function applyAgentStarter(button) {
 }
 
 function openWorkspaceModal() {
+    if (windowManager) { windowManager.open(); return true; }
     if (chatComponent && typeof chatComponent.openChat === 'function') {
         chatComponent.openChat();
         return true;
@@ -2035,6 +2046,7 @@ function startTaskEventPolling() {
         return;
     }
     taskEventPollTimer = window.setInterval(() => {
+        if (document.hidden || !windowManager?.isOpen) return;
         pollTaskEventsOnce();
     }, TASK_EVENT_POLL_MS);
 }
@@ -2064,7 +2076,7 @@ async function deleteAgentTask(taskId) {
     if (!id) {
         return;
     }
-    if (!window.confirm('确定从历史记录中删除这条 Agent 任务吗？')) {
+    if (!await confirmGlass({ title: '删除任务历史', message: '确定从历史记录中删除这条 Agent 任务吗？', confirmLabel: '删除', danger: true })) {
         return;
     }
     const data = await apiJson(`/api/agent-tasks/${id}`, { method: 'DELETE' });
@@ -2084,7 +2096,7 @@ async function deleteAgentTask(taskId) {
 }
 
 async function clearAgentTaskHistory() {
-    if (!window.confirm('确定删除你所有已结束的 Agent 任务历史吗？正在排队或执行中的任务不会删除。')) {
+    if (!await confirmGlass({ title: '清理任务历史', message: '删除你所有已结束的 Agent 任务历史？正在排队或执行中的任务会保留。', confirmLabel: '删除历史', danger: true })) {
         return;
     }
     const data = await apiJson('/api/agent-tasks/history', { method: 'DELETE' });
@@ -2460,7 +2472,7 @@ function startTaskPolling() {
     }
     taskPollTimer = window.setInterval(() => {
         const modal = $('#ai-chat-modal');
-        if (modal?.style.display === 'block') {
+        if (!document.hidden && modal?.style.display === 'block' && taskBootstrapLoaded) {
             refreshTasks({ silent: true });
         }
     }, TASK_REFRESH_MS);
@@ -2526,6 +2538,13 @@ function setAgentMode(enabled, { persist = true, showRuntimeWarning = false } = 
         return;
     }
     agentMode = Boolean(enabled);
+    conversationHistory?.close();
+    setAgentHistoryOpen(false);
+    const historyButton = $('#ai-agent-history-toggle');
+    if (historyButton) {
+        historyButton.title = agentMode ? 'Agent 队列与历史' : '我的对话';
+        historyButton.setAttribute('aria-label', historyButton.title);
+    }
     if (!agentMode) {
         selectedAgentWorkflowKey = '';
     }
@@ -2553,12 +2572,12 @@ function setAgentMode(enabled, { persist = true, showRuntimeWarning = false } = 
     setQueueState(lastTaskPayload.queue_state || {}, lastTaskPayload.counts || {});
     if (persist) {
         try {
-            window.localStorage.setItem('lanshare.aiWorkspace.agentMode', agentMode ? '1' : '0');
+            workspaceState.patch({ agentMode });
         } catch {
             // Ignore storage restrictions.
         }
     }
-    if (agentMode) {
+    if (agentMode && windowManager?.isOpen) {
         loadBootstrap({ showRuntimeWarning }).then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
         startTaskPolling();
     } else {
@@ -2609,7 +2628,7 @@ function scheduleComposerHeartbeat() {
         window.clearInterval(composerHeartbeatTimer);
     }
     composerHeartbeatTimer = window.setInterval(() => {
-        if (agentMode && document.activeElement === $('#ai-chat-textarea')) {
+        if (!document.hidden && windowManager?.isOpen && agentMode && document.activeElement === $('#ai-chat-textarea')) {
             updateComposerPresence(true).catch(() => {});
         }
     }, COMPOSER_HEARTBEAT_MS);
@@ -2812,7 +2831,7 @@ async function submitAgentTaskFromChat() {
             surface.sendBtn.disabled = false;
         }
         renderAgentStarters();
-        textarea?.focus();
+        if ($('#ai-chat-modal')?.contains(document.activeElement)) textarea?.focus();
     }
 }
 
@@ -2832,6 +2851,7 @@ function bindTaskCenter() {
         });
     });
     $('#ai-agent-history-toggle')?.addEventListener('click', () => {
+        if (!agentMode) { void conversationHistory?.toggle(); return; }
         const drawer = $('#ai-agent-history-drawer');
         setAgentHistoryOpen(!drawer || drawer.hidden);
     });
@@ -3067,18 +3087,14 @@ function bindTaskCenter() {
         }
     });
     scheduleComposerHeartbeat();
-    let preferredAgentMode = !CONFIG.classOfferingId;
+    let preferredAgentMode = false;
     try {
-        const saved = window.localStorage.getItem('lanshare.aiWorkspace.agentMode');
-        if (saved === '1') preferredAgentMode = true;
-        if (saved === '0') preferredAgentMode = false;
+        const saved = workspaceState.value.agentMode;
+        if (typeof saved === 'boolean') preferredAgentMode = saved;
     } catch {
         // Ignore storage restrictions.
     }
     setAgentMode(preferredAgentMode, { persist: false, showRuntimeWarning: false });
-    if (!preferredAgentMode) {
-        loadBootstrap({ showRuntimeWarning: false }).then(() => refreshTasks({ silent: true })).catch((error) => notify(error.message || 'Agent 加载失败', 'error'));
-    }
     startTaskPolling();
     startTaskEventPolling();
 }
@@ -3090,7 +3106,12 @@ function initChatComponent() {
     try {
         chatComponent = new window.AIChatComponent({
             classOfferingId: CONFIG.classOfferingId,
-            contextOnly: !CONFIG.classOfferingId,
+            contextOnly: true, workspace: true, managedWindow: true,
+            sessionUUID: workspaceState.value.sessionUUID,
+            pendingRequest: workspaceState.value.pendingRequest,
+            onSessionChange: sessionUUID => workspaceState.patch({ sessionUUID }),
+            onRequestChange: pendingRequest => workspaceState.patch({ pendingRequest }),
+            onDraftChange: persistDraft,
             getContextPromptExtra: () => formatContextForPrompt(collectPageContext()),
         });
         chatComponent.init();
@@ -3102,109 +3123,76 @@ function initChatComponent() {
     }
 }
 
-function initFallbackShell() {
-    const fab = $('#ai-chat-fab');
-    const modal = $('#ai-chat-modal');
-    const container = $('.ai-chat-container', modal || document);
-    if (!fab || !modal || !container) {
-        return;
-    }
-    const open = () => {
-        openWorkspaceModal();
-    };
-    const close = () => {
-        modal.style.display = 'none';
-        modal.setAttribute('aria-hidden', 'true');
-        fab.style.display = 'flex';
-        container.classList.remove('fullscreen');
-        document.body.classList.remove('ai-chat-fullscreen-active');
-    };
-    fab.addEventListener('click', open);
-    $('#ai-chat-btn-close')?.addEventListener('click', close);
-    $('#ai-chat-btn-fullscreen')?.addEventListener('click', () => {
-        const button = $('#ai-chat-btn-fullscreen');
-        const isFullscreen = container.classList.toggle('fullscreen');
-        document.body.classList.toggle('ai-chat-fullscreen-active', isFullscreen);
-        if (isFullscreen) {
-            // 清掉浮窗模式留下的内联几何样式，否则全屏布局会被覆盖。
-            ['width', 'height', 'top', 'bottom', 'left', 'right'].forEach((prop) => {
-                container.style[prop] = '';
-            });
-        } else {
-            window.setTimeout(ensureWorkspaceWindowVisible, 0);
-        }
-        if (button) {
-            button.title = isFullscreen ? '退出全屏' : '全屏';
-            button.setAttribute('aria-label', button.title);
-            button.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
-        }
-    });
-    if (!CONFIG.classOfferingId) {
-        $('#ai-chat-textarea')?.setAttribute('placeholder', CONFIG.taskCenterEnabled ? '描述要让 Agent 执行的平台任务...' : '当前页面未绑定具体课堂。');
-        ['#ai-chat-btn-send', '#ai-chat-btn-attach', '#ai-deep-think-btn'].forEach((selector) => {
-            const button = $(selector);
-            if (button) {
-                button.disabled = !(CONFIG.taskCenterEnabled && selector === '#ai-chat-btn-send');
-            }
-        });
-    }
+function persistDraft() {
+    if (!draftsReady) return;
+    workspaceState.patch({ draft: $('#ai-chat-textarea')?.value || '', deepThinking: Boolean(chatComponent?.isDeepThinking) });
+    void workspaceState.saveFiles(chatComponent?.pendingFiles || []);
 }
 
-function initOpenContextHooks() {
-    $('#ai-chat-fab')?.addEventListener('click', () => {
-        refreshContextPreview();
-        window.setTimeout(ensureWorkspaceWindowVisible, 0);
-        window.dispatchEvent(new CustomEvent('ai-workspace:opened', { detail: collectPageContext() }));
-    }, { capture: true });
+async function initWindow() {
+    const modal = $('#ai-chat-modal'), fab = $('#ai-chat-fab');
+    const container = $('.ai-chat-container', modal);
+    const textarea = $('#ai-chat-textarea');
+    textarea.value = workspaceState.value.draft || '';
+    if (chatComponent) {
+        chatComponent.pendingFiles = await workspaceState.loadFiles();
+        chatComponent.isDeepThinking = Boolean(workspaceState.value.deepThinking);
+        $('#ai-deep-think-btn')?.classList.toggle('active', chatComponent.isDeepThinking);
+        chatComponent.renderPreviews();
+    }
+    draftsReady = true;
+    windowManager = createAssistantWindow({ modal, container, fab, state: workspaceState,
+        onOpen: ({ focus }) => {
+            refreshContextPreview();
+            if (agentMode) void loadBootstrap().then(() => refreshTasks({ silent: true }));
+            if (chatComponent) {
+                if (!chatComponent.currentSessionUUID) void chatComponent.loadOrCreateSession();
+                else if (!chatComponent.isLoading || chatComponent.historyPollTimer || chatComponent.historyPaused) void chatComponent.loadSession(chatComponent.currentSessionUUID);
+            }
+            if (focus) textarea.focus({ preventScroll: true });
+        },
+        onClose: () => {
+            persistDraft();
+            chatComponent?.pauseHistory();
+            Array.from(taskEventStreams.keys()).forEach(closeTaskEventStream);
+            void updateComposerPresence(false);
+        },
+    });
+    if (chatComponent) chatComponent.windowManager = windowManager;
+    conversationHistory = createConversationHistory(container, chatComponent, notify);
+    textarea.addEventListener('input', persistDraft);
+    $('#ai-deep-think-btn')?.addEventListener('click', persistDraft);
+    window.addEventListener('pagehide', persistDraft);
     window.addEventListener('ai-workspace:opened', refreshContextPreview);
-    window.addEventListener('ai-workspace:opened', () => window.setTimeout(ensureWorkspaceWindowVisible, 0));
+    const captureButton = $('#ai-chat-btn-capture');
+    captureButton?.addEventListener('click', () => {
+        if (!chatComponent || captureButton.disabled) return;
+        if (agentMode && currentAgentComposerTargetTask()) {
+            notify('请先新建对话或任务，再添加截图。'); return;
+        }
+        captureButton.disabled = true;
+        // Keep this direct call in the click activation: browser consent cannot be deferred.
+        capturePageImage({
+            hideAssistant: () => { windowManager.suspend(); return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); },
+            restoreAssistant: () => { windowManager.resume(); textarea.focus({ preventScroll: true }); }, notify,
+        }).then(file => {
+            if (!file) return;
+            chatComponent.onFileSelected({ target: { files: [file] } });
+            textarea.focus({ preventScroll: true });
+        }).catch(error => notify(error.message || '截图失败，请重试或上传截图。', 'error'))
+          .finally(() => { captureButton.disabled = false; });
+    });
+    windowManager.restore();
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) chatComponent?.pauseHistory();
+        else if (windowManager.isOpen && chatComponent?.historyPaused) void chatComponent.loadSession(chatComponent.currentSessionUUID);
+    });
 }
 
 let aiWorkspaceWidgetInitialized = false;
 
-function initScopedModelessKeyboard() {
-    if (!document.body.matches('.ls-page, .classroom-workspace-v2')) return;
-    const modal = $('#ai-chat-modal');
-    const container = $('.ai-chat-container', modal || document);
-    const fab = $('#ai-chat-fab');
-    const close = $('#ai-chat-btn-close');
-    if (!modal || !container || !fab || !close) return;
-
-    // This floating workspace deliberately permits work on the page behind it.
-    container.setAttribute('aria-modal', 'false');
-    modal.style.pointerEvents = 'none';
-    modal.style.background = 'transparent';
-    // Keep the workspace below these pages' real modal overlays (5090+).
-    modal.style.zIndex = '5000';
-    container.style.pointerEvents = 'auto';
-    let returnTarget = fab;
-    window.addEventListener('ai-workspace:opened', () => {
-        const active = document.activeElement;
-        if (active instanceof HTMLElement && active !== document.body && !modal.contains(active)) {
-            returnTarget = active;
-        }
-    });
-    close.addEventListener('click', () => {
-        if (modal.getAttribute('aria-hidden') !== 'true') return;
-        const target = returnTarget.isConnected && returnTarget.getClientRects().length ? returnTarget : fab;
-        target.focus({ preventScroll: true });
-    });
-    modal.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented ||
-            event.target.closest('[role="dialog"]') !== container) return;
-        // A real modal opened above this tool owns Escape until it is dismissed.
-        const blockingDialog = [...document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]')]
-            .some((dialog) => dialog !== container && dialog.getClientRects().length &&
-                getComputedStyle(dialog).visibility !== 'hidden');
-        if (blockingDialog) return;
-        event.preventDefault();
-        event.stopPropagation();
-        close.click();
-    });
-}
-
-function initAIWorkspaceWidget() {
-    if (aiWorkspaceWidgetInitialized) {
+async function initAIWorkspaceWidget() {
+    if (aiWorkspaceWidgetInitialized || !$('#ai-chat-modal') || window.top !== window.self) {
         return;
     }
     aiWorkspaceWidgetInitialized = true;
@@ -3212,11 +3200,8 @@ function initAIWorkspaceWidget() {
     window.formatAIWorkspaceContextForPrompt = formatContextForPrompt;
 
     const chatReady = initChatComponent();
-    if (!chatReady) {
-        initFallbackShell();
-    }
-    initScopedModelessKeyboard();
-    initOpenContextHooks();
+    if (!chatReady) { notify('AI 助手加载失败，请刷新页面重试。', 'error'); return; }
+    await initWindow();
     const deferredLauncher = $('#ai-chat-fab[data-ai-deferred]');
     if (deferredLauncher) {
         deferredLauncher.disabled = false;

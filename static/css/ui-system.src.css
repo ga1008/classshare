@@ -44782,8 +44782,7 @@ body.has-teaching-session-modal {
    ============================================================ */
 
 /* 全屏铺满视口；!important 防止浮窗模式残留的内联几何样式覆盖布局 */
-.ai-chat-container.fullscreen,
-.ai-workspace-container.fullscreen {
+#ai-chat-modal:not([data-ai-window="modeless"]) .ai-chat-container.fullscreen {
     inset: 0 !important;
     width: auto !important;
     height: auto !important;

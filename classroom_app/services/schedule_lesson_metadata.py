@@ -7,8 +7,46 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 
 from .academic_course_sync_service import _parse_section_range
+
+
+def _class_name_identity(value: str) -> str:
+    """Compare display spelling, not punctuation or fragments of a class name."""
+    return re.sub(r'\s+', '', unicodedata.normalize('NFKC', value))
+
+
+def _cached_class_names(value: str, known: dict[str, str]) -> list[str]:
+    # The membership cache uses '·'; older imports used list punctuation.
+    # Spaces, slashes and parentheses belong to names, never list boundaries.
+    parts, current, depth = [], [], 0
+    for char in value:
+        if char in '(（[［【':
+            depth += 1
+        elif char in ')）]］】':
+            depth = max(0, depth - 1)
+        if depth == 0 and char in '、,，;；\r\n':
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    parts.append(''.join(current).strip())
+    result = []
+    for part in filter(None, parts):
+        if _class_name_identity(part) in known:
+            result.append(part)
+            continue
+        pieces = [piece.strip() for piece in part.split('·') if piece.strip()]
+        index = 0
+        while index < len(pieces):
+            # A real class can itself contain a middle dot. Match known whole
+            # names longest-first before treating cache dots as separators.
+            end = next((end for end in range(len(pieces), index, -1)
+                        if _class_name_identity('·'.join(pieces[index:end])) in known), index + 1)
+            result.append('·'.join(pieces[index:end]))
+            index = end
+    return result
 
 
 def load_offering_class_labels(conn, offering_ids, *, teacher_id=None) -> dict[int, str]:
@@ -36,10 +74,13 @@ def load_offering_class_labels(conn, offering_ids, *, teacher_id=None) -> dict[i
                 parts.append(value)
     result = {}
     for oid, parts in names.items():
-        combined = [part.strip() for part in re.split(r'[、,，;；]', labels.get(oid, '')) if part.strip()]
-        for name in parts:
-            if name not in combined:
-                combined.append(name)
+        known = {_class_name_identity(name): name for name in parts}
+        combined, seen = [], set()
+        for name in [*_cached_class_names(labels.get(oid, ''), known), *parts]:
+            identity = _class_name_identity(name)
+            if identity and identity not in seen:
+                seen.add(identity)
+                combined.append(known.get(identity, name))
         result[oid] = '、'.join(combined)
     return result
 

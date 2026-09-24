@@ -1,0 +1,11 @@
+{# A single policy gate for every document root; embedded tools use their host's workspace. #}
+{% set ai_workspace_access = ai_workspace_policy(user_info|default(none), request|default(none)) if ai_workspace_policy is defined else {'allowed': false} %}
+{% set ai_workspace_embedded = embedded_mode|default(false) or (request is defined and request.query_params is defined and (request.query_params.get('embed', '')|trim|lower) in ['1', 'true', 'yes', 'on']) %}
+{% if ai_workspace_access.allowed and not ai_workspace_embedded %}
+{% if ai_workspace_stage|default('body') == 'head' %}
+<link rel="stylesheet" href="{{ asset_url('css/ai_workspace.css') }}">
+{% else %}
+{% include 'partials/ai_workspace_widget.html' %}
+{% include 'partials/ai_workspace_assets.html' %}
+{% endif %}
+{% endif %}

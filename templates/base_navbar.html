@@ -102,9 +102,6 @@
 <main class="main-content container"{% if navbar_shell_enabled %} id="navbar-main" tabindex="-1" data-lq-navbar-content{% if user_info.role == 'student' %} data-lq-dock-content{% endif %}{% endif %}>
     {% block main_content %}{% endblock %}
 </main>
-{% if user_info.role == 'teacher' %}
-{% include "partials/ai_workspace_widget.html" %}
-{% endif %}
 {% if user_info.role == 'student' %}
 {% if navbar_shell_enabled %}{% include 'partials/lq_app_bottomnav.html' %}{% else %}{% include "partials/app_bottomnav.html" %}{% endif %}
 {% endif %}
@@ -216,13 +213,4 @@
 {% endif %}
 <script type="module" src="{{ asset_url('js/feedback.js') }}"></script>
 <script type="module" src="{{ asset_url('js/global_search.js') }}"></script>
-{% if user_info.role == 'teacher' %}
-{% if dashboard_defer_ai_tools | default(false) %}
-<script type="application/json" id="ls-deferred-ai-assets">{{ {"scripts": [asset_url('es2022_polyfills'), asset_url('marked'), asset_url('markdown_runtime'), asset_url('js/ai_chat_component.js')], "module": asset_url('js/ai_workspace_widget.js'), "mermaid": asset_url('mermaid')} | tojson }}</script>
-{% else %}
-{% include "partials/markdown_assets.html" %}
-<script src="{{ asset_url('js/ai_chat_component.js') }}"></script>
-<script type="module" src="{{ asset_url('js/ai_workspace_widget.js') }}"></script>
-{% endif %}
-{% endif %}
 {% endblock %}
