@@ -37,6 +37,9 @@ export const DECK_CSS = `
 }
 .cs-deck-nav__btn:hover { border-color: hsl(var(--ls-primary) / .6); background: color-mix(in srgb, hsl(var(--ls-primary)) 12%, var(--cs-control-fill)); }
 .cs-deck-nav__btn:disabled { opacity: 0.4; cursor: default; }
+.cs-deck-nav__btn--edit, .cs-deck-nav__btn--edit:link, .cs-deck-nav__btn--edit:visited { width: auto; padding: 0 14px; font-size: .8rem; font-weight: 800; text-decoration: none; color: hsl(var(--ls-ink)); background: color-mix(in srgb, hsl(var(--ls-primary)) 16%, var(--cs-control-fill)); }
+.cs-deck-nav__btn--edit:hover { background: color-mix(in srgb, hsl(var(--ls-primary)) 28%, var(--cs-control-fill)); color: hsl(var(--ls-ink)); }
+.cs-deck-nav__btn--edit[hidden] { display: none; }
 .cs-week-indicator { font-size: 0.86rem; font-weight: 800; color: hsl(var(--ls-ink)); min-width: 120px; text-align: center; }
 .cs-week-indicator small { display: block; font-weight: 600; color: hsl(var(--ls-ink-2)); font-size: 0.7rem; }
 .cs-deck-slider { width: 180px; accent-color: hsl(var(--ls-primary)); }
@@ -390,6 +393,12 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     cursor: pointer;
 }
 .cs-expand__nav button:hover { background: color-mix(in srgb, hsl(var(--ls-primary)) 12%, var(--cs-control-fill)); }
+.cs-expand__nav a[data-csd-expand-editor], .cs-expand__nav a[data-csd-expand-editor]:link, .cs-expand__nav a[data-csd-expand-editor]:visited {
+    display: inline-flex; align-items: center; border: 1px solid hsl(var(--ls-primary) / .5); background: color-mix(in srgb, hsl(var(--ls-primary)) 16%, var(--cs-control-fill));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)); color: hsl(var(--ls-ink)); border-radius: var(--ls-r-capsule); padding: 6px 14px; font-size: 0.82rem; font-weight: 800; text-decoration: none;
+}
+.cs-expand__nav a[data-csd-expand-editor]:hover { background: color-mix(in srgb, hsl(var(--ls-primary)) 28%, var(--cs-control-fill)); }
+.cs-expand__nav a[data-csd-expand-editor][hidden] { display: none; }
 .cs-expand__body { padding: 16px 20px 20px; min-height: 0; position: relative; }
 /* Routing space belongs to the timetable's scrollable canvas. Endpoints follow
    the visible lesson bounds; previews stay above lines and remain clickable. */

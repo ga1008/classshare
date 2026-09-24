@@ -480,6 +480,54 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/ai/workspace/attachments/{session_uuid}/{opaque_name}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workspace_attachment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace/history/{session_uuid}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workspace_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace/session/import/{legacy_uuid}",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_workspace_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace/session/new",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_workspace_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace/session/{session_uuid}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete_workspace_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/workspace/sessions",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_workspace_sessions",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/approvals",
     "methods": [
       "GET"
@@ -3230,6 +3278,54 @@
       "POST"
     ],
     "name": "api_sync_academic_course_schedule",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_payload",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/drafts",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_save_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_schedule_editor_delete_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}/withdraw",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_withdraw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/push",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_push",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/rooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_rooms",
     "include_in_schema": true
   },
   {
@@ -6630,6 +6726,14 @@
       "GET"
     ],
     "name": "get_manage_course_schedule_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/course-schedule/editor",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_course_schedule_editor_page",
     "include_in_schema": true
   },
   {

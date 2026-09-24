@@ -110,10 +110,13 @@ def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='
     stats = _build_course_stats(official)
     current = next((w for w in weeks if w['is_current']), {})
     warnings = snapshot.get('warnings') or []
+    # Several approved requests raise the same sentence; show each distinct text once.
+    warning_texts = list(dict.fromkeys(
+        text for text in (str(w.get('message', '')) if isinstance(w, dict) else str(w) for w in warnings) if text
+    ))
     return {
         'status': 'success', 'has_data': bool(all_items), 'schedule_source': 'academic',
-        'message': '；'.join(str(w.get('message', '')) if isinstance(w, dict) else str(w)
-                           for w in warnings[:3]), 'warnings': warnings,
+        'message': '；'.join(warning_texts[:3]), 'warnings': warnings,
         'terms': entries, 'selected_term': selected, 'sync_state': snapshot.get('sync_state') or {},
         'filters': {'course': course, 'class_label': class_label, 'course_options': course_options, 'class_options': class_options},
         'summary': {'course_count': len(stats), 'class_count': len({i['class_label'] for i in official}),

@@ -144,6 +144,36 @@ async def get_manage_course_schedule_page(request: Request, user: dict = Depends
     )
 
 
+@router.get("/manage/academic/course-schedule/editor", response_class=HTMLResponse)
+async def get_manage_course_schedule_editor_page(
+    request: Request, year: str = "", term: str = "", user: dict = Depends(get_current_teacher),
+):
+    """课表编辑模式：整学期周列表 + 拖拽调课 + 课次属性 + 保存到教务草稿。"""
+    from ...services.schedule_editor_service import build_editor_payload
+    from ...services.smart_classroom_schedule_sync_service import (
+        build_teacher_course_schedule_overview,
+    )
+
+    with get_db_connection() as conn:
+        overview = build_teacher_course_schedule_overview(
+            conn, int(user["id"]), year=str(year or "").strip(), term=str(term or "").strip(),
+        )
+        editor = build_editor_payload(conn, int(user["id"]), overview)
+        conn.commit()
+
+    return templates.TemplateResponse(
+        request,
+        "manage/course_schedule_editor.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="课表编辑模式",
+            active_page="course_schedule",
+            extra={"schedule_editor_boot": editor},
+        ),
+    )
+
+
 @router.get("/manage/academic/gongwen-sync", response_class=HTMLResponse)
 async def get_manage_system_gongwen_integrations_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教师个人校园公文通账号与公文同步管理页面。"""

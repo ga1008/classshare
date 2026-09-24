@@ -8,6 +8,7 @@ from .manage_parts import semesters_textbooks as _semesters_textbooks
 from .manage_parts import system_config as _system_config
 from .manage_parts import system_monitor as _system_monitor
 from .manage_parts import integrations as _integrations
+from .manage_parts import schedule_editor as _schedule_editor
 
 from .manage_parts.common import *
 from .manage_parts.classes_courses import *
@@ -24,6 +25,7 @@ router.include_router(_semesters_textbooks.router)
 router.include_router(_system_config.router)
 router.include_router(_system_monitor.router)
 router.include_router(_integrations.router)
+router.include_router(_schedule_editor.router)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

@@ -1,4 +1,4 @@
-import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
+import { createScheduleDeck, pendingScheduleChange, scheduleChangeLabel } from '/static/js/course_schedule_deck.js?v=deck3d-20260925-editor';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { bindSelection } from './lq/selection.js';
 

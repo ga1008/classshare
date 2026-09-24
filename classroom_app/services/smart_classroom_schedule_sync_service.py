@@ -1022,6 +1022,8 @@ def _build_week_deck(
                 **{key: item[key] for key in (
                     'event_key', 'session_id', 'actual_date', 'adjustment', 'counts_towards_total',
                     'binding_status', 'session_no', 'session_total',
+                    # 编辑模式需要教务教学班标识才能生成调课草稿
+                    'teaching_class_id', 'teaching_class_name',
                 ) if key in item},
                 **item.get('_occurrence_metadata', {}).get(week_index, {}),
             }

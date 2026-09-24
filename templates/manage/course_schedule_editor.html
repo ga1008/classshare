@@ -1,0 +1,52 @@
+{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
+
+{% block title %}课表编辑模式{% endblock %}
+{% block body_class %}cse-page{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('返回 3D 课表', '课时统计', 'calendar', href='/manage/academic/course-schedule', variant='outline', tone='slate', attrs='data-cse-back') }}
+{% endblock %}
+
+{% block content %}
+{% set _cse_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
+{{ page_head('课表编辑模式', explain='按住课次拖到新的节次即可调整；拖到左侧周次可跨周；单击课次在右侧设置周次/星期/节次、教室、原因与课次材料。所有调整先记录为平台草稿，「保存到教务」只写入教务调停课申请的待提交草稿，提交申请仍由您登录教务系统完成。', explain_label='课表编辑模式说明', lq_enabled=_cse_lq_enabled) }}
+
+<section class="cse-root" data-cse-root>
+    <div class="cse-toolbar">
+        <div class="cse-toolbar__term">
+            <label for="cseTermSelect">学年学期</label>
+            <select id="cseTermSelect" class="cse-select" data-cse-term aria-label="学年学期"></select>
+        </div>
+        <div class="cse-toolbar__meta" data-cse-meta></div>
+        <div class="cse-toolbar__spacer"></div>
+        <div class="cse-toolbar__actions">
+            <button type="button" class="cse-btn" data-cse-sync>同步教务课表</button>
+            <button type="button" class="cse-btn cse-btn--primary" data-cse-push disabled>保存到教务</button>
+        </div>
+        <div class="cse-feedback" data-cse-feedback role="status" aria-live="polite"></div>
+    </div>
+
+    <div class="cse-layout" data-cse-layout>
+        <nav class="cse-weeks" data-cse-weeks aria-label="学期周次列表"></nav>
+        <div class="cse-stage">
+            <div class="cse-stage__bar">
+                <strong data-cse-stage-title>—</strong>
+                <span data-cse-stage-sub></span>
+                <span class="cse-stage__hint">按住课次拖动 · 单击查看属性 · 拖到左侧周次可跨周</span>
+            </div>
+            <div class="cse-stage__body" data-cse-stage-body></div>
+        </div>
+        <aside class="cse-drawer" data-cse-drawer aria-label="课次属性" hidden></aside>
+    </div>
+
+    <section class="cse-drafts" data-cse-drafts aria-label="变更清单"></section>
+</section>
+
+<script id="course-schedule-editor-boot" type="application/json">{{ schedule_editor_boot | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/course_schedule_editor.js') }}"></script>
+{% endblock %}

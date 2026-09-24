@@ -135,6 +135,8 @@ export function createScheduleDeck(container, options = {}) {
         onNavigate: typeof options.onNavigate === 'function'
             ? options.onNavigate
             : (url) => window.location.assign(url),
+        // 编辑模式入口：字符串或 (selected_term) => url；为空则不显示按钮。
+        editorUrl: typeof options.editorUrl === 'function' || typeof options.editorUrl === 'string' ? options.editorUrl : null,
     };
 
     const state = { overview: null, activeWeekIndex: 0, expanded: false };
@@ -173,6 +175,7 @@ export function createScheduleDeck(container, options = {}) {
                 <div class="cs-week-indicator" data-csd-indicator aria-live="polite">—</div>
                 <button type="button" class="cs-deck-nav__btn" data-csd-next title="下一周">›</button>
                 <input type="range" class="cs-deck-slider" data-csd-slider min="1" max="1" value="1" aria-label="周次选择滑杆" />
+                ${config.editorUrl ? '<a class="cs-deck-nav__btn cs-deck-nav__btn--edit" data-csd-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
             </div>
         </div>
         <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮、方向键或左右拖拽切换周次">
@@ -194,6 +197,7 @@ export function createScheduleDeck(container, options = {}) {
                 <div class="cs-expand__nav">
                     <button type="button" data-csd-expand-prev>‹ 上一周</button>
                     <button type="button" data-csd-expand-next>下一周 ›</button>
+                    ${config.editorUrl ? '<a data-csd-expand-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
                     <button type="button" data-csd-expand-close>返回 3D 视图</button>
                 </div>
             </div>
@@ -217,7 +221,19 @@ export function createScheduleDeck(container, options = {}) {
         expandPrev: expand.querySelector('[data-csd-expand-prev]'),
         expandNext: expand.querySelector('[data-csd-expand-next]'),
         expandClose: expand.querySelector('[data-csd-expand-close]'),
+        editorLinks: [container.querySelector('[data-csd-editor]'), expand.querySelector('[data-csd-expand-editor]')].filter(Boolean),
     };
+
+    /** Keep both 编辑模式 links pointing at the currently selected term. */
+    function updateEditorLinks() {
+        if (!config.editorUrl || !refs.editorLinks.length) return;
+        const term = state.overview?.selected_term || {};
+        const url = typeof config.editorUrl === 'function' ? config.editorUrl(term, state.overview) : config.editorUrl;
+        refs.editorLinks.forEach((link) => {
+            if (url) { link.href = url; link.removeAttribute('aria-disabled'); link.hidden = false; }
+            else { link.href = '#'; link.setAttribute('aria-disabled', 'true'); link.hidden = true; }
+        });
+    }
 
     /* ---------------- 课表网格 ---------------- */
 
@@ -1200,6 +1216,7 @@ export function createScheduleDeck(container, options = {}) {
             }
             state.activeWeekIndex = nextIndex >= 0 ? nextIndex : 0;
             renderTermSelect();
+            updateEditorLinks();
             renderDeck();
         },
         getActiveWeekIndex() {

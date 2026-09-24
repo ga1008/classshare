@@ -1,5 +1,5 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260920-glass';
+import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260925-editor';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
@@ -762,6 +762,9 @@ if (root) {
                     }
                     applyFilters();
                 },
+                editorUrl: dashboardRole === 'teacher'
+                    ? (term) => (term?.year ? `/manage/academic/course-schedule/editor?year=${encodeURIComponent(term.year)}&term=${encodeURIComponent(term.term)}` : '/manage/academic/course-schedule/editor')
+                    : null,
                 emptyHtml: () => scheduleDeckUnsupportedTerm
                     ? '<strong>该学期暂无可用的3D课表</strong><p>请使用列表查看课堂，或选择已配置的学年学期。</p>'
                     : dashboardRole === 'student'
