@@ -30,4 +30,14 @@
 
 原生 PostgreSQL 演练：`E:/CodexTemp/lanshare-ai-workspace-pg-20260924/native-report.json`；恢复备份 `E:/CodexTemp/lanshare-lq-release-20260923/snapshot.dump`。增量与完整启动各两遍，原数据与幂等差异为零，177/177 表校验通过。生产发布继续执行正式备份、停写迁移与健康/资源一致性门禁，保护现有数据目录。
 
-发布标识、线上核验及 Git 确认在部署完成后补充。
+2026-09-24 已完成生产部署：
+
+- 发布代码提交：`a95fe1450a6aff43ecac84947df48813708826c1`，Git 同步目标 `origin/dev`。
+- 线上发布标识：`20260924-160236-89f12708cb36`。
+- 静态资源图：`a7c2116e150a7efdb3c435994aaa590ecbaef150771849b36242068c6f82a4e5`，服务器构建与本地一致。
+- 正式停写备份：`/tmp/lanshare-deploy-backups/db-cutover-20260924-160248.sql.gz`；迁移 177/177 表通过，索引失败与跳过步骤均为零。
+- 发布后 48 个变更源文件、11 个公网关键资源 SHA-256 一致；登录页 200、发布响应头与首次仅清 HTTP 缓存行为通过。
+- 8 个服务运行，6 个具有健康检查的服务均 healthy；主服务与 AI 服务 `status=ok`，三张新增会话表正常。
+- `background_tasks.ok=false` 来自原有累计记录，总计 735、滞留 0。相比前次增加的 1 条为 AI 批改任务 #236 在 09:29:02 进入 `review_required`，执行成功、无错误码，早于本次 16:02 发布；发布后无新增批改失败/待复核记录。未清理历史记录。
+
+本地证据：`.codex-temp/ai-workspace-postflight.json`、`.codex-temp/ai-workspace-background-audit.json`、`.codex-temp/ai-workspace-deploy.log`。发布地址：[课堂互动平台](https://www.guardianangel.net.cn)。
