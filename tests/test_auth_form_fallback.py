@@ -227,6 +227,8 @@ class AuthFormFallbackTests(unittest.TestCase):
         self.assertEqual(2, self.count("user_sessions"))
         self.assertEqual(1, self.count("student_login_audit_logs"))
         self.assertEqual("student", dependencies.verify_token(student_token, "testclient")["role"])
+        # A changed client address (phone/carrier NAT) keeps the signed session alive.
+        self.assertEqual("student", dependencies.verify_token(student_token, "203.0.113.9")["role"])
         self.assertEqual(2, self.session_save.call_count)
         self.assertEqual(303, student.status_code)
 

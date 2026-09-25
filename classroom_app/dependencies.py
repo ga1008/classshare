@@ -300,6 +300,20 @@ def create_access_token(data: dict, client_ip: str) -> str:
     return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
 
 
+_SESSION_IP_CHANGES_NOTED: dict[str, str] = {}
+_SESSION_IP_CHANGES_LIMIT = 2000
+
+
+def _note_session_ip_change(session_id: str, user_id: str, session_ip: Optional[str], client_ip: str) -> None:
+    """Log each (session, new address) pair once so mobile roaming does not flood the log."""
+    if _SESSION_IP_CHANGES_NOTED.get(session_id) == client_ip:
+        return
+    if len(_SESSION_IP_CHANGES_NOTED) >= _SESSION_IP_CHANGES_LIMIT:
+        _SESSION_IP_CHANGES_NOTED.clear()
+    _SESSION_IP_CHANGES_NOTED[session_id] = client_ip
+    print(f"[SESSION] 会话地址变化 - 用户: {user_id}, 登录IP: {session_ip}, 当前IP: {client_ip}")
+
+
 def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optional[dict]:
     """验证 JWT token，同时验证IP和会话有效性"""
     if token is None:
@@ -328,18 +342,14 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         _cache_session_snapshot(session_user_key, current_session)
         session_ip = normalize_ip(current_session.get("ip"))
 
-        if normalized_client_ip is not None:
-            if (
-                current_session["session_id"] != session_id
-                or session_ip != token_ip
-                or token_ip != normalized_client_ip
-            ):
-                print(f"[SESSION] 会话验证失败 - 用户: {user_id}, 期望IP: {session_ip}, 实际IP: {normalized_client_ip}")
-                return None
-        else:
-            if current_session["session_id"] != session_id:
-                print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
-                return None
+        if current_session["session_id"] != session_id:
+            print(f"[SESSION] 会话ID不匹配 - 用户: {user_id}")
+            return None
+        # The signed session id is the binding. Phones and carrier NAT change the
+        # client address mid-session (2026-09-26 production incident: a teacher was
+        # logged out while typing), so an address change is recorded, not rejected.
+        if normalized_client_ip is not None and token_ip != normalized_client_ip:
+            _note_session_ip_change(str(session_id), user_id, session_ip, normalized_client_ip)
 
         return payload
     except JWTError:

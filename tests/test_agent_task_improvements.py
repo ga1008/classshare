@@ -240,7 +240,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
 
         self.assertIn("queue_position", live_block)
         self.assertIn("estimated_wait_label", live_block)
-        self.assertIn("前面还有", live_block)
+        self.assertIn("排队中", live_block)
         self.assertIn("queue_paused", live_block)
     def test_agent_queue_deploy_shape_runs_agents_sdk_in_worker(self):
         compose_yml = Path("docker-compose.yml").read_text(encoding="utf-8")

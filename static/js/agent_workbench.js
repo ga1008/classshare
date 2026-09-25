@@ -5,7 +5,7 @@
 
 import { html as lq } from './lq/components.js';
 import { choose as chooseGlass, confirm as confirmGlass } from './lq/dialogs.js';
-import { collectPageContext, contextLabel } from './ai_workspace_context.js';
+import { clampText, collectPageContext, contextLabel } from './ai_workspace_context.js';
 import {
     buildTimeline, escapeHtml, formatTime, icon, renderAdminRow, renderInstruction, renderLiveState,
     renderQuestionCard, renderResult, renderTaskListItem, statusChip,
@@ -22,11 +22,12 @@ const ALLOWED_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.csv', '.json',
     '.html', '.htm', '.css', '.sql', '.log', '.docx', '.doc', '.pdf', '.pptx', '.ppt', '.xlsx', '.xls',
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 const COMPOSER_COPY = {
-    new: ['描述你要 Agent 完成的事，例如“把 3 班未交第 5 次作业的同学列出来并私信提醒”…', 'Enter 发送 · Shift+Enter 换行 · 可附图片/文档（Agent 会直接看图）', '加入队列'],
-    answer: ['也可以直接输入你的回答（作为“自定义输入”提交）…', '可在上方选项中点选后提交，或直接在这里输入', '回答'],
-    supplement: ['给正在执行的任务补充说明…', '补充说明会在 Agent 的下一步被读取', '补充'],
-    followup: ['继续追问或提新要求（基于这次结果继续）…', '会创建一个延续本次上下文的新任务', '追问'],
+    new: ['要 Agent 做什么？例如：列出 3 班未交第 5 次作业的同学并私信提醒', 'Enter 发送 · Shift+Enter 换行 · 可附图片/文档', '加入队列'],
+    answer: ['直接输入你的回答…', '或在上方点选后提交', '回答'],
+    supplement: ['给正在执行的任务补充说明…', '', '补充'],
+    followup: ['继续追问或提新要求…', '', '追问'],
 };
+const DRAFT_KEY_PREFIX = 'lanshare.agentDraft.';
 
 function inferTaskType(instruction, context) {
     const text = `${instruction || ''} ${context.page?.title || ''}`.toLowerCase();
@@ -108,6 +109,18 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
     };
     const el = {};
 
+    // The draft survives a login redirect (a session can be replaced mid-typing).
+    function draftKey() { return DRAFT_KEY_PREFIX + String(config.userKey || ''); }
+    function saveDraft() {
+        try { sessionStorage.setItem(draftKey(), el.input?.value || ''); } catch { /* storage may be blocked */ }
+    }
+    function restoreDraft() {
+        try {
+            const saved = sessionStorage.getItem(draftKey());
+            if (saved && el.input && !el.input.value) { el.input.value = saved; autoSize(); }
+        } catch { /* storage may be blocked */ }
+    }
+
     function mount(isAdmin) {
         root.innerHTML = panelMarkup(isAdmin, isTeacher);
         ['queue', 'head', 'timeline', 'scroll', 'input', 'files', 'hint', 'file-input', 'list', 'subs-list', 'toggles',
@@ -117,6 +130,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         bindEvents();
         renderHead();
         renderComposer();
+        restoreDraft();
     }
 
     // ------------------------------------------------------------ data
@@ -344,14 +358,14 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         const recent = state.tasks.filter((task) => task.is_owner).slice(0, 3);
         el.head.innerHTML = `
             <section class="awb-welcome">
-                <div class="awb-welcome__hero">${icon('decision')}<div><strong>你的平台全能助手</strong>
-                    <p>以你的身份和权限操作平台、整理数据、生成材料，并可联网查证。任务在全平台队列中排队执行；需要你确认时会列出选项让你点选。</p></div></div>
-                <p class="awb-welcome__safety">安全边界：删除账号、清空数据等高危操作会被硬性拦截；批量修改或删除前 Agent 会自检，必要时先问你。</p>
-                ${starters.length ? `<div class="awb-welcome__label">适合「${escapeHtml(contextLabel(context))}」的任务</div>
+                <div class="awb-welcome__hero">${icon('decision')}<div><strong>Agent</strong>
+                    <p>以你的身份操作平台、整理数据、生成材料，可联网。需要确认时会给你选项。</p></div></div>
+                <p class="awb-welcome__safety">高危操作会被拦截；批量修改前会先确认。</p>
+                ${starters.length ? `<div class="awb-welcome__label">推荐（${escapeHtml(contextLabel(context))}）</div>
                 <div class="awb-starters">${starters.map((item) => `
                     <button type="button" class="awb-starter${item.key === state.workflowKey ? ' is-selected' : ''}" data-awb-starter="${escapeHtml(item.key)}">
                         <strong>${escapeHtml(item.name || '教学事务')}</strong>
-                        <small>${escapeHtml((item.steps || [])[0] || item.agent_capability || '')}</small>
+                        <small>${escapeHtml(clampText((item.steps || [])[0] || '', 28))}</small>
                     </button>`).join('')}</div>` : ''}
                 ${recent.length ? `<div class="awb-welcome__label">最近的任务</div><ul class="awb-list awb-list--inline">${recent.map((task) => renderTaskListItem(task, null)).join('')}</ul>` : ''}
             </section>`;
@@ -475,6 +489,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
                 state.files = [];
                 state.workflowKey = '';
                 el.input.value = '';
+                saveDraft();
                 if (el.nohistory) el.nohistory.checked = false;
                 notify('已加入全平台 Agent 队列。', 'success');
                 await openTask(data.task.id);
@@ -751,7 +766,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
             const sub = event.target.closest('[data-awb-sub],[data-awb-sub-hour]');
             if (sub) void saveSubscription(sub.dataset.awbSub || sub.dataset.awbSubHour);
         });
-        el.input.addEventListener('input', autoSize);
+        el.input.addEventListener('input', () => { autoSize(); saveDraft(); });
         el.input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
                 event.preventDefault();

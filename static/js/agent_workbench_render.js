@@ -168,7 +168,7 @@ export function renderQuestionCard(question) {
             <form data-awb-question-form>
                 ${groups}
                 <footer class="awb-question__foot">
-                    <small class="awb-dim">回答后 Agent 自动继续，并优先排队。</small>
+                    <small class="awb-dim">回答后自动继续</small>
                     ${lq.button({ label: '提交回答', variant: 'prominent', size: 'sm', icon: 'send', type: 'submit', attrs: { 'data-awb-answer-submit': '' } })}
                 </footer>
             </form>
@@ -249,14 +249,14 @@ export function renderInstruction(task) {
 export function renderLiveState(task, queueState = {}) {
     if (task.is_terminal) return null;
     let body;
-    if (task.runtime_status === 'waiting_input') body = `${icon('question')}<span>Agent 在等你的回答；回答后会优先继续。等待期间不占用执行队列。</span>`;
-    else if (task.is_parked) body = `${icon('decision')}<span>任务已暂停，进度已保存。点击“继续”后优先执行。</span>`;
+    if (task.runtime_status === 'waiting_input') body = `${icon('question')}<span>等你回答，不占用队列</span>`;
+    else if (task.is_parked) body = `${icon('decision')}<span>已暂停，点“继续”恢复</span>`;
     else if (task.status === 'queued') {
-        const paused = queueState.queue_paused ? '（队列已被超级管理员暂停）' : '';
-        const ahead = task.queue_position ? `，前面还有 ${Math.max(0, task.queue_position - 1)} 个任务` : '';
+        const paused = queueState.queue_paused ? '（队列已暂停）' : '';
+        const ahead = task.queue_position ? `，前面 ${Math.max(0, task.queue_position - 1)} 个` : '';
         body = `${lq.spinner({ size: 'sm' })}<span>排队中${ahead}${task.estimated_wait_label ? ` · ${escapeHtml(task.estimated_wait_label)}` : ''}${paused}</span>`;
     } else {
-        body = `${lq.spinner({ size: 'sm' })}<span>${task.pause_requested ? '当前步骤完成后暂停…' : 'Agent 正在工作'} · 已用 ${escapeHtml(formatElapsed(task.elapsed_seconds))}</span>`;
+        body = `${lq.spinner({ size: 'sm' })}<span>${task.pause_requested ? '本步完成后暂停' : '执行中'} · ${escapeHtml(formatElapsed(task.elapsed_seconds))}</span>`;
     }
     return { key: `live:${task.status}:${task.runtime_status}:${task.pause_requested ? 1 : 0}:${task.queue_position || 0}`, kind: 'live',
         html: `<div class="awb-live" role="status">${body}</div>` };
