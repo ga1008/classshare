@@ -48,7 +48,7 @@ class AgentActorTaskTests(unittest.TestCase):
             task = self.create(self.student, task_type="blog_draft", page_context={"page": {"title": "我的课堂"}, "actor": {"role": "teacher"}, "follow_up": {"parent_thread_id": "stolen"}}, source_session_hash="forged")
         row = dict(self.conn.execute("SELECT * FROM agent_tasks WHERE id=?", (task["id"],)).fetchone())
         self.assertIsNone(row["teacher_id"])
-        self.assertEqual(("student", 7, "blog_draft", "deepseek-dsh"), (row["actor_role"], row["actor_id"], row["task_type"], row["runtime_provider"]))
+        self.assertEqual(("student", 7, "blog_draft", "openai-agents"), (row["actor_role"], row["actor_id"], row["task_type"], row["runtime_provider"]))
         self.assertEqual(hashlib.sha256(b"session-one").hexdigest(), row["source_session_hash"])
         self.assertEqual("student:7", row["source_session_key"])
         context = json.loads(row["context_snapshot_json"])
@@ -175,15 +175,18 @@ class AgentActorTaskTests(unittest.TestCase):
         self.assertEqual(1, result["counts"]["completed"])
         self.assertEqual(1, result["counts"]["queued"])
 
-    def test_widget_enables_agent_for_students_without_teacher_subscriptions(self):
+    def test_widget_enables_agent_only_for_teachers(self):
         env = Environment(loader=FileSystemLoader(str(Path(__file__).resolve().parents[1] / "templates")))
         template = env.get_template("partials/ai_workspace_widget.html")
         for role in ("student", "teacher"):
             rendered = template.render(user_info={"role": role})
-            self.assertIn("taskCenterEnabled: true", rendered)
-            self.assertIn('id="ai-agent-history-drawer"', rendered)
-            self.assertIn('data-ai-mode-select="agent"', rendered)
-            self.assertEqual(role == "teacher", 'id="ai-agent-subscriptions-panel"' in rendered)
+            is_teacher = role == "teacher"
+            self.assertEqual(is_teacher, "taskCenterEnabled: true" in rendered)
+            self.assertEqual(is_teacher, 'data-ai-mode-select="agent"' in rendered)
+            self.assertEqual(is_teacher, 'data-ai-workspace-panel="agent"' in rendered)
+            # Everyone keeps the ordinary AI chat and its conversation history.
+            self.assertIn('id="ai-chat-textarea"', rendered)
+            self.assertIn('id="ai-chat-history-toggle"', rendered)
 
 
 class AgentActorSchemaMigrationTests(unittest.TestCase):

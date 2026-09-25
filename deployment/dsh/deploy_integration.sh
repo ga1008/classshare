@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
-# Tracked core integration. deployment/deploy_remote.ps1 sources these functions.
-# Called only after source extraction; activation follows quiesced PG migration.
+# DSH runtime retired (2026-09-25): the Agent now runs on the OpenAI Agents SDK
+# inside the agent-worker container (classroom_app/services/agent_sdk). The
+# function names stay because deployment/deploy_remote.ps1 sources and calls
+# them; they now only retire the old host launcher, idempotently.
 dsh_preflight() {
-  local root="${1:?canonical project root required}"
-  local quiesced="${2:-False}"
-  if [ "$quiesced" != True ]; then
-    echo 'DSH deployment requires the native PostgreSQL gate and quiesced schema migration.' >&2
-    return 2
-  fi
-  python3 "$root/deployment/dsh/install_launcher.py" --root "$root" --mode preflight
+  echo 'Agent runtime: openai-agents in agent-worker (DSH retired); no preflight needed.'
 }
 dsh_activate() {
-  local root="${1:?canonical project root required}"
-  python3 "$root/deployment/dsh/install_launcher.py" --root "$root" --mode activate
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat lanshare-agent-launcher.service >/dev/null 2>&1; then
+    systemctl disable --now lanshare-agent-launcher.service >/dev/null 2>&1 || true
+    echo 'DSH_LAUNCHER_RETIRED=lanshare-agent-launcher.service'
+  fi
 }
 dsh_verify_and_retire() {
-  local root="${1:?canonical project root required}"
-  # Both launcher evidence and loopback application health are mandatory,
-  # including releases that skip the deployer's optional broad health checks.
-  python3 "$root/deployment/dsh/install_launcher.py" --root "$root" --mode retire-legacy
+  echo 'Agent runtime: DSH launcher retired; nothing to verify.'
 }

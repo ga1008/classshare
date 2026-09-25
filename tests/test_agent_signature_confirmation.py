@@ -153,18 +153,19 @@ class AgentSignatureConfirmationHTTPTests(SignatureFlowFixture):
         self.assertEqual(409,self.client.post(self.url+'/preview',json={}).status_code)
         self.assertEqual(0,self.receipt_count())
 
-    def test_authorized_student_reviewer_uses_their_own_role_and_session(self):
+    def test_students_cannot_execute_agent_actions(self):
+        # Agent is teacher-only (2026-09-25); students approve in the normal signature UI.
         self.sql("UPDATE electronic_signatures SET owner_role='student',owner_id=7,subject_role='student',subject_id=7 WHERE id=1")
         self.sql("UPDATE signature_access_requests SET owner_role='student',owner_id=7 WHERE id=?",(self.request_id,))
         self.sql("UPDATE signature_access_request_reviewers SET reviewer_role='student',reviewer_id=7 WHERE request_id=?",(self.request_id,))
         self.sql("UPDATE agent_tasks SET status='failed',result_detail_json=(SELECT result_detail_json FROM agent_tasks WHERE id=12) WHERE id=11")
         self.actor = {'role':'student','id':7,'session_id':'student-session'}
         self.url = '/api/agent-tasks/11/actions/0'
-        result = self.client.post(self.url+'/execute',json=self.declaration())
-        self.assertEqual(200,result.status_code,result.text)
-        self.assertEqual('approved',self.status())
-        receipt = self.sql('SELECT actor_role,actor_id FROM agent_action_executions')[0]
-        self.assertEqual(('student',7),tuple(receipt))
+        self.assertEqual(403, self.client.post(self.url+'/preview').status_code)
+        result = self.client.post(self.url+'/execute',json={'confirmation_token':'x'})
+        self.assertEqual(403,result.status_code,result.text)
+        self.assertNotEqual('approved',self.status())
+        self.assertEqual([], self.sql('SELECT actor_role,actor_id FROM agent_action_executions'))
 
     def test_explicit_admin_override_records_admin_without_impersonating_owner(self):
         self.actor = {'role':'teacher','id':7,'session_id':'teacher-session'}

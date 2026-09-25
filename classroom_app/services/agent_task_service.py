@@ -43,6 +43,21 @@ TASK_STATUS_FAILED = "failed"
 TASK_STATUS_CANCELED = "canceled"
 
 ACTIVE_TASK_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
+
+# Agents-SDK runtime (agent_sdk). Parked tasks stay ``queued`` but hold no
+# execution slot and are never claimed until they are resumed:
+#   waiting_input  - the Agent asked the owner a question (conversation saved)
+#   paused         - a started task paused by its owner or a super admin
+#   held           - a not-yet-started task held by a super admin
+#   resume_pending - answered/resumed; claimed ahead of new work
+AGENT_RUNTIME_PROVIDER = "openai-agents"
+RUNTIME_WAITING_INPUT = "waiting_input"
+RUNTIME_PAUSED = "paused"
+RUNTIME_HELD = "held"
+RUNTIME_RESUME_PENDING = "resume_pending"
+PARKED_RUNTIME_STATUSES = (RUNTIME_WAITING_INPUT, RUNTIME_PAUSED, RUNTIME_HELD)
+RESUME_PRIORITY = 5
+_NOT_PARKED_SQL = "COALESCE(runtime_status, '') NOT IN ('waiting_input', 'paused', 'held')"
 FINAL_TASK_STATUSES = {TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_CANCELED}
 
 TASK_ORIGIN_MANUAL = "manual"
@@ -955,7 +970,7 @@ def create_agent_task(conn, user: dict[str, Any], payload: dict[str, Any], *, so
             parent_task_id,
             origin,
             _json_dumps(attachments[:8]),
-            "deepseek-dsh",
+            AGENT_RUNTIME_PROVIDER,
             source_session_hash,
             source_session_key,
             persistent_authorization_id,
@@ -1140,8 +1155,14 @@ def set_agent_task_composer(
 def get_agent_queue_state(conn, *, viewer_teacher_id: int, viewer_role: str = "teacher") -> dict[str, Any]:
     composer_cutoff = _purge_stale_composers(conn, tolerate_write_failure=True)
     queued_count = int(
-        conn.execute("SELECT COUNT(*) FROM agent_tasks WHERE status = ?", (TASK_STATUS_QUEUED,)).fetchone()[0]
+        conn.execute(f"SELECT COUNT(*) FROM agent_tasks WHERE status = ? AND {_NOT_PARKED_SQL}", (TASK_STATUS_QUEUED,)).fetchone()[0]
     )
+    parked_count = int(
+        conn.execute(f"SELECT COUNT(*) FROM agent_tasks WHERE status = ? AND NOT ({_NOT_PARKED_SQL})", (TASK_STATUS_QUEUED,)).fetchone()[0]
+    )
+    from .agent_queue_control_service import queue_pause_state
+
+    pause_state = queue_pause_state(conn)
     running_count = _running_agent_task_count(conn)
     global_concurrency = _agent_task_global_concurrency()
     running = conn.execute(
@@ -1191,6 +1212,10 @@ def get_agent_queue_state(conn, *, viewer_teacher_id: int, viewer_role: str = "t
 
     return {
         "queued_count": queued_count,
+        "parked_count": parked_count,
+        "queue_paused": bool(pause_state.get("paused")),
+        "queue_paused_by": pause_state.get("by_name") or "",
+        "queue_paused_at": pause_state.get("at") or "",
         "running_count": running_count,
         "global_concurrency": global_concurrency,
         "available_slots": max(0, global_concurrency - running_count),
@@ -1285,7 +1310,7 @@ def _ordered_queued_task_ids(conn) -> list[int]:
         f"""
         SELECT id
         FROM agent_tasks
-        WHERE status = ?
+        WHERE status = ? AND {_NOT_PARKED_SQL}
         {_FAIR_QUEUE_ORDER_SQL}
         """,
         (TASK_STATUS_QUEUED,),
@@ -1386,6 +1411,17 @@ def _failed_recovery_summary(status: str, summary: str, detail: dict[str, Any]) 
     )
 
 
+def _status_label(status: str, runtime_status: str | None) -> str:
+    runtime_status = str(runtime_status or "")
+    if status in (TASK_STATUS_QUEUED, TASK_STATUS_RUNNING) and runtime_status == RUNTIME_WAITING_INPUT:
+        return "等待你的回答"
+    if status == TASK_STATUS_QUEUED and runtime_status in (RUNTIME_PAUSED, RUNTIME_HELD):
+        return "已暂停"
+    if status == TASK_STATUS_QUEUED and runtime_status == RUNTIME_RESUME_PENDING:
+        return "即将继续"
+    return TASK_STATUS_LABELS.get(status, "处理中")
+
+
 def serialize_agent_task(row, *, viewer_teacher_id: int, viewer_role: str = "teacher", events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     item = dict(row)
     task_id = int(item.get("id") or 0)
@@ -1402,7 +1438,8 @@ def serialize_agent_task(row, *, viewer_teacher_id: int, viewer_role: str = "tea
         "public_summary": item.get("public_summary") or "",
         "teacher_name": item.get("teacher_name") or "某位老师",
         "status": status,
-        "status_label": "等待你的回答" if status == "running" and item.get("runtime_status") == "waiting_input" else TASK_STATUS_LABELS.get(status, "处理中"),
+        "status_label": _status_label(status, item.get("runtime_status")),
+        "is_parked": status == TASK_STATUS_QUEUED and item.get("runtime_status") in PARKED_RUNTIME_STATUSES,
         "is_owner": is_owner,
         "is_active": status in ACTIVE_TASK_STATUSES,
         "is_terminal": status in FINAL_TASK_STATUSES,
@@ -1456,8 +1493,8 @@ def list_agent_tasks(conn, *, viewer_teacher_id: int, viewer_role: str = "teache
                 WHEN 'queued' THEN 1
                 ELSE 2
               END,
-              created_at ASC,
-              id ASC
+              -- queue in arrival order; history newest first (the LIMIT keeps recent work)
+              CASE WHEN status IN ('running', 'queued') THEN id ELSE -id END ASC
             LIMIT ?
             """,
             (viewer_role, int(viewer_teacher_id), max(1, min(int(limit), 80))),
@@ -1872,12 +1909,13 @@ def delete_agent_task_history(conn, *, teacher_id: int, actor_role: str = "teach
     return {"deleted_count": len(task_ids), "task_ids": task_ids, "deleted_workspace_ids": deleted_workspaces}
 
 
-def cancel_agent_task(conn, task_id: int, *, teacher_id: int, actor_role: str = "teacher", commit: bool = True) -> dict[str, Any]:
+def cancel_agent_task(conn, task_id: int, *, teacher_id: int, actor_role: str = "teacher", commit: bool = True,
+                      as_admin: bool = False, admin_name: str = "") -> dict[str, Any]:
     conn.execute("UPDATE agent_tasks SET status=status WHERE id=?", (int(task_id),))
     row = conn.execute("SELECT * FROM agent_tasks WHERE id = ? LIMIT 1", (int(task_id),)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="任务不存在。")
-    if not _is_task_owner(row, teacher_id, actor_role):
+    if not as_admin and not _is_task_owner(row, teacher_id, actor_role):
         raise HTTPException(status_code=403, detail="只能取消自己的任务。")
     status = str(row["status"] or "")
     if status in FINAL_TASK_STATUSES:
@@ -1893,7 +1931,9 @@ def cancel_agent_task(conn, task_id: int, *, teacher_id: int, actor_role: str = 
             """,
             (now, now, int(task_id)),
         )
-        append_task_event(conn, task_id, "cancel_requested", "已请求取消，正在等待执行器响应。", commit=False)
+        append_task_event(conn, task_id, "cancel_requested",
+                          f"超级管理员{admin_name}已停止该任务，正在等待执行器响应。" if as_admin else "已请求取消，正在等待执行器响应。",
+                          {"by_admin": as_admin}, commit=False)
     else:
         conn.execute(
             """
@@ -1903,9 +1943,14 @@ def cancel_agent_task(conn, task_id: int, *, teacher_id: int, actor_role: str = 
             """,
             (TASK_STATUS_CANCELED, now, now, now, int(task_id)),
         )
-        append_task_event(conn, task_id, "canceled", "任务已取消。", commit=False)
+        append_task_event(conn, task_id, "canceled",
+                          f"任务已被超级管理员{admin_name}停止。" if as_admin else "任务已取消。",
+                          {"by_admin": as_admin}, commit=False)
     if commit:
         conn.commit()
+    if as_admin:
+        return serialize_agent_task(conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (int(task_id),)).fetchone(),
+                                    viewer_teacher_id=teacher_id, viewer_role=actor_role)
     return get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=actor_role)
 
 
@@ -2281,6 +2326,10 @@ def _sqlite_table_has_column(conn, table_name: str, column_name: str) -> bool:
 
 
 def _claim_next_agent_task_sqlite(conn, *, worker_id: str, now: str) -> dict[str, Any] | None:
+    from .agent_queue_control_service import is_queue_paused
+
+    if is_queue_paused(conn):
+        return None
     begin_immediate_transaction(conn)
     running_count = int(
         conn.execute(
@@ -2312,7 +2361,7 @@ def _claim_next_agent_task_sqlite(conn, *, worker_id: str, now: str) -> dict[str
         f"""
         SELECT *
         FROM agent_tasks
-        WHERE status = ?
+        WHERE status = ? AND {_NOT_PARKED_SQL}
         {owner_guard}
         {order_sql}
         LIMIT 1
@@ -2323,20 +2372,33 @@ def _claim_next_agent_task_sqlite(conn, *, worker_id: str, now: str) -> dict[str
         conn.commit()
         return None
     task_id = int(row["id"])
+    resumed = str(dict(row).get("runtime_status") or "") == RUNTIME_RESUME_PENDING
     conn.execute(
         """
         UPDATE agent_tasks
-        SET status = ?, started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
+        SET status = ?, runtime_status = ?, started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
         WHERE id = ? AND status = ?
         """,
-        (TASK_STATUS_RUNNING, now, now, worker_id, task_id, TASK_STATUS_QUEUED),
+        (TASK_STATUS_RUNNING, "resuming" if resumed else "running", now, now, worker_id, task_id, TASK_STATUS_QUEUED),
     )
-    append_task_event(conn, task_id, "started", "Agent 执行器已领取任务。", {"worker_id": worker_id}, commit=False)
+    _append_claim_event(conn, task_id, worker_id, resumed)
     conn.commit()
     return dict(conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (task_id,)).fetchone())
 
 
+def _append_claim_event(conn, task_id: int, worker_id: str, resumed: bool) -> None:
+    if resumed:
+        append_task_event(conn, task_id, "resumed", "Agent 已重新领取任务，继续执行。", {"worker_id": worker_id}, commit=False)
+    else:
+        append_task_event(conn, task_id, "started", "Agent 执行器已领取任务。", {"worker_id": worker_id}, commit=False)
+
+
 def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[str, Any] | None:
+    from .agent_queue_control_service import is_queue_paused
+
+    if is_queue_paused(conn):
+        conn.commit()
+        return None
     lock_row = conn.execute(
         "SELECT pg_try_advisory_xact_lock(?, ?) AS acquired",
         AGENT_TASK_ADVISORY_LOCK_KEYS,
@@ -2349,9 +2411,9 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
     row = conn.execute(
         f"""
         WITH candidate AS (
-            SELECT id
+            SELECT id, runtime_status AS previous_runtime_status
             FROM agent_tasks
-            WHERE status = ?
+            WHERE status = ? AND {_NOT_PARKED_SQL}
               AND NOT EXISTS (
                 SELECT 1 FROM agent_tasks r2
                 WHERE r2.status = 'running'
@@ -2363,7 +2425,9 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
             FOR UPDATE SKIP LOCKED
         )
         UPDATE agent_tasks
-        SET status = ?, started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
+        SET status = ?,
+            runtime_status = CASE WHEN candidate.previous_runtime_status = 'resume_pending' THEN 'resuming' ELSE 'running' END,
+            started_at = COALESCE(started_at, ?), updated_at = ?, worker_id = ?
         FROM candidate
         WHERE agent_tasks.id = candidate.id
           AND (
@@ -2371,7 +2435,7 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
               FROM agent_tasks running
               WHERE running.status = ?
           ) < ?
-        RETURNING agent_tasks.*
+        RETURNING agent_tasks.*, candidate.previous_runtime_status
         """,
         (
             TASK_STATUS_QUEUED,
@@ -2388,9 +2452,10 @@ def _claim_next_agent_task_postgres(conn, *, worker_id: str, now: str) -> dict[s
         return None
 
     task_id = int(row["id"])
-    append_task_event(conn, task_id, "started", "Agent 执行器已领取任务。", {"worker_id": worker_id}, commit=False)
+    claimed = dict(row)
+    _append_claim_event(conn, task_id, worker_id, claimed.pop("previous_runtime_status", None) == RUNTIME_RESUME_PENDING)
     conn.commit()
-    return dict(row)
+    return claimed
 
 
 def claim_next_agent_task(conn, *, worker_id: str) -> dict[str, Any] | None:

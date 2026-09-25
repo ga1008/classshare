@@ -4,6 +4,7 @@ import os
 import socket
 import sys
 import threading
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -20,13 +21,17 @@ def _configure_stdio_encoding() -> None:
             pass
 
 
+PARKED_EXPIRY_INTERVAL_SECONDS = 300
+_last_parked_expiry = 0.0
+
+
 def _process_task(task: dict[str, Any]) -> None:
-    from classroom_app.services.agent_dsh_task_service import run_dsh_task
+    from classroom_app.services.agent_sdk.runner import run_agent_task
 
     try:
-        # All identities use the same leased provider. Native lesson generation
-        # and document search remain domain tools, with transactional receipts.
-        asyncio.run(run_dsh_task(task))
+        # One execution segment on the OpenAI Agents SDK (DeepSeek V4.1 Flash).
+        # Platform operations go through the app bridge as the task's user.
+        asyncio.run(run_agent_task(task))
     except Exception as exc:
         # A database or transport error does not prove that a runner stopped or
         # that a business transaction did not commit. The lease reconciler owns
@@ -42,13 +47,30 @@ def _worker_ids(base_worker_id: str, concurrency: int) -> list[str]:
     return [f"{worker_id}-{index}" for index in range(1, count + 1)]
 
 
+def _housekeeping() -> None:
+    """Loop 1 only: fail tasks whose worker died, expire long-parked tasks."""
+    global _last_parked_expiry
+    from classroom_app.services.agent_sdk.state import expire_parked_tasks, recover_stale_tasks
+
+    try:
+        recovered = recover_stale_tasks()
+        if recovered:
+            print(f"[AGENT_TASK] recovered {recovered} interrupted task(s)")
+        if time.monotonic() - _last_parked_expiry >= PARKED_EXPIRY_INTERVAL_SECONDS:
+            _last_parked_expiry = time.monotonic()
+            expired = expire_parked_tasks()
+            if expired:
+                print(f"[AGENT_TASK] closed {expired} long-parked task(s)")
+    except Exception as exc:
+        print(f"[AGENT_TASK] housekeeping failed ({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
 def _run_once(worker_id: str, *, cleanup: bool = True) -> bool:
     from classroom_app.database import get_db_connection
     from classroom_app.services.agent_task_service import claim_next_agent_task, maybe_cleanup_stale_agent_task_attachments
 
     if cleanup:
-        from classroom_app.services.agent_dsh_task_service import recover_stale_dsh_tasks
-        recover_stale_dsh_tasks()
+        _housekeeping()
 
     with get_db_connection() as conn:
         if cleanup:
@@ -85,7 +107,7 @@ def main() -> None:
     load_dotenv()
     _configure_stdio_encoding()
 
-    parser = argparse.ArgumentParser(description="LanShare DSH agent task worker")
+    parser = argparse.ArgumentParser(description="LanShare Agent task worker (OpenAI Agents SDK runtime)")
     parser.add_argument("--once", action="store_true", help="process at most one queued task and exit")
     parser.add_argument("--worker-id", default="", help="stable worker id shown in task events")
     parser.add_argument("--concurrency", type=int, default=0, help="parallel worker loops; defaults to config")
@@ -101,6 +123,12 @@ def main() -> None:
 
     ensure_runtime_directories()
     init_database()
+    from classroom_app.database import get_db_connection
+    from classroom_app.services.agent_runtime_schema import ensure_agent_runtime_schema
+
+    with get_db_connection() as conn:
+        ensure_agent_runtime_schema(conn)
+        conn.commit()
 
     worker_id = args.worker_id or AGENT_TASK_WORKER_ID or os.getenv("AGENT_TASK_WORKER_ID") or f"agent-{socket.gethostname()}"
     configured_concurrency = args.concurrency if args.concurrency > 0 else AGENT_TASK_WORKER_CONCURRENCY

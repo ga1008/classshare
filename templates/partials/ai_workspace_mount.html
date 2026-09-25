@@ -4,6 +4,7 @@
 {% if ai_workspace_access.allowed and not ai_workspace_embedded %}
 {% if ai_workspace_stage|default('body') == 'head' %}
 <link rel="stylesheet" href="{{ asset_url('css/ai_workspace.css') }}">
+{% if user_info is defined and user_info and user_info.role == 'teacher' %}<link rel="stylesheet" href="{{ asset_url('css/agent_workbench.css') }}">{% endif %}
 {% else %}
 {% include 'partials/ai_workspace_widget.html' %}
 {% include 'partials/ai_workspace_assets.html' %}

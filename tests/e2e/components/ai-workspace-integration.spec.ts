@@ -112,8 +112,8 @@ test('closed workspace does not bootstrap or poll Agent tasks and ordinary histo
   expect(fixture.apiCalls.filter(call => call.includes('/api/agent-tasks'))).toEqual([]);
   await expect(page.locator('#ai-chat-modal')).toHaveAttribute('aria-hidden', 'true');
   await open(page);
-  await expect(page.locator('#ai-agent-history-toggle')).toHaveAttribute('aria-label', '我的对话');
-  await page.locator('#ai-agent-history-toggle').click();
+  await expect(page.locator('#ai-chat-history-toggle')).toHaveAttribute('aria-label', '我的对话');
+  await page.locator('#ai-chat-history-toggle').click();
   await expect(page.getByRole('complementary', { name: '我的 AI 对话' })).toBeVisible();
   await page.getByRole('button', { name: /之前的课程备课/ }).click();
   await expect(page.locator('#ai-chat-messages-box')).toContainText('这是之前会话的完整备课回复。');
@@ -272,7 +272,7 @@ test('real history imports a classroom conversation and confirms deletion withou
   await open(page);
   await page.locator('#ai-chat-textarea').fill('这份未发送草稿必须保留');
   await page.locator('#ai-chat-file-input').setInputFiles({ name: 'history-draft.txt', mimeType: 'text/plain', buffer: Buffer.from('尚未发送的课堂附件') });
-  await page.locator('#ai-agent-history-toggle').click();
+  await page.locator('#ai-chat-history-toggle').click();
   const history = page.getByRole('complementary', { name: '我的 AI 对话' });
   await expect(history).toBeVisible();
   await expect(history.getByRole('button', { name: '删除对话：旧课堂网络问答', exact: true })).toHaveCount(0);
@@ -280,7 +280,7 @@ test('real history imports a classroom conversation and confirms deletion withou
   await expect(page.locator('#ai-chat-messages-box')).toContainText('旧课堂导入后的网络分析完整内容。');
   expect(imports).toEqual(['POST']); expect(await page.evaluate(() => (window as any).aiChat.currentSessionUUID)).toBe('fixture-imported-7');
   await expect(history).toBeHidden();
-  await page.locator('#ai-agent-history-toggle').click();
+  await page.locator('#ai-chat-history-toggle').click();
   const remove = history.getByRole('button', { name: '删除对话：导入的网络课堂问答', exact: true });
   const confirmation = page.getByRole('dialog', { name: '删除对话', exact: true });
   await remove.click(); await expect(confirmation).toBeVisible();

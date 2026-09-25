@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from ..config import AGENT_DSH_ENABLED, AGENT_TASKS_ENABLED
+from ..config import AGENT_RUNTIME_ENABLED, AGENT_TASKS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.agent_actor_service import resolve_agent_actor
@@ -43,10 +43,35 @@ router = APIRouter(prefix="/api/agent-tasks", tags=["agent-tasks"])
 
 
 def _current_agent_user(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    # Agent is a teacher-only assistant; students keep the ordinary AI chat.
+    if user.get("role") != "teacher":
+        raise HTTPException(status_code=403, detail="Agent 仅对教师开放，学生请使用 AI 对话。")
     with get_db_connection() as conn:
         ensure_ai_workspace_access(conn, user, request)
         actor = resolve_agent_actor(conn, user.get("role"), user.get("id"))
-    return {**user, **actor.as_user()}
+    return {**user, **actor.as_user(), "is_super_admin": bool(getattr(actor, "is_super_admin", False))}
+
+
+def _require_super_admin(user: dict = Depends(_current_agent_user)) -> dict:
+    if not user.get("is_super_admin"):
+        raise HTTPException(status_code=403, detail="只有超级管理员可以管理 Agent 队列。")
+    return user
+
+
+def _agent_runtime_configured() -> bool:
+    import os
+
+    if not AGENT_RUNTIME_ENABLED:
+        return False
+    if os.getenv("DEEPSEEK_API_KEY"):
+        return True
+    try:
+        from ..services.agent_key_service import get_active_agent_api_key
+
+        with get_db_connection() as conn:
+            return get_active_agent_api_key(conn) is not None
+    except Exception:
+        return False
 
 
 def _ensure_agent_page_context(conn, user: dict, request: Request, data: dict) -> None:
@@ -84,11 +109,61 @@ def bootstrap_agent_task_center(user: dict = Depends(_current_agent_user)):
     return {
         "status": "success",
         "enabled": bool(AGENT_TASKS_ENABLED),
-        "runtime_configured": bool(AGENT_DSH_ENABLED),
+        "runtime_configured": _agent_runtime_configured(),
+        "runtime": {"provider": "openai-agents", "model": "deepseek-flash"},
+        "is_super_admin": bool(user.get("is_super_admin")),
         "task_types": task_type_options(),
         "workflow_catalog": agent_workflow_catalog() if user["role"] == "teacher" else [],
         **queue,
     }
+
+
+@router.get("/admin/queue", response_class=JSONResponse)
+def api_admin_agent_queue(user: dict = Depends(_require_super_admin)):
+    from ..services.agent_queue_control_service import admin_queue_overview
+
+    with get_db_connection() as conn:
+        return {"status": "success", **admin_queue_overview(conn, admin=user)}
+
+
+@router.post("/admin/queue/{action}", response_class=JSONResponse)
+async def api_admin_agent_queue_action(action: str, request: Request, user: dict = Depends(_require_super_admin)):
+    from ..services.agent_queue_control_service import admin_queue_overview, clear_queue, set_queue_paused
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    with get_db_connection() as conn:
+        if action == "pause":
+            set_queue_paused(conn, paused=True, admin=user)
+            message = "Agent 队列已暂停：不再领取新任务，正在执行的任务不受影响。"
+        elif action == "resume":
+            set_queue_paused(conn, paused=False, admin=user)
+            message = "Agent 队列已恢复。"
+        elif action == "clear":
+            result = clear_queue(conn, admin=user, include_parked=bool(payload.get("include_parked")))
+            message = f"已清空队列，取消 {result['canceled_count']} 个任务。"
+        else:
+            raise HTTPException(status_code=404, detail="未知的队列操作。")
+        return {"status": "success", "message": message, **admin_queue_overview(conn, admin=user)}
+
+
+@router.post("/admin/tasks/{task_id}/{action}", response_class=JSONResponse)
+def api_admin_agent_task_action(task_id: int, action: str, user: dict = Depends(_require_super_admin)):
+    from ..services.agent_queue_control_service import admin_queue_overview, pause_task, resume_task, stop_task
+
+    with get_db_connection() as conn:
+        if action == "pause":
+            pause_task(conn, task_id, user=user, as_admin=True)
+        elif action == "resume":
+            resume_task(conn, task_id, user=user, as_admin=True)
+        elif action == "stop":
+            stop_task(conn, task_id, admin=user)
+        else:
+            raise HTTPException(status_code=404, detail="未知的任务操作。")
+        return {"status": "success", **admin_queue_overview(conn, admin=user)}
 
 
 @router.get("", response_class=JSONResponse)
@@ -336,9 +411,53 @@ def api_get_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
     with get_db_connection() as conn:
         task = get_agent_task(conn, task_id, teacher_id=teacher_id, actor_role=user["role"])
         if task["is_owner"]:
-            from ..services.agent_question_service import list_user_questions
-            task["questions"] = list_user_questions(conn, user, task_id)
+            from ..services.agent_sdk.state import load_run_state
+
+            run_state = load_run_state(conn, task_id)
+            task["pending_question"] = (run_state.get("pending_question")
+                                        if task.get("runtime_status") == "waiting_input" else None)
+            task["pause_requested"] = bool(run_state.get("pause_requested"))
     return {"status": "success", "task": task}
+
+
+@router.post("/{task_id}/answer", response_class=JSONResponse)
+async def api_answer_agent_task(task_id: int, request: Request, user: dict = Depends(_current_agent_user)):
+    """Answer the Agent's pending question; the task then resumes with priority."""
+    from starlette.concurrency import run_in_threadpool
+    from ..services.agent_sdk.state import answer_parked_question
+
+    _source_session_id(user)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(400, "回答格式无效。") from None
+    if (not isinstance(payload, dict) or not isinstance(payload.get("answers"), list)
+            or len(json.dumps(payload, ensure_ascii=False)) > 20000):
+        raise HTTPException(400, "回答格式无效。")
+
+    def save():
+        with get_db_connection() as conn:
+            answer_parked_question(conn, task_id, user=user, question_id=str(payload.get("question_id") or ""),
+                                   answers=payload["answers"])
+            return get_agent_task(conn, task_id, teacher_id=_teacher_id(user), actor_role=user["role"])
+
+    return {"status": "success", "task": await run_in_threadpool(save)}
+
+
+@router.post("/{task_id}/pause", response_class=JSONResponse)
+def api_pause_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
+    from ..services.agent_queue_control_service import pause_task
+
+    with get_db_connection() as conn:
+        return {"status": "success", "task": pause_task(conn, task_id, user=user)}
+
+
+@router.post("/{task_id}/resume", response_class=JSONResponse)
+def api_resume_agent_task(task_id: int, user: dict = Depends(_current_agent_user)):
+    from ..services.agent_queue_control_service import resume_task
+
+    with get_db_connection() as conn:
+        return {"status": "success", "task": resume_task(conn, task_id, user=user)}
 
 
 @router.post("/{task_id}/questions/{question_id}/answer", response_class=JSONResponse)

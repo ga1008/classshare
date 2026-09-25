@@ -77,8 +77,8 @@ def capability_catalog(app, *, actor_role, is_super_admin, keys=None, query=None
         user_input_actions=select(groups["secure_input"]) + select(groups["user_confirmation"]),
         catalog_mode="parameters" if keys is not None else "index", available_counts=totals,
         request_guarantee="普通平台请求保留接口观察回执；业务是否最终完成须按返回结果继续核对。",
-        route_guarantee="platform_routes 覆盖全站 JSON 接口，以用户本人实时权限执行；status=route_ready 的用 platform_request 调用，route_confirmation_required 的只能提出 platform_route_request 提案由用户确认。",
-        next_step="索引仅提供名称。调用 platform_capabilities(keys=[所选名称]) 获取完整参数，再调用对应工具；query可按中英文名称、方法或路径检索索引。优先使用审核能力（read/write/request）；无对应审核能力时使用 platform_routes。file_transports分为文本抽取和文件字节复制，按条目tool调用；secure_input/user_confirmation只能提出由用户安全填写或本人核对的确认提案。")
+        route_guarantee="platform_routes 覆盖全站 JSON 接口，以用户本人实时权限执行，均用 platform_request 调用；status=route_destructive_self_check 的是破坏性操作，必须附带 safety_check 自检（服务端核对），硬性拦截的高危操作不会出现在目录中。",
+        next_step="索引仅提供名称。调用 platform_capabilities(keys=[所选名称]) 获取完整参数，再调用对应工具；query可按中英文名称、方法或路径检索索引。优先使用审核能力（read/write/request）；无对应审核能力时使用 platform_routes。file_transports分为文本抽取和文件字节复制，按条目tool调用；secure_input（密码/凭据）只能由用户本人在平台页面填写，Agent 不能代填。")
     if keys is not None:
         value["unavailable_keys"] = [key for key in keys if key not in known]
     return value

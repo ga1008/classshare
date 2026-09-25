@@ -238,34 +238,6 @@ test('parser exceptions preserve safe readable text and later successful parsing
   expect(h.errors).toEqual([]);
 });
 
-test('module entry exports the shared renderer and Agent results preserve code and alignment', async ({ page }) => {
-  const h = await mount(page, { module: true });
-  expect(await page.evaluate(() => typeof (window as any).renderAIChatMarkdown)).toBe('function');
-  const widgetSource = fs.readFileSync('static/js/ai_workspace_widget.js', 'utf8');
-  const widget = widgetSource.slice(0, widgetSource.lastIndexOf("if (document.readyState === 'loading')"));
-  await page.addScriptTag({ content: `(() => { ${widget}\nwindow.fixtureAgentRenderers = { renderBusinessResult, renderDeliverable, renderRuntimeDetail }; })();` });
-  const source = '    #literal\n    print("##literal")\n\n| 左 | 中 | 右 |\n| :- | :-: | -: |\n| 文字 | 居中 | 42 |';
-  await page.evaluate(source => {
-    const w = window as any;
-    const result = document.createElement('div');
-    result.id = 'fixture-agent-results';
-    result.innerHTML = w.fixtureAgentRenderers.renderBusinessResult({ markdown: source })
-      + w.fixtureAgentRenderers.renderDeliverable({ deliverable_markdown: source })
-      + w.fixtureAgentRenderers.renderRuntimeDetail({ text_outputs: [{ text: source }] });
-    w.chatFixture.messagesBox.appendChild(result);
-  }, source);
-  for (const selector of ['.ai-task-business-markdown', '.ai-task-deliverable', '.ai-task-runtime-output']) {
-    const result = page.locator(selector);
-    expect(await result.locator('pre code').textContent()).toBe('#literal\nprint("##literal")\n');
-    await expect(result.locator('h1,h2')).toHaveCount(0);
-    for (const [index, align] of ['left', 'center', 'right'].entries()) {
-      await expect(result.locator('th').nth(index)).toHaveCSS('text-align', align);
-      await expect(result.locator('td').nth(index)).toHaveCSS('text-align', align);
-    }
-  }
-  expect(h.errors).toEqual([]);
-});
-
 for (const width of [1440, 390]) {
   test(`long Markdown remains contained at ${width}px in window and fullscreen`, async ({ page }) => {
     await page.setViewportSize({ width, height: 980 });

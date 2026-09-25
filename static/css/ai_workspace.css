@@ -122,7 +122,7 @@
     font: inherit; font-size: 14px; line-height: 1.5;
 }
 #ai-chat-modal .ai-chat-input-area textarea::placeholder { color: hsl(var(--ls-glass-muted)); opacity: .85; }
-#ai-chat-modal :is(button, .ai-agent-memory-toggle, .ai-workspace-title__mark) {
+#ai-chat-modal :is(button:not([class*="lq-"]), .ai-workspace-title__mark) {
     border-radius: var(--ls-r-capsule, 999px);
     border: 1px solid hsl(var(--ls-glass-rim));
     color: hsl(var(--ls-glass-ink));
@@ -132,13 +132,13 @@
     -webkit-backdrop-filter: blur(var(--ls-blur-thin, 8px)) saturate(var(--ls-glass-saturate));
     transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms var(--ls-ease-out);
 }
-#ai-chat-modal button { cursor: pointer; }
-#ai-chat-modal button:hover:not(:disabled) { background-color: hsl(var(--ls-primary) / .14); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), 0 3px 12px hsl(var(--ls-primary) / .12); }
-#ai-chat-modal button:active:not(:disabled) { transform: scale(.96); background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); }
-#ai-chat-modal button:is(.active, .is-active, .send):not(:disabled) { background: linear-gradient(hsl(var(--ls-primary) / .92), hsl(var(--ls-primary) / .92)), var(--ls-glass-sheen); color: hsl(var(--ls-on-primary)); }
-#ai-chat-modal button:is(.active, .is-active, .send) :is(strong, small, svg, span) { color: inherit; }
-#ai-chat-modal :is(button,textarea):focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
-#ai-chat-modal button:disabled { opacity: .48; cursor: not-allowed; }
+#ai-chat-modal button:not([class*="lq-"]) { cursor: pointer; }
+#ai-chat-modal button:not([class*="lq-"]):hover:not(:disabled) { background-color: hsl(var(--ls-primary) / .14); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), 0 3px 12px hsl(var(--ls-primary) / .12); }
+#ai-chat-modal button:not([class*="lq-"]):active:not(:disabled) { transform: scale(.96); background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); }
+#ai-chat-modal button:not([class*="lq-"]):is(.active, .is-active, .send):not(:disabled) { background: linear-gradient(hsl(var(--ls-primary) / .92), hsl(var(--ls-primary) / .92)), var(--ls-glass-sheen); color: hsl(var(--ls-on-primary)); }
+#ai-chat-modal button:not([class*="lq-"]):is(.active, .is-active, .send) :is(strong, small, svg, span) { color: inherit; }
+#ai-chat-modal :is(button:not([class*="lq-"]),textarea):focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
+#ai-chat-modal button:not([class*="lq-"]):disabled { opacity: .48; cursor: not-allowed; }
 #ai-chat-modal .chat-btn { width: 36px; height: 36px; min-width: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 #ai-chat-modal .ai-workspace-modebar { display: flex; gap: 6px; border: 0; background: transparent; padding: 0; margin-bottom: 9px; }
 #ai-chat-modal .ai-workspace-mode-option { flex: 1; min-width: 0; padding: 7px 12px; gap: 8px; }
@@ -211,5 +211,5 @@ dialog.ai-agent-reconciliation-dialog button { border-radius: 999px; }
     #ai-chat-modal .right-buttons { grid-column: 2; grid-row: 2; }
     #ai-chat-modal .ai-agent-starters { max-height: 100px; }
 }
-@media (prefers-reduced-motion: reduce) { #ai-chat-modal .ai-workspace-container, #ai-chat-modal button { animation: none; transition: none; } }
+@media (prefers-reduced-motion: reduce) { #ai-chat-modal .ai-workspace-container, #ai-chat-modal button:not([class*="lq-"]) { animation: none; transition: none; } }
 @supports not (backdrop-filter: blur(1px)) { #ai-chat-modal .ai-workspace-container::before, #ai-chat-modal .ai-agent-history-drawer { background: hsl(var(--ls-surface-1)); } }

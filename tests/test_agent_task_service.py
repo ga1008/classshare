@@ -91,7 +91,8 @@ class AgentTaskServiceTests(unittest.TestCase):
                 created_at TEXT,
                 started_at TEXT,
                 updated_at TEXT,
-                worker_id TEXT
+                worker_id TEXT,
+                runtime_status TEXT
             );
             CREATE TABLE agent_task_events (
                 id INTEGER PRIMARY KEY,
@@ -169,7 +170,8 @@ class AgentTaskServiceTests(unittest.TestCase):
     def test_queue_state_tolerates_stale_composer_cleanup_failure_on_read(self):
         conn = _ReadMostlyConnection()
 
-        state = get_agent_queue_state(conn, viewer_teacher_id=42)
+        with patch("classroom_app.services.agent_queue_control_service.queue_pause_state", return_value={"paused": False}):
+            state = get_agent_queue_state(conn, viewer_teacher_id=42)
 
         self.assertTrue(conn.rollback_called)
         self.assertEqual(0, state["queued_count"])
@@ -310,7 +312,7 @@ class AgentTaskServiceTests(unittest.TestCase):
     def test_postgres_agent_claim_uses_advisory_lock_skip_locked_and_returning(self):
         conn = _FakePostgresAgentConnection()
 
-        with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 2):
+        with patch("classroom_app.config.AGENT_TASK_GLOBAL_CONCURRENCY", 2),                 patch("classroom_app.services.agent_queue_control_service.is_queue_paused", return_value=False):
             claimed = _claim_next_agent_task_postgres(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00")
 
         self.assertEqual({"id": 11, "status": "running", "worker_id": "agent-worker-1"}, claimed)
@@ -320,13 +322,16 @@ class AgentTaskServiceTests(unittest.TestCase):
         self.assertIn("FOR UPDATE SKIP LOCKED", sql_text)
         self.assertIn("NOT EXISTS", sql_text)
         self.assertIn("RETURNING agent_tasks.*", sql_text)
+        # parked tasks (waiting for an answer / paused) never hold or take a slot
+        self.assertIn("NOT IN ('waiting_input', 'paused', 'held')", sql_text)
         self.assertNotIn("BEGIN IMMEDIATE", sql_text)
         self.assertEqual(2, conn.calls[1][1][-1])
 
     def test_postgres_agent_claim_returns_none_when_singleton_lock_is_busy(self):
         conn = _FakePostgresAgentConnection(lock_acquired=False)
 
-        self.assertIsNone(_claim_next_agent_task_postgres(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00"))
+        with patch("classroom_app.services.agent_queue_control_service.is_queue_paused", return_value=False):
+            self.assertIsNone(_claim_next_agent_task_postgres(conn, worker_id="agent-worker-1", now="2026-01-01T00:10:00"))
         self.assertEqual(1, conn.commits)
         self.assertEqual(1, len(conn.calls))
 

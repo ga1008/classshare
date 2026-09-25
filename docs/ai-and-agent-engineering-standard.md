@@ -1,6 +1,6 @@
 # LanShare AI 与 Agent 工程规范
 
-> 状态：长期维护文档（living document）。首版 2026-09-11，基于 `dev` 分支 `04f0e0ab`。
+> 状态：长期维护文档（living document）。首版 2026-09-11，基于 `dev` 分支 `04f0e0ab`；2026-09-25 Agent 运行时改为 OpenAI Agents SDK（见 `docs/agent-runtime-openai-agents-2026-09-25.md`）。
 > 面向对象：后续改进 AI 能力、Agent 能力或任何调用模型的业务功能的工程师与 AI 助手。
 > 定位：本文是**规范与索引**，不是实现记录。具体设计与证据以第 10 节「真源索引」列出的文档、代码和测试为准；两者冲突时，以代码与测试为准，并回来修订本文。
 
@@ -22,7 +22,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 | 链路 | 用途 | 代表入口 | 执行主体 |
 |---|---|---|---|
 | **AI 服务链路** | 平台功能内嵌的模型调用：批改、出题、教案/考核计划/评学表生成与导入、课堂/全局聊天、错题归集、职业规划、公文识别、博客改写等 | 主应用各 service → `ai_client` / `ai_gateway_post` → AI 微服务 `ai_assistant.py` | AI 微服务（容器 `ai`，端口 8001）直连 DeepSeek / 火山方舟 |
-| **Agent 链路（数字分身）** | 用户以本人身份委托一个多步任务，由官方 DSH（deepseek-harness）理解、规划并调用平台工具执行 | AI 工作区任务中心 → `/api/agent-tasks` → `agent-worker` → DSH 隔离容器 → `/api/agent-bridge/mcp` | 每任务一个隔离 DSH runner；平台通过 MCP 工具与模型网关提供能力 |
+| **Agent 链路（教师的虚拟助手）** | 教师以本人身份委托一个多步任务，由 Agent 理解、规划并调用平台工具与联网检索执行（仅教师） | AI 窗口 Agent 面板 → `/api/agent-tasks` → 全平台队列 → `agent-worker`（OpenAI Agents SDK + DeepSeek V4.1 Flash）→ `/api/agent-bridge/mcp` | `agent-worker` 容器内的 Python 运行时（`services/agent_sdk/`）；平台通过桥接工具按用户实时权限提供能力 |
 
 ```
 ┌────────────── 主应用 app (FastAPI, 8000) ──────────────┐
@@ -30,10 +30,10 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 │        │                                                │        │  ai_model_policy 选档
 │        └─ 持久任务账本 ai_jobs (PostgreSQL)  ◄──────────│────────┘  durable worker 领取
 │                                                         │
-│  /api/agent-tasks ──► agent_tasks 队列 ──► agent-worker │
-│  /api/agent-bridge/mcp  ◄── MCP 工具调用 ───────────────│──┐
-│  /api/agent-model/*     ◄── 模型请求（凭据在网关侧）────│──┤  DSH runner（隔离容器，--network none，
-└─────────────────────────────────────────────────────────┘  └─ 经 launcher 转发的 gateway socket）
+│  /api/agent-tasks ──► agent_tasks 全平台队列             │
+│  /api/agent-bridge/mcp  ◄── 工具调用（任务凭据）────────│──┐
+└─────────────────────────────────────────────────────────┘  │  agent-worker：openai-agents 运行时
+                                                             └─ ──► DeepSeek deepseek-flash（OpenAI 兼容）
 ```
 
 两条链路的共同底座：
@@ -182,23 +182,26 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 ### 4.1 架构与生命周期
 
-1. **入口**：教师/学生在 AI 工作区任务中心提交任务与附件（`static/js/ai_workspace_widget.js`）→ `POST /api/agent-tasks`（`classroom_app/routers/agent_tasks.py`）。
-2. **队列**：`agent_tasks` 表；`agent-worker` 容器公平领取（PG `SKIP LOCKED`）。全局/worker 并发由 `AGENT_TASK_GLOBAL_CONCURRENCY` / `AGENT_TASK_WORKER_CONCURRENCY` 控制，生产默认 1（同一主体同时一个任务）。
-3. **运行**：`agent_dsh_task_service.run_dsh_task` 创建尝试（attempt + fencing token），签发**任务委托凭据**（tools 与 model 两种用途、独立 scope 与 TTL），经 `agent_runtime/launcher_client` 请求宿主 launcher（`tools/agent_dsh_launcher.py`，systemd 服务）启动隔离 DSH 容器（`deployment/dsh/`，固定镜像 + profile digest 校验，`--network none`，只读根文件系统，资源配额，独立 workspace）。
-4. **工具**：runner 内通过 gateway socket 只能到达 `/api/agent-bridge/*` 与 `/api/agent-model/*`。MCP 工具面见 4.4。模型请求经 `agent_model_gateway`：真实 API key 不进 runner，请求按任务计数/限流（`MAX_REQUESTS_PER_TASK` 等）。
-5. **结果**：事件流（SSE `/{task_id}/stream`）、产物、`proposed_actions` 提案、平台请求回执；终态后可追问（follow-up）、重试、按提案预览/执行（本人确认）。
-6. **收尾**：租约对账（reconcile）决定不确定结果；容器由 launcher 回收；历史可读。
+1. **入口（仅教师）**：AI 窗口的 Agent 面板（`static/js/agent_workbench.js`）→ `POST /api/agent-tasks`（`routers/agent_tasks.py`，`_current_agent_user` 只放行教师；学生只有 AI 对话）。
+2. **全平台队列**：`agent_tasks` 表；`agent-worker` 公平领取（PG `SKIP LOCKED`）。`AGENT_TASK_GLOBAL_CONCURRENCY`（默认 2）限制同时执行数，每位教师同时 1 个。停靠任务（等待回答 `waiting_input`、暂停 `paused`、超管挂起 `held`）保持 `queued` 但**不占执行槽、不被领取**；回答/继续后变 `resume_pending`，以优先级 5 优先领取。
+3. **队列控制（超管）**：`agent_queue_control_service` —— 暂停/恢复整个队列（`agent_queue_controls.queue_paused`，暂停后不再领取）、挂起/暂停/恢复/停止任意任务、清空排队（默认只取消未开始的，可选含停靠任务）。接口 `/api/agent-tasks/admin/*`；教师本人可暂停/继续/取消自己的任务。
+4. **运行**：`agent_sdk.runner.run_agent_task` —— `state.setup_attempt` 创建 attempt（fencing）并签发 **tools 委托凭据**（绑定用户实时会话）；OpenAI Agents SDK 以 `deepseek-flash`（thinking enabled，effort high，深度思考时 max；图片附件直接输入）驱动 `FunctionTool` 工具，工具经 HTTP 调用 app 的 `/api/agent-bridge/mcp`；联网搜索走 AI 服务 `/api/ai/web-search`。监控协程每 2s 核对取消/暂停，每 15s 续租。
+5. **停靠与恢复**：`ask_user` 工具（`StopAtTools`）或暂停/单段超时/步数上限 → `state.park_task` 保存 SDK 对话（`agent_run_states.history_json`）并让出槽位；恢复时追加“回答/补充/继续”消息后续跑。停靠超过 `AGENT_TASK_PARKED_TTL_HOURS` 自动关闭。
+6. **结果与收尾**：结构化事件（§4.9）→ SSE → 前端时间线；终态写结果卡（成品 Markdown、已执行操作、产物、用量）与消息中心通知；worker 崩溃由租约对账标记失败，不自动重放。
+7. **厂商兼容**：`model.deepseek_input_filter`（`RunConfig.call_model_input_filter`）在每次模型调用前剔除空 assistant 消息——DeepSeek 要求 tool_calls 之后紧跟 tool 结果（2026-09-25 真实 API 验证）。
 
 ### 4.2 身份与授权铁律
 
 - **R1 权限 = 本人实时权限**。Agent 执行任何平台操作时走：任务委托凭据 → 用户实时登录会话 → 进程内 ASGI 调用目标路由，由路由自身依赖鉴权。用户在网页上做不到的，Agent 也做不到；反之亦然。撤权/注销后等待中的操作立即失效。
-- **R2 模型文本不能提升权限**。硬排除、破坏性判定、确认要求全部由路由元数据和服务端规则决定，提示词只能帮助使用工具。
-- **R3 凭据不进 runner**。模型 key 留在网关；任务凭据形如 `lsagt_…`，日志与事件经 `redact_runtime_value` 脱敏；密码等安全输入只能由用户在确认界面填写，不进提案/任务/回执。
-- **R4 三级确认**：
-  - 普通可逆读写：继承用户提交任务时的授权，不逐步确认。
-  - 破坏性/不可逆/外发/公开（DELETE，或命名含 delete、remove、purge、reset、clear、revoke、close-out、merge、publish、archive、disable、force、bulk、batch、transfer、import、sync、approve、reject 等）：模型只能提 `platform_route_request` / 领域提案，由本人在确认模态核对平台生成的快照、勾选提示、填写说明后执行（`agent_route_confirmation_service`、`agent_business_confirmation_service`）。
-  - 安全输入（密码、密钥、邮箱配置）：`secure_input` 层，仅本人在界面填写。
-- **R5 超管可代批但记在真实账号下**，且必须接受明确提示并说明。
+- **R2 模型文本不能提升权限**。硬排除、硬性拦截、破坏性判定、自检核验全部由路由元数据和服务端规则决定，提示词只能帮助使用工具。
+- **R3 凭据不进模型**。模型 key 只在 worker 进程内（超管 Agent Key 优先，否则 `DEEPSEEK_API_KEY`）；任务凭据形如 `lsagt_…`，事件经 `recorder.redact` 脱敏；密码等安全输入只能由用户在平台页面填写。
+- **R4 执行策略（2026-09-25 起，取代“本人确认提案”）**：
+  - 用户已明确要求的操作：确认参数后**直接执行**，不再逐步询问。
+  - **硬性拦截**（`agent_danger_guard`，对所有人含超管）：系统级删除、删除学生/行政班/学期/账号、停用教师、一键清空/重置/抹除/迁移/回滚、超管授权变更、提交文件修复。能力目录中不可见，执行返回 403。
+  - **破坏性操作自检**：删除/撤销/清空/合并/发布/导入/同步等须带 `safety_check`，服务端核验：单条需“用户要求”或“数据无效/过期”；大量（批量类、多条、本任务第 5 次起）需“用户要求”且“数据无效/过期”，否则先 `ask_user`，回答后以 `user_confirmed` 执行（服务端核对确有已回答的疑问）；每任务上限 40 次，超过熔断。已审核适配仅在批量时要求自检。`user_confirmed` 须引用最近一次已回答疑问的 `question_id`；已审核事务写中的删除组织/停用账号/超管授权变更由 `HARD_BLOCKED_WRITE_ACTIONS` 硬性拦截（新增破坏性写动作须在该文件显式归类，否则不变量测试失败）。
+  - 意图不明、存在多个方案、或大量修改需确认时用 `ask_user`：1~3 个问题，每题 2~4 个选项（首项为推荐），平台自动追加“自定义输入”。
+  - 安全输入（密码、密钥、邮箱配置）：仅本人在页面填写。
+- **R5 超管同样受硬性拦截约束**；超管的队列控制记录在任务事件中（谁、何时）。
 
 ### 4.3 能力分层
 
@@ -228,7 +231,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 | `platform_request_status` / `platform_task_context` | 读取本任务/父任务的回执与产物 | 不重发请求 |
 | `platform_query_catalog` / `platform_query` | 教师命名统计查询（白名单视图） | 不支持任意 SQL |
 | `platform_file` / `platform_download` | 有界文本抽取 / 原始字节复制到任务 inputs | 复核身份与来源 |
-| `children/*`、`questions/*`（HTTP） | 子任务准入、向用户提问 | 子代理/工作流插件**当前禁用** |
+| `children/*`、`questions/*`（HTTP） | 旧 DSH 子任务/提问通道 | 新运行时不使用（提问改为 `ask_user` 停靠） |
 | `/query` `/schema` `/file` `/web`（旧桥接） | 只读 SQL（单条 SELECT、≤200 行、敏感表拒绝、列脱敏）、文件、联网（SSRF 防护） | 按任务主体过滤 |
 
 ### 4.5 新增/修改业务路由时对 Agent 的要求
@@ -245,11 +248,14 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 ### 4.6 运行时与部署
 
-- 版本固定：官方 `@deepseek-ai/dsh 0.1.5-rc.1`，Node 镜像按 digest 固定，`deployment/dsh/release.json` 记录镜像 ID 与 profile digest。启动前 launcher 用 `--evidence` 探针比对版本与 digest。
-- 运行时开关：`AGENT_TASKS_ENABLED`、`AGENT_DSH_ENABLED`、`AGENT_DSH_LAUNCHER_SOCKET`、`AGENT_TASK_MAX_RUNTIME_SECONDS`、`AGENT_MODEL_DEFAULT`、`AGENT_MODEL_SEARCH_MODEL`、`AGENT_MODEL_ALLOWED_BASE_URLS`（模型 base URL 白名单，管理员配置仍受其约束）。
-- Agent 模型 key 由超管在平台内配置（`agent_key_service`，加密存储），不是 `docker.env` 的 `DEEPSEEK_API_KEY`。
-- 子代理与工作流插件禁用（取消后远端工作停止尚无完整证明，见 `docs/agent-dsh-subagent-enablement-2026-09-10.md`）；启用需重建镜像并重新验证 digest。
-- 旧 deepseek-tui 已退役，不得重新引入其 HTTP 协议适配；`agent-improvement-goals.md` 仅作历史参考。
+- 依赖：`openai-agents==0.16.1`（锁定于 `requirements.lock.txt`，兼容 `openai==2.30.0`；清华源对其返回 403，`DockerfileBase` 使用阿里云镜像）。运行在既有 `agent-worker` 容器，无额外容器、无宿主 launcher（DSH 已退役，`deployment/dsh/deploy_integration.sh` 只负责停用旧 launcher 服务）。
+- 开关：`AGENT_TASKS_ENABLED`、`AGENT_RUNTIME_ENABLED`、`AGENT_MODEL_DEFAULT`（deepseek-flash）、`AGENT_TASK_GLOBAL_CONCURRENCY`/`AGENT_TASK_WORKER_CONCURRENCY`（2）、`AGENT_TASK_MAX_RUNTIME_SECONDS`（单段，超时自动暂停，可继续）、`AGENT_TASK_MAX_TURNS`、`AGENT_TASK_MAX_WEB_SEARCHES`、`AGENT_TASK_PARKED_TTL_HOURS`；compose 为 agent-worker 设置 `AGENT_BRIDGE_BASE_URL=http://app:8000`。
+- 运行时表 `agent_run_states`、`agent_queue_controls` 由 `services/agent_runtime_schema.py` 维护（`CREATE TABLE IF NOT EXISTS`，应用启动时建立；该函数本身不提交、不缓存“就绪”标记）。
+- 模型密钥由超管在平台内配置（`agent_key_service`，加密存储；Anthropic 兼容 URL 会自动转为 OpenAI 兼容地址），缺省回退 `DEEPSEEK_API_KEY`。
+
+### 4.9 事件语义（前端时间线）
+
+`thinking`（思考，折叠）/`decision`（决定，`record_decision`）/`tool_call`+`tool_result`（工具，按 call_id 合并）/`operation`+`operation_result`（操作，含自检）/`guard`（安全拦截）/`question_requested`+`question_answered`（疑问）/`assistant_text`（说明）/`artifact`（文件）/生命周期事件。新增事件类型需同步 `agent_workbench_render.buildTimeline`。
 
 ### 4.7 轻量聊天查询（G9）边界
 
@@ -262,9 +268,9 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 - [ ] 破坏性判定与确认层未被绕过；模型参数不含本人声明字段
 - [ ] 幂等：`operation_id` 语义、不确定结果不自动重试、重放读既有回执
 - [ ] 日志/事件脱敏（`redact_runtime_value`）；凭据不进 runner、不进产物
-- [ ] 测试：`tests/test_agent_*`（sqlite）+ 涉及锁/并发/时间类型的必须补 `*_postgres` 原生用例；浏览器确认模态用 `tests/e2e/components/agent-user-confirmation.spec.ts`
+- [ ] 测试：`tests/test_agent_*`（sqlite）+ 涉及锁/并发/时间类型的必须补 `*_postgres` 原生用例；浏览器用 `tests/e2e/specs/agent-workbench.spec.ts`（P03：步骤类型、选项疑问、超管队列、学生 403）
 - [ ] 能力台账 `--check` 通过；`docs/agent-capability-reviewed.json` 证据哈希与实现一致
-- [ ] 若动了 runner 镜像/profile/launcher：重建镜像、更新 `release.json`、重做隔离端到端与生产只读验收
+- [ ] 若改动模型/工具调用链：先跑 `tests/test_agent_sdk_runtime.py`（脚本化 DeepSeek 流会按厂商规则校验消息顺序），必要时做一次性真实 API 契约验证并记录 token 用量
 - [ ] 实施记录 + 证据 JSON 落在 `docs/`（第 9 节）
 
 ---
@@ -304,7 +310,7 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 - **部署流程**见记忆 `deploy-workflow` 与 `DEVELOPMENT.md` §5：从 LF 冻结 worktree 打包；`-QuiesceForMigration` + 原生 PG 演练报告；报告按 `classroom_app/db/*.py` 的 SHA-256 绑定——因此**运行时建表的新功能把 DDL 放在 `services/*_schema.py`**（engine-aware `CREATE TABLE IF NOT EXISTS`，操作前 ensure，并对"进程已标记就绪但库里没表"做二次 ensure），只有真正需要进入迁移体系的表才改 `db/`。
 - **健康检查**：AI 服务 `/api/internal/health`（`grading_queue.pending`、durable 汇总）；应用 `/api/internal/health`（含 `db_pool`）；系统诊断页可取消/重排持久任务。
 - **AI 止血 runbook**（不重部署）：改 `/lanshare/docker.env` 开关 → `docker compose restart ai`；卡住的提交用 `force_submit_submission_for_ai_grading` 重新派发（先 force 再 submit，`status='grading'` 直接 submit 会被视为 already_grading）。详见记忆 `ai-scheduling-architecture`。
-- **Agent 运维**：launcher 为 systemd 服务；生产只读验收脚本与证据在 `docs/agent-dsh-production-runtime-acceptance-2026-09-10.json`；回滚镜像 `lanshare-app:rollback-pre-dsh-20260910`。
+- **Agent 运维**：超管在 Agent 面板“队列管理”中暂停/恢复队列、暂停/停止任务、清空排队；运行时在 `agent-worker` 容器（`docker compose logs agent-worker`）。DSH launcher 已退役。
 - **日志真源**：AI 费用看 `logs/ai_usage.jsonl`；Agent 任务看 `agent_task_events` 与 `agent_platform_requests`。
 
 ---
@@ -313,7 +319,7 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 
 1. 模型 key、平台 `SECRET_KEY`、数据库口令不进 runner、不进提示词、不进产物、不进日志。
 2. Agent 的任何写操作都经用户实时会话与目标路由鉴权；不存在"系统身份"执行的用户业务。
-3. 破坏性、公开、外发、审批决定、安全输入四类永远需要本人在平台确认。
+3. 硬性拦截清单（账号/组织/学期删除、一键清空/重置、超管授权变更等）对所有人（含超管）永远不能由 Agent 执行；破坏性与大量修改须经服务端核验的自检；安全输入只能本人在页面填写。
 4. 旧桥接 `/query` 只读单条 SELECT，敏感表拒绝、敏感列脱敏、按任务主体过滤；`/web` 拒内网与逐跳重定向校验；`/file` 限白名单目录与大小。
 5. 模型输出永远是"待校验数据"：成绩、文档字段、路由参数都要经服务端校验；解析失败不写库。
 6. 学生答案、隐私字段不进联网检索与提示词池；提示词池自动跳过疑似凭据文本。
@@ -344,11 +350,13 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 | 文档类 AI 功能 | `*_generation_service.py`、`*_import_service.py`、`material_final_document_service.py` | `docs/document-feature-ai-implementation-guide.md` | 各 `tests/test_*_plan*` / `*_evaluation*` |
 | 联网检索 | `ai_web_research.py`；`ai_assistant.py` `/api/ai/web-search` | 模块 docstring | — |
 | 轻量聊天查询 | `chat_platform_query_service.py` | 模块 docstring | `tests/test_agent_g9_light_query_eval.py` |
-| Agent 任务与队列 | `routers/agent_tasks.py`、`services/agent_task_service.py`、`agent_dsh_task_service.py`、`agent_task_worker.py` | `docs/agent-dsh-migration-plan-2026-09-10.md`、`docs/agent-dsh-final-gates-2026-09-10.md` | `tests/test_agent_task_service.py`、`test_agent_dsh_task_service.py`、`test_agent_task_worker.py` |
-| DSH 运行时 | `services/agent_runtime/`（`acp_client`、`dsh_provider`、`launcher_client`、`contracts`）、`tools/agent_dsh_launcher.py`、`deployment/dsh/` | `deployment/dsh/README.md`、`docs/agent-dsh-subagent-enablement-2026-09-10.md` | `tests/test_agent_acp_client.py`、`test_agent_dsh_provider.py`、`test_agent_dsh_launcher.py`、`test_agent_dsh_deployment.py` |
+| Agent 任务与队列 | `routers/agent_tasks.py`、`services/agent_task_service.py`、`agent_queue_control_service.py`、`agent_task_worker.py` | `docs/agent-runtime-openai-agents-2026-09-25.md` | `tests/test_agent_task_service.py`、`test_agent_sdk_runtime.py`、`test_agent_task_worker.py` |
+| Agent 运行时（OpenAI Agents SDK） | `services/agent_sdk/`（`runner`、`tools`、`model`、`bridge`、`state`、`prompts`、`recorder`）、`services/agent_runtime_schema.py`、`services/agent_task_receipts.py` | `docs/agent-runtime-openai-agents-2026-09-25.md`；DSH 历史见 `docs/agent-dsh-*.md` | `tests/test_agent_sdk_runtime.py` |
+| 危险操作守卫 | `services/agent_danger_guard.py`、`agent_platform_request_service._admit_danger` | 同上 §5 | `tests/test_agent_sdk_runtime.py::DangerGuardTests`、`test_agent_platform_route_capability.py` |
+| Agent 前端 | `static/js/agent_workbench.js`、`agent_workbench_render.js`、`ai_workspace_context.js`、`static/css/agent_workbench.css` | 同上 §6–7 | `tests/test_agent_task_improvements.py` |
 | 委托与身份 | `agent_delegation_service.py`、`agent_actor_service.py`、`agent_request_context.py`、`agent_platform_request_context.py`、`agent_user_route_request_context.py`、`dependencies.py` | `docs/agent-digital-twin-route-capability-2026-09-11.md` | `tests/test_agent_delegation_service.py`、`test_agent_authority*.py` |
 | 能力层（read/write/request/route） | `agent_platform_registry.py`、`agent_platform_broker.py`、`agent_action_registry.py`、`agent_platform_write_service.py`、`agent_platform_request_*.py`、`agent_platform_route_capability.py`、`agent_capability_catalog_service.py` | `docs/agent-capability-matrix.md`（生成）、`docs/agent-capability-reviewed.json` | `tests/test_agent_platform_*.py`、`test_agent_capability_inventory.py` |
-| 本人确认 | `agent_business_confirmation_service.py`、`agent_route_confirmation_service.py`、`agent_grade/signature/teaching_confirmation_service.py`、`agent_user_confirmation_actions.py`、`static/js/agent_user_confirmation.js` | `docs/agent-human-business-confirmation-2026-09-10.md` | `tests/test_agent_*_confirmation*.py`、`tests/e2e/components/agent-user-confirmation.spec.ts` |
+| 本人确认 | `agent_business_confirmation_service.py`、`agent_route_confirmation_service.py`、`agent_grade/signature/teaching_confirmation_service.py`、`agent_user_confirmation_actions.py`（仅用于旧任务提案，新运行时直接执行） | `docs/agent-human-business-confirmation-2026-09-10.md`（历史） | `tests/test_agent_*_confirmation*.py` |
 | 模型网关与密钥 | `agent_model_gateway_service.py`、`routers/agent_model_gateway.py`、`agent_key_service.py` | — | `tests/test_agent_model_gateway.py`、`test_agent_key_gateway.py` |
 | 旧桥接（SQL/文件/联网） | `agent_bridge_service.py`、`routers/agent_bridge.py` | 记忆 `agent-bridge-and-knowledge` | `tests/test_agent_bridge_service.py`、`test_agent_mcp_bridge.py` |
 | 通用审批流 | `approval_workflow_service.py`、`approval_workflow_schema.py`、`approval_request_types/`、`routers/approval_workflow.py`、`static/js/approval_workflow.js` | `docs/approval-workflow-plan-2026-09-11.md` | `tests/test_approval_workflow.py` |
@@ -360,7 +368,7 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 
 - 生产 `docker.env` 中的 AI 并发仍为代码默认值；调高需手动改服务器 env。
 - DeepSeek 官方 2026-09-14 起把 `deepseek-v4-pro` 请求路由到 V4.1 Flash；账目标签已显式化，但若官方后续再调整需复核价表。
-- Agent 子代理/工作流插件禁用；表单/多部分上传路由仍需审核适配；破坏性判定按命名保守划分。
+- 表单/多部分上传路由仍需审核适配；破坏性判定按命名保守划分；工具结果无法携带图片（平台内图片以文本抽取方式读取）。
 - flash 档已知弱点：多图时思考耗尽正文为空（已用 32k 输出 + 有界回退缓解）、对"截图齐文字空"偏宽松（系统提示第 9 条约束）、格式校验失败率约 20%（软规范化缓解）。
 - 全量单测存在既有失败（lessondoc、agent 路由快照、`test_db_postgres_schema` agent_* 表等），与 AI/Agent 规范无关，但新改动需用 clean worktree 对照确认未新增失败。
 - `_grading_adjudication_reasons` 的"证据冲突涉及高分题"细化未做。

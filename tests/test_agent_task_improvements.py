@@ -223,56 +223,46 @@ class AgentTaskImprovementTests(unittest.TestCase):
             schema_agent_ext._SCHEMA_READY = False
 
     def test_terminal_agent_events_refresh_message_center_bell(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
+        workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
         bell_js = Path("static/js/message_center_bell.js").read_text(encoding="utf-8")
-        terminal_handler = workspace_js[
-            workspace_js.index("function handleTaskEventPayload"):
-            workspace_js.index("function startTaskEventStream")
-        ]
+        handler = workbench_js[workbench_js.index("function handleEvents"):workbench_js.index("// ------------------------------------------------------------ rendering")]
 
-        self.assertIn("function refreshAgentTaskFinishNotification", workspace_js)
-        self.assertIn("window.refreshMessageCenterBell", workspace_js)
-        self.assertIn("message-center:refresh-requested", workspace_js)
-        self.assertIn("refreshAgentTaskFinishNotification(id)", terminal_handler)
+        self.assertIn("function refreshFinishNotification", workbench_js)
+        self.assertIn("window.refreshMessageCenterBell", workbench_js)
+        self.assertIn("message-center:refresh-requested", workbench_js)
+        self.assertIn("refreshFinishNotification(task.id)", handler)
+        self.assertIn("question_requested", handler)
         self.assertIn("message-center:refresh-requested", bell_js)
         self.assertIn("refreshBell({ allowPopup", bell_js)
-
     def test_agent_queue_list_surfaces_wait_estimate(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        render_list_block = workspace_js[
-            workspace_js.index("function renderTaskList"):
-            workspace_js.index("function formatAgentSubscriptionHour")
-        ]
+        render_js = Path("static/js/agent_workbench_render.js").read_text(encoding="utf-8")
+        live_block = render_js[render_js.index("export function renderLiveState"):render_js.index("export function renderResult")]
 
-        self.assertIn("queuePieces", render_list_block)
-        self.assertIn("estimated_wait_label", render_list_block)
-        self.assertIn("队列第", render_list_block)
-        self.assertIn("queuePieces.join(' · ')", render_list_block)
-
-    def test_agent_queue_deploy_shape_uses_one_isolated_dsh_runner(self):
+        self.assertIn("queue_position", live_block)
+        self.assertIn("estimated_wait_label", live_block)
+        self.assertIn("前面还有", live_block)
+        self.assertIn("queue_paused", live_block)
+    def test_agent_queue_deploy_shape_runs_agents_sdk_in_worker(self):
         compose_yml = Path("docker-compose.yml").read_text(encoding="utf-8")
         docker_env_example = Path("docker.env.example").read_text(encoding="utf-8")
 
         self.assertNotIn("ghcr.io/hmbown/deepseek-tui", compose_yml)
-        self.assertIn("/run/lanshare-agent/control:/run/lanshare-agent:ro", compose_yml)
-        self.assertIn("AGENT_TASK_GLOBAL_CONCURRENCY=1", docker_env_example)
-        self.assertIn("AGENT_TASK_WORKER_CONCURRENCY=1", docker_env_example)
-        self.assertIn("AGENT_DSH_ENABLED=false", docker_env_example)
-
+        self.assertNotIn("/run/lanshare-agent", compose_yml)
+        self.assertIn("AGENT_BRIDGE_BASE_URL: http://app:8000", compose_yml)
+        self.assertIn("AGENT_TASK_GLOBAL_CONCURRENCY=2", docker_env_example)
+        self.assertIn("AGENT_RUNTIME_ENABLED=true", docker_env_example)
+        self.assertIn("AGENT_MODEL_DEFAULT=deepseek-flash", docker_env_example)
+        self.assertNotIn("AGENT_DSH_ENABLED", docker_env_example)
+        self.assertIn("openai-agents==", Path("requirements.lock.txt").read_text(encoding="utf-8"))
     def test_agent_attachment_validator_rejects_unsupported_types_before_submit(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        validator_block = workspace_js[
-            workspace_js.index("const AGENT_ATTACHMENT_ALLOWED_EXTENSIONS"):
-            workspace_js.index("function agentAttachmentPreviews")
-        ]
+        workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
+        validator_block = workbench_js[workbench_js.index("const ALLOWED_EXTENSIONS"):workbench_js.index("const COMPOSER_COPY")]
+        add_block = workbench_js[workbench_js.index("function addFiles"):workbench_js.index("async function submitComposer")]
 
-        self.assertIn("AGENT_ATTACHMENT_ALLOWED_EXTENSIONS", validator_block)
-        self.assertIn("agentAttachmentExtension(file.name)", validator_block)
-        self.assertIn("类型暂不支持", validator_block)
-        self.assertIn(".docx", validator_block)
-        self.assertIn(".xlsx", validator_block)
-        self.assertIn(".png", validator_block)
-
+        for extension in (".docx", ".xlsx", ".png", ".pdf"):
+            self.assertIn(extension, validator_block)
+        self.assertIn("ALLOWED_EXTENSIONS.has(extensionOf(file.name))", add_block)
+        self.assertIn("类型暂不支持", add_block)
     def test_record_agent_auto_retry_enforces_hourly_budget(self):
         conn = self._open_agent_task_conn()
         try:
@@ -489,19 +479,13 @@ class AgentTaskImprovementTests(unittest.TestCase):
             schema_agent_ext._SCHEMA_READY = False
 
     def test_agent_starter_panel_is_wired_in_frontend(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        self.assertIn("function renderAgentStarters", workspace_js)
-        self.assertIn("data-agent-starter", workspace_js)
-        self.assertIn("selectedAgentWorkflowKey", workspace_js)
-        self.assertIn("agentWorkflowKey", workspace_js)
-
-        template = Path("templates/partials/ai_workspace_widget.html").read_text(encoding="utf-8")
-        self.assertIn('id="ai-agent-starters"', template)
-
-        ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
-        self.assertIn(".ai-agent-starters", ui_css)
-        self.assertIn(".ai-agent-starter", ui_css)
-
+        workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
+        self.assertIn("function renderWelcome", workbench_js)
+        self.assertIn("data-awb-starter", workbench_js)
+        self.assertIn("state.workflowKey", workbench_js)
+        self.assertIn("agentWorkflowKey", workbench_js)
+        self.assertIn("recommendedWorkflowKeys", workbench_js)
+        self.assertIn(".awb-starter", Path("static/css/agent_workbench.css").read_text(encoding="utf-8"))
     def test_follow_up_task_inherits_no_history_option(self):
         conn = self._open_agent_task_conn()
         try:
@@ -945,63 +929,37 @@ class AgentTaskImprovementTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_manual_agent_action_uses_server_confirmation_and_audit_path(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        manual_block_start = workspace_js.index("async function openManualAgentAction")
-        manual_block_end = workspace_js.index("async function executeAgentAction")
-        manual_block = workspace_js[manual_block_start:manual_block_end]
-
-        self.assertIn("/preview", manual_block)
-        self.assertIn("/execute", manual_block)
-        self.assertIn("confirmation_token", manual_block)
-        self.assertIn("renderTaskDetail", manual_block)
-
+    def test_legacy_proposals_are_shown_but_new_tasks_execute_directly(self):
+        render_js = Path("static/js/agent_workbench_render.js").read_text(encoding="utf-8")
+        result_block = render_js[render_js.index("export function renderResult"):render_js.index("export function renderTaskListItem")]
+        self.assertIn("proposed_actions", result_block)
+        self.assertIn("旧版 Agent", result_block)
+        self.assertNotIn("/execute", Path("static/js/agent_workbench.js").read_text(encoding="utf-8"))
     def test_agent_task_context_uses_bottom_composer_and_hides_recommendations(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        starters_block = workspace_js[
-            workspace_js.index("function renderAgentStarters"):
-            workspace_js.index("function applyAgentStarter")
-        ]
-        followup_block = workspace_js[
-            workspace_js.index("function renderFollowUpBox"):
-            workspace_js.index("function renderTaskList")
-        ]
-        submit_block = workspace_js[
-            workspace_js.index("async function submitActiveAgentSupplementFromComposer"):
-            workspace_js.index("function bindTaskCenter")
-        ]
+        workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
+        mode_block = workbench_js[workbench_js.index("function composerMode"):workbench_js.index("function renderComposer")]
+        render_block = workbench_js[workbench_js.index("function renderComposer"):workbench_js.index("function renderFiles")]
+        submit_block = workbench_js[workbench_js.index("async function submitComposer"):workbench_js.index("function collectAnswers")]
 
-        self.assertIn("function currentActiveOwnAgentTask", workspace_js)
-        self.assertIn("function currentAgentComposerTargetTask", workspace_js)
-        self.assertIn("const hasTaskContext = hasCurrentAgentTaskContext()", starters_block)
-        self.assertIn("if (!agentMode || hasTaskContext || hasInput || !starters.length)", starters_block)
-        self.assertIn("!task.is_terminal", followup_block)
-        self.assertNotIn("task.is_active", followup_block)
-        self.assertNotIn("data-agent-followup-input", workspace_js)
-        self.assertNotIn("data-agent-followup", workspace_js)
+        for mode in ("'new'", "'followup'", "'answer'", "'supplement'"):
+            self.assertIn(mode, mode_block)
+        self.assertIn("const canAttach = mode === 'new'", render_block)
+        self.assertIn("el.toggles.hidden = mode !== 'new'", render_block)
         self.assertIn("/follow-up", submit_block)
-        self.assertIn("补充到当前 Agent 任务", workspace_js)
-        self.assertIn("追问当前 Agent 结果", workspace_js)
-        self.assertIn("补充说明暂不支持附件", workspace_js)
-        self.assertIn("function renderTaskEventsPanel", workspace_js)
-        self.assertIn("function userFacingTaskEvent", workspace_js)
-
+        self.assertIn("await submitAnswer(", submit_block)
+        self.assertIn("给正在执行的任务补充说明", workbench_js)
+        self.assertIn("继续追问或提新要求", workbench_js)
+        head_block = workbench_js[workbench_js.index("function renderHead"):workbench_js.index("function renderWelcome")]
+        self.assertIn("renderWelcome()", head_block)  # starters only when no task is open
     def test_agent_runtime_warning_waits_for_explicit_agent_action(self):
-        workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-        bootstrap_block = workspace_js[
-            workspace_js.index("async function loadBootstrap"):
-            workspace_js.index("function startTaskPolling")
-        ]
+        workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
+        bootstrap_block = workbench_js[workbench_js.index("function loadBootstrap"):workbench_js.index("function applyList")]
+        activate_block = workbench_js[workbench_js.index("async activate()"):workbench_js.index("deactivate()")]
 
-        self.assertIn("function showRuntimeUnavailableWarning()", workspace_js)
-        self.assertIn("agentRuntimeConfigured = Boolean(data.runtime_configured)", bootstrap_block)
-        self.assertNotIn("notify('Agent 运行时未配置", bootstrap_block)
-        self.assertIn("setAgentMode(preferredAgentMode, { persist: false, showRuntimeWarning: false })", workspace_js)
-        self.assertIn("loadBootstrap({ showRuntimeWarning: false })", workspace_js)
-        self.assertIn("setAgentMode(!agentMode, { showRuntimeWarning: true })", workspace_js)
-        self.assertIn("setAgentMode(button.dataset.aiModeSelect === 'agent', { showRuntimeWarning: true })", workspace_js)
-        self.assertIn("setAgentMode(true, { showRuntimeWarning: true })", workspace_js)
-
+        self.assertNotIn("notify(", bootstrap_block)
+        self.assertIn("runtime_configured", activate_block)
+        self.assertIn("state.runtimeWarned", activate_block)
+        self.assertIn("Agent 模型尚未配置", activate_block)
     def test_notification_preview_requires_explicit_recipients_without_sending(self):
         from classroom_app.routers.agent_tasks import _preview_agent_task_action
         conn = self._open_agent_task_conn()
@@ -1077,7 +1035,7 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertTrue(exam["enabled"])
             self.assertIn("未来 3 天暂无考试/监考安排", exam["last_run_message"])
             self.assertEqual("2026-06-13T07:00:00", exam["last_finished_at"])
-            self.assertIn("last_run_message", Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8"))
+            self.assertIn("last_run_message", Path("static/js/agent_workbench.js").read_text(encoding="utf-8"))
         finally:
             conn.close()
             schema_scheduler._SCHEMA_READY = False
@@ -1179,12 +1137,12 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertEqual(rows[0]["ref_id"], exam["attention_ref_id"])
 
             workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-            self.assertIn("function handleAgentSubscriptionDeepLink", workspace_js)
+            workbench_js = Path("static/js/agent_workbench.js").read_text(encoding="utf-8")
+            self.assertIn("function readDeepLink", workspace_js)
             self.assertIn("agent_subscriptions", workspace_js)
-            self.assertIn("ai-agent-subscriptions-panel", workspace_js)
-            self.assertIn("attention_message", workspace_js)
-            ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
-            self.assertIn("ai-agent-subscription-row__attention", ui_css)
+            self.assertIn("openSubscriptions", workspace_js)
+            self.assertIn("data-awb-subs", workbench_js)
+            self.assertIn("attention_message", workbench_js)
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False
@@ -1659,13 +1617,10 @@ class AgentTaskImprovementTests(unittest.TestCase):
             self.assertFalse(detail["follow_up_available"])
             self.assertEqual("请把课堂活动再压缩成 15 分钟版本", detail["supplement"])
 
-            workspace_js = Path("static/js/ai_workspace_widget.js").read_text(encoding="utf-8")
-            self.assertIn("data-agent-supplement-followup", workspace_js)
-            self.assertIn("function prefillSupplementFollowUp", workspace_js)
-            self.assertIn("补充说明：", workspace_js)
-            ui_css = Path("static/css/ui-system.src.css").read_text(encoding="utf-8")
-            self.assertIn("ai-task-event__supplement", ui_css)
-            self.assertIn("ai-task-event__followup", ui_css)
+            render_js = Path("static/js/agent_workbench_render.js").read_text(encoding="utf-8")
+            self.assertIn("pending_supplement", render_js)
+            self.assertIn("detail.supplement", render_js)
+            self.assertIn(".awb-user--note", Path("static/css/agent_workbench.css").read_text(encoding="utf-8"))
         finally:
             conn.close()
             schema_agent_ext._SCHEMA_READY = False

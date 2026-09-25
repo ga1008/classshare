@@ -186,6 +186,12 @@ async def startup_event():
     with get_db_connection() as signature_conn:
         ensure_standard_review_signatures(signature_conn)
         signature_conn.commit()
+    from .services.agent_runtime_schema import ensure_agent_runtime_schema
+
+    with get_db_connection() as agent_conn:
+        # Created once here so concurrent first requests never race the DDL.
+        ensure_agent_runtime_schema(agent_conn)
+        agent_conn.commit()
 
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)

@@ -224,6 +224,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/admin/queue",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_admin_agent_queue",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/admin/queue/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_admin_agent_queue_action",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/admin/tasks/{task_id}/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_admin_agent_task_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/bootstrap",
     "methods": [
       "GET"
@@ -296,6 +320,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/answer",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_answer_agent_task",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/artifacts/{artifact_path:path}",
     "methods": [
       "GET"
@@ -328,6 +360,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/agent-tasks/{task_id}/pause",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_pause_agent_task",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/agent-tasks/{task_id}/platform-requests",
     "methods": [
       "GET"
@@ -357,6 +397,14 @@
       "POST"
     ],
     "name": "api_answer_agent_question",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/agent-tasks/{task_id}/resume",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_resume_agent_task",
     "include_in_schema": true
   },
   {

@@ -164,13 +164,13 @@ services:
       - *lanshare-rosters
       - *lanshare-shared
       - *lanshare-storage
-      # A directory bind survives launcher socket replacement. Only control IPC
-      # is exposed here; gateway.sock, Docker IPC and transient env files stay out.
-      - /run/lanshare-agent/control:/run/lanshare-agent:ro
     environment:
       <<: *lanshare-timezone
-      AGENT_DSH_LAUNCHER_SOCKET: /run/lanshare-agent/launcher.sock
       AGENT_TASK_WORKER_ID: agent-worker-compose
+      # The Agents-SDK runtime runs in this container; platform tools go through
+      # the app's /api/agent-bridge with a per-task credential (user's live authority).
+      AGENT_BRIDGE_BASE_URL: http://app:8000
+      AI_ASSISTANT_URL: http://ai:8001
 
   nginx:
     image: nginx:1.27-alpine

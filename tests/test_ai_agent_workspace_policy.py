@@ -64,8 +64,13 @@ class AgentWorkspacePolicyTests(unittest.TestCase):
             get_task.assert_not_called()
             retry.assert_not_called()
 
-    def test_teacher_assessment_context_and_student_normal_context_remain_allowed(self):
-        for user, path in ((TEACHER, '/assignment/1'), (STUDENT, '/classroom/10')):
+    def test_teacher_assessment_context_is_allowed_and_students_never_get_agent(self):
+        with patch.object(routes, 'get_db_connection', self.connect),              patch.object(routes, 'create_agent_task') as create, self.client(STUDENT) as client:
+            response = client.post('/api/agent-tasks', json={'instruction': 'question', 'page_context': {'page': {'path': '/classroom/10'}}},
+                                   headers={'referer': 'http://testserver/classroom/10'})
+            self.assertEqual(response.status_code, 403, response.text)  # Agent is teacher-only; students keep AI chat
+            create.assert_not_called()
+        for user, path in ((TEACHER, '/assignment/1'),):
             with self.subTest(user=user), patch.object(routes, 'get_db_connection', self.connect), \
                  patch.object(routes, 'resolve_agent_actor', return_value=SimpleNamespace(as_user=lambda: user)), \
                  patch.object(routes, 'AGENT_TASKS_ENABLED', True), \

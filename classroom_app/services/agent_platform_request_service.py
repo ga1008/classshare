@@ -328,17 +328,69 @@ async def _drain(work):
     if not work.cancelled(): work.exception()
 
 
-async def dispatch_platform_request(app, token, capability_key, operation_id, *, path_params=None, query_params=None, body=None, files=None):
-    """MCP-facing seam; accepts a reviewed key and bounded parameters, no URL/header."""
+def _admit_danger(token, operation, safety_check, *, reviewed=False):
+    """Hard-block + verified self-check for destructive operations (agent_danger_guard).
+
+    Generic route.* capabilities always need the self-check when destructive.
+    Reviewed adapters have audited single-object semantics: they are still
+    hard-blocked and bulk-checked, but a single-object action runs directly.
+    Counts are per task and live server-side, so the model cannot reset them.
+    Returns the accepted self-check record ({} for ordinary operations)."""
+    from .agent_danger_guard import assess_route, evaluate_safety_check, normalize_safety_check
+    from .agent_runtime_schema import ensure_agent_runtime_schema
+
+    assessment = assess_route(operation.method, operation.path, getattr(operation, 'handler', ''))
+    if assessment.hard_blocked:
+        evaluate_safety_check(assessment, None, prior_destructive_count=0, confirmation_valid=False)
+    if not assessment.destructive or (reviewed and not assessment.bulk and safety_check is None):
+        return {}
+    check = normalize_safety_check(safety_check)
+    with get_db_connection() as conn:
+        ensure_agent_runtime_schema(conn)
+        grant = verify_task_delegation(conn, token, purpose='tools', required_scope='platform:write')
+        task_id = int(grant.task['id'])
+        now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        if conn.execute('SELECT 1 FROM agent_run_states WHERE task_id=?', (task_id,)).fetchone() is None:
+            try:
+                conn.execute('INSERT INTO agent_run_states (task_id, destructive_count, updated_at) VALUES (?, 0, ?)', (task_id, now))
+                conn.commit()
+            except Exception:  # a parallel call created it first; the UPDATE below serializes us
+                conn.rollback()
+        # Increment first: the row lock orders parallel tool calls, so each sees a
+        # distinct count. A refused check raises before commit and rolls back.
+        conn.execute('UPDATE agent_run_states SET destructive_count=destructive_count+1, updated_at=? WHERE task_id=?', (now, task_id))
+        prior = int(conn.execute('SELECT destructive_count FROM agent_run_states WHERE task_id=?', (task_id,)).fetchone()['destructive_count']) - 1
+        # "user_confirmed" must cite the latest question the user actually answered in this task.
+        confirmed = False
+        if check and check['data_state'] == 'user_confirmed' and check.get('question_id'):
+            latest = conn.execute("SELECT detail_json FROM agent_task_events WHERE task_id=? AND event_type='question_answered' "
+                                  "ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+            if latest:
+                try:
+                    confirmed = json.loads(latest['detail_json'] or '{}').get('question_id') == check['question_id']
+                except ValueError:
+                    confirmed = False
+        try:
+            accepted = evaluate_safety_check(assessment, check, prior_destructive_count=prior, confirmation_valid=confirmed)
+        except HTTPException:
+            conn.rollback()
+            raise
+        conn.commit()
+    return accepted
+
+
+async def dispatch_platform_request(app, token, capability_key, operation_id, *, path_params=None, query_params=None, body=None, files=None,
+                                    safety_check=None):
+    """MCP-facing seam; accepts a reviewed key and bounded parameters, no URL/header.
+
+    Destructive operations execute directly under the user's live authority once
+    they pass the hard-block list and the verified self-check (agent_danger_guard)."""
     if _request_identity.get() is not None or _broker_identity.get() is not None:
         raise HTTPException(403,'不允许嵌套 Agent 平台请求。')
     if isinstance(capability_key, str) and capability_key.startswith(ROUTE_KEY_PREFIX):
         # Digital-twin layer: any mounted JSON route outside the hard exclusions,
         # governed by classification instead of a hand-written adapter.
         operation, route = resolve_route_capability(app, capability_key)
-        if operation.requires_user_confirmation:
-            raise HTTPException(403, {'message': '该操作具有破坏性或不可逆影响，模型不能直接执行。请在最终输出中提出 platform_route_request 提案，由用户本人在平台核对后确认执行。',
-                                      'capability_key': capability_key, 'proposal_action': 'platform_route_request'})
         if files is not None:
             raise HTTPException(400, '平台路由能力不支持任务附件。')
         path, query, raw, normalized = route_arguments(operation, path_params=path_params, query_params=query_params, body=body)
@@ -349,6 +401,10 @@ async def dispatch_platform_request(app, token, capability_key, operation_id, *,
         if operation.transport not in {'json', 'form'}:
             raise HTTPException(503,'该平台能力的请求格式尚未接入。')
         path,query,raw,normalized = arguments(operation,path_params=path_params,query_params=query_params,body=body)
+    reviewed = not (isinstance(capability_key, str) and capability_key.startswith(ROUTE_KEY_PREFIX))
+    accepted_check = await run_in_threadpool(_admit_danger, token, operation, safety_check, reviewed=reviewed)
+    if accepted_check:
+        normalized = {**normalized, 'safety_check': accepted_check}
     if operation.server_operation_id_field is not None:
         if operation.transport != 'json':
             raise HTTPException(503,'下游保存编号只支持经过审核的 JSON 请求。')

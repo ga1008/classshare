@@ -172,16 +172,24 @@ PUBLIC_SITE_BASE_URL = _read_url_env("PUBLIC_SITE_BASE_URL") or _read_url_env("S
 
 # --- Teacher agent task center ---
 AGENT_TASKS_ENABLED = _read_bool_env("AGENT_TASKS_ENABLED", True)
-AGENT_DSH_ENABLED = _read_bool_env("AGENT_DSH_ENABLED", False)
-AGENT_MODEL_DEFAULT = str(os.getenv("AGENT_MODEL_DEFAULT") or "deepseek-v4-pro").strip()
-AGENT_DSH_LAUNCHER_SOCKET = str(os.getenv("AGENT_DSH_LAUNCHER_SOCKET") or "/run/lanshare-agent/launcher.sock").strip()
+# Agents-SDK runtime (openai-agents, in the agent-worker container). The model is
+# DeepSeek V4.1 Flash (multimodal) through its OpenAI-compatible endpoint.
+AGENT_RUNTIME_ENABLED = _read_bool_env("AGENT_RUNTIME_ENABLED", True)
+AGENT_MODEL_DEFAULT = str(os.getenv("AGENT_MODEL_DEFAULT") or "deepseek-flash").strip()
+# Where the worker reaches the app's /api/agent-bridge (compose: http://app:8000).
+AGENT_BRIDGE_BASE_URL = (_read_url_env("AGENT_BRIDGE_BASE_URL") or f"http://127.0.0.1:{PORT}").rstrip("/")
+AGENT_TASK_MAX_TURNS = max(8, min(int(os.getenv("AGENT_TASK_MAX_TURNS", 60)), 200))
+AGENT_TASK_MAX_WEB_SEARCHES = max(0, min(int(os.getenv("AGENT_TASK_MAX_WEB_SEARCHES", 12)), 50))
+# Parked (waiting for an answer / paused) tasks expire after this many hours.
+AGENT_TASK_PARKED_TTL_HOURS = max(1, min(int(os.getenv("AGENT_TASK_PARKED_TTL_HOURS", 72)), 24 * 14))
 AGENT_TASK_WORKSPACE_ROOT = DATA_DIR / "agent_tasks"
 AGENT_TASK_WORKER_ID = str(os.getenv("AGENT_TASK_WORKER_ID") or "agent-task-worker").strip()
 AGENT_TASK_WORKER_POLL_SECONDS = max(2, int(os.getenv("AGENT_TASK_WORKER_POLL_SECONDS", 5)))
 AGENT_TASK_MAX_RUNTIME_SECONDS = max(60, int(os.getenv("AGENT_TASK_MAX_RUNTIME_SECONDS", 1800)))
-# Global Agent tasks allowed to run at once. Each actor is capped at 1.
-# Each isolated DSH runner has a 1 GiB limit; default to 1 on the 2c/4GB VPS.
-AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 1)), 4))
+# Global Agent tasks allowed to run at once (platform-wide queue). Each actor is
+# capped at 1. The in-process runtime is I/O bound (model + HTTP), so 2 fits the
+# 2c/4GB VPS; parked tasks (waiting for an answer / paused) hold no slot.
+AGENT_TASK_GLOBAL_CONCURRENCY = max(1, min(int(os.getenv("AGENT_TASK_GLOBAL_CONCURRENCY", 2)), 4))
 AGENT_TASK_WORKER_CONCURRENCY = max(
     1,
     min(

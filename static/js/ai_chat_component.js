@@ -1570,7 +1570,8 @@ class AIChatComponent {
 
             actionsDiv.appendChild(copyBtn);
         }
-        if (agentHandoff) {
+        // Agent is teacher-only; the chat never offers a handoff it cannot honour.
+        if (agentHandoff && window.AI_WORKSPACE_WIDGET_CONFIG?.taskCenterEnabled) {
             const handoffBtn = document.createElement('button');
             handoffBtn.className = 'copy-btn ai-agent-handoff-btn';
             handoffBtn.type = 'button';

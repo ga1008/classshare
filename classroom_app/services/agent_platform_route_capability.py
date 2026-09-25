@@ -90,11 +90,13 @@ class RouteCapability:
     server_operation_id_field: str | None = None
 
     def public(self, *, include_parameters: bool) -> dict[str, Any]:
+        # requires_user_confirmation now means "destructive": it executes directly
+        # once platform_request carries a server-verified safety_check.
         item = {"key": self.key, "method": self.method, "path": self.path, "label": self.label,
                 "domain": self.domain, "risk": self.risk, "mutates": self.mutates,
-                "executable": not self.requires_user_confirmation,
-                "status": "route_confirmation_required" if self.requires_user_confirmation else "route_ready",
-                "tool": "platform_route_request proposal" if self.requires_user_confirmation else "platform_request",
+                "executable": True,
+                "status": "route_destructive_self_check" if self.requires_user_confirmation else "route_ready",
+                "tool": "platform_request + safety_check" if self.requires_user_confirmation else "platform_request",
                 "authorization": "normal_platform_resource_policy",
                 "guarantee": "observed_http_result_not_verified_business"}
         if include_parameters:
@@ -177,6 +179,10 @@ def classify_route(app, row: dict[str, Any], reviewed: dict | None = None) -> Ro
         return RouteClassification("blocked", "outside_openapi_schema")
     if _is_json_body(operation) is False:
         return RouteClassification("blocked", "form_or_multipart_requires_reviewed_adapter")
+    from .agent_danger_guard import hard_block_reason
+
+    if hard_block_reason(method, path, row["handler"]):
+        return RouteClassification("blocked", "agent_hard_blocked")
     superseded = (reviewed if reviewed is not None else _reviewed_keys()).get((method, path))
     if superseded:
         return RouteClassification("reviewed", "reviewed_adapter_takes_precedence", superseded_by=tuple(superseded))

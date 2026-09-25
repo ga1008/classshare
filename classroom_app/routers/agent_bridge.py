@@ -287,9 +287,16 @@ def _mcp_tools(actor):
         tool("platform_write", "执行当前用户要求的已审核平台操作。先查看能力目录；同一操作重试必须复用 operation_id 和参数，成功以返回的业务回执为准。",
              {"operation_id": {"type": "string", "minLength": 8, "maxLength": 128}, "action": string, "params": obj},
              ["operation_id", "action", "params"]),
-        tool("platform_request", "以当前登录用户身份调用平台接口：capability_key 可以是目录中的审核能力，也可以是 platform_routes 中的 route.* 全站路由（权限即用户本人权限）。破坏性路由不能直接执行，须提出 platform_route_request 提案由用户确认。返回的是接口观察回执，不能当作异步业务完成证明；不确定结果须先核对，不能换编号重试。",
+        tool("platform_request", "以当前登录用户身份调用平台接口：capability_key 可以是目录中的审核能力，也可以是 platform_routes 中的 route.* 全站路由（权限即用户本人权限）。删除/撤销/清空/批量等破坏性操作必须附带 safety_check 自检，由服务端核对后直接执行；硬性拦截的高危操作永远不能执行。返回的是接口观察回执，不能当作异步业务完成证明；不确定结果须先核对，不能换编号重试。",
              {"capability_key": string, "operation_id": {"type": "string", "format": "uuid"},
               "path_params": obj, "query_params": obj, "body": obj,
+              "safety_check": {"type": "object", "properties": {
+                  "user_requested": {"type": "boolean"},
+                  "data_state": {"type": "string", "enum": ["invalid", "expired", "user_confirmed", "user_specified"]},
+                  "reason": {"type": "string", "maxLength": 500},
+                  "target_count": {"type": "integer", "minimum": 1},
+                  "targets": {"type": "string", "maxLength": 500}},
+                  "required": ["user_requested", "data_state", "reason"], "additionalProperties": False},
               "files": {"type": "array", "maxItems": 16, "items": {"type": "object", "properties": {
                   "path": string, "filename": string, "sha256": string, "parent_task_id": {"type": "integer", "minimum": 1}},
                   "required": ["path"], "additionalProperties": False}}}, ["capability_key", "operation_id"]),
@@ -313,7 +320,7 @@ def _mcp_tools(actor):
 
 @router.post("/mcp")
 async def bridge_mcp(request: Request, authorization: Optional[str] = Header(default="")):
-    """Stateless MCP Tools transport. No new DSH-facing database or login API."""
+    """Stateless MCP Tools transport used by the Agents-SDK runtime (agent-worker)."""
     import json
     from starlette.concurrency import run_in_threadpool
     from ..services.agent_delegation_service import verify_task_delegation
@@ -396,7 +403,10 @@ async def bridge_mcp(request: Request, authorization: Optional[str] = Header(def
                 else:
                     value = await dispatch_read(request.app, token, **arguments)
             elif name == "platform_write":
+                from ..services.agent_danger_guard import raise_if_write_action_blocked
                 from ..services.agent_platform_write_service import dispatch_write
+
+                raise_if_write_action_blocked(arguments.get("action"))
 
                 def execute_write():
                     with get_db_connection() as conn:
@@ -441,8 +451,11 @@ async def bridge_mcp(request: Request, authorization: Optional[str] = Header(def
                 raise HTTPException(413, "工具结果过大，请缩小范围。")
             result = {"content": [{"type": "text", "text": text}], "isError": False}
         except HTTPException as exc:
-            result = {"content": [{"type": "text", "text": json.dumps({"status": "error", "code": exc.status_code,
-                      "message": str(exc.detail)[:1000]}, ensure_ascii=False)}], "isError": True}
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+            error = {"status": "error", "status_code": exc.status_code,
+                     "code": str(detail.get("code") or exc.status_code),
+                     "message": str(detail.get("message") or detail)[:1000]}
+            result = {"content": [{"type": "text", "text": json.dumps(error, ensure_ascii=False)}], "isError": True}
         except Exception:
             result = {"content": [{"type": "text", "text": "工具执行未成功，请核对参数或稍后重试。"}], "isError": True}
     else:

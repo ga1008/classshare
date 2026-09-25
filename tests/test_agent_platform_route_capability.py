@@ -57,6 +57,10 @@ def build_app() -> FastAPI:
     def change_password(user: dict = Depends(get_current_user)):
         return {"status": "ok"}
 
+    @api.post("/items/clear-all")
+    def clear_all_items(user: dict = Depends(get_current_user)):
+        return {"status": "ok"}
+
     @api.get("/hidden", include_in_schema=False)
     def hidden(user: dict = Depends(get_current_user)):
         return {"status": "ok"}
@@ -145,8 +149,9 @@ class RouteCapabilityTests(unittest.TestCase):
         self.assertEqual("read", listed[("GET", "/api/demo/items")]["risk"])
         self.assertEqual("write", listed[("POST", "/api/demo/items")]["risk"])
         for destructive in (("DELETE", "/api/demo/items/{item_id}"), ("POST", "/api/demo/items/{item_id}/publish")):
-            self.assertEqual("route_confirmation_required", listed[destructive]["status"])
-            self.assertFalse(listed[destructive]["executable"])
+            # Destructive routes execute directly once a server-verified self-check is attached.
+            self.assertEqual("route_destructive_self_check", listed[destructive]["status"])
+            self.assertTrue(listed[destructive]["executable"])
         self.assertEqual(listed[("GET", "/api/demo/items")]["key"], self.key("GET", "/api/demo/items"))
         reasons = {(row["method"], row["path"]): routes.classify_route(self.app, row).reason for row in routes._rows(self.app)}
         self.assertEqual("special_secure_input_required", reasons[("POST", "/api/demo/password")])
@@ -156,6 +161,7 @@ class RouteCapabilityTests(unittest.TestCase):
         self.assertEqual("non_json_response", reasons[("GET", "/api/demo/report")])
         self.assertEqual("reviewed_adapter_takes_precedence", reasons[("GET", "/api/blog/follows")])
         self.assertEqual("agent_control_plane", reasons[("GET", "/api/agent-tasks/demo")])
+        self.assertEqual("agent_hard_blocked", reasons[("POST", "/api/demo/items/clear-all")])
         details, unavailable = routes.route_capability_details(self.app, [self.key("GET", "/api/demo/items"), self.key("GET", "/manage/demo"), "route.nothing"])
         self.assertEqual(["limit", "tag"], sorted(details[0]["parameters"]))
         self.assertEqual([self.key("GET", "/manage/demo"), "route.nothing"], unavailable)
@@ -191,10 +197,21 @@ class RouteCapabilityTests(unittest.TestCase):
         self.assertTrue(all(row["capability_key"] == key and row["method"] == "POST" and row["mutates"] == 1
                             and len(row["route_source_sha256"]) == 64 for row in rows))
 
-    def test_destructive_blocked_and_reviewed_routes_are_refused_with_guidance(self):
-        destructive = self.error("teacher", self.key("DELETE", "/api/demo/items/{item_id}"), path_params={"item_id": 5})
-        self.assertEqual(403, destructive.status_code)
-        self.assertEqual("platform_route_request", destructive.detail["proposal_action"])
+    def test_destructive_route_needs_self_check_and_hard_blocked_routes_never_run(self):
+        key = self.key("DELETE", "/api/demo/items/{item_id}")
+        missing = self.error("teacher", key, path_params={"item_id": 5})
+        self.assertEqual(428, missing.status_code)
+        self.assertEqual("agent_safety_check_required", missing.detail["code"])
+        not_requested = self.error("teacher", key, path_params={"item_id": 5}, safety_check={
+            "user_requested": False, "data_state": "user_specified", "reason": "我认为它没用了", "target_count": 1})
+        self.assertEqual(409, not_requested.status_code)
+        self.assertEqual(403, self.error("teacher", self.key("POST", "/api/demo/items/clear-all")).status_code)
+        with self.connection() as conn:
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM agent_platform_requests").fetchone()[0])
+        done = self.dispatch("teacher", key, path_params={"item_id": 5}, safety_check={
+            "user_requested": True, "data_state": "user_specified", "reason": "用户点名删除第 5 项", "target_count": 1})
+        self.assertEqual("observed_http_result", done["status"])
+        self.assertEqual({"status": "ok", "deleted": 5, "by": "teacher:7", "channel": "agent_platform_request"}, done["result"]["data"])
         self.assertEqual(403, self.error("teacher", self.key("POST", "/api/demo/password")).status_code)
         self.assertEqual(403, self.error("teacher", self.key("GET", "/manage/demo")).status_code)
         reviewed = self.error("teacher", self.key("GET", "/api/blog/follows"))
@@ -202,7 +219,7 @@ class RouteCapabilityTests(unittest.TestCase):
         self.assertEqual(["blog.follows", "http.blog.follows.list"], reviewed.detail["use_capability_keys"])
         self.assertEqual(404, self.error("teacher", "route.xyz").status_code)
         with self.connection() as conn:
-            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM agent_platform_requests").fetchone()[0])
+            self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM agent_platform_requests").fetchone()[0])
 
     def test_user_confirmation_executes_destructive_route_as_the_confirming_user_once(self):
         user = {"id": 7, "role": "teacher", "session_id": "teacher-session"}

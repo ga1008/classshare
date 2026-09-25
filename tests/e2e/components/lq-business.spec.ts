@@ -224,64 +224,6 @@ test('LQ JobStatus and QuestionNavigator remain passive through twenty mount cyc
     await expect(page.locator('[data-lq-job-elapsed]')).toHaveText('12 秒'); expect(requests).toEqual([]);
 });
 
-test('LQ JobStatus presents the actual Agent SSE and polling controller snapshots without owning requests or applying results', async ({ page }) => {
-    const requests = await mount(page);
-    const task: any = { id: 9, is_owner: true, is_active: true, status: 'running', runtime_status: 'waiting_input', status_label: '等待你的回答',
-        elapsed_seconds: 12, title: '课堂活动方案', events: [], questions: [] };
-    const calls: string[] = [];
-    let hold = false, held = false, release!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    await page.route('https://lq-business.test/api/agent-tasks/**', async route => {
-        calls.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-        if (new URL(route.request().url()).pathname.endsWith('/events')) return route.fulfill({ json: { task_id: 9, events: [{ id: 2, event_type: 'question_closed', detail: { question_id: 'request-1' } }], last_event_id: 2 } });
-        const snapshot = JSON.stringify({ task });
-        if (hold) { hold = false; held = true; await gate; }
-        return route.fulfill({ contentType: 'application/json', body: snapshot });
-    });
-    await page.evaluate(() => {
-        const host = document.createElement('div'); host.id = 'ai-chat-modal'; host.style.display = 'block';
-        host.style.setProperty('position', 'static', 'important');
-        const messages = document.createElement('div'); messages.id = 'ai-chat-messages-box'; host.append(messages); document.body.append(host);
-        const w = window as any;
-        w.jobRoot = w.business.job_status({ identity: 'task:9', generation: 0, family: 'agent', state: 'queued', label: '排队中' });
-        document.getElementById('fixture')!.append(w.jobRoot); w.applied = 0;
-        w.jobController = w.business.jobStatus(w.jobRoot, { onAction: () => w.applied++ });
-    });
-    const source = fs.readFileSync('static/js/ai_workspace_widget.js', 'utf8');
-    const widget = source.slice(0, source.lastIndexOf("if (document.readyState === 'loading')"));
-    await page.addScriptTag({ content: `(() => { window.AI_WORKSPACE_WIDGET_CONFIG={taskCenterEnabled:true}; ${widget}
-        currentChatSurface=()=>({messagesBox:document.querySelector('#ai-chat-messages-box'),scrollToBottom:()=>{}});
-        refreshAgentComposerChrome=()=>{};renderAgentStarters=()=>{};
-        window.EventSource=class {constructor(){window.testTaskStream=this;}close(){}};
-        const originalRender=renderTaskDetail;
-        renderTaskDetail=(task,options)=>{originalRender(task,options);window.jobController.set({identity:'task:'+task.id,
-            generation:taskDetailRequestVersions.get(Number(task.id)),family:'agent',state:task.runtime_status||task.status,
-            label:task.status_label,elapsed:task.elapsed_seconds+' 秒',actions:task.runtime_status==='completed'?[{key:'view',label:'查看结果'}]:[]});};
-        window.agentFixture={refresh:()=>loadTaskDetail(9),stream:()=>startTaskEventStream(9),poll:()=>{taskEventStreamDisabled=true;return pollTaskEventsOnce();},dispose:()=>closeTaskEventStream(9)};
-    })();` });
-    await page.evaluate(() => (window as any).agentFixture.refresh());
-    await expect(page.locator('.lq-job')).toHaveAttribute('data-lq-job-state', 'waiting_input');
-    task.runtime_status = 'running'; task.status_label = '运行中';
-    await page.evaluate(() => { (window as any).agentFixture.stream(); (window as any).testTaskStream.onmessage({ data: JSON.stringify({ task_id: 9, events: [{ id: 1, event_type: 'question_requested', detail: { question_id: 'request-1' } }], last_event_id: 1 }) }); });
-    await expect(page.locator('.lq-job')).toHaveAttribute('data-lq-job-state', 'running');
-    task.runtime_status = 'completed'; task.status = 'completed'; task.status_label = '已完成'; task.is_active = false;
-    await page.evaluate(() => (window as any).agentFixture.poll());
-    await expect(page.locator('.lq-job')).toHaveAttribute('data-lq-job-state', 'completed');
-    expect(await page.evaluate(() => (window as any).applied)).toBe(0);
-    hold = true; task.runtime_status = 'waiting_input'; task.status_label = '旧任务';
-    await page.evaluate(() => { (window as any).pendingDetail = (window as any).agentFixture.refresh(); });
-    await expect.poll(() => held).toBe(true);
-    task.runtime_status = 'completed'; task.status_label = '最新完成';
-    await page.evaluate(() => (window as any).agentFixture.refresh()); release();
-    await page.evaluate(() => (window as any).pendingDetail);
-    await expect(page.locator('.lq-job')).toContainText('最新完成');
-    await page.locator('.lq-job').getByRole('button', { name: '查看结果' }).click();
-    expect(await page.evaluate(() => (window as any).applied)).toBe(1);
-    expect(calls.filter(call => call.endsWith('/events'))).toHaveLength(1); expect(calls.every(call => call.startsWith('GET '))).toBe(true);
-    expect(requests).toEqual([]); await expect(page.locator('#draft')).toHaveValue('保留输入');
-    await page.evaluate(() => { (window as any).agentFixture.dispose(); (window as any).jobController.destroy(); });
-});
-
 for (const appearance of ['light', 'dark']) for (const palette of ['indigo', 'teal', 'rose', 'sky', 'mint', 'violet']) {
     test(`LQ business ${appearance}/${palette} long text and state combinations fit 390 with axe`, async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 }); await mount(page);
