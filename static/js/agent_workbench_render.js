@@ -250,7 +250,9 @@ export function renderLiveState(task, queueState = {}) {
     if (task.is_terminal) return null;
     let body;
     if (task.runtime_status === 'waiting_input') body = `${icon('question')}<span>等你回答，不占用队列</span>`;
-    else if (task.is_parked) body = `${icon('decision')}<span>已暂停，点“继续”恢复</span>`;
+    // The head (with its own 继续 button) scrolls out of view on long runs,
+    // so the parked row carries the action next to the message that names it.
+    else if (task.is_parked) body = `${icon('decision')}<span>已暂停，进度已保存</span>${lq.button({ label: '继续', size: 'sm', variant: 'prominent', icon: 'refresh-cw', attrs: { 'data-awb-action': 'resume' } })}`;
     else if (task.status === 'queued') {
         const paused = queueState.queue_paused ? '（队列已暂停）' : '';
         const ahead = task.queue_position ? `，前面 ${Math.max(0, task.queue_position - 1)} 个` : '';

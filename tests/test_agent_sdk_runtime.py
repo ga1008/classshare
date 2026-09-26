@@ -242,6 +242,36 @@ class AgentSdkRuntimeTests(unittest.TestCase):
         self._run(resumed, ScriptedModel([_turn(content="报告已完成")]))
         self.assertEqual("completed", self._task_row(task_id)["status"])
 
+    def test_turn_budget_auto_continues_with_a_nudge_before_parking(self):
+        from classroom_app.services.agent_sdk import runner
+
+        # Production task 19: ~45 discovery calls exhausted the 60-turn budget and
+        # the task was stranded on "继续". Now the runner nudges and continues.
+        task_id = self._create_task("帮我配置本学期python程序设计课程的AI助手")
+        claimed = self._claim()
+        model = ScriptedModel([_turn(tools=[("record_decision", {"decision": f"继续检索 {index}"})]) for index in range(20)])
+        with patch.object(runner, "AGENT_TASK_MAX_TURNS", 3), patch.object(runner, "AGENT_TASK_AUTO_CONTINUE_LIMIT", 2):
+            self._run(claimed, model)
+        row = self._task_row(task_id)
+        self.assertEqual(("queued", "paused"), (row["status"], row["runtime_status"]), row.get("error_message"))
+        # Three segments of three turns each before the task is finally parked.
+        self.assertEqual(9, len(model.requests))
+        continues = [detail["auto_continue"] for event, detail in self._events(task_id) if event == "decision" and detail.get("auto_continue")]
+        self.assertEqual([1, 2], continues)
+        self.assertTrue(any("本段步数已用尽" in str(message.get("content"))
+                            for message in model.requests[-1]["messages"] if message["role"] == "user"))
+
+        # A model that commits after the nudge finishes without any human click.
+        second_id = self._create_task("帮我配置另一门课程的AI助手")
+        second = self._claim()
+        self.assertEqual(second_id, second["id"])
+        model = ScriptedModel([_turn(tools=[("record_decision", {"decision": f"继续检索 {index}"})]) for index in range(3)]
+                              + [_turn(content="# 已完成配置\n\n提示词与大纲已保存。")])
+        with patch.object(runner, "AGENT_TASK_MAX_TURNS", 3), patch.object(runner, "AGENT_TASK_AUTO_CONTINUE_LIMIT", 2):
+            self._run(second, model)
+        self.assertEqual("completed", self._task_row(second_id)["status"])
+        self.assertEqual(4, len(model.requests))
+
     def test_cancel_before_run_does_not_execute(self):
         from classroom_app.database import get_db_connection
         from classroom_app.services.agent_task_service import cancel_agent_task

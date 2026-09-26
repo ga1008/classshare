@@ -29,6 +29,7 @@ from urllib.parse import urlencode
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.routing import APIRoute
+from starlette.requests import Request
 from starlette.responses import FileResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
 from .agent_platform_registry import (
@@ -55,6 +56,15 @@ DESTRUCTIVE_PATTERN = re.compile(
 )
 CONTROL_PLANE_PREFIXES = ("/api/agent-tasks", "/api/agent-model", "/api/agent-bridge", "/api/manage/system/agent")
 NON_JSON_RESPONSES = (HTMLResponse, FileResponse, RedirectResponse, StreamingResponse, PlainTextResponse)
+FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
+BODY_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+# Handlers that read the body by hand (``await request.json()``) declare
+# nothing in OpenAPI. Their field names are recovered from the source so the
+# model is told what to send instead of being refused every body.
+_UNDECLARED_JSON = re.compile(r"(?:(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?await\s+request\.json\(\)")
+_UNDECLARED_FORM = re.compile(r"(?:(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?await\s+request\.form\(\)")
+_BODY_FIELD_TEMPLATE = r"\b{var}\s*(?:\.get\(|\[)\s*[\"']([A-Za-z_][A-Za-z0-9_]{{0,63}})[\"']"
 
 
 def route_key(method: str, path: str) -> str:
@@ -88,6 +98,35 @@ class RouteCapability:
     max_body_bytes: int = MAX_BODY_BYTES
     response_contract: str = "generic_json"
     server_operation_id_field: str | None = None
+    # json | form (urlencoded). Multipart stays behind a reviewed adapter.
+    content_type: str = "application/json"
+    # False when the handler reads the body by hand; then body_hints carries
+    # the field names recovered from its source and any JSON object is passed.
+    body_declared: bool = True
+    body_fields: tuple[str, ...] = ()
+    body_hints: tuple[str, ...] = ()
+
+    @property
+    def accepts_body(self) -> bool:
+        return self.body_schema is not None or not self.body_declared
+
+    def usage(self) -> str:
+        """One line telling the model exactly how to call this route."""
+        parts = [f"{self.method} {self.path}"]
+        for location in ("path", "query"):
+            names = [f"{name}{'*' if spec.get('required') else ''}" for name, spec in self.parameters.items() if spec["in"] == location]
+            if names:
+                parts.append(f"{location}参数: {', '.join(names)}")
+        kind = "表单字段" if self.transport == "form" else "JSON body 字段"
+        if self.body_fields:
+            parts.append(f"{kind}: {', '.join(self.body_fields)}")
+        elif self.body_hints:
+            parts.append(f"{kind}（从接口源码推断，未在文档声明）: {', '.join(self.body_hints)}")
+        elif not self.body_declared:
+            parts.append(f"{kind}: 接口自行解析，按业务字段名发送 JSON 对象")
+        if not any(spec for spec in self.parameters.values()) and not self.accepts_body:
+            parts.append("无参数")
+        return "；".join(parts) + "（* 为必填）"
 
     def public(self, *, include_parameters: bool) -> dict[str, Any]:
         # requires_user_confirmation now means "destructive": it executes directly
@@ -98,11 +137,16 @@ class RouteCapability:
                 "status": "route_destructive_self_check" if self.requires_user_confirmation else "route_ready",
                 "tool": "platform_request + safety_check" if self.requires_user_confirmation else "platform_request",
                 "authorization": "normal_platform_resource_policy",
-                "guarantee": "observed_http_result_not_verified_business"}
+                "guarantee": "observed_http_result_not_verified_business",
+                "usage": self.usage()}
         if include_parameters:
             item["parameters"] = self.parameters
+            item["transport"] = self.transport
             item["body_schema"] = self.body_schema
             item["body_required"] = self.body_required
+            item["body_fields"] = list(self.body_fields)
+            item["body_hints"] = list(self.body_hints)
+            item["body_declared"] = self.body_declared
             item["required_scope"] = "platform:write" if self.mutates else "platform:read"
         return item
 
@@ -147,11 +191,82 @@ def _explicit_json_response(route) -> bool:
     return isinstance(response_class, type) and issubclass(response_class, JSONResponse)
 
 
-def _is_json_body(operation: dict[str, Any]) -> bool | None:
+def _body_kind(operation: dict[str, Any]) -> str | None:
+    """json | form | multipart | None (no declared request body)."""
     body = operation.get("requestBody")
     if not body:
         return None
-    return "application/json" in (body.get("content") or {})
+    content = body.get("content") or {}
+    if "application/json" in content:
+        return "json"
+    if FORM_CONTENT_TYPE in content:
+        return "form"
+    return "multipart"
+
+
+def _resolve_schema(spec: dict[str, Any], schema: Any, depth: int = 0) -> Any:
+    """Inline ``$ref`` so the model sees field names, not component pointers."""
+    if not isinstance(schema, dict) or depth > 4:
+        return schema
+    if "$ref" in schema:
+        name = str(schema["$ref"]).rsplit("/", 1)[-1]
+        target = ((spec.get("components") or {}).get("schemas") or {}).get(name)
+        return _resolve_schema(spec, target, depth + 1) if isinstance(target, dict) else {"type": "object"}
+    resolved = dict(schema)
+    if isinstance(resolved.get("properties"), dict):
+        resolved["properties"] = {key: _resolve_schema(spec, value, depth + 1) for key, value in resolved["properties"].items()}
+    for key in ("items", "additionalProperties"):
+        if isinstance(resolved.get(key), dict):
+            resolved[key] = _resolve_schema(spec, resolved[key], depth + 1)
+    for key in ("anyOf", "oneOf", "allOf"):
+        if isinstance(resolved.get(key), list):
+            resolved[key] = [_resolve_schema(spec, item, depth + 1) for item in resolved[key]]
+    return resolved
+
+
+def _body_field_names(schema: Any) -> tuple[str, ...]:
+    if not isinstance(schema, dict):
+        return ()
+    required = set(schema.get("required") or [])
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return ()
+    return tuple(f"{name}*" if name in required else name for name in properties)
+
+
+def _undeclared_body(endpoint) -> tuple[str | None, tuple[str, ...]]:
+    """(transport, field hints) for handlers that consume ``request`` by hand."""
+    try:
+        signature = inspect.signature(endpoint)
+        source = inspect.getsource(endpoint)
+    except (TypeError, OSError, ValueError):
+        return None, ()
+    takes_request = any(param.annotation is Request or getattr(param.annotation, "__name__", "") == "Request"
+                        for param in signature.parameters.values())
+    if not takes_request:
+        return None, ()
+    json_calls = list(_UNDECLARED_JSON.finditer(source))
+    form_calls = list(_UNDECLARED_FORM.finditer(source))
+    # A handler that branches on content type (JSON vs multipart) or parses
+    # the body more than once has no single shape to infer: stay blocked.
+    if len(json_calls) + len(form_calls) != 1 or "multipart" in source:
+        return None, ()
+    match, transport = (json_calls[0], "json") if json_calls else (form_calls[0], "form")
+    # Only fields read from the variable that holds the parsed body count as
+    # hints; other dict lookups in the handler (AI responses, rows) do not.
+    variable = match.group("var") or "data"
+    # Stop at the next rebinding of that name (handlers reuse `data` for the
+    # AI response later on), so only the request's own fields are reported.
+    segment = source[match.end():]
+    rebound = re.search(r"\b" + re.escape(variable) + r"\s*=[^=]", segment)
+    if rebound:
+        segment = segment[:rebound.start()]
+    field_pattern = re.compile(_BODY_FIELD_TEMPLATE.format(var=re.escape(variable)))
+    hints: list[str] = []
+    for hit in field_pattern.finditer(segment):
+        if hit.group(1) not in hints:
+            hints.append(hit.group(1))
+    return transport, tuple(hints[:24])
 
 
 def classify_route(app, row: dict[str, Any], reviewed: dict | None = None) -> RouteClassification:
@@ -177,8 +292,10 @@ def classify_route(app, row: dict[str, Any], reviewed: dict | None = None) -> Ro
     operation = _openapi_operation(app, method, path)
     if operation is None:
         return RouteClassification("blocked", "outside_openapi_schema")
-    if _is_json_body(operation) is False:
-        return RouteClassification("blocked", "form_or_multipart_requires_reviewed_adapter")
+    if _body_kind(operation) == "multipart":
+        # File uploads stay behind reviewed adapters (attachment brokering);
+        # plain urlencoded forms are ordinary field maps and run as `form`.
+        return RouteClassification("blocked", "multipart_requires_reviewed_adapter")
     from .agent_danger_guard import hard_block_reason
 
     if hard_block_reason(method, path, row["handler"]):
@@ -221,8 +338,20 @@ def _capability(app, row: dict[str, Any], classification: RouteClassification, *
     route = row["route"]
     operation = _openapi_operation(app, row["method"], row["path"]) or {}
     body = operation.get("requestBody") or {}
-    schema = ((body.get("content") or {}).get("application/json") or {}).get("schema")
+    kind = _body_kind(operation)
+    transport = "form" if kind == "form" else "json"
+    content = (body.get("content") or {}).get(FORM_CONTENT_TYPE if kind == "form" else "application/json") or {}
+    try:
+        spec = app.openapi()
+    except Exception:
+        spec = {}
+    schema = _resolve_schema(spec, content.get("schema")) if kind else None
     endpoint = route.endpoint
+    body_declared, hints = True, ()
+    if kind is None and row["method"] in BODY_METHODS:
+        undeclared, hints = _undeclared_body(endpoint)
+        if undeclared:
+            body_declared, transport = False, undeclared
     return RouteCapability(
         key=route_key(row["method"], row["path"]), label=_label(route, operation), method=row["method"], path=row["path"],
         module=getattr(endpoint, "__module__", ""), handler=getattr(endpoint, "__qualname__", ""),
@@ -231,6 +360,8 @@ def _capability(app, row: dict[str, Any], classification: RouteClassification, *
         source_sha256=source_digest(endpoint) if with_source else "", domain=_domain(row), risk=classification.risk, mutates=classification.mutates,
         requires_user_confirmation=classification.status == "route_confirmation_required",
         parameters=_parameter_specs(operation), body_schema=schema, body_required=bool(body.get("required")),
+        transport=transport, content_type=FORM_CONTENT_TYPE if transport == "form" else "application/json",
+        body_declared=body_declared, body_fields=_body_field_names(schema), body_hints=hints,
     )
 
 
@@ -338,20 +469,50 @@ def route_arguments(capability: RouteCapability, *, path_params=None, query_para
 
 
 def _body_bytes(capability: RouteCapability, body: Any) -> bytes:
-    if capability.body_schema is None:
+    if not capability.accepts_body:
         if body not in (None, {}):
             raise HTTPException(400, "该平台路由不接受请求体。")
         return b""
     if body is None:
         if capability.body_required:
-            raise HTTPException(400, "该平台路由需要 JSON 请求体。")
+            raise HTTPException(400, "该平台路由需要请求体。")
         return b""
+    if capability.transport == "form":
+        return _form_bytes(capability, body)
     if not isinstance(body, (dict, list)):
         raise HTTPException(400, "请求体必须是 JSON 对象或数组。")
+    if not capability.body_declared:
+        # The handler parses this itself; only the shape is bounded here.
+        if not isinstance(body, dict) or any(not isinstance(key, str) or not FIELD_NAME.fullmatch(key) for key in body):
+            raise HTTPException(400, "请求体必须是字段名合法的 JSON 对象。")
     try:
         raw = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     except (TypeError, ValueError):
         raise HTTPException(400, "请求体不是有效 JSON。") from None
+    if len(raw) > capability.max_body_bytes:
+        raise HTTPException(400, "平台请求内容过长。")
+    return raw
+
+
+def _form_bytes(capability: RouteCapability, body: Any) -> bytes:
+    """urlencoded field map; scalars and lists of scalars only, like a browser form."""
+    if not isinstance(body, dict):
+        raise HTTPException(400, "表单请求体必须是字段名到值的 JSON 对象。")
+    items: list[tuple[str, str]] = []
+    for name, value in body.items():
+        if not isinstance(name, str) or not FIELD_NAME.fullmatch(name):
+            raise HTTPException(400, "表单字段名无效。")
+        values = value if isinstance(value, list) else [value]
+        if len(values) > MAX_ARRAY_ITEMS:
+            raise HTTPException(400, f"字段 {name} 项数过多。")
+        for item in values:
+            if item is None or isinstance(item, (dict, list)):
+                raise HTTPException(400, f"字段 {name} 必须是文本、数字或布尔值。")
+            text = _query_text(item)
+            if len(text) > MAX_STRING_LENGTH or any(ord(char) < 32 and char not in "\n\r\t" for char in text):
+                raise HTTPException(400, f"字段 {name} 内容无效。")
+            items.append((name, text))
+    raw = urlencode(items).encode("ascii")
     if len(raw) > capability.max_body_bytes:
         raise HTTPException(400, "平台请求内容过长。")
     return raw

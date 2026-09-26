@@ -210,7 +210,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 | read | `agent_platform_registry.READ_OPERATIONS` | 已审核只读接口，参数白名单 | 无副作用 |
 | write | `agent_action_registry` / `agent_platform_write_service` | 已审核事务写；`operation_id` 幂等 | 事务写回执（业务行与账本同事务） |
 | request | `agent_platform_request_registry` + `agent_platform_request_*.py` | 已审核的普通 HTTP 请求（含表单/上传等 JSON 之外形态） | 观察回执（`observed_http_result`），不确定时 uncertain，不自动重试 |
-| route.* | `agent_platform_route_capability` | 由挂载路由 + OpenAPI 自动推导的全站 JSON 路由；键 `route.<sha256(method\npath)[:20]>` | 观察回执，`verified_business=false` |
+| route.* | `agent_platform_route_capability` | 由挂载路由 + OpenAPI 自动推导的全站路由；键 `route.<sha256(method\npath)[:20]>`。JSON 体、urlencoded 表单（`transport=form`，body 同样传字段映射）以及手工 `await request.json()` 的未声明体（字段名从源码推断为 `body_hints`）都可直接调用；multipart 仍须审核适配。每条目录项带 `usage`（方法/路径/参数/body 字段） | 观察回执，`verified_business=false`；4xx 记为 `outcome=rejected` 并附 `error_detail`，对账自动清零、允许修正后换 `operation_id` 重试 |
 | secure_input | `agent_secure_account_actions` | 密码/凭据类，仅本人 | — |
 | user_confirmation | `agent_user_confirmation_actions` + 各 `*_confirmation_service` | 成绩公布、签章审批、删除空班/课程、合班、破坏性路由 | 本人确认回执 |
 | file transports | `agent_file_capability_catalog`（`platform_file` / `platform_download`） | 按正常下载权限取文本抽取或复制原始字节到任务 inputs | 含 SHA-256 |
@@ -224,7 +224,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 | 工具 | 作用 | 边界 |
 |---|---|---|
 | `platform_overview` | 当前身份与平台概览 | 只读 |
-| `platform_capabilities` | 能力索引；`query` 检索，`keys`（1–8 个）取完整参数 | 目录可见不等于有权 |
+| `platform_capabilities` | 能力索引；`query` 按相关度检索（中文同义词、路径片段、方法名，每组 ≤40 条，条目含 `usage`），`keys`（1–8 个）取完整参数 | 目录可见不等于有权 |
 | `platform_read` | 已审核只读接口 | 参数白名单、≤2MB、15s |
 | `platform_write` | 已审核事务写 | 同一操作重试须复用 `operation_id` |
 | `platform_request` | 审核请求能力或 `route.*` | 破坏性 403 → 提案；JSON 体 ≤64KB |
@@ -249,7 +249,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 ### 4.6 运行时与部署
 
 - 依赖：`openai-agents==0.16.1`（锁定于 `requirements.lock.txt`，兼容 `openai==2.30.0`；清华源对其返回 403，`DockerfileBase` 使用阿里云镜像）。运行在既有 `agent-worker` 容器，无额外容器、无宿主 launcher（DSH 已退役，`deployment/dsh/deploy_integration.sh` 只负责停用旧 launcher 服务）。
-- 开关：`AGENT_TASKS_ENABLED`、`AGENT_RUNTIME_ENABLED`、`AGENT_MODEL_DEFAULT`（deepseek-flash）、`AGENT_TASK_GLOBAL_CONCURRENCY`/`AGENT_TASK_WORKER_CONCURRENCY`（2）、`AGENT_TASK_MAX_RUNTIME_SECONDS`（单段，超时自动暂停，可继续）、`AGENT_TASK_MAX_TURNS`、`AGENT_TASK_MAX_WEB_SEARCHES`、`AGENT_TASK_PARKED_TTL_HOURS`；compose 为 agent-worker 设置 `AGENT_BRIDGE_BASE_URL=http://app:8000`。
+- 开关：`AGENT_TASKS_ENABLED`、`AGENT_RUNTIME_ENABLED`、`AGENT_MODEL_DEFAULT`（deepseek-flash）、`AGENT_TASK_GLOBAL_CONCURRENCY`/`AGENT_TASK_WORKER_CONCURRENCY`（2）、`AGENT_TASK_MAX_RUNTIME_SECONDS`（单段，超时自动暂停，可继续）、`AGENT_TASK_MAX_TURNS`、`AGENT_TASK_AUTO_CONTINUE_LIMIT`（单段步数用尽后带“停止探索、直接执行或提问”提示自动续跑的次数，默认 2，超过才停靠为 paused）、`AGENT_TASK_MAX_WEB_SEARCHES`、`AGENT_TASK_PARKED_TTL_HOURS`；compose 为 agent-worker 设置 `AGENT_BRIDGE_BASE_URL=http://app:8000`。
 - 运行时表 `agent_run_states`、`agent_queue_controls` 由 `services/agent_runtime_schema.py` 维护（`CREATE TABLE IF NOT EXISTS`，应用启动时建立；该函数本身不提交、不缓存“就绪”标记）。
 - 模型密钥由超管在平台内配置（`agent_key_service`，加密存储；Anthropic 兼容 URL 会自动转为 OpenAI 兼容地址），缺省回退 `DEEPSEEK_API_KEY`。
 

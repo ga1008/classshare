@@ -104,13 +104,26 @@ queued ─claim─► running ──最终回答──► completed
 
 ## 9. 配置（`docker.env.example`）
 
-`AGENT_RUNTIME_ENABLED`、`AGENT_MODEL_DEFAULT=deepseek-flash`、`AGENT_TASK_GLOBAL_CONCURRENCY=2`、`AGENT_TASK_WORKER_CONCURRENCY=2`、`AGENT_TASK_MAX_RUNTIME_SECONDS=1800`（单段，超时自动暂停，可继续）、`AGENT_TASK_MAX_TURNS=60`、`AGENT_TASK_MAX_WEB_SEARCHES=12`、`AGENT_TASK_PARKED_TTL_HOURS=72`；compose 为 agent-worker 设置 `AGENT_BRIDGE_BASE_URL=http://app:8000`、`AI_ASSISTANT_URL=http://ai:8001`。已移除 `AGENT_DSH_*`。
+`AGENT_RUNTIME_ENABLED`、`AGENT_MODEL_DEFAULT=deepseek-flash`、`AGENT_TASK_GLOBAL_CONCURRENCY=2`、`AGENT_TASK_WORKER_CONCURRENCY=2`、`AGENT_TASK_MAX_RUNTIME_SECONDS=1800`（单段，超时自动暂停，可继续）、`AGENT_TASK_MAX_TURNS=60`、`AGENT_TASK_AUTO_CONTINUE_LIMIT=2`（步数用尽自动续跑次数）、`AGENT_TASK_MAX_WEB_SEARCHES=12`、`AGENT_TASK_PARKED_TTL_HOURS=72`；compose 为 agent-worker 设置 `AGENT_BRIDGE_BASE_URL=http://app:8000`、`AI_ASSISTANT_URL=http://ai:8001`。已移除 `AGENT_DSH_*`。
 
 ## 10. 已知边界
 
 - 平台内图片（作业截图等）目前以文本抽取方式读取；直接看图只支持用户附件与截图（模型工具结果无法携带图片）。
 - `/api/agent-model/*` 模型网关与旧 `agent_question_service` 已不被新运行时使用（保留以兼容历史数据，后续可清理）。
 - 旧 DSH 任务的 `proposed_actions` 只展示说明，不再提供一键执行。
+
+## 12. 2026-09-26 生产首次失败与修复
+
+生产任务 19「帮我配置本学期python程序设计课程的AI助手」跑满 60 轮后停靠。事件回放（`agent_task_events`）显示三处缺陷，均已修：
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| ~45 次 `find_capabilities` 全部“0 结果”（保存AI配置 / settings / Api Save Ai / manage/ai …） | 检索要求每个原词都是 key/label/description 的子串，不搜路径与方法、不懂中文；`/api/manage/ai/configure` 是表单路由，被整体排除；工具摘要只数第一组，把有结果的检索也记成 0 | `agent_capability_catalog_service.rank_catalog_items`：中文同义词 + 路径/方法可搜 + 相关度排序（每组 ≤40）；目录项自带 `usage`；摘要按全部分组计数 |
+| `POST /api/manage/ai/ai-generate` 传 body 被拒“不接受请求体”，传 query 被拒“未注册的query参数”，空调用得 400 | 处理函数手工 `await request.json()`，OpenAPI 无 requestBody，注册表视为无参数 | `agent_platform_route_capability`：从源码识别未声明体并推断字段（`body_hints`，只取解析变量重绑定之前的读取）；urlencoded 表单作为 `transport=form` 直接可调（body 传字段映射）；`$ref` 内联为字段名 |
+| 4xx 只回“结果不确定，需要核对（HTTP 400）”，且同意图被对账锁住 | `_observation` 把所有非 2xx 归为 uncertain，不带原因 | 4xx 记 `outcome=rejected` + `error_detail`（detail/message，≤400 字，与浏览器端看到的同一文案）；**仅 route.\* 且状态码属请求形态/前置条件类（400/404/405/409/413/415/422/428）**时结算对账清零（`not_occurred`），修正参数后可换 `operation_id` 重试，字节相同的重试仍被 `_admit` 拦下；审核适配与 401/403 保持原来的保守锁；工具摘要显示“平台拒绝了请求…：<原因>” |
+| 步数上限直接停靠，面板底部提示“点继续”但按钮在顶部已滚出视野 | 单段 `max_turns` 无自动续跑；继续按钮只在 head | `AGENT_TASK_AUTO_CONTINUE_LIMIT`（默认 2）：用尽后注入“停止探索、直接执行或提问”的系统提示并续跑，超过才停靠；停靠行内嵌“继续”按钮 |
+
+提示词同步：检索 3 组关键词无果即执行或提问；POST 字段按 usage/body_fields/body_hints 填；4xx 按 error_detail 修正最多重试 2 次。测试：`test_agent_platform_route_capability`（未声明体/表单/拒绝对账）、`test_agent_capability_catalog_search`、`test_agent_sdk_runtime.test_turn_budget_auto_continues_with_a_nudge_before_parking`。
 
 ## 11. 回滚
 

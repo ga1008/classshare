@@ -19,7 +19,13 @@ from agents import Agent, ItemHelpers, Runner
 from agents.exceptions import MaxTurnsExceeded
 from fastapi import HTTPException
 
-from ...config import AGENT_BRIDGE_BASE_URL, AGENT_RUNTIME_ENABLED, AGENT_TASK_MAX_RUNTIME_SECONDS, AGENT_TASK_MAX_TURNS
+from ...config import (
+    AGENT_BRIDGE_BASE_URL,
+    AGENT_RUNTIME_ENABLED,
+    AGENT_TASK_AUTO_CONTINUE_LIMIT,
+    AGENT_TASK_MAX_RUNTIME_SECONDS,
+    AGENT_TASK_MAX_TURNS,
+)
 from ...database import get_db_connection
 from ..agent_task_service import (
     AGENT_RUNTIME_PROVIDER,
@@ -49,6 +55,19 @@ AUTO_PAUSE_NOTES = {
     "timeout": "单次执行时间较长，已自动保存进度并暂停；点击“继续”即可接着执行。",
     "max_turns": "本次执行步骤较多，已自动保存进度并暂停；点击“继续”即可接着执行。",
 }
+# Injected when a segment runs out of turns and the runner continues by itself.
+# Exhausting the budget almost always means the model is looping on discovery
+# (production task 19 spent ~45 turns on find_capabilities): make it commit.
+BUDGET_NUDGE = {"role": "user", "content": (
+    "# 系统提示：本段步数已用尽，已自动续跑\n"
+    "请停止继续检索或反复尝试。根据已掌握的信息，二选一：\n"
+    "1. 直接执行最合理的方案（接口参数按 usage / body_fields / body_hints 填写；返回 4xx 时按 error_detail 修正一次）；\n"
+    "2. 若仍缺少关键信息或存在多个方案，用 ask_user 提出具体选项让用户决定。\n"
+    "不要再做无结果的关键词检索；无法完成时给出结论并说明需要用户在页面手工处理的事项。")}
+
+
+def _continue_note(index: int, limit: int) -> str:
+    return f"步骤已达单段上限，自动续跑（第 {index}/{limit} 次）：停止探索，直接执行或向用户提问。"
 
 
 class _SegmentStop:
@@ -218,7 +237,9 @@ async def run_agent_task(task: dict[str, Any]) -> None:
         if signals["pause"] and not signals["canceled"]:
             await _park_items(attempt, input_items, RUNTIME_PAUSED, None, usage)
             return
-        for round_index in range(MAX_SUPPLEMENT_ROUNDS + 1):
+        round_index = 0
+        auto_continues = 0
+        while True:
             stop = _SegmentStop()
             result = Runner.run_streamed(agent, input_items, context=ctx, max_turns=AGENT_TASK_MAX_TURNS, run_config=run_config())
             monitor = asyncio.create_task(_monitor(result, attempt, ctx, stop, started))
@@ -241,7 +262,15 @@ async def run_agent_task(task: dict[str, Any]) -> None:
             if ctx.pending_question:
                 await _park(attempt, result, RUNTIME_WAITING_INPUT, ctx.pending_question, usage)
                 return
-            if stop.reason:  # pause / timeout / max_turns
+            if stop.reason == "max_turns" and auto_continues < AGENT_TASK_AUTO_CONTINUE_LIMIT:
+                # Keep the slot and the context: a fresh turn budget plus a
+                # nudge to commit beats stranding the task on a "继续" button.
+                auto_continues += 1
+                note = _continue_note(auto_continues, AGENT_TASK_AUTO_CONTINUE_LIMIT)
+                await recorder.emit("decision", note, {"decision": note, "system": True, "auto_continue": auto_continues})
+                input_items = result.to_input_list() + [BUDGET_NUDGE]
+                continue
+            if stop.reason:  # pause / timeout / max_turns (auto-continues exhausted)
                 note = AUTO_PAUSE_NOTES.get(stop.reason)
                 if note:
                     await recorder.emit("decision", note, {"decision": note, "system": True})
@@ -251,6 +280,7 @@ async def run_agent_task(task: dict[str, Any]) -> None:
             final_text = str(result.final_output or "").strip()
             more = await asyncio.to_thread(state.take_pending_supplements, task_id)
             if more and round_index < MAX_SUPPLEMENT_ROUNDS:
+                round_index += 1
                 input_items = result.to_input_list() + [supplement_message(more)]
                 last_text = final_text or last_text
                 continue

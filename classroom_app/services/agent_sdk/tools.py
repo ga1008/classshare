@@ -130,8 +130,20 @@ def _is_mutating(ctx: RunContext, key: str) -> bool:
 
 # ---------------------------------------------------------------- read-side tools
 
+CATALOG_GROUPS = ("operations", "platform_requests", "platform_routes", "file_transports", "user_input_actions")
+
+
 def _summarize_result(value: Any, limit: int = 140) -> str:
     if isinstance(value, dict):
+        if value.get("catalog_mode"):
+            # A capability catalog answers in several groups; "0 results" was
+            # being reported whenever the first group happened to be empty.
+            groups = {name: value.get(name) for name in CATALOG_GROUPS}
+            groups["writes"] = (value.get("writes") or {}).get("actions") if isinstance(value.get("writes"), dict) else None
+            counts = {name: len(items) for name, items in groups.items() if isinstance(items, list) and items}
+            total = sum(counts.values())
+            detail = "、".join(f"{name} {count}" for name, count in counts.items())
+            return clip(f"返回 {total} 条结果" + (f"（{detail}）" if detail else ""), limit)
         for key in ("rows", "items", "results", "tasks", "operations", "platform_routes"):
             items = value.get(key)
             if isinstance(items, list):
@@ -273,9 +285,16 @@ def _operation_summary(value: Any) -> tuple[bool, str, dict[str, Any]]:
     labels = {"observed_http_result": "平台已执行并返回结果", "submitted": "已提交，后台处理中",
               "uncertain": "结果不确定，需要核对", "failed": "执行失败"}
     text = labels.get(status, "已执行" if ok else "未成功")
+    if result.get("outcome") == "rejected":
+        # 4xx: nothing happened; the reason is what the model needs to fix.
+        ok = False
+        text = "平台拒绝了请求，未执行"
     if http_status:
         text += f"（HTTP {http_status}）"
-    return ok, text, {"status": status, "http_status": http_status}
+    detail = str(result.get("error_detail") or "").strip()
+    if detail:
+        text += f"：{clip(detail, 200)}"
+    return ok, text, {"status": status, "http_status": http_status, **({"error_detail": detail} if detail else {})}
 
 
 async def platform_request(ctx: RunContext, args: dict[str, Any]) -> Any:
@@ -455,13 +474,18 @@ ASK_USER_SCHEMA = {
 def build_tools(ctx: RunContext) -> list[FunctionTool]:
     tools = [
         _tool("platform_overview", "读取当前用户身份、角色、权限概况和平台功能版图。任务开始时先调用一次。", {}, [], platform_overview),
-        _tool("find_capabilities", "按中文或英文关键词检索平台可用功能（读取、操作、全站接口 route.*）。返回能力名称索引。",
-              {"query": {"type": "string", "description": "关键词，如“作业 批改”“博客 发布”“课堂 学生名单”"}}, ["query"], find_capabilities),
-        _tool("capability_details", "获取所选功能（1~8 个 key）的完整参数、方法与路径。执行前必须先看参数。",
+        _tool("find_capabilities", "按中文或英文关键词检索平台可用功能（读取、操作、全站接口 route.*），支持中文同义词、"
+              "接口路径片段（如 manage/ai、offering）和 HTTP 方法。结果按相关度排序，每条自带 usage（方法、路径、参数与 body 字段），"
+              "看到 usage 后通常可直接调用，无需再查参数。找不到时换 2~3 组关键词即可，不要连续检索十几次。",
+              {"query": {"type": "string", "description": "关键词，如“课堂 AI 配置 保存”“作业 批改”“manage/ai”"}}, ["query"], find_capabilities),
+        _tool("capability_details", "获取所选功能（1~8 个 key）的完整参数、方法、路径、body 字段（body_fields）或源码推断字段（body_hints）。"
+              "usage 已足够时可跳过。",
               {"keys": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8}}, ["keys"], capability_details),
         _tool("platform_read", "通过已审核的只读接口读取本人有权访问的数据（operation_key 来自能力目录）。",
               {"operation_key": {"type": "string"}, "path_params": OBJECT, "query_params": OBJECT}, ["operation_key"], platform_read),
         _tool("platform_request", "以用户本人身份调用平台接口（审核能力或 route.* 全站接口），用于查询或执行操作。"
+              "参数按 usage 填：path_params / query_params 只放已声明的参数；body 放 JSON 字段或表单字段（transport=form 时同样用 body 传字段名到值）。"
+              "接口返回 4xx 时回执带 error_detail，按提示修正参数后换新调用重试（最多 2 次）；"
               "删除/撤销/清空/批量/覆盖类操作必须附 safety_check；硬性拦截的高危操作不会被执行。返回平台回执与 operation_id。",
               {"capability_key": {"type": "string"}, "path_params": OBJECT, "query_params": OBJECT, "body": OBJECT,
                "files": {"type": "array", "items": {"type": "object"}, "description": "支持附件的表单能力：引用本任务相对路径 {path}"},

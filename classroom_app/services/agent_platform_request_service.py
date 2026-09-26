@@ -23,7 +23,7 @@ from ..database import get_db_connection
 from .agent_delegation_service import verify_task_delegation
 from .agent_platform_request_context import _RequestIdentity, _request_identity, _SCOPE_KEY
 from .agent_platform_request_registry import arguments, matched_route, resolve_capability, platform_request_catalog
-from .agent_platform_route_capability import ROUTE_KEY_PREFIX, resolve_route_capability, route_arguments
+from .agent_platform_route_capability import ROUTE_KEY_PREFIX, RouteCapability, resolve_route_capability, route_arguments
 from .agent_request_context import _broker_identity
 
 MAX_RESPONSE_BYTES = 128 * 1024
@@ -163,6 +163,13 @@ def _settle(claim, status, observation):
             WHERE id=? AND settlement_hash=? AND settled_at IS NULL""",
             (status,encoded,now,now,claim.request_id,_hash(claim.secret)))
         if changed.rowcount != 1: raise HTTPException(409, '平台请求结算能力无效或已经用过。')
+        if observation.get('reconciliation') == 'not_occurred':
+            # A request-shape refusal on a generic route never reached business
+            # logic: it must not hold the same-intent lock that stops a
+            # corrected retry (a byte-identical retry stays blocked by _admit).
+            conn.execute("""UPDATE agent_platform_requests SET reconciliation_status='cleared',reconciliation_resolution='not_occurred',
+                reconciled_at=?,reconciliation_note=? WHERE id=? AND reconciliation_status='pending'""",
+                (now,'platform_rejected_request_http_'+str(observation.get('http_status')),claim.request_id))
         conn.commit()
         row = conn.execute('SELECT * FROM agent_platform_requests WHERE id=?', (claim.request_id,)).fetchone()
         return _public(row)
@@ -200,6 +207,26 @@ def _authorize_return(token, original, required_scope):
         raise HTTPException(401,'当前权限来源不允许读取刚完成的请求结果。')
 
 
+# 4xx codes that mean "the request itself was refused" (shape, missing target,
+# state precondition), as opposed to 401/403 authority failures.
+REJECTED_WITHOUT_EFFECT = frozenset({400, 404, 405, 409, 413, 415, 422, 428})
+
+
+def _error_detail(response, limit=400):
+    """Human-readable refusal reason (FastAPI ``detail`` or message), bounded."""
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text if 'text/' in response.headers.get('content-type', '') else ''
+        return text.strip()[:limit]
+    if isinstance(payload, dict):
+        for key in ('detail', 'message', 'error'):
+            value = payload.get(key)
+            if value not in (None, ''):
+                return (value if isinstance(value, str) else json.dumps(value, ensure_ascii=False))[:limit]
+    return json.dumps(payload, ensure_ascii=False)[:limit]
+
+
 def _observation(response, operation=None):
     result = {'http_status':response.status_code,'body_sha256':_hash(response.content),
               'verified_business':False, 'follow_up':'inspect_observed_result'}
@@ -207,6 +234,16 @@ def _observation(response, operation=None):
         result['follow_up'] = 'needs_interaction' if 300 <= response.status_code < 400 else 'reconcile_http_error_no_automatic_retry'
         if response.status_code == 413 and operation is not None and operation.key in {'http.materials.content.read', 'http.materials.content.save'}:
             result['follow_up'] = 'use_file_workflow_or_smaller_material_source_no_automatic_retry'
+        elif 400 <= response.status_code < 500:
+            # The platform refused the request; the reason is what the model
+            # needs to fix it. Only generic route.* calls with request-shape /
+            # precondition refusals release the same-intent lock: reviewed
+            # adapters and permission failures keep the conservative default.
+            result['outcome'] = 'rejected'
+            result['error_detail'] = _error_detail(response)
+            if isinstance(operation, RouteCapability) and response.status_code in REJECTED_WITHOUT_EFFECT:
+                result['reconciliation'] = 'not_occurred'
+                result['follow_up'] = 'fix_request_per_error_detail_then_retry_with_new_operation_id'
         return 'uncertain', result
     if 'application/json' not in response.headers.get('content-type','').lower():
         result['follow_up'] = 'needs_response_adapter'
@@ -244,7 +281,10 @@ def _observation(response, operation=None):
 
 async def _execute(app, token, operation_id, operation, route, path, query, body, normalized, admission, files=None):
     content_type = 'application/json'
-    if operation.transport == 'form':
+    if isinstance(operation, RouteCapability):
+        # Generic routes already carry an encoded body (JSON or urlencoded form).
+        content_type = operation.content_type
+    elif operation.transport == 'form':
         def prepare_form():
             from .agent_platform_multipart_service import encode_form_upload
             with get_db_connection() as conn:

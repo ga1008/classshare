@@ -13,8 +13,8 @@ import unittest
 from unittest.mock import patch
 import uuid
 
-from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from classroom_app.db.schema_agent_platform_requests import ensure_agent_platform_requests_schema
@@ -72,6 +72,18 @@ def build_app() -> FastAPI:
     @api.get("/follows")
     def plain_follows(user: dict = Depends(get_current_user)):
         return {"status": "ok"}
+
+    @api.post("/raw", response_class=JSONResponse)
+    async def raw_json(request: Request, user: dict = Depends(get_current_user)):
+        """Reads its JSON by hand, like /api/manage/ai/ai-generate in production."""
+        data = await request.json()
+        if not isinstance(data, dict) or not data.get("name"):
+            raise HTTPException(400, "缺少 name")
+        return {"status": "ok", "name": data.get("name"), "count": data.get("count", 1)}
+
+    @api.post("/form", response_class=JSONResponse)
+    async def urlencoded_form(name: str = Form(...), count: int = Form(1), user: dict = Depends(get_current_user)):
+        return {"status": "ok", "name": name, "count": count, "actor": user["id"]}
 
     app.include_router(api)
 
@@ -144,7 +156,13 @@ class RouteCapabilityTests(unittest.TestCase):
     def test_inventory_exposes_only_machine_readable_business_routes_with_stable_keys(self):
         listed = {(item["method"], item["path"]): item for item in routes.route_capability_inventory(self.app, actor_role="teacher")}
         self.assertEqual({("GET", "/api/demo/items"), ("POST", "/api/demo/items"), ("DELETE", "/api/demo/items/{item_id}"),
-                          ("POST", "/api/demo/items/{item_id}/publish"), ("GET", "/api/demo/follows")}, set(listed))
+                          ("POST", "/api/demo/items/{item_id}/publish"), ("GET", "/api/demo/follows"),
+                          ("POST", "/api/demo/raw"), ("POST", "/api/demo/form")}, set(listed))
+        # Every index entry says how to call the route, so the model can act without a second lookup.
+        self.assertEqual("GET /api/demo/items；query参数: limit, tag（* 为必填）", listed[("GET", "/api/demo/items")]["usage"])
+        self.assertEqual("POST /api/demo/items；JSON body 字段: name*, count（* 为必填）", listed[("POST", "/api/demo/items")]["usage"])
+        self.assertEqual("POST /api/demo/raw；JSON body 字段（从接口源码推断，未在文档声明）: name, count（* 为必填）", listed[("POST", "/api/demo/raw")]["usage"])
+        self.assertEqual("POST /api/demo/form；表单字段: name*, count（* 为必填）", listed[("POST", "/api/demo/form")]["usage"])
         self.assertEqual("route_ready", listed[("GET", "/api/demo/items")]["status"])
         self.assertEqual("read", listed[("GET", "/api/demo/items")]["risk"])
         self.assertEqual("write", listed[("POST", "/api/demo/items")]["risk"])
@@ -156,7 +174,7 @@ class RouteCapabilityTests(unittest.TestCase):
         reasons = {(row["method"], row["path"]): routes.classify_route(self.app, row).reason for row in routes._rows(self.app)}
         self.assertEqual("special_secure_input_required", reasons[("POST", "/api/demo/password")])
         self.assertEqual("outside_openapi_schema", reasons[("GET", "/api/demo/hidden")])
-        self.assertEqual("form_or_multipart_requires_reviewed_adapter", reasons[("POST", "/api/demo/upload")])
+        self.assertEqual("multipart_requires_reviewed_adapter", reasons[("POST", "/api/demo/upload")])
         self.assertEqual("page_route_not_machine_readable", reasons[("GET", "/manage/demo")])
         self.assertEqual("non_json_response", reasons[("GET", "/api/demo/report")])
         self.assertEqual("reviewed_adapter_takes_precedence", reasons[("GET", "/api/blog/follows")])
@@ -190,12 +208,49 @@ class RouteCapabilityTests(unittest.TestCase):
         invalid = self.dispatch("teacher", key, body={"name": "C", "count": "many"})
         self.assertEqual("uncertain", invalid["status"])
         self.assertEqual(422, invalid["result"]["http_status"])
+        # A refusal never ran business logic: it says why, and it does not lock
+        # the intent so the corrected retry below is admitted.
+        self.assertEqual("rejected", invalid["result"]["outcome"])
+        self.assertIn("count", invalid["result"]["error_detail"])
+        self.assertEqual(("cleared", "not_occurred"), (invalid["reconciliation_status"], invalid["reconciliation_resolution"]))
+        corrected = self.dispatch("teacher", key, body={"name": "C", "count": 3})
+        self.assertEqual("observed_http_result", corrected["status"])
         self.assertEqual(400, self.error("teacher", key).status_code)
         with self.connection() as conn:
             rows = conn.execute("SELECT capability_key, method, mutates, route_source_sha256 FROM agent_platform_requests").fetchall()
         self.assertTrue(rows)
         self.assertTrue(all(row["capability_key"] == key and row["method"] == "POST" and row["mutates"] == 1
                             and len(row["route_source_sha256"]) == 64 for row in rows))
+
+    def test_undeclared_json_and_form_routes_are_callable_with_a_plain_body(self):
+        raw_key, form_key = self.key("POST", "/api/demo/raw"), self.key("POST", "/api/demo/form")
+        details, _ = routes.route_capability_details(self.app, [raw_key, form_key])
+        raw, form = details
+        self.assertEqual(("json", False, ["name", "count"], []), (raw["transport"], raw["body_declared"], raw["body_hints"], raw["body_fields"]))
+        self.assertEqual(("form", True, ["name*", "count"]), (form["transport"], form["body_declared"], form["body_fields"]))
+        self.assertEqual({"name", "count"}, set(form["body_schema"]["properties"]))
+        # Production task 19 was refused every way it tried to pass class_offering_id; now the JSON object goes through.
+        done = self.dispatch("teacher", raw_key, body={"name": "生成配置", "count": 2})
+        self.assertEqual("observed_http_result", done["status"])
+        self.assertEqual({"status": "ok", "name": "生成配置", "count": 2}, done["result"]["data"])
+        refused = self.dispatch("teacher", raw_key, body={"count": 2})
+        self.assertEqual(("rejected", 400, "缺少 name"), (refused["result"]["outcome"], refused["result"]["http_status"], refused["result"]["error_detail"]))
+        self.assertEqual("cleared", refused["reconciliation_status"])
+        # Byte-identical retry of the refused request is still blocked in this task; only a corrected one is admitted.
+        same_again = self.error("teacher", raw_key, body={"count": 2})
+        self.assertEqual(409, same_again.status_code)
+        self.assertTrue(same_again.detail["requires_reconciliation"])
+        self.assertEqual("observed_http_result", self.dispatch("teacher", raw_key, body={"name": "修正后", "count": 2})["status"])
+        self.assertEqual(400, self.error("teacher", raw_key, body={"bad key": 1}).status_code)
+        self.assertEqual(400, self.error("teacher", raw_key, query_params={"name": "x"}).status_code)
+        # Form routes take the same body map and are sent urlencoded, exactly as the browser form would.
+        saved = self.dispatch("teacher", form_key, body={"name": "配置", "count": 4})
+        self.assertEqual({"status": "ok", "name": "配置", "count": 4, "actor": 7}, saved["result"]["data"])
+        self.assertEqual(400, self.error("teacher", form_key, body={"name": {"nested": 1}}).status_code)
+        self.assertEqual(400, self.error("teacher", form_key, body=[1, 2]).status_code)
+        with self.connection() as conn:
+            row = conn.execute("SELECT request_json FROM agent_platform_requests WHERE capability_key=? ORDER BY id DESC LIMIT 1", (form_key,)).fetchone()
+        self.assertIn('"count": 4', row["request_json"].replace('"count":4', '"count": 4'))
 
     def test_destructive_route_needs_self_check_and_hard_blocked_routes_never_run(self):
         key = self.key("DELETE", "/api/demo/items/{item_id}")

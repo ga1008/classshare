@@ -179,6 +179,10 @@ AGENT_MODEL_DEFAULT = str(os.getenv("AGENT_MODEL_DEFAULT") or "deepseek-flash").
 # Where the worker reaches the app's /api/agent-bridge (compose: http://app:8000).
 AGENT_BRIDGE_BASE_URL = (_read_url_env("AGENT_BRIDGE_BASE_URL") or f"http://127.0.0.1:{PORT}").rstrip("/")
 AGENT_TASK_MAX_TURNS = max(8, min(int(os.getenv("AGENT_TASK_MAX_TURNS", 60)), 200))
+# When a segment exhausts AGENT_TASK_MAX_TURNS the runner continues by itself
+# this many times (with a "stop exploring, act or ask" nudge) before parking
+# the task as paused. 0 restores the old behaviour of pausing immediately.
+AGENT_TASK_AUTO_CONTINUE_LIMIT = max(0, min(int(os.getenv("AGENT_TASK_AUTO_CONTINUE_LIMIT", 2)), 5))
 AGENT_TASK_MAX_WEB_SEARCHES = max(0, min(int(os.getenv("AGENT_TASK_MAX_WEB_SEARCHES", 12)), 50))
 # Parked (waiting for an answer / paused) tasks expire after this many hours.
 AGENT_TASK_PARKED_TTL_HOURS = max(1, min(int(os.getenv("AGENT_TASK_PARKED_TTL_HOURS", 72)), 24 * 14))
