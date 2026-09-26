@@ -1220,7 +1220,7 @@
           },
           {
             "path": "static/js/login_scene.js",
-            "sha256": "d18e23c9d38e0fbdefd1fa7f4a4747a379e174a6b9d1f2ea9d741c4baa669a55",
+            "sha256": "6bff75657d9587f532080ccc7c4188f962230d9c7d120f8efb8620a7ff917be3",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -18564,7 +18564,7 @@
           },
           {
             "path": "static/js/cultivation_identity.js",
-            "sha256": "3c6ccdd7222da79f6855049f325d27ebe24764387edb50b8ebcb46b06ef3b2e4",
+            "sha256": "2202fab55088a780fb4709a57b4d26c23a64866bc845b70c13e2856fd28cf52d",
             "scope": "仅 ensureTopbarChip 单一浮层关闭所有者：原 click/Esc/toggle 同一幂等释放，捕获外部 pointerdown 兼容 WebKit 触控，无迟注册 timer；保留场景、登录交棒、修为业务与其他弹层呈现。",
             "tests": [
               "tests/test_lq_report_card_pilot.py",

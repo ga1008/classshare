@@ -4,10 +4,15 @@
    every material in the document reads it: a panel paints the pre-blurred
    backdrop slice itself instead of running a live backdrop-filter. Both values
    come from the service whitelists (a library file name, a six-digit hex), so
-   this stays a pure custom-property write with nothing to escape. #}
+   this stays a pure custom-property write with nothing to escape.
+
+   `data-lq-scene-tone` is the measured tone of that backdrop (light|dark).
+   Glass that sits directly on the scene pairs its fill and ink from it, so
+   the ink never follows the account theme onto a photograph. page_backdrop.js
+   republishes it whenever the account changes image or colour. #}
 {% macro root_attrs(preferences) -%}
 {%- set scene = preferences.backdrop_scene|default(none) -%}
-data-ui-palette="{{ preferences.palette_key|default('indigo') }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-appearance="{{ 'dark' if preferences.appearance|default('auto') == 'dark' else 'light' }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-lq-glass="off" data-lq-tier="C"{% if scene %} data-lq-frost="{{ 'on' if scene.frost else 'off' }}" style="--lq-frost-image: {{ scene.frost_css }}; --lq-frost-base: {{ scene.frost_base }}"{% endif %}
+data-ui-palette="{{ preferences.palette_key|default('indigo') }}" data-appearance-preference="{{ preferences.appearance|default('auto') }}" data-appearance="{{ 'dark' if preferences.appearance|default('auto') == 'dark' else 'light' }}" data-glass-preference="{{ preferences.glass|default('tinted') }}" data-lq-glass="off" data-lq-tier="C"{% if scene %} data-lq-frost="{{ 'on' if scene.frost else 'off' }}"{% if scene.tone in ('light', 'dark') %} data-lq-scene-tone="{{ scene.tone }}"{% endif %} style="--lq-frost-image: {{ scene.frost_css }}; --lq-frost-base: {{ scene.frost_base }}"{% endif %}
 {%- endmacro %}
 
 {% macro body_attrs(preferences) -%}

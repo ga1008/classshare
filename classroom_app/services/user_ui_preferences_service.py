@@ -57,6 +57,8 @@ BACKDROP_MODES = frozenset({"off", "scene", *BACKDROP_CATEGORY_LABELS})
 DEFAULT_BACKDROP = "scene"
 DEFAULT_BACKDROP_COLOR = "#ffffff"
 _BACKDROP_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(?:webp|jpg|jpeg|png)")
+# Shared with tools/tips/compress_images.py and static/js/lq/scene_tone.js.
+SCENE_TONE_LUMA_THRESHOLD = 148
 
 
 class ConstrainedFormat:
@@ -217,6 +219,41 @@ def backdrop_library() -> tuple[tuple[str, frozenset[str]], ...]:
     return tuple(sorted(images))
 
 
+@lru_cache(maxsize=1)
+def backdrop_tones() -> dict[str, str]:
+    """Scene tone per library image, measured once by tools/tips/compress_images.py.
+
+    Glass on a photograph pairs its fill and ink from this value, never from
+    the account theme; the client reads the same manifest, so SSR and the
+    browser agree without sampling pixels.
+    """
+    try:
+        data = json.loads(BACKDROP_MANIFEST.read_text(encoding="utf-8"))
+        entries = data["images"]
+    except Exception:
+        return {}
+    tones: dict[str, str] = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, Mapping):
+            continue
+        file, tone, luma = entry.get("file"), entry.get("tone"), entry.get("luma")
+        if not isinstance(file, str) or not _BACKDROP_FILE.fullmatch(file):
+            continue
+        if tone not in ("light", "dark") and isinstance(luma, (int, float)) and not isinstance(luma, bool):
+            tone = "light" if luma > SCENE_TONE_LUMA_THRESHOLD else "dark"
+        if tone in ("light", "dark"):
+            tones[file] = tone
+    return tones
+
+
+def tone_of_hex(color: str) -> str | None:
+    """Rec.709 luma of a solid backdrop colour; the same threshold as the images."""
+    if color not in HEX_COLOR:
+        return None
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "light" if 0.2126 * r + 0.7152 * g + 0.0722 * b > SCENE_TONE_LUMA_THRESHOLD else "dark"
+
+
 def _stable_index(seed: str, size: int) -> int:
     """FNV-1a keeps the server pick and the client preview on the same image."""
     digest = 2166136261
@@ -258,12 +295,17 @@ def resolve_backdrop(preferences: Mapping[str, Any], *, seed: str) -> dict[str, 
     file = backdrop_file_for(mode, seed)
     image = BACKDROP_LIBRARY_BASE + file if file else None
     frost = BACKDROP_FROST_BASE + f"{file.rsplit('.', 1)[0]}.webp" if file else None
+    # The tone of what sits behind the glass: the picked image's measured band,
+    # or the solid colour itself. Materials pair fill and ink from it, so the
+    # account's light/dark theme never decides the ink on a photograph.
+    tone = backdrop_tones().get(file) if file else tone_of_hex(color)
     return {
         "mode": mode,
         "color": color,
         "seed": seed,
         "image": image,
         "frost": frost,
+        "tone": tone,
         # Only whitelisted library file names reach this value, so the url()
         # needs no quoting and the template stays a pure custom-property write.
         "image_css": f"url({image})" if image else "none",

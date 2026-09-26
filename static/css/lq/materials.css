@@ -13,6 +13,7 @@
     --lq-material-blur: var(--ls-blur-regular);
     --lq-material-ink: var(--ls-glass-ink);
     --lq-material-muted: var(--ls-glass-muted);
+    --lq-material-accent: var(--ls-primary);
     --lq-material-brightness: 1;
     position: relative;
     isolation: isolate;
@@ -317,12 +318,18 @@
        --lq-material-blur      set by the level; never set it on a nested block
    ───────────────────────────────────────────────────────────────────────── */
 [data-lq-material] {
+    /* Each material resets to the ink paired with its own (theme) fill; a
+       scene tone below overrides fill and ink together. Text inside must read
+       --lq-material-ink/muted, never a theme grey. */
+    --lq-material-ink: var(--ls-glass-ink);
+    --lq-material-muted: var(--ls-glass-muted);
+    --lq-material-accent: var(--ls-primary);
     position: relative;
     isolation: isolate;
     border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--lq-material-radius, var(--ls-r-lg));
     background: hsl(var(--lq-material-fill));
-    color: hsl(var(--ls-ink));
+    color: hsl(var(--lq-material-ink));
     /* The rim is what reads as glass. An inset shadow instead of a pseudo
        element, because legacy blocks already use ::before for their own
        decoration and a second one would fight them. */
@@ -344,26 +351,48 @@
     --lq-control-ink: var(--ls-ink);
 }
 
-/* An image-backed surface may adapt to the photograph independently of the
-   account theme. Fill and every foreground switch together, never white text
-   merely because the surface is labelled clear. Components consume this API. */
-[data-lq-tone="light"] {
+/* ─────────────────────────────────────────────────────────────────────────
+   Scene tone. The text colour on glass is never chosen from the account
+   theme: it is paired with the fill according to what is behind the glass.
+
+     --lq-material-ink     body copy        --lq-material-accent  kicker / label
+     --lq-material-muted   secondary copy   --lq-control-fill/ink inset controls
+
+   Three ways a host gets a tone, from cheapest to most specific:
+     1. `<html data-lq-scene-tone>` — the page backdrop's measured tone (SSR
+        from the image manifest, republished by page_backdrop.js when the
+        account changes image or colour). Clear materials inherit it.
+     2. `data-lq-tone="light|dark"` on any element — an explicit pairing.
+     3. `data-lq-scene="auto"` — lq/scene_tone.js samples the backdrop behind
+        that element's box and writes data-lq-tone for it.
+   Fill and every foreground switch together, never white text merely because
+   the surface is labelled clear. Components consume this API.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-lq-tone="light"],
+:root[data-lq-scene-tone="light"]:not([data-lq-glass="off"], [data-lq-tier="B"], [data-lq-tier="C"], [data-lq-contrast="more"]) :is(.lq-glass--clear, [data-lq-material="clear"]):not([data-lq-tone]) {
     --lq-material-fill: var(--ls-glass-scene-light-fill);
     --lq-material-ink: var(--ls-glass-scene-light-ink);
     --lq-material-muted: var(--ls-glass-scene-light-muted);
+    --lq-material-accent: var(--ls-glass-scene-light-accent);
     --lq-control-fill: var(--ls-glass-scene-light-control);
     --lq-control-ink: var(--ls-glass-scene-light-ink);
 }
-[data-lq-tone="dark"] {
+[data-lq-tone="dark"],
+:root[data-lq-scene-tone="dark"]:not([data-lq-glass="off"], [data-lq-tier="B"], [data-lq-tier="C"], [data-lq-contrast="more"]) :is(.lq-glass--clear, [data-lq-material="clear"]):not([data-lq-tone]) {
     --lq-material-fill: var(--ls-glass-scene-dark-fill);
     --lq-material-ink: var(--ls-glass-scene-dark-ink);
     --lq-material-muted: var(--ls-glass-scene-dark-muted);
+    --lq-material-accent: var(--ls-glass-scene-dark-accent);
     --lq-control-fill: var(--ls-glass-scene-dark-control);
     --lq-control-ink: var(--ls-glass-scene-dark-ink);
 }
-:is([data-lq-tone="light"], [data-lq-tone="dark"]) {
+:is([data-lq-tone="light"], [data-lq-tone="dark"]),
+:root[data-lq-scene-tone]:not([data-lq-glass="off"], [data-lq-tier="B"], [data-lq-tier="C"], [data-lq-contrast="more"]) :is(.lq-glass--clear, [data-lq-material="clear"]):not([data-lq-tone]) {
     color: hsl(var(--lq-material-ink));
 }
+/* Muted and accent copy inside a toned host follow the same pairing. */
+:is([data-lq-tone], .lq-glass--clear, [data-lq-material="clear"]) :where(.lq-material-muted) { color: hsl(var(--lq-material-muted)); }
+:is([data-lq-tone], .lq-glass--clear, [data-lq-material="clear"]) :where(.lq-material-accent) { color: hsl(var(--lq-material-accent, var(--ls-primary))); }
 
 /* The content material had fill and blur but no rim, which is why panels read
    as flat translucent boxes rather than glass. */

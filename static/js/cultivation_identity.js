@@ -1,4 +1,5 @@
 import { initPageBackdrop, writeSceneHandoff } from './page_backdrop.js';
+import { sampleImageTone } from './lq/scene_tone.js';
 
 function clampPercent(value) {
     const number = Number(value || 0);
@@ -123,26 +124,8 @@ function preloadImage(url, timeoutMs) {
     });
 }
 
-const TONE_LUMA_THRESHOLD = 148;
-
-export function sampleImageTone(image) {
-    // 采样图片中央横带（文字所在区域）的平均亮度：亮 → 深色字，暗 → 白字。
-    try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 48;
-        canvas.height = 27;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0, 48, 27);
-        const data = ctx.getImageData(6, 8, 36, 11).data;
-        let sum = 0;
-        for (let i = 0; i < data.length; i += 4) {
-            sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-        }
-        return sum / (data.length / 4) > TONE_LUMA_THRESHOLD ? 'light' : 'dark';
-    } catch (error) {
-        return 'dark';
-    }
-}
+// 场景色调统一由 lq/scene_tone.js 判定（与 manifest 的 tone 字段同一口径）。
+export { sampleImageTone };
 
 function buildIdentityChip(profile) {
     const level = profile?.highest_level;
@@ -169,7 +152,10 @@ function buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl) {
     overlay.setAttribute('role', 'status');
     overlay.setAttribute('aria-live', 'polite');
     overlay.dataset.tipCategory = tip.category || '';
+    // data-lq-tone hands the photo's tone to materials.css, which pairs fill and
+    // every ink for the card; data-tip-tone keeps the legacy backdrop filters.
     overlay.dataset.tipTone = tone === 'light' ? 'light' : 'dark';
+    overlay.dataset.lqTone = overlay.dataset.tipTone;
     overlay.innerHTML = `
         <div class="life-tip-backdrop${hasImage ? ' has-image' : ''}" aria-hidden="true"
             ${hasImage ? `style="background-image: url('${escapeHtml(imageUrl || tip.image_url)}')"` : ''}></div>

@@ -46,10 +46,12 @@
     --ls-glass-scene-light-ink: 222 47% 11%; /* @type hsl-channels */
     --ls-glass-scene-light-muted: 215 25% 25%; /* @type hsl-channels */
     --ls-glass-scene-light-control: 0 0% 100% / .22; /* @type hsl-alpha-channels */
+    --ls-glass-scene-light-accent: 201 90% 30%; /* @type hsl-channels */
     --ls-glass-scene-dark-fill: 224 30% 12% / .38; /* @type hsl-alpha-channels */
     --ls-glass-scene-dark-ink: 214 32% 98%; /* @type hsl-channels */
     --ls-glass-scene-dark-muted: 215 20% 88%; /* @type hsl-channels */
     --ls-glass-scene-dark-control: 224 30% 12% / .22; /* @type hsl-alpha-channels */
+    --ls-glass-scene-dark-accent: 199 95% 74%; /* @type hsl-channels */
     --ls-scrim: 222 47% 11% / .28; /* @type hsl-alpha-channels */
     --ls-scrim-login: 0 0% 0% / .80; /* @type hsl-alpha-channels */
     --ls-glass-sheen-clear: linear-gradient(135deg, hsl(0 0% 100% / .04), transparent 60%); /* @type image */

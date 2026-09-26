@@ -18,7 +18,8 @@
 .life-tip-backdrop {
     position: absolute;
     inset: -4%;
-    background: radial-gradient(120% 90% at 20% 10%, var(--gray-800) 0%, var(--gray-900) 45%, #020617 100%);
+    /* No-photo fallback is always a night sky; theme greys would turn it white in dark mode. */
+    background: radial-gradient(120% 90% at 20% 10%, #1e293b 0%, #0f172a 45%, #020617 100%);
     background-size: cover;
     background-position: center;
     animation: life-tip-kenburns 9s ease-out forwards;
@@ -49,7 +50,8 @@
     border-radius: var(--radius-full);
     background: rgba(2, 6, 23, 0.55);
     backdrop-filter: blur(6px);
-    color: var(--gray-200);
+    /* The pill's fill is fixed dark, so its ink is the fixed dark-scene pairing. */
+    color: hsl(var(--ls-glass-scene-dark-ink));
     opacity: 0;
     transform: translateY(-8px);
     transition: opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s;
@@ -78,7 +80,7 @@
 }
 .life-tip-identity__level {
     font-size: var(--text-xs);
-    color: var(--gray-400);
+    color: hsl(var(--ls-glass-scene-dark-muted));
 }
 .life-tip-identity__bar {
     width: 72px;
@@ -93,11 +95,14 @@
     border-radius: inherit;
     background: linear-gradient(90deg, var(--cultivation-a, hsl(var(--ls-info))), var(--cultivation-b, #a78bfa));
 }
+/* Every colour on the reveal is a scene pairing (materials.css `data-lq-tone`):
+   the overlay carries the photo's measured tone, and ink/muted/accent follow it
+   whatever the account's light/dark theme says. Never a theme grey here. */
 .life-tip-stage {
     position: relative;
     max-width: min(720px, 88vw);
     text-align: center;
-    color: var(--gray-100);
+    color: hsl(var(--lq-material-ink, var(--ls-glass-scene-dark-ink)));
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.6s ease 0.25s, transform 0.6s ease 0.25s;
@@ -112,7 +117,7 @@
     font-weight: 700;
     letter-spacing: 0.35em;
     text-transform: uppercase;
-    color: #7dd3fc;
+    color: hsl(var(--lq-material-accent, var(--ls-glass-scene-dark-accent)));
 }
 .life-tip-stage__kicker::before,
 .life-tip-stage__kicker::after {
@@ -122,10 +127,10 @@
     height: 1px;
     margin: 0 12px;
     vertical-align: middle;
-    background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.7));
+    background: linear-gradient(90deg, transparent, hsl(var(--lq-material-accent, var(--ls-glass-scene-dark-accent)) / .7));
 }
 .life-tip-stage__kicker::after {
-    background: linear-gradient(90deg, rgba(125, 211, 252, 0.7), transparent);
+    background: linear-gradient(90deg, hsl(var(--lq-material-accent, var(--ls-glass-scene-dark-accent)) / .7), transparent);
 }
 .life-tip-stage__text {
     margin: 0;
@@ -139,7 +144,7 @@
 .life-tip-stage__source {
     margin: 14px 0 0;
     font-size: var(--text-sm);
-    color: var(--gray-400);
+    color: hsl(var(--lq-material-muted, var(--ls-glass-scene-dark-muted)));
 }
 .life-tip-footer {
     position: absolute;
@@ -150,7 +155,7 @@
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    color: var(--gray-400);
+    color: hsl(var(--lq-material-muted, var(--ls-glass-scene-dark-muted)));
 }
 .life-tip-footer__timer {
     width: min(320px, 60vw);
@@ -204,7 +209,7 @@
     border: 1px solid rgba(148, 163, 184, 0.35);
     border-radius: var(--radius-full);
     background: rgba(2, 6, 23, 0.45);
-    color: var(--gray-300);
+    color: hsl(var(--ls-glass-scene-dark-muted));
     font-size: var(--text-xs);
     letter-spacing: 0.05em;
     cursor: pointer;
@@ -212,13 +217,13 @@
     transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 .life-tip-feedback:hover {
-    border-color: rgba(125, 211, 252, 0.7);
-    color: var(--gray-100);
+    border-color: hsl(var(--ls-glass-scene-dark-accent) / .7);
+    color: hsl(var(--ls-glass-scene-dark-ink));
     transform: translateY(-1px);
 }
 .life-tip-feedback.is-chosen {
-    border-color: rgba(125, 211, 252, 0.9);
-    color: #7dd3fc;
+    border-color: hsl(var(--ls-glass-scene-dark-accent) / .9);
+    color: hsl(var(--ls-glass-scene-dark-accent));
     background: rgba(12, 74, 110, 0.45);
 }
 .life-tip-feedback:disabled {
@@ -338,12 +343,13 @@
     mask-image: none;
 }
 
-/* ==== 修复：全局 p 规则压过继承色导致提示文字发灰（2026-07-24） ==== */
+/* ==== 修复：全局 p 规则压过继承色导致提示文字发灰（2026-07-24） ====
+   2026-09-26 起颜色改由场景配对令牌决定（亮图深字/暗图白字），不再写死。 */
 .cultivation-login-reveal--tip .life-tip-stage__text {
-    color: #ffffff;
+    color: hsl(var(--lq-material-ink, var(--ls-glass-scene-dark-ink)));
 }
 .cultivation-login-reveal--tip .life-tip-stage__source {
-    color: var(--gray-300);
+    color: hsl(var(--lq-material-muted, var(--ls-glass-scene-dark-muted)));
 }
 
 /* ==== 人生一言 · 液态玻璃卡（2026-07-24 定稿实验）：色调自适应，替代字幕暗带 ==== */
@@ -372,18 +378,11 @@
 .cultivation-login-reveal--tip[data-tip-tone="dark"] .life-tip-backdrop.has-image {
     filter: saturate(0.95) brightness(0.85);
 }
+/* 亮图：字色已由 data-lq-tone="light" 的配对令牌给出（深墨/深灰/深青），
+   这里只去掉为白字准备的投影。 */
 .cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__text {
-    color: var(--gray-900);
     text-shadow: none;
 }
-.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker { color: hsl(var(--ls-info-strong)); }
-.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker::before {
-    background: linear-gradient(90deg, transparent, rgba(3, 105, 161, 0.6));
-}
-.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__kicker::after {
-    background: linear-gradient(90deg, rgba(3, 105, 161, 0.6), transparent);
-}
-.cultivation-login-reveal--tip[data-tip-tone="light"] .life-tip-stage__source { color: var(--gray-600); }
 @media (max-width: 640px) {
     .cultivation-login-reveal--tip .life-tip-stage { padding: 24px 22px 20px; border-radius: var(--radius-2xl); }
 }
@@ -448,8 +447,16 @@ body.login-scene-active .login-scene-backdrop { opacity: 1; }
     background:
         linear-gradient(180deg, rgba(2, 6, 23, 0.34) 0%, rgba(2, 6, 23, 0.08) 32%, rgba(2, 6, 23, 0.14) 68%, rgba(2, 6, 23, 0.48) 100%);
 }
-/* 液态玻璃登录卡：白玻璃在亮暗图上都可读（iOS 液态玻璃质感） */
+/* 液态玻璃登录卡：白玻璃在亮暗图上都可读（iOS 液态玻璃质感）。
+   填充固定为白玻璃，所以墨也固定为亮场景配对——legacy 文案读的是
+   --text-* 变量，在此局部改绑，深色外观下不再白字压白玻璃。 */
 body.login-scene-active .login-card {
+    --text-primary: hsl(var(--ls-glass-scene-light-ink));
+    --text-secondary: hsl(var(--ls-glass-scene-light-muted));
+    --text-muted: hsl(var(--ls-glass-scene-light-muted));
+    /* Links read --primary-color, which is a pale tint in dark mode. */
+    --primary-color: hsl(var(--ls-glass-scene-light-accent));
+    color: hsl(var(--ls-glass-scene-light-ink));
     background: rgba(255, 255, 255, 0.58);
     backdrop-filter: blur(18px) saturate(1.5);
     -webkit-backdrop-filter: blur(18px) saturate(1.5);
@@ -465,6 +472,9 @@ body.login-scene-active .login-card .form-control {
     background: rgba(255, 255, 255, 0.74);
     border-color: rgba(255, 255, 255, 0.9);
 }
+/* Fields keep the theme's own field/ink pairing (a dark-mode field rule outranks this block). */
+body.login-scene-active .login-card :is(h2, .form-label, label) { color: hsl(var(--ls-glass-scene-light-ink)); }
+body.login-scene-active .login-card :is(.text-muted, .footer-links a, .footer-links-subtle a) { color: hsl(var(--ls-glass-scene-light-muted)); }
 body.login-scene-active .login-card .form-control:focus {
     background: rgba(255, 255, 255, 0.92);
 }
@@ -479,7 +489,9 @@ body.login-scene-active .identity-panel-note {
     pointer-events: none;
 }
 /* 备案页脚在图上保持可读 */
+body.login-scene-active .site-record-footer a { color: hsl(var(--ls-glass-scene-light-accent)); }
 body.login-scene-active .site-record-footer {
+    color: hsl(var(--ls-glass-scene-light-muted));
     background: rgba(255, 255, 255, 0.55);
     backdrop-filter: blur(16px) saturate(1.4);
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
@@ -538,13 +550,14 @@ body.login-scene-active .site-record-footer {
     z-index: 6050;
     max-width: min(460px, 84vw);
     padding: 14px 18px;
-    border: 1px solid rgba(15, 23, 42, 0.1);
+    /* Near-opaque theme surface, so fill and ink flip together in dark mode. */
+    border: 1px solid hsl(var(--ls-line));
     border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.94);
+    background: hsl(var(--ls-surface-1) / 0.94);
     backdrop-filter: blur(20px) saturate(1.5);
     -webkit-backdrop-filter: blur(20px) saturate(1.5);
     box-shadow: 0 24px 60px -24px rgba(2, 6, 23, 0.45);
-    color: var(--gray-900);
+    color: hsl(var(--ls-ink));
     font-size: var(--text-sm);
     font-weight: 600;
     line-height: 1.8;
@@ -609,12 +622,12 @@ body[data-scene-tone="light"] .login-scene-backdrop__veil {
     font-size: var(--text-2xs);
     font-weight: 800;
     letter-spacing: 0.24em;
-    color: var(--gray-500);
+    color: hsl(var(--ls-ink-2));
     text-transform: uppercase;
 }
 .topbar-scene-pop__text {
     margin: 0;
-    color: var(--gray-900);
+    color: hsl(var(--ls-ink));
     font-size: var(--text-sm);
     font-weight: 600;
     line-height: 1.8;

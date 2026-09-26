@@ -7,8 +7,9 @@
     python tools/tips/compress_images.py <原图目录> --out static/img/life_tips
 
     python tools/tips/compress_images.py --frost-only   # 只为既有图库补霜层副本
+    python tools/tips/compress_images.py --tone-only    # 只为既有 manifest 补场景色调
 
-做四件事：
+做五件事：
 
 1. 统一缩放到宽 ≤1600px，转 WebP（quality 自适应降档直到 ≤120KB）；
 2. 输出文件名 = ``<原名 slug>-<内容hash前8位>.webp``（内容寻址，nginx 可
@@ -17,6 +18,9 @@
    供 ``life_tip_service._pick_image_url`` 按 category 配图；
 4. 同批写出 ``frost/<同名>.webp`` 霜层副本（宽 48px 的预模糊图），供全站毛玻璃
    面板以静态贴图取代 ``backdrop-filter`` 实时模糊，见下方 FROST_* 常量。
+5. 为每张图量出中央横带的平均亮度写进 manifest（``luma`` 0–255、``tone``
+   light/dark）。玻璃上的文字色由这个场景色调配对决定，服务端 SSR 与浏览器
+   都直接读它，不再各自现场采样；阈值与 ``static/js/lq/scene_tone.js`` 一致。
 
 原图命名约定（可选）：``<前缀>-任意.png``，如 ``xueye-library.png`` →
 分类【学业规则/论文写作/奖学金】。无匹配前缀的图不带分类标签 = 任意
@@ -60,6 +64,13 @@ FROST_DIRNAME = "frost"
 FROST_WIDTH = 48          # 宽度就是伪装过的模糊半径；再宽就从霜面变回劣质照片
 FROST_SATURATION = 0.90   # 背景层亮色 .95、暗色 .85，一份副本兼顾，压在材质底色下看不出差别
 FROST_QUALITY = 82
+
+# ── 场景色调 ───────────────────────────────────────────────────────────────
+# 与 static/js/lq/scene_tone.js 的 TONE_LUMA_THRESHOLD / 采样带保持一致：
+# 缩到 48×27 后取中央横带（x 6..42, y 8..19）的 Rec.709 平均亮度。
+TONE_SAMPLE_SIZE = (48, 27)
+TONE_SAMPLE_BOX = (6, 8, 42, 19)
+TONE_LUMA_THRESHOLD = 148
 
 # 文件名前缀 → 提示分类（与 life_tip_seed_data 的 category 对齐）。
 PREFIX_CATEGORIES: dict[str, list[str]] = {
@@ -147,6 +158,55 @@ def write_frost(payload: bytes, out_dir: Path, file_name: str) -> Path:
     return target
 
 
+def measure_luma(payload: bytes) -> int:
+    """中央横带平均亮度（0–255），与浏览器端 sampleImageLuma 同一口径。"""
+    with Image.open(io.BytesIO(payload)) as image:
+        small = image.convert("RGB").resize(TONE_SAMPLE_SIZE, Image.BILINEAR)
+        raw = small.crop(TONE_SAMPLE_BOX).tobytes()
+    count = len(raw) // 3
+    total = sum(0.2126 * raw[i] + 0.7152 * raw[i + 1] + 0.0722 * raw[i + 2] for i in range(0, count * 3, 3))
+    return round(total / max(1, count))
+
+
+def tone_of(luma: int) -> str:
+    return "light" if luma > TONE_LUMA_THRESHOLD else "dark"
+
+
+def _read_manifest_entries(manifest_path: Path) -> list[dict] | None:
+    try:
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))["images"]
+    except (OSError, ValueError, KeyError, TypeError):
+        print(f"manifest 不可用: {manifest_path}", file=sys.stderr)
+        return None
+    return [entry for entry in entries if isinstance(entry, dict) and isinstance(entry.get("file"), str)]
+
+
+def backfill_tone(out_dir: Path) -> int:
+    """按 manifest 为既有图库补齐 luma/tone；已有且源图未变的条目不重算。"""
+    manifest_path = out_dir / "manifest.json"
+    entries = _read_manifest_entries(manifest_path)
+    if not entries:
+        print("manifest 里没有可用的图片", file=sys.stderr)
+        return 1
+    measured = missing = 0
+    for entry in entries:
+        source = out_dir / entry["file"]
+        if not source.is_file():
+            print(f"源图缺失，跳过: {entry['file']}", file=sys.stderr)
+            missing += 1
+            continue
+        if isinstance(entry.get("luma"), int) and entry.get("tone") in {"light", "dark"}:
+            continue
+        luma = measure_luma(source.read_bytes())
+        entry["luma"] = luma
+        entry["tone"] = tone_of(luma)
+        measured += 1
+    manifest_path.write_text(json.dumps({"images": entries}, ensure_ascii=False, indent=2), encoding="utf-8")
+    light = sum(1 for entry in entries if entry.get("tone") == "light")
+    print(f"场景色调：{len(entries)} 张在册，新量 {measured} 张，亮图 {light} / 暗图 {len(entries) - light}")
+    return 1 if missing else 0
+
+
 def backfill_frost(out_dir: Path) -> int:
     """按 manifest 为既有图库补齐霜层副本，并清掉已不在册的孤儿。
 
@@ -200,6 +260,11 @@ def main() -> int:
         help="不入库，只按 manifest 为既有图库补齐霜层副本",
     )
     parser.add_argument(
+        "--tone-only",
+        action="store_true",
+        help="不入库，只按 manifest 为既有图库补齐场景色调（luma/tone）",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=Path("static/img/life_tips"),
@@ -209,6 +274,8 @@ def main() -> int:
 
     if args.frost_only:
         return backfill_frost(args.out)
+    if args.tone_only:
+        return backfill_tone(args.out)
 
     if args.source_dir is None:
         parser.error("需要原图目录，或改用 --frost-only")
@@ -238,9 +305,12 @@ def main() -> int:
         # 霜层副本与背景图同批产出，内容寻址的文件名保证两者永远对得上。
         write_frost(payload, args.out, file_name)
         total_bytes += len(payload)
+        luma = measure_luma(payload)
         entry: dict[str, object] = {
             "file": file_name,
             "categories": categories_for(source.stem),
+            "luma": luma,
+            "tone": tone_of(luma),
         }
         tags = tag_registry.get(source.name)
         if tags:

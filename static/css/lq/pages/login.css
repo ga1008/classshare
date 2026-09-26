@@ -72,7 +72,8 @@ body.lq-centered-page .lq-login-card {
 .lq-centered-page .lq-field__label { text-align: start; }
 .lq-centered-page .login-panel { text-align: start; }
 .lq-centered-page .login-panel[hidden] { display: none; }
-.lq-centered-page :is(.login-panel-copy,.identity-panel-note) { margin: 0 0 var(--ls-s-4); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); color: hsl(var(--ls-ink-2)); }
+/* Copy inside the scene-toned card reads the material's paired muted ink, never the theme grey. */
+.lq-centered-page :is(.login-panel-copy,.identity-panel-note) { margin: 0 0 var(--ls-s-4); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
 .lq-centered-page .lq-login-card .identity-panel-note { color: hsl(var(--lq-material-muted)); background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-md); padding: var(--ls-s-3); }
 .lq-centered-page .identity-panel-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2); margin-bottom: var(--ls-s-3); }
 .lq-centered-page .identity-panel-title { margin: 0; font-size: var(--ls-t-headline); color: inherit; }
@@ -96,12 +97,13 @@ body.lq-centered-page .lq-login-card {
 .lq-centered-page .lq-login-card :is(.link-button,.footer-links a):focus-visible { outline-color: hsl(var(--lq-material-ink)); }
 .lq-centered-page .student-identity-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--ls-s-2); margin-bottom: var(--ls-s-4); }
 .lq-centered-page .student-identity-chip { min-width: 0; padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-sm); background: hsl(var(--ls-surface-2)); }
+/* The chip paints its own theme surface, so its ink stays the theme pairing. */
 .lq-centered-page .student-identity-chip span { display: block; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); }
 .lq-centered-page .student-identity-chip strong { display: block; overflow-wrap: anywhere; color: hsl(var(--ls-ink)); font-size: var(--ls-t-footnote); }
 .lq-centered-page .student-auth-flow .auth-flow-student { margin-bottom: var(--ls-s-4); overflow-wrap: anywhere; font-size: var(--ls-t-footnote); }
 .lq-centered-page .forgot-class-field { display: flex; align-items: center; gap: var(--ls-s-2); }
 .lq-centered-page .forgot-class-field .lq-input { flex: 1; width: 0; min-width: 0; text-align: center; }
-.lq-centered-page .forgot-class-affix { max-width: 32%; overflow-wrap: anywhere; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); }
+.lq-centered-page .forgot-class-affix { max-width: 32%; overflow-wrap: anywhere; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: var(--ls-t-footnote); }
 .lq-centered-page .forgot-class-affix:empty { display: none; }
 body.lq-centered-page .site-record-footer { width: fit-content; max-width: calc(100% - 2rem); background: hsl(var(--lq-material-fill)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-glass-line)); }
 body.lq-centered-page .site-record-footer :is(a,span,p) { color: inherit; }

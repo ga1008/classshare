@@ -1,4 +1,6 @@
 /** One full-viewport scene owner, shared by welcome handoff and preferences. */
+import { publishSceneTone, resolveSceneTone } from './lq/scene_tone.js';
+
 export const BACKDROP_BASE = '/static/img/life_tips/';
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(?:webp|jpg|jpeg|png)$/;
 const HANDOFF_KEY = 'lanshareLoginScene';
@@ -38,7 +40,8 @@ function preload(win, url) {
         let settled = false;
         const done = result => { if (settled) return; settled = true; win.clearTimeout(timer); image.onload = image.onerror = null; resolve(result); };
         const timer = win.setTimeout(() => done(false), 1800);
-        image.onload = () => done(image.naturalWidth > 0); image.onerror = () => done(false); image.src = url;
+        // Resolve the decoded image itself so a manifest without a tone can still be sampled.
+        image.onload = () => done(image.naturalWidth > 0 ? image : false); image.onerror = () => done(false); image.src = url;
     });
 }
 
@@ -96,7 +99,7 @@ export function createBackdropLayer(root = document) {
         if (win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { done(); return; }
         win.requestAnimationFrame(() => { html.classList.add('scene-cover-dissolving'); win.setTimeout(done, 560); });
     }
-    function paint(file, color, rendered) {
+    function paint(file, color, rendered, tone = null) {
         const image = layer.querySelector('[data-lq-backdrop-image]');
         const paintValue = rendered ? `url(${rendered})` : 'none';
         const changed = layer.style.getPropertyValue('--lq-backdrop-paint').trim() !== paintValue;
@@ -131,6 +134,10 @@ export function createBackdropLayer(root = document) {
         html.style.setProperty('--lq-frost-image', file ? `url(${BACKDROP_BASE}frost/${file.replace(/\.[^.]+$/, '')}.webp)` : 'none');
         html.style.setProperty('--lq-frost-base', file ? 'hsl(var(--ls-background))' : color);
         html.dataset.lqFrost = file ? 'on' : 'off';
+        // The scene's tone drives every clear material's fill/ink pairing
+        // (materials.css). An account's manual image or colour goes through
+        // the same path, so its glass copy stays readable too.
+        publishSceneTone(tone, doc);
     }
     async function apply(values) {
         if (!layer || disposed) return;
@@ -138,7 +145,7 @@ export function createBackdropLayer(root = document) {
         layer.dataset.lqBackdropMode = values.backdrop;
         layer.dataset.lqBackdropColor = values.backdrop_color;
         layer.style.setProperty('--lq-backdrop-color', values.backdrop_color);
-        if (values.backdrop === 'off') { paint(null, values.backdrop_color, null); finishCover(); return; }
+        if (values.backdrop === 'off') { paint(null, values.backdrop_color, null, resolveSceneTone({ color: values.backdrop_color })); finishCover(); return; }
         const list = await images();
         if (disposed || mine !== generation) return;
         const sceneFile = backdropFileFromUrl(scene?.image);
@@ -156,7 +163,8 @@ export function createBackdropLayer(root = document) {
             // Keep the last usable scene when a replacement cannot be decoded.
             finishCover(); return;
         }
-        paint(file, values.backdrop_color, original);
+        const entry = list.find(item => item.file === file) || null;
+        paint(file, values.backdrop_color, original, resolveSceneTone({ entry, image: ready }));
         if (validScene && context) write(win, SESSION_KEY, { ...scene, context });
         finishCover();
     }

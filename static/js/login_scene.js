@@ -1,7 +1,8 @@
 // 登录页「人生一言」场景：进页面即铺一言背景图 + 液态玻璃表单，
 // 登录成功后表单原地化为一言玻璃卡，结束时把背景交棒给首页顶栏。
-import { playLoginSceneReveal, sampleImageTone } from '/static/js/cultivation_identity.js?v=20260803-scene3';
+import { playLoginSceneReveal } from '/static/js/cultivation_identity.js?v=20260803-scene3';
 import { spinner } from './lq/components.js';
+import { publishSceneTone, resolveSceneTone } from './lq/scene_tone.js';
 
 const MANIFEST_URL = '/static/img/life_tips/manifest.json';
 const IMAGE_BASE = '/static/img/life_tips/';
@@ -56,6 +57,8 @@ async function pickSceneImage(signal) {
         return {
             url: IMAGE_BASE + chosen.file,
             categories: Array.isArray(chosen.categories) ? chosen.categories : [],
+            // Measured at ingest (tools/tips/compress_images.py); sampling is only a fallback.
+            entry: { tone: chosen.tone, luma: chosen.luma },
         };
     } catch (error) {
         return null;
@@ -72,7 +75,7 @@ async function initLegacyLoginScene() {
     const image = await preloadSceneImage(picked.url, IMAGE_PRELOAD_TIMEOUT_MS);
     if (!image) return null;
 
-    const tone = sampleImageTone(image);
+    const tone = resolveSceneTone({ entry: picked.entry, image });
     const backdrop = document.createElement('div');
     backdrop.className = 'login-scene-backdrop';
     backdrop.setAttribute('aria-hidden', 'true');
@@ -84,6 +87,7 @@ async function initLegacyLoginScene() {
     backdrop.append(imageLayer, veilLayer);
     document.body.prepend(backdrop);
     document.body.dataset.sceneTone = tone;
+    publishSceneTone(tone);
     window.requestAnimationFrame(() => document.body.classList.add('login-scene-active'));
 
     return { imageUrl: picked.url, categories: picked.categories, tone };
@@ -127,6 +131,7 @@ export function initLoginScene() {
         backdrop?.remove();
         document.body.classList.remove('login-scene-active');
         delete document.body.dataset.sceneTone;
+        publishSceneTone(null);
         card.dataset.lqSceneState = 'unavailable';
         refresh();
         if (document[sceneKey] === owner) delete document[sceneKey];
@@ -146,7 +151,7 @@ export function initLoginScene() {
             if (remaining <= 0) return null;
             const image = await preloadSceneImage(url.href, remaining, abort.signal);
             if (!image || abort.signal.aborted || disposed || !card.isConnected) return null;
-            scene = { imageUrl: picked.url, categories: picked.categories, tone: sampleImageTone(image), dispose: owner.dispose };
+            scene = { imageUrl: picked.url, categories: picked.categories, tone: resolveSceneTone({ entry: picked.entry, image }), dispose: owner.dispose };
             backdrop = document.createElement('div');
             backdrop.className = 'login-scene-backdrop';
             backdrop.setAttribute('aria-hidden', 'true');
@@ -158,6 +163,7 @@ export function initLoginScene() {
             backdrop.append(imageLayer, veil);
             document.body.prepend(backdrop);
             document.body.dataset.sceneTone = scene.tone;
+            publishSceneTone(scene.tone);
             loaded = true;
             card.dataset.lqSceneState = 'ready';
             refresh();

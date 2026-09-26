@@ -159,6 +159,62 @@ class BackdropLibraryTests(unittest.TestCase):
         self.assertEqual((hostile["mode"], hostile["color"]), ("scene", "#ffffff"))
 
 
+class SceneToneTests(unittest.TestCase):
+    """Glass ink is paired with what sits behind it, never with the theme.
+
+    The tone is measured once per library image by tools/tips/compress_images.py
+    and read back here; a solid colour is measured with the same threshold.
+    """
+
+    def test_every_shipped_image_has_a_measured_tone(self):
+        tones = svc.backdrop_tones()
+        self.assertEqual(set(tones), {file for file, _ in svc.backdrop_library()})
+        self.assertEqual(set(tones.values()), {"light", "dark"})
+        self.assertIs(tones, svc.backdrop_tones())
+
+    def test_manifest_tone_falls_back_to_luma_and_ignores_hostile_entries(self):
+        manifest = {"images": [
+            {"file": "bright.webp", "tone": "light"},
+            {"file": "dim.webp", "luma": 40},
+            {"file": "odd.webp", "tone": "purple", "luma": "200"},
+            {"file": "../x.webp", "tone": "light"},
+            {"file": "flag.webp", "luma": True},
+            "not-a-mapping",
+        ]}
+        with patch.object(svc.BACKDROP_MANIFEST.__class__, "read_text", lambda *_, **__: json.dumps(manifest)):
+            svc.backdrop_tones.cache_clear()
+            self.addCleanup(svc.backdrop_tones.cache_clear)
+            self.assertEqual(svc.backdrop_tones(), {"bright.webp": "light", "dim.webp": "dark"})
+        with patch.object(svc.BACKDROP_MANIFEST.__class__, "read_text", side_effect=OSError("missing")):
+            svc.backdrop_tones.cache_clear()
+            self.assertEqual(svc.backdrop_tones(), {})
+
+    def test_solid_colour_tone_uses_the_shared_luma_threshold(self):
+        self.assertEqual(svc.tone_of_hex("#ffffff"), "light")
+        self.assertEqual(svc.tone_of_hex("#102030"), "dark")
+        # 148 on the Rec.709 scale is the boundary in both the tool and the browser.
+        self.assertEqual(svc.tone_of_hex("#959595"), "light")
+        self.assertEqual(svc.tone_of_hex("#949494"), "dark")
+        self.assertIsNone(svc.tone_of_hex("#FFF"))
+        self.assertIsNone(svc.tone_of_hex("white"))
+
+    def test_resolved_backdrop_carries_the_tone_of_what_is_painted(self):
+        file, _ = svc.backdrop_library()[0]
+        fixed = svc.resolve_backdrop({"backdrop": f"image:{file}"}, seed="seed")
+        self.assertEqual(fixed["tone"], svc.backdrop_tones()[file])
+        scene = svc.resolve_backdrop({"backdrop": "scene"}, seed="seed")
+        self.assertEqual(scene["tone"], svc.backdrop_tones()[scene["image"].rsplit("/", 1)[1]])
+        off = svc.resolve_backdrop({"backdrop": "off", "backdrop_color": "#0a1b2c"}, seed="seed")
+        self.assertEqual(off["tone"], "dark")
+        self.assertEqual(svc.resolve_backdrop({"backdrop": "off"}, seed="seed")["tone"], "light")
+
+    def test_compressor_and_service_share_one_threshold(self):
+        source = (ROOT / "tools/tips/compress_images.py").read_text(encoding="utf-8")
+        self.assertIn(f"TONE_LUMA_THRESHOLD = {svc.SCENE_TONE_LUMA_THRESHOLD}", source)
+        browser = (ROOT / "static/js/lq/scene_tone.js").read_text(encoding="utf-8")
+        self.assertIn(f"TONE_LUMA_THRESHOLD = {svc.SCENE_TONE_LUMA_THRESHOLD}", browser)
+
+
 class BackdropPersistenceTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:", check_same_thread=False)
@@ -306,6 +362,8 @@ class BackdropSSRTests(unittest.TestCase):
         self.assertIn("--lq-backdrop-image: none", html)
         self.assertIn('<option value="off" selected>', html)
         self.assertIn('value="#102030"', html)
+        # A solid colour is a scene too: its tone is measured the same way.
+        self.assertIn('data-lq-scene-tone="dark"', html)
 
     def test_catalog_payload_is_json_and_matches_the_registry(self):
         html = self.render(self.student)
@@ -317,7 +375,13 @@ class BackdropSSRTests(unittest.TestCase):
         svc.update_ui_preferences(self.conn, self.student, changes={"backdrop": f"image:{file}"}, version=0)
         html = self.render(self.student)
         self.assertIn(f'data-lq-backdrop-mode="image:{file}"', html)
-        self.assertIn(f'--lq-backdrop-paint: url({svc.BACKDROP_FROST_BASE}{file.rsplit(".", 1)[0]}.webp)', html)
+        # The page paints the original image (one Gaussian on the viewport);
+        # the frost thumbnail is only the panels' cached slice on <html>.
+        self.assertIn(f'--lq-backdrop-paint: url({svc.BACKDROP_LIBRARY_BASE}{file})', html)
+        self.assertIn(f'--lq-frost-image: url({svc.BACKDROP_FROST_BASE}{file.rsplit(".", 1)[0]}.webp)', html)
+        # The measured tone of that image reaches <html> so clear glass pairs
+        # its ink with the photo, not with the account theme.
+        self.assertIn(f'data-lq-scene-tone="{svc.backdrop_tones()[file]}"', html)
         self.assertIn('data-ui-backdrop-selected-image', html)
         self.assertNotIn('lanshareTopbarScene', html)
         self.assertNotIn('has-topbar-scene', html)
