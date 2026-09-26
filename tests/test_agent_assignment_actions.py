@@ -100,6 +100,9 @@ class AssignmentAgentTests(PlatformWriteFixture):
         app.include_router(assignments.router, prefix="/api")
         for target in ("classroom_app.database.get_db_connection", "classroom_app.dependencies.get_db_connection", "classroom_app.services.agent_platform_broker.get_db_connection", "classroom_app.routers.homework_parts.assignments.get_db_connection"):
             item=patch(target,self.connection); item.start(); self.addCleanup(item.stop)
+        # `remaining_seconds` is derived from the wall clock; freeze it so the two reads (web, then broker) compare equal.
+        from classroom_app.services import assignment_lifecycle_service as lifecycle
+        frozen = patch.object(lifecycle, "_utc_like_now", return_value=lifecycle._utc_like_now()); frozen.start(); self.addCleanup(frozen.stop)
         with TestClient(app) as client:
             for user in (self.teacher,self.student):
                 app.dependency_overrides[dependencies.get_current_user] = lambda user=user: user

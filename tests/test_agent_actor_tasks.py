@@ -156,12 +156,14 @@ class AgentActorTaskTests(unittest.TestCase):
                    "source_session_hash": "forged-hash", "extra_context": {"actor": {"id": 999}}}
         with patch.object(router, "get_db_connection", return_value=self.conn), \
              patch.object(router, "_parse_create_request", new=AsyncMock(return_value=(payload, []))), \
-             patch.object(router, "AGENT_TASKS_ENABLED", True):
+             patch.object(router, "AGENT_TASKS_ENABLED", True), \
+             patch.object(router, "ensure_ai_workspace_access"):  # exam-lock policy needs the assignments schema; covered by test_ai_workspace
             result = asyncio.run(router.api_create_agent_task(None, BackgroundTasks(), {**self.student, "session_id": "trusted-session"}))
         row = dict(self.conn.execute("SELECT * FROM agent_tasks WHERE id=?", (result["task"]["id"],)).fetchone())
         self.assertEqual(("student", 7, None), (row["actor_role"], row["actor_id"], row["teacher_id"]))
         self.assertEqual(hashlib.sha256(b"trusted-session").hexdigest(), row["source_session_hash"])
-        self.assertEqual("deepseek-dsh", row["runtime_provider"])
+        from classroom_app.services.agent_task_service import AGENT_RUNTIME_PROVIDER
+        self.assertEqual(AGENT_RUNTIME_PROVIDER, row["runtime_provider"])  # forged "legacy" provider is replaced by the canonical runtime
         self.assertNotIn("forged", json.dumps(result))
 
     def test_student_history_excludes_teacher_terminal_tasks_but_shares_public_live_queue(self):

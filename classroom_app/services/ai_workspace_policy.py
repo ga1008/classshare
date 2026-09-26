@@ -33,7 +33,7 @@ def ensure_ai_workspace_access(conn, user, request, *, page_path='', extra_conte
         return
     # Reject every supplied source independently: a harmless client path must
     # never override an assessment Referer or assessment context.
-    paths = [page_path, request.headers.get('referer', '')]
+    paths = [page_path, request.headers.get('referer', '') if request is not None else '']
     paths.extend(re.findall(r"^(?:路径|当前URL|page_path|pagePath)\s*[:：]\s*(\S+)", str(extra_context or ''), re.I | re.M))
     try:
         context = json.loads(extra_context or '{}')
@@ -50,11 +50,12 @@ def ensure_ai_workspace_access(conn, user, request, *, page_path='', extra_conte
         raise HTTPException(403, '作业和考试页面不能使用 AI 助手')
     # Page metadata is not an authorization boundary. An ongoing, timed exam
     # assigned to this student's class also blocks calls made from another tab.
-    rows = conn.execute("""
+    from .offering_membership_service import offering_student_where
+
+    rows = conn.execute(f"""
         SELECT a.* FROM assignments a
         JOIN class_offerings co ON co.id=a.class_offering_id
-        JOIN students st ON st.id=? AND (st.class_id=co.class_id OR EXISTS (
-            SELECT 1 FROM class_offering_class_links cl WHERE cl.offering_id=co.id AND cl.class_id=st.class_id))
+        JOIN students st ON st.id=? AND {offering_student_where(offering_alias='co', student_alias='st')}
         WHERE a.exam_paper_id IS NOT NULL AND a.exam_paper_id<>''
           AND a.availability_mode<>'permanent' AND a.status NOT IN ('new','closed')
           AND (a.assessment_kind IN ('midterm','final') OR a.availability_mode='countdown')

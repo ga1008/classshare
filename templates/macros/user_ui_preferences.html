@@ -65,7 +65,7 @@
                 {% for category in scene.categories|default([]) %}<option value="{{ category.name }}">{{ category.name }}</option>{% endfor %}
             </select>
         </label>
-        <p data-ui-backdrop-gallery-status role="status">展开后加载图库。</p>
+        <p data-ui-backdrop-gallery-status aria-live="polite">展开后加载图库。</p>
         <div class="ui-backdrop-gallery__grid" data-ui-backdrop-grid aria-label="背景图片"></div>
     </details>
     {% else %}

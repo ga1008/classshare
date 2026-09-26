@@ -67,7 +67,9 @@ class ProfileAppearanceTests(unittest.TestCase):
         self.assertEqual(len([a for _, a in nodes if a.get('role') == 'status']), 1)
         self.assertEqual(len([a for tag, a in nodes if tag == 'fieldset']), 2)
         self.assertFalse([a for _, a in nodes if a.get('role') in ('tab', 'tablist', 'tabpanel') or 'data-lq-tabs' in a])
-        self.assertFalse([a for tag, a in nodes if tag in ('form', 'select', 'script', 'iframe')])
+        self.assertFalse([a for tag, a in nodes if tag in ('form', 'script', 'iframe')])
+        # The 页面背景 mode / 图库筛选 controls (2026-09-23 backdrop feature) are native selects; each must be labelled.
+        self.assertTrue(all(a.get('aria-label') or a.get('id') for tag, a in nodes if tag == 'select'))
 
     def test_disabled_context_and_unavailable_context_are_explicit_without_fake_save(self):
         html = self.render(enabled=False)

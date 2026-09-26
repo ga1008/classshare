@@ -2,7 +2,10 @@
 import json
 import unittest
 
-from test_profile_template_contract import Document, profile_context, template_environment, SECTIONS
+try:  # tools/test_backend.py discovers with tests/ on sys.path; `unittest discover -s tests -t .` uses the package name
+    from test_profile_template_contract import Document, profile_context, template_environment, SECTIONS
+except ModuleNotFoundError:
+    from tests.test_profile_template_contract import Document, profile_context, template_environment, SECTIONS
 
 
 class LqProfilePresentationTests(unittest.TestCase):

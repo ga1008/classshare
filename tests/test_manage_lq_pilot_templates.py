@@ -134,8 +134,10 @@ class ManageLqPilotTemplateTests(unittest.TestCase):
                     count += 1
                     if any(arg.key == 'lq_enabled' for arg in call.kwargs): explicit.add(path.relative_to(ROOT / 'templates').as_posix())
         self.assertTrue(PILOTS.issubset(explicit))
-        self.assertEqual(39, count)
-        self.assertEqual(39, len(explicit))
+        # 40 = the 39 S4-F callers + manage/course_schedule_editor.html (课表编辑模式, 2026-09-25),
+        # which opts in explicitly like every other manage page.
+        self.assertEqual(40, count)
+        self.assertEqual(40, len(explicit))
 
     def test_shell_switch_has_exactly_one_controller_and_each_header_node(self):
         old, pilot = self.render_shell(), self.render_shell(True)
