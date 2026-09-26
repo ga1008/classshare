@@ -16,8 +16,10 @@ from ...services.academic_schedule_draft_push_service import (
 )
 from ...services.academic_availability_sync_service import search_free_rooms, sync_availability_for_term
 from ...services.schedule_availability_service import build_lesson_availability
+from ...services.national_holiday_service import load_national_holiday_status, refresh_national_holidays
 from ...services.schedule_editor_service import (
-    ScheduleEditError, build_editor_payload, delete_draft, get_draft, save_draft, search_rooms,
+    ScheduleEditError, apply_resequence_by_dates, build_editor_payload, delete_draft, get_draft,
+    plan_resequence_for_drafts, save_draft, search_rooms,
 )
 from ...services.smart_classroom_schedule_sync_service import build_teacher_course_schedule_overview
 from .common import _parse_json_request
@@ -163,3 +165,65 @@ async def api_schedule_editor_free_rooms(year: str = "", term: str = "", week: i
                                      sections=section_list, keyword=_term(q), room_id=_term(room_id), room_name=_term(room),
                                      building=_term(building), room_type=_term(room_type))
     return JSONResponse({"status": "success", "result": result}, headers=_NO_STORE)
+
+
+@router.get("/academic/course-schedule/editor/resequence-preview", response_class=JSONResponse)
+async def api_schedule_editor_resequence_preview(year: str = "", term: str = "", draft_ids: str = "",
+                                                 user: dict = Depends(get_current_teacher)):
+    """课次重排预览：把当前草稿当作已生效的调整，展示剩余课次的新顺序（不写库）。"""
+    try:
+        ids = [int(part) for part in draft_ids.split(",") if part.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="草稿编号格式错误。") from exc
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        preview = plan_resequence_for_drafts(conn, int(user["id"]), overview, draft_ids=ids or None)
+    return JSONResponse({"status": "success", **preview}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/resequence/apply", response_class=JSONResponse)
+async def api_schedule_editor_resequence_apply(request: Request, user: dict = Depends(get_current_teacher)):
+    """按当前日期重排本学期课次（已发生课次不变，课次序号与材料不变，只重新分配日期）。"""
+    payload = await _parse_json_request(request)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    offering_id = payload.get("offering_id")
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        try:
+            result = apply_resequence_by_dates(conn, int(user["id"]), overview,
+                                              offering_id=int(offering_id) if offering_id else None)
+        except ScheduleEditError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        conn.commit()
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        editor = build_editor_payload(conn, int(user["id"]), overview)
+    return JSONResponse({**editor, "status": "success", "result": result}, headers=_NO_STORE)
+
+
+@router.get("/academic/course-schedule/editor/holidays/status", response_class=JSONResponse)
+async def api_schedule_editor_holiday_status(user: dict = Depends(get_current_teacher)):
+    """全国节假日/调休自动获取状态（按年份的记录数与最近获取时间）。"""
+    with get_db_connection() as conn:
+        status = load_national_holiday_status(conn)
+    return JSONResponse({"status": "success", "holidays": status}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/holidays/refresh", response_class=JSONResponse)
+async def api_schedule_editor_holiday_refresh(request: Request, user: dict = Depends(get_current_teacher)):
+    """立即刷新全国节假日/调休数据（默认今年与明年），并返回刷新后的编辑载荷。"""
+    import asyncio
+
+    payload = await _parse_json_request(request)
+    raw_years = payload.get("years") or []
+    try:
+        years = [int(y) for y in raw_years] if isinstance(raw_years, list) else []
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="年份格式错误。") from exc
+    summary = await asyncio.to_thread(refresh_national_holidays, years or None)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        editor = build_editor_payload(conn, int(user["id"]), overview)
+        status = load_national_holiday_status(conn)
+    return JSONResponse({**editor, "status": "success", "result": summary, "holidays": status}, headers=_NO_STORE)

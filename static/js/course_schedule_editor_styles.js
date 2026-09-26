@@ -249,4 +249,54 @@ body.cse-dragging .cs-lesson-slot { pointer-events: none; }
     .cse-stage__body { overflow: auto; }
     .cse-stage__body > .cs-grid { position: relative; inset: auto; min-width: 760px; min-height: 560px; }
 }
+
+/* ---- 节假日 / 已过去 / 调休 ---- */
+.cse-layout { position: relative; }
+.cse-swaps { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6; overflow: visible; }
+.cse-swaps[hidden] { display: none; }
+.cse-swap__line { fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7 5; opacity: .92; filter: drop-shadow(0 1px 2px hsl(var(--ls-ink) / .18)); }
+.cse-swap__origin { fill: var(--cse-raised); stroke-width: 2; }
+.cse-swap__label rect { fill: var(--cse-raised); stroke: currentColor; stroke-width: 1.2; }
+.cse-swap__label text { fill: currentColor; font: 800 .68rem/1 var(--ls-font-sans); text-anchor: middle; dominant-baseline: central; }
+.cse-dayhead { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1.15; }
+.cse-dayhead__name small { display: block; font-size: .64rem; font-weight: 600; color: hsl(var(--ls-ink-3)); }
+.cse-dayhead__tag { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 6px; border-radius: var(--ls-r-capsule); font-size: .62rem; font-weight: 800; line-height: 1.4; }
+.cse-dayhead__tag--holiday { background: color-mix(in srgb, hsl(var(--ls-destructive)) 18%, var(--cse-control)); color: hsl(var(--ls-destructive)); }
+.cse-dayhead__tag--workday { background: color-mix(in srgb, var(--cse-swap, hsl(var(--ls-primary))) 20%, var(--cse-control)); color: var(--cse-swap, hsl(var(--ls-primary))); border: 1px dashed var(--cse-swap, hsl(var(--ls-primary))); }
+.cse-dayhead__tag--past { background: var(--cse-control); color: hsl(var(--ls-ink-3)); }
+.cse-dayhead--holiday .cse-dayhead__name, .cse-dayhead--past .cse-dayhead__name { color: hsl(var(--ls-ink-3)); }
+.cse-grid .cs-grid__cellbg--holiday { background: repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--ls-destructive) / .16) 6px 8px), color-mix(in srgb, hsl(var(--ls-destructive)) 7%, var(--cse-inset)); cursor: not-allowed; }
+.cse-grid .cs-grid__cellbg--past { background: repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--ls-ink-3) / .14) 6px 8px), var(--cse-inset); opacity: .7; cursor: not-allowed; }
+.cse-grid .cs-grid__cellbg--workday { box-shadow: inset 2px 0 0 color-mix(in srgb, hsl(var(--ls-primary)) 45%, transparent); }
+.cse-grid .cs-grid__section.cse-section--pair { font-weight: 900; color: hsl(var(--ls-ink)); }
+.cse-lesson--mirror .cs-lesson__surface { opacity: .72; border-style: dashed; background-image: repeating-linear-gradient(45deg, transparent 0 8px, hsl(var(--ls-primary) / .08) 8px 10px), var(--ls-glass-sheen); cursor: pointer; }
+.cse-lesson--past .cs-lesson__surface { opacity: .6; filter: grayscale(.5); cursor: not-allowed; }
+.cse-tag--workday { background: color-mix(in srgb, hsl(var(--ls-primary)) 22%, var(--cse-control)); color: hsl(var(--ls-primary)); }
+.cse-status--workday { background: color-mix(in srgb, hsl(var(--ls-primary)) 12%, var(--cse-control)); color: hsl(var(--ls-ink)); }
+.cse-status--muted { background: var(--cse-control); color: hsl(var(--ls-ink-2)); }
+.cse-legend__item--holiday::before { background: repeating-linear-gradient(135deg, transparent 0 3px, hsl(var(--ls-destructive) / .3) 3px 5px), color-mix(in srgb, hsl(var(--ls-destructive)) 8%, var(--cse-inset)); }
+.cse-legend__item--past::before { background: repeating-linear-gradient(135deg, transparent 0 3px, hsl(var(--ls-ink-3) / .3) 3px 5px), var(--cse-inset); }
+.cse-legend__item--workday::before { background: var(--cse-inset); box-shadow: inset 3px 0 0 hsl(var(--ls-primary)); }
+.cse-calnote { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 6px 10px; border-radius: var(--ls-r-md); background: var(--cse-inset); font-size: .74rem; }
+.cse-calnote[hidden] { display: none; }
+.cse-calnote__item { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--ls-r-capsule); background: var(--cse-control); color: hsl(var(--ls-ink-2)); }
+.cse-calnote__item--holiday { color: hsl(var(--ls-destructive)); font-weight: 700; }
+.cse-calnote__item--swap { border: 1px dashed var(--cse-swap); color: hsl(var(--ls-ink)); }
+.cse-calnote__item--swap i { width: 9px; height: 9px; border-radius: 50%; background: var(--cse-swap); }
+.cse-calnote__item small { font-size: .62rem; color: hsl(var(--ls-ink-3)); }
+.cse-week__marks { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.cse-week__holiday, .cse-week__swap { display: inline-block; padding: 0 5px; border-radius: var(--ls-r-capsule); font-size: .6rem; font-weight: 800; line-height: 1.5; }
+.cse-week__holiday { background: color-mix(in srgb, hsl(var(--ls-destructive)) 16%, var(--cse-control)); color: hsl(var(--ls-destructive)); }
+.cse-week__swap { background: color-mix(in srgb, var(--cse-swap) 18%, var(--cse-control)); color: var(--cse-swap); border: 1px dashed var(--cse-swap); }
+.cse-week__past { font-style: normal; margin-left: 4px; font-size: .6rem; font-weight: 700; color: hsl(var(--ls-ink-3)); }
+.cse-week.is-past { opacity: .72; }
+.cse-reseq__course { padding: 10px 12px; border-radius: var(--ls-r-md); background: var(--cse-control); border: 1px solid hsl(var(--ls-glass-line)); }
+.cse-reseq__course + .cse-reseq__course { margin-top: 8px; }
+.cse-reseq__title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; font-size: .82rem; }
+.cse-reseq__title span { color: hsl(var(--ls-ink-3)); font-size: .74rem; }
+.cse-reseq__list { margin: 8px 0 0; padding-left: 18px; font-size: .78rem; display: grid; gap: 4px; }
+.cse-reseq__list li.is-direct { font-weight: 700; }
+.cse-reseq__list i { margin-left: 6px; font-style: normal; font-size: .64rem; padding: 0 5px; border-radius: var(--ls-r-capsule); background: color-mix(in srgb, hsl(var(--ls-primary)) 20%, var(--cse-control)); color: hsl(var(--ls-primary)); }
+.cse-reseq__old { color: hsl(var(--ls-ink-3)); text-decoration: line-through; }
+.cse-reseq__new { color: hsl(var(--ls-ink)); font-weight: 700; }
 `;

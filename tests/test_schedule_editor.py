@@ -4,6 +4,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 from contextlib import asynccontextmanager, contextmanager
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,7 +33,7 @@ def overview(lessons_by_week, *, max_week=19, editable=True):
                       "lesson_count": len(rows), "total_hours": sum(len(r["sections"]) for r in rows), "date_range_label": ""})
     return {
         "schedule_source": "academic" if editable else "smart", "has_data": True,
-        "selected_term": {"year": "2026-2027", "term": "1", "max_week": max_week, "week1_monday": "2026-08-31", "focus_week": 5},
+        "selected_term": {"year": "2026-2027", "term": "1", "max_week": max_week, "week1_monday": "2026-03-02", "focus_week": 5},
         "section_range": {"min": 1, "max": 11}, "weeks": weeks, "terms": [],
     }
 
@@ -41,6 +42,9 @@ class ScheduleEditorServiceTests(unittest.TestCase):
     def setUp(self):
         schema_schedule_editor.reset_schema_ready_for_tests()
         schema_schedule_availability.reset_schema_ready_for_tests()
+        clock = patch.object(editor, "china_today", return_value=date(2026, 3, 1))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self.addCleanup(self.conn.close)
@@ -60,7 +64,7 @@ class ScheduleEditorServiceTests(unittest.TestCase):
         self.assertEqual(draft["original"], {"week": 5, "weekday": 4, "sections": [4, 5], "date": "2026-09-15",
                                              "room": self.a["classroom"], "room_id": ""})
         self.assertEqual(draft["proposed"]["sections"], [6, 7])
-        self.assertEqual(draft["proposed"]["date"], "2026-09-29")  # 第5周周二
+        self.assertEqual(draft["proposed"]["date"], "2026-03-31")  # 第5周周二
         self.assertEqual(draft["proposed"]["room"], self.a["classroom"])
         self.assertEqual(draft["proposed_label"], "第5周 周二 第6-7节 · （知新楼B310）金融科技综合实验室")
         self.assertEqual(draft["reason"], "调休")
@@ -76,10 +80,24 @@ class ScheduleEditorServiceTests(unittest.TestCase):
             self.save(week=20, weekday=2, start_section=6)
         with self.assertRaisesRegex(editor.ScheduleEditError, "没有变化"):
             self.save(week=5, weekday=4, start_section=4)
+        # 两小节为单位：起始节只能是 2/4/6/8/10
+        with self.assertRaisesRegex(editor.ScheduleEditError, "两小节"):
+            self.save(week=5, weekday=2, start_section=3)
+        # 已过去的日期不可放置（时钟固定在 2026-03-01，第 1 周周一 = 2026-03-02，往前一周即过去）
+        with self.assertRaisesRegex(editor.ScheduleEditError, "已经过去"):
+            with patch.object(editor, "china_today", return_value=date(2026, 4, 1)):
+                self.save(week=5, weekday=2, start_section=6)  # 2026-03-31 < 04-01
+        # 节假日不可放置：第 6 周周六 = 2026-04-11？不是；第 5 周周六 2026-04-04 清明节
+        with self.assertRaisesRegex(editor.ScheduleEditError, "节假日"):
+            self.save(week=5, weekday=6, start_section=6)
+        # 已上过的课次不能调整
+        with patch.object(editor, "china_today", return_value=date(2026, 12, 1)):
+            with self.assertRaisesRegex(editor.ScheduleEditError, "已经上过"):
+                self.save(week=5, weekday=2, start_section=6)
 
     def test_overlap_with_own_lesson_or_other_draft_is_rejected_but_vacated_slot_is_free(self):
         with self.assertRaisesRegex(editor.ScheduleEditError, "重叠.*Python"):
-            self.save(week=5, weekday=5, start_section=3)
+            self.save(week=5, weekday=5, start_section=2)
         # b moves away first; its old slot becomes available for a
         editor.save_draft(self.conn, 1, self.overview, {"event_key": "ev-b", "week": 5, "weekday": 1, "start_section": 8})
         self.save(week=5, weekday=5, start_section=2)
@@ -108,7 +126,9 @@ class ScheduleEditorServiceTests(unittest.TestCase):
         self.assertFalse(ghost["counts_towards_total"])
         self.assertEqual(week7["draft_count"], 1)
         self.assertTrue(payload["editable"])
-        self.assertEqual(payload["rules"], {"min_section": 2, "max_section": 11, "max_week": 19})
+        self.assertEqual(payload["rules"], {"min_section": 2, "max_section": 11, "max_week": 19, "pair_starts": [2, 4, 6, 8, 10], "pair_unit": 2})
+        self.assertEqual(payload["today"], "2026-03-01")
+        self.assertTrue(any(d["date"] == "2026-04-04" and d["kind"] == "holiday" for d in payload["calendar"]["days"]))
         self.assertIn("ttksq_cxTtksqIndex", payload["zf_entry_url"])
 
     def test_pushed_draft_is_locked_until_withdrawn(self):
@@ -197,6 +217,9 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         schema_schedule_editor.reset_schema_ready_for_tests()
         schema_schedule_availability.reset_schema_ready_for_tests()
+        clock = patch.object(editor, "china_today", return_value=date(2026, 3, 1))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         schema_schedule_editor.ensure_schedule_editor_schema(self.conn)
@@ -290,7 +313,7 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_existing_remote_detail_is_linked_instead_of_duplicated(self):
         base = overview({5: [lesson("ev-b", week=5, weekday=5, sections=(2, 3))]})
-        editor.save_draft(self.conn, 1, base, {"event_key": "ev-b", "week": 8, "weekday": 1, "start_section": 4})
+        editor.save_draft(self.conn, 1, base, {"event_key": "ev-b", "week": 9, "weekday": 1, "start_section": 4})
         self.conn.commit()
         with self.fake_client():
             result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")

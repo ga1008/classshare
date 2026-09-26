@@ -4,6 +4,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 from contextlib import asynccontextmanager, contextmanager
+from datetime import date
 from unittest.mock import patch
 
 import httpx
@@ -43,6 +44,9 @@ def make_conn():
 
 class AvailabilityServiceTests(unittest.TestCase):
     def setUp(self):
+        clock = patch.object(editor, "china_today", return_value=date(2026, 3, 1))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.conn = make_conn()
         self.addCleanup(self.conn.close)
         self.a = lesson("ev-a", week=5, weekday=4, sections=(4, 5))
@@ -99,6 +103,9 @@ class AvailabilityServiceTests(unittest.TestCase):
 
 class AvailabilitySyncAdapterTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        clock = patch.object(editor, "china_today", return_value=date(2026, 3, 1))
+        clock.start()
+        self.addCleanup(clock.stop)
         self.conn = make_conn()
         self.calls: list[str] = []
         conn = self.conn

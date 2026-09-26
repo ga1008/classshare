@@ -206,7 +206,18 @@ function buildSemesterModel(semester, holidayLookup, todayIso, modelCache, extra
         for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
             const currentDate = addDays(weekStart, dayIndex);
             const isoDate = formatIsoDate(currentDate);
-            const holidayInfo = semesterDayLookup[isoDate] || holidayLookup[isoDate] || null;
+            let holidayInfo = semesterDayLookup[isoDate] || holidayLookup[isoDate] || null;
+            // 学校日历只知道是调休上课日时，补哪一天的课取全国节假日数据（含推断）。
+            if (holidayInfo?.kind === 'workday' && !holidayInfo.makeup_for_date && holidayLookup[isoDate]?.makeup_for_date) {
+                const shared = holidayLookup[isoDate];
+                holidayInfo = {
+                    ...holidayInfo,
+                    makeup_for_date: shared.makeup_for_date,
+                    makeup_for_weekday: shared.makeup_for_weekday || '',
+                    inferred: Boolean(shared.inferred),
+                    verification_note: holidayInfo.verification_note || shared.verification_note || '',
+                };
+            }
             const inSemester = currentDate >= startDate && currentDate <= endDate;
             const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
             const isHoliday = holidayInfo?.kind === 'holiday';
@@ -257,6 +268,110 @@ function buildSemesterModel(semester, holidayLookup, todayIso, modelCache, extra
     };
     modelCache.set(cacheKey, model);
     return model;
+}
+
+/* ---------------------------------------------------------------- 调休连线（曲线箭头：调休上课日 → 被补的那天） */
+const SWAP_ARROW_STYLE_ID = 'semester-swap-arrows-style';
+const SWAP_ARROW_COLORS = ['hsl(var(--ls-primary))', 'hsl(var(--ls-warning))', 'hsl(var(--ls-success))', 'hsl(var(--ls-destructive))', 'hsl(var(--ls-info, var(--ls-primary)))', 'hsl(var(--ls-ink-2))'];
+const SWAP_ARROW_CSS = `
+.semester-swap-arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
+.semester-swap-arrows path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 4; opacity: .9; }
+.semester-swap-arrows circle { stroke-width: 2; fill: hsl(var(--lq-page-content, var(--ls-glass-fill-content))); }
+.semester-swap-arrows .semester-swap-label rect { fill: hsl(var(--lq-page-content, var(--ls-glass-fill-content))); stroke: currentColor; stroke-width: 1; }
+.semester-swap-arrows .semester-swap-label text { fill: currentColor; font: 800 .64rem/1 var(--ls-font-sans, system-ui); text-anchor: middle; dominant-baseline: central; }
+.semester-day-cell.has-swap { box-shadow: inset 0 0 0 1.5px var(--semester-swap-color); }
+.semester-day-cell.has-swap-from .semester-mini-tag.workday { border: 1px dashed var(--semester-swap-color); }
+`;
+
+function ensureSwapArrowStyles() {
+    if (document.getElementById(SWAP_ARROW_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = SWAP_ARROW_STYLE_ID;
+    style.textContent = SWAP_ARROW_CSS;
+    document.head.appendChild(style);
+}
+
+function collectSwaps(model) {
+    const swaps = [];
+    const seen = new Set();
+    (model?.weeks || []).forEach((week) => {
+        (week.days || []).forEach((day) => {
+            const info = day.holidayInfo;
+            if (!info || info.kind !== 'workday' || !info.makeup_for_date || seen.has(day.isoDate)) return;
+            seen.add(day.isoDate);
+            swaps.push({ from: day.isoDate, to: String(info.makeup_for_date), weekday: info.makeup_for_weekday || '', inferred: Boolean(info.inferred), label: info.label || '' });
+        });
+    });
+    return swaps;
+}
+
+/** Draw curved arrows from each 调休上课 cell to the cell whose timetable it follows. */
+function renderSwapArrows(board, model) {
+    board.querySelector('.semester-swap-arrows')?.remove();
+    const swaps = collectSwaps(model);
+    if (!swaps.length || !board.offsetWidth) return;
+    ensureSwapArrowStyles();
+    board.style.position = 'relative';
+    const boardRect = board.getBoundingClientRect();
+    const ns = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}, text = '') => {
+        const node = document.createElementNS(ns, tag);
+        Object.entries(attrs).forEach(([name, value]) => node.setAttribute(name, String(value)));
+        if (text) node.textContent = text;
+        return node;
+    };
+    const svg = el('svg', { class: 'semester-swap-arrows', 'aria-hidden': 'true', viewBox: `0 0 ${board.offsetWidth} ${board.offsetHeight}`, width: board.offsetWidth, height: board.offsetHeight });
+    const defs = el('defs');
+    svg.appendChild(defs);
+    const rectOf = (cell) => {
+        const r = cell.getBoundingClientRect();
+        return { left: r.left - boardRect.left, top: r.top - boardRect.top, right: r.right - boardRect.left, bottom: r.bottom - boardRect.top, cx: (r.left + r.right) / 2 - boardRect.left, cy: (r.top + r.bottom) / 2 - boardRect.top };
+    };
+    let drawn = 0;
+    swaps.forEach((swap, index) => {
+        const fromCell = board.querySelector(`.semester-day-cell[data-date="${swap.from}"]`);
+        const toCell = board.querySelector(`.semester-day-cell[data-date="${swap.to}"]`);
+        if (!fromCell || !toCell) return;
+        const color = SWAP_ARROW_COLORS[index % SWAP_ARROW_COLORS.length];
+        fromCell.classList.add('has-swap', 'has-swap-from');
+        toCell.classList.add('has-swap', 'has-swap-to');
+        fromCell.style.setProperty('--semester-swap-color', color);
+        toCell.style.setProperty('--semester-swap-color', color);
+        const a = rectOf(fromCell);
+        const b = rectOf(toCell);
+        // Leave from the cell edge facing the target; enter the target from the facing edge.
+        const horizontal = Math.abs(b.cx - a.cx) >= Math.abs(b.cy - a.cy);
+        const start = horizontal ? { x: b.cx > a.cx ? a.right - 2 : a.left + 2, y: a.cy } : { x: a.cx, y: b.cy > a.cy ? a.bottom - 2 : a.top + 2 };
+        const end = horizontal ? { x: b.cx > a.cx ? b.left + 2 : b.right - 2, y: b.cy } : { x: b.cx, y: b.cy > a.cy ? b.top + 2 : b.bottom - 2 };
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        const bulge = Math.min(70, Math.max(18, distance * 0.28));
+        // Perpendicular offset so the curve arcs away from the straight line (always toward the top-left for readability).
+        const nx = -dy / distance;
+        const ny = dx / distance;
+        const sign = ny < 0 || (ny === 0 && nx < 0) ? 1 : -1;
+        const control = { x: (start.x + end.x) / 2 + nx * bulge * sign, y: (start.y + end.y) / 2 + ny * bulge * sign };
+        const markerId = `semester-swap-arrow-${index}-${Math.round(start.x)}`;
+        const marker = el('marker', { id: markerId, markerWidth: 12, markerHeight: 12, refX: 10, refY: 6, orient: 'auto', markerUnits: 'userSpaceOnUse', overflow: 'visible' });
+        marker.appendChild(el('path', { d: 'M 2 2 L 10 6 L 2 10', fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        defs.appendChild(marker);
+        const group = el('g', { class: 'semester-swap', style: `color:${color}`, 'data-swap-from': swap.from, 'data-swap-to': swap.to });
+        group.appendChild(el('title', {}, `${swap.from} 调休上课：补 ${swap.to}${swap.weekday ? `（${swap.weekday}）` : ''} 的课程${swap.inferred ? '（补课星期为推断）' : ''}`));
+        group.appendChild(el('path', { d: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, stroke: color, 'marker-end': `url(#${markerId})` }));
+        group.appendChild(el('circle', { cx: start.x, cy: start.y, r: 2.6, stroke: color }));
+        // Label at the curve midpoint (t = .5 of the quadratic Bézier).
+        const mid = { x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x, y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y };
+        const text = `补${swap.weekday || ''}${swap.inferred ? '?' : ''}`;
+        const width = Math.ceil([...text].reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 11 : 6), 10));
+        const label = el('g', { class: 'semester-swap-label', transform: `translate(${mid.x} ${mid.y})` });
+        label.appendChild(el('rect', { x: -width / 2, y: -8, width, height: 16, rx: 5 }));
+        label.appendChild(el('text', { x: 0, y: 0 }, text));
+        group.appendChild(label);
+        svg.appendChild(group);
+        drawn += 1;
+    });
+    if (drawn) board.appendChild(svg);
 }
 
 function createCell(fragment, className, text, row, column, columnSpan = 1) {
@@ -1810,6 +1925,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         }
 
         board.appendChild(fragment);
+        renderSwapArrows(board, model);
         renderWeekTodoStage(semester, model);
         syncActiveTodoVisuals(semester);
         if (pendingScrollWeekKey) {

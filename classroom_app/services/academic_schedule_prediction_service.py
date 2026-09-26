@@ -282,6 +282,21 @@ def _update_session(conn, session: dict, slot: dict, stamp: str, *, cancelled: b
     session["schedule_status"] = "cancelled" if cancelled else "scheduled"
 
 
+def _resequence_after_updates(conn, teacher_id: int, semester_id: int, sessions: list[dict], touched: set, stamp: str) -> list[dict]:
+    """Re-order the remaining lessons of every offering whose session dates just changed."""
+    from .offering_session_resequence_service import resequence_offerings_after_publish
+
+    offering_ids = {int(row["class_offering_id"]) for row in sessions if int(row["id"]) in touched}
+    if not offering_ids:
+        return []
+    semester = conn.execute("SELECT start_date FROM academic_semesters WHERE id=?", (int(semester_id),)).fetchone()
+    start = date.fromisoformat(str(semester["start_date"])) if semester and semester["start_date"] else None
+    monday = start - timedelta(days=start.weekday()) if start else None
+    today = _clock(stamp).date()
+    return resequence_offerings_after_publish(conn, teacher_id, semester_id, sessions, offering_ids,
+                                              week1_monday=monday, today=today, stamp=stamp)
+
+
 def _split_official(official: list[dict], requests: list[dict], offerings: list[dict], sessions: list[dict]) -> list[dict]:
     """Split merged remote coverage only when known session/request boundaries prove it."""
     result = []
@@ -453,6 +468,16 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
         _update_session(conn, session, target, stamp, cancelled=request["kind"] == "cancel")
         _bind(conn, teacher_id, semester_id, session, request, target, stamp, "approved_official_confirmed")
         (cancelled_sessions if request["kind"] == "cancel" else changed_sessions).add(session_id)
+    # 课程一旦调整（审批通过并已体现在正式课表），剩余课次按新日期重排：已发生课次不变，
+    # 材料跟随课次序号自动重绑。重排失败只降级为警告，绝不让发布失败。
+    resequenced = []
+    if changed_sessions or cancelled_sessions:
+        try:
+            resequenced = _resequence_after_updates(conn, teacher_id, semester_id, sessions, changed_sessions | cancelled_sessions, stamp)
+        except Exception as exc:  # pragma: no cover - defensive
+            _warning(warnings, "resequence_failed", message=f"课次重排未完成：{str(exc)[:120]}")
+    for report in resequenced:
+        _warning(warnings, "sessions_resequenced", message=f"调课已生效，{report['applied_count']} 个课次已按新日期重排（课次材料随序号保持不变）。")
     active_ids = {request["request_id"] for request in requests}
     for link in links.values():
         if link["request_id"] not in active_ids:

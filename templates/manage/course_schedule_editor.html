@@ -11,7 +11,7 @@
 
 {% block content %}
 {% set _cse_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
-{{ page_head('课表编辑模式', explain='按住课次拖到新的节次即可调整；拖到左侧周次可跨周；单击课次在右侧设置周次/星期/节次、教室、原因与课次材料。所有调整先记录为平台草稿，「保存到教务」只写入教务调停课申请的待提交草稿，提交申请仍由您登录教务系统完成。', explain_label='课表编辑模式说明', lq_enabled=_cse_lq_enabled) }}
+{{ page_head('课表编辑模式', explain='按住课次拖到新的节次即可调整；拖到左侧周次可跨周；单击课次在右侧设置周次/星期/节次、教室、原因与课次材料。课次以两小节为单位放置（2-3 / 4-5 / 6-7 / 8-9 / 10-11），已过去的日期与节假日不可放置；调休上课日按被补那天的课表判断冲突；调整生效后剩余课次按日期自动重排，材料随课次序号不变。所有调整先记录为平台草稿，「保存到教务」只写入教务调停课申请的待提交草稿，提交申请仍由您登录教务系统完成。', explain_label='课表编辑模式说明', lq_enabled=_cse_lq_enabled) }}
 
 <section class="cse-root" data-cse-root>
     <div class="cse-toolbar">
@@ -24,6 +24,7 @@
         <div class="cse-toolbar__actions">
             <button type="button" class="cse-btn" data-cse-sync>同步教务课表</button>
             <button type="button" class="cse-btn" data-cse-avail-sync title="从教务拉取学生（行政班）课表与教室占用，用于标出可调时段">同步可调时段</button>
+            <button type="button" class="cse-btn" data-cse-holiday-refresh title="从国务院放假通知数据集（holiday-cn）刷新全国节假日与调休安排；平台每周自动更新">更新节假日/调休</button>
             <button type="button" class="cse-btn cse-btn--primary" data-cse-push disabled>保存到教务</button>
         </div>
         <div class="cse-avail-meta" data-cse-avail-meta></div>
@@ -31,6 +32,7 @@
     </div>
 
     <div class="cse-layout" data-cse-layout>
+        <svg class="cse-swaps" data-cse-swaps aria-hidden="true" hidden></svg>
         <nav class="cse-weeks" data-cse-weeks aria-label="学期周次列表"></nav>
         <div class="cse-stage">
             <div class="cse-stage__bar">
@@ -38,6 +40,7 @@
                 <span data-cse-stage-sub></span>
                 <span class="cse-stage__hint">按住课次拖动 · 单击查看属性 · 拖到左侧周次可跨周</span>
             </div>
+            <div class="cse-calnote" data-cse-calnote aria-label="本周节假日与调休" hidden></div>
             <div class="cse-legend" data-cse-legend hidden></div>
             <div class="cse-stage__body" data-cse-stage-body></div>
         </div>
@@ -45,6 +48,7 @@
     </div>
 
     <section class="cse-drafts" data-cse-drafts aria-label="变更清单"></section>
+    <section class="cse-drafts cse-reseq" data-cse-resequence aria-label="课次重排" hidden></section>
 </section>
 
 <script id="course-schedule-editor-boot" type="application/json">{{ schedule_editor_boot | tojson }}</script>

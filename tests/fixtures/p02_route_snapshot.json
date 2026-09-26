@@ -3385,11 +3385,43 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/editor/holidays/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_holiday_refresh",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/holidays/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_holiday_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/academic/course-schedule/editor/push",
     "methods": [
       "POST"
     ],
     "name": "api_schedule_editor_push",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/resequence-preview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_resequence_preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/resequence/apply",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_resequence_apply",
     "include_in_schema": true
   },
   {

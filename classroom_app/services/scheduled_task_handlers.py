@@ -614,6 +614,13 @@ from .material_workflow_storage_service import cleanup_expired_bundles  # noqa: 
 
 register_task_handler("material_workflow_cleanup", cleanup_expired_bundles)
 
+from .national_holiday_service import (  # noqa: E402
+    NATIONAL_HOLIDAY_REFRESH_TASK_KIND,
+    handle_national_holiday_refresh,
+)
+
+register_task_handler(NATIONAL_HOLIDAY_REFRESH_TASK_KIND, handle_national_holiday_refresh)
+
 
 from .wechat_mp_subscribe_service import (  # noqa: E402
     DEADLINE_SCAN_TASK_KIND,

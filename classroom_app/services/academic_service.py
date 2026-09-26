@@ -338,7 +338,12 @@ def truncate_text(value: Any, limit: int = 140) -> str:
     return normalized[: max(limit - 3, 0)].rstrip() + "..."
 
 
-def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, Any]]:
+def build_holiday_lookup(years: Iterable[int], *, include_national_feed: bool = True) -> dict[str, dict[str, Any]]:
+    """节假日/调休查找表（ISO 日期 → 信息）。
+
+    底层是自动获取的全国节假日数据（含推断的调休补课映射），上层覆盖内置官方表与
+    校内核验的 ``ACADEMIC_MAKEUP_DATA``；``include_national_feed=False`` 只用内置数据。
+    """
     lookup: dict[str, dict[str, Any]] = {}
     normalized_years: set[int] = set()
 
@@ -349,6 +354,18 @@ def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, Any]]:
             continue
         normalized_years.add(year)
 
+    # 1) 自动获取的全国节假日/调休（holiday-cn 周更）作为底层：覆盖内置表没有的年份，
+    #    并为调休日补上推断的“补哪一天课”。
+    if include_national_feed:
+        try:
+            from .national_holiday_service import cached_national_lookup
+
+            for iso_date, info in cached_national_lookup(normalized_years).items():
+                lookup[iso_date] = dict(info)
+        except Exception:  # pragma: no cover - feed is best-effort
+            pass
+
+    # 2) 内置官方表 + 校内核验的调休映射覆盖在上面（人工核验优先于推断）。
     for year in normalized_years:
         payload = HOLIDAY_DATA.get(year) or {}
         for bucket in ("holidays", "workdays"):
@@ -358,9 +375,16 @@ def build_holiday_lookup(years: Iterable[int]) -> dict[str, dict[str, Any]]:
                 info.setdefault("source_url", HOLIDAY_POLICY_SOURCES.get((year, scope), ""))
                 info.setdefault("confidence", 0.96)
                 info.setdefault("policy_source_url", HOLIDAY_POLICY_SOURCES.get((year, scope), ""))
+                feed_info = lookup.get(iso_date) or {}
                 if iso_date in ACADEMIC_MAKEUP_DATA:
                     info.update(ACADEMIC_MAKEUP_DATA[iso_date])
                     info["verification_note"] = "调休课程映射已参考公开高校教学通知核验；如学校另有通知，以校内通知为准。"
+                elif info.get("kind") == "workday" and feed_info.get("makeup_for_date"):
+                    # 内置表只知道是调休上班日，补课星期取自动推断结果并注明。
+                    for key in ("makeup_for_date", "makeup_for_weekday", "inferred", "verification_note"):
+                        if feed_info.get(key) not in (None, ""):
+                            info[key] = feed_info[key]
+                    info["label"] = str(feed_info.get("label") or info.get("label") or "")
                 lookup[iso_date] = info
 
     return lookup

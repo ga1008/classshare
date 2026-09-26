@@ -373,6 +373,10 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             # which ensures these additive batch/snapshot/export tables.
             "schema_material_signatures.py",
             "schema_material_whiteboards.py",
+            # 课表编辑模式 / 可调时段 / 全国节假日：仿 polls 的运行时 engine-aware 建表。
+            "schema_national_holidays.py",
+            "schema_schedule_availability.py",
+            "schema_schedule_editor.py",
             "schema_offering_class_links.py",
             "schema_offering_merge.py",
             "schema_polls.py",
