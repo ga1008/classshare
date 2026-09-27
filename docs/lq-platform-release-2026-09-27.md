@@ -1,6 +1,6 @@
 # LQ 平台组件与性能改进验收记录（2026-09-27）
 
-状态：本地实现及有界回归记录初稿。最终路由矩阵、远程部署和 Git 推送结果由发布负责人补录；本文件不代表已发布，也不宣称平台所有业务状态均已通过。
+状态：实现、完整隔离浏览器矩阵、最终专项与生产发布验证完成；发布版本为 `20260928-001638-579ede77ac6e`。下方发布表区分已部署产品源码与随后补录的验收文档。证据按源码阶段区分，不宣称平台所有业务状态均已穷尽。
 
 ## 1. 目标与验收口径
 
@@ -65,6 +65,10 @@
 | 最终文档与窄屏边界 | 15/15 通过 | `.codex-temp/lq-last-domain-final.log`：最终正式 CSS 上预览 7、窄屏页面 4、LessonDoc 编辑器 4。编辑器浅深与 390/1440 使用真实 Jinja，工具栏/侧栏共享材质、正文保持原文档内容。 |
 | 透明偏好与动态材质 | 34/34 通过 | `.codex-temp/lq-material-preferences-final.log`：材质边界 3、动态过程 7、Toast 24。`material-boundaries.css` 作为最终材质裁决，深色 raised 在透明关闭时保持不透明，子控件不新增 blur。 |
 | 最终 AI 与白板边界 | 13/13 通过 | FAB/dock 5，Agent 抽屉、聊天附件卡、考试白板 8。保留原子节点、表单与操作回调，抽屉使用共享 raised；浮动入口消费 dock 同一次测量，不新建监听循环。图标变体的后续几何修正另外定向复验。 |
+| FAB 与管理员最终专项 | FAB 5/5、管理页 4/4 通过 | 图标容器和 SVG 保持宽高、最小尺寸；博客/监控浅深 390/1440 保留表格全部列、操作和局部滚动，共享填充与文字/SVG 前景匹配。 |
+| 全平台严格矩阵 | 16/16 通过 | 固定图 `9c124519...`：472 条 GET DOM 观察、112 个实际 GET 地址，另有 24 条认证 POST 合同引用；524 个平台 frame 与 12 个用户内容 frame。未归属/无效声明/缺浮层内容/横溢/叶子 blur/源码漂移/JS 异常/执行失败均 0；最多 5 个可见 blur 宿主。来源 [精简机器结果](lq-platform-browser-final-2026-09-27.json) 与 [运行报告](lq-platform-browser-audit-2026-09-27.md)。 |
+| 编辑器最终可读性与反馈 | 4/4 通过 | 最终图 `689322a2...`：浅深 × 390/1440，在实际深色场景底色合成下验证小字、Status 五种语义、Alert 均至少 4.5:1；真实 `reportError` 保留诊断内容转义、重试动作及正文 iframe。`.codex-temp/lq-lessondoc-release.log`。该有界修正接在完整矩阵后，不将旧矩阵伪称新图全量重跑。 |
+| 编辑器最终真实应用 | 4/4 通过 | 发布源码 `0043c320` 的独立快照启动于隔离端口 8300，使用正式不可变图 `689322a2...`；手机/桌面 × 明暗均通过严格结构、横溢、叶子 blur、JS 异常与源冻结门禁。实际页面截图确认保存状态及辅助字清晰，正文不变。`.codex-temp/lq-lessondoc-release-app.log` 与同名目录。 |
 
 Content 的初始 disabled/busy 恢复用例曾以 `outerHTML` 字符串比较属性顺序。采集恢复前后差异确认属性值及节点未丢失后，改用 `isEqualNode` 比较完整结构/属性值，并显式检查全部原节点身份与顺序；只沿用既有空 style 容忍，不绕过清理合同。文档预览测试也按原平移边界计算期望值，等待分页自身过渡完成；没有修改业务几何以迎合测试。
 
@@ -77,32 +81,39 @@ Content 的初始 disabled/busy 恢复用例曾以 `outerHTML` 字符串比较�
 本轮主任务确认的资产图 revision：
 
 ```text
-9c124519c530160cf382ad06a9c3f37118f362406e356dd27cd8d2d95a51338f
+689322a2ee20114e6f9b4643c3c670c4db9210e11af76917b94ffa04ca411a1e
 ```
 
 LQ 原生入口及其同步依赖的正式 gzip 响应合计为 **17,771 bytes / 18,432 bytes** 预算。测量工具为 `tools/ui/measure_lq_entry.mjs --production --check`，使用实际发布 gzip sidecar，并校验来源、构建 recipe 和不可变图；该数字不是整个页面 CSS/JS 总传输量，也不含按需加载的领域功能。
 
-最终 `npm run build`、`npm run typecheck`、`npm run lint:lq` 与体积守卫通过。资源图含 460 个文件、12,280,503 bytes 原始内容；lint blocking 为 0，保留 3,281 个历史/待审提示，不把提示数当作实际运行时缺陷或已验收状态。早期文档证据曾使用 `1e92d229...` 等中间图，最终整页复验以本节完整 revision 为准。
+最终 `npm run build`、`npm run typecheck`、`npm run lint:lq` 与体积守卫通过；最终 80 文件/688 单元测试再次通过。资源图含 460 个文件、12,280,367 bytes 原始内容；lint blocking 为 0，保留 3,279 个历史/待审提示，不把提示数当作实际运行时缺陷或已验收状态。完整矩阵使用 `9c124519...`；随后只有 LessonDoc 标签/反馈组件变更，独立和真实应用专项针对本节最终 revision 复验，早期 `1e92d229...` 等图保留其原证据范围。
+
+截图复核发现 LessonDoc 辅助字在场景背景上实际仅为 1.623～2.313:1。最终修正用共享强前景显示小标签，保存状态消费 Status 的语义填充/前景配对，错误及警告消费 Alert；未改保存/重试/冲突/草稿流程。最终源审计来自隔离发布 checkout：512 个作者文件、198 个模板、5,329 个源码入口；[发布摘要](lq-platform-component-audit-2026-09-28-release-summary.json) 保留 pending/unknown，完整本地报告 `.codex-temp/lq-platform-release-source-audit.json`。并行的微信订阅/通知服务工作未混入本发布源码。
 
 台账本轮针对有界审查的 sharedSources 更新最终字节哈希与证据；未通过验收的页面 status 不上调。文档预览 5 个消费者没有既有 sharedSources 范围，因此仅在 6 个对应路由条目补 notes/tests 与源哈希，不创建虚假的全页验收或修改历史 before/inventory 快照。发布前仍须核对最终资产图和源字节，后续源码变化必须重新关联证据。
 
 ## 6. 已知限制与未决记录
 
-1. 早期课表组件回归存在一个已识别的旧基线比例期望差异，曾记录 35/36；这不是本次最终矩阵结论，也不能在没有相应证据时标为已消除。相应最终状态由发布负责人补录。
+1. 早期课表组件回归存在一个已识别的旧基线比例期望差异，曾记录 35/36；该旧用例未纳入本轮完整复验，不标为已消除，也不改变本次实际路由矩阵的独立结果。
 2. 核心和 AI 套件保留首轮旧期望/选择器差异及定向复验记录。定向复验不等于完整矩阵重跑，不能把不同源码阶段和不同运行结果合并为一次“全绿”。
+   早期旧签名 fixture 的 6 个过时选择器用例未纳入通过统计；当前审批/签名相关的现行控制器合同以单独列出的作用域为准，不据此宣称旧 fixture 已修复。
 3. 隔离测试使用合成数据、授权 fixture、路由模拟或临时数据库；不访问生产账号数据。它们无法证明所有真实文档、真实账号权限组合、第三方服务异常、并发提交和全部历史数据状态。
 4. 全平台源码报告中的 pending/unknown 继续作为待核查入口。动态节点声明、组件 marker 和材质 recipe 命中均不能单独证明业务流程完成。
-5. 此时尚未在本记录确认远程部署、生产健康、资源哈希一致性或远程 Git 提交。不得依据本地测试推断上述动作已执行。
+5. 生产主服务和 AI 服务健康，原生 PostgreSQL 正常；后台汇总 `background_tasks.ok=false` 在发布前已存在。发布前后均为累计失败 736、排队 28、运行 0、陈旧 0、活跃 worker 4；本轮未将这些历史任务重置或记为已修复。
 
 ## 7. 发布负责人补录区
 
 | 项目 | 最终结果与证据 |
 |---|---|
-| 最终源冻结时间、提交 SHA | 待主任务填写 |
-| 最终 build / lint / typecheck / 体积与资产图复核 | 待主任务填写；如 revision 变化，保留上方已有运行对应关系 |
-| 隔离应用重启与最终路由/角色/宽度/主题矩阵 | 待主任务填写场景数、通过/失败/跳过及报告路径 |
-| pending/unknown 与旧 fixture 最终处置 | 待主任务填写有界结论，禁止换算为组件完成率 |
-| 部署授权、演练、备份/迁移门禁 | 待主任务填写；保留业务数据边界 |
-| 生产健康、发布版本与资源哈希、重点业务 postflight | 待主任务填写；历史后台任务失败须与本变更分开记录 |
-| Git 本地提交、远程分支与推送确认 | 待主任务填写远程确认结果 |
-| 未决项、回滚指针与发布结论 | 待主任务填写 |
+| 最终源冻结时间、提交 SHA | 发布源码 `0043c320c4c39185f1c90e1311c1691b93ba3c1d`，包含组件提交 `a1d49d1a` 与性能提交 `0351edf9`。FAB 使用已有图标变体，最终 LessonDoc 修正独立提交并验证。 |
+| 最终 build / lint / typecheck / 体积与资产图复核 | 全部通过；graph `689322a2...`（完整值见第 5 节），LQ 核心 gzip 17,771 / 18,432 bytes；`.codex-temp/lq-platform-{build,typecheck,lint,size,vitest}-release.log`。 |
+| 隔离应用重启与最终路由/角色/宽度/主题矩阵 | 完整矩阵 16/16 通过，0 失败/跳过，报告 `.codex-temp/lq-platform-browser-audit-final-clean/`；最终 LessonDoc 独立 4/4，真实发布源码另从 `.codex-temp/lq-platform-release-source` 隔离启动于 8300，真实应用 4/4 通过。原 8299 矩阵证据完整保留。 |
+| pending/unknown 与旧 fixture 最终处置 | 源审计不自动修改人工迁移状态；760 个 unknown 源码入口包含 631 个动态 HTML 写入点，不能换算为未实现功能或组件完成率。完整实际矩阵的结构缺口为 0；历史测试限制见第 6 节。 |
+| 部署授权、演练、备份/迁移门禁 | 用户明确授权部署和推送。干净 managed worktree `C:/Users/AngelWei/.codex/worktrees/lq-platform-release/lanshare` 与测试源码逐文件字节一致；只复制 Git 跟踪来源及正式构建，不含用户未跟踪文档或并行小程序改动。最终 2026-09-28 00:08 dry-run 通过，3,307 个发布文件、35.26 MB；71 个迁移来源与原生 PostgreSQL 演练报告及备份摘要匹配。最终证据 `.codex-temp/lq-release-checkout-final-parity.json`、`.codex-temp/lq-platform-deploy-release-dryrun.log`、`E:/CodexTemp/lanshare-deploy-20260928-000820/`；23:43 的旧阶段证据保留。干净目录无生产 docker.env，预检仅给出本地配置提示；实际远端从受保护配置确认 `DB_ENGINE=postgres`。最终部署暂停写入后备份，迁移要求表 177/177、索引失败 0、跳过 0。 |
+| 生产健康、发布版本与资源哈希、重点业务 postflight | 实际 release `20260928-001638-579ede77ac6e`，主/AI 服务均 `ok`，`NO_RECENT_ERROR_LOGS`，`DEPLOY_DONE`。公网 manifest 与本地完整 graph `689322a2...` 一致；抽查 9 项公网不可变资产及 19 项运行镜像源码摘要全部匹配。教师 1440/light 与学生 390/dark 两个匿名入口实际浏览器 GET 验证通过：正式资产、原生共享字段/按钮、0 横溢、0 页面脚本异常，截图已复核。缓存失效仅 `"cache"`，不清 cookie/用户存储。证据 `.codex-temp/lq-platform-deploy-release-corrected.log`、`lq-platform-postflight-final.json`、`lq-platform-source-postflight-final.json`、`lq-public-postflight/result.json`；后三项均位于 `.codex-temp/`。没有在生产账号上执行提交。历史后台任务指标见第 6 节。 |
+| Git 本地提交、远程分支与推送确认 | 产品源码为 `0043c320c4c39185f1c90e1311c1691b93ba3c1d`。最终验收文档在以此为父提交的独立发布分支提交，推送目标 `origin/dev`；最终提交及 `ls-remote` 确认保存于 `.codex-temp/lq-platform-git-final.json`。发布链不包含主工作目录并行产生的小程序提交 `cd921654`，不将后来的文档 SHA 当成已部署产品源码。 |
+| 未决项、回滚指针与发布结论 | 本轮发布已通过上述门禁；未穷尽的业务状态及历史测试限制继续保留。改动前回滚组为 `20260928-001209`，app 镜像 `lanshare-app:rollback-20260928-001209-app`，代码 `/tmp/lanshare-deploy-backups/code-20260928-001209.tgz`，停写备份 `/tmp/lanshare-deploy-backups/db-cutover-20260928-001209.sql.gz`。最终发布前另有 `20260928-001649` 同类镜像/代码/数据库备份；两个备份组按现有策略保留，回滚须遵循原部署流程并保护 `/lanshare/data`。 |
+
+第一次上线的资源一致性检查拒绝了服务器遗留的 `static/js/agent_user_confirmation.js`：该文件已在 Git 提交 `891cd78c` 中删除，当前模板和脚本无引用，远端字节与被删文件的 CRLF 版本一致，且已存在代码备份。经路径与 SHA-256 双重核验，仅将此文件可逆迁到 `/tmp/lanshare-deploy-backups/retired-agent_user_confirmation-20260928-001154.js`，重新执行完整部署后资源图精确匹配。未放宽摘要门禁、未清理业务数据，也未删除供已打开页面使用的旧不可变资产。差异和迁移凭据见 `.codex-temp/lq-production-asset-difference.json`、`.codex-temp/lq-retired-asset-quarantine.json`。
+
+公网浏览器检查的初始临时脚本只按 `data-lq-component="input"` 计数字段，与登录页既有规范 `input.lq-input` 不符。核对模板与共享字段合同后更正选择器，并增加“所有可见输入均使用共享字段配方”的断言；产品代码未因此修改。最终两页检查与截图均通过。

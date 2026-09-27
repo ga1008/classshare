@@ -1,0 +1,238 @@
+{
+  "schema": 1,
+  "date": "2026-09-27",
+  "status": "passed-scoped-structural-browser-gate",
+  "overallMigrationAcceptance": "not-promoted",
+  "assetGraph": "9c124519c530160cf382ad06a9c3f37118f362406e356dd27cd8d2d95a51338f",
+  "enforce": true,
+  "browser": "Chrome",
+  "roleWidthAppearanceMatrix": {
+    "roles": [
+      "anonymous",
+      "student",
+      "teacher",
+      "superTeacher"
+    ],
+    "widths": [
+      390,
+      1440
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ]
+  },
+  "execution": {
+    "startTime": "2026-09-27T15:38:20.280Z",
+    "duration": 1105839.0140000002,
+    "expected": 16,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "observations": {
+    "dom-measured-pending": 472,
+    "scoped-contract-covered-browser-not-run": 24
+  },
+  "uniqueRequestedGetUrls": 112,
+  "platformFrames": 524,
+  "documentContentFrames": 12,
+  "platformComponentInstancesRepeatedAcrossPages": 56724,
+  "gates": {
+    "groups": 16,
+    "routeGaps": 0,
+    "distinctControlFindings": 0,
+    "overflowFrames": 0,
+    "executionFailures": 0,
+    "leafBlurFrames": 0,
+    "maximumBlurHosts": 5
+  },
+  "uiSourceAndAssetHashesIdenticalAcrossAllGroups": true,
+  "uiSourceAndAssetHashCount": 570,
+  "manifestSha256": "d08a46ec02192fe2623354d40ea67e919dc3e867b6262622d67ba9150c96dd13",
+  "compiledCssSha256": "d38c5a9ec0710b57b3945bdada2320bdae16d15731752db1fed4ec9e5329f208",
+  "sourceAuditSha256": "104b00be01b04566732c343a21cce7a7e4a44ef188bfc2239a760ab096d78a27",
+  "sourceAuditCandidatePointerMismatches": 0,
+  "routeManifestSha256": "1482e0ab9c23a22010a88c31c4811c8209a5eff1ff0b7bd4966e65dc54619fc2",
+  "artifacts": {
+    "directory": ".codex-temp/lq-platform-browser-audit-final-clean",
+    "summary": ".codex-temp/lq-platform-browser-audit-final-clean/summary.json",
+    "playwright": ".codex-temp/lq-platform-browser-audit-final-clean/playwright-results.json",
+    "previousCandidate": ".codex-temp/lq-platform-browser-audit-final"
+  },
+  "groups": [
+    {
+      "group": "anonymous-1440-dark",
+      "selected": 11,
+      "observations": 11,
+      "states": {
+        "dom-measured-pending": 5,
+        "scoped-contract-covered-browser-not-run": 6
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "anonymous-1440-light",
+      "selected": 11,
+      "observations": 11,
+      "states": {
+        "dom-measured-pending": 5,
+        "scoped-contract-covered-browser-not-run": 6
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "anonymous-390-dark",
+      "selected": 11,
+      "observations": 11,
+      "states": {
+        "dom-measured-pending": 5,
+        "scoped-contract-covered-browser-not-run": 6
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "anonymous-390-light",
+      "selected": 11,
+      "observations": 11,
+      "states": {
+        "dom-measured-pending": 5,
+        "scoped-contract-covered-browser-not-run": 6
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "student-1440-dark",
+      "selected": 24,
+      "observations": 34,
+      "states": {
+        "dom-measured-pending": 34
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "student-1440-light",
+      "selected": 24,
+      "observations": 34,
+      "states": {
+        "dom-measured-pending": 34
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "student-390-dark",
+      "selected": 24,
+      "observations": 34,
+      "states": {
+        "dom-measured-pending": 34
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "student-390-light",
+      "selected": 24,
+      "observations": 34,
+      "states": {
+        "dom-measured-pending": 34
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "superTeacher-1440-dark",
+      "selected": 8,
+      "observations": 8,
+      "states": {
+        "dom-measured-pending": 8
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "superTeacher-1440-light",
+      "selected": 8,
+      "observations": 8,
+      "states": {
+        "dom-measured-pending": 8
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "superTeacher-390-dark",
+      "selected": 8,
+      "observations": 8,
+      "states": {
+        "dom-measured-pending": 8
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "superTeacher-390-light",
+      "selected": 8,
+      "observations": 8,
+      "states": {
+        "dom-measured-pending": 8
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "teacher-1440-dark",
+      "selected": 66,
+      "observations": 71,
+      "states": {
+        "dom-measured-pending": 71
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "teacher-1440-light",
+      "selected": 66,
+      "observations": 71,
+      "states": {
+        "dom-measured-pending": 71
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "teacher-390-dark",
+      "selected": 66,
+      "observations": 71,
+      "states": {
+        "dom-measured-pending": 71
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    },
+    {
+      "group": "teacher-390-light",
+      "selected": 66,
+      "observations": 71,
+      "states": {
+        "dom-measured-pending": 71
+      },
+      "sourceChanged": [],
+      "pageErrors": []
+    }
+  ],
+  "limitations": [
+    "GET baseline with hidden DOM, frames and open shadow roots; dynamic business flows use linked domain suites.",
+    "24 POST observations are references to executed authentication contracts, not browser form submissions.",
+    "12 authored material frames remain document-content; platform chrome is still gated.",
+    "Blur counts are DOM host observations, not old-device FPS measurements.",
+    "Source audit pending/unknown and registry migration statuses are not automatically accepted.",
+    "UI source and asset hashes cover the scanner scope, not unrelated backend files changed by another task.",
+    "Any subsequent LessonDoc contrast fix must be recorded as a separate scoped verification against its own final assets."
+  ]
+}

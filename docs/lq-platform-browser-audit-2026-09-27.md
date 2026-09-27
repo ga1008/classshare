@@ -73,3 +73,24 @@ npx playwright test --config tests/e2e/lq-platform-audit.playwright.config.ts
 原始目录 `.codex-temp/lq-platform-browser-audit-final` 保持原路径，以保留 JSON 内截图与 trace 的绝对引用；该目录是修复过程中的候选证据。正式终版另写 `.codex-temp/lq-platform-browser-audit-final-clean`，使用 `LQ_PLATFORM_AUDIT_ENFORCE=1`。
 
 本候选实际执行 16 组，15 组产出 462 条记录（438 条 GET DOM、24 条认证 POST 合同引用）；学生 1440 深色组在服务重启期间登录遭遇 `ERR_CONNECTION_REFUSED`，没有被补写成成功。运行中源码变化逐组保留。聚合发现 12 种类名/状态组合问题、4 个路径上的 10 条横溢记录，无叶子模糊宿主，单帧最多 5 个可见背景模糊宿主；这些是待修复候选结果。截图另揭示 LessonDoc 深色移动工具条的原白底边界，不能由 DOM 归属检查代替视觉审阅。
+
+## 冻结资产的完整严格矩阵
+
+2026-09-27 23:38 至 23:56（Asia/Shanghai），使用 8299 端口、专属 `.codex-temp/lq-platform-20260927-runtime` 合成数据及 `LQ_PLATFORM_AUDIT_ENFORCE=1` 完成 16/16 组，耗时 18.4 分钟，无跳过、重试、失败或 flaky。机器可读摘要为 [lq-platform-browser-final-2026-09-27.json](lq-platform-browser-final-2026-09-27.json)，原始结果、截图和 Playwright 结果位于 `.codex-temp/lq-platform-browser-audit-final-clean/`；此前各轮候选证据仍保留。
+
+| 实测范围或门禁 | 结果 |
+|---|---:|
+| GET DOM 观察记录 / 不同实际 GET 地址 | 472 / 112 |
+| 认证 POST 合同引用（不是浏览器表单提交） | 24 |
+| 平台 UI / 用户文档内容 frame | 524 / 12 |
+| 跨页重复的平台组件实例 | 56,724 |
+| 未执行路由 / 未归属或结构不合规控件 | 0 / 0 |
+| 文档横向溢出 / 叶子背景模糊 frame | 0 / 0 |
+| 浏览器异常 / 分组执行失败 / UI 源码变化 | 0 / 0 / 0 |
+| 单 frame 可见背景模糊宿主上限（包括有效伪元素） | 5 |
+
+同一资产图 `9c124519c530160cf382ad06a9c3f37118f362406e356dd27cd8d2d95a51338f` 覆盖整轮：570 个纳入审计的 UI 源码及资产 SHA 在全部 16 组完全相同；正式 CSS SHA256 为 `d38c5a9ec0710b57b3945bdada2320bdae16d15731752db1fed4ec9e5329f208`，asset manifest SHA256 为 `d08a46ec02192fe2623354d40ea67e919dc3e867b6262622d67ba9150c96dd13`。这不是整个工作树的冻结声明；同时由其他任务修改的非 UI 后端文件不在此范围内，合成服务器未在运行期间重载。
+
+运行前刷新后的源码清单为 512 个作者源码文件、198 个 HTML 模板、5326 个候选入口。所有运行时映射的候选 id/文件/行号与该清单一致，不匹配数为 0；复用造成的映射歧义、未知输出和原迁移状态仍按原样保留。静态 `pending/unknown` 没有因本轮通过自动改为完成。
+
+本轮通过的是明确范围的结构浏览器门禁：页面初始 DOM、隐藏控件、frame、开放 ShadowRoot 的共享所有权、表面边界、文档横溢和叶子模糊。它不能代替所有动态业务操作、无障碍和逐像素视觉验收；24 条 POST 仅引用已执行认证合同，12 个用户文档 frame 保持 `document-content` 独立边界。模糊宿主计数不能作为旧电脑硬件的 FPS 测量。LessonDoc 浅色辅助文字的后续对比度复核或修复应绑定其自身版本并另做领域验证，不覆盖这轮资产图的完整矩阵证据。
