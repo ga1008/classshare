@@ -1,6 +1,6 @@
-/* Notifications take the raised fill like every other layer, but never a blur:
-   a toast stack has no upper bound, so one compositing layer per toast would
-   multiply the cost by N for a tint that is already .78/.80 opaque. */
+/* Notifications are thick glass like dialogs: the stack is capped at three, so
+   the blur cost is bounded, and a plain .78 tint is unreadable on bright photo
+   backdrops (2026-09-27). Ink pairs with the material, never the page theme. */
 .lq-toasts {
     position: fixed;
     z-index: var(--ls-z-toast);
@@ -26,8 +26,7 @@
     padding: 10px 10px 10px 14px;
     border-radius: var(--ls-r-lg);
     pointer-events: auto;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+    color: hsl(var(--lq-material-ink, var(--ls-ink)));
     opacity: 1;
     transform: none;
     transition: opacity 160ms var(--ls-ease-out), transform 160ms var(--ls-ease-out);

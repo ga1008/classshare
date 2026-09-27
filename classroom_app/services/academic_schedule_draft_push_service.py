@@ -24,6 +24,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 import httpx
+from datetime import datetime, timezone
 
 from ..database import get_db_connection
 from .academic_integration_service import load_teacher_academic_access_method, open_authenticated_academic_client
@@ -263,25 +264,11 @@ async def _save_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict
                 "label": str(existing.get("select_name") or ""), "message": "教务草稿中已存在该原课次的调整记录，已直接关联。"}
     fields = build_detail_form(page, slot, draft)
     check = await _request(client, "POST", CONFLICT_CHECK_PATH, label="教务冲突检测", files=_multipart(fields), headers=_headers())
-    payload = _json_or_none(check)
-    conflict_num = 0
-    if isinstance(payload, dict) and str(payload.get("conflictNum") or "").strip():
-        try:
-            conflict_num = int(str(payload.get("conflictNum")))
-        except ValueError:
-            conflict_num = 0
-    if conflict_num:
-        message = describe_conflict(conflict_num)
-        hard = any(conflict_num & bit for bit in HARD_CONFLICT_BITS)
-        if hard or not force:
-            # Verified 2026-09-27: ctxxList items are UPPERCASE-keyed (CTLX 冲突类型 / MC 对象 / JXBMC / KCMC /
-            # XQJ / JC / ZCD, student rows add XH / BJ / XB); conflictXs is the student subset. One clash can list
-            # every affected student, so keep a bounded copy plus the counts.
-            details = payload.get("ctxxList") if isinstance(payload, dict) and isinstance(payload.get("ctxxList"), list) else []
-            students = payload.get("conflictXs") if isinstance(payload, dict) and isinstance(payload.get("conflictXs"), list) else []
-            return {"status": "conflict", "ttk_id": page["ttk_id"], "message": message,
-                    "conflict": {"conflict_num": conflict_num, "hard": hard, "details": details[:MAX_CONFLICT_DETAILS],
-                                 "detail_count": len(details), "student_count": len(students)}}
+    conflict = conflict_outcome(_json_or_none(check))
+    if conflict["conflict_num"]:
+        message = conflict["message"]
+        if conflict["hard"] or not force:
+            return {"status": "conflict", "ttk_id": page["ttk_id"], "message": message, "conflict": conflict}
         fields = fields + [("sfctttk", "1"), ("ctskapqk", force_note or "已与相关方沟通，按新安排上课"), ("ttkctlx", message)]
     saved = await _request(client, "POST", SAVE_DETAIL_PATH, label="保存教务草稿", files=_multipart(fields), headers=_headers())
     result = _json_or_none(saved)
@@ -292,7 +279,106 @@ async def _save_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict
     if not detail_id:
         raise DraftPushError(f"教务未返回草稿明细标识：{str(result)[:200]}")
     return {"status": "pushed", "ttk_id": page["ttk_id"], "detail_id": detail_id, "label": label,
-            "message": "已保存到教务调停课草稿（待提交）。" + (f"教务冲突提示：{describe_conflict(conflict_num)}" if conflict_num else "")}
+            "message": "已保存到教务调停课草稿（待提交）。" + (f"教务冲突提示：{conflict['message']}" if conflict["conflict_num"] else "")}
+
+
+def conflict_outcome(payload: Any) -> dict[str, Any]:
+    """Normalise a ``ttksq_cxConflictCtzt`` answer.
+
+    Verified 2026-09-27: ``ctxxList`` items are UPPERCASE-keyed (CTLX 冲突类型 / MC 对象 / JXBMC / KCMC /
+    XQJ / JC / ZCD, student rows add XH / BJ / XB); ``conflictXs`` is the student subset. One clash can list
+    every affected student, so keep a bounded copy plus the counts.
+    """
+    conflict_num = 0
+    if isinstance(payload, dict) and str(payload.get("conflictNum") or "").strip():
+        try:
+            conflict_num = int(str(payload.get("conflictNum")))
+        except ValueError:
+            conflict_num = 0
+    details = payload.get("ctxxList") if isinstance(payload, dict) and isinstance(payload.get("ctxxList"), list) else []
+    students = payload.get("conflictXs") if isinstance(payload, dict) and isinstance(payload.get("conflictXs"), list) else []
+    hard = any(conflict_num & bit for bit in HARD_CONFLICT_BITS)
+    return {"conflict_num": conflict_num, "hard": hard, "message": describe_conflict(conflict_num) if conflict_num else "",
+            "details": details[:MAX_CONFLICT_DETAILS], "detail_count": len(details), "student_count": len(students)}
+
+
+async def _check_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Read-only dry run of ``_save_one``: the same conflict check 教务 performs before saving, nothing saved."""
+    slot = find_original_slot(page["slots"], draft["original"])
+    if slot is None:
+        return {"status": "failed", "message": "教务正式课表中未找到该原课次（可能已被调整或本地课表过期），请先同步教务课表。"}
+    existing = find_existing_detail(page["existing_details"], draft["original"])
+    if existing and existing.get("ttkxx_id"):
+        return {"status": "already", "detail_id": str(existing["ttkxx_id"]), "message": "教务草稿中已有该原课次的调整记录；保存时将直接关联，不会重复。"}
+    check = await _request(client, "POST", CONFLICT_CHECK_PATH, label="教务冲突检测", files=_multipart(build_detail_form(page, slot, draft)), headers=_headers())
+    conflict = conflict_outcome(_json_or_none(check))
+    if not conflict["conflict_num"]:
+        return {"status": "ok", "message": "教务未检测到冲突，可以保存。", "conflict": conflict}
+    return {"status": "hard" if conflict["hard"] else "conflict", "message": conflict["message"], "conflict": conflict}
+
+
+async def check_drafts_conflicts(teacher_id: int, *, year: str, term: str, draft_ids: list[int] | None = None) -> dict[str, Any]:
+    """提前预测：run 教务's own conflict check for pending drafts without saving anything.
+
+    Results are recorded on each draft (``availability_json.zf_precheck``) so the editor can show
+    the verdict on cards and in the drawer before the teacher decides to save.
+    """
+    teacher_id = int(teacher_id)
+    identity = identity_from_year_term(year, term)
+    if identity is None:
+        return {"status": "invalid_semester", "message": "学年学期无效。", "results": []}
+    xnm, xqm = identity.as_xnm_xqm()
+    with get_db_connection() as conn:
+        credential = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
+        drafts = list_drafts(conn, teacher_id, year, term)
+    if not credential:
+        return {"status": "missing_credential", "message": "尚未配置教务账号，无法提前检测冲突；保存前请先在教务系统对接设置中验证账号。", "results": []}
+    wanted = {int(d) for d in draft_ids or []}
+    targets = [d for d in drafts if d["status"] in ("draft", "conflict", "failed") and (not wanted or d["id"] in wanted)]
+    if not targets:
+        return {"status": "nothing", "message": "没有待检测的变更。", "results": []}
+    results: list[dict[str, Any]] = []
+    try:
+        async with open_authenticated_academic_client(credential) as (client, profile, _login):
+            if profile.school_code != "gxufl":
+                raise DraftPushError("当前学校尚未启用调停课草稿保存。")
+            await _request(client, "GET", ENTRY_PATH, label="打开教务调停课页面", headers=_headers(html=True))
+            pages: dict[str, dict[str, Any]] = {}
+            for draft in targets:
+                jxb_id = draft["teaching_class_id"]
+                try:
+                    if jxb_id not in pages:
+                        pages[jxb_id] = await open_form_page(client, jxb_id=jxb_id, xnm=xnm, xqm=xqm)
+                    outcome = await _check_one(client, pages[jxb_id], draft)
+                except DraftPushError as exc:
+                    outcome = {"status": "failed", "message": str(exc)}
+                results.append({"draft_id": draft["id"], "course_name": draft["course_name"],
+                                "original_label": describe_slot(draft["original"]), "proposed_label": describe_slot(draft["proposed"]), **outcome})
+    except (ValueError, httpx.HTTPError) as exc:
+        message = str(exc) if isinstance(exc, ValueError) else "教务系统访问失败，暂时无法提前检测冲突。"
+        return {"status": "failed", "message": message, "results": results}
+    except Exception:
+        logger.exception("Schedule draft pre-check failed for teacher %s", teacher_id)
+        return {"status": "failed", "message": "检测冲突时发生未知错误，请稍后重试。", "results": results}
+    from .schedule_editor_service import record_draft_precheck
+
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    try:
+        with get_db_connection() as conn:
+            for item in results:
+                record_draft_precheck(conn, teacher_id, item["draft_id"], {"checked_at": stamp, "status": item["status"], "message": item.get("message", ""),
+                                                                          **{k: v for k, v in (item.get("conflict") or {}).items()}})
+            conn.commit()
+    except Exception:
+        # The 教务 round-trips already succeeded; a persistence hiccup must not turn them into a 500.
+        logger.exception("Schedule draft pre-check could not be recorded for teacher %s", teacher_id)
+    ok = sum(1 for r in results if r["status"] in ("ok", "already"))
+    soft = sum(1 for r in results if r["status"] == "conflict")
+    hard = sum(1 for r in results if r["status"] == "hard")
+    failed = len(results) - ok - soft - hard
+    parts = [f"{ok} 项无冲突", f"{soft} 项有可强制保存的冲突" if soft else "", f"{hard} 项不能保存" if hard else "", f"{failed} 项检测失败" if failed else ""]
+    return {"status": "success", "results": results, "ok": ok, "conflicts": soft, "hard": hard, "failed": failed,
+            "message": "，".join(part for part in parts if part) + "。"}
 
 
 async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: str, draft_ids: list[int] | None = None,

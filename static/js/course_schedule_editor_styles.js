@@ -345,4 +345,11 @@ body.cse-dragging .cs-lesson-slot { pointer-events: none; }
 .cse-push__block .cse-reseq__list { width: 100%; }
 .cse-push__foot { display: flex; justify-content: flex-end; gap: 8px; }
 .cse-reseq__list { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; display: grid; gap: 4px; }
+
+/* ---- 第五轮：教务预检结论与保存结果 ---- */
+.cse-push__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.cse-push__detail { margin-top: 4px; font-size: .8rem; color: hsl(var(--ls-ink)); }
+.cse-push__next { margin-top: 4px; padding: 6px 10px; border-radius: var(--ls-r-md); font-size: .78rem; line-height: 1.5; color: hsl(var(--ls-ink)); background: color-mix(in srgb, hsl(var(--ls-warning)) 14%, var(--cse-control)); border-left: 3px solid hsl(var(--ls-warning)); }
+.cse-push__block > span { flex: 1 1 240px; min-width: 0; font-size: .82rem; line-height: 1.5; }
+.cse-push[data-phase="checking"] .cse-push__list, .cse-push[data-phase="saving"] .cse-push__list { opacity: .7; }
 `;

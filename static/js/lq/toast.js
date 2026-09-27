@@ -170,7 +170,7 @@ export function getToastSystem(doc = document) {
         if (duplicate) return update(duplicate, message, props);
         // Remove the oldest before adding: even animated exits count toward three.
         while (records.length >= 3) finish(records[0], 'overflow', true);
-        const root = doc.createElement('article'); root.className = 'lq-toast lq-surface'; root.hidden = true;
+        const root = doc.createElement('article'); root.className = 'lq-toast lq-glass lq-glass--thick'; root.hidden = true; // thick glass: readable on bright photo backdrops
         const icon = doc.createElement('span'); icon.className = 'lq-toast__icon'; icon.setAttribute('aria-hidden', 'true');
         const content = doc.createElement('div'); content.className = 'lq-toast__content';
         const live = doc.createElement('div'); live.className = 'lq-toast__message'; live.setAttribute('role', 'status'); live.setAttribute('aria-atomic', 'true');

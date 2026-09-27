@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ...database import get_db_connection
 from ...dependencies import get_current_teacher
 from ...services.academic_schedule_draft_push_service import (
-    push_drafts_to_academic_system, withdraw_draft_from_academic_system,
+    check_drafts_conflicts, push_drafts_to_academic_system, withdraw_draft_from_academic_system,
 )
 from ...services.academic_availability_sync_service import search_free_rooms, sync_availability_for_term
 from ...services.schedule_availability_service import build_lesson_availability
@@ -304,3 +304,22 @@ async def api_schedule_editor_download_proof(draft_id: int, file_id: str, user: 
         except ScheduleEditError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return FileResponse(str(path), filename=str(record.get("name") or path.name), headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/academic/course-schedule/editor/push/check", response_class=JSONResponse)
+async def api_schedule_editor_push_check(request: Request, user: dict = Depends(get_current_teacher)):
+    """提前预测：用教务自身的冲突检测试跑待保存的草稿（不保存），结果记在草稿上供卡片/抽屉展示。"""
+    payload = await _parse_json_request(request)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    if not year or not term:
+        raise HTTPException(status_code=400, detail="请先选择学年学期。")
+    raw_ids = payload.get("draft_ids") or []
+    try:
+        draft_ids = [int(item) for item in raw_ids] if isinstance(raw_ids, list) else []
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="草稿编号格式错误。") from exc
+    result = await check_drafts_conflicts(int(user["id"]), year=year, term=term, draft_ids=draft_ids or None)
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        editor = build_editor_payload(conn, int(user["id"]), overview)
+    return JSONResponse({**editor, "status": "success", "result": result}, headers=_NO_STORE)

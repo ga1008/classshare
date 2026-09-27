@@ -9,7 +9,7 @@
        accessibility media feature; explicit opt-outs below win with important. */
     @media screen {
         :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
-        :is(.lq-glass:not(.lq-toast, .lq-tooltip), [data-lq-material="chrome"], [data-lq-material="raised"], [data-lq-material="clear"]) {
+        :is(.lq-glass:not(.lq-tooltip), [data-lq-material="chrome"], [data-lq-material="raised"], [data-lq-material="clear"]) {
             background-color: hsl(var(--lq-material-fill, var(--ls-glass-fill)));
             background-image: var(--ls-glass-sheen);
             background-attachment: scroll;

@@ -379,7 +379,8 @@ function init(boot) {
         }
         if (refs.pushBtn) {
             refs.pushBtn.disabled = state.busy || !pending || !state.payload?.editable;
-            refs.pushBtn.innerHTML = `保存到教务 <span class="cse-btn__badge">${pending}</span>`;
+            refs.pushBtn.innerHTML = `检测冲突并保存 <span class="cse-btn__badge">${pending}</span>`;
+            refs.pushBtn.title = '先用教务自身的冲突检测试跑每一项，再把没有冲突的写入教务草稿；有冲突的会明确告诉你原因和下一步。';
         }
         if (refs.syncBtn) refs.syncBtn.disabled = state.busy;
         if (refs.availSync) refs.availSync.disabled = state.busy || !state.payload?.editable;
@@ -685,7 +686,7 @@ function init(boot) {
                 : targetDay.kind === 'ended' ? `<div class="cse-status cse-status--conflict">目标日期 ${shortDate(targetDay.iso)} 已超出学期结束日期（${escapeHtml(termEnd)}），不能放置。</div>`
                     : targetDay.kind === 'workday' ? `<div class="cse-status cse-status--workday">目标日期 ${shortDate(targetDay.iso)} 为调休上课日：当天按 ${escapeHtml(targetDay.info.makeup_for_weekday || '')}（${shortDate(targetDay.info.makeup_for_date)}）课表上课，冲突与可调时段按那一天判断。${targetDay.info.inferred ? '补课星期为推断，以学校通知为准。' : ''}</div>` : '';
         const statusBlock = pastLesson ? '<div class="cse-status cse-status--muted"><strong>该课次已上过</strong><br>已发生的课次不能再调整；调整后续课次时，课次序号与材料保持不变。</div>'
-            : draft ? `<div class="cse-status cse-status--${escapeHtml(draft.status)}"><strong>${escapeHtml(draft.status_label)}</strong>${draft.remote_message ? `<br>${escapeHtml(draft.remote_message)}` : ''}${draft.status === 'pushed' ? '<br>如需修改，请先「从教务撤回」。' : ''}</div>` : '';
+            : draft ? `<div class="cse-status cse-status--${escapeHtml(draft.status)}"><strong>${escapeHtml(draft.status_label)}</strong>${draft.remote_message ? `<br>${escapeHtml(draft.remote_message)}` : ''}${draft.status === 'pushed' ? '<br>如需修改，请先「从教务撤回」。' : ''}${precheckOf(draft) && draft.status !== 'pushed' ? `<br>${escapeHtml(PRECHECK_LABELS[precheckOf(draft).status] || '教务预检')}${precheckOf(draft).message ? `：${escapeHtml(precheckOf(draft).message)}` : ''}` : ''}</div>` : '';
         const originalRoom = String(lesson.classroom || '');
         const roomOptions = `<option value=""${form.room_id ? '' : ' selected'}>沿用原教室${originalRoom ? `：${escapeHtml(compactClassroomName(originalRoom))}` : ''}</option>${form.room_id ? `<option value="${escapeHtml(form.room_id)}" selected>${escapeHtml(form.room)}</option>` : ''}`;
         const proofs = draft ? (draft.proofs || []) : [];
@@ -980,23 +981,38 @@ function init(boot) {
         return `<div class="cse-draft__msg"><strong>教务冲突明细：</strong><ul class="cse-conflict-list">${lines.join('')}</ul>${total > rows.length ? `<span>教务共返回 ${total} 条，已按类型汇总</span>` : ''}</div>`;
     }
 
+    /** 教务预检结论（保存本地草稿后自动运行 / 弹窗里再跑一次）。 */
+    function precheckOf(draft) {
+        const pre = draft?.availability?.zf_precheck;
+        return pre && pre.status ? pre : null;
+    }
+    const PRECHECK_LABELS = { ok: '教务预检：无冲突', already: '教务预检：已有记录', conflict: '教务预检：有冲突（可强制保存）', hard: '教务预检：不能保存', failed: '教务预检失败' };
+    const PRECHECK_TONE = { ok: 'ok', already: 'ok', conflict: 'room', hard: 'conflict', failed: 'muted' };
+    function precheckTag(draft) {
+        const pre = precheckOf(draft);
+        if (!pre || draft.status === 'pushed') return '';
+        return `<span class="cse-tag cse-tag--${PRECHECK_TONE[pre.status] || 'muted'}" data-cse-precheck-tag="${escapeHtml(pre.status)}" title="${escapeHtml(pre.message || '')}">${escapeHtml(PRECHECK_LABELS[pre.status] || '教务预检')}</span>`;
+    }
+
     function renderDrafts() {
         if (!refs.drafts) return;
         const list = drafts();
         const pushed = list.filter(d => d.status === 'pushed').length;
         const rows = list.map(draft => `<div class="cse-draft" data-cse-draft="${draft.id}">
-            <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}${draft.room_status === 'busy' ? '<span class="cse-tag cse-tag--room">教室已占用 · 需换教室</span>' : draft.room_status === 'free' ? '<span class="cse-tag cse-tag--ok">教室空闲</span>' : ''}</div>
+            <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}${draft.room_status === 'busy' ? '<span class="cse-tag cse-tag--room">教室已占用 · 需换教室</span>' : draft.room_status === 'free' ? '<span class="cse-tag cse-tag--ok">教室空闲</span>' : ''}${precheckTag(draft)}</div>
             <div class="cse-draft__route">${escapeHtml(draft.original_label)} → <b>${escapeHtml(draft.proposed_label)}</b>${draft.reason ? ` · 原因：${escapeHtml(draft.reason)}` : ' · <em class="cse-draft__warn">未填写原因</em>'}${(draft.proofs || []).length ? ` · 证明材料 ${draft.proofs.length} 份` : ' · <em class="cse-draft__warn">无证明材料</em>'}</div>
             ${draft.remote_message || draft.remote_label ? `<div class="cse-draft__msg">${escapeHtml(draft.remote_label ? `教务：${draft.remote_label}` : '')}${draft.remote_label && draft.remote_message ? ' · ' : ''}${escapeHtml(draft.remote_message || '')}</div>` : ''}
-            ${conflictDetailsHtml(draft.remote_conflict)}
+            ${precheckOf(draft) && draft.status !== 'pushed' && !draft.remote_message ? `<div class="cse-draft__msg">${escapeHtml(precheckOf(draft).message || '')}</div>` : ''}
+            ${conflictDetailsHtml(draft.remote_conflict?.details?.length ? draft.remote_conflict : precheckOf(draft))}
             <div class="cse-draft__actions">
                 <button type="button" class="cse-btn cse-btn--sm" data-cse-locate="${draft.id}">定位</button>
                 ${draft.status === 'pushed' ? `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-withdraw="${draft.id}">从教务撤回</button>` : `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-discard="${draft.id}">撤销</button>`}
+                ${draft.status !== 'pushed' ? `<button type="button" class="cse-btn cse-btn--sm" data-cse-precheck="${draft.id}">${precheckOf(draft) ? '重新预检' : '预检冲突'}</button>` : ''}
                 ${draft.status === 'conflict' && !draft.remote_conflict?.hard ? `<button type="button" class="cse-btn cse-btn--sm" data-cse-force="${draft.id}">冲突仍保存</button>` : ''}
             </div>
         </div>`).join('');
         const next = pushed ? `<div class="cse-drafts__next"><span>已有 ${pushed} 项保存到教务草稿。下一步：</span><a href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」 ↗</a></div>` : '';
-        refs.drafts.innerHTML = `<div class="cse-drafts__head"><h3>变更清单</h3><p>拖拽或在右侧属性中保存后，变更先记录在平台；「保存到教务」只写入教务草稿，不会提交申请。</p></div>
+        refs.drafts.innerHTML = `<div class="cse-drafts__head"><h3>变更清单</h3><p>拖拽或在右侧属性中保存后，变更先记录在平台，并自动请教务预检冲突；「检测冲突并保存」把没有冲突的写入教务草稿（待提交），不会提交申请。</p></div>
             ${list.length ? `<div class="cse-drafts__list">${rows}</div>` : '<div class="cse-materials__empty">还没有任何调整。按住课次拖到新的节次，或单击课次在右侧设置。</div>'}${next}`;
     }
 
@@ -1051,10 +1067,32 @@ function init(boot) {
             state.form = null;
             if (select && data.draft) state.selectedKey = data.draft.event_key;
             applyPayload(data);
-            toast(`已记录：${data.draft.course_name} → ${data.draft.proposed_label}`, 'success');
+            toast(`已记录：${data.draft.course_name} → ${data.draft.proposed_label}，正在请教务预检冲突…`, 'success');
+            if (data.draft) void precheckDrafts([data.draft.id], { notify: 'summary' });
             return data.draft;
         } catch (error) { toast(error.message, 'danger'); return null; }
         finally { setBusy(false); }
+    }
+
+    /**
+     * 提前预测：用教务自身的冲突检测试跑（不保存），结论落在草稿 availability.zf_precheck 上。
+     * notify = 'full'（逐条提示）| 'summary'（只在有冲突时提示）| 'none'（弹窗内自行展示）。
+     */
+    async function precheckDrafts(draftIds, { notify = 'full' } = {}) {
+        try {
+            const data = await api(`${API}/push/check`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, draft_ids: draftIds || [] }) });
+            applyPayload(data);
+            const result = data.result || {};
+            const clean = result.status === 'success' && !result.conflicts && !result.hard && !result.failed;
+            if (notify === 'full') {
+                if (result.status === 'missing_credential') LQ.toast(result.message, { tone: 'warning', duration: 8000, action: { label: '去设置教务账号', href: CREDENTIAL_URL } }).catch(() => {});
+                else toast(result.message || '预检完成。', clean ? 'success' : 'warning');
+            } else if (notify === 'summary') {
+                if (result.status === 'success' && !clean) toast(`教务预检：${result.message} 变更清单里有原因与建议。`, 'warning');
+                else if (result.status === 'missing_credential') toast('未配置教务账号，暂时无法提前检测冲突。', 'warning');
+            }
+            return result;
+        } catch (error) { if (notify !== 'none') toast(error.message, 'danger'); return null; }
     }
 
     async function discardDraft(id) {
@@ -1080,78 +1118,170 @@ function init(boot) {
 
     async function pushDrafts({ draftIds = null, force = false } = {}) {
         const targets = draftIds ? draftIds.map(draftById).filter(Boolean) : pendingDrafts();
-        if (!targets.length) { toast('没有待保存到教务的变更。'); return; }
-        const ok = force ? await LQ.confirm({
+        if (!targets.length) { toast('没有待检测/保存的变更。'); return; }
+        if (!force) { await openPushDialog(targets); return; }
+        const ok = await LQ.confirm({
             title: '按冲突调停课保存',
-            message: `教务已检测到冲突，仍保存将标记为"冲突调停课"。${targets.length} 项变更写入教务草稿（待提交），不会替您提交申请。`,
+            message: `教务已检测到冲突，仍保存将标记为"冲突调停课"，教务审批时需要说明。${targets.length} 项变更写入教务草稿（待提交），不会替您提交申请。`,
             confirmLabel: '仍然保存',
-        }) : await openPushDialog(targets);
+        });
         if (!ok) return;
+        const result = await runPush(targets.map(d => d.id), { force: true });
+        if (result) toast(describePushResult(result), result.status === 'success' ? 'success' : 'warning');
+    }
+
+    /** 实际写入教务草稿；结果由调用方展示。 */
+    async function runPush(ids, { force = false } = {}) {
         setBusy(true);
         try {
-            const data = await api(`${API}/push`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, draft_ids: targets.map(d => d.id), force, force_note: force ? '已与相关方沟通，按新安排上课' : '' }) });
+            const data = await api(`${API}/push`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, draft_ids: ids, force, force_note: force ? '已与相关方沟通，按新安排上课' : '' }) });
             state.lastPush = data.result;
             applyPayload(data);
-            const result = data.result || {};
-            if (result.status === 'missing_credential') {
-                LQ.toast(result.message, { tone: 'warning', duration: 8000, action: { label: '去设置教务账号', href: CREDENTIAL_URL } }).catch(() => {});
-            } else {
-                const proofCount = targets.reduce((n, d) => n + ((draftById(d.id)?.proofs || []).length), 0);
-                const lines = [describePushResult(result)];
-                if (result.status === 'success' || result.status === 'partial') lines.push(proofCount ? `提交申请时请在教务附上已保存的 ${proofCount} 份证明材料（变更清单可下载）。` : '提交申请时请在教务补充证明材料。', '调课经教务审批并同步后，剩余课次将自动按新日期重排，课次材料随序号不变。');
-                LQ.toast(lines.filter(Boolean).join('\n'), { tone: result.status === 'success' ? 'success' : result.status === 'partial' ? 'warning' : 'danger', duration: 9000 }).catch(() => {});
-            }
-            if (refs.feedback) refs.feedback.textContent = result.message || '';
-        } catch (error) { toast(error.message, 'danger'); }
+            if (refs.feedback) refs.feedback.textContent = data.result?.message || '';
+            return data.result || {};
+        } catch (error) { toast(error.message, 'danger'); return null; }
         finally { setBusy(false); }
     }
 
+    function mergePushResults(first, second) {
+        if (!first) return second;
+        if (!second) return first;
+        const pushed = (first.pushed || 0) + (second.pushed || 0);
+        return { ...second, results: [...(first.results || []), ...(second.results || [])], pushed,
+            conflicts: (first.conflicts || 0) + (second.conflicts || 0), failed: (first.failed || 0) + (second.failed || 0),
+            message: `${first.message || ''} ${second.message || ''}`.trim(),
+            status: first.status === 'success' && second.status === 'success' ? 'success' : (pushed ? 'partial' : 'failed') };
+    }
+
     /**
-     * 保存到教务前的确认弹窗：变更清单、缺失的原因/证明材料、课次重排预览、批量上传证明材料。
-     * 返回 true 表示继续保存。
+     * 「检测冲突并保存」弹窗（降低期待、明确告知）：
+     * 打开即用教务自身的冲突检测试跑每一项（不保存）→ 逐项给出结论与下一步建议 →
+     * 保存没有冲突的（可选连同软冲突强制保存）→ 同一弹窗展示保存结果与后续操作。
      */
     async function openPushDialog(targets) {
         const dialogs = await LQ.load('dialogs');
-        const preview = await fetchResequencePreview(targets.map(d => d.id));
+        const ids = targets.map(d => d.id);
+        const preview = await fetchResequencePreview(ids);
         const body = document.createElement('div'); body.className = 'cse-push';
-        const missingReason = targets.filter(d => !String(d.reason || '').trim());
-        const missingProof = targets.filter(d => !(d.proofs || []).length);
+        const footer = document.createElement('div'); footer.className = 'cse-push__foot';
+        let phase = 'checking';            // checking → checked → saving → done
+        let check = null;                  // result of push/check
+        let pushResult = null;
+        const VERDICT = {
+            ok: { tone: 'ok', label: '无冲突，可保存' }, already: { tone: 'ok', label: '教务已有记录，保存时直接关联' },
+            conflict: { tone: 'room', label: '有冲突（可强制保存）' }, hard: { tone: 'conflict', label: '不能保存' }, failed: { tone: 'muted', label: '检测失败' },
+        };
+        const NEXT_STEP = {
+            conflict: '建议：换一个时段或教室后再试；若已与相关方沟通，也可「连同冲突一起保存」，教务审批时会标记为冲突调停课。',
+            hard: '教务里该原课次已有调课申请或已补课，不允许再申请：请先在教务撤回旧申请，或在这里撤销这条变更。',
+            failed: '教务未能识别该课次，多半是本地课表过期：先点「同步教务课表」再重新检测。',
+        };
+        const current = () => targets.map(d => draftById(d.id) || d);
+        const verdictOf = draft => check?.results?.find(r => r.draft_id === draft.id) || precheckOf(draft) || null;
+        const okIds = () => current().filter(d => ['ok', 'already'].includes(verdictOf(d)?.status)).map(d => d.id);
+        const softIds = () => current().filter(d => verdictOf(d)?.status === 'conflict').map(d => d.id);
+        const unchecked = () => !check || check.status !== 'success';
+        const pushedItem = draft => pushResult?.results?.find(r => r.draft_id === draft.id);
+        const itemBadge = (draft, pushed, v) => {
+            if (pushed) return `<span class="cse-tag cse-tag--${pushed.status === 'pushed' ? 'ok' : pushed.status === 'conflict' ? 'room' : 'conflict'}">${pushed.status === 'pushed' ? '已保存到教务草稿' : pushed.status === 'conflict' ? '教务冲突，未保存' : '保存失败'}</span>`;
+            const meta = v ? VERDICT[v.status] || VERDICT.failed : null;
+            if (meta) return `<span class="cse-tag cse-tag--${meta.tone}">${meta.label}</span>`;
+            return phase === 'checking' ? '<span class="cse-tag cse-tag--muted">检测中…</span>' : '<span class="cse-tag cse-tag--muted">未检测</span>';
+        };
+        const nextStepFor = (pushed, v) => {
+            if (pushed) return pushed.status === 'pushed' ? '' : NEXT_STEP[pushed.status === 'conflict' ? (pushed.conflict?.hard ? 'hard' : 'conflict') : 'failed'];
+            return v ? NEXT_STEP[v.status] || '' : '';
+        };
+        const renderItem = draft => {
+            const v = verdictOf(draft); const pushed = pushedItem(draft);
+            const detail = pushed?.message || v?.message || '';
+            const next = nextStepFor(pushed, v);
+            return `<li class="cse-push__item" data-cse-push-item="${draft.id}"><div class="cse-push__head"><b>${escapeHtml(draft.course_name)}</b>${itemBadge(draft, pushed, v)}</div><span>${escapeHtml(draft.original_label)} → ${escapeHtml(draft.proposed_label)}</span><small>${draft.reason ? `原因：${escapeHtml(draft.reason)}` : '<em>未填写原因</em>'} · ${(draft.proofs || []).length ? `证明材料 ${draft.proofs.length} 份` : '<em>无证明材料</em>'}</small>${detail ? `<div class="cse-push__detail">${escapeHtml(detail)}</div>` : ''}${conflictDetailsHtml(pushed?.conflict || v?.conflict || v)}${next ? `<div class="cse-push__next">${escapeHtml(next)}</div>` : ''}</li>`;
+        };
+        const renderCheckNote = () => {
+            if (!check) return '';
+            if (check.status === 'missing_credential') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>未配置教务账号，无法提前检测</strong><span>${escapeHtml(check.message || '')}</span><a class="cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a></div>`;
+            if (check.status !== 'success') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>检测未完成</strong><span>${escapeHtml(check.message || '')} 可重试，或直接尝试保存（保存时教务仍会逐项检测，有冲突的不会写入）。</span><button type="button" class="cse-btn cse-btn--sm" data-cse-push-recheck>重试检测</button></div>`;
+            const clean = !check.conflicts && !check.hard && !check.failed;
+            return `<div class="cse-push__block cse-status ${clean ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>教务预检结果</strong><span>${escapeHtml(check.message || '')}</span><button type="button" class="cse-btn cse-btn--sm" data-cse-push-recheck>重新检测</button></div>`;
+        };
+        const renderDoneNote = () => {
+            if (!pushResult) return '';
+            const title = pushResult.status === 'success' ? '已保存到教务草稿' : pushResult.status === 'partial' ? '部分已保存，其余需处理' : pushResult.status === 'missing_credential' ? '未配置教务账号' : '未能保存';
+            const proofCount = current().reduce((n, d) => n + ((d.proofs || []).length), 0);
+            const steps = pushResult.pushed ? `<div class="cse-push__block"><strong>下一步</strong><span>1) 登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」；2) 提交时附上证明材料${proofCount ? '（变更清单可下载已上传的材料）' : '（本批尚未上传）'}；3) 审批通过并同步后，剩余课次自动重排，材料随序号不变。</span><a class="cse-btn cse-btn--sm cse-btn--primary" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">打开教务调停课申请 ↗</a></div>` : '';
+            const fix = pushResult.status === 'missing_credential' ? `<a class="cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a>` : '';
+            return `<div class="cse-push__block cse-status ${pushResult.status === 'success' ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>${title}</strong><span>${escapeHtml(pushResult.message || '')}</span>${fix}</div>${steps}`;
+        };
         const renderBody = () => {
-            const rows = targets.map(d => draftById(d.id) || d).map(d => `<li class="cse-push__item"><b>${escapeHtml(d.course_name)}</b><span>${escapeHtml(d.original_label)} → ${escapeHtml(d.proposed_label)}</span><small>${d.reason ? `原因：${escapeHtml(d.reason)}` : '<em>未填写原因</em>'} · ${(d.proofs || []).length ? `证明材料 ${d.proofs.length} 份` : '<em>无证明材料</em>'}</small></li>`).join('');
+            const list = current();
+            const done = phase === 'done';
+            const missingReason = list.filter(d => !String(d.reason || '').trim() && d.status !== 'pushed');
+            const missingProof = list.filter(d => !(d.proofs || []).length);
             const plans = (preview?.plans || []).filter(p => p.changes?.length);
             const planHtml = plans.length ? `<div class="cse-push__block"><strong>审批通过并同步后的课次重排</strong><ul class="cse-reseq__list">${plans.map(p => `<li><b>${escapeHtml(p.course_label || '')}</b>：已发生 ${p.frozen_count} 次不变，${p.change_count} 次重新分配日期${p.changes.slice(0, 3).map(c => `<br><small>第 ${c.order_index} 次课 ${escapeHtml(describeSlot(c.old))} → ${escapeHtml(describeSlot(c.new))}</small>`).join('')}${p.changes.length > 3 ? `<br><small>… 共 ${p.changes.length} 次</small>` : ''}</li>`).join('')}</ul><p class="cse-field__hint">课次序号与教学材料保持不变，只重新分配日期，无需手动改。</p></div>` : '';
-            body.innerHTML = `<p class="cse-push__lead">${targets.length} 项变更将写入教务系统的调停课申请草稿（待提交），不会替您提交申请。保存后请登录教务系统核对并点击「提交申请」。</p>
-                <ul class="cse-push__list">${rows}</ul>
-                ${missingReason.length ? `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>` : ''}
-                <div class="cse-push__block">
-                    <strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span>
-                    <label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label>
-                </div>
-                ${planHtml}`;
+            body.dataset.phase = phase;
+            body.innerHTML = `<p class="cse-push__lead">${done ? '结果如下，有问题的项已给出建议。' : `${list.length} 项变更会先交给教务做冲突检测（不保存）；确认没有冲突的才写入教务的调停课申请草稿（待提交），平台不会替您提交申请。`}</p>
+                ${done ? renderDoneNote() : renderCheckNote()}
+                <ul class="cse-push__list">${list.map(renderItem).join('')}</ul>
+                ${done || !missingReason.length ? '' : `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>`}
+                ${done ? '' : `<div class="cse-push__block"><strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span><label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label></div>`}
+                ${done ? '' : planHtml}`;
+            const busy = phase === 'checking' || phase === 'saving';
+            const blocked = check && (check.status === 'missing_credential' || check.status === 'nothing');
+            const confirmLabel = phase === 'checking' ? '正在检测…' : phase === 'saving' ? '正在保存…' : unchecked() ? '直接尝试保存' : `保存无冲突的 ${okIds().length} 项`;
+            footer.innerHTML = done
+                ? '<button type="button" class="cse-btn cse-btn--primary" data-cse-push-cancel>完成</button>'
+                : `<button type="button" class="cse-btn" data-cse-push-cancel>取消</button>
+                   ${softIds().length ? `<button type="button" class="cse-btn cse-btn--danger" data-cse-push-force${busy ? ' disabled' : ''}>连同 ${softIds().length} 项冲突一起保存</button>` : ''}
+                   <button type="button" class="cse-btn cse-btn--primary" data-cse-push-confirm${busy || blocked || (!unchecked() && !okIds().length) ? ' disabled' : ''} title="${unchecked() ? '预检未完成；保存时教务仍会逐项检测冲突，有冲突的不会写入' : ''}">${confirmLabel}</button>`;
         };
         renderBody();
-        const footer = document.createElement('div'); footer.className = 'cse-push__foot';
-        footer.innerHTML = '<button type="button" class="cse-btn" data-cse-push-cancel>取消</button><button type="button" class="cse-btn cse-btn--primary" data-cse-push-confirm>保存到教务</button>';
-        const root = dialogs.createDialog({ title: '保存到教务系统', body, footer, size: 'lg', attrs: { 'data-cse-push-dialog': '' } });
+        const root = dialogs.createDialog({ title: '检测冲突并保存到教务', body, footer, size: 'lg', attrs: { 'data-cse-push-dialog': '' } });
         return new Promise(resolve => {
             let decided = false;
             const finish = value => { if (!decided) { decided = true; resolve(value); } };
-            const handle = dialogs.openDialog(root, { onClose: () => finish(false) });
+            const handle = dialogs.openDialog(root, { onClose: () => finish(pushResult) });
             const close = async () => { await LQ.layer.close(handle, 'button'); };
+            const runCheck = async () => {
+                phase = 'checking'; renderBody();
+                check = (await precheckDrafts(ids, { notify: 'none' })) || { status: 'failed', message: '预检请求失败，可直接尝试保存或稍后重试。' };
+                phase = 'checked'; renderBody();
+            };
+            const save = async (force) => {
+                phase = 'saving'; renderBody();
+                let result = null;
+                if (unchecked()) result = await runPush(ids);
+                else {
+                    const ok = okIds(); const soft = softIds();
+                    if (ok.length) result = await runPush(ok);
+                    if (force && soft.length) result = mergePushResults(result, await runPush(soft, { force: true }));
+                }
+                pushResult = result || { status: 'failed', message: '保存请求失败，请稍后重试。', results: [] };
+                phase = 'done'; renderBody();
+                if (pushResult.status === 'missing_credential') LQ.toast(pushResult.message, { tone: 'warning', duration: 8000, action: { label: '去设置教务账号', href: CREDENTIAL_URL } }).catch(() => {});
+                else toast(pushResult.message || '', pushResult.status === 'success' ? 'success' : pushResult.status === 'partial' ? 'warning' : 'danger');
+            };
             root.addEventListener('click', async event => {
-                if (event.target.closest('[data-cse-push-cancel]')) { finish(false); await close(); return; }
-                if (event.target.closest('[data-cse-push-confirm]')) { finish(true); await close(); return; }
+                if (event.target.closest('[data-cse-push-cancel]')) { await close(); return; }
+                if (event.target.closest('[data-cse-push-recheck]')) { await runCheck(); return; }
+                if (event.target.closest('[data-cse-push-confirm]')) { await save(false); return; }
+                if (event.target.closest('[data-cse-push-force]')) {
+                    const ok = await LQ.confirm({ title: '连同冲突一起保存', message: '有冲突的项会以「冲突调停课」保存到教务草稿，教务审批时需要说明；确定继续？', confirmLabel: '仍然保存' });
+                    if (ok) await save(true);
+                    return;
+                }
                 const aiAll = event.target.closest('[data-cse-push-ai-all]');
                 if (aiAll) {
                     aiAll.disabled = true; aiAll.textContent = 'AI 填写中…';
-                    for (const draft of missingReason) {
+                    for (const draft of current().filter(d => !String(d.reason || '').trim())) {
                         try {
                             const data = await api(`${API}/reason-suggest`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, event_key: draft.event_key, week: draft.proposed.week, weekday: draft.proposed.weekday, sections: draft.proposed.sections, room: draft.proposed.room }) });
                             const saved = await api(`${API}/drafts`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, event_key: draft.event_key, week: draft.proposed.week, weekday: draft.proposed.weekday, sections: draft.proposed.sections, room: draft.proposed.room, room_id: draft.proposed.room_id, reason: data.reason }) });
-                            state.payload = saved; draft.reason = data.reason;
+                            state.payload = saved;
                         } catch (error) { toast(error.message, 'danger'); }
                     }
-                    missingReason.length = 0; renderBody(); renderAll();
+                    renderBody(); renderAll();
                 }
             });
             root.addEventListener('change', async event => {
@@ -1159,9 +1289,10 @@ function init(boot) {
                 if (!input || !input.files?.length) return;
                 const files = [...input.files];
                 state.proofsBusy = true; renderBody();
-                for (const draft of targets) await uploadProofs(draft.id, files);
-                state.proofsBusy = false; missingProof.length = 0; renderBody();
+                for (const draft of current()) await uploadProofs(draft.id, files);
+                state.proofsBusy = false; renderBody();
             });
+            void runCheck();
         });
     }
 
@@ -1469,7 +1600,9 @@ function init(boot) {
         const withdraw = event.target.closest('[data-cse-withdraw]');
         if (withdraw) { await withdrawDraft(withdraw.dataset.cseWithdraw); return; }
         const force = event.target.closest('[data-cse-force]');
-        if (force) await pushDrafts({ draftIds: [Number(force.dataset.cseForce)], force: true });
+        if (force) { await pushDrafts({ draftIds: [Number(force.dataset.cseForce)], force: true }); return; }
+        const precheck = event.target.closest('[data-cse-precheck]');
+        if (precheck) { precheck.disabled = true; precheck.textContent = '检测中…'; await precheckDrafts([Number(precheck.dataset.csePrecheck)]); }
     });
 
     applyPayload(boot, { keepWeek: false, keepSelection: false });

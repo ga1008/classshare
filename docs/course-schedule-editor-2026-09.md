@@ -101,3 +101,13 @@
 - **保存到教务弹窗**（替代原确认框）：变更清单（原因/材料状态）、「AI 填写全部」补齐缺失原因、批量上传证明材料到本批全部草稿、课次重排预览；确认后再推送。
 - **液态玻璃下拉（新组件 `static/js/lq/dropdown.js`，特性名 `dropdown`）**：`bindDropdown(select, {searchable, placeholder, onQuery})`，原生 `<select>` 仍是值的唯一所有者（表单/校验/change 监听不变），组件只渲染玻璃触发按钮 + 通过 layer 系统浮出的 `lq-selection__popup lq-glass` 列表；`searchable` 在弹层顶部加筛选框（可配 `onQuery`/`setResults` 异步取数）；`select.multiple` 变为多选（勾选框、选后不关闭、触发按钮汇总"A、B 等 N 项"）；声明式 `<select data-lq-dropdown data-lq-searchable>` + `enhanceDropdowns(root)`。样式在 `selection.css` 的 `.lq-dropdown*`。**坑**：LQ 按钮 props 不接受 `aria-*`/`tabindex` attrs（会抛 Unsupported LQ attribute），装饰属性要创建后再 set。
 - 验证：`tests/test_schedule_editor_round4.py`（学期结束禁放、证明材料存取/越权/路径穿越、AI 原因与兜底）；Playwright 审计覆盖日历箭头方向与实心箭头、周卡锁定/发光、四个玻璃下拉、可搜索教室、AI 原因、证明材料上传、跨周拖拽、调休箭头与虚线列、保存弹窗与推送反馈、移动端；控制台零错误。
+
+## 第五轮（2026-09-27）：降低期待、提前预测、明确告知
+
+用户反馈：保存到教务时只告诉"不能调"，但用户期待的是"能保存就能用"；弹窗（LQ toast）只是半透明，字看不清。
+
+- **提前预测（只读预检）**：`academic_schedule_draft_push_service.check_drafts_conflicts(teacher_id, year, term, draft_ids)` 用教务自身的 `ttksq_cxConflictCtzt` 对每条待保存草稿试跑（`_check_one`：找不到原课次 → failed；教务已有明细 → already；无冲突 → ok；冲突位含 8/64 → hard，否则 conflict），**不调用保存接口**，结论写入草稿 `availability_json.zf_precheck`（`schedule_editor_service.record_draft_precheck`，草稿 status 不变）。`conflict_outcome()` 统一归一化冲突应答，`_save_one` 同用。路由 `POST /api/manage/academic/course-schedule/editor/push/check`。
+- **触发时机**：① 本地保存草稿（拖拽/抽屉）后前端自动静默预检，只有出现冲突才提示；② 变更清单每条草稿有「预检冲突/重新预检」；③ 打开「检测冲突并保存」弹窗即自动预检。
+- **说法与流程**：按钮「保存到教务」→「检测冲突并保存」（title 说明先检测再保存）。弹窗四阶段 checking → checked → saving → done：逐项结论徽章（无冲突可保存 / 教务已有记录 / 有冲突可强制保存 / 不能保存 / 检测失败）+ 分组冲突明细 + 下一步建议（换时段或教室、撤回教务旧申请或撤销本条、先同步课表）；主按钮变为「保存无冲突的 N 项」（未预检成功则「直接尝试保存」），软冲突另有「连同 N 项冲突一起保存」（二次确认，`force`）；保存后同一弹窗进入结果阶段：已保存/冲突未保存/失败 逐项标注 + 「打开教务调停课申请」深链 + 三步后续指引；未配置教务账号在预检和结果阶段都直接给「去设置教务账号」。卡片与抽屉显示预检结论。
+- **玻璃弹窗**：`lq/toast.js` 根类改为 `lq-glass lq-glass--thick`，`toast.css` 去掉 `backdrop-filter: none` 并用 `--lq-material-ink` 着色，`material-boundaries.css` 的模糊选择器不再排除 `.lq-toast`。
+- 验证：`tests/test_schedule_editor.py::test_precheck_runs_conflict_check_only_and_records_verdict_on_draft`（假教务：只打冲突检测、不打保存、status 不变、zf_precheck 落库、hard 判定）；P03 Playwright `editor-audit.spec.ts` 第 8 步改为预检弹窗（无凭据提示、「直接尝试保存」、done 阶段、卡片预检按钮）。

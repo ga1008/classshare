@@ -321,6 +321,28 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((linked["status"], linked["detail_id"]), ("pushed", "DETAIL-OLD"))
         self.assertEqual(sum(1 for _m, p, _f in self.calls if p.endswith("ttksq_cxSaveTtksj.html")), 1)
 
+    async def test_precheck_runs_conflict_check_only_and_records_verdict_on_draft(self):
+        with self.fake_client(conflict_num=4):
+            result = await push.check_drafts_conflicts(1, year="2026-2027", term="1")
+        self.assertEqual(result["status"], "success", result)
+        paths = [p for _m, p, _f in self.calls]
+        self.assertIn("/tkgl/ttksq_cxConflictCtzt.html", paths)
+        self.assertNotIn("/tkgl/ttksq_cxSaveTtksj.html", paths)
+        self.assertEqual((result["ok"], result["conflicts"], result["hard"]), (0, 1, 0))
+        stored = editor.get_draft(self.conn, 1, self.draft["id"])
+        self.assertEqual(stored["status"], "draft", "pre-check must not change the draft status")
+        self.assertEqual(stored["availability"]["zf_precheck"]["status"], "conflict")
+        self.assertEqual(stored["availability"]["zf_precheck"]["conflict_num"], 4)
+        self.calls.clear()
+        with self.fake_client(conflict_num=8):
+            hard = await push.check_drafts_conflicts(1, year="2026-2027", term="1", draft_ids=[self.draft["id"]])
+        self.assertEqual(hard["results"][0]["status"], "hard")
+        self.assertEqual(editor.get_draft(self.conn, 1, self.draft["id"])["availability"]["zf_precheck"]["status"], "hard")
+        self.calls.clear()
+        with self.fake_client():
+            clean = await push.check_drafts_conflicts(1, year="2026-2027", term="1")
+        self.assertEqual((clean["ok"], clean["results"][0]["status"]), (1, "ok"))
+
     async def test_withdraw_deletes_remote_detail_and_unlocks_local_draft(self):
         editor.update_draft_remote_state(self.conn, self.draft["id"], status="pushed", remote_ttk_id="TTK-DRAFT", remote_detail_id="DETAIL-GONE", pushed=True)
         self.conn.commit()

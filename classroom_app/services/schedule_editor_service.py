@@ -774,3 +774,20 @@ def find_draft_proof(conn, teacher_id: int, draft_id: int, file_id: str) -> tupl
     if not path.is_file():
         raise ScheduleEditError("证明材料文件已丢失。", status_code=404)
     return target, path
+
+
+def record_draft_precheck(conn, teacher_id: int, draft_id: int, precheck: dict[str, Any]) -> None:
+    """Store the latest 教务 conflict pre-check under ``availability_json.zf_precheck`` (draft status untouched).
+
+    Scoped to the owning teacher so a stray id can never touch another teacher's draft.
+    """
+    row = conn.execute("SELECT availability_json FROM teacher_schedule_edit_drafts WHERE id = ? AND teacher_id = ?",
+                       (int(draft_id), int(teacher_id))).fetchone()
+    if row is None:
+        return
+    current = _loads(row["availability_json"], {}) or {}
+    if not isinstance(current, dict):
+        current = {}
+    current["zf_precheck"] = precheck
+    conn.execute("UPDATE teacher_schedule_edit_drafts SET availability_json = ?, updated_at = ? WHERE id = ?",
+                 (json.dumps(current, ensure_ascii=False), _now_iso(), int(draft_id)))
