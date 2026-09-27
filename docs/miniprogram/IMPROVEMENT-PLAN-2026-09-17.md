@@ -253,6 +253,29 @@
 **真机**：截止 24h/2h、催交、批改完成三类各收到一次；冷启动点击通知到达正确任务；模拟微信慢 8s 时批改接口 p95 不受影响、催交 p95≤1s 受理。
 **出口**：C07/C08 及三处新发现关闭；M1 出口勾选；v0.15.x 体验版。
 
+**执行记录（2026-09-28，本地实现完成，未提交推送/未部署/未上传；v0.14.0 审核中）**
+
+- [x] B1 新表 `mp_subscribe_tasks`（event_key 唯一、state、attempts、next_attempt_at、expires_at、lease）+ `mp_subscribe_reports`，新模块 `services/wechat_mp_subscribe_dispatch_service.py`；`mp_subscribe_sends` 保留不再写。
+- [x] B2 截止扫描、批改完成、教师催交全部改为短事务 `enqueue_subscribe_message`，请求与批改事务内不再访问微信；催交立即返回受理统计（保留旧字段 `pushed/skipped` 兼容 v0.14 及以前客户端）。
+- [x] B3 scheduler handler `mp_subscribe_dispatch`（30 秒一轮、40 秒预算、每批 10 条、租约 5 分钟）：领取时原子预扣额度，确定未送达才退还；43101 清额度记 rejected；-1/45009/45011、连接失败、无 token 退还后指数退避重试（60s 起，最多 4 次）；读超时记 unknown 不重发；其余错误码退还后记 failed；截止提醒过期记 expired 不发。无绑定/无额度/拒收为可唤醒终态，同事件再次入队且原因消除时重新排队。**与原计划的差异**：原计划"成功才扣额度"，实现改为"领取即预扣、失败退还"，杜绝两条任务争用最后一次额度。
+- [x] B4 批改完成事件键改为 `graded:{submission_id}:{sha256(score,feedback)[:16]}`；落点改为 `pages/task-detail/index?id=`。
+- [x] B5 `/api/mp/subscribe/report` 接受 `report_id`（同一次授权只计一次）并返回全部余额；`/config` 同时返回本人余额。
+- [x] B6 新路由 `GET /api/mp/teacher/assignment/{id}/nudge-status`（任课教师校验，按状态汇总今日催交）；路由快照已加入。学生侧余额并入 `/config`，未另开路由。
+- [x] B7 发送日志只记错误类别与 errcode，不打印带 access_token 的异常；表在 app 启动期 `ensure_dispatch_task` 中建好。
+- [x] B8 共享 `/api/message-center/items` 增加 `offset`（默认 0，向后兼容）。
+- [x] B9 **与原计划的差异**：微信一次性订阅按模板计次、与具体作业无关，"每张任务卡一个铃铛"会误导学生，改为任务页顶部一张"截止提醒：还能收到 N 条 · 再加一条"卡片（手势内同步发起授权）。
+- [x] B10 催交弹窗按 受理/未开启提醒/未绑定/今日已提醒 说明；页面显示"今日催交：已送达·发送中·未开启·未绑定·未确认/失败"，发送中每 15 秒自动刷新，离开页面清理定时器。
+- [x] B11 消息中心每页 50 条、触底/按钮加载更多、按 id 去重；无深链的通知点击展开完整摘要（平台通知只存 180 字摘要，没有更长正文）。
+- [x] B12 审批流深链已在批次 A 覆盖；反馈通知点击展开。
+
+**批次中发现并修复的生产潜伏缺陷**：旧 `_claim_dedupe` 使用 `db.sql.insert_ignore_sql`，其 PostgreSQL 输出为 `$n` 占位，运行时连接门面只转换 `?`，每次都会抛错；异常被 `try/except` 吞掉后返回"已发过"，所以生产环境**任何订阅消息都不可能发出**。单测跑 SQLite 所以一直没暴露。2026-09-28 只读核查生产：`mp_subscribe_sends` 0 行、`mp_subscribe_grants` 0 行、活跃微信绑定 1 个，即至今没有学生授权过模板，未造成实际漏发。新代码统一用 `?` 占位的 insert-ignore，并在隔离 PostgreSQL 上验证。
+
+验证：后端 `test_wechat_mp_subscribe_dispatch`（新，19 例：状态机、预扣/退还、租约、退避、过期、幂等上报、汇总）等相关 212 例 + 调度器 7 例通过（32 个为无 DSN 跳过的 PG 层用例）；**隔离 PG16（127.0.0.1:55451，用后停止）并发核验**：4 个 worker × 40 条任务 × 25 次额度 → 恰好 25 次发送、额度归零不为负、无重复、无卡在 processing；小程序 `type-check` 通过、vitest 9 文件 59/59、`build:mp-weixin` 通过。
+
+代码审查：APPROVE，0 CRITICAL/HIGH；MEDIUM（worker 停顿超过租约后结果写不回、可能重发）已加 `lease lost` 日志留痕，LOW（离开催交页仍轮询）已改为 onHide 停止。
+
+待办：部署授权、上传体验版 v0.15.0、真机三类消息送达验收（需先有学生授权模板）。
+
 ### 批次 C：分页、容量与成绩口径（v0.16.x，对应真源阶段 3）
 
 | 项 | 改动 |

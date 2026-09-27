@@ -685,17 +685,17 @@ def mp_teacher_grading(assignment_id: int, user: dict = Depends(get_current_mp_t
 
 @router.post("/assignment/{assignment_id}/nudge")
 def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_teacher)):
-    """一键催交：给未提交学生发"作业催交通知"订阅消息。
+    """一键催交：为未提交学生登记"作业催交通知"订阅消息任务，立即返回。
 
-    额度制（学生须先在小程序里允许过该模板）；同一作业同一学生每天
-    最多推一次（dedupe 按日）。缺交记零占位视为未提交。
+    请求内只写任务行，不调用微信（C08）；scheduler worker 异步发送，结果
+    用 GET .../nudge-status 查询。额度制（学生须先在小程序里允许过该模板）；
+    同一作业同一学生每天最多一条。缺交记零占位视为未提交。
     """
-    from datetime import date
-
-    from ...services.wechat_mp_subscribe_service import (
-        build_nudge_values,
-        send_subscribe_message,
+    from ...services.wechat_mp_subscribe_dispatch_service import (
+        enqueue_subscribe_message,
+        nudge_group_key,
     )
+    from ...services.wechat_mp_subscribe_service import build_nudge_values
 
     teacher_id = int(user["id"])
     with get_db_connection() as conn:
@@ -722,27 +722,40 @@ def mp_teacher_nudge(assignment_id: int, user: dict = Depends(get_current_mp_tea
         values = build_nudge_values(
             assignment["title"], assignment.get("course_name"), assignment.get("due_at")
         )
-        today = date.today().isoformat()
-        stats = {"total_unsubmitted": len(rows), "pushed": 0, "no_grant": 0, "skipped": 0}
+        group_key = nudge_group_key(assignment_id)
+        day = group_key.rsplit(":", 1)[-1]
+        stats = {"total_unsubmitted": len(rows), "queued": 0, "no_grant": 0, "no_binding": 0, "duplicate": 0}
         for row in rows:
             student_id = int(row["id"])
-            status = send_subscribe_message(
+            outcome = enqueue_subscribe_message(
                 conn,
+                event_key=f"nudge:{assignment_id}:{student_id}:{day}",
+                group_key=group_key,
                 user_role="student",
                 user_pk=student_id,
                 template_key="nudge",
                 values=values,
-                page="pages/tasks/index",
-                dedupe_key=f"nudge:{assignment_id}:{student_id}:{today}",
+                page=f"pages/task-detail/index?id={assignment_id}",
             )
-            if status == "sent":
-                stats["pushed"] += 1
-            elif status == "no_grant":
-                stats["no_grant"] += 1
-            else:
-                stats["skipped"] += 1
+            key = "queued" if outcome in ("queued", "rearmed") else outcome
+            stats[key] += 1
         conn.commit()
+    # 旧客户端（v0.14 及以前）读 pushed/skipped：pushed 现在表示"已受理待发送"。
+    stats["pushed"] = stats["queued"]
+    stats["skipped"] = stats["no_binding"] + stats["duplicate"]
     return {"success": True, "data": stats, "error": None}
+
+
+@router.get("/assignment/{assignment_id}/nudge-status")
+def mp_teacher_nudge_status(assignment_id: int, user: dict = Depends(get_current_mp_teacher)):
+    """今天这份作业的催交送达情况（按发送任务状态汇总）。"""
+    from ...services.wechat_mp_subscribe_dispatch_service import nudge_group_key, summarize_group
+
+    with get_db_connection() as conn:
+        _get_teacher_assignment(conn, assignment_id, int(user["id"]))
+        summary = summarize_group(conn, nudge_group_key(assignment_id))
+        conn.commit()
+    return {"success": True, "data": summary, "error": None}
 
 
 @router.get("/submission/{submission_id}/review")

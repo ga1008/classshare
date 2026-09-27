@@ -139,7 +139,7 @@ class AssessmentSecondarySurfacesTests(unittest.TestCase):
         captured = []
         with patch.object(notifications, "_load_student_support_profile", return_value=""), \
              patch.object(notifications, "_insert_notification_if_allowed", side_effect=lambda conn, payload, **kw: captured.append(payload) or True), \
-             patch("classroom_app.services.wechat_mp_subscribe_service.send_subscribe_message") as wechat:
+             patch("classroom_app.services.wechat_mp_subscribe_dispatch_service.enqueue_subscribe_message") as wechat:
             notifications.create_student_grading_notification(self.conn, sid, actor_role="teacher")
         self.assertEqual(1, len(captured))
         metadata = json.loads(captured[0]["metadata_json"])

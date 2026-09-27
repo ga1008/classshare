@@ -8,21 +8,26 @@ const vue = localRequire("vue");
 const pageScript = readFileSync(new URL("../src/pages/messages/index.vue", import.meta.url), "utf8")
   .split('<script setup lang="ts">')[1].split("</script>")[0];
 
-function harness() {
+function item(id: number, unread = true) {
+  return { id, title: `t${id}`, body_preview: "b", category: "x", is_unread: unread, created_at: "2026-01-01" };
+}
+
+function harness(pages: Array<ReturnType<typeof item>[]> = [[item(7)]]) {
   const request = vi.fn(async (options: { path: string }) => {
     if (options.path.startsWith("/api/message-center/items")) {
-      return { items: [{ id: 7, title: "t", body_preview: "b", category: "x", is_unread: true, created_at: "2026-01-01" }] };
+      const offset = Number(/offset=(\d+)/.exec(options.path)?.[1] ?? 0);
+      return { items: pages.find((page, index) => pages.slice(0, index).flat().length === offset) ?? [] };
     }
     return {};
   });
   const redirectToLogin = vi.fn();
   const uni = { showToast: vi.fn(), navigateTo: vi.fn(), stopPullDownRefresh: vi.fn() };
-  const code = ts.transpileModule(`${pageScript}\nexport const testPage = { items, loadItems, openItem };`, {
+  const code = ts.transpileModule(`${pageScript}\nexport const testPage = { items, loadItems, openItem, loadMore, hasMore, expandedId };`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const imports: Record<string, unknown> = {
     vue,
-    "@dcloudio/uni-app": { onShow: vi.fn(), onPullDownRefresh: vi.fn() },
+    "@dcloudio/uni-app": { onShow: vi.fn(), onPullDownRefresh: vi.fn(), onReachBottom: vi.fn() },
     "../../utils/api": { request },
     "../../utils/session": { ensurePageSession: async () => true, redirectToLogin },
     "../../utils/format": { relativeTimeLabel: () => "" },
@@ -59,5 +64,30 @@ describe("message centre read state (F1)", () => {
     await page.openItem(page.items.value[0]);
     expect(page.items.value[0].is_unread).toBe(true);
     expect(redirectToLogin).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("message centre paging and expand (B11)", () => {
+  it("pages by offset and drops cards that shifted between pages", async () => {
+    const first = Array.from({ length: 50 }, (_, index) => item(100 - index));
+    const { page, request } = harness([first, [item(51), item(10)]]);
+    await page.loadItems();
+    expect(page.hasMore.value).toBe(true);
+    await page.loadMore();
+    expect(request.mock.calls.at(-1)?.[0].path).toContain("offset=50");
+    // id 51 was already on the first page (moved after a read); it must not duplicate.
+    expect(page.items.value).toHaveLength(51);
+    expect(page.items.value.at(-1).id).toBe(10);
+    expect(new Set(page.items.value.map((entry: { id: number }) => entry.id)).size).toBe(page.items.value.length);
+    expect(page.hasMore.value).toBe(false);
+  });
+
+  it("expands a notification without a deep link instead of doing nothing", async () => {
+    const { page } = harness([[item(7, false)]]);
+    await page.loadItems();
+    await page.openItem(page.items.value[0]);
+    expect(page.expandedId.value).toBe(7);
+    await page.openItem(page.items.value[0]);
+    expect(page.expandedId.value).toBeNull();
   });
 });

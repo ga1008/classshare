@@ -8,7 +8,7 @@
  * - POST /api/assignments/{id}/submissions/zero-unsubmitted 缺交记零
  * 单份批阅在独立的 teacher-grade 页完成。
  */
-import { onLoad, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
+import { onHide, onLoad, onPullDownRefresh, onShow, onUnload } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
@@ -122,6 +122,45 @@ async function runBatchAiGrading(): Promise<void> {
 
 const nudging = ref(false);
 
+interface NudgeStatus {
+  total: number;
+  delivered: number;
+  in_flight: number;
+  no_grant: number;
+  no_binding: number;
+  unknown: number;
+  failed: number;
+}
+
+const nudgeStatus = ref<NudgeStatus | null>(null);
+let nudgeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+const nudgeStatusLabel = computed(() => {
+  const status = nudgeStatus.value;
+  if (!status || !status.total) return "";
+  const parts = [`已送达 ${status.delivered}`];
+  if (status.in_flight) parts.push(`发送中 ${status.in_flight}`);
+  if (status.no_grant) parts.push(`未开启提醒 ${status.no_grant}`);
+  if (status.no_binding) parts.push(`未绑定微信 ${status.no_binding}`);
+  if (status.unknown + status.failed) parts.push(`未确认/失败 ${status.unknown + status.failed}`);
+  return `今日催交：${parts.join(" · ")}`;
+});
+
+async function loadNudgeStatus(): Promise<void> {
+  if (!assignmentId.value) return;
+  try {
+    nudgeStatus.value = await request<NudgeStatus>({
+      path: `/api/mp/teacher/assignment/${assignmentId.value}/nudge-status`,
+    });
+  } catch {
+    /* 状态行是辅助信息，失败不打扰主流程 */
+  }
+  if (nudgeRefreshTimer) clearTimeout(nudgeRefreshTimer);
+  nudgeRefreshTimer = nudgeStatus.value?.in_flight
+    ? setTimeout(() => void loadNudgeStatus(), 15000)
+    : null;
+}
+
 async function nudgeUnsubmitted(): Promise<void> {
   if (nudging.value) return;
   const count = unsubmittedEntries.value.length;
@@ -132,7 +171,7 @@ async function nudgeUnsubmitted(): Promise<void> {
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
       title: "一键催交",
-      content: `给 ${count} 名未提交学生发送微信催交提醒？（仅送达已在小程序允许通知的学生，每人每天最多一次）`,
+      content: `给 ${count} 名未提交学生发送微信催交提醒？只有在小程序里开启过催交提醒的学生能收到，每人每天最多一次。`,
       success: (res) => resolve(Boolean(res.confirm)),
       fail: () => resolve(false),
     });
@@ -140,17 +179,22 @@ async function nudgeUnsubmitted(): Promise<void> {
   if (!confirmed) return;
   nudging.value = true;
   try {
-    const data = await request<{ pushed: number; no_grant: number; total_unsubmitted: number }>({
+    const data = await request<{ queued: number; no_grant: number; no_binding: number; duplicate: number }>({
       path: `/api/mp/teacher/assignment/${assignmentId.value}/nudge`,
       method: "POST",
       data: {},
     });
-    const skipped = data.total_unsubmitted - data.pushed;
+    const notes = [
+      data.no_grant ? `${data.no_grant} 人未开启催交提醒` : "",
+      data.no_binding ? `${data.no_binding} 人未绑定微信` : "",
+      data.duplicate ? `${data.duplicate} 人今天已提醒过` : "",
+    ].filter(Boolean);
     uni.showModal({
-      title: "催交完成",
-      content: `已推送 ${data.pushed} 人${skipped > 0 ? `；${skipped} 人未订阅通知或今日已提醒` : ""}。`,
+      title: data.queued ? "已开始发送" : "没有可发送的学生",
+      content: `${data.queued} 人的提醒正在发送，约 1 分钟内送达${notes.length ? `；${notes.join("，")}，收不到这次提醒` : ""}。页面下方会显示送达情况。`,
       showCancel: false,
     });
+    void loadNudgeStatus();
   } catch (error: unknown) {
     uni.showToast({
       title: error instanceof Error ? error.message : "催交失败",
@@ -202,7 +246,17 @@ onLoad((query) => {
   }
 });
 
+function stopNudgeRefresh(): void {
+  if (nudgeRefreshTimer) clearTimeout(nudgeRefreshTimer);
+  nudgeRefreshTimer = null;
+}
+
+// 进入批阅页（onHide）时停止轮询，返回时 onShow 重新拉取并按需续轮。
+onHide(stopNudgeRefresh);
+onUnload(stopNudgeRefresh);
+
 onShow(() => {
+  void loadNudgeStatus();
   // 从批阅页返回后刷新计数与分数
   if (needsRefresh.value && data.value) {
     needsRefresh.value = false;
@@ -274,6 +328,7 @@ onPullDownRefresh(() => {
           <text>缺交记零</text>
         </view>
       </view>
+      <text v-if="nudgeStatusLabel" class="nudge-status" @tap="loadNudgeStatus">{{ nudgeStatusLabel }}</text>
 
       <!-- 分段 -->
       <view class="segment glass-chip">
@@ -346,6 +401,13 @@ onPullDownRefresh(() => {
 </template>
 
 <style scoped>
+.nudge-status {
+  display: block;
+  margin: -8rpx 4rpx 8rpx;
+  color: #66718f;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
 .page {
   min-height: 100vh;
   padding: 28rpx 28rpx calc(env(safe-area-inset-bottom) + 40rpx);

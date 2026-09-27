@@ -5,7 +5,7 @@
  * 零 mp 专属后端——直调既有 /api/message-center/{summary,items,read}
  * （bearer 直通）。私信收发留在 Web，此处只聚合通知类消息。
  */
-import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
+import { onPullDownRefresh, onReachBottom, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
@@ -33,6 +33,10 @@ const loading = ref(true);
 const failed = ref(false);
 const tab = ref<"all" | "unread">("all");
 const marking = ref(false);
+const PAGE_SIZE = 50;
+const hasMore = ref(false);
+const loadingMore = ref(false);
+const expandedId = ref<number | null>(null);
 const auth = useAuthStore();
 
 const unreadCount = computed(() => items.value.filter((item) => item.is_unread).length);
@@ -46,9 +50,10 @@ async function loadItems(): Promise<void> {
   failed.value = false;
   try {
     const data = await request<{ items: MessageItem[] }>({
-      path: "/api/message-center/items?limit=150",
+      path: `/api/message-center/items?limit=${PAGE_SIZE}&offset=0`,
     });
     items.value = data.items ?? [];
+    hasMore.value = items.value.length >= PAGE_SIZE;
   } catch (error: unknown) {
     failed.value = true;
     if ((error as { statusCode?: number }).statusCode === 401) {
@@ -57,6 +62,26 @@ async function loadItems(): Promise<void> {
   } finally {
     loading.value = false;
     uni.stopPullDownRefresh();
+  }
+}
+
+async function loadMore(): Promise<void> {
+  if (!hasMore.value || loadingMore.value || loading.value) return;
+  loadingMore.value = true;
+  try {
+    const data = await request<{ items: MessageItem[] }>({
+      path: `/api/message-center/items?limit=${PAGE_SIZE}&offset=${items.value.length}`,
+    });
+    const next = data.items ?? [];
+    // 未读优先排序：翻页期间有消息被读会整体挪位，按 id 去重避免重复卡片。
+    const seen = new Set(items.value.map((item) => item.id));
+    items.value = [...items.value, ...next.filter((item) => !seen.has(item.id))];
+    hasMore.value = next.length >= PAGE_SIZE;
+  } catch (error: unknown) {
+    if ((error as { statusCode?: number }).statusCode === 401) redirectToLogin();
+    else uni.showToast({ title: "加载更多失败，稍后再试", icon: "none" });
+  } finally {
+    loadingMore.value = false;
   }
 }
 
@@ -81,6 +106,7 @@ async function openItem(item: MessageItem): Promise<void> {
   // 作业/考试相关通知深链到作答页；其余仅展开阅读（正文即预览）
   const target = assessmentNotificationTarget(item.link_url || "", item.metadata, auth.isTeacher);
   if (target) uni.navigateTo({ url: target });
+  else expandedId.value = expandedId.value === item.id ? null : item.id;
 }
 
 async function markAllRead(): Promise<void> {
@@ -107,6 +133,10 @@ onShow(() => {
 
 onPullDownRefresh(() => {
   void loadItems();
+});
+
+onReachBottom(() => {
+  void loadMore();
 });
 </script>
 
@@ -152,7 +182,11 @@ onPullDownRefresh(() => {
         </view>
         <text class="message__time">{{ relativeTimeLabel(item.created_at) }}</text>
       </view>
-      <text v-if="item.body_preview" class="message__preview">{{ item.body_preview }}</text>
+      <text
+        v-if="item.body_preview"
+        class="message__preview"
+        :class="{ 'message__preview--full': expandedId === item.id }"
+      >{{ item.body_preview }}</text>
       <view class="message__meta">
         <text class="message__chip">{{ item.category_label }}</text>
         <text v-if="item.severity === 'important'" class="message__chip message__chip--important">
@@ -160,10 +194,24 @@ onPullDownRefresh(() => {
         </text>
       </view>
     </view>
+    <view v-if="items.length && (hasMore || loadingMore)" class="more" @tap="loadMore">
+      <text>{{ loadingMore ? "加载中…" : "加载更多" }}</text>
+    </view>
   </view>
 </template>
 
 <style scoped>
+.message__preview--full {
+  display: block !important;
+  -webkit-line-clamp: unset !important;
+  overflow: visible !important;
+}
+.more {
+  padding: 20rpx 0 8rpx;
+  text-align: center;
+  color: #66718f;
+  font-size: 26rpx;
+}
 .messages {
   min-height: 100vh;
   padding: 28rpx 30rpx calc(env(safe-area-inset-bottom) + 32rpx);

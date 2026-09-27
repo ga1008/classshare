@@ -248,6 +248,10 @@ async def startup_event():
             from .services.wechat_mp_subscribe_service import ensure_deadline_scan_task
 
             mp_deadline_scan_task_id = ensure_deadline_scan_task(align_conn)
+            from .services.wechat_mp_subscribe_dispatch_service import ensure_dispatch_task
+
+            # 同时在启动期建好订阅任务表，避免首次业务事务里跑 DDL。
+            ensure_dispatch_task(align_conn)
             from .services.national_holiday_service import ensure_national_holiday_refresh_task
 
             ensure_national_holiday_refresh_task(align_conn)

@@ -35,7 +35,33 @@ describe("subscribe-message request (F2)", () => {
     expect(await pending).toBe("asked");
     await Promise.resolve();
     const report = request.mock.calls.find(([options]) => options.path.endsWith("/subscribe/report"));
-    expect(report?.[0].data).toEqual({ accepted: ["deadline"] });
+    expect(report?.[0].data).toMatchObject({ accepted: ["deadline"] });
+    expect(typeof report?.[0].data.report_id).toBe("string");
+  });
+
+  it("publishes balances from config and from the report response (B5/B9)", async () => {
+    const { mod, uni, request } = await load({ deadline: "T1" });
+    request.mockImplementation(async (options: { path: string }) => options.path.endsWith("/subscribe/config")
+      ? { templates: { deadline: "T1" }, balances: { deadline: 0 } }
+      : { balances: { deadline: 1 }, counted: true });
+    const seen: Array<number | undefined> = [];
+    const stop = mod.onSubscribeBalances((value) => seen.push(value.deadline));
+    await mod.prefetchSubscribeConfig();
+    uni.requestSubscribeMessage.mockImplementation((options: { success: (res: unknown) => void }) =>
+      options.success({ T1: "accept" }));
+    await mod.requestSubscribe(["deadline"]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    stop();
+    expect(seen).toEqual([undefined, 0, 1]);
+  });
+
+  it("does not report when the student rejects", async () => {
+    const { mod, uni, request } = await load({ deadline: "T1" });
+    await mod.prefetchSubscribeConfig();
+    uni.requestSubscribeMessage.mockImplementation((options: { success: (res: unknown) => void }) =>
+      options.success({ T1: "reject" }));
+    await mod.requestSubscribe(["deadline"]);
+    expect(request.mock.calls.some(([options]) => options.path.endsWith("/report"))).toBe(false);
   });
 
   it("returns no_config when the config cannot be fetched and never throws", async () => {

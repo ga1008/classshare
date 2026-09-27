@@ -71,26 +71,15 @@ class GrantLedgerTests(unittest.TestCase):
         self.assertEqual(balances["deadline"], 2)
         self.assertEqual(balances["graded"], 1)
         self.assertNotIn("bogus", balances)
-
-        self.assertTrue(svc._consume_grant(self.conn, "student", 7, "deadline"))
-        self.assertTrue(svc._consume_grant(self.conn, "student", 7, "deadline"))
-        # 额度耗尽后拒绝
-        self.assertFalse(svc._consume_grant(self.conn, "student", 7, "deadline"))
-        # 其他人无额度
-        self.assertFalse(svc._consume_grant(self.conn, "student", 8, "graded"))
-
-    def test_dedupe_claim_is_once_only(self):
-        first = svc._claim_dedupe(
-            self.conn, template_key="deadline", user_role="student", user_pk=7,
-            dedupe_key="deadline:1:7:stage24",
-        )
-        second = svc._claim_dedupe(
-            self.conn, template_key="deadline", user_role="student", user_pk=7,
-            dedupe_key="deadline:1:7:stage24",
-        )
-        self.assertTrue(first)
-        self.assertFalse(second)
-
+        # 预扣/退还/拒收清零、去重与重试由发送 worker 负责，见
+        # tests/test_wechat_mp_subscribe_dispatch.py。
+        again = svc.record_subscribe_grants(self.conn, user_role="student", user_pk=7, template_keys=["deadline"])
+        self.assertEqual(3, again["deadline"])
+        svc._clear_grants(self.conn, "student", 7, "deadline")
+        row = self.conn.execute(
+            "SELECT remaining FROM mp_subscribe_grants WHERE user_pk = 7 AND template_key = 'deadline'"
+        ).fetchone()
+        self.assertEqual(0, row["remaining"])
 
 if __name__ == "__main__":
     unittest.main()

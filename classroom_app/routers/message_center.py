@@ -166,6 +166,7 @@ def api_message_center_items(
     keyword: str = Query(default=""),
     filter_key: str = Query(default="all", alias="filter"),
     limit: int = Query(default=120, ge=1, le=300),
+    offset: int = Query(default=0, ge=0, le=10000),
     include_private: bool = Query(default=True),
     user: dict = Depends(get_current_user),
 ):
@@ -178,6 +179,7 @@ def api_message_center_items(
             filter_key=filter_key,
             limit=limit,
             include_private=include_private,
+            offset=offset,
         )
         return {
             "status": "success",

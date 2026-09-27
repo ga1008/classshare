@@ -2010,6 +2010,7 @@ def list_message_center_items(
     filter_key: str = "all",
     limit: int = 120,
     include_private: bool = True,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     user_pk, role, _ = _ensure_user_identity(user)
     conditions = ["recipient_role = ?", "recipient_user_pk = ?"]
@@ -2049,9 +2050,9 @@ def list_message_center_items(
             CASE WHEN read_at IS NULL THEN 0 ELSE 1 END,
             created_at DESC,
             id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (*params, max(1, min(int(limit), 300))),
+        (*params, max(1, min(int(limit), 300)), max(0, int(offset))),
     ).fetchall()
     return [_serialize_notification(row) for row in rows]
 
@@ -4157,16 +4158,19 @@ def create_student_grading_notification(
     )
     created = 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=True) else 0
 
-    # 小程序订阅消息（批改完成）：尽力而为，任何失败不影响站内通知。
+    # 小程序订阅消息（批改完成）：只登记发送任务（不在批改事务里调微信），
+    # 由 scheduler worker 异步发送；同一批改结果只推一次。
     if created and submission["score"] is not None:
         try:
-            from .wechat_mp_subscribe_service import (
-                build_graded_values,
-                send_subscribe_message,
+            from .wechat_mp_subscribe_dispatch_service import (
+                enqueue_subscribe_message,
+                graded_event_key,
             )
+            from .wechat_mp_subscribe_service import build_graded_values
 
-            send_subscribe_message(
+            enqueue_subscribe_message(
                 conn,
+                event_key=graded_event_key(submission["id"], submission["score"], submission["feedback_md"]),
                 user_role="student",
                 user_pk=int(submission["student_pk_id"]),
                 template_key="graded",
@@ -4175,11 +4179,10 @@ def create_student_grading_notification(
                     submission["score"],
                     feedback_preview,
                 ),
-                page="pages/tasks/index",
-                dedupe_key=f"graded:{submission['id']}:{timestamp}",
+                page=f"pages/task-detail/index?id={submission['assignment_id']}",
             )
         except Exception as exc:
-            print(f"[MP_SUBSCRIBE] graded push failed: {exc}")
+            print(f"[MP_SUBSCRIBE] graded enqueue failed: {type(exc).__name__}")
     return created
 
 

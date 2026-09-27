@@ -629,15 +629,31 @@ from .wechat_mp_subscribe_service import (  # noqa: E402
 
 
 def handle_mp_deadline_reminder_scan(task: dict[str, Any]) -> str:
-    """小程序作业截止订阅消息扫描（30 分钟一轮，dedupe 幂等）。"""
+    """小程序作业截止提醒登记（30 分钟一轮，事件键幂等；发送由 dispatch 负责）。"""
     with get_db_connection() as conn:
         stats = run_deadline_reminder_scan(conn)
         conn.commit()
     return (
         f"mp deadline scan: candidates={stats.get('candidates', 0)} "
-        f"sent={stats.get('sent', 0)} no_grant={stats.get('no_grant', 0)} "
-        f"skipped={stats.get('skipped', 0)}"
+        f"queued={stats.get('queued', 0)} no_grant={stats.get('no_grant', 0)} "
+        f"no_binding={stats.get('no_binding', 0)} duplicate={stats.get('duplicate', 0)}"
     )
 
 
 register_task_handler(DEADLINE_SCAN_TASK_KIND, handle_mp_deadline_reminder_scan)
+
+
+from .wechat_mp_subscribe_dispatch_service import (  # noqa: E402
+    DISPATCH_TASK_KIND,
+    dispatch_subscribe_tasks,
+)
+
+
+def handle_mp_subscribe_dispatch(task: dict[str, Any]) -> str:
+    """小程序订阅消息发送 worker（30 秒一轮，事务外调用微信）。"""
+    stats = dispatch_subscribe_tasks()
+    summary = " ".join(f"{key}={value}" for key, value in sorted(stats.items())) or "idle"
+    return f"mp subscribe dispatch: {summary}"
+
+
+register_task_handler(DISPATCH_TASK_KIND, handle_mp_subscribe_dispatch)

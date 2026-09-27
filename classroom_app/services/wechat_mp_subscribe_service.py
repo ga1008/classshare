@@ -1,13 +1,13 @@
-"""微信小程序订阅消息：模板注册表、授权额度、发送管线。
+"""微信小程序订阅消息：模板注册表、授权额度台账、字段清洗、截止扫描。
 
 微信一次性订阅制：用户每点一次"允许"，对应模板获得一次下发额度。
-本服务维护额度台账（``mp_subscribe_grants``，前端上报 accept 时 +1，
-发送时 -1，用户拒收时清零），并用 ``mp_subscribe_sends`` 的
-dedupe_key 保证同一事件绝不重复推送。
+本模块维护额度台账（``mp_subscribe_grants``，前端上报 accept 时 +1，
+用户拒收时清零）。**发送不在这里**：业务侧只调用
+``wechat_mp_subscribe_dispatch_service.enqueue_subscribe_message`` 登记任务，
+由 scheduler worker 在事务外发送、预扣/退还额度、记录状态（批次 B）。
 
-所有发送都是尽力而为：无额度/无绑定/接口失败只记日志，绝不阻断
-上游业务（批改、截止扫描、催交）。模板 ID 非机密，默认值硬编码、
-env 可覆盖（WECHAT_MP_TMPL_DEADLINE / _NUDGE / _GRADED）。
+``mp_subscribe_sends`` 是批次 B 之前的去重历史表，保留不再写入。
+模板 ID 非机密，默认值硬编码、env 可覆盖（WECHAT_MP_TMPL_DEADLINE / _NUDGE / _GRADED）。
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from typing import Any, Optional
 import httpx
 
 from ..db.connection import get_configured_db_engine
-from ..db.sql import insert_ignore_sql
 from .wechat_mp_service import get_wechat_mp_credentials
 
 _STABLE_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/stable_token"
@@ -185,19 +184,6 @@ def record_subscribe_grants(
     return result
 
 
-def _consume_grant(conn: Any, user_role: str, user_pk: int, template_key: str) -> bool:
-    """额度 -1；无余额返回 False（调用方跳过发送）。"""
-    cursor = conn.execute(
-        """
-        UPDATE mp_subscribe_grants
-        SET remaining = remaining - 1, updated_at = ?
-        WHERE user_role = ? AND user_pk = ? AND template_key = ? AND remaining > 0
-        """,
-        (_now_iso(), user_role, int(user_pk), template_key),
-    )
-    return bool(cursor.rowcount)
-
-
 def _clear_grants(conn: Any, user_role: str, user_pk: int, template_key: str) -> None:
     conn.execute(
         """
@@ -206,24 +192,6 @@ def _clear_grants(conn: Any, user_role: str, user_pk: int, template_key: str) ->
         """,
         (_now_iso(), user_role, int(user_pk), template_key),
     )
-
-
-def _claim_dedupe(conn: Any, *, template_key: str, user_role: str, user_pk: int, dedupe_key: str) -> bool:
-    """原子占位：同 dedupe_key 只允许一次发送（插入失败 = 已发过）。"""
-    statement = insert_ignore_sql(
-        get_configured_db_engine(),
-        "mp_subscribe_sends",
-        ("template_key", "user_role", "user_pk", "dedupe_key", "sent_at"),
-        conflict_columns=("dedupe_key",),
-    )
-    try:
-        cursor = conn.execute(
-            statement.sql,
-            (template_key, user_role, int(user_pk), dedupe_key, _now_iso()),
-        )
-    except Exception:
-        return False
-    return bool(cursor.rowcount)
 
 
 # ---------------------------------------------------------------------------
@@ -274,80 +242,6 @@ def _find_openid(conn: Any, user_role: str, user_pk: int) -> str:
         (user_role, int(user_pk)),
     ).fetchone()
     return str(row["openid"]) if row else ""
-
-
-def send_subscribe_message(
-    conn: Any,
-    *,
-    user_role: str,
-    user_pk: int,
-    template_key: str,
-    values: dict[str, str],
-    page: str = "pages/home/index",
-    dedupe_key: Optional[str] = None,
-) -> str:
-    """发送一条订阅消息。返回状态：sent / no_grant / no_binding /
-    duplicate / no_token / rejected / failed。永不抛异常。"""
-    try:
-        ensure_mp_subscribe_schema(conn)
-        template = TEMPLATES.get(template_key)
-        if not template:
-            return "failed"
-        if dedupe_key and not _claim_dedupe(
-            conn,
-            template_key=template_key,
-            user_role=user_role,
-            user_pk=user_pk,
-            dedupe_key=dedupe_key,
-        ):
-            return "duplicate"
-        openid = _find_openid(conn, user_role, user_pk)
-        if not openid:
-            return "no_binding"
-        if not _consume_grant(conn, user_role, user_pk, template_key):
-            return "no_grant"
-        token = _get_access_token()
-        if not token:
-            return "no_token"
-
-        body = {
-            "touser": openid,
-            "template_id": template["template_id"],
-            "page": page,
-            "data": {field: {"value": value} for field, value in values.items()},
-        }
-        payload: dict[str, Any] = {}
-        for attempt in range(2):
-            try:
-                response = httpx.post(
-                    f"{_SUBSCRIBE_SEND_URL}?access_token={token}",
-                    json=body,
-                    timeout=8.0,
-                )
-                payload = response.json()
-            except Exception as exc:
-                print(f"[MP_SUBSCRIBE] send 请求失败: {exc}")
-                return "failed"
-            errcode = int(payload.get("errcode") or 0)
-            if errcode in (40001, 42001) and attempt == 0:
-                token = _get_access_token(force_refresh=True)
-                if not token:
-                    return "no_token"
-                continue
-            break
-
-        errcode = int(payload.get("errcode") or 0)
-        if errcode == 0:
-            return "sent"
-        if errcode == 43101:
-            # 用户拒收/取消订阅：清空余额，避免持续无效尝试
-            _clear_grants(conn, user_role, user_pk, template_key)
-            return "rejected"
-        print(f"[MP_SUBSCRIBE] send 错误 template={template_key}: {errcode} {payload.get('errmsg')}")
-        return "failed"
-    except Exception as exc:
-        print(f"[MP_SUBSCRIBE] send_subscribe_message 异常: {exc}")
-        return "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -411,10 +305,10 @@ DEADLINE_SCAN_INTERVAL_SECONDS = 1800
 
 
 def run_deadline_reminder_scan(conn: Any) -> dict[str, int]:
-    """扫描 24h 内截止的作业，给未提交且有额度的学生推截止提醒。
+    """扫描 24h 内截止的作业，为未提交的学生登记截止提醒任务。
 
     合班课堂口径：学生属于 offering 的主班或 class_offering_class_links
-    任一挂链班级即计入。dedupe = 作业×学生×档位，天然幂等。
+    任一挂链班级即计入。事件键 = 作业×学生×档位，天然幂等；无额度的学生之后授权会在下一轮被唤醒。
     """
     from .offering_membership_service import offering_student_where
 
@@ -444,7 +338,9 @@ def run_deadline_reminder_scan(conn: Any) -> dict[str, int]:
         """,
     ).fetchall()
 
-    stats = {"candidates": 0, "sent": 0, "no_grant": 0, "skipped": 0}
+    from .wechat_mp_subscribe_dispatch_service import enqueue_subscribe_message
+
+    stats = {"candidates": 0, "queued": 0, "no_grant": 0, "no_binding": 0, "duplicate": 0}
     for row in rows:
         item = dict(row)
         due_text = str(item.get("due_at") or "").replace("T", " ")
@@ -458,21 +354,20 @@ def run_deadline_reminder_scan(conn: Any) -> dict[str, int]:
             continue
         stats["candidates"] += 1
         hours_left = max(1, int(remaining // 3600))
-        status = send_subscribe_message(
+        outcome = enqueue_subscribe_message(
             conn,
+            event_key=f"deadline:{item['assignment_id']}:{item['student_id']}:{stage}",
+            group_key=f"deadline:{item['assignment_id']}",
             user_role="student",
             user_pk=int(item["student_id"]),
             template_key="deadline",
             values=build_deadline_values(item["title"], item["class_name"], due_text, hours_left),
             page="pages/tasks/index",
-            dedupe_key=f"deadline:{item['assignment_id']}:{item['student_id']}:{stage}",
+            # 截止之后再送达的"截止提醒"只会误导学生。
+            expires_at=due_at.isoformat(timespec="seconds"),
         )
-        if status == "sent":
-            stats["sent"] += 1
-        elif status == "no_grant":
-            stats["no_grant"] += 1
-        else:
-            stats["skipped"] += 1
+        key = "queued" if outcome in ("queued", "rearmed") else outcome
+        stats[key] = stats.get(key, 0) + 1
     return stats
 
 

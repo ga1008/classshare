@@ -288,17 +288,21 @@ class ManualGradeSafetyTests(unittest.TestCase):
             self.assertEqual(value, result["stats"][key])
 
     def test_nudge_targets_use_the_same_membership_scope_as_the_roster(self):
-        sent = []
+        queued = []
 
-        def fake_send(conn, **kwargs):
-            sent.append(kwargs["user_pk"])
-            return "sent"
+        def fake_enqueue(conn, **kwargs):
+            queued.append((kwargs["user_pk"], kwargs["event_key"], kwargs["group_key"]))
+            return "queued"
 
-        with patch("classroom_app.services.wechat_mp_subscribe_service.send_subscribe_message", fake_send):
+        with patch("classroom_app.services.wechat_mp_subscribe_dispatch_service.enqueue_subscribe_message", fake_enqueue),              patch("classroom_app.services.wechat_mp_subscribe_dispatch_service.httpx.post",
+                   side_effect=AssertionError("nudge must not call WeChat inside the request")):
             stats = teacher.mp_teacher_nudge(1, user={"id": 10})["data"]
         # Absence placeholders count as unsubmitted; paused / other-class students never do.
-        self.assertEqual([5], sent)
-        self.assertEqual({"total_unsubmitted": 1, "pushed": 1, "no_grant": 0, "skipped": 0}, stats)
+        self.assertEqual([5], [item[0] for item in queued])
+        self.assertTrue(queued[0][1].startswith("nudge:1:5:"))
+        self.assertTrue(queued[0][2].startswith("nudge:1:"))
+        self.assertEqual(1, stats["total_unsubmitted"])
+        self.assertEqual((1, 1, 0), (stats["queued"], stats["pushed"], stats["skipped"]))
 
     def test_submission_files_reject_other_teachers_before_listing(self):
         with self.connection() as conn:

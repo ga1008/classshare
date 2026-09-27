@@ -313,7 +313,7 @@ class GradingNotificationEmailPrivacyTests(unittest.TestCase):
         captured = []
         with patch.object(notifications, "_load_student_support_profile", return_value=""), \
              patch.object(notifications, "_insert_notification_if_allowed", side_effect=lambda conn, payload, **kwargs: captured.append(payload) or True), \
-             patch("classroom_app.services.wechat_mp_subscribe_service.send_subscribe_message"):
+             patch("classroom_app.services.wechat_mp_subscribe_dispatch_service.enqueue_subscribe_message"):
             self.assertEqual(1, notifications.create_student_grading_notification(self.conn, submission_id, actor_role="teacher"))
         self.assertEqual(1, len(captured))
         return captured[0]

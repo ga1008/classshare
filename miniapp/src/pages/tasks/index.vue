@@ -3,13 +3,14 @@
  * 作业考试：学生三分段（进行中/已完成/已截止）大卡列表 + 教师进度列表。
  * 数据源 /api/mp/tasks（assignments 直查单一真源，与首页统计对齐）。
  */
-import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
+import { onHide, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 
 import { request } from "../../utils/api";
 import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { formatDueLabel, relativeDueLabel } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
+import { onSubscribeBalances, prefetchSubscribeConfig, requestSubscribe } from "../../utils/subscribe";
 import { ASSESSMENT_FILTER_OPTIONS, assessmentLabel, isFormalAssessment, matchesAssessmentKind, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
 
 interface TaskItem extends AssessmentClassification, SubmissionPresence {
@@ -102,8 +103,31 @@ function openTeacherTask(task: TeacherTask): void {
   uni.navigateTo({ url: `/pages/teacher-task/index?id=${task.id}` });
 }
 
+// 截止提醒额度：微信一次性订阅按模板计次，与具体作业无关。
+const deadlineBalance = ref<number | null>(null);
+let stopBalance: (() => void) | null = null;
+
+function addDeadlineReminder(): void {
+  // 必须在点击手势的同步阶段发起授权。
+  void requestSubscribe(["deadline"]).then((outcome) => {
+    if (outcome === "no_config") uni.showToast({ title: "提醒设置暂时不可用，请稍后再试", icon: "none" });
+  });
+}
+
 onShow(() => {
   void loadTasks();
+  if (!auth.isTeacher) {
+    stopBalance?.();
+    stopBalance = onSubscribeBalances((value) => {
+      deadlineBalance.value = typeof value.deadline === "number" ? value.deadline : null;
+    });
+    void prefetchSubscribeConfig(true);
+  }
+});
+
+onHide(() => {
+  stopBalance?.();
+  stopBalance = null;
 });
 
 onPullDownRefresh(() => {
@@ -153,6 +177,13 @@ onPullDownRefresh(() => {
 
     <!-- 学生视图 -->
     <template v-else>
+      <view class="glass-card reminder press" @tap="addDeadlineReminder">
+        <view class="reminder__text">
+          <text class="reminder__title">⏰ 截止提醒</text>
+          <text class="reminder__sub">{{ deadlineBalance ? `还能收到 ${deadlineBalance} 条微信截止提醒` : "尚未开启，截止前收不到微信提醒" }}</text>
+        </view>
+        <text class="reminder__action">{{ deadlineBalance ? "再加一条" : "开启" }}</text>
+      </view>
       <view class="segment glass-chip">
         <view
           v-for="item in SEGMENTS"
@@ -219,6 +250,34 @@ onPullDownRefresh(() => {
   font-size: 28rpx;
 }
 
+.reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 24rpx 28rpx;
+}
+.reminder__text {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+}
+.reminder__title {
+  color: #1b2540;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.reminder__sub {
+  color: #66718f;
+  font-size: 24rpx;
+}
+.reminder__action {
+  flex-shrink: 0;
+  color: #5b6ee0;
+  font-size: 26rpx;
+  font-weight: 600;
+}
 .segment {
   display: flex;
   padding: 8rpx;
