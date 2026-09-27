@@ -140,6 +140,7 @@ def serialize_draft(row: Any) -> dict[str, Any]:
         "remote_conflict": _loads(data.get("remote_conflict_json"), {}) or {},
         "room_status": _clean(data.get("room_status")) or "unknown",
         "availability": _loads(data.get("availability_json"), {}) or {},
+        "proofs": [p for p in (_loads(data.get("proof_json"), []) or []) if isinstance(p, dict)],
         "pushed_at": data.get("pushed_at", ""),
         "created_at": data.get("created_at", ""),
         "updated_at": data.get("updated_at", ""),
@@ -262,7 +263,18 @@ def build_term_calendar(conn, context: dict[str, Any]) -> dict[str, Any]:
     """
     start, end = _term_bounds(context)
     if start is None or end is None:
-        return {"days": [], "swaps": [], "start": "", "end": ""}
+        return {"days": [], "swaps": [], "start": "", "end": "", "term_start": "", "term_end": ""}
+    # 学期真实起止（教务/平台学期记录）：结束日之后的日期不可放置。
+    term_start, term_end = start.isoformat(), end.isoformat()
+    if context.get("semester_id"):
+        try:
+            row = conn.execute("SELECT start_date, end_date FROM academic_semesters WHERE id = ?", (int(context["semester_id"]),)).fetchone()
+            if row and row["end_date"]:
+                term_end = str(row["end_date"])[:10]
+            if row and row["start_date"]:
+                term_start = str(row["start_date"])[:10]
+        except Exception:  # minimal fixtures may lack the table
+            pass
     lookup = {k: dict(v) for k, v in build_holiday_lookup({start.year, end.year}).items()}
     if context.get("semester_id"):
         try:
@@ -301,7 +313,8 @@ def build_term_calendar(conn, context: dict[str, Any]) -> dict[str, Any]:
     for swap in swaps:
         swap["week"], swap["weekday"] = _date_week_weekday(swap["workday_date"], context["week1_monday"])
         swap["makeup_week"], swap["makeup_weekday"] = _date_week_weekday(swap["makeup_for_date"], context["week1_monday"])
-    return {"days": days, "swaps": swaps, "start": start.isoformat(), "end": end.isoformat()}
+    return {"days": days, "swaps": swaps, "start": start.isoformat(), "end": end.isoformat(),
+            "term_start": term_start, "term_end": term_end}
 
 
 def calendar_day_info(calendar: dict[str, Any], iso_date: str) -> dict[str, Any] | None:
@@ -350,6 +363,9 @@ def _normalize_proposed(payload: dict[str, Any], original: dict[str, Any], conte
     today = _clean(context.get("today"))
     if today and target_date and target_date < today:
         raise ScheduleEditError("目标时间已经过去，不能把课次放到过去的日期。")
+    term_end = _clean((calendar or {}).get("term_end"))
+    if term_end and target_date and target_date > term_end:
+        raise ScheduleEditError(f"目标日期已超出学期结束日期（{term_end}），不能放置。")
     day_info = calendar_day_info(calendar or {}, target_date) if target_date else None
     if day_info and day_info["kind"] == "holiday":
         raise ScheduleEditError(f"目标日期为节假日（{day_info.get('label') or '放假'}），不能安排课程。")
@@ -666,3 +682,95 @@ def search_rooms(conn, keyword: str = "", *, limit: int = 30, school_code: str =
         if len(result) >= limit:
             break
     return result
+
+
+# ---------------------------------------------------------------------------
+# 证明材料 (proof files attached to a draft; reminded at 教务 submission time)
+# ---------------------------------------------------------------------------
+
+PROOF_ALLOWED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx", ".txt"}
+PROOF_MAX_BYTES = 10 * 1024 * 1024
+PROOF_MAX_PER_DRAFT = 6
+
+
+def _proof_root():
+    from pathlib import Path
+    from .. import config
+
+    root = Path(getattr(config, "DATA_DIR", "data")) / "schedule_editor_proofs"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def draft_proof_path(teacher_id: int, draft_id: int, stored_name: str):
+    """Absolute path of one stored proof file; refuses names that could escape the draft folder."""
+    from pathlib import Path
+
+    stored = Path(str(stored_name)).name
+    if not stored or stored in (".", "..") or "/" in str(stored_name) or "\\" in str(stored_name):
+        raise ScheduleEditError("证明材料文件名无效。", status_code=404)
+    return _proof_root() / str(int(teacher_id)) / str(int(draft_id)) / stored
+
+
+def _write_proof_json(conn, draft_id: int, proofs: list[dict[str, Any]]) -> None:
+    conn.execute("UPDATE teacher_schedule_edit_drafts SET proof_json = ?, updated_at = ? WHERE id = ?",
+                 (json.dumps(proofs, ensure_ascii=False), _now_iso(), int(draft_id)))
+
+
+def add_draft_proof(conn, teacher_id: int, draft_id: int, *, filename: str, content: bytes) -> dict[str, Any]:
+    """Store one proof file for the teacher's own draft and record it in ``proof_json``."""
+    import uuid
+    from pathlib import Path
+
+    draft = get_draft(conn, teacher_id, draft_id)
+    if draft is None:
+        raise ScheduleEditError("草稿不存在。", status_code=404)
+    name = Path(str(filename or "")).name.strip()
+    suffix = Path(name).suffix.lower()
+    if not name or suffix not in PROOF_ALLOWED_SUFFIXES:
+        raise ScheduleEditError("证明材料仅支持 PDF、图片、Word 或文本文件。")
+    if not content:
+        raise ScheduleEditError("证明材料文件为空。")
+    if len(content) > PROOF_MAX_BYTES:
+        raise ScheduleEditError("单个证明材料不能超过 10 MB。")
+    proofs = list(draft.get("proofs") or [])
+    if len(proofs) >= PROOF_MAX_PER_DRAFT:
+        raise ScheduleEditError(f"每条调整最多附 {PROOF_MAX_PER_DRAFT} 份证明材料。")
+    file_id = uuid.uuid4().hex[:12]
+    stored = f"{file_id}{suffix}"
+    path = draft_proof_path(teacher_id, draft_id, stored)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    record = {"id": file_id, "name": name[:120], "size": len(content), "stored": stored, "uploaded_at": _now_iso()}
+    proofs.append(record)
+    _write_proof_json(conn, draft_id, proofs)
+    return record
+
+
+def remove_draft_proof(conn, teacher_id: int, draft_id: int, file_id: str) -> dict[str, Any] | None:
+    draft = get_draft(conn, teacher_id, draft_id)
+    if draft is None:
+        raise ScheduleEditError("草稿不存在。", status_code=404)
+    proofs = list(draft.get("proofs") or [])
+    target = next((p for p in proofs if str(p.get("id")) == str(file_id)), None)
+    if target is None:
+        return None
+    try:
+        draft_proof_path(teacher_id, draft_id, str(target.get("stored") or "")).unlink(missing_ok=True)
+    except (OSError, ScheduleEditError):
+        pass
+    _write_proof_json(conn, draft_id, [p for p in proofs if p is not target])
+    return target
+
+
+def find_draft_proof(conn, teacher_id: int, draft_id: int, file_id: str) -> tuple[dict[str, Any], Any]:
+    draft = get_draft(conn, teacher_id, draft_id)
+    if draft is None:
+        raise ScheduleEditError("草稿不存在。", status_code=404)
+    target = next((p for p in (draft.get("proofs") or []) if str(p.get("id")) == str(file_id)), None)
+    if target is None:
+        raise ScheduleEditError("证明材料不存在。", status_code=404)
+    path = draft_proof_path(teacher_id, draft_id, str(target.get("stored") or ""))
+    if not path.is_file():
+        raise ScheduleEditError("证明材料文件已丢失。", status_code=404)
+    return target, path

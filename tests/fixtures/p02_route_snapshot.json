@@ -3369,6 +3369,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}/proofs",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_upload_proof",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}/proofs/{file_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_schedule_editor_delete_proof",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}/proofs/{file_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_schedule_editor_download_proof",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/academic/course-schedule/editor/drafts/{draft_id}/withdraw",
     "methods": [
       "POST"
@@ -3406,6 +3430,14 @@
       "POST"
     ],
     "name": "api_schedule_editor_push",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/course-schedule/editor/reason-suggest",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_reason_suggest",
     "include_in_schema": true
   },
   {

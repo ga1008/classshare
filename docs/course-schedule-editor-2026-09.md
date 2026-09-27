@@ -90,3 +90,14 @@
 
 - 单测：`tests/test_national_holidays_and_resequence.py`（推断/入库/lookup 覆盖优先级/多镜像容错/重排计划与应用/取消课次）、`tests/test_schedule_editor.py`（两小节、过去日期、节假日、已上过、载荷 today/calendar）、`tests/test_academic_schedule_overview.py`（审批生效后重排：第 1 次课落到最早剩余日期、材料随序号不变）。
 - Playwright 审计（P03 运行时 + 合成快照，`.codex-temp/tk/editor-audit.spec.ts`）：学期管理日历曲线箭头、当前周已过锁定与只读抽屉、第 3 周国庆四天斜纹、学生有课/节假日/奇数起点三种拒绝、同周拖拽+教室二次搜索、抽屉换教室、跨周摊开、第 4 周同周箭头+第 1 周跨周箭头与镜像卡、重排预览与按日期重排、可调时段同步与保存到教务的缺凭据提示、撤销、移动端；控制台零错误。
+
+## 第四轮（2026-09-27）：界面布局与提交闭环
+
+- **左侧周卡**：内容居中，「第N周」放大居上，下面是日期范围小字与徽标（N 项调整 / 假 N / 调休 / 被补），去掉「N 可放」。发光表示可放：选中或拖动课次时，有可放时段的周绿色发光（`is-droppable`），没有的灰色（`is-blocked`）；整周已过去或已超出学期结束日期的周始终灰色锁定（`is-locked`，拖到上面不摊开）。学期结束日期来自 `academic_semesters.end_date`（载荷 `calendar.term_end`），之后的日期在网格里标「学期外」斜纹锁定，后端 `_normalize_proposed` 同样拒绝。
+- **调休连线**：方向按上课理解——被补那天（课从这里来）→ 调休上课日（课在这里上）：起点实心小圆点贴在线段起点，终点实心三角箭头；调休上课日那一列用细虚线包裹（留内边距，不侵占相邻列）。同周画列头之间的弧线；跨周：源在当前周则从列头连到左侧目标周卡，目标在当前周则从源周卡连到列头；两周都不在当前周时只画周卡间的括线（同周的不画，周卡徽标已标）。学期日历面板（`renderSwapArrows`）同样改为该方向与实心箭头。
+- **去掉「课次重排」面板与页面 page_head**：重排在教务审批同步后自动执行（`_publish` 钩子），只在「保存到教务」弹窗里预览、保存成功后 toast 提示。工具栏放大（`cse-toolbar--lg`）。
+- **右侧属性栏**：原安排改为卡片；「调整到」= 周次 + 节次 两列、星期整行（选项带日期与 已过/学期外/节假日/调休 提示）、教室改为可搜索下拉（输入楼名/教室号实时查教务场地，可"沿用原教室"）、调课原因带「AI 填写」（`POST editor/reason-suggest`：快速 AI `fast_text_response` 写 ≤30 字，AI 不可用时按校历规则兜底）、已保存草稿下方有「证明材料」区（上传/下载/删除）。
+- **证明材料**：草稿表新增 `proof_json`（`[{id, name, size, stored, uploaded_at}]`），文件存 `DATA_DIR/schedule_editor_proofs/<teacher>/<draft>/<id>.<ext>`，仅本人可读；限 PDF/图片/Word/文本、10 MB、每条 6 份。API：`POST editor/drafts/{id}/proofs`（multipart `files`）、`DELETE .../proofs/{file_id}`、`GET .../proofs/{file_id}`。**教务侧附件上传接口未逆向**（正方 `tksmfjm`/附件管理），因此平台只保存并在保存成功后提醒"提交申请时在教务附上"；变更清单与弹窗都提示缺原因/缺材料。
+- **保存到教务弹窗**（替代原确认框）：变更清单（原因/材料状态）、「AI 填写全部」补齐缺失原因、批量上传证明材料到本批全部草稿、课次重排预览；确认后再推送。
+- **液态玻璃下拉（新组件 `static/js/lq/dropdown.js`，特性名 `dropdown`）**：`bindDropdown(select, {searchable, placeholder, onQuery})`，原生 `<select>` 仍是值的唯一所有者（表单/校验/change 监听不变），组件只渲染玻璃触发按钮 + 通过 layer 系统浮出的 `lq-selection__popup lq-glass` 列表；`searchable` 在弹层顶部加筛选框（可配 `onQuery`/`setResults` 异步取数）；`select.multiple` 变为多选（勾选框、选后不关闭、触发按钮汇总"A、B 等 N 项"）；声明式 `<select data-lq-dropdown data-lq-searchable>` + `enhanceDropdowns(root)`。样式在 `selection.css` 的 `.lq-dropdown*`。**坑**：LQ 按钮 props 不接受 `aria-*`/`tabindex` attrs（会抛 Unsupported LQ attribute），装饰属性要创建后再 set。
+- 验证：`tests/test_schedule_editor_round4.py`（学期结束禁放、证明材料存取/越权/路径穿越、AI 原因与兜底）；Playwright 审计覆盖日历箭头方向与实心箭头、周卡锁定/发光、四个玻璃下拉、可搜索教室、AI 原因、证明材料上传、跨周拖拽、调休箭头与虚线列、保存弹窗与推送反馈、移动端；控制台零错误。

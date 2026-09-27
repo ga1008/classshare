@@ -6,8 +6,8 @@ by the teacher inside 教务系统.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 
 from ...database import get_db_connection
 from ...dependencies import get_current_teacher
@@ -18,9 +18,11 @@ from ...services.academic_availability_sync_service import search_free_rooms, sy
 from ...services.schedule_availability_service import build_lesson_availability
 from ...services.national_holiday_service import load_national_holiday_status, refresh_national_holidays
 from ...services.schedule_editor_service import (
-    ScheduleEditError, apply_resequence_by_dates, build_editor_payload, delete_draft, get_draft,
-    plan_resequence_for_drafts, save_draft, search_rooms,
+    ScheduleEditError, add_draft_proof, apply_resequence_by_dates, build_editor_payload, build_term_calendar,
+    calendar_day_info, delete_draft, find_draft_proof, get_draft, plan_resequence_for_drafts, remove_draft_proof,
+    save_draft, search_rooms, slot_date, _lesson_index, _term_context,
 )
+from ...services.schedule_reason_service import suggest_reason
 from ...services.smart_classroom_schedule_sync_service import build_teacher_course_schedule_overview
 from .common import _parse_json_request
 
@@ -227,3 +229,78 @@ async def api_schedule_editor_holiday_refresh(request: Request, user: dict = Dep
         editor = build_editor_payload(conn, int(user["id"]), overview)
         status = load_national_holiday_status(conn)
     return JSONResponse({**editor, "status": "success", "result": summary, "holidays": status}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/reason-suggest", response_class=JSONResponse)
+async def api_schedule_editor_reason_suggest(request: Request, user: dict = Depends(get_current_teacher)):
+    """快速 AI 根据原安排/拟安排与校历（节假日、调休）写一句简短的调课原因；AI 不可用时给规则兜底。"""
+    payload = await _parse_json_request(request)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    event_key = _term(payload.get("event_key"))
+    if not event_key:
+        raise HTTPException(status_code=400, detail="缺少课次标识。")
+    with get_db_connection() as conn:
+        overview = _load_overview(conn, int(user["id"]), year, term)
+        context = _term_context(overview)
+        calendar = build_term_calendar(conn, context)
+    lesson = _lesson_index(overview).get(event_key)
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="未找到要调整的课次。")
+    original = {"week": int(lesson.get("week_index") or 0), "weekday": int(lesson.get("weekday") or 0),
+                "sections": [int(s) for s in lesson.get("sections") or []], "date": str(lesson.get("actual_date") or ""),
+                "room": str(lesson.get("classroom") or "")}
+    try:
+        week, weekday = int(payload.get("week") or original["week"]), int(payload.get("weekday") or original["weekday"])
+        sections = [int(s) for s in (payload.get("sections") or [])] or original["sections"]
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="目标时间格式错误。") from exc
+    proposed = {"week": week, "weekday": weekday, "sections": sections, "date": slot_date(context["week1_monday"], week, weekday),
+                "room": _term(payload.get("room")) or original["room"]}
+    result = await suggest_reason({
+        "course_name": lesson.get("course_name"), "class_label": lesson.get("class_label") or lesson.get("teaching_class_name"),
+        "original": original, "proposed": proposed, "note": _term(payload.get("note"))[:200],
+        "original_day": calendar_day_info(calendar, original["date"]), "proposed_day": calendar_day_info(calendar, proposed["date"]),
+    })
+    return JSONResponse({"status": "success", **result}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/drafts/{draft_id}/proofs", response_class=JSONResponse)
+async def api_schedule_editor_upload_proof(draft_id: int, files: list[UploadFile] = File(...), user: dict = Depends(get_current_teacher)):
+    """为一条调课草稿附加证明材料（放假通知、会议通知等），提交教务时提醒一并上传。"""
+    stored = []
+    with get_db_connection() as conn:
+        for upload in files:
+            content = await upload.read()
+            try:
+                stored.append(add_draft_proof(conn, int(user["id"]), int(draft_id), filename=str(upload.filename or ""), content=content))
+            except ScheduleEditError as exc:
+                conn.rollback()
+                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        conn.commit()
+        draft = get_draft(conn, int(user["id"]), int(draft_id))
+    return JSONResponse({"status": "success", "stored": stored, "draft": draft}, headers=_NO_STORE)
+
+
+@router.delete("/academic/course-schedule/editor/drafts/{draft_id}/proofs/{file_id}", response_class=JSONResponse)
+async def api_schedule_editor_delete_proof(draft_id: int, file_id: str, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        try:
+            removed = remove_draft_proof(conn, int(user["id"]), int(draft_id), file_id)
+        except ScheduleEditError as exc:
+            conn.rollback()
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        conn.commit()
+        draft = get_draft(conn, int(user["id"]), int(draft_id))
+    if removed is None:
+        raise HTTPException(status_code=404, detail="证明材料不存在。")
+    return JSONResponse({"status": "success", "removed": removed, "draft": draft}, headers=_NO_STORE)
+
+
+@router.get("/academic/course-schedule/editor/drafts/{draft_id}/proofs/{file_id}")
+async def api_schedule_editor_download_proof(draft_id: int, file_id: str, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        try:
+            record, path = find_draft_proof(conn, int(user["id"]), int(draft_id), file_id)
+        except ScheduleEditError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return FileResponse(str(path), filename=str(record.get("name") or path.name), headers={"Cache-Control": "private, no-store"})

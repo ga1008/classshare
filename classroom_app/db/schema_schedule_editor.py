@@ -80,6 +80,7 @@ def _ensure_extension_columns(conn: Any, engine: str) -> None:
     columns = (
         ("room_status", "TEXT NOT NULL DEFAULT 'unknown'"),   # free | busy | unknown for the proposed slot
         ("availability_json", "TEXT NOT NULL DEFAULT '{}'"),   # verdict snapshot at save time
+        ("proof_json", "TEXT NOT NULL DEFAULT '[]'"),          # 证明材料 [{id, name, size, stored, uploaded_at}]
     )
     if engine == "postgres":
         for name, ddl_type in columns:

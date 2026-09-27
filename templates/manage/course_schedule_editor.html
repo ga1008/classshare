@@ -1,5 +1,4 @@
 {% extends "manage/layout.html" %}
-{% from "macros/manage_page.html" import page_head %}
 
 {% block title %}课表编辑模式{% endblock %}
 {% block body_class %}cse-page{% endblock %}
@@ -10,14 +9,12 @@
 {% endblock %}
 
 {% block content %}
-{% set _cse_lq_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
-{{ page_head('课表编辑模式', explain='按住课次拖到新的节次即可调整；拖到左侧周次可跨周；单击课次在右侧设置周次/星期/节次、教室、原因与课次材料。课次以两小节为单位放置（2-3 / 4-5 / 6-7 / 8-9 / 10-11），已过去的日期与节假日不可放置；调休上课日按被补那天的课表判断冲突；调整生效后剩余课次按日期自动重排，材料随课次序号不变。所有调整先记录为平台草稿，「保存到教务」只写入教务调停课申请的待提交草稿，提交申请仍由您登录教务系统完成。', explain_label='课表编辑模式说明', lq_enabled=_cse_lq_enabled) }}
 
 <section class="cse-root" data-cse-root>
-    <div class="cse-toolbar">
+    <div class="cse-toolbar cse-toolbar--lg">
         <div class="cse-toolbar__term">
             <label for="cseTermSelect">学年学期</label>
-            <select id="cseTermSelect" class="cse-select" data-cse-term aria-label="学年学期"></select>
+            <select id="cseTermSelect" data-cse-term data-lq-dropdown aria-label="学年学期"></select>
         </div>
         <div class="cse-toolbar__meta" data-cse-meta></div>
         <div class="cse-toolbar__spacer"></div>
@@ -48,7 +45,6 @@
     </div>
 
     <section class="cse-drafts" data-cse-drafts aria-label="变更清单"></section>
-    <section class="cse-drafts cse-reseq" data-cse-resequence aria-label="课次重排" hidden></section>
 </section>
 
 <script id="course-schedule-editor-boot" type="application/json">{{ schedule_editor_boot | tojson }}</script>

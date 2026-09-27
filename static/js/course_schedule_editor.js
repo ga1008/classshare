@@ -15,6 +15,7 @@ import { EDITOR_CSS } from './course_schedule_editor_styles.js';
 import { compactClassroomName } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 import { syncAcademicSchedule } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { getLQ } from './lq/index.js';
+import { bindDropdown } from './lq/dropdown.js';
 
 const LQ = getLQ();
 const API = '/api/manage/academic/course-schedule/editor';
@@ -83,7 +84,7 @@ function init(boot) {
         busy: false, lastPush: null, materials: { key: '', items: null, loading: false },
         availability: { key: '', roomKey: '', data: null, loading: false },
         freeRooms: { slotKey: '', items: [], status: '', roomStatus: '', loading: false, message: '' },
-        resequence: { loading: false, error: '', preview: null, applied: null },
+        proofsBusy: false,
     };
     const refs = {
         termSelect: root.querySelector('[data-cse-term]'),
@@ -104,7 +105,6 @@ function init(boot) {
         legend: root.querySelector('[data-cse-legend]'),
         calendarNote: root.querySelector('[data-cse-calnote]'),
         swaps: root.querySelector('[data-cse-swaps]'),
-        resequence: root.querySelector('[data-cse-resequence]'),
         holidayRefresh: root.querySelector('[data-cse-holiday-refresh]'),
     };
 
@@ -146,16 +146,20 @@ function init(boot) {
     const shortDate = iso => (iso ? `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}` : '');
 
     /** Column state for a (week, weekday): holiday / past / workday(调休上课) / ''. */
+    /** Column state for a (week, weekday): holiday / past / ended(学期外) / workday(调休上课) / ''. */
     function dayState(week, weekday) {
         const iso = dateOf(week, weekday);
         const info = iso ? calendarDay(iso) : null;
         if (info?.kind === 'holiday') return { kind: 'holiday', iso, info };
         if (isPastDate(iso)) return { kind: 'past', iso, info };
+        const termEnd = String(calendar().term_end || '');
+        if (termEnd && iso && iso > termEnd) return { kind: 'ended', iso, info };
         if (info?.kind === 'workday' && info.makeup_for_date) return { kind: 'workday', iso, info };
         return { kind: '', iso, info };
     }
+    const LOCKED_KINDS = new Set(['holiday', 'past', 'ended']);
+    const LOCK_REASONS = { dawn: '第 1 节为早读，不可放置', holiday: '节假日不可放置', past: '已过去的日期不可放置', ended: '学期已结束，不可放置' };
 
-    /** (week, weekday) whose timetable is followed on that day — 调休上课日走被补那天的课表。 */
     function effectiveSlot(week, weekday) {
         const day = dayState(week, weekday);
         if (day.kind === 'workday' && day.info.makeup_week) return { week: Number(day.info.makeup_week), weekday: Number(day.info.makeup_weekday) };
@@ -233,7 +237,7 @@ function init(boot) {
         let count = 0;
         for (let weekday = 1; weekday <= 7; weekday += 1) {
             const day = dayState(week, weekday);
-            if (day.kind === 'holiday' || day.kind === 'past') continue;      // 节假日 / 已过去的日期不可放
+            if (LOCKED_KINDS.has(day.kind)) continue;      // 节假日 / 已过去 / 学期外 不可放
             const eff = effectiveSlot(week, weekday);
             for (const start of pairStarts()) {
                 if (start + span - 1 > maxSection) continue;
@@ -278,7 +282,7 @@ function init(boot) {
             notes.push(coverage.room === 'timetable' ? `教室 ${data.room?.name || ''}：整学期占用已同步` : coverage.room === 'checks' ? `教室 ${data.room?.name || ''}：已实时查询 ${data.room?.checked_slots || 0} 个时段` : `教室 ${data.room?.name || ''}：占用未查询，放置后可二次搜索空闲教室`);
         }
         refs.legend.hidden = false;
-        refs.legend.innerHTML = `<span class="cse-legend__item cse-legend__item--block">学生/本人有课 · 禁放</span><span class="cse-legend__item cse-legend__item--room">教室已占用 · 需换教室</span><span class="cse-legend__item cse-legend__item--ok">可放置</span><span class="cse-legend__item cse-legend__item--unknown">教室未查询</span><span class="cse-legend__item cse-legend__item--holiday">节假日 · 禁放</span><span class="cse-legend__item cse-legend__item--past">已过去 · 禁放</span><span class="cse-legend__item cse-legend__item--workday">调休上课 · 按被补那天课表</span><span class="cse-legend__note">${escapeHtml(notes.join(' · '))}</span>`;
+        refs.legend.innerHTML = `<span class="cse-legend__item cse-legend__item--block">学生/本人有课 · 禁放</span><span class="cse-legend__item cse-legend__item--room">教室已占用 · 需换教室</span><span class="cse-legend__item cse-legend__item--ok">可放置</span><span class="cse-legend__item cse-legend__item--unknown">教室未查询</span><span class="cse-legend__item cse-legend__item--holiday">节假日 · 禁放</span><span class="cse-legend__item cse-legend__item--past">已过去 / 学期外 · 禁放</span><span class="cse-legend__item cse-legend__item--workday">调休上课 · 按被补那天课表</span><span class="cse-legend__note">${escapeHtml(notes.join(' · '))}</span>`;
     }
 
     /** Holiday / 调休 legend for the active week (shown even without a selection). */
@@ -354,7 +358,6 @@ function init(boot) {
         renderDrawer();
         renderLegend();
         renderDrafts();
-        renderResequence();
     }
 
     function renderTermSelect() {
@@ -386,27 +389,34 @@ function init(boot) {
         }
     }
 
+    /** Whether a week can receive a drop at all (independent of the selected lesson). */
+    function weekLocked(index) {
+        return Array.from({ length: 7 }, (_, i) => dayState(index, i + 1)).every(d => LOCKED_KINDS.has(d.kind));
+    }
+
     function renderWeekRail() {
         if (!refs.weeks) return;
-        const selection = state.selectedKey ? resolveSelection(state.selectedKey) : null;
+        const selection = state.drag ? resolveSelection(state.drag.sourceKey) : (state.selectedKey ? resolveSelection(state.selectedKey) : null);
         const availData = selection ? availabilityData(selection.lesson.event_key) : null;
         const span = selection ? (selection.lesson.sections || []).length : 0;
         const items = weeks().map(week => {
             const index = Number(week.week_index);
-            const free = availData && span ? freeStartCount(availData, index, span) : null;
+            const locked = weekLocked(index);
+            const free = !locked && availData && span ? freeStartCount(availData, index, span) : null;
             const draftCount = new Set((week.lessons || []).filter(l => l.edit_draft || l.edit_ghost).map(l => l.edit_draft ? l.edit_draft.id : l.edit_draft_id)).size;
             const holidays = Array.from({ length: 7 }, (_, i) => dayState(index, i + 1)).filter(d => d.kind === 'holiday');
             const swaps = swapsForWeek(index);
-            const past = dateOf(index, 7) && isPastDate(dateOf(index, 7));
-            const classes = ['cse-week', index === state.activeWeek ? 'is-active' : '', week.is_current ? 'is-current' : '', past ? 'is-past' : '', holidays.length ? 'has-holiday' : ''].filter(Boolean).join(' ');
+            const glow = locked ? 'is-locked' : (selection ? (free === null ? '' : (free > 0 ? 'is-droppable' : 'is-blocked')) : '');
+            const classes = ['cse-week', index === state.activeWeek ? 'is-active' : '', week.is_current ? 'is-current' : '', glow, holidays.length ? 'has-holiday' : ''].filter(Boolean).join(' ');
             const marks = [
+                draftCount ? `<span class="cse-week__draft" title="本周有 ${draftCount} 项调整">${draftCount} 项调整</span>` : '',
                 holidays.length ? `<span class="cse-week__holiday" title="${escapeHtml(holidays.map(d => `${shortDate(d.iso)} ${d.info.label || '放假'}`).join('；'))}">假 ${holidays.length}</span>` : '',
                 ...swaps.map(swap => `<span class="cse-week__swap" data-cse-swap-dot="${escapeHtml(swap.workday_date)}" style="--cse-swap:${swapColor(swap)}" title="${escapeHtml(swapTitle(swap))}">${Number(swap.week) === index ? '调休' : '被补'}</span>`),
             ].filter(Boolean).join('');
-            return `<button type="button" class="${classes}" data-cse-week="${index}" aria-pressed="${index === state.activeWeek}">
-                <strong>${escapeHtml(week.label)}${past ? '<em class="cse-week__past">已过</em>' : ''}</strong>
-                <span class="cse-week__count">${draftCount ? `<span class="cse-week__draft" title="本周有 ${draftCount} 项调整">${draftCount}</span> ` : ''}${free !== null ? `<span class="cse-week__free${free ? '' : ' is-none'}" title="本周学生与本人都有空的时段数（教室占用另查）">${free} 可放</span> ` : ''}${week.lesson_count} 节</span>
-                <small>${escapeHtml(week.date_range_label || '')}</small>
+            const lockedTitle = locked ? '本周全部日期已过去或已超出学期，不可放置' : (selection && free === 0 ? '本周没有学生与本人都有空的时段' : '');
+            return `<button type="button" class="${classes}" data-cse-week="${index}"${locked ? ' data-locked="1"' : ''} aria-pressed="${index === state.activeWeek}"${lockedTitle ? ` title="${escapeHtml(lockedTitle)}"` : ''}>
+                <strong class="cse-week__title">${escapeHtml(week.label)}</strong>
+                <small class="cse-week__range">${escapeHtml(week.date_range_label || '')}${week.lesson_count ? ` · ${week.lesson_count} 节` : ''}</small>
                 ${marks ? `<span class="cse-week__marks">${marks}</span>` : ''}
             </button>`;
         });
@@ -486,7 +496,8 @@ function init(boot) {
             const classes = ['cs-grid__day', 'cse-dayhead', weekday >= 6 ? 'cs-grid__day--weekend' : '', weekday === todayColumn ? 'cs-grid__day--today' : '', st.kind ? `cse-dayhead--${st.kind}` : ''].filter(Boolean).join(' ');
             const tag = st.kind === 'holiday' ? `<span class="cse-dayhead__tag cse-dayhead__tag--holiday" title="${escapeHtml(st.info.label || '放假')}">${escapeHtml(st.info.label || '放假')}</span>`
                 : st.kind === 'workday' ? `<span class="cse-dayhead__tag cse-dayhead__tag--workday" style="--cse-swap:${swapColor(swap)}" title="${escapeHtml(swap ? swapTitle(swap) : st.info.label || '')}">调休 · 补${escapeHtml(st.info.makeup_for_weekday || '')} ${shortDate(st.info.makeup_for_date)}${st.info.inferred ? '?' : ''}</span>`
-                    : st.kind === 'past' ? '<span class="cse-dayhead__tag cse-dayhead__tag--past">已过</span>' : '';
+                    : st.kind === 'past' ? '<span class="cse-dayhead__tag cse-dayhead__tag--past">已过</span>'
+                        : st.kind === 'ended' ? '<span class="cse-dayhead__tag cse-dayhead__tag--past">学期外</span>' : '';
             return `<div class="${classes}" data-cse-dayhead="${weekday}" data-date="${escapeHtml(st.iso)}" style="grid-column:${index + columnBase};grid-row:1;"><span class="cse-dayhead__name">周${day}<small>${escapeHtml(shortDate(st.iso))}${weekday === todayColumn ? ' · 今天' : ''}</small></span>${tag}</div>`;
         }).join('');
         const sectionLabels = Array.from({ length: sectionCount }, (_, offset) => {
@@ -494,12 +505,11 @@ function init(boot) {
             const pairStart = pairStarts().includes(section);
             return `<div class="cs-grid__section cs-grid__section--${sectionBand(section)}${pairStart ? ' cse-section--pair' : ''}" style="grid-column:2;grid-row:${offset + 2};" title="${section < minSection ? '早读时段不可放置课次' : pairStart ? `课次可从第 ${section} 节开始` : ''}">${section}</div>`;
         }).join('');
-        const lockReason = { holiday: '节假日不可放置', past: '已过去的日期不可放置' };
         const cells = Array.from({ length: sectionCount * 7 }, (_, cell) => {
             const section = 1 + Math.floor(cell / 7);
             const weekday = (cell % 7) + 1;
             const st = days[weekday - 1];
-            const dayLock = st.kind === 'holiday' || st.kind === 'past' ? st.kind : '';
+            const dayLock = LOCKED_KINDS.has(st.kind) ? st.kind : '';
             const locked = section < minSection || Boolean(dayLock);
             const eff = effectiveSlot(week.week_index, weekday);
             const avail = availData && !locked ? cellState(availData, eff.week, eff.weekday, section) : '';
@@ -507,7 +517,7 @@ function init(boot) {
             const classes = ['cs-grid__cellbg', `cs-grid__cellbg--${sectionBand(section)}`, weekday >= 6 ? 'cs-grid__cellbg--weekend' : '',
                 weekday === todayColumn ? 'cs-grid__cellbg--today' : '', section < minSection ? 'cs-grid__cellbg--locked' : '', dayLock ? `cs-grid__cellbg--${dayLock}` : '',
                 st.kind === 'workday' ? 'cs-grid__cellbg--workday' : '', avail ? `is-avail-${avail}` : ''].filter(Boolean).join(' ');
-            const title = dayLock ? `${lockReason[dayLock]}${st.kind === 'holiday' ? `（${st.info.label || ''}）` : ''}` : reason ? `${AVAIL_LABELS[avail] || ''}：${reason}` : '';
+            const title = dayLock ? `${LOCK_REASONS[dayLock]}${st.kind === 'holiday' ? `（${st.info.label || ''}）` : ''}` : reason ? `${AVAIL_LABELS[avail] || ''}：${reason}` : '';
             return `<div class="${classes}" data-cse-cell data-weekday="${weekday}" data-section="${section}"${locked ? ` data-locked="${dayLock || 'dawn'}"` : ''}${title ? ` title="${escapeHtml(title)}"` : ''} style="grid-column:${weekday - 1 + columnBase};grid-row:${section + 1};"></div>`;
         }).join('');
         const bands = [];
@@ -546,25 +556,26 @@ function init(boot) {
     }
 
     function swapPath(from, to, kind) {
-        // Curved arrow. Header→header arcs above the headers; rail↔header bends horizontally.
+        // 方向：被补那天（课从这里来）→ 调休上课日（课在这里上）。同周在列头之间画弧；跨周与左侧周卡相连。
         if (kind === 'head-head') {
             const lift = Math.max(26, Math.min(60, Math.abs(to.cx - from.cx) * 0.25));
             const y = Math.min(from.top, to.top) - 6;
-            return { d: `M ${from.cx} ${from.top} C ${from.cx} ${y - lift}, ${to.cx} ${y - lift}, ${to.cx} ${to.top}`, label: { x: (from.cx + to.cx) / 2, y: y - lift * 0.75 } };
+            const start = { x: from.cx, y: from.top }, end = { x: to.cx, y: to.top };
+            return { start, end, d: `M ${start.x} ${start.y} C ${start.x} ${y - lift}, ${end.x} ${y - lift}, ${end.x} ${end.y}`, label: { x: (from.cx + to.cx) / 2, y: y - lift * 0.75 } };
         }
         if (kind === 'head-rail') {
-            const sx = from.cx, sy = from.top, tx = to.right + 2, ty = to.cy;
-            const midX = tx + Math.max(40, (sx - tx) * 0.35);
-            return { d: `M ${sx} ${sy} C ${sx} ${sy - 40}, ${midX} ${ty}, ${tx} ${ty}`, label: { x: (sx + midX) / 2, y: sy - 34 } };
+            const start = { x: from.cx, y: from.top }, end = { x: to.right + 2, y: to.cy };
+            const midX = end.x + Math.max(40, (start.x - end.x) * 0.35);
+            return { start, end, d: `M ${start.x} ${start.y} C ${start.x} ${start.y - 40}, ${midX} ${end.y}, ${end.x} ${end.y}`, label: { x: (start.x + midX) / 2, y: start.y - 34 } };
         }
         if (kind === 'rail-head') {
-            const sx = from.right + 2, sy = from.cy, tx = to.cx, ty = to.top;
-            const midX = sx + Math.max(40, (tx - sx) * 0.35);
-            return { d: `M ${sx} ${sy} C ${midX} ${sy}, ${tx} ${ty - 40}, ${tx} ${ty}`, label: { x: (sx + midX) / 2, y: sy - 14 } };
+            const start = { x: from.right + 2, y: from.cy }, end = { x: to.cx, y: to.top };
+            const midX = start.x + Math.max(40, (end.x - start.x) * 0.35);
+            return { start, end, d: `M ${start.x} ${start.y} C ${midX} ${start.y}, ${end.x} ${end.y - 40}, ${end.x} ${end.y}`, label: { x: (start.x + midX) / 2, y: start.y - 14 } };
         }
-        // rail-rail: small bracket along the rail's right edge
         const x = Math.max(from.right, to.right) + 14;
-        return { d: `M ${from.right} ${from.cy} C ${x} ${from.cy}, ${x} ${to.cy}, ${to.right} ${to.cy}`, label: { x: x + 4, y: (from.cy + to.cy) / 2 } };
+        const start = { x: from.right, y: from.cy }, end = { x: to.right, y: to.cy };
+        return { start, end, d: `M ${start.x} ${start.y} C ${x} ${start.y}, ${x} ${end.y}, ${end.x} ${end.y}`, label: { x: x + 4, y: (start.y + end.y) / 2 } };
     }
 
     function renderSwapLines() {
@@ -582,6 +593,8 @@ function init(boot) {
         const railVisible = card => { if (!railRect || !card) return false; const r = card.getBoundingClientRect(); return r.bottom > railRect.top + 4 && r.top < railRect.bottom - 4; };
         const head = weekday => refs.stageBody?.querySelector(`[data-cse-dayhead="${weekday}"]`);
         const railCard = w => refs.weeks?.querySelector(`[data-cse-week="${w}"]`);
+        const grid = refs.stageBody?.querySelector('.cse-grid');
+        const gridRect = grid ? anchorRect(grid, layoutRect) : null;
         const ns = 'http://www.w3.org/2000/svg';
         const el = (tag, attrs = {}, text = '') => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v)); if (text) n.textContent = text; return n; };
         const defs = el('defs');
@@ -589,23 +602,32 @@ function init(boot) {
         const active = Number(week.week_index);
         swaps.forEach((swap, index) => {
             const color = swapColor(swap);
-            const fromWeek = Number(swap.week), toWeek = Number(swap.makeup_week);
+            const sourceWeek = Number(swap.makeup_week), targetWeek = Number(swap.week); // 课从被补那天来，到调休日上
             let from = null, to = null, kind = '';
-            if (fromWeek === active && toWeek === active) { from = anchorRect(head(swap.weekday), layoutRect); to = anchorRect(head(swap.makeup_weekday), layoutRect); kind = 'head-head'; }
-            else if (fromWeek === active) { const card = railCard(toWeek); if (!railVisible(card)) return; from = anchorRect(head(swap.weekday), layoutRect); to = anchorRect(card, layoutRect); kind = 'head-rail'; }
-            else if (toWeek === active) { const card = railCard(fromWeek); if (!railVisible(card)) return; from = anchorRect(card, layoutRect); to = anchorRect(head(swap.makeup_weekday), layoutRect); kind = 'rail-head'; }
-            else { const a = railCard(fromWeek), b = railCard(toWeek); if (!railVisible(a) || !railVisible(b)) return; from = anchorRect(a, layoutRect); to = anchorRect(b, layoutRect); kind = 'rail-rail'; }
+            if (sourceWeek === active && targetWeek === active) { from = anchorRect(head(swap.makeup_weekday), layoutRect); to = anchorRect(head(swap.weekday), layoutRect); kind = 'head-head'; }
+            else if (sourceWeek === active) { const card = railCard(targetWeek); if (!railVisible(card)) return; from = anchorRect(head(swap.makeup_weekday), layoutRect); to = anchorRect(card, layoutRect); kind = 'head-rail'; }
+            else if (targetWeek === active) { const card = railCard(sourceWeek); if (!railVisible(card)) return; from = anchorRect(card, layoutRect); to = anchorRect(head(swap.weekday), layoutRect); kind = 'rail-head'; }
+            else { if (sourceWeek === targetWeek) return; /* 同周调休在周卡徽标里已标出，切到该周才画列头弧线 */ const a = railCard(sourceWeek), b = railCard(targetWeek); if (!railVisible(a) || !railVisible(b)) return; from = anchorRect(a, layoutRect); to = anchorRect(b, layoutRect); kind = 'rail-rail'; }
             if (!from || !to) return;
             const markerId = `cse-swap-arrow-${index}`;
-            const marker = el('marker', { id: markerId, markerWidth: 12, markerHeight: 12, refX: 10, refY: 6, orient: 'auto', markerUnits: 'userSpaceOnUse', overflow: 'visible' });
-            marker.append(el('path', { d: 'M 2 2 L 10 6 L 2 10', fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+            const marker = el('marker', { id: markerId, markerWidth: 12, markerHeight: 12, refX: 9, refY: 6, orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse', overflow: 'visible' });
+            marker.append(el('path', { d: 'M 1 1.5 L 10.5 6 L 1 10.5 Z', fill: color, stroke: color, 'stroke-width': 1, 'stroke-linejoin': 'round' }));
             defs.append(marker);
-            const { d, label } = swapPath(from, to, kind);
+            const { d, label, start } = swapPath(from, to, kind);
             const group = el('g', { class: `cse-swap cse-swap--${kind}`, 'data-cse-swap': swap.workday_date, style: `color:${color}` });
             group.append(el('title', {}, swapTitle(swap)));
+            // 目标列（调休上课日）用细虚线包裹，留内边距，不侵占相邻列
+            if (targetWeek === active && gridRect) {
+                const column = anchorRect(head(swap.weekday), layoutRect);
+                if (column) group.append(el('rect', { class: 'cse-swap__column', x: column.left + 3, y: column.top - 2, width: Math.max(0, column.right - column.left - 6), height: Math.max(0, gridRect.bottom - column.top - 2), rx: 10, stroke: color }));
+            }
             group.append(el('path', { class: 'cse-swap__line', d, stroke: color, 'marker-end': `url(#${markerId})` }));
-            group.append(el('circle', { class: 'cse-swap__origin', cx: from.cx, cy: kind.startsWith('head') ? from.top : from.cy, r: 2.8, stroke: color }));
-            const text = kind === 'head-head' ? `补${swap.makeup_for_weekday || ''}课` : kind === 'head-rail' ? `补第${toWeek}周${swap.makeup_for_weekday || ''}课` : kind === 'rail-head' ? `第${fromWeek}周${shortDate(swap.workday_date)}调休来补` : `第${fromWeek}周→第${toWeek}周`;
+            group.append(el('circle', { class: 'cse-swap__origin', cx: start.x, cy: start.y, r: 3.2, fill: color, stroke: color }));
+            const sourceDay = swap.makeup_for_weekday || `周${DAY_NAMES[swap.makeup_weekday - 1] || ''}`;
+            const targetDay = `周${DAY_NAMES[swap.weekday - 1] || ''}`;
+            const text = kind === 'head-head' ? `${sourceDay}的课 → ${targetDay}上`
+                : kind === 'head-rail' ? `${sourceDay}的课 → 第${targetWeek}周${targetDay}上`
+                    : kind === 'rail-head' ? `第${sourceWeek}周${sourceDay}的课 → ${targetDay}上` : `第${sourceWeek}周→第${targetWeek}周`;
             const width = Math.ceil([...text].reduce((t, c) => t + (c.charCodeAt(0) > 255 ? 12 : 7), 12));
             const labelGroup = el('g', { class: 'cse-swap__label', transform: `translate(${label.x} ${label.y})` });
             labelGroup.append(el('rect', { x: -width / 2, y: -9, width, height: 18, rx: 6 }));
@@ -642,23 +664,36 @@ function init(boot) {
         const { max_section: maxSection, max_week: maxWeek } = rules();
         const pastLesson = isPastDate(String(lesson.actual_date || ''));
         const locked = lesson.counts_towards_total === false || draft?.status === 'pushed' || pastLesson;
-        const weekOptions = Array.from({ length: Math.max(maxWeek, weeks().length) }, (_, i) => i + 1)
-            .map(w => `<option value="${w}"${w === form.week ? ' selected' : ''}>第${w}周${dateOf(w, 7) && isPastDate(dateOf(w, 7)) ? '（已过）' : ''}</option>`).join('');
+        const termEnd = String(calendar().term_end || '');
+        const weekOptions = Array.from({ length: Math.max(maxWeek, weeks().length) }, (_, i) => i + 1).map(w => {
+            const end = dateOf(w, 7), start = dateOf(w, 1);
+            const flag = end && isPastDate(end) ? '已过' : (termEnd && start && start > termEnd ? '学期外' : '');
+            return `<option value="${w}"${w === form.week ? ' selected' : ''}${flag ? ' data-hint="' + flag + '"' : ''}>第${w}周 ${escapeHtml(shortDate(start))}–${escapeHtml(shortDate(end))}</option>`;
+        }).join('');
         const dayOptions = DAY_NAMES.map((d, i) => {
             const st = dayState(form.week, i + 1);
-            const note = st.kind === 'holiday' ? `（${st.info.label || '放假'}）` : st.kind === 'past' ? '（已过）' : st.kind === 'workday' ? `（调休·补${st.info.makeup_for_weekday || ''}）` : '';
-            return `<option value="${i + 1}"${i + 1 === form.weekday ? ' selected' : ''}>周${d} ${shortDate(st.iso)}${note}</option>`;
+            const hint = st.kind === 'holiday' ? (st.info.label || '放假') : st.kind === 'past' ? '已过' : st.kind === 'ended' ? '学期外' : st.kind === 'workday' ? `调休·补${st.info.makeup_for_weekday || ''}` : '';
+            return `<option value="${i + 1}"${i + 1 === form.weekday ? ' selected' : ''}${hint ? ` data-hint="${escapeHtml(hint)}"` : ''}>周${d} ${escapeHtml(shortDate(st.iso))}</option>`;
         }).join('');
         const starts = pairStarts().filter(s => s + form.span - 1 <= maxSection);
         if (form.start && !starts.includes(form.start)) starts.push(form.start);
         const startOptions = starts.sort((a, b) => a - b)
-            .map(s => `<option value="${s}"${s === form.start ? ' selected' : ''}>第${s}${form.span > 1 ? `-${s + form.span - 1}` : ''}节${pairStarts().includes(s) ? '' : '（不合规）'}</option>`).join('');
+            .map(s => `<option value="${s}"${s === form.start ? ' selected' : ''}${pairStarts().includes(s) ? '' : ' data-hint="不合规"'}>第${s}${form.span > 1 ? `-${s + form.span - 1}` : ''}节 · ${BAND_LABELS[sectionBand(s)]}</option>`).join('');
         const targetDay = dayState(form.week, form.weekday);
         const dayNote = targetDay.kind === 'holiday' ? `<div class="cse-status cse-status--conflict">目标日期 ${shortDate(targetDay.iso)} 为节假日（${escapeHtml(targetDay.info.label || '放假')}），不能安排课程。</div>`
             : targetDay.kind === 'past' ? `<div class="cse-status cse-status--conflict">目标日期 ${shortDate(targetDay.iso)} 已经过去，不能放置。</div>`
-                : targetDay.kind === 'workday' ? `<div class="cse-status cse-status--workday">目标日期 ${shortDate(targetDay.iso)} 为调休上课日：当天按 ${escapeHtml(targetDay.info.makeup_for_weekday || '')}（${shortDate(targetDay.info.makeup_for_date)}）课表上课，冲突与可调时段按那一天判断。${targetDay.info.inferred ? '补课星期为推断，以学校通知为准。' : ''}</div>` : '';
+                : targetDay.kind === 'ended' ? `<div class="cse-status cse-status--conflict">目标日期 ${shortDate(targetDay.iso)} 已超出学期结束日期（${escapeHtml(termEnd)}），不能放置。</div>`
+                    : targetDay.kind === 'workday' ? `<div class="cse-status cse-status--workday">目标日期 ${shortDate(targetDay.iso)} 为调休上课日：当天按 ${escapeHtml(targetDay.info.makeup_for_weekday || '')}（${shortDate(targetDay.info.makeup_for_date)}）课表上课，冲突与可调时段按那一天判断。${targetDay.info.inferred ? '补课星期为推断，以学校通知为准。' : ''}</div>` : '';
         const statusBlock = pastLesson ? '<div class="cse-status cse-status--muted"><strong>该课次已上过</strong><br>已发生的课次不能再调整；调整后续课次时，课次序号与材料保持不变。</div>'
             : draft ? `<div class="cse-status cse-status--${escapeHtml(draft.status)}"><strong>${escapeHtml(draft.status_label)}</strong>${draft.remote_message ? `<br>${escapeHtml(draft.remote_message)}` : ''}${draft.status === 'pushed' ? '<br>如需修改，请先「从教务撤回」。' : ''}</div>` : '';
+        const originalRoom = String(lesson.classroom || '');
+        const roomOptions = `<option value=""${form.room_id ? '' : ' selected'}>沿用原教室${originalRoom ? `：${escapeHtml(compactClassroomName(originalRoom))}` : ''}</option>${form.room_id ? `<option value="${escapeHtml(form.room_id)}" selected>${escapeHtml(form.room)}</option>` : ''}`;
+        const proofs = draft ? (draft.proofs || []) : [];
+        const proofsBlock = draft ? `<section class="cse-section" data-cse-proofs>
+                    <div class="cse-section__title">证明材料 <span class="cse-section__hint">放假通知、会议通知等；提交教务申请时需一并附上</span></div>
+                    ${proofs.length ? `<div class="cse-proofs">${proofs.map(p => `<span class="cse-proof"><a href="${API}/drafts/${draft.id}/proofs/${escapeHtml(p.id)}" target="_blank" rel="noopener" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a><small>${formatBytes(p.size)}</small><button type="button" class="cse-proof__remove" data-cse-proof-del="${escapeHtml(p.id)}" aria-label="删除 ${escapeHtml(p.name)}"${locked ? ' disabled' : ''}>×</button></span>`).join('')}</div>` : '<div class="cse-materials__empty">还没有上传证明材料。</div>'}
+                    <label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-proof-input multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden${locked ? ' disabled' : ''}>${state.proofsBusy ? '上传中…' : '添加证明材料'}</label>
+                </section>` : '';
         const materialsBlock = renderMaterialsBlock(lesson);
         refs.drawer.hidden = false;
         refs.drawer.innerHTML = `
@@ -668,42 +703,41 @@ function init(boot) {
             </div>
             <div class="cse-drawer__body">
                 ${statusBlock}
-                <section class="cse-section">
+                <section class="cse-section cse-section--origin">
                     <div class="cse-section__title">原安排</div>
-                    <dl class="cse-kv">
-                        <dt>时间</dt><dd>${escapeHtml(week.label)} ${escapeHtml(lesson.weekday_label || '')} ${escapeHtml(lesson.section_label || '')}${lesson.actual_date ? `（${escapeHtml(lesson.actual_date)}）` : ''}</dd>
-                        <dt>教室</dt><dd>${escapeHtml(lesson.classroom || '教室待定')}</dd>
-                        <dt>占用</dt><dd>${form.span} 节${lesson.session_no ? ` · 第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}` : ''}</dd>
-                    </dl>
+                    <div class="cse-origin">
+                        <div class="cse-origin__time">${escapeHtml(week.label)} ${escapeHtml(lesson.weekday_label || '')} ${escapeHtml(lesson.section_label || '')}${lesson.actual_date ? `<small>${escapeHtml(lesson.actual_date)}</small>` : ''}</div>
+                        <div class="cse-origin__meta"><span>${escapeHtml(lesson.classroom || '教室待定')}</span><span>${form.span} 节${lesson.session_no ? ` · 第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}` : ''}</span></div>
+                    </div>
                 </section>
                 <section class="cse-section">
                     <div class="cse-section__title">调整到</div>
-                    <div class="cse-field-row">
-                        <div class="cse-field"><label for="cseWeek">周次</label><select id="cseWeek" class="cse-select" data-cse-field="week"${locked ? ' disabled' : ''}>${weekOptions}</select></div>
-                        <div class="cse-field"><label for="cseWeekday">星期</label><select id="cseWeekday" class="cse-select" data-cse-field="weekday"${locked ? ' disabled' : ''}>${dayOptions}</select></div>
-                        <div class="cse-field"><label for="cseStart">节次</label><select id="cseStart" class="cse-select" data-cse-field="start"${locked ? ' disabled' : ''}>${startOptions}</select></div>
+                    <div class="cse-field-grid">
+                        <div class="cse-field"><label for="cseWeek">周次</label><select id="cseWeek" data-cse-field="week" data-lq-dropdown aria-label="周次"${locked ? ' disabled' : ''}>${weekOptions}</select></div>
+                        <div class="cse-field"><label for="cseStart">节次</label><select id="cseStart" data-cse-field="start" data-lq-dropdown aria-label="节次"${locked ? ' disabled' : ''}>${startOptions}</select></div>
+                        <div class="cse-field cse-field--full"><label for="cseWeekday">星期</label><select id="cseWeekday" data-cse-field="weekday" data-lq-dropdown aria-label="星期"${locked ? ' disabled' : ''}>${dayOptions}</select></div>
                     </div>
-                    <div class="cse-field__hint">第 1 节为早读，不可放置；课次以两小节为单位（2-3 / 4-5 / 6-7 / 8-9 / 10-11），四小节课可跨上午下午；占用节数固定为 ${form.span} 节，最多到第 ${maxSection} 节。</div>
                     ${dayNote}
-                    <div class="cse-field cse-rooms">
+                    <div class="cse-field" data-cse-room-dropdown>
                         <label for="cseRoom">教室（教务场地）</label>
-                        <input id="cseRoom" class="cse-input" data-cse-field="room" value="${escapeHtml(form.room)}" placeholder="输入楼名/教室号搜索，或留空沿用原教室" autocomplete="off"${locked ? ' disabled' : ''}>
-                        <div class="cse-rooms__list" data-cse-rooms hidden></div>
-                        <div class="cse-field__hint">${form.room_id ? `已选教务场地 ${escapeHtml(form.room_id)}` : '未选择教务场地时沿用原教室'}</div>
+                        <select id="cseRoom" data-cse-field="room" data-lq-dropdown data-lq-searchable data-lq-placeholder="沿用原教室" aria-label="教室"${locked ? ' disabled' : ''}>${roomOptions}</select>
+                        <div class="cse-field__hint">${form.room_id ? `已选教务场地 ${escapeHtml(form.room_id)}` : '输入楼名或教室号搜索教务场地；不选则沿用原教室'}</div>
                     </div>
                     <div class="cse-verdict" data-cse-verdict></div>
                     <div class="cse-field cse-free-rooms" data-cse-free-rooms-panel>
                         <div class="cse-free-rooms__head">
-                            <label>该时段空闲教室（二次搜索，实时查教务）</label>
+                            <label>该时段空闲教室（实时查教务）</label>
                             <button type="button" class="cse-btn cse-btn--sm" data-cse-free-rooms${locked ? ' disabled' : ''}>查询空闲教室</button>
                         </div>
                         <div class="cse-free-rooms__body" data-cse-free-rooms-list></div>
                     </div>
                     <div class="cse-field">
-                        <label for="cseReason">调课原因（随草稿一并写入教务，可在教务提交时修改）</label>
-                        <textarea id="cseReason" class="cse-textarea" data-cse-field="reason" maxlength="400" placeholder="例如：国庆假期调休、参加学术会议…"${locked ? ' disabled' : ''}>${escapeHtml(form.reason)}</textarea>
+                        <div class="cse-field__labelrow"><label for="cseReason">调课原因</label><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-reason-ai${locked ? ' disabled' : ''}>AI 填写</button></div>
+                        <textarea id="cseReason" class="cse-textarea" data-cse-field="reason" maxlength="400" rows="2" placeholder="简短说明，例如：国庆假期调休，课程顺延"${locked ? ' disabled' : ''}>${escapeHtml(form.reason)}</textarea>
+                        <div class="cse-field__hint">随草稿一并写入教务，可在教务提交时修改。</div>
                     </div>
                 </section>
+                ${proofsBlock}
                 ${materialsBlock}
             </div>
             <div class="cse-drawer__foot">
@@ -712,10 +746,87 @@ function init(boot) {
                 ${draft && draft.status === 'pushed' ? `<button type="button" class="cse-btn cse-btn--danger" data-cse-withdraw="${draft.id}">从教务撤回</button>` : ''}
                 ${lesson.classroom_url ? `<a class="cse-btn" href="${escapeHtml(lesson.classroom_url)}">进入课堂</a>` : ''}
             </div>`;
+        bindDrawerDropdowns();
         if (lesson.class_offering_id && lesson.session_id) loadMaterials(lesson);
         renderDrawerVerdict();
         renderFreeRooms();
         loadAvailability(lesson.event_key, { roomId: form.room_id, roomName: form.room_id ? form.room : '' });
+    }
+
+    function formatBytes(size) {
+        const n = Number(size) || 0;
+        return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+    }
+
+    /** Glass dropdowns for the drawer selects; the native selects stay the value owners. */
+    function bindDrawerDropdowns() {
+        for (const select of refs.drawer?.querySelectorAll('select[data-lq-dropdown]') || []) {
+            if (select.dataset.cseField === 'room') {
+                let binding = null;
+                binding = bindDropdown(select, { searchable: true, placeholder: '沿用原教室', onQuery: ticket => queryRooms(binding, ticket) });
+            } else bindDropdown(select);
+        }
+    }
+
+    async function queryRooms(binding, ticket) {
+        const q = String(ticket.query || '').trim();
+        const original = state.form ? resolveSelection(state.form.key)?.lesson : null;
+        const keep = [{ value: '', label: `沿用原教室${original?.classroom ? `：${compactClassroomName(original.classroom)}` : ''}` }];
+        if (!q) { binding.setResults({ ...ticket, options: keep.concat(state.form?.room_id ? [{ value: state.form.room_id, label: state.form.room }] : []) }); return; }
+        state.roomsRequest?.abort?.();
+        const controller = new AbortController(); state.roomsRequest = controller;
+        try {
+            const data = await api(`${API}/rooms?q=${encodeURIComponent(q)}&limit=30`, { signal: controller.signal });
+            if (controller.signal.aborted) return;
+            const rooms = (data.rooms || []).map(room => ({ value: String(room.room_id), label: String(room.full_name || room.name), hint: [room.building, room.seat_count ? `${room.seat_count} 座` : '', room.schedulable ? '' : '不可排课'].filter(Boolean).join(' · ') }));
+            binding.setResults({ ...ticket, options: keep.concat(rooms), message: rooms.length ? '' : '没有匹配的教务场地' });
+        } catch (error) { if (error.name !== 'AbortError') binding.setResults({ ...ticket, status: 'error', message: error.message }); }
+    }
+
+    async function fillReasonByAi() {
+        const form = state.form;
+        if (!form) return;
+        const button = refs.drawer?.querySelector('[data-cse-reason-ai]');
+        if (button) { button.disabled = true; button.textContent = 'AI 思考中…'; }
+        try {
+            const data = await api(`${API}/reason-suggest`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, event_key: form.key, week: form.week, weekday: form.weekday, sections: currentFormSections(), room: form.room_id ? form.room : '', note: form.reason }) });
+            state.form = { ...state.form, reason: data.reason || '' };
+            const area = refs.drawer?.querySelector('[data-cse-field="reason"]');
+            if (area) area.value = state.form.reason;
+            toast(data.source === 'ai' ? 'AI 已填写调课原因，可继续修改。' : '已按校历规则填写调课原因（AI 暂不可用）。', data.source === 'ai' ? 'success' : 'info');
+        } catch (error) { toast(error.message, 'danger'); }
+        finally { if (button) { button.disabled = false; button.textContent = 'AI 填写'; } }
+    }
+
+    function patchDraft(draft) {
+        if (!draft || !state.payload) return;
+        const list = drafts();
+        const index = list.findIndex(d => d.id === draft.id);
+        if (index >= 0) list[index] = draft; else list.push(draft);
+        state.payload = { ...state.payload, drafts: list };
+    }
+
+    async function uploadProofs(draftId, files) {
+        if (!files?.length) return null;
+        state.proofsBusy = true; renderDrawer();
+        try {
+            const body = new FormData();
+            for (const file of files) body.append('files', file, file.name);
+            const response = await fetch(`${API}/drafts/${draftId}/proofs`, { method: 'POST', body, credentials: 'same-origin' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || '证明材料上传失败');
+            patchDraft(data.draft);
+            toast(`已上传 ${data.stored?.length || 0} 份证明材料。`, 'success');
+            return data.draft;
+        } catch (error) { toast(error.message, 'danger'); return null; }
+        finally { state.proofsBusy = false; renderDrawer(); renderDrafts(); }
+    }
+
+    async function removeProof(draftId, fileId) {
+        try {
+            const data = await api(`${API}/drafts/${draftId}/proofs/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+            patchDraft(data.draft); renderDrawer(); renderDrafts();
+        } catch (error) { toast(error.message, 'danger'); }
     }
 
     function currentFormSections() {
@@ -875,7 +986,7 @@ function init(boot) {
         const pushed = list.filter(d => d.status === 'pushed').length;
         const rows = list.map(draft => `<div class="cse-draft" data-cse-draft="${draft.id}">
             <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}${draft.room_status === 'busy' ? '<span class="cse-tag cse-tag--room">教室已占用 · 需换教室</span>' : draft.room_status === 'free' ? '<span class="cse-tag cse-tag--ok">教室空闲</span>' : ''}</div>
-            <div class="cse-draft__route">${escapeHtml(draft.original_label)} → <b>${escapeHtml(draft.proposed_label)}</b>${draft.reason ? ` · 原因：${escapeHtml(draft.reason)}` : ''}</div>
+            <div class="cse-draft__route">${escapeHtml(draft.original_label)} → <b>${escapeHtml(draft.proposed_label)}</b>${draft.reason ? ` · 原因：${escapeHtml(draft.reason)}` : ' · <em class="cse-draft__warn">未填写原因</em>'}${(draft.proofs || []).length ? ` · 证明材料 ${draft.proofs.length} 份` : ' · <em class="cse-draft__warn">无证明材料</em>'}</div>
             ${draft.remote_message || draft.remote_label ? `<div class="cse-draft__msg">${escapeHtml(draft.remote_label ? `教务：${draft.remote_label}` : '')}${draft.remote_label && draft.remote_message ? ' · ' : ''}${escapeHtml(draft.remote_message || '')}</div>` : ''}
             ${conflictDetailsHtml(draft.remote_conflict)}
             <div class="cse-draft__actions">
@@ -889,34 +1000,7 @@ function init(boot) {
             ${list.length ? `<div class="cse-drafts__list">${rows}</div>` : '<div class="cse-materials__empty">还没有任何调整。按住课次拖到新的节次，或单击课次在右侧设置。</div>'}${next}`;
     }
 
-    /* ------------------------------------------------------------------ 课次重排 (resequence) */
-    function renderResequence() {
-        const box = refs.resequence;
-        if (!box) return;
-        if (!state.payload?.editable) { box.hidden = true; box.innerHTML = ''; return; }
-        const rs = state.resequence;
-        const pending = pendingDrafts().length + drafts().filter(d => d.status === 'pushed').length;
-        let body = '';
-        if (rs.loading) body = '<div class="cse-materials__empty">正在计算课次重排预览…</div>';
-        else if (rs.error) body = `<div class="cse-materials__empty">${escapeHtml(rs.error)}</div>`;
-        else if (rs.preview) {
-            const plans = rs.preview.plans || [];
-            body = plans.length ? plans.map(plan => `<div class="cse-reseq__course">
-                <div class="cse-reseq__title"><strong>${escapeHtml(plan.course_label || '课程')}</strong><span>已发生 ${plan.frozen_count} 次不变 · 重排 ${plan.change_count} 次 · 直接调整 ${plan.moved_count} 次</span></div>
-                ${plan.changes.length ? `<ol class="cse-reseq__list">${plan.changes.map(c => `<li${c.moved_directly ? ' class="is-direct"' : ''}><b>第 ${c.order_index} 次课</b>${c.title ? ` ${escapeHtml(c.title)}` : ''}：<span class="cse-reseq__old">${escapeHtml(describeSlot(c.old))}</span> → <span class="cse-reseq__new">${escapeHtml(describeSlot(c.new))}</span>${c.moved_directly ? '<i>本次调整</i>' : ''}</li>`).join('')}</ol>` : '<div class="cse-materials__empty">顺序不变。</div>'}
-            </div>`).join('') : '<div class="cse-materials__empty">当前草稿不涉及平台课堂课次，或课次顺序不受影响。</div>';
-            body += `<div class="cse-field__hint">${escapeHtml(rs.preview.note || '')}</div>`;
-        } else body = `<div class="cse-materials__empty">${pending ? '点击「预览课次重排」查看调整生效后各课次的新顺序。' : '还没有调整；调整后可在这里预览课次重排结果。'}</div>`;
-        const lastApplied = rs.applied ? `<div class="cse-status cse-status--pushed">已按当前日期重排 ${rs.applied.applied_count} 个课次${rs.applied.applied_count ? '：' + rs.applied.reports.flatMap(r => r.summary).slice(0, 6).map(escapeHtml).join('；') : '（顺序已正确）'}</div>` : '';
-        box.hidden = false;
-        box.innerHTML = `<div class="cse-drafts__head"><h3>课次重排</h3><p>课程一旦调整，已发生的课次保持不变，剩余课次按新日期重新排序；课次序号与教学材料（含 HTML 包 lesson_N、git 同步）跟随序号自动重绑，无需手动改。教务审批通过并同步后自动执行。</p></div>
-            ${lastApplied}${body}
-            <div class="cse-draft__actions">
-                <button type="button" class="cse-btn cse-btn--sm" data-cse-reseq-preview${state.busy ? ' disabled' : ''}>预览课次重排</button>
-                <button type="button" class="cse-btn cse-btn--sm" data-cse-reseq-apply${state.busy ? ' disabled' : ''} title="按课次当前日期立即重排（用于日期已在课堂中手动改过、或审批已生效但顺序未更新的情况）">按当前日期重排</button>
-            </div>`;
-    }
-
+    /* ------------------------------------------------------------------ 课次重排预览 */
     function describeSlot(slot) {
         if (!slot?.date) return '未排期';
         const d = new Date(`${slot.date}T00:00:00`);
@@ -924,31 +1008,12 @@ function init(boot) {
         return `${slot.week ? `第${slot.week}周 ` : ''}${shortDate(slot.date)} ${weekday} ${sectionText(slot.sections || [])}`.trim();
     }
 
-    async function previewResequence() {
-        state.resequence = { ...state.resequence, loading: true, error: '' };
-        renderResequence();
+    /** 课次重排预览（只读）：调课经教务审批同步后自动执行，这里只在保存到教务时告知结果。 */
+    async function fetchResequencePreview(draftIds) {
         try {
-            const data = await api(`${API}/resequence-preview?year=${encodeURIComponent(term().year)}&term=${encodeURIComponent(term().term)}`);
-            state.resequence = { ...state.resequence, loading: false, preview: data };
-        } catch (error) { state.resequence = { ...state.resequence, loading: false, error: error.message }; }
-        renderResequence();
-    }
-
-    async function applyResequence() {
-        const ok = await LQ.confirm({
-            title: '按当前日期重排课次',
-            message: '将按各课次当前日期重新排序本学期课次：已发生的课次不变，其余课次的日期按顺序重新分配；课次序号、材料绑定不变。此操作会改动课堂课次日期，确定继续？',
-            confirmLabel: '立即重排',
-        });
-        if (!ok) return;
-        setBusy(true);
-        try {
-            const data = await api(`${API}/resequence/apply`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term }) });
-            state.resequence = { loading: false, error: '', preview: null, applied: data.result };
-            applyPayload(data);
-            toast(data.result?.applied_count ? `已重排 ${data.result.applied_count} 个课次。` : '课次顺序已经正确，无需重排。', 'success');
-        } catch (error) { toast(error.message, 'danger'); }
-        finally { setBusy(false); }
+            const params = new URLSearchParams({ year: term().year || '', term: term().term || '', draft_ids: (draftIds || []).join(',') });
+            return await api(`${API}/resequence-preview?${params}`);
+        } catch { return null; }
     }
 
     async function refreshHolidays() {
@@ -965,7 +1030,7 @@ function init(boot) {
     }
 
     /* ------------------------------------------------------------------ actions */
-    function setBusy(flag) { state.busy = flag; renderMeta(); renderTermSelect(); renderResequence(); }
+    function setBusy(flag) { state.busy = flag; renderMeta(); renderTermSelect(); }
 
     async function loadTerm(year, termCode) {
         setBusy(true);
@@ -1016,11 +1081,11 @@ function init(boot) {
     async function pushDrafts({ draftIds = null, force = false } = {}) {
         const targets = draftIds ? draftIds.map(draftById).filter(Boolean) : pendingDrafts();
         if (!targets.length) { toast('没有待保存到教务的变更。'); return; }
-        const ok = await LQ.confirm({
-            title: force ? '按冲突调停课保存' : '保存到教务系统',
-            message: `${targets.length} 项变更将写入教务系统的调停课申请草稿（待提交），不会替您提交申请。${force ? '教务已检测到冲突，仍保存将标记为"冲突调停课"。' : ''}保存后请登录教务系统核对并点击「提交申请」。`,
-            confirmLabel: force ? '仍然保存' : '保存到教务',
-        });
+        const ok = force ? await LQ.confirm({
+            title: '按冲突调停课保存',
+            message: `教务已检测到冲突，仍保存将标记为"冲突调停课"。${targets.length} 项变更写入教务草稿（待提交），不会替您提交申请。`,
+            confirmLabel: '仍然保存',
+        }) : await openPushDialog(targets);
         if (!ok) return;
         setBusy(true);
         try {
@@ -1031,11 +1096,73 @@ function init(boot) {
             if (result.status === 'missing_credential') {
                 LQ.toast(result.message, { tone: 'warning', duration: 8000, action: { label: '去设置教务账号', href: CREDENTIAL_URL } }).catch(() => {});
             } else {
-                toast(describePushResult(result), result.status === 'success' ? 'success' : result.status === 'partial' ? 'warning' : 'danger');
+                const proofCount = targets.reduce((n, d) => n + ((draftById(d.id)?.proofs || []).length), 0);
+                const lines = [describePushResult(result)];
+                if (result.status === 'success' || result.status === 'partial') lines.push(proofCount ? `提交申请时请在教务附上已保存的 ${proofCount} 份证明材料（变更清单可下载）。` : '提交申请时请在教务补充证明材料。', '调课经教务审批并同步后，剩余课次将自动按新日期重排，课次材料随序号不变。');
+                LQ.toast(lines.filter(Boolean).join('\n'), { tone: result.status === 'success' ? 'success' : result.status === 'partial' ? 'warning' : 'danger', duration: 9000 }).catch(() => {});
             }
             if (refs.feedback) refs.feedback.textContent = result.message || '';
         } catch (error) { toast(error.message, 'danger'); }
         finally { setBusy(false); }
+    }
+
+    /**
+     * 保存到教务前的确认弹窗：变更清单、缺失的原因/证明材料、课次重排预览、批量上传证明材料。
+     * 返回 true 表示继续保存。
+     */
+    async function openPushDialog(targets) {
+        const dialogs = await LQ.load('dialogs');
+        const preview = await fetchResequencePreview(targets.map(d => d.id));
+        const body = document.createElement('div'); body.className = 'cse-push';
+        const missingReason = targets.filter(d => !String(d.reason || '').trim());
+        const missingProof = targets.filter(d => !(d.proofs || []).length);
+        const renderBody = () => {
+            const rows = targets.map(d => draftById(d.id) || d).map(d => `<li class="cse-push__item"><b>${escapeHtml(d.course_name)}</b><span>${escapeHtml(d.original_label)} → ${escapeHtml(d.proposed_label)}</span><small>${d.reason ? `原因：${escapeHtml(d.reason)}` : '<em>未填写原因</em>'} · ${(d.proofs || []).length ? `证明材料 ${d.proofs.length} 份` : '<em>无证明材料</em>'}</small></li>`).join('');
+            const plans = (preview?.plans || []).filter(p => p.changes?.length);
+            const planHtml = plans.length ? `<div class="cse-push__block"><strong>审批通过并同步后的课次重排</strong><ul class="cse-reseq__list">${plans.map(p => `<li><b>${escapeHtml(p.course_label || '')}</b>：已发生 ${p.frozen_count} 次不变，${p.change_count} 次重新分配日期${p.changes.slice(0, 3).map(c => `<br><small>第 ${c.order_index} 次课 ${escapeHtml(describeSlot(c.old))} → ${escapeHtml(describeSlot(c.new))}</small>`).join('')}${p.changes.length > 3 ? `<br><small>… 共 ${p.changes.length} 次</small>` : ''}</li>`).join('')}</ul><p class="cse-field__hint">课次序号与教学材料保持不变，只重新分配日期，无需手动改。</p></div>` : '';
+            body.innerHTML = `<p class="cse-push__lead">${targets.length} 项变更将写入教务系统的调停课申请草稿（待提交），不会替您提交申请。保存后请登录教务系统核对并点击「提交申请」。</p>
+                <ul class="cse-push__list">${rows}</ul>
+                ${missingReason.length ? `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>` : ''}
+                <div class="cse-push__block">
+                    <strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span>
+                    <label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label>
+                </div>
+                ${planHtml}`;
+        };
+        renderBody();
+        const footer = document.createElement('div'); footer.className = 'cse-push__foot';
+        footer.innerHTML = '<button type="button" class="cse-btn" data-cse-push-cancel>取消</button><button type="button" class="cse-btn cse-btn--primary" data-cse-push-confirm>保存到教务</button>';
+        const root = dialogs.createDialog({ title: '保存到教务系统', body, footer, size: 'lg', attrs: { 'data-cse-push-dialog': '' } });
+        return new Promise(resolve => {
+            let decided = false;
+            const finish = value => { if (!decided) { decided = true; resolve(value); } };
+            const handle = dialogs.openDialog(root, { onClose: () => finish(false) });
+            const close = async () => { await LQ.layer.close(handle, 'button'); };
+            root.addEventListener('click', async event => {
+                if (event.target.closest('[data-cse-push-cancel]')) { finish(false); await close(); return; }
+                if (event.target.closest('[data-cse-push-confirm]')) { finish(true); await close(); return; }
+                const aiAll = event.target.closest('[data-cse-push-ai-all]');
+                if (aiAll) {
+                    aiAll.disabled = true; aiAll.textContent = 'AI 填写中…';
+                    for (const draft of missingReason) {
+                        try {
+                            const data = await api(`${API}/reason-suggest`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, event_key: draft.event_key, week: draft.proposed.week, weekday: draft.proposed.weekday, sections: draft.proposed.sections, room: draft.proposed.room }) });
+                            const saved = await api(`${API}/drafts`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term, event_key: draft.event_key, week: draft.proposed.week, weekday: draft.proposed.weekday, sections: draft.proposed.sections, room: draft.proposed.room, room_id: draft.proposed.room_id, reason: data.reason }) });
+                            state.payload = saved; draft.reason = data.reason;
+                        } catch (error) { toast(error.message, 'danger'); }
+                    }
+                    missingReason.length = 0; renderBody(); renderAll();
+                }
+            });
+            root.addEventListener('change', async event => {
+                const input = event.target.closest('[data-cse-push-proofs]');
+                if (!input || !input.files?.length) return;
+                const files = [...input.files];
+                state.proofsBusy = true; renderBody();
+                for (const draft of targets) await uploadProofs(draft.id, files);
+                state.proofsBusy = false; missingProof.length = 0; renderBody();
+            });
+        });
     }
 
     async function withdrawDraft(id) {
@@ -1083,26 +1210,6 @@ function init(boot) {
         if (selection) loadAvailability(selection.lesson.event_key);
     }
 
-    /* ------------------------------------------------------------------ rooms search */
-    function searchRooms(query) {
-        const list = refs.drawer?.querySelector('[data-cse-rooms]');
-        if (!list) return;
-        window.clearTimeout(state.roomsTimer);
-        state.roomsTimer = window.setTimeout(async () => {
-            state.roomsRequest?.abort?.();
-            const controller = new AbortController(); state.roomsRequest = controller;
-            try {
-                const data = await api(`${API}/rooms?q=${encodeURIComponent(query)}&limit=30`, { signal: controller.signal });
-                if (controller.signal.aborted) return;
-                const rooms = data.rooms || [];
-                list.hidden = false;
-                list.innerHTML = rooms.length
-                    ? rooms.map(room => `<button type="button" class="cse-rooms__item" data-cse-room="${escapeHtml(room.room_id)}" data-cse-room-name="${escapeHtml(room.full_name || room.name)}"><span>${escapeHtml(room.full_name || room.name)}</span><small>${escapeHtml([room.campus, room.building, room.seat_count ? `${room.seat_count} 座` : '', room.type].filter(Boolean).join(' · '))}${room.schedulable ? '' : ' · 不可排课'}</small></button>`).join('')
-                    : '<div class="cse-rooms__empty">没有匹配的教务场地；可保留文字作为教室名称，保存到教务时将沿用原教室场地。</div>';
-            } catch (error) { if (error.name !== 'AbortError') list.innerHTML = `<div class="cse-rooms__empty">${escapeHtml(error.message)}</div>`; }
-        }, 220);
-    }
-
     /* ------------------------------------------------------------------ drag & drop */
     function cellAt(x, y) {
         const element = document.elementFromPoint(x, y);
@@ -1122,6 +1229,7 @@ function init(boot) {
         let reason = valid ? '' : (start < minSection ? '第 1 节为早读，不可放置' : `超出第 ${maxSection} 节`);
         if (valid && day.kind === 'holiday') { valid = false; reason = `节假日（${day.info.label || '放假'}）不可放置`; }
         if (valid && day.kind === 'past') { valid = false; reason = '已过去的日期不可放置'; }
+        if (valid && day.kind === 'ended') { valid = false; reason = '学期已结束，不可放置'; }
         if (valid && !pairStarts().includes(start)) { valid = false; reason = '课次以两小节为单位：只能从第 2、4、6、8、10 节开始'; }
         if (valid) {
             const week = activeWeekData();
@@ -1183,7 +1291,7 @@ function init(boot) {
             window.clearTimeout(drag.weekTimer);
             refs.weeks?.querySelectorAll('.is-drop-hover').forEach(node => node.classList.remove('is-drop-hover'));
             drag.hoverWeek = hoverWeek;
-            if (hoverWeek && hoverWeek !== state.activeWeek) {
+            if (hoverWeek && hoverWeek !== state.activeWeek && !weekButton.dataset.locked) {
                 weekButton.classList.add('is-drop-hover');
                 drag.weekTimer = window.setTimeout(() => {
                     if (!state.drag || state.drag.hoverWeek !== hoverWeek) return;
@@ -1193,7 +1301,6 @@ function init(boot) {
                 }, WEEK_HOVER_DELAY);
             }
         }
-        const LOCK_REASONS = { dawn: '第 1 节为早读，不可放置', holiday: '节假日不可放置', past: '已过去的日期不可放置' };
         const target = cell && !cell.dataset.locked ? dropTarget(cell) : (cell ? { ...dropTarget(cell), valid: false, reason: LOCK_REASONS[cell.dataset.locked] || '不可放置' } : null);
         drag.target = target;
         paintTarget(target);
@@ -1273,10 +1380,6 @@ function init(boot) {
     refs.syncBtn?.addEventListener('click', syncTerm);
     refs.availSync?.addEventListener('click', syncAvailability);
     refs.holidayRefresh?.addEventListener('click', refreshHolidays);
-    refs.resequence?.addEventListener('click', async event => {
-        if (event.target.closest('[data-cse-reseq-preview]')) { await previewResequence(); return; }
-        if (event.target.closest('[data-cse-reseq-apply]')) await applyResequence();
-    });
     // 调休连线跟随布局：窗口尺寸、周列表滚动、抽屉开合都重画
     window.addEventListener('resize', scheduleSwapLines, { passive: true });
     refs.weeks?.addEventListener('scroll', scheduleSwapLines, { passive: true });
@@ -1319,6 +1422,13 @@ function init(boot) {
         }
         const freeRooms = event.target.closest('[data-cse-free-rooms]');
         if (freeRooms) { await searchFreeRooms(); return; }
+        if (event.target.closest('[data-cse-reason-ai]')) { await fillReasonByAi(); return; }
+        const proofDel = event.target.closest('[data-cse-proof-del]');
+        if (proofDel && state.form) {
+            const draft = resolveSelection(state.form.key)?.draft;
+            if (draft) await removeProof(draft.id, proofDel.dataset.cseProofDel);
+            return;
+        }
         const save = event.target.closest('[data-cse-save]');
         if (save && state.form) {
             const form = state.form;
@@ -1334,15 +1444,22 @@ function init(boot) {
         const field = event.target.closest('[data-cse-field]');
         if (!field || !state.form) return;
         const name = field.dataset.cseField;
-        if (name === 'room') { state.form = { ...state.form, room: field.value, room_id: '' }; searchRooms(field.value); return; }
+        if (name === 'room') {
+            const option = field.selectedOptions?.[0];
+            state.form = { ...state.form, room_id: String(field.value || ''), room: field.value ? String(option?.textContent || '') : '' };
+            state.availability = { ...state.availability, data: null };
+            renderDrawer(); return;
+        }
         if (name === 'reason') { state.form = { ...state.form, reason: field.value }; return; }
         state.form = { ...state.form, [name]: Number(field.value) };
+        if (name === 'week') { renderDrawer(); return; } // 星期选项的日期/节假日提示随周次变化
         renderDrawerVerdict(); renderFreeRooms();
     });
-    refs.drawer?.addEventListener('focusin', event => { if (event.target.matches('[data-cse-field="room"]')) searchRooms(event.target.value); });
-    document.addEventListener('pointerdown', event => {
-        const list = refs.drawer?.querySelector('[data-cse-rooms]');
-        if (list && !list.hidden && !event.target.closest('.cse-rooms')) list.hidden = true;
+    refs.drawer?.addEventListener('change', async event => {
+        const input = event.target.closest('[data-cse-proof-input]');
+        if (!input || !input.files?.length || !state.form) return;
+        const draft = resolveSelection(state.form.key)?.draft;
+        if (draft) await uploadProofs(draft.id, [...input.files]);
     });
     refs.drafts?.addEventListener('click', async event => {
         const locate = event.target.closest('[data-cse-locate]');
@@ -1356,4 +1473,5 @@ function init(boot) {
     });
 
     applyPayload(boot, { keepWeek: false, keepSelection: false });
+    if (refs.termSelect) bindDropdown(refs.termSelect, { placeholder: '选择学年学期' });
 }

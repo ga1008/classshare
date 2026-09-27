@@ -276,7 +276,7 @@ const SWAP_ARROW_COLORS = ['hsl(var(--ls-primary))', 'hsl(var(--ls-warning))', '
 const SWAP_ARROW_CSS = `
 .semester-swap-arrows { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
 .semester-swap-arrows path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 6 4; opacity: .9; }
-.semester-swap-arrows circle { stroke-width: 2; fill: hsl(var(--lq-page-content, var(--ls-glass-fill-content))); }
+.semester-swap-arrows circle { stroke-width: 1.5; }
 .semester-swap-arrows .semester-swap-label rect { fill: hsl(var(--lq-page-content, var(--ls-glass-fill-content))); stroke: currentColor; stroke-width: 1; }
 .semester-swap-arrows .semester-swap-label text { fill: currentColor; font: 800 .64rem/1 var(--ls-font-sans, system-ui); text-anchor: middle; dominant-baseline: central; }
 .semester-day-cell.has-swap { box-shadow: inset 0 0 0 1.5px var(--semester-swap-color); }
@@ -329,8 +329,9 @@ function renderSwapArrows(board, model) {
     };
     let drawn = 0;
     swaps.forEach((swap, index) => {
-        const fromCell = board.querySelector(`.semester-day-cell[data-date="${swap.from}"]`);
-        const toCell = board.querySelector(`.semester-day-cell[data-date="${swap.to}"]`);
+        // 方向按上课理解：被补那天（课从这里来）→ 调休上课日（课在这里上）。
+        const fromCell = board.querySelector(`.semester-day-cell[data-date="${swap.to}"]`);
+        const toCell = board.querySelector(`.semester-day-cell[data-date="${swap.from}"]`);
         if (!fromCell || !toCell) return;
         const color = SWAP_ARROW_COLORS[index % SWAP_ARROW_COLORS.length];
         fromCell.classList.add('has-swap', 'has-swap-from');
@@ -353,16 +354,16 @@ function renderSwapArrows(board, model) {
         const sign = ny < 0 || (ny === 0 && nx < 0) ? 1 : -1;
         const control = { x: (start.x + end.x) / 2 + nx * bulge * sign, y: (start.y + end.y) / 2 + ny * bulge * sign };
         const markerId = `semester-swap-arrow-${index}-${Math.round(start.x)}`;
-        const marker = el('marker', { id: markerId, markerWidth: 12, markerHeight: 12, refX: 10, refY: 6, orient: 'auto', markerUnits: 'userSpaceOnUse', overflow: 'visible' });
-        marker.appendChild(el('path', { d: 'M 2 2 L 10 6 L 2 10', fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+        const marker = el('marker', { id: markerId, markerWidth: 12, markerHeight: 12, refX: 9, refY: 6, orient: 'auto-start-reverse', markerUnits: 'userSpaceOnUse', overflow: 'visible' });
+        marker.appendChild(el('path', { d: 'M 1 1.5 L 10.5 6 L 1 10.5 Z', fill: color, stroke: color, 'stroke-width': 1, 'stroke-linejoin': 'round' }));
         defs.appendChild(marker);
         const group = el('g', { class: 'semester-swap', style: `color:${color}`, 'data-swap-from': swap.from, 'data-swap-to': swap.to });
-        group.appendChild(el('title', {}, `${swap.from} 调休上课：补 ${swap.to}${swap.weekday ? `（${swap.weekday}）` : ''} 的课程${swap.inferred ? '（补课星期为推断）' : ''}`));
+        group.appendChild(el('title', {}, `${swap.to}${swap.weekday ? `（${swap.weekday}）` : ''} 的课调到 ${swap.from} 上（调休上课）${swap.inferred ? '（补课星期为推断）' : ''}`));
         group.appendChild(el('path', { d: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, stroke: color, 'marker-end': `url(#${markerId})` }));
-        group.appendChild(el('circle', { cx: start.x, cy: start.y, r: 2.6, stroke: color }));
+        group.appendChild(el('circle', { cx: start.x, cy: start.y, r: 3, fill: color, stroke: color }));
         // Label at the curve midpoint (t = .5 of the quadratic Bézier).
         const mid = { x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x, y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y };
-        const text = `补${swap.weekday || ''}${swap.inferred ? '?' : ''}`;
+        const text = `${swap.weekday || '课'}→${swap.inferred ? '?' : ''}`;
         const width = Math.ceil([...text].reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 11 : 6), 10));
         const label = el('g', { class: 'semester-swap-label', transform: `translate(${mid.x} ${mid.y})` });
         label.appendChild(el('rect', { x: -width / 2, y: -8, width, height: 16, rx: 5 }));
