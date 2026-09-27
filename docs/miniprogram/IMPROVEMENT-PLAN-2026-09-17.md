@@ -253,7 +253,9 @@
 **真机**：截止 24h/2h、催交、批改完成三类各收到一次；冷启动点击通知到达正确任务；模拟微信慢 8s 时批改接口 p95 不受影响、催交 p95≤1s 受理。
 **出口**：C07/C08 及三处新发现关闭；M1 出口勾选；v0.15.x 体验版。
 
-**执行记录（2026-09-28，本地实现完成，未提交推送/未部署/未上传；v0.14.0 审核中）**
+**执行记录（2026-09-28 实现并发布）**
+
+发布登记：commit `cd921654`（随 `5e8df8d5` 推送 origin/dev）；后端生产 release `20260928-005827-0408097a4e09`（主工作树，复用 `lanshare-editor-r4-pg-20260927` 原生演练报告对，gate ok，NO_RECENT_ERROR_LOGS，根盘 49%）；生产核验：`nudge-status`/`nudge`/`subscribe/config` 无身份均 401，`mp_subscribe_dispatch` 已注册（30 秒）并已运行（idle），两张新表存在；**体验版 v0.15.0 已上传**（包 383 KB）。日志 `E:/CodexTemp/lanshare-miniapp-batchB-20260928/`。
 
 - [x] B1 新表 `mp_subscribe_tasks`（event_key 唯一、state、attempts、next_attempt_at、expires_at、lease）+ `mp_subscribe_reports`，新模块 `services/wechat_mp_subscribe_dispatch_service.py`；`mp_subscribe_sends` 保留不再写。
 - [x] B2 截止扫描、批改完成、教师催交全部改为短事务 `enqueue_subscribe_message`，请求与批改事务内不再访问微信；催交立即返回受理统计（保留旧字段 `pushed/skipped` 兼容 v0.14 及以前客户端）。
@@ -274,7 +276,7 @@
 
 代码审查：APPROVE，0 CRITICAL/HIGH；MEDIUM（worker 停顿超过租约后结果写不回、可能重发）已加 `lease lost` 日志留痕，LOW（离开催交页仍轮询）已改为 onHide 停止。
 
-待办：部署授权、上传体验版 v0.15.0、真机三类消息送达验收（需先有学生授权模板）。
+待办：真机三类消息送达验收（需先有学生在任务页开启提醒）；通过后勾选 M1 出口。
 
 ### 批次 C：分页、容量与成绩口径（v0.16.x，对应真源阶段 3）
 
