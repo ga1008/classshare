@@ -47,6 +47,79 @@ async function drag(page: Page, x: number, y: number, dx: number, dy: number) {
   await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dx, y + dy, { steps: 6 }); await page.mouse.up();
 }
 
+async function startMeasuredDrag(page: Page) {
+  await page.evaluate(() => {
+    const w = window as any, container = document.querySelector('.ai-workspace-container')!;
+    w.gestureProbe = { writes: 0, styles: 0, pointerId: null, x: 0, y: 0 };
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (this === sessionStorage && key === w.state.key) w.gestureProbe.writes++;
+      return setItem.call(this, key, value);
+    };
+    new MutationObserver(records => { w.gestureProbe.styles += records.length; })
+      .observe(container, { attributes: true, attributeFilter: ['style'] });
+    container.addEventListener('pointerdown', event => {
+      const pointer = event as PointerEvent;
+      Object.assign(w.gestureProbe, { pointerId: pointer.pointerId, x: pointer.clientX, y: pointer.clientY });
+    }, { once: true });
+  });
+  const title = (await page.locator('.ai-workspace-title').boundingBox())!;
+  await page.mouse.move(title.x + 20, title.y + 20); await page.mouse.down();
+}
+
+test('pointer bursts paint once per frame, persist once and flush the final release position', async ({ page }) => {
+  const errors = await mount(page); await openAt(page); await startMeasuredDrag(page);
+  const burst = await page.evaluate(async () => {
+    const w = window as any, probe = w.gestureProbe, container = document.querySelector('.ai-workspace-container') as HTMLElement;
+    const send = (type: string, dx: number, dy: number, pointerId = probe.pointerId) => container.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId, clientX: probe.x + dx, clientY: probe.y + dy, pointerType: 'mouse', buttons: type === 'pointerup' ? 0 : 1,
+    }));
+    for (let index = 1; index <= 40; index++) send('pointermove', index * 2, index);
+    const beforeFrame = { left: container.style.left, top: container.style.top, writes: probe.writes };
+    // A different pointer cannot end or persist this gesture.
+    send('pointerup', 1, 1, probe.pointerId + 10);
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const painted = { left: container.style.left, top: container.style.top, writes: probe.writes, styles: probe.styles };
+    send('pointermove', 100, 50);
+    // The release can be newer than the last delivered move and arrive before rAF.
+    send('pointerup', 120, 55);
+    const released = { rect: w.state.value.rect, writes: probe.writes, manipulating: container.classList.contains('is-manipulating') };
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    return { beforeFrame, painted, released, settled: { left: container.style.left, top: container.style.top, writes: probe.writes } };
+  });
+  await page.mouse.up();
+  expect(burst.beforeFrame).toEqual({ left: '500px', top: '160px', writes: 0 });
+  expect(burst.painted).toEqual({ left: '580px', top: '200px', writes: 0, styles: 2 });
+  expect(burst.released).toEqual({ rect: { left: 620, top: 215, width: 460, height: 520 }, writes: 1, manipulating: false });
+  expect(burst.settled).toEqual({ left: '620px', top: '215px', writes: 1 });
+  expect(errors).toEqual([]);
+});
+
+for (const boundary of ['pointercancel', 'lostpointercapture', 'close', 'maximize', 'resize', 'destroy', 'pagehide']) {
+  test(`pending drag survives ${boundary} without a stale frame or lost coordinates`, async ({ page }) => {
+    const errors = await mount(page); await openAt(page); await startMeasuredDrag(page);
+    const result = await page.evaluate(async boundary => {
+      const w = window as any, probe = w.gestureProbe, container = document.querySelector('.ai-workspace-container') as HTMLElement;
+      container.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: probe.pointerId,
+        clientX: probe.x + 120, clientY: probe.y + 55, pointerType: 'mouse', buttons: 1 }));
+      if (boundary === 'pointercancel' || boundary === 'lostpointercapture') container.dispatchEvent(new PointerEvent(boundary, { bubbles: true, pointerId: probe.pointerId }));
+      else if (boundary === 'close') w.api.close();
+      else if (boundary === 'maximize') w.api.toggleFullscreen();
+      else if (boundary === 'destroy') w.api.destroy();
+      else window.dispatchEvent(new Event(boundary));
+      const immediate = { rect: w.state.value.rect, left: container.style.left, top: container.style.top, manipulating: container.classList.contains('is-manipulating') };
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      return { immediate, afterFrame: { rect: w.state.value.rect, left: container.style.left, top: container.style.top }, stored: JSON.parse(sessionStorage.getItem(w.state.key)!).rect };
+    }, boundary);
+    await page.mouse.up();
+    const rect = { left: 620, top: 215, width: 460, height: 520 };
+    expect(result.immediate.rect).toEqual(rect); expect(result.stored).toEqual(rect);
+    expect(result.immediate.manipulating).toBe(false);
+    expect(result.afterFrame).toEqual({ rect, left: boundary === 'maximize' ? '8px' : '620px', top: boundary === 'maximize' ? '8px' : '215px' });
+    expect(errors).toEqual([]);
+  });
+}
+
 test('modeless assistant leaves outside controls, text selection and body scrolling usable', async ({ page }) => {
   const errors = await mount(page); await openAt(page);
   await expect(page.locator('.ai-workspace-container')).toHaveAttribute('aria-modal', 'false');

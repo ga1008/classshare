@@ -193,7 +193,7 @@ export function enhanceShell(root, { paneGuards = {}, onError } = {}) {
     if (next === null) el.removeAttribute(name); else el.setAttribute(name, next);
   };
   const listen = (el, name, fn, options) => { el.addEventListener(name, fn, options); releases.push(() => el.removeEventListener(name, fn, options)); };
-  let disposed = false, active = null, guards = {}, generation = 0;
+  let disposed = false, active = null, guards = {}, generation = 0, scrollFrame = null;
   const narrow = (key, width = win.innerWidth) => width < (key === 'aside' ? 1280 : 1024) && (mode !== 'topbar' || typeof panels[0]?.showModal === 'function');
   const hasActions = () => mode !== 'topbar' || [...root.querySelector('.lq-topbar__actions').childNodes].some(el => el.nodeType === 1 ? !el.matches('.lq-shell-slot') || [...el.childNodes].some(child => child.nodeType === 1 || child.nodeType === 3 && child.textContent.trim()) : el.nodeType === 3 && el.textContent.trim());
   const keep = key => guards[key] && Object.values(guards[key]).some(Boolean);
@@ -228,6 +228,17 @@ export function enhanceShell(root, { paneGuards = {}, onError } = {}) {
     }
     if (mode === 'topbar') { set(root, 'data-lq-condensed', String(scrollTop > 80)); set(root, 'data-lq-scroll-edge', String(scrollTop > 0)); }
   }
+  function scroll() {
+    if (disposed || scrollFrame !== null) return;
+    scrollFrame = win.requestAnimationFrame(() => {
+      scrollFrame = null;
+      if (disposed) return;
+      // Scrolling changes only the chrome state, never pane layout or focus.
+      const top = win.scrollY;
+      set(root, 'data-lq-condensed', String(top > 80));
+      set(root, 'data-lq-scroll-edge', String(top > 0));
+    });
+  }
   function openPane(key, suppliedTrigger) {
     if (disposed) throw new Error('Shell is destroyed');
     const panel = panels.find(el => el.dataset.lqPane === key);
@@ -259,7 +270,7 @@ export function enhanceShell(root, { paneGuards = {}, onError } = {}) {
     else if (close && active?.panel.contains(close)) { event.preventDefault(); void closePane(); }
   });
   listen(win, 'resize', sync);
-  if (mode === 'topbar') listen(win, 'scroll', apply, { passive: true });
+  if (mode === 'topbar') listen(win, 'scroll', scroll, { passive: true });
   let observer;
   const measured = mode === 'topbar' ? root : root.querySelector(':scope > .lq-editor__bar');
   const oldHeight = root.style.getPropertyValue('--lq-topbar-h'), oldPriority = root.style.getPropertyPriority('--lq-topbar-h');
@@ -297,6 +308,7 @@ export function enhanceShell(root, { paneGuards = {}, onError } = {}) {
   }
   const handle = { openPane, closePane, refresh(value = guards) { guards = validateGuards(value); sync(); }, destroy() {
     if (disposed) return; disposed = true; generation++; active?.handle.destroy(); active = null; observer?.disconnect(); releases.reverse().forEach(fn => fn());
+    if (scrollFrame !== null) win.cancelAnimationFrame(scrollFrame); scrollFrame = null;
     for (const [el, values] of saved) for (const [name, value] of values) if (value === null) el.removeAttribute(name); else el.setAttribute(name, value);
     if (oldHeight) root.style.setProperty('--lq-topbar-h', oldHeight, oldPriority); else root.style.removeProperty('--lq-topbar-h'); delete root[shellOwner];
   } };

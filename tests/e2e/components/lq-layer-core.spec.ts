@@ -19,6 +19,31 @@ async function mount(page: Page) {
 test.describe('LQ layer core', () => {
 test.beforeEach(async ({ page }) => mount(page));
 
+test('scrolling inside a fixed menu avoids unchanged geometry writes and still follows its anchor', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any, anchor = document.querySelector<HTMLElement>('#before')!;
+    anchor.style.position = 'fixed'; anchor.style.left = '50px'; anchor.style.top = '40px';
+    const root = w.create('menu'), surface = root.firstElementChild as HTMLElement;
+    root.className = ''; surface.className = 'floating'; surface.style.maxHeight = '100px'; surface.style.overflow = 'auto';
+    surface.append(Object.assign(document.createElement('div'), { textContent: '菜单内容', style: 'height:500px' }));
+    const handle = w.system.open(root, { type: 'menu', modality: 'non-modal', anchor, trigger: anchor, surface });
+    const tick = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await tick();
+    const before = surface.style.left;
+    let mutations = 0;
+    const observer = new MutationObserver(records => mutations += records.length);
+    observer.observe(surface, { attributes: true, attributeFilter: ['style', 'data-lq-flipped'] });
+    for (let i = 0; i < 30; i++) surface.dispatchEvent(new Event('scroll'));
+    await tick();
+    const unchanged = mutations;
+    anchor.style.left = '130px'; window.dispatchEvent(new Event('resize')); await tick();
+    const moved = parseFloat(surface.style.left) - parseFloat(before);
+    observer.disconnect(); handle.destroy();
+    return { unchanged, moved };
+  });
+  expect(result.unchanged).toBe(0); expect(result.moved).toBeCloseTo(80, 0);
+});
+
 test('document singleton survives duplicate asset imports; repeated open and update keep one handle', async ({ page }) => {
   expect(await page.evaluate(async () => {
     const w = window as any;

@@ -258,11 +258,13 @@ function createLayerSystem(doc) {
         const box = record.surface.getBoundingClientRect();
         const result = getPopoverPosition({ anchor: anchor.getBoundingClientRect(), panel: { width: record.surface.offsetWidth || box.width, height: record.surface.offsetHeight || box.height },
             width: view.innerWidth, height: view.innerHeight, placement: record.options.placement });
-        record.surface.style.left = `${result.left}px`; record.surface.style.top = `${result.top}px`;
-        record.surface.toggleAttribute('data-lq-flipped', result.flipped);
+        const left = `${result.left}px`, top = `${result.top}px`;
+        if (record.surface.style.left !== left) record.surface.style.left = left;
+        if (record.surface.style.top !== top) record.surface.style.top = top;
+        if (record.surface.hasAttribute('data-lq-flipped') !== result.flipped) record.surface.toggleAttribute('data-lq-flipped', result.flipped);
     }
     function reposition() {
-        if (repositionFrame !== null) return;
+        if (repositionFrame !== null || !stack.some(handle => records.get(handle).options.anchor && ['popover', 'menu'].includes(handle.type))) return;
         repositionFrame = view.requestAnimationFrame(() => { repositionFrame = null; stack.forEach(position); });
     }
     function inside(handle, event) {

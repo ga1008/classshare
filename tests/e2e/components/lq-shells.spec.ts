@@ -60,6 +60,35 @@ async function gallery(page:Page, allNavigation=true) {
   },{cases:fixture.cases.filter((x:any)=>['sidebar','crumbs','steps','nav_item','page_layout'].includes(x.kind)||['topbar','dock-nav','fab','fab-small','fab-prominent'].includes(x.props.id)),allNavigation});
 }
 
+test('topbar scroll bursts update chrome without traversing panes or changing drafts and focus', async ({ page }) => {
+  await mountTopbar(page);
+  const result = await page.evaluate(async () => {
+    const w = window as any, root = w.topbarRoot as HTMLElement;
+    const input = w.topbarInput as HTMLInputElement;
+    input.value = '滚动保留草稿'; input.focus(); input.setSelectionRange(2, 4);
+    let scrollTop = 0, reads = 0, classWrites = 0;
+    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => scrollTop });
+    const nodes = [root, ...root.querySelectorAll<HTMLElement>('[data-lq-pane]')];
+    nodes.forEach(node => { const original = node.querySelector; node.querySelector = function(selector: string) { reads++; return original.call(this, selector); } as typeof original; });
+    const observer = new MutationObserver(records => { classWrites += records.filter(record => record.attributeName === 'class').length; });
+    observer.observe(root, { attributes: true, subtree: true, attributeFilter: ['class'] });
+    const tick = () => new Promise(resolve => requestAnimationFrame(resolve));
+    scrollTop = 240;
+    for (let i = 0; i < 200; i++) window.dispatchEvent(new Event('scroll'));
+    await tick();
+    const down = [root.dataset.lqCondensed, root.dataset.lqScrollEdge];
+    scrollTop = 40; window.dispatchEvent(new Event('scroll')); await tick();
+    const edge = [root.dataset.lqCondensed, root.dataset.lqScrollEdge];
+    scrollTop = 0; window.dispatchEvent(new Event('scroll')); await tick();
+    const up = [root.dataset.lqCondensed, root.dataset.lqScrollEdge];
+    const retained = input.value === '滚动保留草稿' && document.activeElement === input && input.selectionStart === 2 && input.selectionEnd === 4;
+    observer.disconnect();
+    scrollTop = 240; window.dispatchEvent(new Event('scroll')); w.topbarHandle.destroy(); await tick();
+    return { reads, classWrites, down, edge, up, retained, cleaned: !root.hasAttribute('data-lq-condensed') };
+  });
+  expect(result).toEqual({ reads: 0, classWrites: 0, down: ['true', 'true'], edge: ['false', 'true'], up: ['false', 'false'], retained: true, cleaned: true });
+});
+
 test.describe('LQ Shells and seven layouts', () => {
   test('real Python/Jinja and JS props/HTML/Element semantic parity and unsafe inputs', async ({ page }) => {
     expect(fixture.isolated).toBe(true); expect(fixture.cases.filter((x:any)=>x.error)).toEqual([]);
@@ -347,7 +376,7 @@ test.describe('LQ Shells and seven layouts', () => {
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
   });
 
-  test('topbar refresh scroll and resize snapshot viewport reads before material writes',async({page})=>{
+  test('topbar refresh and resize snapshot viewport reads before material writes',async({page})=>{
     await page.setViewportSize({width:390,height:844});await mountTopbar(page);
     const results=await page.evaluate(()=>{
       const w=window as any,root=w.topbarRoot as HTMLElement,events:string[]=[],restores:(()=>void)[]=[];
@@ -361,7 +390,8 @@ test.describe('LQ Shells and seven layouts', () => {
       Element.prototype.setAttribute=function(name,value){if(recording&&(this===root||root.contains(this)))events.push(`write:${name}`);return Reflect.apply(set,this,[name,value]);};
       DOMTokenList.prototype.toggle=function(...args:Parameters<DOMTokenList['toggle']>){if(recording&&this===root.classList)events.push('write:class');return Reflect.apply(toggle,this,args);};
       try{
-        return ['refresh','scroll','resize'].map(source=>{
+        // Scroll has its own frame-coalesced chrome-only contract above.
+        return ['refresh','resize'].map(source=>{
           root.classList.remove('lq-glass');root.removeAttribute('data-lq-condensed');root.removeAttribute('data-lq-scroll-edge');events.length=0;recording=true;
           try{if(source==='refresh')w.topbarHandle.refresh();else window.dispatchEvent(new Event(source));}finally{recording=false;}
           return {source,events:[...events],glass:root.classList.contains('lq-glass'),condensed:root.dataset.lqCondensed,edge:root.dataset.lqScrollEdge};

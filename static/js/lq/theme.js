@@ -81,7 +81,16 @@ export function initTheme(documentRoot = document) {
     };
     discover();
     if (win.MutationObserver) {
-        const observer = new win.MutationObserver(discover);
+        // Chat streams, tables and menus mutate frequently. Only frame changes
+        // can affect this bridge; do not rescan the document for each text node.
+        const observer = new win.MutationObserver(records => {
+            if (disposed) return;
+            const changed = records.some(record => record.type === 'attributes'
+                ? record.target.tagName === 'IFRAME'
+                : [...record.addedNodes].some(node => node.nodeType === 1 &&
+                    (node.tagName === 'IFRAME' || node.querySelector('iframe[data-lq-theme-bridge="app"]'))));
+            if (changed || [...frames.keys()].some(frame => !root.contains(frame))) discover();
+        });
         observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-lq-theme-bridge', 'src', 'srcdoc', 'sandbox'] });
         cleanups.push(() => observer.disconnect());
     }

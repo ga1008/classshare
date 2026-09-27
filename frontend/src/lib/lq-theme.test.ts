@@ -203,8 +203,10 @@ describe('synchronous theme bootstrap and display-only runtime', () => {
 describe('explicit app-only iframe theme bridge', () => {
   function frame(env: ReturnType<typeof environment>, attrs: Record<string, string>) {
     const element = new ElementDouble(attrs);
+    element.tagName = 'IFRAME';
     element.ownerDocument = env.doc;
     element.contentWindow = { postMessage: vi.fn() };
+    env.root.append(element);
     env.frames.push(element);
     return element;
   }
@@ -257,23 +259,66 @@ describe('explicit app-only iframe theme bridge', () => {
   });
   it('releases detached and deauthorized frame listeners on discovery', () => {
     const env = environment();
-    let discover!: () => void;
-    env.win.MutationObserver = class { constructor(callback: () => void) { discover = callback; } observe() {} disconnect() {} };
+    let discover!: (records: any[]) => void;
+    env.win.MutationObserver = class { constructor(callback: (records: any[]) => void) { discover = callback; } observe() {} disconnect() {} };
     const app = frame(env, { src: '/app', 'data-lq-theme-bridge': 'app' });
     const remove = vi.spyOn(app, 'removeEventListener');
     const api = install(env);
     env.frames.length = 0;
-    discover();
+    app.isConnected = false;
+    app.remove();
+    discover([{ type: 'childList', addedNodes: [], removedNodes: [app] }]);
     expect(remove).toHaveBeenCalledWith('load', expect.any(Function));
     app.contentWindow.postMessage.mockClear();
     app.dispatchEvent(new Event('load'));
     api.refresh();
     expect(app.contentWindow.postMessage).not.toHaveBeenCalled();
     env.frames.push(app);
-    discover();
+    app.isConnected = true;
+    env.root.append(app);
+    discover([{ type: 'childList', addedNodes: [app], removedNodes: [] }]);
     app.removeAttribute('data-lq-theme-bridge');
-    discover();
+    discover([{ type: 'attributes', target: app }]);
     expect(remove).toHaveBeenCalledTimes(2);
+  });
+  it('releases a frame moved outside the document even when it stays connected', () => {
+    const env = environment();
+    let changed!: (records: any[]) => void;
+    env.win.MutationObserver = class { constructor(callback: (records: any[]) => void) { changed = callback; } observe() {} disconnect() {} };
+    const app = frame(env, { src: '/app', 'data-lq-theme-bridge': 'app' });
+    const api = install(env), remove = vi.spyOn(app, 'removeEventListener');
+    new ElementDouble().append(app); env.frames.length = 0;
+    expect(app.isConnected).toBe(true);
+    changed([{ type: 'childList', addedNodes: [], removedNodes: [app] }]);
+    app.contentWindow.postMessage.mockClear(); app.dispatchEvent(new Event('load')); api.refresh();
+    expect(remove).toHaveBeenCalledWith('load', expect.any(Function));
+    expect(app.contentWindow.postMessage).not.toHaveBeenCalled();
+  });
+  it('ignores ordinary DOM updates but discovers nested frames and revalidates their boundaries', () => {
+    const env = environment();
+    let changed!: (records: any[]) => void;
+    env.win.MutationObserver = class { constructor(callback: (records: any[]) => void) { changed = callback; } observe() {} disconnect() {} };
+    const scans = vi.spyOn(env.doc, 'querySelectorAll');
+    const api = install(env); scans.mockClear();
+    for (let i = 0; i < 100; i++) changed([{ type: 'childList', addedNodes: [{ nodeType: 3 }, new ElementDouble()], removedNodes: [] }]);
+    changed([{ type: 'attributes', target: new ElementDouble({ src: '/image.webp' }) }]);
+    expect(scans).not.toHaveBeenCalled();
+    const app = frame(env, { src: '/app', 'data-lq-theme-bridge': 'app' });
+    const wrapper = new ElementDouble(); wrapper.querySelector = () => app;
+    changed([{ type: 'childList', addedNodes: [wrapper], removedNodes: [] }]);
+    expect(app.contentWindow.postMessage).toHaveBeenCalledTimes(1);
+    for (const [name, value] of [['sandbox', 'allow-scripts'], ['srcdoc', '<p>preview</p>'], ['src', 'https://other.test/app']]) {
+      app.setAttribute(name, value);
+      changed([{ type: 'attributes', target: app }]);
+      app.contentWindow.postMessage.mockClear(); app.dispatchEvent(new Event('load')); api.refresh();
+      expect(app.contentWindow.postMessage).not.toHaveBeenCalled();
+      if (name === 'src') app.setAttribute(name, '/app'); else app.removeAttribute(name);
+      changed([{ type: 'attributes', target: app }]);
+      expect(app.contentWindow.postMessage).toHaveBeenCalledTimes(1);
+    }
+    api.dispose(); scans.mockClear();
+    changed([{ type: 'childList', addedNodes: [wrapper], removedNodes: [] }]);
+    expect(scans).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 /** Modeless window geometry/lifecycle shared by every authenticated page. */
 export function createAssistantWindow({ modal, container, fab, state, onOpen, onClose }) {
-    let gesture = null, closeAnimation = null;
+    let gesture = null, gestureFrame = null, pendingPointer = null, closeAnimation = null;
     let maximized = false;
     let open = false;
     const abort = new AbortController();
@@ -17,11 +17,19 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     }
     function apply(rect, persist = true) {
         const next = constrain(rect);
-        for (const [key, value] of Object.entries(next)) container.style[key] = `${value}px`;
-        container.style.right = container.style.bottom = 'auto';
-        if (persist) state.patch({ rect: next });
+        for (const [key, value] of Object.entries(next)) {
+            if (container.style[key] !== `${value}px`) container.style[key] = `${value}px`;
+        }
+        if (container.style.right !== 'auto') container.style.right = 'auto';
+        if (container.style.bottom !== 'auto') container.style.bottom = 'auto';
+        if (persist) saveRect(next);
+        return next;
+    }
+    function saveRect(rect) {
+        if (Object.keys(rect).some(key => state.value.rect?.[key] !== rect[key])) state.patch({ rect });
     }
     function maximize(value) {
+        stop();
         maximized = value;
         container.classList.toggle('fullscreen', value);
         const button = container.querySelector('#ai-chat-btn-fullscreen');
@@ -34,6 +42,7 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
         } else apply(state.value.rect);
     }
     function show({ focus = true } = {}) {
+        stop();
         const entering = !open;
         closeAnimation?.cancel(); closeAnimation = null;
         open = true;
@@ -50,6 +59,7 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     }
     function close({ persist = true } = {}) {
         if (!open) return;
+        stop();
         open = false;
         if (persist) state.patch({ open: false });
         onClose?.();
@@ -70,7 +80,7 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     function start(event) {
         const handle = event.target.closest('.resizer');
         if (!handle && (!event.target.closest('.ai-workspace-header') || event.target.closest('button,a,input,select,textarea'))) return;
-        if (event.button > 0 || maximized) return;
+        if (event.button > 0 || maximized || gesture) return;
         event.preventDefault();
         gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, rect: container.getBoundingClientRect(), direction: handle?.dataset.resize || '', target: event.target };
         container.classList.add('is-manipulating');
@@ -78,8 +88,16 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     }
     function move(event) {
         if (!gesture || event.pointerId !== gesture.id) return;
+        pendingPointer = { x: event.clientX, y: event.clientY };
+        if (gestureFrame === null) gestureFrame = window.requestAnimationFrame(flushGesture);
+    }
+    function flushGesture() {
+        gestureFrame = null;
+        if (!gesture || !pendingPointer) return;
+        const point = pendingPointer;
+        pendingPointer = null;
         const { rect, direction: d } = gesture;
-        const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+        const dx = point.x - gesture.x, dy = point.y - gesture.y;
         let { width, height, left, top } = rect;
         const v = viewport();
         const minWidth = Math.min(320, v.width - 16), minHeight = Math.min(360, v.height - 16);
@@ -90,9 +108,22 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
             if (d.includes('top')) { top = Math.max(8, Math.min(rect.bottom - minHeight, rect.top + dy)); height = rect.bottom - top; }
             if (d.includes('bottom')) height = Math.max(minHeight, Math.min(v.height - top - 8, rect.height + dy));
         }
-        apply({ left, top, width, height });
+        // Keep real geometry (and therefore the glass's backdrop sampling), but
+        // paint at most once per frame and leave synchronous storage to stop().
+        gesture.latest = apply({ left, top, width, height }, false);
     }
-    function stop() { gesture = null; container.classList.remove('is-manipulating'); }
+    function stop(event) {
+        if (event?.pointerId !== undefined && event.pointerId !== gesture?.id) return;
+        if (gesture && event?.type === 'pointerup') pendingPointer = { x: event.clientX, y: event.clientY };
+        if (gestureFrame !== null) window.cancelAnimationFrame(gestureFrame);
+        flushGesture();
+        const ended = gesture;
+        gesture = null;
+        pendingPointer = null;
+        if (ended?.latest) saveRect(ended.latest);
+        container.classList.remove('is-manipulating');
+        if (ended && container.hasPointerCapture(ended.id)) container.releasePointerCapture(ended.id);
+    }
     for (const resizer of container.querySelectorAll('.resizer')) {
         resizer.dataset.resize = [...resizer.classList].find(c => c.startsWith('resizer-'))?.slice(8) || 'right';
     }
@@ -108,9 +139,10 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     container.addEventListener('pointerup', stop, opts);
     container.addEventListener('pointercancel', stop, opts);
     container.addEventListener('lostpointercapture', stop, opts);
-    const resize = () => maximized ? maximize(true) : apply(state.value.rect, false);
+    const resize = () => { stop(); if (maximized) maximize(true); else apply(state.value.rect, false); };
     window.addEventListener('resize', resize, opts);
     window.visualViewport?.addEventListener('resize', resize, opts);
+    window.addEventListener('pagehide', stop, opts);
     container.addEventListener('keydown', event => {
         const blocking = [...document.querySelectorAll('[aria-modal="true"],dialog[open]')].some(node => node !== container && node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
         if (event.key === 'Escape' && !event.defaultPrevented && !blocking) {
