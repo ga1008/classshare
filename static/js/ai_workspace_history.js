@@ -1,17 +1,21 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 /** Conversation picker: authenticated server data, no HTML interpolation. */
 import { confirm as confirmGlass } from './lq/dialogs.js';
 
 export function createConversationHistory(container, chat, notify) {
     const panel = document.createElement('aside');
     panel.className = 'ai-agent-history-drawer ai-conversation-history';
+    panel.dataset.lqComponent = 'drawer';
+    panel.dataset.lqMaterial = 'raised';
+    panel.classList.add('lq-domain-raised');
     panel.hidden = true;
     panel.setAttribute('aria-label', '我的 AI 对话');
-    panel.innerHTML = '<header><strong>我的对话</strong><button type="button" class="chat-btn" aria-label="收起对话历史">×</button></header><div class="ai-task-list" role="list"></div>';
+    panel.innerHTML = '<header><strong>我的对话</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass chat-btn" aria-label="收起对话历史">×</button></header><div class="ai-task-list" role="list"></div>';
     container.append(panel);
     const close = () => { panel.hidden = true; };
     panel.querySelector('header button').addEventListener('click', close);
     panel.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.stopPropagation(); close(); container.querySelector('#ai-agent-history-toggle')?.focus(); }
+        if (event.key === 'Escape') { event.stopPropagation(); close(); container.querySelector('#ai-chat-history-toggle')?.focus(); }
     });
     const api = {
         close,
@@ -31,6 +35,8 @@ export function createConversationHistory(container, chat, notify) {
                     const button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'ai-conversation-entry';
+                    adoptDomainControl(button, { kind: 'choice', variant: 'glass' });
+                    button.dataset.lqShape = 'surface';
                     button.setAttribute('aria-current', String(session.session_uuid === chat.currentSessionUUID));
                     const title = document.createElement('strong'), date = document.createElement('small');
                     title.textContent = `${session.legacy ? '课堂对话 · ' : ''}${session.title || '新对话'}`;
@@ -56,6 +62,7 @@ export function createConversationHistory(container, chat, notify) {
                     if (!session.legacy) {
                         const remove = document.createElement('button');
                         remove.className = 'chat-btn'; remove.type = 'button';
+                        adoptDomainControl(remove, { variant: 'ghost' });
                         remove.setAttribute('aria-label', `删除对话：${session.title || '新对话'}`);
                         remove.textContent = '×';
                         remove.addEventListener('click', async () => {

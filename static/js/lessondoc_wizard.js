@@ -73,14 +73,14 @@ function shell(title, bodyHtml, footHtml = '') {
     modalEl.className = 'modal-backdrop';
     modalEl.style.display = 'flex';
     modalEl.innerHTML = `
-        <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide">
-            <div class="modal-content">
+        <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable modal-dialog-wide">
+            <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content">
                 <div class="modal-header">
                     <div>
                         <h3 class="modal-title">${esc(title)}</h3>
                         <p class="modal-subtitle">配置驱动的课程学习文档包(PPT 式课次页 + 课程首页,自动绑定课次)</p>
                     </div>
-                    <button class="modal-close" data-ld-close>&times;</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-ld-close>&times;</button>
                 </div>
                 <div class="modal-body" data-ld-body>${bodyHtml}</div>
                 ${footHtml ? `<div class="modal-footer" data-ld-foot>${footHtml}</div>` : ''}
@@ -126,16 +126,16 @@ function renderCreateView(course) {
     const rows = defaultLessonRows(course);
     const themeCards = THEMES.map((theme, i) => `
         <label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 8px 0;cursor:pointer;">
-            <input type="radio" name="ldTheme" value="${theme.key}" ${i === 0 ? 'checked' : ''}>
+            <input data-lq-component="radio" class="lq-radio" type="radio" name="ldTheme" value="${theme.key}" ${i === 0 ? 'checked' : ''}>
             <span style="display:inline-block;width:16px;height:16px;border-radius:4px;background:${theme.color}"></span>
             ${theme.label}
         </label>`).join('');
     const rowsHtml = rows.map((row) => `
         <tr data-ld-row data-n="${row.n}">
             <td style="white-space:nowrap;padding:4px 8px;"><label style="display:flex;gap:6px;align-items:center;">
-                <input type="checkbox" data-ld-include checked> 第${row.n}课</label></td>
-            <td style="padding:4px 8px;"><input type="text" data-ld-title value="${esc(row.title)}" placeholder="课次标题" style="width:100%;"></td>
-            <td style="padding:4px 8px;"><input type="text" data-ld-hint placeholder="本课生成提示(可选)" style="width:100%;"></td>
+                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-ld-include checked> 第${row.n}课</label></td>
+            <td style="padding:4px 8px;"><input data-lq-component="input" class="lq-input" type="text" data-ld-title value="${esc(row.title)}" placeholder="课次标题" style="width:100%;"></td>
+            <td style="padding:4px 8px;"><input data-lq-component="input" class="lq-input" type="text" data-ld-hint placeholder="本课生成提示(可选)" style="width:100%;"></td>
         </tr>`).join('');
 
     shell(`生成学习文档包 · ${course?.name || ''}`, `
@@ -157,25 +157,25 @@ function renderCreateView(course) {
         <div style="margin-bottom:12px;">
             <strong>③ 阶段分组(可选)</strong>
             <span style="color:#64748b;font-size:.88em;">每行一条「阶段名: 起-止」,决定首页导图与卡片墙的分组;留空=不分组</span>
-            <textarea data-ld-stages rows="3" style="width:100%;margin-top:6px;font-family:var(--mono,monospace);"
+            <textarea data-lq-component="textarea" class="lq-textarea" data-ld-stages rows="3" style="width:100%;margin-top:6px;font-family:var(--mono,monospace);"
                 placeholder="总纲·概述: 1-4&#10;物理层: 5-6&#10;数据链路层: 7-10"></textarea>
         </div>
         <div style="margin-bottom:12px;">
             <strong>④ 课程级生成提示(可选)</strong>
-            <textarea data-ld-course-hint rows="2" style="width:100%;margin-top:6px;"
+            <textarea data-lq-component="textarea" class="lq-textarea" data-ld-course-hint rows="2" style="width:100%;margin-top:6px;"
                 placeholder="对整门课的编写要求,如:面向外语院校学生,弱化数学推导,多用生活类比"></textarea>
         </div>
         <div>
             <strong>⑤ 立即生成范围</strong>
-            <select data-ld-scope style="margin-left:8px;">
+            <select data-lq-component="select" class="lq-select" data-ld-scope style="margin-left:8px;">
                 <option value="first2" selected>首页 + 前 2 课(推荐)</option>
                 <option value="all">全部课次(耗时较长)</option>
                 <option value="none">仅创建骨架,稍后手动生成</option>
             </select>
         </div>
     `, `
-        <button class="btn btn-outline" data-ld-close>取消</button>
-        <button class="btn btn-primary" data-ld-submit ${rows.length ? '' : 'disabled'}>创建学习文档包</button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ld-close>取消</button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-ld-submit ${rows.length ? '' : 'disabled'}>创建学习文档包</button>
     `);
 
     modalEl.querySelector('[data-ld-submit]')?.addEventListener('click', async (event) => {
@@ -220,21 +220,21 @@ function lessonRowHtml(lesson,packId) {
         : '';
     const busy = lesson.gen_status === 'queued' || lesson.gen_status === 'running';
     const actions = lesson.gen_status === 'excluded'
-        ? `<button class="btn btn-ghost btn-sm" data-ld-restore data-n="${lesson.lesson_no}">恢复</button>`
+        ? `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-ld-restore data-n="${lesson.lesson_no}">恢复</button>`
         : `
-            <button class="btn btn-outline btn-sm" data-ld-gen data-n="${lesson.lesson_no}"
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-ld-gen data-n="${lesson.lesson_no}"
                 data-rewrite="${lesson.gen_status === 'ready' ? 1 : 0}" ${busy ? 'disabled' : ''}>
                 ${lesson.gen_status === 'ready' ? 'AI 重写' : 'AI 生成'}
             </button>
             ${lesson.gen_status === 'pending' || lesson.gen_status === 'failed'
-                ? `<button class="btn btn-ghost btn-sm" data-ld-exclude data-n="${lesson.lesson_no}">排除</button>` : ''}`;
+                ? `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-ld-exclude data-n="${lesson.lesson_no}">排除</button>` : ''}`;
     return `
         <tr>
             <td style="white-space:nowrap;padding:6px 10px;">第${lesson.lesson_no}课</td>
             <td style="padding:6px 10px;"><span style="color:${color};font-weight:600;">${label}</span> ${warningBadge}</td>
             <td style="color:#64748b;font-size:.85em;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 10px;"
                 title="${esc(lesson.user_hint || '')}">${esc(lesson.user_hint || '')}</td>
-            <td style="text-align:right;white-space:nowrap;padding:6px 10px;"><a class="btn btn-outline btn-sm" href="/materials/lessondoc-editor/${Number(packId)}?lesson=${lesson.lesson_no}&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑</a>${actions}</td>
+            <td style="text-align:right;white-space:nowrap;padding:6px 10px;"><a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/materials/lessondoc-editor/${Number(packId)}?lesson=${lesson.lesson_no}&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑</a>${actions}</td>
         </tr>`;
 }
 
@@ -249,19 +249,19 @@ async function renderManageView(packSummary, course) {
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;">
             <span class="academic-badge is-accent">lessondoc ${esc(String(pack.spec_version || '2.0').replace('lessondoc/', ''))}</span>
             <strong data-ld-progress>${pack.ready_count} / ${pack.total_count} 课就绪</strong>
-            <a class="btn btn-outline btn-sm" href="${esc(pack.render_shell_url)}" target="_blank" rel="noopener">打开首页</a>
-            <a class="btn btn-outline btn-sm" href="/materials/lessondoc-editor/${pack.id}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑首页</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${esc(pack.render_shell_url)}" target="_blank" rel="noopener">打开首页</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/materials/lessondoc-editor/${pack.id}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑首页</a>
             <label style="font-size:.9em;">主题
-                <select data-ld-theme>${themeOptions}</select>
+                <select data-lq-component="select" class="lq-select" data-ld-theme>${themeOptions}</select>
             </label>
-            <button class="btn ${pack.assets_outdated ? 'btn-primary' : 'btn-ghost'} btn-sm" data-ld-refresh-assets
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn ${pack.assets_outdated ? 'btn-primary lq-btn--prominent' : 'btn-ghost lq-btn--ghost'} btn-sm" data-ld-refresh-assets
                 title="${pack.assets_outdated ? '平台渲染引擎已升级，点击把包内副本更新到最新（不影响已生成内容）' : '把包内引擎更新到平台最新版本'}">
                 ${pack.assets_outdated ? '⬆ 引擎可更新' : '刷新引擎'}</button>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
-            <button class="btn btn-primary btn-sm" data-ld-batch>补齐待生成课次</button>
-            <button class="btn btn-outline btn-sm" data-ld-bind>绑定课堂</button>
-            <button class="btn btn-outline btn-sm" data-ld-stages-edit
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-ld-batch>补齐待生成课次</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-ld-bind>绑定课堂</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-ld-stages-edit
                 title="调整首页导图与卡片墙的阶段分组（每行一条「阶段名: 起-止」）">编辑分组</button>
         </div>
         <div data-ld-batch-progress style="display:none;margin-bottom:10px;padding:8px 12px;
@@ -273,7 +273,7 @@ async function renderManageView(packSummary, course) {
             </table>
         </div>
         <div data-ld-bind-panel style="display:none;margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:12px;"></div>
-    `, `<button class="btn btn-outline" data-ld-close>关闭</button>`);
+    `, `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ld-close>关闭</button>`);
 
     const packId = pack.id;
     let idleReads = 0;
@@ -390,8 +390,8 @@ async function openStagesPanel(packId) {
                 每行一条「阶段名: 起-止」（支持 1-4 / 5,7 / 单个数字）。未覆盖的课次会自动归入「其他课次」；
                 清空 = 恢复单一「全部课次」。保存后课程首页立即重渲，共 ${lessonCount} 个课次。
             </p>
-            <textarea data-ld-stages-text rows="4" style="width:100%;font-family:var(--mono,monospace);">${esc(stagesToText(stages))}</textarea>
-            <button class="btn btn-primary btn-sm" data-ld-stages-save style="margin-top:8px;">保存分组</button>`;
+            <textarea data-lq-component="textarea" class="lq-textarea" data-ld-stages-text rows="4" style="width:100%;font-family:var(--mono,monospace);">${esc(stagesToText(stages))}</textarea>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-ld-stages-save style="margin-top:8px;">保存分组</button>`;
         panel.querySelector('[data-ld-stages-save]').addEventListener('click', async () => {
             try {
                 const parsed = parseStagesText(panel.querySelector('[data-ld-stages-text]').value);
@@ -430,12 +430,12 @@ async function openBindPanel(pack) {
             <div style="max-height:180px;overflow:auto;">
                 ${offerings.map((o) => `
                     <label style="display:flex;gap:8px;align-items:center;padding:4px 0;">
-                        <input type="checkbox" data-ld-offering value="${o.id}" ${o.home_bound ? 'checked' : ''}>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-ld-offering value="${o.id}" ${o.home_bound ? 'checked' : ''}>
                         ${esc(o.course_name || '')} · ${esc(o.class_name || '')}${o.semester ? `(${esc(o.semester)})` : ''}
                         ${o.home_bound ? '<span style="color:#16a34a;font-size:.82em;">已绑首页</span>' : ''}
                     </label>`).join('')}
             </div>
-            <button class="btn btn-primary btn-sm" data-ld-bind-submit style="margin-top:8px;">确认绑定</button>`;
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-ld-bind-submit style="margin-top:8px;">确认绑定</button>`;
         panel.querySelector('[data-ld-bind-submit]').addEventListener('click', async () => {
             const ids = Array.from(panel.querySelectorAll('[data-ld-offering]:checked')).map((cb) => Number(cb.value));
             if (!ids.length) { notify('请先勾选课堂', true); return; }

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { LqButton } from '@/components/lq-presentation';
 import { cn } from '@/lib/utils';
 import { loadLayerSystem, type LayerHandle, type LayerOptions, type LayerReason, type LayerSystem } from '@/lib/lq-layer';
 
@@ -194,15 +194,13 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(funct
 
   if (!portal) return null;
   return createPortal(<div ref={root} data-ui-dialog-root="">
-    {dialog.modal && <div ref={overlay} data-ui-dialog-overlay="" data-ui-overlay-surface="" data-state={phase.current} className="tw-fixed tw-inset-0 tw-z-50 tw-bg-black/80" />}
-    <div {...props} ref={setSurfaceRef} role="dialog" tabIndex={-1} data-ui-dialog-content="" data-state={phase.current}
+    {dialog.modal && <div ref={overlay} data-ui-dialog-overlay="" data-ui-overlay-surface="" data-state={phase.current} className="lq-scrim tw-fixed tw-inset-0 tw-z-50" />}
+    <div data-lq-material="raised" {...props} ref={setSurfaceRef} role="dialog" tabIndex={-1} data-ui-dialog-content="" data-state={phase.current}
       aria-labelledby={props['aria-labelledby'] || dialog.titleId}
       aria-describedby={Object.hasOwn(props, 'aria-describedby') ? props['aria-describedby'] : dialog.described ? dialog.descriptionId : undefined}
-      className={cn('tw-fixed tw-left-[50%] tw-top-[50%] tw-z-50 tw-grid tw-w-full tw-max-w-lg tw-translate-x-[-50%] tw-translate-y-[-50%] tw-gap-4 tw-border tw-bg-background tw-p-6 tw-shadow-lg sm:tw-rounded-lg', className)}>
+      className={cn('tw-fixed tw-left-[50%] tw-top-[50%] tw-z-50 tw-grid tw-w-full tw-max-w-lg tw-translate-x-[-50%] tw-translate-y-[-50%] tw-gap-4 tw-p-6 sm:tw-rounded-lg', className)}>
       {children}
-      <button type="button" className="ui-dialog-close tw-absolute tw-right-4 tw-top-4 tw-flex tw-h-8 tw-w-8 tw-items-center tw-justify-center tw-rounded-sm tw-opacity-70 tw-ring-offset-background tw-transition-opacity hover:tw-opacity-100 focus:tw-outline-none focus:tw-ring-2 focus:tw-ring-ring focus:tw-ring-offset-2 disabled:tw-pointer-events-none" onClick={() => { if (handle.current) void portal.system.close(handle.current, 'button'); }}>
-        <X className="tw-h-4 tw-w-4" aria-hidden="true" /><span className="tw-sr-only">关闭</span>
-      </button>
+      <LqButton variant="ghost" icon="x" attrs={{ 'aria-label': '关闭' }} className="ui-dialog-close tw-absolute tw-right-4 tw-top-4" onClick={() => { if (handle.current) void portal.system.close(handle.current, 'button'); }} />
     </div>
   </div>, portal.host);
 });

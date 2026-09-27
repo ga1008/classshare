@@ -47,7 +47,7 @@ function schemeRow(scheme, boundSchemeId) {
   const assigned = scheme.assigned_count || 0;
   return `
     <label class="ga-scheme-option">
-      <input type="radio" name="ga-scheme" value="${scheme.id}" ${checked} />
+      <input data-lq-component="radio" class="lq-radio" type="radio" name="ga-scheme" value="${scheme.id}" ${checked} />
       <span class="ga-scheme-option__body">
         <span class="ga-scheme-option__name">${escapeHtml(scheme.name || '随机分组')}</span>
         <span class="ga-scheme-option__meta">${scheme.group_count || 0} 个小组 · 已分配 ${assigned} 人 · 每组 ${scheme.min_members || 0}-${scheme.max_members || 0} 人</span>
@@ -64,15 +64,16 @@ function render(assignmentId, title, data) {
     : '<p class="ga-empty">该课堂还没有分组方案，请在下方新建一个分组方案。</p>';
 
   overlayEl = document.createElement('div');
-  overlayEl.className = 'ga-modal-overlay';
+  overlayEl.className = 'lq-domain-region ga-modal-overlay';
+    overlayEl.dataset.lqComponent = 'layer';
   overlayEl.innerHTML = `
-    <div class="ga-modal" role="dialog" aria-modal="true" aria-label="分组配置">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ga-modal" role="dialog" aria-modal="true" aria-label="分组配置">
       <header class="ga-modal__header">
         <div>
           <h3 class="ga-modal__title">按小组完成</h3>
           <p class="ga-modal__subtitle">${escapeHtml(title || '作业')}</p>
         </div>
-        <button type="button" class="ga-modal__close" data-ga-close aria-label="关闭">&times;</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ga-modal__close" data-ga-close aria-label="关闭">&times;</button>
       </header>
       <div class="ga-modal__body">
         ${binding ? `<div class="ga-current"><span class="ga-current__dot"></span>当前已按「${escapeHtml(binding.scheme_name || '分组方案')}」完成</div>` : ''}
@@ -81,27 +82,27 @@ function render(assignmentId, title, data) {
           <div class="ga-scheme-list">${schemeListHtml}</div>
         </section>
         <section class="ga-section ga-newscheme" data-ga-newscheme>
-          <button type="button" class="ga-newscheme__toggle" data-ga-newscheme-toggle>
+          <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ga-newscheme__toggle" data-ga-newscheme-toggle>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             新建分组方案
           </button>
           <div class="ga-newscheme__form" data-ga-newscheme-form hidden>
             <label class="ga-field">
               <span>方案名称</span>
-              <input type="text" data-ga-new-name placeholder="如：项目小组" maxlength="60" />
+              <input data-lq-component="input" class="lq-input" type="text" data-ga-new-name placeholder="如：项目小组" maxlength="60" />
             </label>
             <div class="ga-field-row">
               <label class="ga-field">
                 <span>每组最少</span>
-                <input type="number" data-ga-new-min min="1" max="12" value="2" />
+                <input data-lq-component="input" class="lq-input" type="number" data-ga-new-min min="1" max="12" value="2" />
               </label>
               <label class="ga-field">
                 <span>每组最多</span>
-                <input type="number" data-ga-new-max min="1" max="12" value="5" />
+                <input data-lq-component="input" class="lq-input" type="number" data-ga-new-max min="1" max="12" value="5" />
               </label>
               <label class="ga-field">
                 <span>组数(可选)</span>
-                <input type="number" data-ga-new-count min="1" max="60" placeholder="自动" />
+                <input data-lq-component="input" class="lq-input" type="number" data-ga-new-count min="1" max="60" placeholder="自动" />
               </label>
             </div>
             <p class="ga-hint">新建后学生可在课堂互动区随机加入小组；也可由你在大屏拖拽分配。</p>
@@ -109,10 +110,10 @@ function render(assignmentId, title, data) {
         </section>
       </div>
       <footer class="ga-modal__footer">
-        ${binding ? '<button type="button" class="btn btn-outline ga-btn-danger" data-ga-unbind>取消按小组</button>' : '<span></span>'}
+        ${binding ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass ga-btn-danger" data-ga-unbind>取消按小组</button>' : '<span></span>'}
         <div class="ga-modal__footer-right">
-          <button type="button" class="btn btn-ghost" data-ga-close>关闭</button>
-          <button type="button" class="btn btn-primary" data-ga-save>保存配置</button>
+          <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-ga-close>关闭</button>
+          <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-ga-save>保存配置</button>
         </div>
       </footer>
     </div>`;

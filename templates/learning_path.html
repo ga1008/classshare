@@ -6,7 +6,7 @@
 {% block body_class %}page-wrapper learning-path-page role-student{% endblock %}
 
 {% block navbar_actions %}
-<a href="/dashboard" class="app-topbar-action app-topbar-action--solid">
+<a data-lq-component="button" href="/dashboard" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--solid">
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 3h7v7H3z"></path>
@@ -20,7 +20,7 @@
         <small>返回驾驶舱</small>
     </span>
 </a>
-<a href="/learning-path" class="app-topbar-action app-topbar-action--primary" aria-current="page">
+<a data-lq-component="button" href="/learning-path" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary" aria-current="page">
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14.1 5.55a2 2 0 0 0 1.8 0l3.65-1.83A1 1 0 0 1 21 4.62v12.76a1 1 0 0 1-.55.9l-4.55 2.27a2 2 0 0 1-1.8 0l-4.2-2.1a2 2 0 0 0-1.8 0l-3.65 1.83A1 1 0 0 1 3 19.38V6.62a1 1 0 0 1 .55-.9L8.1 3.45a2 2 0 0 1 1.8 0z"></path>
@@ -52,7 +52,7 @@
         <div class="lq-card--stat"><span>{{ stat.label }}</span><strong>{{ stat.value }}</strong><small>{{ stat.hint }}</small></div>
         {% endfor %}
     {% endcall %}
-    <aside class="path-focus-card" aria-label="当前优先路径" data-lq-material="content">
+    <aside data-lq-component="surface" class="lq-surface path-focus-card" aria-label="当前优先路径" data-lq-material="content">
         {% if focus %}
         {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
         {% set cultivation_card = {
@@ -84,7 +84,7 @@
             <h1>{{ path_context.title }}</h1>
             <p>{{ path_context.subtitle }}</p>
         </div>
-        <aside class="path-focus-card" aria-label="当前优先路径" data-lq-material="content">
+        <aside data-lq-component="surface" class="lq-surface path-focus-card" aria-label="当前优先路径" data-lq-material="content">
             {% if focus %}
             {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
             {% set cultivation_card = {
@@ -153,7 +153,7 @@
         </div>
         <div class="path-course-grid">
             {% for course in path_context.courses %}
-            <a href="{{ course.href }}" class="path-course-card" data-course-id="{{ course.course_id }}">
+            <a data-lq-component="surface" href="{{ course.href }}" class="lq-surface path-course-card" data-course-id="{{ course.course_id }}">
                 {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                 {% set cultivation_card = {
                     'variant': 'compact',
@@ -177,12 +177,12 @@
     </section>
     {% endif %}
 
-    <section class="path-toolbar" aria-label="学习路径筛选" data-lq-material="content">
-        <div class="path-filter-tabs" role="tablist" aria-label="状态筛选">
+    <section data-lq-component="toolbar" class="lq-domain-toolbar path-toolbar" aria-label="学习路径筛选" data-lq-material="content">
+        <div data-lq-component="tab" class="lq-tabs__list path-filter-tabs" role="tablist" aria-label="状态筛选">
             {% for item in path_context.filters %}
-            <a
+            <a data-lq-component="tab"
                 href="/learning-path?status={{ item.value }}"
-                class="path-filter{% if item.value == path_context.active_status %} is-active{% endif %}"
+                class="lq-tabs__tab path-filter{% if item.value == path_context.active_status %} is-active{% endif %}"
                 data-path-filter="{{ item.value }}"
                 role="tab"
                 aria-selected="{{ 'true' if item.value == path_context.active_status else 'false' }}"
@@ -194,11 +194,11 @@
         </div>
         <label class="path-search">
             <span>搜索</span>
-            <input type="search" value="{{ path_context.keyword }}" placeholder="课程、任务、材料、复盘">
+            <input data-lq-component="input" class="lq-input" type="search" value="{{ path_context.keyword }}" placeholder="课程、任务、材料、复盘">
         </label>
         <label class="path-course-filter">
             <span>课程</span>
-            <select>
+            <select data-lq-component="select" class="lq-select">
                 <option value="0">全部课程</option>
                 {% for course in path_context.courses %}
                 <option value="{{ course.course_id }}" {% if course.course_id == path_context.active_course_id %}selected{% endif %}>
@@ -217,8 +217,8 @@
     <section class="path-card-list" aria-label="学习路径动作列表" data-lq-material="content">
         {% set path_status_tone = {'active': 'info', 'snoozed': 'neutral', 'done': 'success'} %}
         {% for item in path_context['items'] %}
-        <article
-            class="path-card path-card--{{ item.status }} path-card--{{ item.tone }}{% if item.pinned %} is-pinned{% endif %}"
+        <article data-lq-component="surface"
+            class="lq-surface path-card path-card--{{ item.status }} path-card--{{ item.tone }}{% if item.pinned %} is-pinned{% endif %}"
             data-path-card
             data-status="{{ item.status }}"
             data-course-id="{{ item.course_id }}"
@@ -255,19 +255,19 @@
             <div class="path-card__side">
                 <label>
                     <span>我的记录</span>
-                    <textarea rows="3" data-path-reflection placeholder="写下这一步做完后，自己真正弄懂了什么。">{{ item.reflection }}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="3" data-path-reflection placeholder="写下这一步做完后，自己真正弄懂了什么。">{{ item.reflection }}</textarea>
                 </label>
                 <label>
                     <span>下次行动</span>
-                    <textarea rows="2" data-path-next-action placeholder="例如：复盘后再做一道同类题，或课前补完材料。">{{ item.next_action }}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="2" data-path-next-action placeholder="例如：复盘后再做一道同类题，或课前补完材料。">{{ item.next_action }}</textarea>
                 </label>
                 <div class="path-card__actions">
-                    <button type="button" class="path-action path-action--ghost" data-path-pin="{{ '0' if item.pinned else '1' }}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass path-action path-action--ghost" data-path-pin="{{ '0' if item.pinned else '1' }}">
                         {{ '取消置顶' if item.pinned else '置顶' }}
                     </button>
-                    <button type="button" class="path-action" data-path-save data-next-status="active">保存</button>
-                    <button type="button" class="path-action" data-path-save data-next-status="snoozed">稍后</button>
-                    <button type="button" class="path-action path-action--primary" data-path-save data-next-status="done">完成</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass path-action" data-path-save data-next-status="active">保存</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass path-action" data-path-save data-next-status="snoozed">稍后</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass path-action path-action--primary" data-path-save data-next-status="done">完成</button>
                 </div>
             </div>
         </article>

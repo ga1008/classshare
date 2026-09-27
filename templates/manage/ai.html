@@ -14,22 +14,22 @@
     {{ page_head('AI 助教', explain='为每个课堂配置独立的 AI 系统提示词和课程大纲；绑定教材后自动关联教材信息，课堂信息自动填充，可随时重新生成默认草稿。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
     <section class="academic-stat-grid">
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">可配置课堂</div>
             <div class="academic-stat-value">{{ my_offerings|length }}</div>
             <div class="academic-stat-help">只有已经开设的课堂才能拥有独立 AI 配置。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">教材候选</div>
             <div class="academic-stat-value">{{ my_textbooks|length }}</div>
             <div class="academic-stat-help">教材变更后建议重新生成提示词。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">系统提示词</div>
             <div class="academic-stat-value">课堂级</div>
             <div class="academic-stat-help">每个课堂独立维护，不会互相覆盖。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">知识依据</div>
             <div class="academic-stat-value">大纲 + 教材</div>
             <div class="academic-stat-help">可包含课程大纲、章节结构和考核要求。</div>
@@ -38,7 +38,7 @@
 
     {% if my_offerings %}
     <section class="academic-content-grid two-column">
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">课堂 AI 配置</h3>
@@ -49,7 +49,7 @@
                 <form id="aiConfigForm" action="/api/manage/ai/configure" method="post" class="academic-form-grid">
                     <div class="academic-field">
                         <label for="aiOfferingSelect">课堂</label>
-                        <select id="aiOfferingSelect" name="class_offering_id" class="form-control" required>
+                        <select data-lq-component="select" id="aiOfferingSelect" name="class_offering_id" class="lq-select form-control" required>
                             <option value="">请选择课堂</option>
                             {% for offering in my_offerings %}
                             <option value="{{ offering.id }}" data-textbook-id="{{ offering.textbook_id or '' }}">{{ offering.course_name }} / {{ offering.class_name }}{% if offering.semester %} · {{ offering.semester }}{% endif %}</option>
@@ -59,39 +59,39 @@
                     <div class="academic-field">
                         <label for="aiTextbookSelect">教材绑定</label>
                         <div class="academic-split-field">
-                            <select id="aiTextbookSelect" name="textbook_id" class="form-control">
+                            <select data-lq-component="select" id="aiTextbookSelect" name="textbook_id" class="lq-select form-control">
                                 <option value="">暂不绑定教材</option>
                                 {% for textbook in my_textbooks %}
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/library/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a data-lq-component="button" href="/manage/library/textbooks?open=new" class="lq-btn lq-btn--sm lq-btn--glass academic-link-btn">新增教材</a>
                         </div>
                     </div>
                     <div class="academic-action-group" style="justify-content: space-between;">
                         <div style="display: flex; gap: 8px;">
-                            <button type="button" class="btn btn-outline" id="aiRegenerateBtn">重新生成默认草稿</button>
-                            <button type="button" class="btn btn-accent" id="aiGenerateBtn">AI 生成</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="aiRegenerateBtn">重新生成默认草稿</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-accent" id="aiGenerateBtn">AI 生成</button>
                         </div>
-                        <button type="submit" class="btn btn-primary" id="aiConfigSubmitBtn">保存 AI 配置</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="aiConfigSubmitBtn">保存 AI 配置</button>
                     </div>
                     <div class="academic-field" role="status" aria-live="polite">
                         <span id="aiConfigStatus">请选择课堂后加载配置。</span>
-                        <button type="button" class="btn btn-outline" id="aiConfigRetryBtn" hidden>重新加载</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="aiConfigRetryBtn" hidden>重新加载</button>
                     </div>
                     <div class="academic-field">
                         <label for="aiSystemPromptInput">系统提示词</label>
-                        <textarea id="aiSystemPromptInput" name="system_prompt" class="form-control ai-textarea" data-prompt-pool-key="classroom_ai.system_prompt" placeholder="选择课堂后自动加载已有配置，也可点击重新生成默认草稿自动填充。"></textarea>
+                        <textarea data-lq-component="textarea" id="aiSystemPromptInput" name="system_prompt" class="lq-textarea form-control ai-textarea" data-prompt-pool-key="classroom_ai.system_prompt" placeholder="选择课堂后自动加载已有配置，也可点击重新生成默认草稿自动填充。"></textarea>
                     </div>
                     <div class="academic-field">
                         <label for="aiSyllabusInput">课程大纲 / 知识依据</label>
-                        <textarea id="aiSyllabusInput" name="syllabus" class="form-control ai-textarea" placeholder="填写课程目标、章节安排、知识点和考核方式等。"></textarea>
+                        <textarea data-lq-component="textarea" id="aiSyllabusInput" name="syllabus" class="lq-textarea form-control ai-textarea" placeholder="填写课程目标、章节安排、知识点和考核方式等。"></textarea>
                     </div>
                 </form>
             </div>
         </article>
 
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">课堂信息预览</h3>
@@ -117,13 +117,13 @@
         </article>
     </section>
     {% else %}
-    <section class="academic-card">
+    <section data-lq-component="surface" class="lq-surface academic-card">
         <div class="academic-card-body">
             <div class="academic-empty">
                 <strong>还没有可配置的课堂</strong>
                 先到“开设课堂”页面创建至少一个课堂实例，再回来配置课堂 AI。
                 <div class="academic-hero-actions" style="justify-content: center; margin-top: 16px;">
-                    <a href="/manage/teaching/offerings" class="btn btn-primary">前往开设课堂</a>
+                    <a data-lq-component="button" href="/manage/teaching/offerings" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">前往开设课堂</a>
                 </div>
             </div>
         </div>

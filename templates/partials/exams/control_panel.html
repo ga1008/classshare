@@ -1,15 +1,15 @@
 {# 试卷页筛选区（docs §5.10 P4：搜索 + 状态/分配/来源三组 chips + 「更多筛选」折叠）。
    控件 id 与 scripts.html 的 readFilterControls() 契约不变：chips 只是三个隐藏 select 的可视代理。 #}
-    <section class="exam-control-panel" aria-label="试卷筛选和排序">
+    <section data-lq-component="surface" class="lq-surface exam-control-panel" aria-label="试卷筛选和排序">
         <div class="exam-control-row primary">
             <div class="search-box">
                 <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" id="searchInput" placeholder="搜索试卷名称、描述、标签、状态或题型..." oninput="onSearchInput(this)">
-                <button class="search-clear" id="searchClear" onclick="clearSearch()" title="清除搜索">
+                <input data-lq-component="input" class="lq-input" type="text" id="searchInput" placeholder="搜索试卷名称、描述、标签、状态或题型..." oninput="onSearchInput(this)">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass search-clear" id="searchClear" onclick="clearSearch()" title="清除搜索">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
-            <button class="clear-filters-btn" id="clearFiltersBtn" onclick="clearAllFilters()">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass clear-filters-btn" id="clearFiltersBtn" onclick="clearAllFilters()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 清除筛选
             </button>
@@ -19,7 +19,7 @@
         <div class="exam-chip-groups" role="group" aria-label="主筛选">
             <div class="exam-chip-group" data-filter-chips="statusFilter" role="group" aria-label="状态">
                 <span class="exam-chip-group__label">状态</span>
-                <select id="statusFilter" class="exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-component="select" id="statusFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部状态</option>
                     <option value="ready">可用</option>
                     <option value="draft">草稿</option>
@@ -27,43 +27,43 @@
                     <option value="generating">AI 生成中</option>
                     <option value="failed">生成失败</option>
                 </select>
-                <button type="button" class="exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('statusFilter', 'all')">全部</button>
-                <button type="button" class="exam-chip" data-value="ready" aria-pressed="false" onclick="setFilterControl('statusFilter', 'ready')">可用</button>
-                <button type="button" class="exam-chip" data-value="draft" aria-pressed="false" onclick="setFilterControl('statusFilter', 'draft')">草稿</button>
-                <button type="button" class="exam-chip" data-value="published" aria-pressed="false" onclick="setFilterControl('statusFilter', 'published')">已发布</button>
-                <button type="button" class="exam-chip" data-value="generating" aria-pressed="false" onclick="setFilterControl('statusFilter', 'generating')">AI 生成中</button>
-                <button type="button" class="exam-chip" data-value="failed" aria-pressed="false" onclick="setFilterControl('statusFilter', 'failed')">生成失败</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('statusFilter', 'all')">全部</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="ready" aria-pressed="false" onclick="setFilterControl('statusFilter', 'ready')">可用</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="draft" aria-pressed="false" onclick="setFilterControl('statusFilter', 'draft')">草稿</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="published" aria-pressed="false" onclick="setFilterControl('statusFilter', 'published')">已发布</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="generating" aria-pressed="false" onclick="setFilterControl('statusFilter', 'generating')">AI 生成中</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="failed" aria-pressed="false" onclick="setFilterControl('statusFilter', 'failed')">生成失败</button>
             </div>
             <div class="exam-chip-group" data-filter-chips="assignmentFilter" role="group" aria-label="分配">
                 <span class="exam-chip-group__label">分配</span>
-                <select id="assignmentFilter" class="exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-component="select" id="assignmentFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部分配</option>
                     <option value="unassigned">未分配</option>
                     <option value="assigned">已分配</option>
                 </select>
-                <button type="button" class="exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('assignmentFilter', 'all')">全部</button>
-                <button type="button" class="exam-chip" data-value="unassigned" aria-pressed="false" onclick="setFilterControl('assignmentFilter', 'unassigned')">未分配</button>
-                <button type="button" class="exam-chip" data-value="assigned" aria-pressed="false" onclick="setFilterControl('assignmentFilter', 'assigned')">已分配</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('assignmentFilter', 'all')">全部</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="unassigned" aria-pressed="false" onclick="setFilterControl('assignmentFilter', 'unassigned')">未分配</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="assigned" aria-pressed="false" onclick="setFilterControl('assignmentFilter', 'assigned')">已分配</button>
             </div>
             <div class="exam-chip-group" data-filter-chips="sourceFilter" role="group" aria-label="来源">
                 <span class="exam-chip-group__label">来源</span>
-                <select id="sourceFilter" class="exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-component="select" id="sourceFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部来源</option>
                     <option value="manual">手动 / 导入</option>
                     <option value="ai">AI 生成</option>
                 </select>
-                <button type="button" class="exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('sourceFilter', 'all')">全部</button>
-                <button type="button" class="exam-chip" data-value="manual" aria-pressed="false" onclick="setFilterControl('sourceFilter', 'manual')">手动 / 导入</button>
-                <button type="button" class="exam-chip" data-value="ai" aria-pressed="false" onclick="setFilterControl('sourceFilter', 'ai')">AI 生成</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="all" aria-pressed="true" onclick="setFilterControl('sourceFilter', 'all')">全部</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="manual" aria-pressed="false" onclick="setFilterControl('sourceFilter', 'manual')">手动 / 导入</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-chip" data-value="ai" aria-pressed="false" onclick="setFilterControl('sourceFilter', 'ai')">AI 生成</button>
             </div>
         </div>
 
         <details class="exam-more-filters" id="examMoreFilters">
-            <summary>更多筛选<span class="exam-more-filters__count" id="examMoreFiltersCount" hidden></span></summary>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">更多筛选<span class="exam-more-filters__count" id="examMoreFiltersCount" hidden></span></summary>
             <div class="exam-control-row secondary">
                 <div class="exam-filter-field">
                     <label for="structureFilter">结构</label>
-                    <select id="structureFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-component="select" id="structureFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部结构</option>
                         <option value="objective">客观题</option>
                         <option value="subjective">主观题</option>
@@ -73,7 +73,7 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="scopeFilter">开放</label>
-                    <select id="scopeFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-component="select" id="scopeFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部范围</option>
                         <option value="owned">我管理的</option>
                         <option value="shared">共享给我的</option>
@@ -84,19 +84,19 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="schoolFilter">学校</label>
-                    <select id="schoolFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-component="select" id="schoolFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部学校</option>
                     </select>
                 </div>
                 <div class="exam-filter-field">
                     <label for="departmentFilter">系部</label>
-                    <select id="departmentFilter" class="exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-component="select" id="departmentFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部系部</option>
                     </select>
                 </div>
                 <div class="exam-filter-field">
                     <label for="sortSelect">排序</label>
-                    <select id="sortSelect" class="exam-filter-select" onchange="onSortChange()">
+                    <select data-lq-component="select" id="sortSelect" class="lq-select exam-filter-select" onchange="onSortChange()">
                         <option value="updated-desc">最近更新</option>
                         <option value="created-desc">最新创建</option>
                         <option value="title-asc">名称 A-Z</option>
@@ -107,7 +107,7 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="groupModeSelect">归集</label>
-                    <select id="groupModeSelect" class="exam-filter-select" onchange="onGroupModeChange()">
+                    <select data-lq-component="select" id="groupModeSelect" class="lq-select exam-filter-select" onchange="onGroupModeChange()">
                         <option value="none">不归集</option>
                         <option value="status">按状态</option>
                         <option value="tag">按首个标签</option>
@@ -123,13 +123,13 @@
                         <!-- Dynamic filter chips injected by JS -->
                     </div>
                 </div>
-                <div class="tag-dropdown" id="tagDropdown">
-                    <button class="tag-dropdown-btn" onclick="toggleTagDropdown(event)">
+                <div data-lq-component="menu" class="lq-domain-region tag-dropdown" id="tagDropdown">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass tag-dropdown-btn" onclick="toggleTagDropdown(event)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
                         标签筛选
                         <span class="tag-dropdown-count" id="tagDropdownCount" style="display:none;">0</span>
                     </button>
-                    <div class="tag-dropdown-menu" id="tagDropdownMenu">
+                    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tag-dropdown-menu" id="tagDropdownMenu">
                         <!-- Dynamic tag options injected by JS -->
                     </div>
                 </div>

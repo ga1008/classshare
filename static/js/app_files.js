@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { adoptDomainContentSlot } from './lq/domain-controls.js';
 import { ChunkedUploader } from './upload.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, showToast } from './ui.js';
 
@@ -118,9 +119,9 @@ function buildBlockedAction(file, extraClassName = '') {
     const title = escapeHtml(file.download_blocked_reason || '已限制下载');
     const className = `btn btn-ghost btn-sm btn-icon resource-download-blocked ${extraClassName}`.trim();
     return `
-        <button
+        <button data-lq-component="button"
             type="button"
-            class="${className}"
+            class="lq-btn lq-btn--sm lq-btn--glass ${className}"
             data-action="blocked"
             data-file-id="${file.id}"
             title="${title}"
@@ -140,9 +141,9 @@ function buildDownloadAction(file) {
     }
 
     return `
-        <a
+        <a data-lq-component="button"
             href="${escapeHtml(file.download_url || `/download/course_file/${file.id}`)}"
-            class="btn btn-ghost btn-sm btn-icon"
+            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm btn-icon"
             data-action="download"
             data-file-id="${file.id}"
             title="下载文件"
@@ -173,7 +174,7 @@ function buildFileCard(file) {
     const summary = truncateText(file.description || '');
 
     return `
-        <article class="card card-interactive resource-file-card" data-file-id="${file.id}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(fileName)} 详情">
+        <article data-lq-component="surface" class="lq-surface card card-interactive resource-file-card" data-file-id="${file.id}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(fileName)} 详情">
             <div class="resource-file-main">
                 <div class="resource-file-icon" style="background:${icon.color}15;color:${icon.color};">${escapeHtml(icon.label)}</div>
                 <div class="resource-file-copy">
@@ -186,7 +187,7 @@ function buildFileCard(file) {
                 </div>
             </div>
             <div class="resource-file-actions">
-                <button type="button" class="btn btn-ghost btn-sm btn-icon" data-action="details" data-file-id="${file.id}" title="查看详情" aria-label="查看详情">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm btn-icon" data-action="details" data-file-id="${file.id}" title="查看详情" aria-label="查看详情">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -195,7 +196,7 @@ function buildFileCard(file) {
                 </button>
                 ${buildDownloadAction(file)}
                 ${isTeacherView() ? `
-                    <button type="button" class="btn btn-ghost btn-sm btn-icon text-danger" data-action="delete" data-file-id="${file.id}" title="删除文件" aria-label="删除文件">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm btn-icon text-danger" data-action="delete" data-file-id="${file.id}" title="删除文件" aria-label="删除文件">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <polyline points="3 6 5 6 21 6"></polyline>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -329,12 +330,12 @@ function renderFileModal(file) {
 
     modalDownloadSlot.innerHTML = file.download_allowed
         ? `
-            <a href="${escapeHtml(file.download_url || `/download/course_file/${file.id}`)}" class="btn btn-primary">
+            <a data-lq-component="button" href="${escapeHtml(file.download_url || `/download/course_file/${file.id}`)}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">
                 下载文件
             </a>
         `
         : `
-            <button type="button" class="btn btn-danger resource-download-blocked-btn" data-action="blocked" data-file-id="${file.id}" title="${escapeHtml(file.download_blocked_reason || '已限制下载')}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive resource-download-blocked-btn" data-action="blocked" data-file-id="${file.id}" title="${escapeHtml(file.download_blocked_reason || '已限制下载')}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="12" cy="12" r="9"></circle>
                     <path d="M5 5l14 14"></path>
@@ -359,6 +360,7 @@ async function copyText(value) {
     }
 
     const helper = document.createElement('textarea');
+    adoptDomainContentSlot(helper);
     helper.value = value;
     helper.setAttribute('readonly', 'true');
     helper.style.position = 'fixed';
@@ -456,7 +458,8 @@ function uploadFile(file) {
     if (!uploadProgressArea) return;
 
     const item = document.createElement('div');
-    item.className = 'card';
+    item.className = 'card lq-surface';
+    item.dataset.lqComponent = 'surface';
     item.style.cssText = 'padding: var(--spacing-md); margin-bottom: var(--spacing-sm);';
     item.innerHTML = `
         <div class="flex items-center justify-between mb-1">

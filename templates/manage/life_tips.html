@@ -16,34 +16,34 @@
         explain_label='一言提示说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-life-tips__summary" data-life-tip-summary></div>{% endcall %}
 
     <form class="manage-life-tips__filters" data-life-tip-filters>
-        <select name="scope">
+        <select data-lq-component="select" class="lq-select" name="scope">
             <option value="">全部作用域</option>
             <option value="global">通用</option>
             <option value="school">本校</option>
             <option value="department">系部</option>
         </select>
-        <select name="status">
+        <select data-lq-component="select" class="lq-select" name="status">
             <option value="">全部状态</option>
             <option value="active">投放中</option>
             <option value="draft">草稿</option>
             <option value="retired">已下架</option>
         </select>
-        <select name="source_kind">
+        <select data-lq-component="select" class="lq-select" name="source_kind">
             <option value="">全部来源</option>
             <option value="seed">内置种子</option>
             <option value="ai_gongwen">公文挖掘</option>
             <option value="manual">手工录入</option>
         </select>
-        <select name="audience">
+        <select data-lq-component="select" class="lq-select" name="audience">
             <option value="">全部受众</option>
             <option value="student">学生</option>
             <option value="teacher">教师</option>
         </select>
-        <select name="category" data-life-tip-category-filter>
+        <select data-lq-component="select" class="lq-select" name="category" data-life-tip-category-filter>
             <option value="">全部分类</option>
         </select>
-        <input type="search" name="keyword" placeholder="搜索提示语或来源…">
-        <button type="submit" class="btn btn-secondary">筛选</button>
+        <input data-lq-component="input" class="lq-input" type="search" name="keyword" placeholder="搜索提示语或来源…">
+        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass">筛选</button>
     </form>
 
     <div class="manage-life-tips__loading" data-life-tip-loading>正在加载提示语…</div>
@@ -51,22 +51,22 @@
     <div class="manage-life-tips__pager" data-life-tip-pager hidden></div>
 </section>
 
-<div class="life-tip-modal-backdrop" id="life-tip-create-modal" hidden>
-    <div class="life-tip-modal">
+<div class="lq-domain-region life-tip-modal-backdrop" id="life-tip-create-modal" hidden data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised life-tip-modal">
         <h3>新增一言提示</h3>
         <form data-life-tip-create-form>
             <label class="life-tip-modal__field">
                 <span>提示语（10-150 字，游戏加载屏句式：具体、可执行、带数字/门槛更佳）</span>
-                <textarea name="tip_text" rows="4" required minlength="10" maxlength="150"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="tip_text" rows="4" required minlength="10" maxlength="150"></textarea>
             </label>
             <div class="life-tip-modal__grid">
                 <label class="life-tip-modal__field">
                     <span>分类</span>
-                    <select name="category" data-life-tip-category-input></select>
+                    <select data-lq-component="select" class="lq-select" name="category" data-life-tip-category-input></select>
                 </label>
                 <label class="life-tip-modal__field">
                     <span>作用域</span>
-                    <select name="scope" data-life-tip-scope-input>
+                    <select data-lq-component="select" class="lq-select" name="scope" data-life-tip-scope-input>
                         <option value="school">本校</option>
                         <option value="department">指定系部</option>
                         <option value="global">全平台通用</option>
@@ -74,11 +74,11 @@
                 </label>
                 <label class="life-tip-modal__field" data-life-tip-department-field hidden>
                     <span>系部名称</span>
-                    <input type="text" name="department" placeholder="如：信息工程学院">
+                    <input data-lq-component="input" class="lq-input" type="text" name="department" placeholder="如：信息工程学院">
                 </label>
                 <label class="life-tip-modal__field">
                     <span>受众</span>
-                    <select name="audience">
+                    <select data-lq-component="select" class="lq-select" name="audience">
                         <option value="student">学生</option>
                         <option value="teacher">教师</option>
                         <option value="all">全部</option>
@@ -86,8 +86,8 @@
                 </label>
             </div>
             <div class="life-tip-modal__actions">
-                <button type="button" class="btn btn-secondary" data-life-tip-create-close>取消</button>
-                <button type="submit" class="btn btn-primary">保存并生效</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass" data-life-tip-create-close>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存并生效</button>
             </div>
         </form>
     </div>

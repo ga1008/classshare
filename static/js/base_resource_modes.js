@@ -218,26 +218,26 @@ function ensureModal() {
     modal.className = 'resource-mode-backdrop';
     modal.setAttribute('aria-hidden', 'true');
     modal.innerHTML = `
-        <section class="resource-mode-dialog" role="dialog" aria-modal="true" aria-labelledby="resourceModeTitle">
+        <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised resource-mode-dialog" role="dialog" aria-modal="true" aria-labelledby="resourceModeTitle">
             <div class="resource-mode-head">
                 <div>
                     <h3 class="resource-mode-title" id="resourceModeTitle">资源属性</h3>
                     <p class="resource-mode-subtitle" id="resourceModeSubtitle"></p>
                 </div>
-                <button type="button" class="resource-mode-close" data-resource-mode-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass resource-mode-close" data-resource-mode-close aria-label="关闭">×</button>
             </div>
             <form id="resourceModeForm">
                 <div class="resource-mode-body">
-                    <div class="resource-mode-tabs" aria-label="资源编辑模式">
-                        <button type="button" class="resource-mode-tab is-active">属性</button>
-                        <button type="button" class="resource-mode-tab" disabled>内容</button>
+                    <div data-lq-component="toolbar" class="lq-domain-toolbar resource-mode-tabs" aria-label="资源编辑模式">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass resource-mode-tab is-active">属性</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass resource-mode-tab" disabled>内容</button>
                     </div>
                     <div class="resource-mode-grid" id="resourceModeFields"></div>
                     <div class="resource-mode-stats" id="resourceModeStats"></div>
                 </div>
                 <div class="resource-mode-footer">
-                    <button type="button" class="btn btn-outline" data-resource-mode-close>关闭</button>
-                    <button type="submit" class="btn btn-primary" id="resourceModeSaveBtn">保存属性</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-resource-mode-close>关闭</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="resourceModeSaveBtn">保存属性</button>
                 </div>
             </form>
         </section>
@@ -275,19 +275,19 @@ function renderField(field, attributes, canEdit) {
     const required = field.required ? ' required' : '';
     const fieldClass = field.type === 'textarea' || field.wide ? 'resource-mode-field is-wide' : 'resource-mode-field';
     if (field.type === 'textarea') {
-        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><textarea name="${field.key}"${disabled}${required}>${escapeHtml(rawValue || '')}</textarea></div>`;
+        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><textarea data-lq-component="textarea" class="lq-textarea" name="${field.key}"${disabled}${required}>${escapeHtml(rawValue || '')}</textarea></div>`;
     }
     if (field.type === 'select') {
         const value = String(rawValue || '');
         const options = (field.options || []).map(([optionValue, label]) => `
             <option value="${escapeHtml(optionValue)}"${value === optionValue ? ' selected' : ''}>${escapeHtml(label)}</option>
         `).join('');
-        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><select name="${field.key}"${disabled}${required}>${options}</select></div>`;
+        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><select data-lq-component="select" class="lq-select" name="${field.key}"${disabled}${required}>${options}</select></div>`;
     }
     if (field.type === 'list') {
-        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><input name="${field.key}" type="text" value="${escapeHtml(normalizeList(rawValue).join('、'))}"${disabled}${required}></div>`;
+        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><input data-lq-component="input" class="lq-input" name="${field.key}" type="text" value="${escapeHtml(normalizeList(rawValue).join('、'))}"${disabled}${required}></div>`;
     }
-    return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><input name="${field.key}" type="${field.type || 'text'}" value="${escapeHtml(rawValue ?? '')}" step="${field.step || '1'}"${disabled}${required}></div>`;
+    return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><input data-lq-component="input" class="lq-input" name="${field.key}" type="${field.type || 'text'}" value="${escapeHtml(rawValue ?? '')}" step="${field.step || '1'}"${disabled}${required}></div>`;
 }
 
 function renderStats(stats) {

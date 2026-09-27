@@ -7,8 +7,8 @@
         <div class="rz-page-head__sub">先填写姓名、至少一种联系方式和目标岗位即可生成简历；其余信息按需要补充。部分资料已从平台带入。</div>
     </div>
     <div style="display:flex;gap:10px">
-        <button type="button" class="rz-btn" id="rzSeedBtn">用平台资料带入</button>
-        <button type="button" class="rz-btn" id="rzSuggestBtn">✨ AI 优化建议</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" id="rzSeedBtn">用平台资料带入</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" id="rzSuggestBtn">✨ AI 优化建议</button>
     </div>
 </div>
 
@@ -19,7 +19,7 @@
         <div class="rz-avatar__ph" id="rzAvatarPh" style="display:none">头像</div>
         <div>
             <label class="rz-btn rz-btn--sm" style="cursor:pointer">上传头像
-                <input type="file" id="rzAvatarInput" accept="image/*" hidden>
+                <input data-lq-component="file" class="lq-native-file" type="file" id="rzAvatarInput" accept="image/*" hidden>
             </label>
             <div style="color:var(--rz-muted);font-size:.76rem;margin-top:6px">建议证件照，≤5MB</div>
         </div>
@@ -28,7 +28,7 @@
     <div class="rz-form-grid" id="rzFields"></div>
 
     <div style="margin-top:8px;display:flex;gap:10px">
-        <button type="submit" class="rz-btn rz-btn--primary">保存个人信息</button>
+        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--primary">保存个人信息</button>
     </div>
 </form>
 {% endblock %}

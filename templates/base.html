@@ -25,7 +25,7 @@
 
     {% if user_info is defined and user_info %}
     <!-- Global Back-to-top -->
-    <button type="button" id="global-back-to-top" class="back-to-top" aria-label="回到顶部" title="回到顶部"{% if navbar_shell_enabled|default(false) %} data-lq-back-to-top{% if user_info.role == 'student' %} data-lq-dock-back-to-top{% endif %}{% endif %} hidden>
+    <button data-lq-component="button" type="button" id="global-back-to-top" class="lq-btn lq-btn--sm lq-btn--glass back-to-top" aria-label="回到顶部" title="回到顶部"{% if navbar_shell_enabled|default(false) %} data-lq-back-to-top{% if user_info.role == 'student' %} data-lq-dock-back-to-top{% endif %}{% endif %} hidden>
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m18 15-6-6-6 6"></path>
         </svg>

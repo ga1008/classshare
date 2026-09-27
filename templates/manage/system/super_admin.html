@@ -8,7 +8,7 @@
 {{ page_head('超管教师与反馈接收', description='设置唯一超级管理员教师。超管教师会在通知区域收到所有问题反馈，并可在问题反馈页查看完整图文内容。普通教师不会收到这些反馈通知。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
 <div class="sa-grid">
-    <section class="sa-info-card">
+    <section data-lq-component="surface" class="lq-surface sa-info-card">
         <div class="sa-info-card__label">当前超管教师</div>
         {% if super_admin_teacher %}
         <div class="sa-info-card__name">{{ super_admin_teacher.name }}</div>
@@ -26,17 +26,17 @@
         </div>
     </section>
 
-    <form class="sa-form-card" id="super-admin-form">
+    <form data-lq-component="surface" class="lq-surface sa-form-card" id="super-admin-form">
         <div class="sa-form-card__title">调整超管设置</div>
         <label class="form-label" for="super-admin-teacher-id">选择教师</label>
-        <select class="form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
+        <select data-lq-component="select" class="lq-select form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
             {% for teacher in teacher_rows %}
             <option value="{{ teacher.id }}" {% if teacher.is_super_admin %}selected{% endif %}>
                 {{ teacher.name }}{% if teacher.email %}（{{ teacher.email }}）{% endif %}
             </option>
             {% endfor %}
         </select>
-        <button type="submit" class="btn btn-primary" {% if not can_manage_super_admin %}disabled{% endif %}>保存超管设置</button>
+        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" {% if not can_manage_super_admin %}disabled{% endif %}>保存超管设置</button>
         {% if not can_manage_super_admin %}
         <p class="super-admin-help">只有当前超管教师可以调整此设置。</p>
         {% endif %}

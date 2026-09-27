@@ -16,7 +16,7 @@
 
 {% include "partials/lq_page_backdrop.html" with context %}
 
-<header class="navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏" data-lq-material="chrome">
+<header data-lq-component="toolbar" class="lq-domain-toolbar navbar app-topbar exam-topbar role-{{ user_info.role }}" id="examTopbar" aria-label="考试快捷工具栏" data-lq-material="chrome">
     <a href="{{ assignment_back_url }}" class="navbar-brand app-topbar-brand exam-topbar-brand" aria-label="返回课堂">
         <span class="app-topbar-brand__mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
         <span class="app-topbar-brand__copy">
@@ -57,29 +57,29 @@
     </div>
     <nav class="navbar-user app-topbar-nav exam-topbar-nav" aria-label="考试快捷操作">
         <div class="app-topbar-actions app-topbar-actions--primary exam-topbar-actions" aria-label="答题操作">
-            <button type="button" class="app-topbar-action app-topbar-action--tone-slate" id="topbarSidebarToggle" aria-controls="sidebar" aria-expanded="false" title="打开答题卡" aria-label="打开答题卡">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate" id="topbarSidebarToggle" aria-controls="sidebar" aria-expanded="false" title="打开答题卡" aria-label="打开答题卡">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>题目</strong>
                     <small>答题卡</small>
                 </span>
             </button>
-            <button type="button" class="app-topbar-action app-topbar-action--tone-slate exam-edit-action" id="topbarPrevBtn" title="上一页" aria-label="上一页">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate exam-edit-action" id="topbarPrevBtn" title="上一页" aria-label="上一页">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>上一页</strong>
                     <small>回看</small>
                 </span>
             </button>
-            <button type="button" class="app-topbar-action app-topbar-action--primary exam-edit-action" id="topbarNextBtn" title="下一页" aria-label="下一页">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary exam-edit-action" id="topbarNextBtn" title="下一页" aria-label="下一页">
                 <span class="app-topbar-action__icon exam-icon-next" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>下一页</strong>
                     <small>继续</small>
                 </span>
             </button>
-            <div class="exam-topbar-more-dropdown exam-edit-action">
-                <button type="button" id="examMoreTrigger" class="app-topbar-action app-topbar-action--tone-amber" title="整理答卷" aria-label="打开整理答卷菜单">
+            <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised exam-topbar-more-dropdown exam-edit-action">
+                <button data-lq-component="button" type="button" id="examMoreTrigger" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-amber" title="整理答卷" aria-label="打开整理答卷菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>整理</strong>
@@ -88,17 +88,17 @@
                 </button>
                 <div class="exam-topbar-more-menu lq-menu" id="examMoreMenu" role="menu" aria-label="整理答卷" data-lq-material="raised" tabindex="-1" hidden>
                     <div class="exam-topbar-menu-label">低频操作</div>
-                    <button type="button" class="exam-topbar-menu-item" id="topbarClearPageBtn" data-lq-menu-item="clear-page" tabindex="-1" title="清空当前页" aria-label="清空当前页" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-topbar-menu-item" id="topbarClearPageBtn" data-lq-menu-item="clear-page" tabindex="-1" title="清空当前页" aria-label="清空当前页" role="menuitem">
                         {{ app_topbar_icon('refresh') }}
                         清空当前页
                     </button>
-                    <button type="button" class="exam-topbar-menu-item is-danger" id="topbarClearAllBtn" data-lq-menu-item="clear-all" tabindex="-1" title="清空整张试卷" aria-label="清空整张试卷" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive exam-topbar-menu-item is-danger" id="topbarClearAllBtn" data-lq-menu-item="clear-all" tabindex="-1" title="清空整张试卷" aria-label="清空整张试卷" role="menuitem">
                         {{ app_topbar_icon('refresh') }}
                         清空整张试卷
                     </button>
                 </div>
             </div>
-            <button type="button" class="app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>交卷</strong>
@@ -109,7 +109,7 @@
     </nav>
 </header>
 
-<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<div class="lq-domain-content-slot sidebar-backdrop" id="sidebarBackdrop" data-lq-component="content-slot" data-lq-slot="scrim"></div>
 
 <div class="exam-layout">
     <!-- Left Sidebar (Question Navigation) -->
@@ -161,11 +161,11 @@
 
                 <!-- Navigation injected here -->
                 <div class="paper-footer" id="navContainer">
-                    <button class="btn btn-outline" id="prevBtn" disabled>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="prevBtn" disabled>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                         上一页
                     </button>
-                    <button class="btn btn-primary" id="nextBtn">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="nextBtn">
                         下一页
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                     </button>
@@ -895,10 +895,10 @@
                         <div class="answer-attachment-card${isImage ? ' answer-attachment-card--image' : ''}">
                             <div class="answer-attachment-meta">
                                 <span>${esc(name)}</span>
-                                ${downloadUrl !== '#' ? `<a href="${downloadUrl}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">${actionText}</a>` : ''}
+                                ${downloadUrl !== '#' ? `<a data-lq-component="button" href="${downloadUrl}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">${actionText}</a>` : ''}
                             </div>
                             ${imageUrl
-                                ? `<button type="button" class="answer-attachment-thumb" data-ls-lightbox data-ls-lightbox-group="${groupId}" data-ls-lightbox-src="${esc(previewUrl)}" data-ls-lightbox-original="${esc(downloadUrl)}" data-ls-lightbox-title="${esc(name)}" title="点击查看大图"><img src="${esc(thumbUrl)}" alt="${esc(name)}" loading="lazy" decoding="async"></button>`
+                                ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass answer-attachment-thumb" data-ls-lightbox data-ls-lightbox-group="${groupId}" data-ls-lightbox-src="${esc(previewUrl)}" data-ls-lightbox-original="${esc(downloadUrl)}" data-ls-lightbox-title="${esc(name)}" title="点击查看大图"><img src="${esc(thumbUrl)}" alt="${esc(name)}" loading="lazy" decoding="async"></button>`
                                 : `<div class="text-sm text-muted">该附件可在下方附件区预览或下载。</div>`}
                         </div>
                     `;
@@ -1049,7 +1049,7 @@
             const stats = getPageAnswerStats(page);
             const isExpanded = idx === state.currentPageIdx;
             html += `
-                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${idx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
+                <section data-lq-component="surface" class="lq-surface exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${idx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
                     <div class="exam-section-card__summary">
                         <div class="exam-section-card__top">
                             <div>
@@ -1118,7 +1118,7 @@
             const isAnswered = answerHasContent(q);
 
             html += `
-                <div class="question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}" data-lq-material="content">
+                <div data-lq-component="surface" class="lq-surface question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(getQuestionDisplayLabel(q))}</span>
                         <div class="q-body">${formatText(q.text)}</div>
@@ -1132,7 +1132,7 @@
                     const optId = `q_${q.id}_opt_${idx}`;
                     html += `
                         <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
-                            <input type="radio" id="${optId}" name="${q.id}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-radio-input">
+                            <input data-lq-component="radio" type="radio" id="${optId}" name="${q.id}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-radio q-radio-input">
                             ${formatInlineMarkdown(opt)}
                         </label>
                     `;
@@ -1146,7 +1146,7 @@
                     const optId = `q_${q.id}_opt_${idx}`;
                     html += `
                         <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
-                            <input type="checkbox" id="${optId}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="q-check-input" data-qid="${q.id}">
+                            <input data-lq-component="checkbox" type="checkbox" id="${optId}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-checkbox q-check-input" data-qid="${q.id}">
                             ${formatInlineMarkdown(opt)}
                         </label>
                     `;
@@ -1155,7 +1155,7 @@
             } else if (q.type === 'text') {
                 html += `
                     <div class="q-text-input">
-                        <input type="text" class="form-control" value="${esc(val)}" placeholder="${esc(q.placeholder || '请输入答案')}" data-text-input="${q.id}">
+                        <input data-lq-component="input" type="text" class="lq-input form-control" value="${esc(val)}" placeholder="${esc(q.placeholder || '请输入答案')}" data-text-input="${q.id}">
                     </div>
                 `;
             } else {
@@ -1173,9 +1173,9 @@
                     || `可上传本题截图、报告、代码文件等；总附件限制与交卷附件一致，最多 ${MAX_FILE_COUNT} 个文件。`;
                 html += `
                     <div class="q-text-input">
-                        <textarea class="form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
+                        <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
                         ${attachmentPolicy.enabled ? `
-                            <div class="question-attachment-panel" data-question-attachment-panel="${q.id}">
+                            <div data-lq-component="surface" class="lq-surface question-attachment-panel" data-question-attachment-panel="${q.id}">
                                 <div class="question-attachment-head">
                                     <strong>本题附件</strong>
                                     <span class="question-attachment-badge ${attachmentPolicy.required ? 'required' : ''}" data-question-attachment-status="${q.id}">
@@ -1185,8 +1185,8 @@
                                 <div class="question-attachment-hint">${esc(attachmentHint)}${attachmentPolicy.allowedFileTypes.length ? ` 本题建议类型：${esc(attachmentPolicy.allowedFileTypes.join(', '))}。` : ''}${ALLOWED_FILE_TYPES.length ? ` 交卷允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}。` : ''}</div>
                                 ${attachmentPolicy.allowDrawing ? `
                                     <div class="drawing-answer-actions">
-                                        <button type="button" class="btn btn-outline btn-sm" data-open-drawing="${q.id}">绘图作答</button>
-                                        <button type="button" class="btn btn-ghost btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
+                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-open-drawing="${q.id}">绘图作答</button>
+                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
                                         <span class="drawing-answer-status" data-drawing-status="${q.id}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
                                     </div>
                                     <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${q.id}">
@@ -1198,15 +1198,15 @@
                                     </div>
                                 ` : ''}
                                 <div class="upload-actions mt-3">
-                                    <button type="button" class="btn btn-outline btn-sm" id="questionPickFiles-${safeQId}">添加本题文件</button>
-                                    <button type="button" class="btn btn-outline btn-sm ls-paste-btn" id="questionPasteFiles-${safeQId}" title="从系统剪贴板粘贴截图或文件（也可在本题区域按 Ctrl+V）">粘贴</button>
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="questionPickFiles-${safeQId}">添加本题文件</button>
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm ls-paste-btn" id="questionPasteFiles-${safeQId}" title="从系统剪贴板粘贴截图或文件（也可在本题区域按 Ctrl+V）">粘贴</button>
                                     <span class="text-sm text-muted" id="questionUploadSummary-${safeQId}">未选择文件</span>
                                 </div>
                                 <div class="upload-dropzone question-upload-dropzone" id="question-drop-zone-${safeQId}">
                                     <p class="mb-1 font-medium text-primary">拖拽本题附件到此处，或点击后按 Ctrl+V 粘贴截图</p>
                                     <p class="text-sm text-muted">截图、代码、报告等会绑定到第 ${esc(getQuestionDisplayLabel(q))} 题，AI 批改会按题号识别。截图会做去重校验，与他人相同的截图无法上传。</p>
                                 </div>
-                                <input type="file" id="question-file-input-${safeQId}" class="hidden" multiple>
+                                <input data-lq-component="file" type="file" id="question-file-input-${safeQId}" class="lq-native-file hidden" multiple>
                                 <div class="file-chips" id="question-file-chips-${safeQId}"></div>
                             </div>
                         ` : ''}
@@ -1222,11 +1222,11 @@
         if (state.currentPageIdx === state.pages.length - 1) {
             html += `
                 <div class="submit-section">
-                    <div class="upload-panel">
+                    <div data-lq-component="surface" class="lq-surface upload-panel">
                         <div class="upload-actions">
-                            <button type="button" class="btn btn-outline btn-sm" id="examPickFilesBtn">选择文件</button>
-                            <button type="button" class="btn btn-outline btn-sm" id="examPickFolderBtn">选择文件夹</button>
-                            <button type="button" class="btn btn-outline btn-sm ls-paste-btn" id="examPasteFilesBtn" title="从系统剪贴板粘贴截图或文件（也可在此区域按 Ctrl+V）">粘贴</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="examPickFilesBtn">选择文件</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="examPickFolderBtn">选择文件夹</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm ls-paste-btn" id="examPasteFilesBtn" title="从系统剪贴板粘贴截图或文件（也可在此区域按 Ctrl+V）">粘贴</button>
                             <span class="text-sm text-muted" id="examUploadSummary">未选择文件</span>
                         </div>
                         <div class="upload-dropzone" id="exam-drop-zone">
@@ -1236,12 +1236,12 @@
                                 ${ALLOWED_FILE_TYPES.length ? `，允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}` : ''}
                             </p>
                         </div>
-                        <input type="file" id="exam-file-input" class="hidden" multiple>
-                        <input type="file" id="exam-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <input data-lq-component="file" type="file" id="exam-file-input" class="lq-native-file hidden" multiple>
+                        <input data-lq-component="file" type="file" id="exam-folder-input" class="lq-native-file hidden" webkitdirectory directory multiple>
                         <div class="file-chips" id="exam-file-chips"></div>
                     </div>
                     <p class="text-muted mb-3" style="font-size:0.9rem;">请确认所有题目已作答完毕，提交后不可修改。</p>
-                    <button class="btn btn-success btn-lg" id="submitExamBtn" style="min-width: 200px;">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success btn-lg" id="submitExamBtn" style="min-width: 200px;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         确认交卷
                     </button>
@@ -2031,7 +2031,7 @@
                     <div class="result-icon">!</div>
                     <h3>${CAN_RESUBMIT_SUBMISSION ? '待重交' : '重交窗口已关闭'}</h3>
                     <p>${CAN_RESUBMIT_SUBMISSION ? `教师已撤回本次提交，请在 ${dueText} 前重新提交。` : '教师已撤回本次提交，但当前重交窗口已关闭，请联系教师重新开放重交时间。'}</p>
-                    ${CAN_RESUBMIT_SUBMISSION ? '<button class="btn btn-primary" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>' : ''}
+                    ${CAN_RESUBMIT_SUBMISSION ? '<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>' : ''}
                 </div>
             `;
         } else if (SUBMISSION_STATUS === 'graded' && GROUP_IS && !GROUP_REVEALED) {
@@ -2040,7 +2040,7 @@
                     <div class="result-icon">👥</div>
                     <h3>等待小组成员完成</h3>
                     <p>你的试卷已完成批改，本次为小组考试。为保证公平，需等小组所有成员都提交并完成批改后，再统一公布每个人的综合表现分。</p>
-                    ${GROUP_IN_GROUP ? `<button type="button" class="btn btn-outline btn-sm" style="margin-top:0.75rem;" data-open-peer-eval data-assignment-id="${ASSIGNMENT_ID}">填写 / 修改组员互评</button>` : ''}
+                    ${GROUP_IN_GROUP ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" style="margin-top:0.75rem;" data-open-peer-eval data-assignment-id="${ASSIGNMENT_ID}">填写 / 修改组员互评</button>` : ''}
                 </div>
             `;
         } else if (SUBMISSION_STATUS === 'graded') {
@@ -2053,8 +2053,8 @@
                     <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span>${(CAN_REQUEST_WITHDRAW || WITHDRAW_REQUEST) && !(GROUP_IS && GROUP_REVEALED) ? '<span id="withdraw-request-launcher"></span>' : ''}</div>
                     ${scoreCaption}
                     <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
-                        <a href="/feedback-review?status=active" class="btn btn-outline btn-sm">进入错题本复盘</a>
-                        <a href="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" class="btn btn-primary btn-sm" data-review-docx-export data-export-url="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" data-suggested-filename="${esc(PAPER_TITLE || '复习导出')}_复习导出.docx">导出复习 Word</a>
+                        <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">进入错题本复盘</a>
+                        <a data-lq-component="button" href="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-review-docx-export data-export-url="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" data-suggested-filename="${esc(PAPER_TITLE || '复习导出')}_复习导出.docx">导出复习 Word</a>
                     </div>
                     ${SUBMISSION_FEEDBACK_MD ? `
                         <div class="result-feedback-overview">
@@ -2101,7 +2101,7 @@
         if (CAN_WITHDRAW_SUBMISSION && SUBMISSION_STATUS === 'submitted') {
             html += `
                 <div class="mb-4 text-center">
-                    <button class="btn btn-outline btn-sm" id="withdrawExamBtn">撤回并继续作答</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="withdrawExamBtn">撤回并继续作答</button>
                     <p class="text-sm text-muted mt-2">在截止前可撤回提交并修改答案，截止后只可查看。</p>
                 </div>
             `;
@@ -2153,7 +2153,7 @@
             });
 
             html += `
-                <div class="question-card" id="q-${q.id}" data-lq-material="content">
+                <div data-lq-component="surface" class="lq-surface question-card" id="q-${q.id}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(String(index + 1))}</span>
                         <div class="q-body">${formatText(q.text)}</div>
@@ -2178,7 +2178,7 @@
                                 <div class="font-medium">${esc(file.display_name || file.original_filename || '附件')}</div>
                                 <div class="text-sm text-muted">${file.file_size ? formatFileSize(file.file_size) : ''}</div>
                             </div>
-                            <a href="/submissions/download/${file.id}" class="btn btn-outline btn-sm">下载</a>
+                            <a data-lq-component="button" href="/submissions/download/${file.id}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">下载</a>
                         </div>
                     `).join('')}
                 </div>
@@ -2249,11 +2249,11 @@
             </div>
             <div class="paper-content" id="pageContent"></div>
             <div class="paper-footer" id="navContainer">
-                <button class="btn btn-outline" id="prevBtn" disabled>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="prevBtn" disabled>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                     上一页
                 </button>
-                <button class="btn btn-primary" id="nextBtn">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="nextBtn">
                     下一页
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
@@ -2321,7 +2321,7 @@
             }, 0);
             const isExpanded = pageIdx === state.currentPageIdx || state.pages.length <= 1;
             html += `
-                <section class="exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${pageIdx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
+                <section data-lq-component="surface" class="lq-surface exam-section-card ${isExpanded ? 'is-expanded' : ''}" data-pageidx="${pageIdx}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" data-lq-material="control">
                     <div class="exam-section-card__summary">
                         <div class="exam-section-card__top">
                             <div>

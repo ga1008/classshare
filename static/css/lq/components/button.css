@@ -34,10 +34,9 @@
     --lq-ctrl-glow-color: var(--ls-primary-soft);
     --lq-ctrl-edge: var(--ls-primary) / .35;
     box-shadow: var(--lq-ctrl-rim), var(--lq-ctrl-glow), var(--lq-ctrl-elev);
-    transition: transform var(--ls-dur-fast) var(--ls-ease-out),
-        box-shadow var(--ls-dur-fast) var(--ls-ease-out),
-        background-color var(--ls-dur-fast) var(--ls-ease-out),
-        border-color var(--ls-dur-fast) var(--ls-ease-out);
+    transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)),
+        box-shadow var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)),
+        border-color var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out));
 }
 /* The rim is what reads as glass, so it belongs to whatever has a resting
    fill. A ghost or a link has none, and an edge with nothing behind it reads
@@ -51,15 +50,17 @@
    the cursor reads as a button. */
 @media (hover: hover) and (pointer: fine) {
     :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
-        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) {
         --lq-ctrl-glow: 0 0 0 3px hsl(var(--lq-ctrl-glow-color));
-        border-color: hsl(var(--lq-ctrl-edge));
-        transform: translateY(-1px);
+        --lq-control-border: hsl(var(--lq-ctrl-edge)); border-color: var(--lq-control-border);
+        transform: translateY(var(--lq-motion-hover-y, -1px));
     }
 }
 :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
-    :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
-    transform: translateY(0) scale(.995);
+    :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) {
+    transform: translateY(0) scale(var(--lq-motion-press-x, .995), var(--lq-motion-press-y, .995));
+    transition-duration: var(--lq-motion-press-duration, var(--ls-dur-fast));
+    transition-timing-function: var(--lq-motion-ease, var(--ls-ease-out));
 }
 :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
     .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value):focus-visible {
@@ -74,9 +75,9 @@
     :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
         .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) { transition: none; }
     :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
-        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]),
     :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
-        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { transform: none; }
+        :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) { transform: none; }
 }
 
 /* S8 control material. Buttons take the control-level glass fill, the glass
@@ -86,6 +87,9 @@
    the explicit declaration also covers a button on a plain page and defends
    against a late module injecting its own filter. */
 .lq-btn {
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink)));
+    --lq-control-border: hsl(var(--ls-glass-line));
     --lq-btn-height: var(--ls-s-10);
     --lq-btn-icon-size: calc(var(--ls-s-4) + var(--ls-s-1) / 2);
     --lq-btn-pad: var(--ls-s-6);
@@ -162,9 +166,9 @@
    The glass language reaches it through the specular top rim and through the
    tinted control siblings around it, not through transparency. */
 .lq-btn--prominent {
-    background: hsl(var(--ls-primary));
-    color: hsl(var(--ls-on-primary));
-    border-color: hsl(var(--ls-primary));
+    --lq-control-background: hsl(var(--ls-primary)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--ls-on-primary)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-primary)); border-color: var(--lq-control-border);
     border-top-color: hsl(var(--ls-glass-rim));
     /* Elevation is the prominent button's own colour decision; it goes into
        the shared block's third shadow slot so hover still interpolates. */
@@ -178,39 +182,41 @@
    control fill; the accent survives in the tint and the border, which is
    where a translucent control can afford to carry it. */
 .lq-btn--glass {
-    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink)));
-    border-color: hsl(var(--ls-glass-line));
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-glass-line)); border-color: var(--lq-control-border);
 }
 .lq-btn--soft {
-    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink)));
-    border-color: hsl(var(--ls-primary));
+    --lq-control-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-primary)); border-color: var(--lq-control-border);
 }
 /* Ghost keeps no fill at rest -- a ghost with a resting fill is no longer the
    quiet variant, and transparent is further from opaque than any glass level.
    Its interactive surfaces below use the control fill. */
 .lq-btn--ghost {
-    background: transparent;
-    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    --lq-control-border: transparent;
+    --lq-control-background: transparent; background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2))); color: var(--lq-control-color);
 }
 .lq-btn--destructive {
-    background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-tone-danger-fg));
-    border-color: hsl(var(--ls-tone-danger-fg));
+    --lq-control-background: linear-gradient(hsl(var(--ls-tone-danger-soft)), hsl(var(--ls-tone-danger-soft))), hsl(var(--ls-glass-fill-control)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--ls-tone-danger-fg)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-tone-danger-fg)); border-color: var(--lq-control-border);
     /* Same halo, its own colour: a destructive action that glows accent-blue
        on hover contradicts the one thing its palette is there to say. */
     --lq-ctrl-glow-color: var(--ls-tone-danger-soft);
     --lq-ctrl-edge: var(--ls-tone-danger-fg) / .5;
 }
 .lq-btn--link {
-    background: transparent;
-    color: hsl(var(--ls-on-primary-soft));
+    --lq-control-border: transparent;
+    --lq-control-background: transparent; background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--ls-on-primary-soft)); color: var(--lq-control-color);
     text-underline-offset: calc(var(--ls-s-1) / 2);
 }
 /* A scene owns a paired control fill and ink; do not mix its light ink with
    the root theme's light fill. Filled actions keep their own colour pair. */
-.lq-glass :is(.lq-btn--ghost, .lq-btn--link) { color: hsl(var(--lq-control-ink, var(--ls-ink))); }
+.lq-glass :is(.lq-btn--ghost, .lq-btn--link) { --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color); }
 /* Focus ring and press live in the shared block: a button that rings 2px
    while a field rings 3px is exactly the drift this package removes. */
 /* Disabled is a named colour pair, not a fade. Halving the alpha of an
@@ -218,9 +224,9 @@
    label is what has to stay readable, so the state names its own muted ink on
    the same control fill and keeps a visible edge. */
 .lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]):not(.is-loading, [aria-busy="true"]) {
-    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
-    border-color: hsl(var(--ls-line-strong));
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2))); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-line-strong)); border-color: var(--lq-control-border);
     border-style: dashed;
     box-shadow: none;
     opacity: 1;
@@ -232,7 +238,7 @@
    an underline for the link. The lift, the halo and the timing are shared. */
 @media (hover: hover) and (pointer: fine) {
     .lq-btn--ghost:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) {
-        background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+        --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); background: var(--lq-control-background);
     }
     .lq-btn--link:hover:not([data-lq-disabled="true"], :disabled, .is-disabled, [aria-disabled="true"]) { text-decoration: underline; }
 }
@@ -242,7 +248,7 @@
 }
 /* Reduced motion is handled once, in the shared block. */
 @media (forced-colors: active) {
-    .lq-btn, .lq-glass .lq-btn { background: ButtonFace; color: ButtonText; border-color: ButtonText; box-shadow: none; }
+    .lq-btn, .lq-glass .lq-btn { --lq-control-background: ButtonFace; background: var(--lq-control-background); --lq-control-color: ButtonText; color: var(--lq-control-color); --lq-control-border: ButtonText; border-color: var(--lq-control-border); box-shadow: none; }
     .lq-btn:focus-visible { outline-color: Highlight; box-shadow: none; }
-    .lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { opacity: 1; background: ButtonFace; color: GrayText; border-color: GrayText; }
+    .lq-btn:is(:disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { opacity: 1; --lq-control-background: ButtonFace; background: var(--lq-control-background); --lq-control-color: GrayText; color: var(--lq-control-color); --lq-control-border: GrayText; border-color: var(--lq-control-border); }
 }

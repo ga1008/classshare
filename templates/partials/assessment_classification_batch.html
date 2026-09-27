@@ -1,6 +1,6 @@
 {# Include once in the teacher task area; classroom.id is the teaching offering. #}
 <details class="assessment-classification-batch" data-assessment-classification-batch data-class-offering-id="{{ classroom.id }}">
-    <summary>核对历史任务分类</summary>
+    <summary data-lq-component="disclosure" class="lq-disclosure-trigger">核对历史任务分类</summary>
     <div class="assessment-classification-batch__body">
         <p>逐项核对教学用途后选择分类，再保存本页勾选的任务。名称建议仅供参考，已有答案、分数和历史成绩材料保留。</p>
         <p data-classification-batch-status role="status" aria-live="polite">展开后读取当前课堂任务。</p>
@@ -11,10 +11,10 @@
             </table>
         </div>
         <div class="assessment-classification-batch__actions">
-            <button type="button" class="btn btn-outline btn-sm" data-classification-batch-previous disabled>上一页</button>
-            <button type="button" class="btn btn-outline btn-sm" data-classification-batch-next disabled>下一页</button>
-            <button type="button" class="btn btn-outline btn-sm" data-classification-batch-clear disabled>清除勾选</button>
-            <button type="button" class="btn btn-primary btn-sm" data-classification-batch-save disabled>保存已核对分类</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-classification-batch-previous disabled>上一页</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-classification-batch-next disabled>下一页</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-classification-batch-clear disabled>清除勾选</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-classification-batch-save disabled>保存已核对分类</button>
         </div>
     </div>
 </details>

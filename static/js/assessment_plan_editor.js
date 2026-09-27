@@ -87,9 +87,9 @@ function renderFields() {
         let control;
         if (def.type === 'select') {
             const opts = def.options.map((o) => `<option value="${escapeHtml(o)}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('');
-            control = `<select data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
+            control = `<select data-lq-component="select" class="lq-select" data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
         } else {
-            control = `<input data-field="${def.key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.placeholder || '')}">`;
+            control = `<input data-lq-component="input" class="lq-input" data-field="${def.key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.placeholder || '')}">`;
         }
         return `<label class="ap-field${def.full ? ' ap-field--full' : ''}"><span>${escapeHtml(def.label)}</span>${control}</label>`;
     }).join('');
@@ -99,10 +99,10 @@ function renderItems() {
     const wrap = document.getElementById('ap-items');
     const rows = state.items.map((item, index) => `
         <div class="ap-item-row" data-row="${index}">
-            <input class="ap-item-form" data-item-field="assessment_form" data-row="${index}" value="${escapeHtml(item.assessment_form || '')}" placeholder="考核形式">
-            <textarea class="ap-item-content" data-item-field="content" data-row="${index}" rows="2" placeholder="考核技能/内容">${escapeHtml(item.content || '')}</textarea>
-            <input class="ap-item-score" data-item-field="score" data-row="${index}" value="${escapeHtml(item.score || '')}" inputmode="decimal" placeholder="分值">
-            <button type="button" class="lp-link lp-link--danger" data-remove-item="${index}">删除</button>
+            <input data-lq-component="input" class="lq-input ap-item-form" data-item-field="assessment_form" data-row="${index}" value="${escapeHtml(item.assessment_form || '')}" placeholder="考核形式">
+            <textarea data-lq-component="textarea" class="lq-textarea ap-item-content" data-item-field="content" data-row="${index}" rows="2" placeholder="考核技能/内容">${escapeHtml(item.content || '')}</textarea>
+            <input data-lq-component="input" class="lq-input ap-item-score" data-item-field="score" data-row="${index}" value="${escapeHtml(item.score || '')}" inputmode="decimal" placeholder="分值">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link lp-link--danger" data-remove-item="${index}">删除</button>
         </div>`).join('');
     wrap.innerHTML = `
         <div class="ap-item-row ap-item-row--head">
@@ -253,8 +253,8 @@ function signatureRow(role, label, boundItems) {
             <div class="ap-sign-picker">
                 <div data-ap-signature-point="${role}"></div>
                 <div class="ap-sign-upload">
-                    <input type="file" accept="image/png,image/jpeg" data-signature-file="${role}">
-                    <button type="button" class="lp-link" data-upload-signature="${role}">上传并绑定</button>
+                    <input data-lq-component="file" class="lq-native-file" type="file" accept="image/png,image/jpeg" data-signature-file="${role}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link" data-upload-signature="${role}">上传并绑定</button>
                 </div>
                 ${notice ? `<div class="ap-sign-notice">${escapeHtml(notice)}</div>` : ''}
             </div>

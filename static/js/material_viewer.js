@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { adoptDomainControl, adoptDomainContentSlot } from './lq/domain-controls.js';
 import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
 import { openImageLightbox as openSharedImageLightbox } from './ls_image_lightbox.js';
@@ -108,7 +109,7 @@ function buildMasteryInlineHtml() {
                 <h2>读完后再确认一次掌握度</h2>
                 <p>已研读先获得本材料 70% 修为；答对 ${escapeHtml(check.pass_count)} 题后计入 100%。检验可跳过、可重试，不扣分。</p>
             </div>
-            <button type="button" class="btn btn-primary" data-open-mastery-check>开始检验</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-open-mastery-check>开始检验</button>
         </div>
     `;
 }
@@ -138,23 +139,24 @@ function ensureMasteryModal() {
         return masteryCheckState.modalEl;
     }
     const modal = document.createElement('div');
-    modal.className = 'material-mastery-modal';
+    modal.className = 'lq-domain-region material-mastery-modal';
+    modal.dataset.lqComponent = 'layer';
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     modal.innerHTML = `
-        <div class="material-mastery-dialog" role="dialog" aria-modal="true" aria-labelledby="material-mastery-title" tabindex="-1">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised material-mastery-dialog" role="dialog" aria-modal="true" aria-labelledby="material-mastery-title" tabindex="-1">
             <div class="material-mastery-dialog__header">
                 <div>
                     <span class="material-mastery-check__kicker">心法检验</span>
                     <h2 id="material-mastery-title">确认你已经掌握</h2>
                     <p id="material-mastery-hint">答对 ${escapeHtml(masteryCheckState.check.pass_count)} 题即可，本检验不计成绩、不扣分。</p>
                 </div>
-                <button type="button" class="material-mastery-dialog__close" data-close-mastery-check aria-label="关闭心法检验">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass material-mastery-dialog__close" data-close-mastery-check aria-label="关闭心法检验">×</button>
             </div>
             <form class="material-mastery-form" data-mastery-form></form>
             <div class="material-mastery-dialog__actions">
-                <button type="button" class="btn btn-ghost" data-skip-mastery-check>稍后再做</button>
-                <button type="submit" class="btn btn-primary" form="material-mastery-form" data-submit-mastery-check>提交检验</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-skip-mastery-check>稍后再做</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" form="material-mastery-form" data-submit-mastery-check>提交检验</button>
             </div>
         </div>
     `;
@@ -205,14 +207,14 @@ function renderMasteryModalQuestions() {
                 : (result && option.id === result.selected && !result.correct ? ' is-wrong' : '');
             return `
                 <label class="material-mastery-option${optionResultClass}">
-                    <input type="radio" name="${escapeHtml(question.id)}" id="${inputId}" value="${escapeHtml(option.id)}"${checked}>
+                    <input data-lq-component="radio" class="lq-radio" type="radio" name="${escapeHtml(question.id)}" id="${inputId}" value="${escapeHtml(option.id)}"${checked}>
                     <span class="material-mastery-option__key">${escapeHtml(option.id)}</span>
                     <span>${escapeHtml(option.text)}</span>
                 </label>
             `;
         }).join('');
         return `
-            <fieldset class="material-mastery-question">
+            <fieldset data-lq-component="field" class="lq-form-section material-mastery-question">
                 <legend>${index + 1}. ${escapeHtml(question.prompt)}</legend>
                 <div class="material-mastery-options">${options}</div>
                 ${explanation}
@@ -389,7 +391,7 @@ function escapeHtml(value) {
 function buildBlockedDownloadButton() {
     const title = escapeHtml(material.download_blocked_reason || '当前材料已限制下载');
     return `
-        <button type="button" class="btn btn-danger resource-download-blocked-btn" data-download-blocked="true" title="${title}" aria-label="${title}">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive resource-download-blocked-btn" data-download-blocked="true" title="${title}" aria-label="${title}">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="9"></circle>
                 <path d="M5 5l14 14"></path>
@@ -628,6 +630,7 @@ async function copyTextToClipboard(text) {
     }
 
     const helper = document.createElement('textarea');
+    adoptDomainContentSlot(helper);
     helper.value = text;
     helper.setAttribute('readonly', 'true');
     helper.style.position = 'fixed';
@@ -658,6 +661,7 @@ function decorateCodeBlocks() {
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
         copyButton.className = 'materials-code-copy-btn';
+        adoptDomainControl(copyButton, { variant: 'ghost' });
         copyButton.textContent = '\u590d\u5236';
         copyButton.setAttribute('aria-label', '\u590d\u5236\u4ee3\u7801');
 

@@ -1,3 +1,4 @@
+import { adoptDomainControl } from '../lq/domain-controls.js';
 /**
  * 考试答题附图画板（位图）。自 teacher_whiteboard.js 原样迁移，行为不变。
  * 复用 teacher-whiteboard-* 类名；exam_take.html 有覆盖样式，勿改类名。
@@ -65,7 +66,7 @@ class ExamDrawingWhiteboard {
                     <canvas id="${this.rootId}-canvas"></canvas>
                 </div>
             </div>
-            <div class="teacher-whiteboard-toolbar exam-drawing-toolbar" role="toolbar" aria-label="答题绘图板工具">
+            <div data-lq-component="toolbar" data-lq-material="raised" class="lq-domain-toolbar lq-domain-raised teacher-whiteboard-toolbar exam-drawing-toolbar" role="toolbar" aria-label="答题绘图板工具">
                 <div class="teacher-whiteboard-group is-board exam-drawing-title">
                     <strong id="${this.rootId}-title">题目附图</strong>
                     <span id="${this.rootId}-subtitle"></span>
@@ -88,6 +89,15 @@ class ExamDrawingWhiteboard {
                     <button type="button" class="btn btn-primary btn-sm" data-exam-drawing-action="save">保存附图</button>
                 </div>
             </div>`;
+        // Explicit creation boundary; listeners and drawing state stay owned here.
+        for (const button of root.querySelectorAll('button')) {
+            adoptDomainControl(button, { variant: button.dataset.examDrawingAction === 'save' ? 'prominent' : 'glass' });
+            if (button.querySelector('svg')) button.classList.add('lq-btn--icon');
+        }
+        for (const input of root.querySelectorAll('input')) {
+            adoptDomainControl(input);
+            if (input.type === 'color') input.dataset.lqVisual = 'color';
+        }
         document.body.append(root);
     }
 

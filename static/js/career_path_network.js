@@ -332,10 +332,10 @@
         var grpStyle = '--tw-dur:' + dur + 's; --tw-delay:' + delay + 's; --tw-max:' + haloOp.toFixed(3)
           + '; --tw-min:' + twMin + '; --chase-hi:' + chaseHi + '; --chase-col:' + col;
         var info = self._stageInfo(n, i);
-        g += '<g class="cn-node" role="button" tabindex="0" aria-label="' + esc(n.name + ' · ' + (st[0] || '') + ' · ' + (st[1] || '') + (info.time_label ? ' · ' + info.time_label : '')) + '" style="' + grpStyle + '" data-id="' + esc(n.tag) + '-' + i + '" data-tag="' + esc(n.tag) + '">'
+        g += '<g data-lq-component="choice" data-lq-owner="domain/career-network" data-lq-shape="surface" class="lq-domain-graph-choice cn-node" role="button" tabindex="0" aria-label="' + esc(n.name + ' · ' + (st[0] || '') + ' · ' + (st[1] || '') + (info.time_label ? ' · ' + info.time_label : '')) + '" style="' + grpStyle + '" data-id="' + esc(n.tag) + '-' + i + '" data-tag="' + esc(n.tag) + '">'
           + '<circle class="cn-halo cn-twinkle" cx="' + x + '" cy="' + yy + '" r="' + haloR + '" fill="url(#' + glowId(col) + ')" opacity="' + haloOp + '" filter="url(#cnBlur)"/>'
           + (hot ? '<circle class="cn-ring" cx="' + x + '" cy="' + yy + '" r="' + (coreR + 5) + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.1"/>' : '')
-          + '<circle class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
+          + '<circle data-lq-graph-hit class="cn-core" cx="' + x + '" cy="' + yy + '" r="' + coreR + '" fill="' + col + '" fill-opacity="' + (rec >= 3 ? 1 : 0.7) + '" '
           + 'stroke="#fff" stroke-opacity="' + (bright >= 0.8 ? 0.9 : 0.5) + '" stroke-width="1.3" data-tag="' + esc(n.tag) + '" data-i="' + i + '"/>'
           // Reserve the core's 1.5x hover radius plus a text-bearing margin.
           // Fitting tall catalogues enlarges role type relative to the SVG, so
@@ -604,9 +604,9 @@
     if (old) old.remove();
     var bar = document.createElement('div');
     bar.className = 'career-zoom';
-    bar.innerHTML = '<button type="button" data-act="in" aria-label="放大">＋</button>'
-      + '<button type="button" data-act="out" aria-label="缩小">－</button>'
-      + '<button type="button" data-act="fit" aria-label="全景复位">⤢</button>';
+    bar.innerHTML = '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-act="in" aria-label="放大">＋</button>'
+      + '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-act="out" aria-label="缩小">－</button>'
+      + '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-act="fit" aria-label="全景复位">⤢</button>';
     bar.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     bar.addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;

@@ -35,17 +35,17 @@
         data-island-id="message-center-workspace-main"
     ></div>
 
-    <section class="message-center-toolbar">
-        <div class="message-center-tabs" id="message-center-tabs"></div>
+    <section data-lq-component="toolbar" class="lq-domain-toolbar message-center-toolbar">
+        <div data-lq-component="tab" class="lq-tabs message-center-tabs" id="message-center-tabs"></div>
         <div class="message-center-controls">
-            <input
+            <input data-lq-component="input"
                 id="message-center-search"
-                class="message-center-search"
+                class="lq-input message-center-search"
                 type="search"
                 placeholder="搜索联系人、消息标题、内容关键词"
             >
-            <select id="message-center-filter" class="message-center-filter"></select>
-            <button type="button" id="message-center-mark-read" class="btn btn-outline">
+            <select data-lq-component="select" id="message-center-filter" class="lq-select message-center-filter"></select>
+            <button data-lq-component="button" type="button" id="message-center-mark-read" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">
                 标记当前已读
             </button>
         </div>
@@ -54,7 +54,7 @@
     <section class="message-center-body">
         <div id="message-center-feed" class="message-center-feed" data-lq-material="content"></div>
 
-        <div id="message-center-private-panel" class="message-center-private-panel" hidden data-lq-material="content">
+        <div data-lq-component="surface" id="message-center-private-panel" class="lq-surface message-center-private-panel" hidden data-lq-material="content">
             <aside class="message-center-sidebar">
                 <div class="message-center-pane-header">
                     <h2 class="message-center-pane-title">私信会话</h2>
@@ -62,14 +62,14 @@
                 </div>
                 <div class="message-center-contact-picker">
                     <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
-                    <input
+                    <input data-lq-component="input"
                         id="message-center-contact-search"
-                        class="message-center-search message-center-search--compact"
+                        class="lq-input message-center-search message-center-search--compact"
                         type="search"
                         placeholder="输入姓名、课程、班级关键词"
                     >
                     <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
-                    <select id="message-center-contact-select" class="message-center-contact-select"></select>
+                    <select data-lq-component="select" id="message-center-contact-select" class="lq-select message-center-contact-select"></select>
                     <div id="message-center-contact-current" class="message-center-contact-current"></div>
                 </div>
                 <div class="message-center-blocks">
@@ -88,57 +88,57 @@
                     <form id="message-center-compose-form" class="message-center-composer__form">
                         <div class="message-center-composer__editor">
                             <div class="message-center-composer__main">
-                                <div id="message-center-editor-toolbar" class="message-center-editor-toolbar">
-                                    <button type="button" data-md-insert="heading" title="标题">H</button>
-                                    <button type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
-                                    <button type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
-                                    <button type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
-                                    <button type="button" data-md-insert="codeblock" title="代码块">{ }</button>
-                                    <button type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
-                                    <button type="button" data-md-insert="ol" title="有序列表">1.</button>
-                                    <button type="button" data-md-insert="quote" title="引用">&ldquo;</button>
-                                    <button type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                <div data-lq-component="toolbar" id="message-center-editor-toolbar" class="lq-domain-toolbar message-center-editor-toolbar">
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="heading" title="标题">H</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="codeblock" title="代码块">{ }</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="ol" title="有序列表">1.</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="quote" title="引用">&ldquo;</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="link" title="链接">&#128279;</button>
                                 </div>
-                                <textarea
+                                <textarea data-lq-component="textarea"
                                     id="message-center-compose-input"
-                                    class="message-center-composer__input"
+                                    class="lq-textarea message-center-composer__input"
                                     placeholder="输入私信内容（支持 Markdown 语法）"
                                 ></textarea>
                                 <div id="message-center-attachment-preview" class="message-center-attachment-preview" hidden></div>
                             </div>
                             <div class="message-center-composer__actions">
                                 <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
-                                    <button
+                                    <button data-lq-component="button"
                                         type="button"
                                         id="message-center-emoji-trigger"
-                                        class="message-center-composer__action-button message-center-emoji-trigger"
+                                        class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button message-center-emoji-trigger"
                                         title="表情"
                                     >
                                         <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
                                         <span>表情</span>
                                     </button>
                                 </div>
-                                <button
+                                <button data-lq-component="button"
                                     type="button"
                                     id="message-center-image-trigger"
-                                    class="message-center-composer__action-button"
+                                    class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button"
                                     title="添加图片"
                                 >
                                     <span class="message-center-composer__action-icon" aria-hidden="true">&#128247;</span>
                                     <span>图片</span>
                                 </button>
-                                <button
+                                <button data-lq-component="button"
                                     type="button"
                                     id="message-center-file-trigger"
-                                    class="message-center-composer__action-button"
+                                    class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button"
                                     title="添加文件"
                                 >
                                     <span class="message-center-composer__action-icon" aria-hidden="true">&#128206;</span>
                                     <span>文件</span>
                                 </button>
-                                <button
+                                <button data-lq-component="button"
                                     type="submit"
-                                    class="btn btn-primary message-center-compose-submit"
+                                    class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent message-center-compose-submit"
                                     data-send-button
                                 >
                                     <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
@@ -146,8 +146,8 @@
                                 </button>
                             </div>
                         </div>
-                        <input id="message-center-image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" multiple hidden>
-                        <input id="message-center-file-input" type="file" multiple hidden>
+                        <input data-lq-component="file" class="lq-native-file" id="message-center-image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" multiple hidden>
+                        <input data-lq-component="file" class="lq-native-file" id="message-center-file-input" type="file" multiple hidden>
                     </form>
                 </div>
             </section>

@@ -1,3 +1,4 @@
+import {adoptDomainControl} from '../lq/domain-controls.js';
 import {clone,equal,locate} from './model.js';
 import {jsonRequest} from './api.js';
 import {openLessonDocPrompt} from '../lessondoc_prompt.js';
@@ -16,7 +17,7 @@ export function openAiPanel(store,api,mode,onError) {
         submit:hint=>jsonRequest(api.base+'/ai-proposal'+api.query,'POST',{document:before,revision,slide_id:slide?.id||'',element_id:element?.id||'',user_hint:hint}),
         onSuccess:result=>{let previewBridge,closed=false;return dialog('检查 AI 改进结果',({body,foot,close})=>{
             const message=el('p','lde-muted',result.stale?'生成期间服务器正文已变化。候选结果可下载，处理版本冲突后再重新生成。':'检查候选内容后应用；正式保存会再次校验版本。');body.append(message);
-            const oldText=el('textarea','lde-code'),newText=el('textarea','lde-code');oldText.readOnly=newText.readOnly=true;
+            const oldText=adoptDomainControl(el('textarea','lde-code')),newText=adoptDomainControl(el('textarea','lde-code'));oldText.readOnly=newText.readOnly=true;
             oldText.setAttribute('aria-label','原内容');newText.setAttribute('aria-label','AI 候选内容');
             const changed=element?locate(result.document,element.id)?.block:result.document.slides.find(s=>s.id===slide.id);
             oldText.value=JSON.stringify(element||slide,null,2);newText.value=JSON.stringify(changed,null,2);

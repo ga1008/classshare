@@ -3,7 +3,7 @@ import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
-import { LqButton } from '@/components/lq-presentation';
+import { LqButton, LqCardFrame } from '@/components/lq-presentation';
 import {
   buildMessageCenterWorkspaceMessage,
   canUsePrivateWorkspace,
@@ -67,7 +67,7 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
     </section>
   );
 
-  const handlePrivateClick = (event: MouseEvent<HTMLAnchorElement>) => {
+  const handlePrivateClick = (event: MouseEvent<HTMLElement>) => {
     if (!privateDirect) {
       return;
     }
@@ -75,7 +75,7 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
     sendWorkspaceCommand('set-tab', { tab: 'private_message' });
   };
 
-  const handleNotificationsClick = (event: MouseEvent<HTMLAnchorElement>) => {
+  const handleNotificationsClick = (event: MouseEvent<HTMLElement>) => {
     if (snapshot.mode !== 'private') {
       event.preventDefault();
       sendWorkspaceCommand('set-tab', { tab: 'all' });
@@ -83,7 +83,7 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
   };
 
   return (
-    <section className="message-center-workspace-sync" data-message-center-workspace-sync>
+    <LqCardFrame as="section" title={snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel} className="message-center-workspace-sync" attrs={{ 'data-message-center-workspace-sync': '' }}>
       <div className="message-center-workspace-sync__summary">
         <span className="message-center-workspace-sync__eyebrow">
           <Bell size={14} aria-hidden="true" />
@@ -128,30 +128,30 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
       ) : null}
 
       <div className="message-center-workspace-sync__actions" aria-label="消息中心快捷操作">
-        <button type="button" onClick={() => sendWorkspaceCommand('refresh')}>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendWorkspaceCommand('refresh')}>
           <RefreshCw size={15} aria-hidden="true" />
           刷新
-        </button>
-        <a href={notificationsHref} onClick={handleNotificationsClick}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" href={notificationsHref} onClick={handleNotificationsClick}>
           <Bell size={15} aria-hidden="true" />
           通知
-        </a>
-        <a href={privateHref} onClick={handlePrivateClick}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" href={privateHref} onClick={handlePrivateClick}>
           <MessageCircle size={15} aria-hidden="true" />
           私信
-        </a>
+        </LqButton>
         {snapshot.privateOpen ? (
-          <button
+          <LqButton size="sm" variant="glass"
             type="button"
             onClick={() => sendWorkspaceCommand('focus-composer')}
             disabled={!snapshot.hasConversation || !snapshot.canSend}
           >
             <Send size={15} aria-hidden="true" />
             输入
-          </button>
+          </LqButton>
         ) : null}
       </div>
-    </section>
+    </LqCardFrame>
   );
 }
 

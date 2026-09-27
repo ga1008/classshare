@@ -1,3 +1,4 @@
+import { adoptDomainContentSlot } from '../lq/domain-controls.js';
 /**
  * 文本工具 mixin：舞台内 textarea 编辑器的打开/提交/关闭。挂到 TeacherWhiteboard.prototype。
  */
@@ -9,6 +10,7 @@ export const textEditorMixin = {
         const screenPoint = this.worldToScreen(worldPoint);
         const editor = document.createElement('textarea');
         editor.className = 'teacher-whiteboard-text-editor';
+        adoptDomainContentSlot(editor);
         editor.rows = 2;
         editor.placeholder = '输入文字';
         editor.style.left = `${clamp(screenPoint.x, 8, Math.max(8, this.canvasWidth - 220))}px`;

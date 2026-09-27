@@ -85,12 +85,12 @@ function renderSections(items) {
         const accent = /^#[0-9a-f]{6}$/i.test(String(section.accent_color || '')) ? section.accent_color : '#2563eb';
         const note = section.is_career ? '就业信息优先采集' : '按板块关键词轮换采集';
         return `
-            <article class="bc-section-card" style="--section-accent:${accent}">
+            <article data-lq-component="surface" class="lq-surface bc-section-card" style="--section-accent:${accent}">
                 <strong>${escapeHtml(section.icon || '•')} ${escapeHtml(section.name || '')}</strong>
                 <p>${escapeHtml(section.description || '')}</p>
                 <div class="bc-section-card__actions">
                     <span class="bc-muted">${section.is_enabled === false ? '已停用 · ' : ''}${escapeHtml(note)}</span>
-                    ${canManage ? `<button type="button" class="btn btn-ghost btn-sm" data-bc-edit-section="${escapeHtml(section.section_key || '')}">编辑</button>` : ''}
+                    ${canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-bc-edit-section="${escapeHtml(section.section_key || '')}">编辑</button>` : ''}
                 </div>
             </article>
         `;
@@ -111,14 +111,14 @@ function renderReports(items) {
         return;
     }
     elements.reportList.innerHTML = items.map((item) => `
-        <article class="bc-post">
+        <article data-lq-component="surface" class="lq-surface bc-post">
             <strong>${escapeHtml(item.target_title || `${item.target_type} #${item.target_id}`)}</strong>
             <div class="bc-muted">${escapeHtml(item.reason_code || '')} · ${escapeHtml(item.reporter_identity || '')} · ${escapeHtml(item.created_at || '')}</div>
             ${item.details ? `<p>${escapeHtml(item.details)}</p>` : ''}
             <div class="flex gap-2">
-                ${item.target_url ? `<a class="btn btn-ghost btn-sm" href="${escapeHtml(item.target_url)}" target="_blank" rel="noopener noreferrer">打开内容核验</a>` : ''}
-                <button type="button" class="btn btn-primary btn-sm" data-bc-resolve-report="${item.id}" data-status="resolved">标记已核验</button>
-                <button type="button" class="btn btn-ghost btn-sm" data-bc-resolve-report="${item.id}" data-status="dismissed">驳回</button>
+                ${item.target_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" href="${escapeHtml(item.target_url)}" target="_blank" rel="noopener noreferrer">打开内容核验</a>` : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-bc-resolve-report="${item.id}" data-status="resolved">标记已核验</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-bc-resolve-report="${item.id}" data-status="dismissed">驳回</button>
             </div>
         </article>
     `).join('');
@@ -242,7 +242,7 @@ function renderPosts(items) {
         return;
     }
     elements.postList.innerHTML = items.map((post) => `
-        <article class="bc-post">
+        <article data-lq-component="surface" class="lq-surface bc-post">
             <strong>${escapeHtml(post.post_title || '')}</strong>
             <div class="bc-muted">${escapeHtml(post.section_key || 'general')} · ${escapeHtml(post.keyword || '')} · ${escapeHtml(post.post_created_at || '')}</div>
             <a href="/blog?post=${encodeURIComponent(post.post_id || '')}" target="_blank" rel="noopener noreferrer">打开博客</a>

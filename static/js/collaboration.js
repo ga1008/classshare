@@ -40,7 +40,7 @@ function scoreSelect(name, label) {
     return `
         <label class="collaboration-form-field">
             <span>${label}</span>
-            <select name="${name}" required>
+            <select data-lq-component="select" class="lq-select" name="${name}" required>
                 ${SCORE_OPTIONS.map((score) => `<option value="${score}">${score} 分</option>`).join('')}
             </select>
         </label>
@@ -93,7 +93,7 @@ function renderGroupCard(group, selectedGroup) {
     const title = group.assignment_title || '自主学习小组';
     return `
         <article class="collaboration-group-card${isSelected ? ' is-selected' : ''}" data-collab-group-card="${group.id}">
-            <button type="button" data-lq-shape="surface" class="collaboration-group-card__body" data-collab-select-group="${group.id}">
+            <button data-lq-component="button" type="button" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass collaboration-group-card__body" data-collab-select-group="${group.id}">
                 <span class="collaboration-group-card__status">${escapeHtml(statusLabel(group))}</span>
                 <strong>${escapeHtml(group.name)}</strong>
                 <small>${escapeHtml(title)}</small>
@@ -101,8 +101,8 @@ function renderGroupCard(group, selectedGroup) {
                 <span class="collaboration-group-card__meta">${group.member_count}/${group.max_members} 人 · 文件 ${group.file_count} · 成果 ${group.submission_count}</span>
             </button>
             <div class="collaboration-group-card__actions">
-                ${group.can_join ? `<button type="button" class="btn btn-primary btn-sm" data-collab-join="${group.id}">加入</button>` : ''}
-                ${group.can_leave ? `<button type="button" class="btn btn-outline btn-sm" data-collab-leave="${group.id}">退出</button>` : ''}
+                ${group.can_join ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-join="${group.id}">加入</button>` : ''}
+                ${group.can_leave ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-collab-leave="${group.id}">退出</button>` : ''}
             </div>
         </article>
     `;
@@ -150,7 +150,7 @@ function renderMembers(snapshot, group) {
         if (!canRemove) return '';
         // A student owner cannot remove themselves (they are the group leader).
         if (currentRole !== 'teacher' && member.is_leader) return '';
-        return `<button type="button" class="collaboration-member-remove" data-collab-remove-member="${group.id}" data-student-id="${member.student_id}" aria-label="移出${escapeHtml(member.name)}">移出</button>`;
+        return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-member-remove" data-collab-remove-member="${group.id}" data-student-id="${member.student_id}" aria-label="移出${escapeHtml(member.name)}">移出</button>`;
     };
     const members = (group.members || []).map((member) => `
         <span class="collaboration-member-pill${member.member_role === 'leader' ? ' is-leader' : ''}">
@@ -161,7 +161,7 @@ function renderMembers(snapshot, group) {
     `).join('');
 
     return `
-        <section class="collaboration-detail-card">
+        <section data-lq-component="surface" class="lq-surface collaboration-detail-card">
             <div class="collaboration-detail-card__head">
                 <div>
                     <strong>成员与分工</strong>
@@ -173,11 +173,11 @@ function renderMembers(snapshot, group) {
             </div>
             ${snapshot.role === 'teacher' && group.can_manage ? `
                 <form class="collaboration-inline-form" data-collab-add-member="${group.id}">
-                    <select name="student_id" required>
+                    <select data-lq-component="select" class="lq-select" name="student_id" required>
                         <option value="">选择学生加入小组</option>
                         ${studentOptions(snapshot)}
                     </select>
-                    <button type="submit" class="btn btn-outline btn-sm">加入</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加入</button>
                 </form>
             ` : ''}
         </section>
@@ -187,7 +187,7 @@ function renderMembers(snapshot, group) {
 function renderFiles(group) {
     const files = group.files || [];
     return `
-        <section class="collaboration-detail-card">
+        <section data-lq-component="surface" class="lq-surface collaboration-detail-card">
             <div class="collaboration-detail-card__head">
                 <div>
                     <strong>组内文件</strong>
@@ -208,12 +208,12 @@ function renderFiles(group) {
             ${group.can_upload ? `
                 <form class="collaboration-upload-form" data-collab-upload="${group.id}">
                     <label class="collaboration-file-drop">
-                        <input type="file" name="file" required>
+                        <input data-lq-component="file" class="lq-native-file" type="file" name="file" required>
                         <span>选择文件</span>
                         <small>实验截图、报告草稿、项目代码压缩包等，单个不超过 100MB。</small>
                     </label>
-                    <input type="text" name="description" placeholder="文件说明，可选">
-                    <button type="submit" class="btn btn-primary btn-sm">上传</button>
+                    <input data-lq-component="input" class="lq-input" type="text" name="description" placeholder="文件说明，可选">
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">上传</button>
                 </form>
             ` : ''}
         </section>
@@ -224,7 +224,7 @@ function renderSubmissions(snapshot, group) {
     const submissions = group.submissions || [];
     const latest = submissions[0] || {};
     return `
-        <section class="collaboration-detail-card">
+        <section data-lq-component="surface" class="lq-surface collaboration-detail-card">
             <div class="collaboration-detail-card__head">
                 <div>
                     <strong>组长提交</strong>
@@ -246,18 +246,18 @@ function renderSubmissions(snapshot, group) {
             ` : '<p class="collaboration-muted">组长可以在这里整理最终说明和归档文件。</p>'}
             ${group.can_submit ? `
                 <form class="collaboration-submission-form" data-collab-submit-work="${group.id}">
-                    <input type="text" name="title" value="${escapeHtml(latest.title || group.name)}" placeholder="成果标题" required>
-                    <select name="assignment_id">
+                    <input data-lq-component="input" class="lq-input" type="text" name="title" value="${escapeHtml(latest.title || group.name)}" placeholder="成果标题" required>
+                    <select data-lq-component="select" class="lq-select" name="assignment_id">
                         ${assignmentOptions(snapshot, latest.assignment_id || group.assignment_id)}
                     </select>
-                    <select name="final_file_id">
+                    <select data-lq-component="select" class="lq-select" name="final_file_id">
                         <option value="">不指定最终文件</option>
                         ${(group.files || []).map((file) => `<option value="${file.id}"${String(file.id) === String(latest.final_file_id || '') ? ' selected' : ''}>${escapeHtml(file.name)}</option>`).join('')}
                     </select>
-                    <textarea name="summary_md" rows="4" placeholder="写清楚本组完成了什么、谁负责了什么、还有什么待改进">${escapeHtml(latest.summary_md || '')}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" name="summary_md" rows="4" placeholder="写清楚本组完成了什么、谁负责了什么、还有什么待改进">${escapeHtml(latest.summary_md || '')}</textarea>
                     <div class="collaboration-submission-actions">
-                        <button type="submit" class="btn btn-primary btn-sm">保存成果</button>
-                        ${latest.id ? `<button type="button" class="btn btn-outline btn-sm" data-collab-blog-draft="${group.id}" data-submission-id="${latest.id}">${latest.blog_url ? '更新博客草稿入口' : '生成博客草稿'}</button>` : ''}
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">保存成果</button>
+                        ${latest.id ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-collab-blog-draft="${group.id}" data-submission-id="${latest.id}">${latest.blog_url ? '更新博客草稿入口' : '生成博客草稿'}</button>` : ''}
                     </div>
                 </form>
             ` : ''}
@@ -268,7 +268,7 @@ function renderSubmissions(snapshot, group) {
 function renderPeerReviews(snapshot, group) {
     if (snapshot.role === 'teacher') {
         return `
-            <section class="collaboration-detail-card">
+            <section data-lq-component="surface" class="lq-surface collaboration-detail-card">
                 <div class="collaboration-detail-card__head">
                     <div>
                         <strong>互评概览</strong>
@@ -300,7 +300,7 @@ function renderPeerReviews(snapshot, group) {
     const currentUserId = Number(window.APP_CONFIG?.userInfo?.id || 0);
     const reviewTargets = (group.members || []).filter((member) => Number(member.student_id) !== currentUserId);
     return `
-        <section class="collaboration-detail-card">
+        <section data-lq-component="surface" class="lq-surface collaboration-detail-card">
             <div class="collaboration-detail-card__head">
                 <div>
                     <strong>同伴互评</strong>
@@ -320,7 +320,7 @@ function renderPeerReviews(snapshot, group) {
                 <form class="collaboration-review-form" data-collab-peer-review="${group.id}">
                     <label class="collaboration-form-field">
                         <span>评价对象</span>
-                        <select name="reviewee_student_id" required>
+                        <select data-lq-component="select" class="lq-select" name="reviewee_student_id" required>
                             <option value="">选择组员</option>
                             ${reviewTargets.map((member) => `<option value="${member.student_id}">${escapeHtml(member.name)}</option>`).join('')}
                         </select>
@@ -330,12 +330,12 @@ function renderPeerReviews(snapshot, group) {
                         ${scoreSelect('collaboration_score', '协作沟通')}
                         ${scoreSelect('quality_score', '贡献质量')}
                     </div>
-                    <textarea name="comment" rows="3" placeholder="写一句具体反馈：对方做得好的地方、可以继续改进的地方"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" name="comment" rows="3" placeholder="写一句具体反馈：对方做得好的地方、可以继续改进的地方"></textarea>
                     <label class="collaboration-checkbox">
-                        <input type="checkbox" name="share_with_reviewee" value="1">
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="share_with_reviewee" value="1">
                         <span>允许对方看到这条文字反馈</span>
                     </label>
-                    <button type="submit" class="btn btn-primary btn-sm">提交互评</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">提交互评</button>
                 </form>
             ` : ''}
         </section>
@@ -346,27 +346,27 @@ function renderCreateForm(snapshot, open) {
     if (!open) return '';
     const isTeacher = snapshot.role === 'teacher';
     return `
-        <section class="collaboration-create-panel">
+        <section data-lq-component="surface" class="lq-surface collaboration-create-panel">
             <div class="collaboration-detail-card__head">
                 <div>
                     <strong>${isTeacher ? '创建课堂小组' : '发起学习小组'}</strong>
                     <span>${isTeacher ? '可直接分配成员与组长' : '先创建开放小组，再邀请同学加入'}</span>
                 </div>
-                <button type="button" class="collaboration-close-btn" data-collab-create-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-create-close aria-label="关闭">×</button>
             </div>
             <form class="collaboration-create-form" data-collab-create-form>
-                <input name="name" type="text" placeholder="小组名称，例如：网络实验 A 组" required maxlength="60">
-                <select name="assignment_id">${assignmentOptions(snapshot)}</select>
-                <textarea name="description" rows="3" placeholder="小组目标、分工建议或约定"></textarea>
+                <input data-lq-component="input" class="lq-input" name="name" type="text" placeholder="小组名称，例如：网络实验 A 组" required maxlength="60">
+                <select data-lq-component="select" class="lq-select" name="assignment_id">${assignmentOptions(snapshot)}</select>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="3" placeholder="小组目标、分工建议或约定"></textarea>
                 <div class="collaboration-form-row">
                     <label class="collaboration-form-field">
                         <span>人数上限</span>
-                        <input name="max_members" type="number" min="2" max="${snapshot.limits?.max_group_members || 12}" value="6">
+                        <input data-lq-component="input" class="lq-input" name="max_members" type="number" min="2" max="${snapshot.limits?.max_group_members || 12}" value="6">
                     </label>
                     ${isTeacher ? `
                         <label class="collaboration-form-field">
                             <span>加入方式</span>
-                            <select name="join_policy">
+                            <select data-lq-component="select" class="lq-select" name="join_policy">
                                 <option value="teacher_assigned">教师分配</option>
                                 <option value="open">开放加入</option>
                                 <option value="locked">锁定</option>
@@ -377,17 +377,17 @@ function renderCreateForm(snapshot, open) {
                 ${isTeacher ? `
                     <label class="collaboration-form-field">
                         <span>初始成员</span>
-                        <select name="member_student_ids" multiple size="6">${studentOptions(snapshot)}</select>
+                        <select data-lq-component="select" class="lq-select" name="member_student_ids" multiple size="6">${studentOptions(snapshot)}</select>
                     </label>
                     <label class="collaboration-form-field">
                         <span>组长</span>
-                        <select name="leader_student_id">
+                        <select data-lq-component="select" class="lq-select" name="leader_student_id">
                             <option value="">稍后指定</option>
                             ${studentOptions(snapshot)}
                         </select>
                     </label>
                 ` : ''}
-                <button type="submit" class="btn btn-primary btn-sm">${isTeacher ? '创建小组' : '发起小组'}</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">${isTeacher ? '创建小组' : '发起小组'}</button>
             </form>
         </section>
     `;
@@ -395,11 +395,11 @@ function renderCreateForm(snapshot, open) {
 
 function renderDetailTabs(group, activeTab) {
     return `
-        <div class="collaboration-detail-tabs" role="tablist" aria-label="小组工作区">
+        <div data-lq-component="tab" class="lq-tabs__list collaboration-detail-tabs" role="tablist" aria-label="小组工作区">
             ${DETAIL_TABS.map((tab) => `
-                <button
+                <button data-lq-component="button"
                     type="button"
-                    class="collaboration-detail-tab${activeTab === tab.key ? ' is-active' : ''}"
+                    class="lq-btn lq-btn--sm lq-btn--glass collaboration-detail-tab${activeTab === tab.key ? ' is-active' : ''}"
                     data-collab-detail-tab="${tab.key}"
                     role="tab"
                     aria-selected="${activeTab === tab.key ? 'true' : 'false'}"
@@ -444,7 +444,7 @@ function renderDetail(snapshot, group, activeTab = 'members') {
                 <div><span>互评</span><strong>${(group.peer_reviews || []).length}</strong></div>
             </div>
             ${renderDetailTabs(group, normalizedTab)}
-            <div class="collaboration-detail-panel" role="tabpanel">
+            <div data-lq-component="surface" class="lq-surface collaboration-detail-panel" role="tabpanel">
                 ${renderDetailPanel(snapshot, group, normalizedTab)}
             </div>
         </aside>
@@ -478,7 +478,7 @@ function renderSchemeMemberAvatar(member) {
     const leaderClass = member.is_leader ? ' is-leader' : '';
     const scoreAttr = member.cultivation_score === null || member.cultivation_score === undefined ? '' : String(member.cultivation_score);
     return `
-        <button type="button" class="collab-scheme-member${leaderClass}"
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-member${leaderClass}"
             data-collab-member-info="${member.student_id}"
             data-name="${escapeHtml(member.name)}"
             data-number="${escapeHtml(member.student_id_number || '')}"
@@ -501,7 +501,7 @@ function renderSchemeGroupCard(group, scheme) {
     const fullClass = group.is_full ? ' is-full' : ' is-open';
     const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '待举荐';
     return `
-        <article class="collab-scheme-group${mine ? ' is-mine' : ''}${fullClass}"
+        <article data-lq-component="surface" class="lq-surface collab-scheme-group${mine ? ' is-mine' : ''}${fullClass}"
             ${mine && scheme.is_active ? `data-collab-scheme-group-open="${group.id}" role="button" tabindex="0"` : ''}>
             <div class="collab-scheme-group__top">
                 <strong>${escapeHtml(group.name)}</strong>
@@ -531,13 +531,13 @@ function renderSchemeCard(scheme, snapshot) {
         ? '<span class="collab-scheme-chip is-expired">已过期</span>'
         : (scheme.is_active ? '<span class="collab-scheme-chip is-active">进行中</span>' : '<span class="collab-scheme-chip">已结束</span>');
     const studentAction = (!isTeacher && scheme.can_random_join)
-        ? `<button type="button" class="btn btn-primary btn-sm" data-collab-scheme-random-join="${scheme.id}">随机分组</button>`
+        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-scheme-random-join="${scheme.id}">随机分组</button>`
         : (!isTeacher && scheme.my_group_id ? '<span class="collab-scheme-chip is-active">已分组</span>' : '');
     const teacherAction = isTeacher
-        ? `<button type="button" class="btn btn-outline btn-sm" data-collab-scheme-board="${scheme.id}">分组大屏</button>${scheme.can_close ? `<button type="button" class="btn btn-ghost btn-sm" data-collab-scheme-close="${scheme.id}">结束方案</button>` : ''}`
+        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-collab-scheme-board="${scheme.id}">分组大屏</button>${scheme.can_close ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-scheme-close="${scheme.id}">结束方案</button>` : ''}`
         : '';
     return `
-        <section class="collab-scheme-card" data-collab-scheme="${scheme.id}">
+        <section data-lq-component="surface" class="lq-surface collab-scheme-card" data-collab-scheme="${scheme.id}">
             <header class="collab-scheme-card__head">
                 <div class="collab-scheme-card__title">
                     <strong>${escapeHtml(scheme.name)}</strong>
@@ -565,18 +565,18 @@ function renderSchemeBuilder(snapshot, open) {
         <section class="collab-scheme-builder">
             <div class="collab-scheme-builder__head">
                 <strong>创建随机分组方案</strong>
-                <button type="button" class="collaboration-close-btn" data-collab-scheme-create-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-scheme-create-close aria-label="关闭">×</button>
             </div>
             <form class="collab-scheme-form" data-collab-scheme-form>
-                <input name="name" type="text" maxlength="60" placeholder="方案名称，例如：第 3 章项目分组" value="随机分组">
+                <input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="方案名称，例如：第 3 章项目分组" value="随机分组">
                 <div class="collab-scheme-form__row">
-                    <label><span>每组最小人数</span><input name="min_members" type="number" min="1" max="12" value="3"></label>
-                    <label><span>每组最大人数</span><input name="max_members" type="number" min="1" max="12" value="5"></label>
-                    <label><span>组数（可选）</span><input name="group_count" type="number" min="1" max="60" placeholder="自动"></label>
+                    <label><span>每组最小人数</span><input data-lq-component="input" class="lq-input" name="min_members" type="number" min="1" max="12" value="3"></label>
+                    <label><span>每组最大人数</span><input data-lq-component="input" class="lq-input" name="max_members" type="number" min="1" max="12" value="5"></label>
+                    <label><span>组数（可选）</span><input data-lq-component="input" class="lq-input" name="group_count" type="number" min="1" max="60" placeholder="自动"></label>
                 </div>
-                <label class="collab-scheme-form__full"><span>时效日期（可选，过期后只读）</span><input name="expires_at" type="datetime-local"></label>
-                <textarea name="description" rows="2" maxlength="600" placeholder="方案说明、分组目标或注意事项（可选）"></textarea>
-                <button type="submit" class="btn btn-primary btn-sm">开始分组</button>
+                <label class="collab-scheme-form__full"><span>时效日期（可选，过期后只读）</span><input data-lq-component="input" class="lq-input" name="expires_at" type="datetime-local"></label>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="2" maxlength="600" placeholder="方案说明、分组目标或注意事项（可选）"></textarea>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">开始分组</button>
             </form>
         </section>
     `;
@@ -586,7 +586,7 @@ function renderInvitePicker(candidates) {
     if (!candidates.length) return '<span class="collaboration-muted">暂无可邀请的同学。</span>';
     return `<div class="collab-invite-grid" data-collab-invite-list>${candidates.map((c) => `
         <label class="collab-invite-card${c.blocked ? ' is-blocked' : ''}"${c.blocked ? ' title="对方已多次拒绝，暂不可邀请"' : ''}>
-            <input type="checkbox" value="${c.student_id}"${c.blocked ? ' disabled' : ''}>
+            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" value="${c.student_id}"${c.blocked ? ' disabled' : ''}>
             <span class="collab-invite-card__avatar">
                 <img src="${escapeHtml(c.avatar_url || '/api/profile/avatar')}" alt="" loading="lazy">
                 <span class="collab-invite-card__check" aria-hidden="true">
@@ -605,15 +605,15 @@ function renderStudentForm(snapshot, state) {
         <section class="collab-scheme-builder">
             <div class="collab-scheme-builder__head">
                 <strong>发起分组 · 邀请同学</strong>
-                <button type="button" class="collaboration-close-btn" data-collab-student-create-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-student-create-close aria-label="关闭">×</button>
             </div>
             <form class="collab-scheme-form" data-collab-student-form>
-                <input name="name" type="text" maxlength="60" placeholder="分组名称，例如：算法学习小队" required>
+                <input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="分组名称，例如：算法学习小队" required>
                 <div class="collab-invite-pick">
                     <span class="collab-invite-pick__label">邀请同学（单击头像选择，可多选）</span>
                     ${candidates.length ? renderInvitePicker(candidates) : '<span class="collaboration-muted">正在加载同学名单…</span>'}
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm">发起并邀请</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">发起并邀请</button>
             </form>
         </section>
     `;
@@ -628,8 +628,8 @@ function renderInvitationCard(invitation) {
                 <span>${escapeHtml(invitation.group_name)} · ${invitation.member_count} 人</span>
             </div>
             <div class="collab-invitation__actions">
-                <button type="button" class="btn btn-primary btn-sm" data-collab-invite-accept="${invitation.id}">接受</button>
-                <button type="button" class="btn btn-ghost btn-sm" data-collab-invite-decline="${invitation.id}">拒绝</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-invite-accept="${invitation.id}">接受</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-invite-decline="${invitation.id}">拒绝</button>
             </div>
         </article>
     `;
@@ -639,7 +639,7 @@ function renderStudentGroupCard(group) {
     const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
     const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '组长';
     return `
-        <article class="collab-scheme-group is-mine is-open" data-collab-scheme-group-open="${group.id}" role="button" tabindex="0">
+        <article data-lq-component="surface" class="lq-surface collab-scheme-group is-mine is-open" data-collab-scheme-group-open="${group.id}" role="button" tabindex="0">
             <div class="collab-scheme-group__top">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span class="collab-scheme-group__count">${group.member_count} 人</span>
@@ -668,9 +668,9 @@ function renderSchemes(snapshot, state) {
         return `
             <div class="collab-scheme-section">
                 ${renderSchemeBuilder(snapshot, state.schemeCreateOpen)}
-                <div class="collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
-                    <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentSchemes.length})</button>
-                    <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historySchemes.length})</button>
+                <div data-lq-component="tab" class="lq-tabs__list collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentSchemes.length})</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historySchemes.length})</button>
                 </div>
                 ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '还没有历史方案' : '还没有进行中的方案'}</strong><p>${tab === 'history' ? '结束的方案会归档到这里。' : '点击上方“创建分组方案”开始随机分组。'}</p></div>`}
             </div>
@@ -685,9 +685,9 @@ function renderSchemes(snapshot, state) {
     return `
         <div class="collab-scheme-section">
             ${renderStudentForm(snapshot, state)}
-            <div class="collab-scheme-tabs" role="tablist" aria-label="分组切换">
-                <button type="button" class="collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentMine.length + currentSchemes.length})</button>
-                <button type="button" class="collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historyMine.length + historySchemes.length})</button>
+            <div data-lq-component="tab" class="lq-tabs__list collab-scheme-tabs" role="tablist" aria-label="分组切换">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentMine.length + currentSchemes.length})</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historyMine.length + historySchemes.length})</button>
             </div>
             ${tab === 'current' ? `
                 ${invitations.length ? `<div class="collab-invitation-list">${invitations.map(renderInvitationCard).join('')}</div>` : ''}
@@ -718,8 +718,9 @@ function findSchemeGroup(snapshot, groupId) {
 
 function showOverlay(html, { onMount } = {}) {
     const overlay = document.createElement('div');
-    overlay.className = 'collab-overlay';
-    overlay.innerHTML = `<div class="collab-overlay__backdrop" data-collab-overlay-close></div><div class="collab-overlay__card" role="dialog" aria-modal="true">${html}</div>`;
+    overlay.className = 'lq-domain-region collab-overlay';
+    overlay.dataset.lqComponent = 'layer';
+    overlay.innerHTML = `<div class="collab-overlay__backdrop" data-collab-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised collab-overlay__card" role="dialog" aria-modal="true">${html}</div>`;
     document.body.appendChild(overlay);
     const close = () => {
         overlay.remove();
@@ -742,8 +743,8 @@ function confirmRandomJoin(scheme) {
                 <strong>即将随机分配小组</strong>
                 <p>系统会把你随机分配到「${escapeHtml(scheme.name)}」中一个还未满员的小组。分配后可以查看组员、设置目标并参与协作。</p>
                 <div class="collab-confirm__actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-collab-overlay-close>再想想</button>
-                    <button type="button" class="btn btn-primary btn-sm" data-collab-confirm-yes>随机加入</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-overlay-close>再想想</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-confirm-yes>随机加入</button>
                 </div>
             </div>
         `, {
@@ -781,8 +782,8 @@ function showMemberInfo(button) {
                 <strong data-member-score>…</strong>
             </div>
             <div class="collab-member-info__actions">
-                ${!isSelf ? `<button type="button" class="btn btn-primary btn-sm" data-collab-pm data-identity="student:${escapeHtml(String(studentId))}" data-name="${escapeHtml(name)}">私信</button>` : ''}
-                <button type="button" class="btn btn-ghost btn-sm" data-collab-overlay-close>关闭</button>
+                ${!isSelf ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-pm data-identity="student:${escapeHtml(String(studentId))}" data-name="${escapeHtml(name)}">私信</button>` : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-overlay-close>关闭</button>
             </div>
         </div>
     `);
@@ -804,13 +805,13 @@ function groupDetailHtml(group, scheme) {
     const goalBlock = editable
         ? `
             <form class="collab-goal-form" data-collab-goal-form="${group.id}">
-                <textarea name="goal_text" rows="2" maxlength="600" placeholder="设置小组任务目标">${escapeHtml(group.goal_text || '')}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="goal_text" rows="2" maxlength="600" placeholder="设置小组任务目标">${escapeHtml(group.goal_text || '')}</textarea>
                 <label class="collab-goal-progress">
                     <span>任务进度</span>
-                    <input name="progress_percent" type="range" min="0" max="100" value="${progress}" data-collab-progress-range>
+                    <input data-lq-component="range" class="lq-range" name="progress_percent" type="range" min="0" max="100" value="${progress}" data-collab-progress-range>
                     <output data-collab-progress-output>${progress}%</output>
                 </label>
-                <button type="submit" class="btn btn-primary btn-sm">保存目标与进度</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">保存目标与进度</button>
             </form>
         `
         : `
@@ -823,7 +824,7 @@ function groupDetailHtml(group, scheme) {
     const members = group.members.map((member) => `
         <div class="collab-group-member-row${member.is_leader ? ' is-leader' : ''}">
             ${renderSchemeMemberAvatar(member)}
-            ${group.can_nominate && !member.is_leader ? `<button type="button" class="btn btn-outline btn-sm collab-nominate-btn" data-collab-nominate="${group.id}" data-candidate="${member.student_id}">举荐为组长</button>` : ''}
+            ${group.can_nominate && !member.is_leader ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm collab-nominate-btn" data-collab-nominate="${group.id}" data-candidate="${member.student_id}">举荐为组长</button>` : ''}
         </div>
     `).join('');
     return `
@@ -831,7 +832,7 @@ function groupDetailHtml(group, scheme) {
             <header class="collab-group-detail__head">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span>${group.uncapped ? `${group.member_count} 人` : `${group.member_count}/${group.max_members} 人`}</span>
-                <button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
             </header>
             <section class="collab-group-detail__goal">
                 <h4>小组目标与进度</h4>
@@ -841,7 +842,7 @@ function groupDetailHtml(group, scheme) {
                 <h4>组员（点击查看修为值）</h4>
                 ${group.has_leader ? '' : '<p class="collaboration-muted">本组还没有组长，可以举荐一位组员担任。</p>'}
                 <div class="collab-group-member-list">${members}</div>
-                ${group.can_invite ? `<button type="button" class="btn btn-outline btn-sm collab-invite-more-btn" data-collab-invite-more="${group.id}">邀请同学加入</button>` : ''}
+                ${group.can_invite ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm collab-invite-more-btn" data-collab-invite-more="${group.id}">邀请同学加入</button>` : ''}
             </section>
             ${group.my_membership ? `
             <section class="collab-group-detail__chat" data-group-chat-drop>
@@ -850,13 +851,13 @@ function groupDetailHtml(group, scheme) {
                 <div class="group-chat-dropmask" data-group-chat-dropmask aria-hidden="true">松开以添加附件</div>
                 <div class="group-chat-pending" data-group-chat-pending hidden></div>
                 <form class="group-chat-form" data-group-chat-form="${group.id}">
-                    <button type="button" class="group-chat-tool" data-group-chat-emoji title="表情" aria-label="表情">😊</button>
-                    <button type="button" class="group-chat-tool" data-group-chat-file title="点击或拖入文件 / 图片 / GIF（最多 10 个）" aria-label="点击或拖入文件、图片、GIF，最多 10 个">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-tool" data-group-chat-emoji title="表情" aria-label="表情">😊</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-tool" data-group-chat-file title="点击或拖入文件 / 图片 / GIF（最多 10 个）" aria-label="点击或拖入文件、图片、GIF，最多 10 个">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </button>
-                    <input type="file" multiple hidden data-group-chat-file-input>
-                    <input type="text" class="group-chat-text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
-                    <button type="submit" class="btn btn-primary btn-sm">发送</button>
+                    <input data-lq-component="file" class="lq-native-file" type="file" multiple hidden data-group-chat-file-input>
+                    <input data-lq-component="input" type="text" class="lq-input group-chat-text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">发送</button>
                 </form>
             </section>
             ` : ''}
@@ -889,10 +890,10 @@ const CHAT_RECALL_WINDOW_MS = 60 * 1000;
 
 function openEmojiOverlay({ classOfferingId, onChar, onSticker }) {
     const { overlay, close } = showOverlay(`
-        <div class="group-chat-emoji-overlay">
-            <div class="group-chat-emoji-overlay__head"><strong>选择表情</strong><button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
+        <div data-lq-component="layer" class="lq-domain-region group-chat-emoji-overlay">
+            <div class="group-chat-emoji-overlay__head"><strong>选择表情</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
             <div class="group-chat-emoji-body" data-emoji-body>
-                <div class="group-chat-emoji-grid">${UNICODE_EMOJIS.map((emoji) => `<button type="button" class="group-chat-emoji-item" data-emoji-char="${emoji}">${emoji}</button>`).join('')}</div>
+                <div class="group-chat-emoji-grid">${UNICODE_EMOJIS.map((emoji) => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-emoji-item" data-emoji-char="${emoji}">${emoji}</button>`).join('')}</div>
                 <div data-emoji-custom></div>
             </div>
         </div>
@@ -911,7 +912,7 @@ function openEmojiOverlay({ classOfferingId, onChar, onSticker }) {
             const custom = data?.custom_emojis || [];
             const box = overlay.querySelector('[data-emoji-custom]');
             if (box && custom.length) {
-                box.innerHTML = `<div class="group-chat-emoji-divider">我的表情包</div><div class="group-chat-emoji-grid">${custom.map((item) => `<button type="button" class="group-chat-emoji-item is-custom" data-emoji-id="${item.id}" title="${escapeHtml(item.name || '')}"><img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name || '')}"></button>`).join('')}</div>`;
+                box.innerHTML = `<div class="group-chat-emoji-divider">我的表情包</div><div class="group-chat-emoji-grid">${custom.map((item) => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-emoji-item is-custom" data-emoji-id="${item.id}" title="${escapeHtml(item.name || '')}"><img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name || '')}"></button>`).join('')}</div>`;
             }
         })
         .catch(() => { /* custom emojis optional */ });
@@ -947,7 +948,7 @@ function initGroupChat(overlay, groupId) {
             return;
         }
         const body = message.content ? `<span class="group-chat-msg__body">${escapeHtml(message.content)}</span>` : '';
-        const recall = message.is_mine ? '<button type="button" class="group-chat-recall" data-group-chat-recall title="撤回">撤回</button>' : '';
+        const recall = message.is_mine ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-recall" data-group-chat-recall title="撤回">撤回</button>' : '';
         row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}${recall}`;
     };
     const append = (messages) => {
@@ -985,7 +986,7 @@ function initGroupChat(overlay, groupId) {
             <span class="group-chat-pending-chip">
                 ${att.kind === 'image' ? `<img src="${escapeHtml(att.url)}" alt="">` : '<span class="group-chat-pending-chip__icon">📄</span>'}
                 <span>${escapeHtml(att.name || '附件')}</span>
-                <button type="button" data-group-chat-pending-remove="${index}" aria-label="移除">×</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-group-chat-pending-remove="${index}" aria-label="移除">×</button>
             </span>
         `).join('');
     };
@@ -1154,8 +1155,8 @@ function renderBoardGroupCard(group) {
                 ${group.members.map((m) => `<li>
                     <span class="collab-board-group__member-name">${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''}</span>
                     <span class="collab-board-group__member-no">${escapeHtml(m.student_id_number || '')}</span>
-                    ${canAssign && !m.is_leader ? `<button type="button" class="collab-board-set-leader" data-collab-assign-leader="${group.id}" data-candidate="${m.student_id}">设为组长</button>` : ''}
-                    <button type="button" class="collab-board-remove" data-collab-board-remove="${group.id}" data-student-id="${m.student_id}" title="移出该成员（将变为未分组）" aria-label="移出${escapeHtml(m.name)}">移出</button>
+                    ${canAssign && !m.is_leader ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-board-set-leader" data-collab-assign-leader="${group.id}" data-candidate="${m.student_id}">设为组长</button>` : ''}
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-board-remove" data-collab-board-remove="${group.id}" data-student-id="${m.student_id}" title="移出该成员（将变为未分组）" aria-label="移出${escapeHtml(m.name)}">移出</button>
                 </li>`).join('') || '<li class="collaboration-muted">空</li>'}
             </ul>
         </article>
@@ -1174,9 +1175,9 @@ function showSchemeBoard(snapshot, schemeId) {
                     <span>每组 ${scheme.min_members}-${scheme.max_members} 人 · ${scheme.group_count} 组</span>
                 </div>
                 <div class="collab-board__head-actions">
-                    ${scheme.is_active && scheme.needs_redistribute ? `<button type="button" class="btn btn-warning btn-sm" data-collab-redistribute="${scheme.id}" title="将少于最低人数的小组成员打散，重新分配到合理的小组">少人组重新分配 (${scheme.deficient_group_count || 0})</button>` : ''}
-                    ${scheme.is_active && scheme.leaderless_group_count > 0 ? `<button type="button" class="btn btn-primary btn-sm" data-collab-auto-leaders="${scheme.id}">一键配置组长 (${scheme.leaderless_group_count})</button>` : ''}
-                    <button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                    ${scheme.is_active && scheme.needs_redistribute ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-warning btn-sm" data-collab-redistribute="${scheme.id}" title="将少于最低人数的小组成员打散，重新分配到合理的小组">少人组重新分配 (${scheme.deficient_group_count || 0})</button>` : ''}
+                    ${scheme.is_active && scheme.leaderless_group_count > 0 ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-auto-leaders="${scheme.id}">一键配置组长 (${scheme.leaderless_group_count})</button>` : ''}
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
                 </div>
             </header>
             <div class="collab-board__stats">
@@ -1413,10 +1414,10 @@ async function handleStudentCreate(root, state, form) {
 
 function showInviteOverlay(root, state, groupId, candidates) {
     showOverlay(`
-        <div class="collab-invite-overlay">
-            <div class="collab-invite-overlay__head"><strong>邀请同学加入</strong><button type="button" class="collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
+        <div data-lq-component="layer" class="lq-domain-region collab-invite-overlay">
+            <div class="collab-invite-overlay__head"><strong>邀请同学加入</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button></div>
             ${candidates.length ? renderInvitePicker(candidates) : '<p class="collaboration-muted">暂无可邀请的同学。</p>'}
-            ${candidates.length ? `<button type="button" class="btn btn-primary btn-sm" data-collab-invite-submit="${groupId}">发送邀请</button>` : ''}
+            ${candidates.length ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-invite-submit="${groupId}">发送邀请</button>` : ''}
         </div>
     `, {
         onMount(node, close) {

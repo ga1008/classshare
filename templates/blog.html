@@ -29,23 +29,23 @@
                 <span><strong data-blog-stat="likes">0</strong>点赞</span>
             </div>
             <div class="blog-header__actions" role="group" aria-label="内容入口">
-                <button class="blog-nav-key is-active" data-blog-nav="feed" type="button">全部</button>
-                <button class="blog-nav-key" data-blog-nav="following" type="button">关注</button>
-                <button class="blog-nav-key" data-blog-nav="my-posts" type="button">我的</button>
-                <button class="blog-nav-key" data-blog-nav="bookmarks" type="button">收藏</button>
-                <button class="blog-nav-key blog-nav-key--compose" data-blog-action="compose" type="button">写帖子</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key is-active" data-blog-nav="feed" type="button">全部</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="following" type="button">关注</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="my-posts" type="button">我的</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="bookmarks" type="button">收藏</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key blog-nav-key--compose" data-blog-action="compose" type="button">写帖子</button>
             </div>
         </div>
 
         <div class="blog-section-viewport">
-            <div class="blog-section-tabs" data-blog-section-tabs role="tablist" aria-label="选择博客板块">
-                <button class="blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#2563eb">
+            <div data-lq-component="tab" class="lq-tabs__list blog-section-tabs" data-blog-section-tabs role="tablist" aria-label="选择博客板块">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-section-tab is-active {{ 'has-content' if blog_total_posts else 'is-empty' }}" data-blog-section="" data-blog-section-count="{{ blog_total_posts }}" type="button" role="tab" aria-selected="true" aria-controls="blog-feed-panel" tabindex="0" style="--section-accent:#2563eb">
                     <span class="blog-section-tab__icon" aria-hidden="true">◎</span>
                     <span class="blog-section-tab__name">全部</span>
                     <span class="blog-section-tab__count">{{ blog_total_posts }}</span>
                 </button>
                 {% for section in blog_sections %}
-                <button class="blog-section-tab {{ 'has-content' if section.post_count else 'is-empty' }}" data-blog-section="{{ section.section_key }}" data-blog-section-count="{{ section.post_count }}" type="button" role="tab" aria-selected="false" aria-controls="blog-feed-panel" tabindex="-1" style="--section-accent:{{ section.accent_color }}">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-section-tab {{ 'has-content' if section.post_count else 'is-empty' }}" data-blog-section="{{ section.section_key }}" data-blog-section-count="{{ section.post_count }}" type="button" role="tab" aria-selected="false" aria-controls="blog-feed-panel" tabindex="-1" style="--section-accent:{{ section.accent_color }}">
                     <span class="blog-section-tab__icon" aria-hidden="true">{{ section.icon }}</span>
                     <span class="blog-section-tab__name">{{ section.short_name }}</span>
                     <span class="blog-section-tab__count">{{ section.post_count }}</span>
@@ -61,9 +61,9 @@
     </header>
 
     <section class="blog-main" aria-label="博客内容">
-        <div class="blog-detail-topbar" data-lq-material="chrome" data-blog-detail-topbar hidden>
+        <div data-lq-component="toolbar" class="lq-domain-toolbar blog-detail-topbar" data-lq-material="chrome" data-blog-detail-topbar hidden>
             <span class="blog-reading-progress" aria-hidden="true"></span>
-            <button class="blog-detail-topbar__back" data-blog-action="back-detail-context" type="button" aria-label="返回上一阅读位置">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-detail-topbar__back" data-blog-action="back-detail-context" type="button" aria-label="返回上一阅读位置">
                 <span class="blog-detail-topbar__back-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
                 </span>
@@ -73,8 +73,8 @@
                 <span data-blog-detail-section>博客中心</span>
                 <strong data-blog-detail-title>文章详情</strong>
             </div>
-            <button class="btn btn-secondary btn-sm blog-detail-topbar__list" data-blog-action="back-to-feed" type="button">博客列表</button>
-            <button class="btn btn-primary btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm blog-detail-topbar__list" data-blog-action="back-to-feed" type="button">博客列表</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm blog-detail-topbar__compose" data-blog-action="compose" type="button">写帖子</button>
         </div>
 
     <!-- Feed View -->
@@ -85,11 +85,11 @@
 
                 <!-- Sort bar -->
                 <div class="blog-sort-bar" data-blog-sort-bar>
-                    <button class="blog-sort-tab is-active" data-blog-sort="latest">最新</button>
-                    <button class="blog-sort-tab" data-blog-sort="hot">热议</button>
-                    <button class="blog-sort-tab" data-blog-nav="following">我的关注</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab is-active" data-blog-sort="latest">最新</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-sort="hot">热议</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-nav="following">我的关注</button>
                     <div class="blog-sort-bar__spacer"></div>
-                    <input class="blog-sort-bar__search" type="search" placeholder="搜标题、正文或标签..." data-blog-search aria-label="搜索博客文章">
+                    <input data-lq-component="input" class="lq-input blog-sort-bar__search" type="search" placeholder="搜标题、正文或标签..." data-blog-search aria-label="搜索博客文章">
                 </div>
 
                 <section class="blog-career-tools" data-lq-material="content" data-blog-career-filters hidden aria-label="就业机会筛选">
@@ -99,7 +99,7 @@
                     </div>
                     <label>
                         <span>地区</span>
-                        <select data-blog-career-region>
+                        <select data-lq-component="select" class="lq-select" data-blog-career-region>
                             <option value="">全部地区</option>
                             <option value="nanning">南宁</option>
                             <option value="guangxi">广西</option>
@@ -108,7 +108,7 @@
                     </label>
                     <label>
                         <span>类型</span>
-                        <select data-blog-career-type>
+                        <select data-lq-component="select" class="lq-select" data-blog-career-type>
                             <option value="">全部类型</option>
                             <option value="campus_recruitment">校园招聘</option>
                             <option value="internship">实习机会</option>
@@ -121,7 +121,7 @@
                     </label>
                     <label>
                         <span>截止</span>
-                        <select data-blog-career-deadline>
+                        <select data-lq-component="select" class="lq-select" data-blog-career-deadline>
                             <option value="">全部时间</option>
                             <option value="7">7 天内</option>
                             <option value="30">30 天内</option>
@@ -130,7 +130,7 @@
                     </label>
                     <label>
                         <span>我的进度</span>
-                        <select data-blog-career-state>
+                        <select data-lq-component="select" class="lq-select" data-blog-career-state>
                             <option value="">全部机会</option>
                             <option value="saved">已收藏</option>
                             <option value="preparing">准备材料</option>
@@ -144,12 +144,12 @@
 
                 <div class="blog-author-filter" data-blog-author-filter hidden>
                     <span data-blog-author-filter-label></span>
-                    <button type="button" class="blog-author-filter__clear" data-blog-clear-author-filter>查看全部帖子</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-author-filter__clear" data-blog-clear-author-filter>查看全部帖子</button>
                 </div>
 
                 <div class="blog-author-filter blog-tag-filter" data-blog-tag-filter hidden>
                     <span data-blog-tag-filter-label></span>
-                    <button type="button" class="blog-author-filter__clear" data-blog-clear-tag-filter>清除标签</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-author-filter__clear" data-blog-clear-tag-filter>清除标签</button>
                 </div>
 
                 <!-- Post feed list -->
@@ -157,34 +157,34 @@
 
                 <!-- Load more -->
                 <div class="blog-load-more" data-blog-load-more hidden>
-                    <button class="btn btn-outline btn-sm">加载更多</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加载更多</button>
                 </div>
             </main>
 
             <aside class="blog-rail" aria-label="博客探索">
-                <section class="blog-rail-card" data-blog-trending-card>
+                <section data-lq-component="surface" class="lq-surface blog-rail-card" data-blog-trending-card>
                     <div class="blog-rail-card__header">
                         <h2>正在热议</h2>
-                        <button type="button" data-blog-sort="hot">看热榜</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-sort="hot">看热榜</button>
                     </div>
                     <div class="blog-rail-list" data-blog-trending-list></div>
                 </section>
-                <section class="blog-rail-card">
+                <section data-lq-component="surface" class="lq-surface blog-rail-card">
                     <div class="blog-rail-card__header">
                         <h2>热门标签</h2>
                     </div>
                     <div class="blog-tag-cloud" data-blog-hot-tags></div>
                 </section>
-                <section class="blog-rail-card">
+                <section data-lq-component="surface" class="lq-surface blog-rail-card">
                     <div class="blog-rail-card__header">
                         <h2>活跃作者</h2>
                     </div>
                     <div class="blog-author-rank" data-blog-active-authors></div>
                 </section>
-                <section class="blog-rail-card blog-rail-card--compose">
+                <section data-lq-component="surface" class="lq-surface blog-rail-card blog-rail-card--compose">
                     <h2>今天写点什么？</h2>
                     <p>一段踩坑记录、一个作品截图、一道题的新解法，都会成为别人继续往下看的理由。</p>
-                    <button class="btn btn-primary btn-sm" data-blog-action="compose" type="button">开始写</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-blog-action="compose" type="button">开始写</button>
                 </section>
             </aside>
         </div>
@@ -202,14 +202,14 @@
     <!-- My Posts View -->
     <div data-blog-view="my-posts" hidden>
         <div class="blog-sort-bar">
-            <button class="blog-sort-tab is-active" data-blog-myposts-filter="all">全部</button>
-            <button class="blog-sort-tab" data-blog-myposts-filter="published">已发布</button>
-            <button class="blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
-            <button class="blog-sort-tab" data-blog-myposts-filter="moderated">已隐藏</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab is-active" data-blog-myposts-filter="all">全部</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="published">已发布</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="moderated">已隐藏</button>
         </div>
         <div class="blog-feed" data-lq-material="content" data-blog-my-feed></div>
         <div class="blog-load-more" data-blog-my-load-more hidden>
-            <button class="btn btn-outline btn-sm">加载更多</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加载更多</button>
         </div>
     </div>
 
@@ -217,49 +217,49 @@
     <div data-blog-view="bookmarks" hidden>
         <div class="blog-feed" data-lq-material="content" data-blog-bookmarks-feed></div>
         <div class="blog-load-more" data-blog-bookmarks-load-more hidden>
-            <button class="btn btn-outline btn-sm">加载更多</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加载更多</button>
         </div>
     </div>
     </section>
 
     <!-- Composer Modal (inside shell for proper event delegation) -->
-    <div class="blog-modal-overlay" data-blog-composer-modal hidden>
-        <div class="blog-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="blog-composer-dialog-title" tabindex="-1">
+    <div data-lq-component="layer" class="lq-domain-region blog-modal-overlay" data-blog-composer-modal hidden>
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region blog-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="blog-composer-dialog-title" tabindex="-1">
             <div class="blog-modal__header">
                 <div>
                     <h3 id="blog-composer-dialog-title" data-blog-composer-title>写帖子</h3>
                     <p class="blog-composer__save-state" data-blog-compose-save-state aria-live="polite">内容仅在你发布后对他人可见</p>
                 </div>
-                <button class="blog-modal__close" data-blog-action="close-composer" type="button" aria-label="关闭编辑器">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-modal__close" data-blog-action="close-composer" type="button" aria-label="关闭编辑器">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             <div class="blog-modal__body">
                 <div class="blog-composer">
                     <!-- Title -->
-                    <input class="blog-composer__input" type="text" placeholder="帖子标题..." data-blog-compose-title maxlength="200">
+                    <input data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="帖子标题..." data-blog-compose-title maxlength="200">
 
                     <!-- Toolbar -->
-                    <div class="blog-composer__toolbar" aria-label="Markdown 格式工具">
-                        <button class="blog-toolbar-btn" data-toolbar="bold" title="粗体" type="button"><b>B</b></button>
-                        <button class="blog-toolbar-btn" data-toolbar="italic" title="斜体" type="button"><i>I</i></button>
-                        <button class="blog-toolbar-btn" data-toolbar="code" title="行内代码" type="button">&lt;/&gt;</button>
-                        <button class="blog-toolbar-btn" data-toolbar="codeblock" title="代码块" type="button">{ }</button>
-                        <button class="blog-toolbar-btn" data-toolbar="quote" title="引用" type="button">&ldquo;</button>
-                        <button class="blog-toolbar-btn" data-toolbar="ul" title="无序列表" type="button">&bull;</button>
-                        <button class="blog-toolbar-btn" data-toolbar="ol" title="有序列表" type="button">1.</button>
-                        <button class="blog-toolbar-btn" data-toolbar="h2" title="标题" type="button">H</button>
-                        <button class="blog-toolbar-btn" data-toolbar="link" title="链接" type="button">&#128279;</button>
-                        <button class="blog-toolbar-btn" data-toolbar="image" title="插入图片" type="button">
+                    <div data-lq-component="toolbar" class="lq-domain-toolbar blog-composer__toolbar" aria-label="Markdown 格式工具">
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="bold" title="粗体" type="button"><b>B</b></button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="italic" title="斜体" type="button"><i>I</i></button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="code" title="行内代码" type="button">&lt;/&gt;</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="codeblock" title="代码块" type="button">{ }</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="quote" title="引用" type="button">&ldquo;</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="ul" title="无序列表" type="button">&bull;</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="ol" title="有序列表" type="button">1.</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="h2" title="标题" type="button">H</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="link" title="链接" type="button">&#128279;</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-toolbar="image" title="插入图片" type="button">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                         </button>
                         <span class="blog-composer__toolbar-spacer"></span>
-                        <button class="blog-toolbar-btn is-active" data-blog-compose-mode="edit" type="button">编辑</button>
-                        <button class="blog-toolbar-btn" data-blog-compose-mode="preview" type="button">预览</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn is-active" data-blog-compose-mode="edit" type="button">编辑</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-btn" data-blog-compose-mode="preview" type="button">预览</button>
                     </div>
 
                     <!-- Content -->
-                    <textarea class="blog-composer__input blog-composer__textarea" placeholder="支持 Markdown 格式..." data-blog-compose-content aria-label="帖子正文"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea blog-composer__input blog-composer__textarea" placeholder="支持 Markdown 格式..." data-blog-compose-content aria-label="帖子正文"></textarea>
                     <div class="blog-composer__preview markdown-body" data-blog-compose-preview hidden></div>
                     <div class="blog-composer__metrics" data-blog-compose-metrics>0 字 · 约 1 分钟阅读</div>
 
@@ -272,15 +272,15 @@
                             <label>署名方式</label>
                             <div class="blog-author-mode-picker" data-blog-compose-author-mode-group>
                                 <label class="blog-author-mode-option">
-                                    <input type="radio" name="blog-author-mode" value="real_name" data-blog-compose-author-mode checked>
+                                    <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="real_name" data-blog-compose-author-mode checked>
                                     <span>真实名字</span>
                                 </label>
                                 <label class="blog-author-mode-option{% if not user_info.nickname %} is-disabled{% endif %}">
-                                    <input type="radio" name="blog-author-mode" value="nickname" data-blog-compose-author-mode {% if not user_info.nickname %}disabled{% endif %}>
+                                    <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="nickname" data-blog-compose-author-mode {% if not user_info.nickname %}disabled{% endif %}>
                                     <span>{% if user_info.nickname %}昵称{% else %}昵称未设置{% endif %}</span>
                                 </label>
                                 <label class="blog-author-mode-option">
-                                    <input type="radio" name="blog-author-mode" value="anonymous" data-blog-compose-author-mode>
+                                    <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="anonymous" data-blog-compose-author-mode>
                                     <span>匿名</span>
                                 </label>
                             </div>
@@ -295,7 +295,7 @@
                     <div class="blog-composer__options">
                         <div class="blog-composer__option blog-composer__option--section">
                             <label>发布到板块</label>
-                            <select class="blog-visibility-select blog-section-select" data-blog-compose-section>
+                            <select data-lq-component="select" class="lq-select blog-visibility-select blog-section-select" data-blog-compose-section>
                                 {% for section in blog_sections if section.allow_user_posts %}
                                 <option value="{{ section.section_key }}">{{ section.name }}</option>
                                 {% endfor %}
@@ -303,7 +303,7 @@
                         </div>
                         <div class="blog-composer__option">
                             <label>可见范围</label>
-                            <select class="blog-visibility-select" data-blog-compose-visibility>
+                            <select data-lq-component="select" class="lq-select blog-visibility-select" data-blog-compose-visibility>
                                 <option value="public">全部可见</option>
                                 <option value="class_visible">同班可见</option>
                                 <option value="selected_users">指定用户可见</option>
@@ -311,11 +311,11 @@
                         </div>
                         <div class="blog-composer__option" data-blog-compose-class-wrap hidden>
                             <label>选择班级</label>
-                            <select data-blog-compose-class></select>
+                            <select data-lq-component="select" class="lq-select" data-blog-compose-class></select>
                         </div>
                         <div class="blog-composer__option">
                             <label>
-                                <input type="checkbox" data-blog-compose-comments checked>
+                                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-blog-compose-comments checked>
                                 允许评论
                             </label>
                         </div>
@@ -324,7 +324,7 @@
                     <!-- Selected users (for selected_users visibility) -->
                     <div class="blog-visibility-config" data-blog-compose-users-config hidden>
                         <div>指定可见用户</div>
-                        <input class="blog-composer__input" type="text" placeholder="搜索用户..." data-blog-compose-user-search style="margin-top: var(--spacing-sm);">
+                        <input data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="搜索用户..." data-blog-compose-user-search style="margin-top: var(--spacing-sm);">
                         <div class="blog-user-picker" data-blog-compose-selected-users></div>
                         <div data-blog-compose-user-results style="margin-top: var(--spacing-sm);"></div>
                     </div>
@@ -333,22 +333,22 @@
                     <div class="blog-composer__options">
                         <div class="blog-composer__option">
                             <label>标签（逗号分隔）</label>
-                            <input class="blog-composer__input" type="text" placeholder="如: 技术, 分享" data-blog-compose-tags style="width: 260px;">
+                            <input data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="如: 技术, 分享" data-blog-compose-tags style="width: 260px;">
                         </div>
                     </div>
 
                     <!-- Footer -->
                     <div class="blog-composer__footer">
                         <div class="blog-composer__image-upload">
-                            <button class="btn btn-ghost btn-sm" data-blog-action="upload-image" title="上传图片" type="button">
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-action="upload-image" title="上传图片" type="button">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                                 上传图片
                             </button>
-                            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-compose-file-input hidden multiple>
+                            <input data-lq-component="file" class="lq-native-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-compose-file-input hidden multiple>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button class="btn btn-ghost btn-sm" data-blog-action="save-draft" type="button">保存草稿</button>
-                            <button class="btn btn-primary btn-sm" data-blog-action="publish" type="button">发布</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-action="save-draft" type="button">保存草稿</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-blog-action="publish" type="button">发布</button>
                         </div>
                     </div>
                 </div>
@@ -356,17 +356,17 @@
         </div>
     </div>
 
-    <dialog class="blog-report-dialog" data-lq-material="raised" data-blog-report-dialog aria-labelledby="blog-report-title">
+    <dialog data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region blog-report-dialog" data-lq-material="raised" data-blog-report-dialog aria-labelledby="blog-report-title">
         <form method="dialog" data-blog-report-form>
             <div class="blog-report-dialog__header">
                 <div>
                     <h3 id="blog-report-title">反馈内容问题</h3>
                     <p>你的反馈只对内容管理人员可见。</p>
                 </div>
-                <button type="button" data-blog-report-cancel aria-label="关闭">×</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-report-cancel aria-label="关闭">×</button>
             </div>
             <label>问题类型
-                <select data-blog-report-reason required>
+                <select data-lq-component="select" class="lq-select" data-blog-report-reason required>
                     <option value="false_information">信息不实或已失效</option>
                     <option value="job_scam">疑似招聘诈骗</option>
                     <option value="spam">广告或垃圾内容</option>
@@ -376,16 +376,16 @@
                 </select>
             </label>
             <label>补充说明
-                <textarea data-blog-report-details rows="4" maxlength="2000" placeholder="请说明具体位置或需要核验的信息"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" data-blog-report-details rows="4" maxlength="2000" placeholder="请说明具体位置或需要核验的信息"></textarea>
             </label>
             <div class="blog-report-dialog__actions">
-                <button type="button" class="btn btn-ghost btn-sm" data-blog-report-cancel>取消</button>
-                <button type="submit" class="btn btn-primary btn-sm">提交反馈</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-report-cancel>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">提交反馈</button>
             </div>
         </form>
     </dialog>
 
-    <div class="blog-user-popover" data-lq-material="raised" data-blog-user-popover hidden></div>
+    <div data-lq-component="menu" class="lq-domain-region blog-user-popover" data-lq-material="raised" data-blog-user-popover hidden></div>
 </div>
 
 {% endblock %}

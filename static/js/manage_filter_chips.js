@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 // Segmented filter chips that proxy an existing <select>. Lets manage pages
 // offer "selection over typing" filters while reusing their current filter
 // logic untouched: clicking a chip sets the target select's value and fires a
@@ -57,7 +58,7 @@ function createGroup(group) {
     // The two existing consumers have 4/6 chips and receive no layout mutation.
     // More/scroll is explicitly opt-in; a stable id is required for controls.
     if (group.dataset.filterOverflow === 'more' && group.id && chips.length > 8) {
-      if (!more) { more = doc.createElement('button'); more.type = 'button'; more.className = 'lq-filter-more'; more.dataset.filterMore = ''; chips[7].after(more); }
+      if (!more) { more = doc.createElement('button'); more.type = 'button'; more.className = 'lq-filter-more'; adoptDomainControl(more, { variant: 'ghost' }); more.dataset.filterMore = ''; chips[7].after(more); }
       chips.slice(8).forEach((chip, index) => { if (!chip.id) chip.id = `${group.id}--lq-extra-${index}`; });
     }
     sync();

@@ -181,14 +181,14 @@ function getDownloadAction(item) {
     }
 
     if (item.download_allowed !== false) {
-        return '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>';
+        return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="download">下载</button>';
     }
 
     const title = escapeHtml(item.download_blocked_reason || '已限制下载');
     return `
-        <button
+        <button data-lq-component="button"
             type="button"
-            class="btn btn-ghost btn-sm resource-download-blocked"
+            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm resource-download-blocked"
             data-action="download-blocked"
             title="${title}"
             aria-label="${title}"
@@ -224,7 +224,7 @@ function renderBreadcrumbs() {
     }
     container.innerHTML = state.breadcrumbs.map((crumb, index) => `
         ${index > 0 ? '<span class="separator">/</span>' : ''}
-        <button type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
     `).join('');
 }
 
@@ -241,10 +241,10 @@ function renderList() {
         const visualMeta = getVisualMeta(item);
         const primaryAction = getMaterialPrimaryAction(item);
         const documentAction = hasLearningDocument(item)
-            ? '<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">文档</button>'
+            ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="view-doc">文档</button>'
             : '';
         const renderAction = isRenderable(item)
-            ? `<button type="button" class="btn btn-outline btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
             : '';
         const repositoryBadge = isGitRepository(item)
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
@@ -263,7 +263,7 @@ function renderList() {
                 data-material-primary-action="${escapeHtml(primaryAction.action || '')}"
             >
                 <div>
-                    <input type="checkbox" data-role="select-item" data-id="${item.id}" aria-label="${escapeHtml(`选择材料：${item.name || '未命名材料'}`)}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-role="select-item" data-id="${item.id}" aria-label="${escapeHtml(`选择材料：${item.name || '未命名材料'}`)}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
                 </div>
                 <div class="materials-name-cell">
                     <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
@@ -276,7 +276,7 @@ function renderList() {
                 <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
                 <div>${escapeHtml(getMetaText(item))}</div>
                 <div class="materials-row-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="${primaryAction.action}">
                         ${primaryAction.label}
                     </button>
                     ${renderAction}
@@ -506,13 +506,13 @@ function renderClassroomAiImportSummary(material, preview = null) {
                 ${fieldsHtml}
             </div>
             <details class="materials-ai-import-summary-detail" ${warningCount > 0 ? 'open' : ''}>
-                <summary>解析警告与核对点</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">解析警告与核对点</summary>
                 ${warningsHtml}
             </details>
             <div class="materials-ai-import-summary-actions">
-                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
-                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
-                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
+                ${renderPreviewUrl ? `<a data-lq-component="button" href="${escapeHtml(renderPreviewUrl)}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
+                ${exportUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
             </div>
         </section>
     `;
@@ -522,7 +522,7 @@ function renderDetailContent(material, preview = null) {
     const aiRecord = material.ai_import_record || null;
     const renderPreviewUrl = preview?.render_preview_url || aiRecord?.render_preview_url || '';
     const renderPreviewAction = renderPreviewUrl
-        ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(renderPreviewUrl)}" target="_blank" rel="noopener">渲染预览</a>`
+        ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${escapeHtml(renderPreviewUrl)}" target="_blank" rel="noopener">渲染预览</a>`
         : '';
     const metaRows = [
         ['类型', getMaterialTypeLabel(material)],
@@ -540,7 +540,7 @@ function renderDetailContent(material, preview = null) {
             ${renderFields(preview.fields || {})}
             ${renderStructuredSummary(preview)}
             <details class="classroom-material-markdown-preview">
-                <summary>查看解析正文</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看解析正文</summary>
                 <pre>${escapeHtml(preview.content_markdown || '暂无正文')}</pre>
             </details>
         </section>
@@ -558,9 +558,9 @@ function renderDetailContent(material, preview = null) {
                 <span>AI优化</span>
                 <strong>字段、内容与导出结构</strong>
             </div>
-            <textarea class="classroom-material-ai-prompt" data-role="final-material-optimize-prompt" data-prompt-pool-key="classroom.final_material_optimize" rows="4" placeholder="例如：补齐审核人、考试时间，细化评分细则，保持总分100分。"></textarea>
+            <textarea data-lq-component="textarea" class="lq-textarea classroom-material-ai-prompt" data-role="final-material-optimize-prompt" data-prompt-pool-key="classroom.final_material_optimize" rows="4" placeholder="例如：补齐审核人、考试时间，细化评分细则，保持总分100分。"></textarea>
             <div class="classroom-material-inline-actions">
-                <button type="button" class="btn btn-primary btn-sm" data-action="optimize-final-material">AI优化并保存</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="optimize-final-material">AI优化并保存</button>
             </div>
         </section>
     ` : '';
@@ -799,9 +799,9 @@ function renderOrdinaryGradePicker() {
             ? `已用于第 ${usedStep + 1} 步`
             : (isCurrent ? '当前已选择' : '选择此来源');
         return `
-            <button
+            <button data-lq-component="choice"
                 type="button"
-                class="ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
                 data-ordinary-grade-candidate-id="${escapeHtml(String(candidateId))}"
                 ${disabled ? 'disabled' : ''}
             >

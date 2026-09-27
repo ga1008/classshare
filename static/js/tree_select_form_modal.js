@@ -57,15 +57,16 @@ export function openTreeSelectFormModal(config) {
     } = config || {};
 
     const overlay = document.createElement('div');
-    overlay.className = 'lp-modal-overlay tsf-overlay';
+    overlay.className = 'lq-domain-region lp-modal-overlay tsf-overlay';
+    overlay.dataset.lqComponent = 'layer';
     overlay.innerHTML = `
-        <div class="tsf-modal" role="dialog" aria-modal="true" aria-labelledby="tsf-modal-title">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tsf-modal" role="dialog" aria-modal="true" aria-labelledby="tsf-modal-title">
             <header class="tsf-modal__head">
                 <div>
                     <h3 id="tsf-modal-title">${escapeHtml(title)}</h3>
                     ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}
                 </div>
-                <button type="button" class="tsf-close" data-tsf-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass tsf-close" data-tsf-close aria-label="关闭">×</button>
             </header>
             <div class="tsf-modal__body">
                 <aside class="tsf-tree">
@@ -75,7 +76,7 @@ export function openTreeSelectFormModal(config) {
                     </div>
                     <div class="tsf-tree__list" data-tsf-tree></div>
                 </aside>
-                <section class="tsf-panel" data-tsf-panel></section>
+                <section data-lq-component="surface" class="lq-surface tsf-panel" data-tsf-panel></section>
             </div>
         </div>`;
     document.body.appendChild(overlay);
@@ -159,7 +160,7 @@ export function openTreeSelectFormModal(config) {
             if (node.leaf) {
                 const active = state.selectedPath === path ? ' is-active' : '';
                 return `
-                    <button type="button" class="tsf-leaf${levelClass}${active}" data-tsf-leaf="${path}" style="--tsf-indent:${(level - 1) * 14}px">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass tsf-leaf${levelClass}${active}" data-tsf-leaf="${path}" style="--tsf-indent:${(level - 1) * 14}px">
                         <span class="tsf-leaf__dot"></span>
                         ${mainLabel}
                         ${badge}
@@ -169,7 +170,7 @@ export function openTreeSelectFormModal(config) {
             const childHtml = isOpen ? renderTreeNodes(node.children, path, level + 1) : '';
             return `
                 <div class="tsf-node${levelClass}${isOpen ? ' is-open' : ''}" data-tsf-node="${path}" style="--tsf-indent:${(level - 1) * 14}px">
-                    <button type="button" class="tsf-node__head${levelClass}" data-tsf-toggle="${path}" aria-expanded="${isOpen ? 'true' : 'false'}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass tsf-node__head${levelClass}" data-tsf-toggle="${path}" aria-expanded="${isOpen ? 'true' : 'false'}">
                         <span class="tsf-node__chevron">${isOpen ? '▾' : '▸'}</span>
                         ${mainLabel}
                         ${badge}
@@ -215,9 +216,9 @@ export function openTreeSelectFormModal(config) {
                     return `<option value="${htmlAttr(optionValue)}"${selected}>${escapeHtml(optionLabel ?? '')}</option>`;
                 })
                 .join('');
-            return `<select data-tsf-field="${htmlAttr(key)}"><option value="">未填写</option>${opts}</select>`;
+            return `<select data-lq-component="select" class="lq-select" data-tsf-field="${htmlAttr(key)}"><option value="">未填写</option>${opts}</select>`;
         }
-        return `<input data-tsf-field="${htmlAttr(key)}" value="${htmlAttr(value)}" placeholder="${htmlAttr(field.placeholder || '')}">`;
+        return `<input data-lq-component="input" class="lq-input" data-tsf-field="${htmlAttr(key)}" value="${htmlAttr(value)}" placeholder="${htmlAttr(field.placeholder || '')}">`;
     }
 
     function renderPanel(descriptor) {
@@ -251,7 +252,7 @@ export function openTreeSelectFormModal(config) {
         const promptHtml = (promptLabel || promptPlaceholder)
             ? `<label class="tsf-field tsf-field--full">
                     <span class="tsf-field__label">${escapeHtml(promptLabel || '补充说明')}</span>
-                    <textarea data-tsf-prompt rows="4"${promptPoolKey ? ` data-prompt-pool-key="${htmlAttr(promptPoolKey)}"` : ''} placeholder="${htmlAttr(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" data-tsf-prompt rows="4"${promptPoolKey ? ` data-prompt-pool-key="${htmlAttr(promptPoolKey)}"` : ''} placeholder="${htmlAttr(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
                </label>`
             : '';
         const hintContent = hintHtml || (hint ? escapeHtml(hint) : '');
@@ -276,7 +277,7 @@ export function openTreeSelectFormModal(config) {
                 </div>
             </div>
             <div class="tsf-panel__foot">
-                <button type="button" class="tsf-btn tsf-btn--primary" data-tsf-confirm>${escapeHtml(confirmLabel)}</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass tsf-btn tsf-btn--primary" data-tsf-confirm>${escapeHtml(confirmLabel)}</button>
             </div>`;
         const promptInput = panelEl.querySelector('[data-tsf-prompt][data-prompt-pool-key]');
         if (promptInput) enhancePromptPoolInput(promptInput);

@@ -1,6 +1,9 @@
 /* S8 control material: the chip takes the control fill and the glass rim and
    never hosts a blur of its own. */
 .lq-chip {
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    --lq-control-border: hsl(var(--ls-glass-line));
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -8,10 +11,10 @@
     min-height: calc(var(--ls-s-6) + var(--ls-s-1));
     max-width: 100%;
     padding: calc(var(--ls-s-1) / 2) var(--ls-s-3);
-    border: 1px solid hsl(var(--ls-glass-line));
+    border: 1px solid var(--lq-control-border);
     border-radius: var(--ls-r-capsule);
-    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    background: var(--lq-control-background);
+    color: var(--lq-control-color);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     font-family: var(--ls-font-sans);
@@ -26,14 +29,20 @@
 /* Selected and status tints layer over the same control fill instead of
    replacing it, so a chip reads as tinted glass rather than flat paint. */
 .lq-chip--filter[aria-pressed="true"] {
-    background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--ls-ink));
-    border-color: hsl(var(--ls-primary));
+    --lq-control-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control));
+    --lq-control-color: hsl(var(--ls-ink));
+    --lq-control-border: hsl(var(--ls-primary));
+    background: var(--lq-control-background);
+    color: var(--lq-control-color);
+    border-color: var(--lq-control-border);
 }
 .lq-chip--status {
-    background: linear-gradient(hsl(var(--lq-tone-soft)), hsl(var(--lq-tone-soft))), hsl(var(--ls-glass-fill-control));
-    color: hsl(var(--lq-tone-fg));
-    border-color: hsl(var(--ls-glass-line));
+    --lq-control-background: linear-gradient(hsl(var(--lq-tone-soft)), hsl(var(--lq-tone-soft))), hsl(var(--ls-glass-fill-control));
+    --lq-control-color: hsl(var(--lq-tone-fg));
+    --lq-control-border: hsl(var(--ls-glass-line));
+    background: var(--lq-control-background);
+    color: var(--lq-control-color);
+    border-color: var(--lq-control-border);
 }
 .lq-chip__dot {
     flex: 0 0 var(--ls-s-2);
@@ -66,16 +75,16 @@
    control, which would take the label down with the fill. */
 .lq-chip--filter:disabled,
 .lq-chip:has(> .lq-chip__remove:disabled),
-.lq-chip__remove:disabled { opacity: 1; cursor: not-allowed; color: hsl(var(--lq-control-ink, var(--ls-ink-2))); }
-.lq-chip--filter:disabled { background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); border-color: hsl(var(--ls-line-strong)); border-style: dashed; }
+.lq-chip__remove:disabled { opacity: 1; cursor: not-allowed; --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2))); color: var(--lq-control-color); }
+.lq-chip--filter:disabled { --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); --lq-control-border: hsl(var(--ls-line-strong)); background: var(--lq-control-background); border-color: var(--lq-control-border); border-style: dashed; }
 @media (pointer: coarse) {
     .lq-chip--filter { min-height: calc(var(--ls-s-10) + var(--ls-s-1)); min-width: calc(var(--ls-s-10) + var(--ls-s-1)); }
 }
 /* Reduced motion is handled once, in the shared block. */
 @media (forced-colors: active) {
-    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-chip--status { background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
+    .lq-chip, .lq-glass .lq-chip:not(.lq-chip--status):not([aria-pressed="true"]), .lq-chip--status { --lq-control-background: Canvas; --lq-control-color: CanvasText; --lq-control-border: CanvasText; background: var(--lq-control-background); color: var(--lq-control-color); border-color: var(--lq-control-border); box-shadow: none; }
     .lq-chip__remove { box-shadow: none; }
-    .lq-chip--filter[aria-pressed="true"] { background: Highlight; color: HighlightText; border-color: Highlight; }
+    .lq-chip--filter[aria-pressed="true"] { --lq-control-background: Highlight; --lq-control-color: HighlightText; --lq-control-border: Highlight; background: var(--lq-control-background); color: var(--lq-control-color); border-color: var(--lq-control-border); }
     .lq-chip--filter:focus-visible, .lq-chip__remove:focus-visible { outline-color: Highlight; }
-    .lq-chip--filter:disabled, .lq-chip__remove:disabled { opacity: 1; color: GrayText; border-color: GrayText; }
+    .lq-chip--filter:disabled, .lq-chip__remove:disabled { opacity: 1; --lq-control-color: GrayText; --lq-control-border: GrayText; color: var(--lq-control-color); border-color: var(--lq-control-border); }
 }

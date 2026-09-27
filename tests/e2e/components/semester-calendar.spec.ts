@@ -12,7 +12,7 @@ async function mountCalendar(page: Page, selection = false) {
   await page.route('http://calendar.test/**', async route => {
     const url = new URL(route.request().url());
     if (await serveLayerModule(route)) return;
-    if (/^\/lq\/[\w.-]+\.js$/.test(url.pathname)) {
+    if (/^\/lq\/[\w.-]+\.js$/.test(url.pathname) || url.pathname === '/ui_popover.js') {
       const file = path.resolve('static/js', url.pathname.slice(1));
       if (fs.existsSync(file)) return route.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(file) });
     }

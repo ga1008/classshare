@@ -17,12 +17,12 @@ export class SignatureMultiSelect {
         this.abort = new AbortController();
         const id = `signature-picker-${++sequence}`;
         root.classList.add('spm');
-        root.innerHTML = `<button type="button" class="spm-trigger" data-spm-open aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}" ${disabled ? 'disabled' : ''}></button>
-            <div id="${id}" class="spm-popover" popover="auto" role="dialog" aria-label="选择和排序签名">
-                <div class="spm-search"><span aria-hidden="true">⌕</span><input type="search" role="combobox" aria-label="搜索签名姓名、职务" aria-autocomplete="list" aria-expanded="true" aria-controls="${id}-options" placeholder="搜索姓名、职务…" autocomplete="off"><button type="button" data-spm-close aria-label="关闭签名选择">×</button></div>
-                <div class="spm-tools"><button type="button" data-spm-identity aria-pressed="true" ${identityLabels.length ? '' : 'hidden'}></button><span class="spm-tabs"><button type="button" data-spm-tab="candidates" aria-pressed="true">候选</button><button type="button" data-spm-tab="selected" aria-pressed="false"></button></span></div>
-                <div class="spm-scroll"><div id="${id}-options" data-spm-options role="listbox" aria-label="签名候选" aria-multiselectable="true"></div><ol data-spm-selected aria-label="签名排版顺序" hidden></ol><p data-spm-empty hidden></p></div>
-                <footer><span data-spm-count aria-live="polite"></span><button type="button" data-spm-clear>清空选择</button><button type="button" data-spm-done>完成选择</button></footer>
+        root.innerHTML = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass spm-trigger" data-spm-open aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}" ${disabled ? 'disabled' : ''}></button>
+            <div data-lq-component="surface" data-lq-material="raised" id="${id}" class="lq-surface lq-domain-raised spm-popover" popover="auto" role="dialog" aria-label="选择和排序签名">
+                <div class="spm-search"><span aria-hidden="true">⌕</span><input data-lq-component="input" class="lq-input" type="search" role="combobox" aria-label="搜索签名姓名、职务" aria-autocomplete="list" aria-expanded="true" aria-controls="${id}-options" placeholder="搜索姓名、职务…" autocomplete="off"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-close aria-label="关闭签名选择">×</button></div>
+                <div class="spm-tools"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-identity aria-pressed="true" ${identityLabels.length ? '' : 'hidden'}></button><span class="spm-tabs"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-tab="candidates" aria-pressed="true">候选</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-tab="selected" aria-pressed="false"></button></span></div>
+                <div class="spm-scroll"><div data-lq-component="select" class="lq-selection" id="${id}-options" data-spm-options role="listbox" aria-label="签名候选" aria-multiselectable="true"></div><ol data-spm-selected aria-label="签名排版顺序" hidden></ol><p data-spm-empty hidden></p></div>
+                <footer><span data-spm-count aria-live="polite"></span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-clear>清空选择</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-done>完成选择</button></footer>
             </div>`;
         this.trigger = root.querySelector('[data-spm-open]');
         this.popup = root.querySelector('.spm-popover');
@@ -178,7 +178,7 @@ export class SignatureMultiSelect {
             if (!group.length) return '';
             return `<div class="spm-group" role="presentation">${kind === 'stamp' ? '特殊签名 · 无需申请' : '个人签名'}</div>` + group.map(item => {
                 const index = this.selectedIds.indexOf(Number(item.id));
-                return `<button type="button" role="option" aria-selected="${index >= 0}" data-spm-option="${Number(item.id)}" ${this.disabled ? 'disabled' : ''}>
+                return `<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" role="option" aria-selected="${index >= 0}" data-spm-option="${Number(item.id)}" ${this.disabled ? 'disabled' : ''}>
                     <span class="spm-check">${index >= 0 ? index + 1 : ''}</span><span class="spm-candidate"><strong>${escape(item.subject_name || item.name)}</strong><small>${escape([item.identity_label, item.scope_label].filter(Boolean).join(' · '))}</small></span>
                     <span class="spm-access ${item.can_use ? 'is-ready' : ''}">${kind === 'stamp' ? '无需申请' : item.can_use ? '可使用' : '需申请'}</span></button>`;
             }).join('');
@@ -186,7 +186,7 @@ export class SignatureMultiSelect {
         const byId = new Map(this.items.map(item => [Number(item.id), item]));
         selected.innerHTML = this.selectedIds.map((id, index) => {
             const item = byId.get(id);
-            return `<li data-spm-id="${id}" draggable="${!this.disabled}"><span aria-hidden="true">⠿</span><b class="spm-order">${index + 1}</b><span class="spm-selected-name">${escape(item?.subject_name || item?.name || `签名 ${id}`)}</span><button type="button" data-spm-move="-1" aria-label="上移" ${index === 0 || this.disabled ? 'disabled' : ''}>↑</button><button type="button" data-spm-move="1" aria-label="下移" ${index === this.selectedIds.length - 1 || this.disabled ? 'disabled' : ''}>↓</button><button type="button" data-spm-remove aria-label="移除" ${this.disabled ? 'disabled' : ''}>×</button></li>`;
+            return `<li data-spm-id="${id}" draggable="${!this.disabled}"><span aria-hidden="true">⠿</span><b class="spm-order">${index + 1}</b><span class="spm-selected-name">${escape(item?.subject_name || item?.name || `签名 ${id}`)}</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-move="-1" aria-label="上移" ${index === 0 || this.disabled ? 'disabled' : ''}>↑</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-move="1" aria-label="下移" ${index === this.selectedIds.length - 1 || this.disabled ? 'disabled' : ''}>↓</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spm-remove aria-label="移除" ${this.disabled ? 'disabled' : ''}>×</button></li>`;
         }).join('');
         const empty = this.root.querySelector('[data-spm-empty]');
         empty.hidden = this.tab === 'candidates' ? visible.length > 0 : this.selectedIds.length > 0;

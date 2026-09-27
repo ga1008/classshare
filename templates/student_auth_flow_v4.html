@@ -53,7 +53,7 @@
                 </div>{% endif %}
             {% endif %}
             {% set submit_label = '验证身份并设置密码' if auth_step == 'identity' else '确认并进入课堂' if auth_step == 'setup' else '提交申请' %}
-            {% if _lq_centered %}{{ lq_btn(submit_label, variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-primary w-full btn-lg">{{ submit_label }}</button>{% endif %}
+            {% if _lq_centered %}{{ lq_btn(submit_label, variant="prominent", size="lg", type="submit") }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent w-full btn-lg">{{ submit_label }}</button>{% endif %}
         </form>
     {% endif %}
     <div class="footer-links">

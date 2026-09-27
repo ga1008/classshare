@@ -116,14 +116,14 @@ function renderSchool(school) {
     const inactiveChip = school.is_active ? '' : '<span class="org-chip is-off">已停用</span>';
     const collegesHtml = (school.colleges || []).map(renderCollege).join('');
     return `
-        <article class="org-school-card${activeClass}" data-school-code="${escapeHtml(school.school_code)}">
+        <article data-lq-component="surface"${activeClass ? ' data-lq-selected="true"' : ''} class="lq-surface org-school-card${activeClass}" data-school-code="${escapeHtml(school.school_code)}">
             <div class="org-school-head">
                 <div class="org-school-title">
                     <strong>${escapeHtml(school.school_name)}</strong>
                     <span>${escapeHtml(school.school_code)}</span>
                 </div>
                 <div class="org-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-select-school="${escapeHtml(school.school_code)}">选择</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-select-school="${escapeHtml(school.school_code)}">选择</button>
                 </div>
             </div>
             <div class="org-chip-line">
@@ -143,16 +143,16 @@ function renderCollege(college) {
     const inactiveChip = college.is_active ? '' : '<span class="org-chip is-off">已停用</span>';
     const departmentsHtml = (college.departments || []).map(renderDepartment).join('');
     return `
-        <div class="org-unit-card${activeClass}" data-college-id="${college.id}">
+        <div data-lq-component="surface"${activeClass ? ' data-lq-selected="true"' : ''} class="lq-surface org-unit-card${activeClass}" data-college-id="${college.id}">
             <div class="org-unit-head">
                 <div class="org-unit-title">
                     <strong>${escapeHtml(college.college_name)}</strong>
                     <span>${escapeHtml(countLabel(college))}</span>
                 </div>
                 <div class="org-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-select-college="${college.id}" data-school-code="${escapeHtml(college.school_code)}">选择</button>
-                    <button type="button" class="btn btn-outline btn-sm" data-rename-college="${college.id}">改名</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-delete-college="${college.id}">停用</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-select-college="${college.id}" data-school-code="${escapeHtml(college.school_code)}">选择</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-rename-college="${college.id}">改名</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-delete-college="${college.id}">停用</button>
                 </div>
             </div>
             <div class="org-chip-line">${inactiveChip}</div>
@@ -166,15 +166,15 @@ function renderCollege(college) {
 function renderDepartment(department) {
     const inactiveChip = department.is_active ? '' : '<span class="org-chip is-off">已停用</span>';
     return `
-        <div class="org-unit-card" data-department-id="${department.id}">
+        <div data-lq-component="surface" class="lq-surface org-unit-card" data-department-id="${department.id}">
             <div class="org-unit-head">
                 <div class="org-unit-title">
                     <strong>${escapeHtml(department.department_name)}</strong>
                     <span>${escapeHtml(countLabel(department))}</span>
                 </div>
                 <div class="org-actions">
-                    <button type="button" class="btn btn-outline btn-sm" data-rename-department="${department.id}">改名</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-delete-department="${department.id}">停用</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-rename-department="${department.id}">改名</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-delete-department="${department.id}">停用</button>
                 </div>
             </div>
             <div class="org-chip-line">${inactiveChip}</div>

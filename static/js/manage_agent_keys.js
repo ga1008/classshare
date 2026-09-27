@@ -141,7 +141,7 @@ function renderUsage() {
     ];
 
     refs.usageSummary.innerHTML = cards.map(([label, value]) => `
-        <div class="agent-key-usage-card">
+        <div data-lq-component="surface" class="lq-surface agent-key-usage-card">
             <span>${escapeHtml(label)}</span>
             <strong>${escapeHtml(value)}</strong>
         </div>
@@ -173,7 +173,7 @@ function renderKeys() {
             : '';
         const canActivate = item.is_active
             ? ''
-            : `<button type="button" class="btn btn-primary btn-sm" data-action="activate" data-id="${item.id}">启用</button>`;
+            : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="activate" data-id="${item.id}">启用</button>`;
         const message = item.last_test_message
             ? `<span>结果：${escapeHtml(item.last_test_message)}</span>`
             : '';
@@ -194,9 +194,9 @@ function renderKeys() {
                     </div>
                 </div>
                 <div class="agent-key-actions">
-                    <button type="button" class="btn btn-outline btn-sm" data-action="test" data-id="${item.id}">测试</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="test" data-id="${item.id}">测试</button>
                     ${canActivate}
-                    <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">删除</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-action="delete" data-id="${item.id}">删除</button>
                 </div>
             </article>
         `;

@@ -3509,41 +3509,8 @@ body.has-cultivation-login-reveal {
     align-items: center;
 }
 
-.message-center-workspace-sync__actions a,
-.message-center-workspace-sync__actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 34px;
-    padding: 7px 10px;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: var(--radius-sm);
-    background: hsl(var(--lq-page-control));
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--text-sm);
-    font-weight: 850;
-    line-height: 1;
-    cursor: pointer;
-    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, color 0.16s ease;
-}
 
-.message-center-workspace-sync__actions a:hover,
-.message-center-workspace-sync__actions a:focus-visible,
-.message-center-workspace-sync__actions button:hover:not(:disabled),
-.message-center-workspace-sync__actions button:focus-visible:not(:disabled) {
-    transform: translateY(-1px);
-    border-color: hsl(var(--ls-teal-bright) / 0.34);
-    color: hsl(var(--ls-teal));
-    box-shadow: var(--shadow-xs);
-    outline: none;
-}
 
-.message-center-workspace-sync__actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-}
 
 .message-center-toolbar {
     display: grid;
@@ -5581,7 +5548,6 @@ body.has-cultivation-login-reveal {
 /* Floating Action Button */
 #ai-chat-fab {
     position: fixed;
-    bottom: 30px;
     right: 30px;
     width: 60px;
     height: 60px;
@@ -6418,7 +6384,6 @@ body.ai-chat-fullscreen-active {
     }
 
     #ai-chat-fab {
-        bottom: 20px;
         right: 20px;
         width: 52px;
         height: 52px;
@@ -6445,7 +6410,6 @@ body.ai-chat-fullscreen-active {
    ======================== */
 
 #ai-chat-fab {
-    bottom: max(16px, calc(env(safe-area-inset-bottom) + 10px));
     right: max(16px, calc(env(safe-area-inset-right) + 10px));
     width: 58px;
     height: 58px;
@@ -6533,7 +6497,6 @@ body.ai-chat-fullscreen-active {
     #ai-chat-fab {
         width: 54px;
         height: 54px;
-        bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
         right: max(12px, calc(env(safe-area-inset-right) + 4px));
     }
 
@@ -6573,7 +6536,8 @@ body.ai-chat-fullscreen-active {
     width: 68px;
     height: 68px;
     right: max(22px, calc(env(safe-area-inset-right) + 16px));
-    bottom: max(22px, calc(env(safe-area-inset-bottom) + 16px));
+    --lq-fab-dock-fallback: 0px;
+    --lq-fab-edge-bottom: max(22px, calc(env(safe-area-inset-bottom) + 16px));
     isolation: isolate;
     overflow: visible;
     border: 1px solid rgba(255, 255, 255, 0.44);
@@ -7200,7 +7164,7 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
         height: 58px;
         border-radius: var(--radius-xl);
         right: max(12px, calc(env(safe-area-inset-right) + 6px));
-        bottom: max(12px, calc(env(safe-area-inset-bottom) + 6px));
+        --lq-fab-edge-bottom: max(12px, calc(env(safe-area-inset-bottom) + 6px));
     }
 
     .ai-workspace-fab__icon {
@@ -35470,19 +35434,14 @@ body.has-academic-sync-dialog {
     gap: 10px;
     min-height: 66px;
     padding: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.24);
+    border: 1px solid hsl(var(--ls-glass-line));
     border-radius: var(--radius-xl);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.88)),
-        radial-gradient(circle at top left, hsl(var(--ls-teal-bright) / 0.12), transparent 34%);
-    box-shadow: 0 22px 42px -28px rgba(15, 23, 42, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.78);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: var(--ls-glass-shadow);
     contain: layout paint;
     transform: translateY(-10px);
     opacity: 0;
     pointer-events: none;
-    transition: transform 180ms ease, opacity 180ms ease;
+    transition: transform var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease), opacity var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease);
 }
 
 .teacher-whiteboard-root.is-open .teacher-whiteboard-toolbar {
@@ -41811,24 +41770,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     min-width: 0;
 }
 
-.classroom-page .assignment-authoring-sync__chips button,
-.classroom-page .assignment-authoring-sync__actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.38rem;
-    min-height: 2.12rem;
-    padding: 0.4rem 0.54rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: var(--radius-sm);
-    background: hsl(var(--lq-page-control));
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--text-xs);
-    font-weight: 840;
-    cursor: pointer;
-    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
-}
 
 .classroom-page .assignment-authoring-sync__chips button {
     flex: 1 1 8.4rem;
@@ -41840,21 +41781,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     justify-content: flex-end;
 }
 
-.classroom-page .assignment-authoring-sync__chips button:hover,
-.classroom-page .assignment-authoring-sync__chips button:focus-visible,
-.classroom-page .assignment-authoring-sync__actions button:hover:not(:disabled),
-.classroom-page .assignment-authoring-sync__actions button:focus-visible:not(:disabled) {
-    transform: translateY(-1px);
-    border-color: hsl(var(--ls-teal-bright) / 0.34);
-    color: hsl(var(--ls-teal));
-    box-shadow: var(--shadow-xs);
-    outline: none;
-}
 
-.classroom-page .assignment-authoring-sync__actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
 
 .classroom-page .exam-assign-island {
     width: 100%;
@@ -41945,24 +41872,6 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     min-width: 0;
 }
 
-.classroom-page .exam-assign-sync__chips button,
-.classroom-page .exam-assign-sync__actions button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.38rem;
-    min-height: 2.12rem;
-    padding: 0.4rem 0.54rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: var(--radius-sm);
-    background: hsl(var(--lq-page-control));
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--text-xs);
-    font-weight: 840;
-    cursor: pointer;
-    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
-}
 
 .classroom-page .exam-assign-sync__chips button {
     flex: 1 1 8.4rem;
@@ -41974,21 +41883,7 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     justify-content: flex-end;
 }
 
-.classroom-page .exam-assign-sync__chips button:hover,
-.classroom-page .exam-assign-sync__chips button:focus-visible,
-.classroom-page .exam-assign-sync__actions button:hover:not(:disabled),
-.classroom-page .exam-assign-sync__actions button:focus-visible:not(:disabled) {
-    transform: translateY(-1px);
-    border-color: hsl(var(--ls-warning) / 0.38);
-    color: var(--warning-dark);
-    box-shadow: var(--shadow-xs);
-    outline: none;
-}
 
-.classroom-page .exam-assign-sync__actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
 
 .classroom-page .classroom-activity-total {
     flex: 0 0 auto;
@@ -53202,6 +53097,7 @@ body.manage-embedded-page { background: transparent; }
 .cs-progress {
     grid-column: 1 / -1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 12px;
     padding: 10px 14px;
@@ -53225,7 +53121,7 @@ body.manage-embedded-page { background: transparent; }
     transition: width 0.4s ease;
 }
 .cs-progress strong { font-size: 0.8rem; color: hsl(var(--ls-c-indigo-900)); white-space: nowrap; }
-.cs-progress__anchor { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+.cs-progress__anchor { min-width: 0; max-width: 100%; font-size: 0.72rem; color: var(--text-muted); overflow-wrap: anywhere; }
 
 .cs-courses { display: grid; gap: var(--spacing-md); margin-top: var(--spacing-lg); }
 .cs-courses__title {
@@ -57800,11 +57696,13 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 
 .bc-main-column {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-lg);
     min-width: 0;
 }
 
 .bc-panel {
+    min-width: 0;
     padding: var(--spacing-xl);
 }
 
@@ -57988,7 +57886,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .bc-main-grid,
     .bc-form-grid,
     .bc-section-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .bc-toolbar {
@@ -58502,17 +58400,19 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 
 /* ── pages layer: manage/system/monitor.html（从模板内联 style 迁出，P4 第二批；色值待令牌化） ── */
 .monitor-board {
-    --mb-bg: #0b1220;
-    --mb-panel: rgba(20, 30, 52, 0.86);
-    --mb-panel-border: rgba(96, 128, 190, 0.22);
-    --mb-text: #e7edf9;
-    --mb-muted: #8aa0c5;
+    --mb-bg: hsl(var(--ls-surface-2));
+    --mb-panel: hsl(var(--ls-surface-1));
+    --mb-panel-border: hsl(var(--ls-glass-line));
+    --mb-text: hsl(var(--ls-ink));
+    --mb-muted: hsl(var(--ls-ink-2));
     --mb-accent: hsl(var(--ls-c-sky-400));
     --mb-good: hsl(var(--ls-c-emerald-400));
     --mb-warn: hsl(var(--ls-c-amber-400));
     --mb-bad: hsl(var(--ls-c-rose-400));
     position: relative;
-    margin: calc(var(--spacing-6) * -1);
+    /* The shared management shell owns its page gutters. */
+    margin: 0;
+    min-width: 0;
     padding: 22px 24px 30px;
     min-height: calc(100vh - 78px);
     background:
@@ -58708,7 +58608,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 .proc-kill:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .monitor-loss-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
-.monitor-loss-stats > div { background: rgba(11, 18, 32, 0.55); border-radius: 10px; padding: 9px 11px; display: grid; gap: 3px; }
+.monitor-loss-stats > div { background: hsl(var(--ls-glass-fill-inset)); border-radius: 10px; padding: 9px 11px; display: grid; gap: 3px; }
 .monitor-loss-stats span { color: var(--mb-muted); font-size: 0.66rem; font-weight: 700; }
 .monitor-loss-stats b { font-size: 1.05rem; font-variant-numeric: tabular-nums; color: var(--mb-text); }
 
@@ -58731,7 +58631,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 }
 
 @media (max-width: 640px) {
-    .monitor-board { margin: calc(var(--spacing-4) * -1); padding: 14px; }
+    .monitor-board { padding: 14px; }
     .monitor-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .monitor-insight__body { grid-template-columns: 1fr; }
 }
@@ -61020,7 +60920,7 @@ body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab {
     width: 52px;
     height: 52px;
     right: max(14px, calc(env(safe-area-inset-right) + 8px));
-    bottom: max(70px, calc(env(safe-area-inset-bottom) + 64px));
+    --lq-fab-edge-bottom: max(70px, calc(env(safe-area-inset-bottom) + 64px));
     border-radius: var(--radius-lg);
 }
 body.ls-render-shell-page #ai-chat-fab.ai-workspace-fab .ai-workspace-fab__icon {
@@ -61061,7 +60961,7 @@ body.ls-render-shell-page .teacher-whiteboard-fab svg {
         width: 46px;
         height: 46px;
         right: max(10px, calc(env(safe-area-inset-right) + 6px));
-        bottom: max(94px, calc(env(safe-area-inset-bottom) + 88px));
+        --lq-fab-edge-bottom: max(94px, calc(env(safe-area-inset-bottom) + 88px));
     }
     body.ls-render-shell-page .teacher-whiteboard-fab {
         width: 46px;

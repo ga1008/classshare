@@ -55,11 +55,11 @@
         </div>
     {% endcall %}
 
-    <section class="classroom-control-panel" aria-label="教学场地筛选">
+    <section data-lq-component="surface" class="lq-surface classroom-control-panel" aria-label="教学场地筛选">
         <div class="classroom-control-main">
             <label class="academic-search classroom-search" for="classroomSearchInput">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                <input id="classroomSearchInput" type="search" class="form-control" placeholder="搜索 B422、知新楼、实验室或校区">
+                <input data-lq-component="input" id="classroomSearchInput" type="search" class="lq-input form-control" placeholder="搜索 B422、知新楼、实验室或校区">
             </label>
             {% if _cr_lq_enabled %}
             {% set _cr_campus_options = [{'value': '', 'label': '全部校区'}] %}
@@ -78,7 +78,7 @@
                     {'value': '', 'label': '全部状态'}, {'value': 'schedulable', 'label': '可排课'},
                     {'value': 'borrowable', 'label': '可借用'}, {'value': 'exam', 'label': '考试可用'}]) }}
             </div>
-            <button type="button" class="btn btn-outline" id="classroomFilterResetBtn">清除筛选</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="classroomFilterResetBtn">清除筛选</button>
         </div>
         {# 真实控件 #classroomTypeFilter 完整保留在上面；这一行只是它的快捷代理。
            manage_classrooms.js 仍按 [data-room-type] 找 chip；本轮给它补了 aria-pressed 同步
@@ -90,7 +90,7 @@
             <div class="classroom-filter-fields">
                 <label class="academic-filter-field" for="classroomCampusFilter">
                     <span>校区</span>
-                    <select id="classroomCampusFilter" class="form-control">
+                    <select data-lq-component="select" id="classroomCampusFilter" class="lq-select form-control">
                         <option value="">全部校区</option>
                         {% for item in options.campuses or [] %}
                         {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
@@ -99,7 +99,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomBuildingFilter">
                     <span>楼号</span>
-                    <select id="classroomBuildingFilter" class="form-control">
+                    <select data-lq-component="select" id="classroomBuildingFilter" class="lq-select form-control">
                         {% for item in options.buildings or [] %}
                         <option value="{{ item.id }}">{{ item.name }}</option>
                         {% endfor %}
@@ -107,7 +107,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomTypeFilter">
                     <span>类别</span>
-                    <select id="classroomTypeFilter" class="form-control">
+                    <select data-lq-component="select" id="classroomTypeFilter" class="lq-select form-control">
                         {% for item in options.room_types or [] %}
                         <option value="{{ item.id }}">{{ item.name }}</option>
                         {% endfor %}
@@ -115,7 +115,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomAvailabilityFilter">
                     <span>状态</span>
-                    <select id="classroomAvailabilityFilter" class="form-control">
+                    <select data-lq-component="select" id="classroomAvailabilityFilter" class="lq-select form-control">
                         <option value="">全部状态</option>
                         <option value="schedulable">可排课</option>
                         <option value="borrowable">可借用</option>
@@ -123,13 +123,13 @@
                     </select>
                 </label>
             </div>
-            <button type="button" class="btn btn-outline" id="classroomFilterResetBtn">清除筛选</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="classroomFilterResetBtn">清除筛选</button>
         </div>
         <div class="classroom-chip-row" id="classroomQuickTypeChips" aria-label="场地类别快捷筛选">
-            <button type="button" class="classroom-chip is-active" data-room-type="">全部</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-chip is-active" data-room-type="">全部</button>
             {% for item in (options.room_types or [])[:8] %}
             {% if item.id %}
-            <button type="button" class="classroom-chip" data-room-type="{{ item.id }}">{{ item.name }}</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-chip" data-room-type="{{ item.id }}">{{ item.name }}</button>
             {% endif %}
             {% endfor %}
         </div>
@@ -137,15 +137,15 @@
     </section>
 
     <section class="classroom-workspace">
-        <div class="classroom-list-panel">
+        <div data-lq-component="surface" class="lq-surface classroom-list-panel">
             <div class="classroom-section-head">
                 <div>
                     <h3>教学场地</h3>
                     <p><span id="classroomResultCount">{{ teaching_place_pagination.total_count if teaching_place_pagination else (teaching_places | length) }}</span> 个场地符合当前条件</p>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" id="classroomReloadBtn">刷新列表</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroomReloadBtn">刷新列表</button>
             </div>
-            <div class="classroom-list-toolbar" aria-label="教学场地分页设置">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar classroom-list-toolbar" aria-label="教学场地分页设置">
                 <span class="classroom-pagination-summary" id="classroomPaginationSummary">第 1 页</span>
                 {# 「每页」不迁 lq_field：lq-field 是块级字段（label 在控件上方），
                    而 .classroom-list-toolbar 是一行内联 flex。截图比对确认迁移后
@@ -153,7 +153,7 @@
                    要迁必须先有页面级 CSS（本包未获授权新增 lq/pages 样式）。 #}
                 <label class="classroom-page-size" for="classroomPageSizeSelect">
                     <span>每页</span>
-                    <select id="classroomPageSizeSelect" class="form-control">
+                    <select data-lq-component="select" id="classroomPageSizeSelect" class="lq-select form-control">
                         <option value="10" selected>10 条</option>
                         <option value="20">20 条</option>
                         <option value="50">50 条</option>
@@ -177,13 +177,13 @@
             <nav class="classroom-pagination" aria-label="教学场地分页">
                 <span class="classroom-page-indicator" id="classroomPageIndicator">1 / 1</span>
                 <span class="classroom-pagination-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" id="classroomPrevPageBtn">上一页</button>
-                    <button type="button" class="btn btn-ghost btn-sm" id="classroomNextPageBtn">下一页</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroomPrevPageBtn">上一页</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroomNextPageBtn">下一页</button>
                 </span>
             </nav>
         </div>
 
-        <aside class="classroom-free-panel" id="freeRoomQueryPanel" aria-label="空闲教室实时查询">
+        <aside data-lq-component="surface" class="lq-surface classroom-free-panel" id="freeRoomQueryPanel" aria-label="空闲教室实时查询">
             <div class="classroom-section-head">
                 <div>
                     <h3>空闲教室</h3>
@@ -195,7 +195,7 @@
                 <div class="classroom-free-grid">
                     <label class="academic-filter-field is-wide" for="freeRoomSemesterSelect">
                         <span>学期</span>
-                        <select id="freeRoomSemesterSelect" class="form-control">
+                        <select data-lq-component="select" id="freeRoomSemesterSelect" class="lq-select form-control">
                             <option value="">自动识别当前学期</option>
                             {% for semester in semester_options %}
                             <option
@@ -220,7 +220,7 @@
                     {% else %}
                     <label class="academic-filter-field" for="freeRoomCampusSelect">
                         <span>校区</span>
-                        <select id="freeRoomCampusSelect" class="form-control">
+                        <select data-lq-component="select" id="freeRoomCampusSelect" class="lq-select form-control">
                             {% for item in options.campuses or [] %}
                             {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
                             {% endfor %}
@@ -228,7 +228,7 @@
                     </label>
                     <label class="academic-filter-field" for="freeRoomBuildingSelect">
                         <span>楼号</span>
-                        <select id="freeRoomBuildingSelect" class="form-control">
+                        <select data-lq-component="select" id="freeRoomBuildingSelect" class="lq-select form-control">
                             {% for item in options.buildings or [] %}
                             <option value="{{ item.id }}">{{ item.name }}</option>
                             {% endfor %}
@@ -236,7 +236,7 @@
                     </label>
                     <label class="academic-filter-field" for="freeRoomTypeSelect">
                         <span>类别</span>
-                        <select id="freeRoomTypeSelect" class="form-control">
+                        <select data-lq-component="select" id="freeRoomTypeSelect" class="lq-select form-control">
                             {% for item in options.room_types or [] %}
                             <option value="{{ item.id }}">{{ item.name }}</option>
                             {% endfor %}
@@ -244,7 +244,7 @@
                     </label>
                     <label class="academic-filter-field" for="freeRoomNameInput">
                         <span>教室</span>
-                        <input id="freeRoomNameInput" type="search" class="form-control" placeholder="可填 B422">
+                        <input data-lq-component="input" id="freeRoomNameInput" type="search" class="lq-input form-control" placeholder="可填 B422">
                     </label>
                     {% endif %}
                 </div>
@@ -256,13 +256,13 @@
                 <div class="classroom-time-block">
                     <strong>星期</strong>
                     <div class="classroom-weekday-row" id="freeRoomWeekdayRow">
-                        <button type="button" class="classroom-toggle-chip is-active" data-weekday="1">周一</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="2">周二</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="3">周三</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="4">周四</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="5">周五</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="6">周六</button>
-                        <button type="button" class="classroom-toggle-chip" data-weekday="7">周日</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip is-active" data-weekday="1">周一</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="2">周二</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="3">周三</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="4">周四</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="5">周五</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="6">周六</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip" data-weekday="7">周日</button>
                     </div>
                 </div>
                 <div class="classroom-time-block">
@@ -270,10 +270,10 @@
                     <div class="classroom-section-row" id="freeRoomSectionRow"></div>
                 </div>
 
-                <button type="submit" class="btn btn-primary" id="freeRoomSubmitBtn">查询空闲教室</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="freeRoomSubmitBtn">查询空闲教室</button>
             </form>
 
-            <section class="classroom-result-panel" aria-label="空闲教室查询结果">
+            <section data-lq-component="surface" class="lq-surface classroom-result-panel" aria-label="空闲教室查询结果">
                 <div class="classroom-result-head">
                     <div>
                         <h3>实时查询结果</h3>
@@ -286,7 +286,7 @@
                     <strong>等待查询条件</strong>
                     选择周次、星期和节次后即可查看可用场地。
                 </div>
-                <div class="classroom-recommend-panel" id="freeRoomRecommendationPanel" hidden>
+                <div data-lq-component="surface" class="lq-surface classroom-recommend-panel" id="freeRoomRecommendationPanel" hidden>
                     <div class="classroom-recommend-head">
                         <div>
                             <h4>同类型空闲推荐</h4>

@@ -74,7 +74,7 @@
     gap: 8px;
 }
 .submission-jump-btn,
-.submission-jump-question {
+.submission-jump-question:not(.lq-btn) {
     width: 100%;
     border: 1px solid hsl(var(--ls-tone-info-base) / 0.18);
     border-radius: 8px;
@@ -109,6 +109,8 @@
     line-height: 1.35;
 }
 .submission-jump-question {
+    width: 100%;
+    text-align: left;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
@@ -148,9 +150,9 @@
     background: hsl(var(--ls-tone-success-base));
 }
 .submission-jump-btn:hover,
-.submission-jump-question:hover,
+.submission-jump-question:not(.lq-btn):hover,
 .submission-jump-btn:focus-visible,
-.submission-jump-question:focus-visible {
+.submission-jump-question:not(.lq-btn):focus-visible {
     border-color: hsl(var(--ls-primary) / 0.28);
     background: hsl(var(--lq-page-content));
     color: var(--text-primary);
@@ -615,12 +617,14 @@
     gap: var(--spacing-md);
     align-items: end;
 }
+.attachment-manage-panel > * { min-width: 0; }
 .attachment-manage-copy {
     display: flex;
     flex-direction: column;
     gap: 4px;
     color: var(--text-muted);
     font-size: 0.85rem;
+    overflow-wrap: anywhere;
 }
 .attachment-actions {
     display: flex;
@@ -672,7 +676,7 @@
     }
     .submission-preview-file-row,
     .attachment-manage-panel {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
     .attachment-actions {
         justify-content: stretch;

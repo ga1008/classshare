@@ -230,8 +230,8 @@ function syncLessonWorkbench() {
         const state = lessonCompletionState(row);
         const isActive = index === activeLessonIndex;
         return `
-            <button type="button"
-                    class="course-lesson-nav-item is-${state}${isActive ? ' is-active' : ''}"
+            <button data-lq-component="button" type="button"
+                    class="lq-btn lq-btn--sm lq-btn--glass course-lesson-nav-item is-${state}${isActive ? ' is-active' : ''}"
                     data-action="select-lesson"
                     data-lesson-index="${index}"
                     aria-current="${isActive ? 'true' : 'false'}">
@@ -466,8 +466,8 @@ function renderCourseGroups() {
             section.dataset.courseGroupKey = group.key;
             section.hidden = group.visibleCount === 0;
             section.innerHTML = `
-                <button type="button"
-                        class="course-group-header"
+                <button data-lq-component="button" type="button"
+                        class="lq-btn lq-btn--sm lq-btn--glass course-group-header"
                         data-action="toggle-course-group"
                         data-course-group-collapse-key="${escapeHtml(collapseKey)}"
                         aria-expanded="${isCollapsed ? 'false' : 'true'}"

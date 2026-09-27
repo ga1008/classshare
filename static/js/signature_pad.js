@@ -14,16 +14,16 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
         <div style="display:grid;gap:12px;width:min(720px,100%);padding:18px;border-radius:14px;background:#fff;box-shadow:0 24px 70px rgba(15,23,42,.3);">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
                 <strong style="color:#172033;font-size:1.05rem;">${title}</strong>
-                <button type="button" data-pad-close style="width:32px;height:32px;border:0;border-radius:8px;background:#f1f5f9;color:#475569;font-size:20px;cursor:pointer;">×</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-pad-close style="width:32px;height:32px;border:0;border-radius:8px;background:#f1f5f9;color:#475569;font-size:20px;cursor:pointer;">×</button>
             </div>
             <p style="margin:0;color:#64748b;font-size:0.85rem;">用鼠标或手指在下方白板上书写签名；提交后系统会自动裁边并把白底转为透明。</p>
             <canvas data-pad-canvas style="width:100%;height:280px;border:1px dashed #cbd5e1;border-radius:10px;background:#fff;cursor:crosshair;touch-action:none;"></canvas>
             <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-                <button type="button" class="btn btn-ghost btn-sm" data-pad-undo>撤销一笔</button>
-                <button type="button" class="btn btn-ghost btn-sm" data-pad-clear>清空</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-pad-undo>撤销一笔</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-pad-clear>清空</button>
                 <span style="flex:1"></span>
-                <button type="button" class="btn btn-outline btn-sm" data-pad-cancel>取消</button>
-                <button type="button" class="btn btn-primary btn-sm" data-pad-confirm disabled>使用这个签名</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-pad-cancel>取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-pad-confirm disabled>使用这个签名</button>
             </div>
         </div>
     `;

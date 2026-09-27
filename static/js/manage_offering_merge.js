@@ -27,7 +27,7 @@ function renderMergeCandidates(candidates) {
             : '<span class="academic-badge">请自行确认确为合班</span>';
         const rows = group.offerings.map((o) => `
             <label class="offering-merge-option">
-                <input type="radio" name="mergeTarget-${index}" value="${o.offering_id}" ${o.offering_id === group.recommended_target_id ? 'checked' : ''}>
+                <input data-lq-component="radio" class="lq-radio" type="radio" name="mergeTarget-${index}" value="${o.offering_id}" ${o.offering_id === group.recommended_target_id ? 'checked' : ''}>
                 <span><strong>${escapeHtml(o.class_name)}</strong>（课堂 #${o.offering_id} · ${o.student_count} 人 · ${o.assignment_count} 作业 · ${o.session_count} 课次）</span>
             </label>`).join('');
         return `
@@ -40,7 +40,7 @@ function renderMergeCandidates(candidates) {
             <p class="offering-merge-hint">选择保留为主课堂的一项（其余课堂的数据将迁入主课堂）：</p>
             ${rows}
             <div class="offering-merge-actions">
-                <button type="button" class="btn btn-secondary btn-sm" data-merge-preview>预检合并</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" data-merge-preview>预检合并</button>
             </div>
             <div class="offering-merge-preview" data-merge-preview-result hidden></div>
         </article>`;
@@ -83,16 +83,16 @@ async function handleMergePreview(groupEl, candidates) {
             <p>共 ${preview.total_source_rows} 行数据将迁入主课堂「${escapeHtml(preview.target.class_name)}」。</p>
             ${blockers ? `<ul>${blockers}</ul><p class="text-danger">存在阻断项，无法执行。</p>` : ''}
             ${warnings ? `<ul>${warnings}</ul>` : ''}
-            <details><summary>关联内容明细（${preview.tables.length} 类）</summary>
+            <details><summary data-lq-component="disclosure" class="lq-disclosure-trigger">关联内容明细（${preview.tables.length} 类）</summary>
                 <table class="offering-merge-table"><thead><tr><th>关联内容</th><th>处理方式</th><th>数量</th></tr></thead>
                 <tbody>${tableRows}</tbody></table>
             </details>
             ${preview.can_execute ? `
             <div class="offering-merge-confirm">
-                <input type="text" class="form-control" data-merge-confirm-input
+                <input data-lq-component="input" type="text" class="lq-input form-control" data-merge-confirm-input
                        placeholder="输入主课堂班级名「${escapeHtml(preview.target.class_name || targetName)}」确认">
-                <label class="offering-merge-ack"><input type="checkbox" data-merge-ack> 我已知晓该操作不可逆（已生成数据快照兜底）</label>
-                <button type="button" class="btn btn-sm text-danger" data-merge-execute>确认合并（不可逆）</button>
+                <label class="offering-merge-ack"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-merge-ack> 我已知晓该操作不可逆（已生成数据快照兜底）</label>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive btn btn-sm text-danger" data-merge-execute>确认合并（不可逆）</button>
             </div>` : ''}
         `;
     } catch (error) {

@@ -28,40 +28,40 @@
         </div>
     </section>
 
-    <section class="um-create-card">
+    <section data-lq-component="surface" class="lq-surface um-create-card">
         <h3>新增教师</h3>
         <form id="teacher-create-form">
             <div class="form-group">
                 <label class="form-label required" for="create-name">姓名</label>
-                <input class="form-control" id="create-name" name="name" type="text" required>
+                <input data-lq-component="input" class="lq-input form-control" id="create-name" name="name" type="text" required>
             </div>
             <div class="form-group">
                 <label class="form-label required" for="create-email">邮箱</label>
-                <input class="form-control" id="create-email" name="email" type="email" required>
+                <input data-lq-component="input" class="lq-input form-control" id="create-email" name="email" type="email" required>
             </div>
             <div class="form-group">
                 <label class="form-label required" for="create-password">初始密码</label>
-                <input class="form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
+                <input data-lq-component="input" class="lq-input form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
             </div>
             <div class="form-group">
                 <label class="form-label required" for="create-school-name">学校</label>
-                <input class="form-control" id="create-school-name" name="school_name" type="text" required placeholder="默认：广西外国语学院">
+                <input data-lq-component="input" class="lq-input form-control" id="create-school-name" name="school_name" type="text" required placeholder="默认：广西外国语学院">
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div class="form-group">
                     <label class="form-label" for="create-college">学院</label>
-                    <input class="form-control" id="create-college" name="college" type="text" placeholder="例如：信息工程学院">
+                    <input data-lq-component="input" class="lq-input form-control" id="create-college" name="college" type="text" placeholder="例如：信息工程学院">
                 </div>
                 <div class="form-group">
                     <label class="form-label required" for="create-department">系别</label>
-                    <input class="form-control" id="create-department" name="department" type="text" required placeholder="例如：软件工程系">
+                    <input data-lq-component="input" class="lq-input form-control" id="create-department" name="department" type="text" required placeholder="例如：软件工程系">
                 </div>
             </div>
             <label class="form-check">
-                <input class="form-check-input" type="checkbox" name="is_super_admin" value="1">
+                <input data-lq-component="checkbox" class="lq-checkbox form-check-input" type="checkbox" name="is_super_admin" value="1">
                 <span>同时授予超管权限</span>
             </label>
-            <button class="btn btn-success" type="submit">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
                 创建教师
             </button>
@@ -69,12 +69,12 @@
     </section>
 </div>
 
-<section class="um-panel">
-    <div class="um-toolbar">
+<section data-lq-component="surface" class="lq-surface um-panel">
+    <div data-lq-component="toolbar" class="lq-domain-toolbar um-toolbar">
         <h3>教师列表</h3>
         <div class="um-toolbar-controls">
-            <input class="form-control um-search" id="teacher-search" type="search" placeholder="搜索姓名、邮箱、联系方式">
-            <select class="form-control um-filter" id="teacher-status-filter">
+            <input data-lq-component="input" class="lq-input form-control um-search" id="teacher-search" type="search" placeholder="搜索姓名、邮箱、联系方式">
+            <select data-lq-component="select" class="lq-select form-control um-filter" id="teacher-status-filter">
                 <option value="all">全部状态</option>
                 <option value="active">启用中</option>
                 <option value="super">超管</option>
@@ -155,15 +155,15 @@
                     </td>
                     <td>
                         <div class="um-actions">
-                            <button class="btn btn-outline btn-sm" type="button" data-action="edit" {% if not teacher.is_active %}disabled{% endif %}>修改</button>
-                            <button class="btn btn-outline btn-sm" type="button" data-action="memberships" {% if not teacher.is_active %}disabled{% endif %}>任教归属</button>
-                            <button class="btn btn-secondary btn-sm" type="button" data-action="reset" {% if not teacher.is_active %}disabled{% endif %}>重置密码</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="edit" {% if not teacher.is_active %}disabled{% endif %}>修改</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="memberships" {% if not teacher.is_active %}disabled{% endif %}>任教归属</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" type="button" data-action="reset" {% if not teacher.is_active %}disabled{% endif %}>重置密码</button>
                             {% if teacher.is_super_admin %}
-                            <button class="btn btn-outline btn-sm" type="button" data-action="revoke" {% if not teacher.is_active %}disabled{% endif %}>撤销超管</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="revoke" {% if not teacher.is_active %}disabled{% endif %}>撤销超管</button>
                             {% else %}
-                            <button class="btn btn-outline btn-sm" type="button" data-action="grant" {% if not teacher.is_active %}disabled{% endif %}>授予超管</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="grant" {% if not teacher.is_active %}disabled{% endif %}>授予超管</button>
                             {% endif %}
-                            <button class="btn btn-danger btn-sm" type="button" data-action="delete" {% if (not teacher.is_active) or teacher.id == user_info.id %}disabled{% endif %}>删除</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" type="button" data-action="delete" {% if (not teacher.is_active) or teacher.id == user_info.id %}disabled{% endif %}>删除</button>
                         </div>
                     </td>
                 </tr>
@@ -174,12 +174,12 @@
     </div>
 </section>
 
-<div class="um-modal-backdrop" id="teacher-edit-modal" hidden>
-    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-edit-title">
+<div class="lq-domain-region um-modal-backdrop" id="teacher-edit-modal" hidden data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-edit-title">
         <form id="teacher-edit-form">
             <div class="um-modal-header">
                 <h3 id="teacher-edit-title">修改教师资料</h3>
-                <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-edit-modal" aria-label="关闭">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-edit-modal" aria-label="关闭">
                     <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -187,66 +187,66 @@
                 <input type="hidden" name="teacher_id" id="edit-teacher-id">
                 <div class="form-group">
                     <label class="form-label required" for="edit-name">姓名</label>
-                    <input class="form-control" id="edit-name" name="name" type="text" required>
+                    <input data-lq-component="input" class="lq-input form-control" id="edit-name" name="name" type="text" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label required" for="edit-email">邮箱</label>
-                    <input class="form-control" id="edit-email" name="email" type="email" required>
+                    <input data-lq-component="input" class="lq-input form-control" id="edit-email" name="email" type="email" required>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="edit-phone">电话</label>
-                        <input class="form-control" id="edit-phone" name="phone" type="text">
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-phone" name="phone" type="text">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-wechat">微信</label>
-                        <input class="form-control" id="edit-wechat" name="wechat" type="text">
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-wechat" name="wechat" type="text">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-qq">QQ</label>
-                        <input class="form-control" id="edit-qq" name="qq" type="text">
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-qq" name="qq" type="text">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-homepage-url">主页</label>
-                        <input class="form-control" id="edit-homepage-url" name="homepage_url" type="url">
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-homepage-url" name="homepage_url" type="url">
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label required" for="edit-school-name">学校</label>
-                    <input class="form-control" id="edit-school-name" name="school_name" type="text" required>
+                    <input data-lq-component="input" class="lq-input form-control" id="edit-school-name" name="school_name" type="text" required>
                     <input id="edit-school-code" name="school_code" type="hidden">
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="edit-college">学院</label>
-                        <input class="form-control" id="edit-college" name="college" type="text">
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-college" name="college" type="text">
                     </div>
                     <div class="form-group">
                         <label class="form-label required" for="edit-department">系别</label>
-                        <input class="form-control" id="edit-department" name="department" type="text" required>
+                        <input data-lq-component="input" class="lq-input form-control" id="edit-department" name="department" type="text" required>
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="edit-description">简介</label>
-                    <textarea class="form-control" id="edit-description" name="description" rows="3"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control" id="edit-description" name="description" rows="3"></textarea>
                 </div>
             </div>
             <div class="um-modal-footer">
-                <button class="btn btn-ghost" type="button" data-close-modal="teacher-edit-modal">取消</button>
-                <button class="btn btn-success" type="submit">保存修改</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" type="button" data-close-modal="teacher-edit-modal">取消</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">保存修改</button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="um-modal-backdrop" id="teacher-membership-modal" hidden>
-    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-membership-title">
+<div class="lq-domain-region um-modal-backdrop" id="teacher-membership-modal" hidden data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-membership-title">
         <div class="um-modal-header">
             <div>
                 <h3 id="teacher-membership-title">任教归属</h3>
                 <p class="text-muted text-sm mb-0" id="membership-target-label"></p>
             </div>
-            <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-membership-modal" aria-label="关闭">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-membership-modal" aria-label="关闭">
                 <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
         </div>
@@ -257,34 +257,34 @@
                 <input type="hidden" id="membership-school-code" name="school_code">
                 <div class="form-group">
                     <label class="form-label required" for="membership-school-name">学校</label>
-                    <input class="form-control" id="membership-school-name" name="school_name" type="text" required>
+                    <input data-lq-component="input" class="lq-input form-control" id="membership-school-name" name="school_name" type="text" required>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="membership-college">学院</label>
-                        <input class="form-control" id="membership-college" name="college" type="text">
+                        <input data-lq-component="input" class="lq-input form-control" id="membership-college" name="college" type="text">
                     </div>
                     <div class="form-group">
                         <label class="form-label required" for="membership-department">系别</label>
-                        <input class="form-control" id="membership-department" name="department" type="text" required>
+                        <input data-lq-component="input" class="lq-input form-control" id="membership-department" name="department" type="text" required>
                     </div>
                 </div>
                 <label class="form-check">
-                    <input class="form-check-input" type="checkbox" name="is_primary" value="1">
+                    <input data-lq-component="checkbox" class="lq-checkbox form-check-input" type="checkbox" name="is_primary" value="1">
                     <span>设为默认任教归属</span>
                 </label>
-                <button class="btn btn-success" type="submit">保存任教归属</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">保存任教归属</button>
             </form>
         </div>
     </div>
 </div>
 
-<div class="um-modal-backdrop" id="teacher-password-modal" hidden>
-    <div class="um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-password-title">
+<div class="lq-domain-region um-modal-backdrop" id="teacher-password-modal" hidden data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-password-title">
         <form id="teacher-password-form">
             <div class="um-modal-header">
                 <h3 id="teacher-password-title">重置教师密码</h3>
-                <button class="btn btn-ghost btn-icon" type="button" data-close-modal="teacher-password-modal" aria-label="关闭">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-password-modal" aria-label="关闭">
                     <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -293,12 +293,12 @@
                 <p class="text-muted mb-0" id="password-target-label"></p>
                 <div class="form-group">
                     <label class="form-label required" for="reset-password">新密码</label>
-                    <input class="form-control" id="reset-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
+                    <input data-lq-component="input" class="lq-input form-control" id="reset-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
                 </div>
             </div>
             <div class="um-modal-footer">
-                <button class="btn btn-ghost" type="button" data-close-modal="teacher-password-modal">取消</button>
-                <button class="btn btn-success" type="submit">确认重置</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" type="button" data-close-modal="teacher-password-modal">取消</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">确认重置</button>
             </div>
         </form>
     </div>
@@ -414,8 +414,8 @@
                         <span class="um-badge ${isActive ? 'is-super' : 'is-inactive'}">${isActive ? (item.is_primary ? '默认' : '启用') : '已停用'}</span>
                     </header>
                     <div class="um-membership-actions">
-                        <button class="btn btn-outline btn-sm" type="button" data-membership-action="primary" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${(!isActive || item.is_primary) ? 'disabled' : ''}>设为默认</button>
-                        <button class="btn btn-danger btn-sm" type="button" data-membership-action="delete" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${canDeactivate ? '' : 'disabled'}>停用</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-membership-action="primary" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${(!isActive || item.is_primary) ? 'disabled' : ''}>设为默认</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" type="button" data-membership-action="delete" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${canDeactivate ? '' : 'disabled'}>停用</button>
                     </div>
                 </article>
             `;

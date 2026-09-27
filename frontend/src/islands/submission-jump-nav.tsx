@@ -1,3 +1,4 @@
+import { LqButton } from '@/components/lq-presentation';
 import { CheckCircle2, Circle } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 
@@ -54,9 +55,9 @@ function SubmissionJumpNavIsland(payload: SubmissionJumpPayload) {
             </div>
             <div className="submission-jump-question-list">
               {group.items.map((item) => (
-                <button
-                  className={`submission-jump-question ${item.answered ? 'is-answered' : ''}`}
-                  data-jump-question={`submission-q-${item.index}`}
+                <LqButton size="sm" variant="glass"
+                  className={`lq-domain-choice submission-jump-question ${item.answered ? 'is-answered' : ''}`}
+                  attrs={{ 'data-jump-question': `submission-q-${item.index}` }}
                   key={`${item.index}-${item.id}`}
                   onClick={() => scrollToSubmissionTarget(`submission-q-${item.index}`)}
                   type="button"
@@ -66,7 +67,7 @@ function SubmissionJumpNavIsland(payload: SubmissionJumpPayload) {
                   <span className="submission-jump-state" aria-hidden="true">
                     {item.answered ? <CheckCircle2 size={13} /> : <Circle size={12} />}
                   </span>
-                </button>
+                </LqButton>
               ))}
             </div>
           </div>

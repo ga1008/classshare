@@ -1,0 +1,140 @@
+/* Explicit component ownership for server-authored and domain-owned DOM.
+ * The recipes themselves live in button/forms/materials, including states.
+ * Only paint is sealed here: a late legacy stylesheet cannot replace it.
+ * Layout, value, events, focus, form ownership and business transforms remain
+ * with the caller. Never apply this contract by scanning/guessing the DOM.
+ */
+/* Component display recipes must never reveal a natively hidden control.
+ * until-found keeps the browser's searchable, content-visibility behavior. */
+:root [data-lq-component][hidden]:not([hidden="until-found" i]) {
+    display: none !important;
+}
+:root [data-lq-component].lq-btn:not([data-lq-visual="color"], [data-lq-visual="category"]),
+:root [data-lq-component].lq-chip--filter,
+:root [data-lq-component]:is(.lq-input, .lq-textarea, .lq-select) {
+    background: var(--lq-control-background) !important;
+    color: var(--lq-control-color) !important;
+    border-color: var(--lq-control-border) !important;
+    border-style: solid !important;
+    border-width: 1px !important;
+    box-shadow: var(--lq-ctrl-rim), var(--lq-ctrl-glow), var(--lq-ctrl-elev) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+/* Data previews and category cells (course/status encoding) are content slots,
+ * not a new skin. Category is limited to a data cell, never an entire toolbar.
+ * Their outer control still shares the rim, focus and motion contract.
+ */
+:root [data-lq-component]:is([data-lq-visual="color"], [data-lq-visual="category"]) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root [data-lq-component]:is(.lq-input, .lq-textarea, .lq-select):disabled {
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    --lq-control-border: hsl(var(--ls-line-strong));
+    opacity: 1;
+    cursor: not-allowed;
+}
+/* Native detail disclosure remains a summary (including its keyboard action
+ * and list marker); a link remains a link. No second click controller. */
+.lq-disclosure-trigger {
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink)));
+    --lq-control-border: hsl(var(--ls-glass-line));
+    color: var(--lq-control-color);
+    cursor: pointer;
+    border-radius: var(--ls-r-sm);
+}
+.lq-disclosure-trigger:focus-visible {
+    outline: 2px solid hsl(var(--ls-ring));
+    outline-offset: 2px;
+}
+/* Compound controls keep their content-driven geometry. This is a named
+ * variant of Button, not a button-shaped card with a second material. */
+.lq-domain-choice {
+    --lq-btn-pad: var(--ls-s-3);
+    min-width: 0;
+    text-align: start;
+    white-space: normal;
+    border-radius: var(--ls-r-md);
+}
+[data-lq-component="surface"].lq-surface:not([data-lq-material="raised"], [data-lq-visual="category"]) {
+    /* A selected parent must not tint an unselected nested surface. */
+    --lq-surface-background: hsl(var(--lq-material-fill));
+    background: var(--lq-surface-background, hsl(var(--lq-material-fill))) !important;
+    color: hsl(var(--ls-ink));
+    border-color: hsl(var(--ls-glass-line));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom));
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+/* Shared Surface selection state keeps the material underneath its tint.
+ * Transparency off therefore remains opaque; selection adds no blur host.
+ */
+[data-lq-component="surface"].lq-surface[data-lq-selected="true"]:not([data-lq-material="raised"], [data-lq-visual="category"]) {
+    --lq-surface-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-material-fill));
+    color: hsl(var(--ls-on-primary-soft));
+    border-color: hsl(var(--ls-primary));
+    box-shadow: inset 0 0 0 1px hsl(var(--ls-primary));
+}
+.lq-domain-raised[data-lq-material="raised"] {
+    background-color: hsl(var(--lq-material-fill)) !important;
+    background-image: var(--ls-glass-sheen) !important;
+    color: hsl(var(--lq-material-ink));
+    border-color: hsl(var(--ls-glass-line));
+}
+/* Toolbar is a composition boundary, not a second nested blur carrier. */
+.lq-domain-toolbar { min-width: 0; max-width: 100%; }
+.lq-native-file, .lq-native-color { font: inherit; color: hsl(var(--ls-ink)); accent-color: hsl(var(--ls-primary)); }
+.lq-native-file::file-selector-button {
+    padding: var(--ls-s-2) var(--ls-s-3);
+    margin-inline-end: var(--ls-s-2);
+    border: 1px solid hsl(var(--ls-glass-line));
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--ls-glass-fill-control));
+    color: hsl(var(--ls-ink));
+    font: inherit;
+    cursor: pointer;
+}
+.lq-native-file:focus-visible, .lq-native-color:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
+/* Calendar cells are a compact grid variant; keep seven columns within the
+ * native popover on a 320px screen while sharing all colour/state recipes. */
+.ls-dp-pop .lq-btn { min-width: 0; }
+.ls-dp-pop :is(.ls-dp-day, .ls-dp-cell, .ls-dp-time-item).lq-btn { padding: var(--ls-s-1); }
+.ls-dp-day.is-today { --lq-control-border: hsl(var(--ls-primary)); }
+.ls-dp-day.is-in-range { --lq-control-background: hsl(var(--ls-primary-soft)); }
+.ls-dp-display.lq-btn { justify-content: flex-start; width: 100%; }
+/* Native top-layer/focus/returnValue remain browser-owned. Discrete CSS
+ * presence adds interruption-safe motion without wrapping showModal/close or
+ * delaying any business event. Browsers without discrete transitions simply
+ * close immediately, preserving the complete native interaction. */
+dialog:is(.lq-native-dialog, .lq-domain-region) {
+    opacity: 0;
+    scale: var(--lq-motion-overlay-scale, .98);
+    transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out),
+        scale var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, ease-out),
+        display var(--lq-motion-presence-duration, 220ms) allow-discrete,
+        overlay var(--lq-motion-presence-duration, 220ms) allow-discrete;
+}
+dialog:is(.lq-native-dialog, .lq-domain-region)[open] { opacity: 1; scale: 1; }
+@starting-style {
+    dialog:is(.lq-native-dialog, .lq-domain-region)[open] { opacity: 0; scale: var(--lq-motion-overlay-scale, .98); }
+}
+@media (prefers-reduced-motion: reduce) {
+    dialog:is(.lq-native-dialog, .lq-domain-region) { transition: none !important; scale: 1; }
+}
+@media (forced-colors: active) {
+    :root [data-lq-component]:is(.lq-input, .lq-textarea, .lq-select) {
+        --lq-control-background: Canvas;
+        --lq-control-color: CanvasText;
+        --lq-control-border: CanvasText;
+    }
+    :root [data-lq-component].lq-btn:not([data-lq-visual="color"]) {
+        --lq-control-background: ButtonFace;
+        --lq-control-color: ButtonText;
+        --lq-control-border: ButtonText;
+    }
+    :root [data-lq-component]:is(.lq-btn, .lq-input, .lq-textarea, .lq-select):disabled {
+        --lq-control-color: GrayText;
+    }
+}

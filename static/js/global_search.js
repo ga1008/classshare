@@ -18,7 +18,8 @@ function escapeHtml(value) {
 
 function buildOverlay() {
   const node = document.createElement('div');
-  node.className = 'global-search-overlay';
+  node.className = 'lq-domain-region global-search-overlay';
+  node.dataset.lqComponent = 'layer';
   node.hidden = true;
   node.innerHTML = `
     <style>
@@ -49,11 +50,11 @@ function buildOverlay() {
       .global-search-hint { padding: 26px 16px; text-align: center; color: #94a3b8; font-size: .85rem; }
       .global-search-close { border: none; background: none; color: #94a3b8; cursor: pointer; font-size: .78rem; }
     </style>
-    <div class="global-search-panel" role="dialog" aria-modal="true" aria-label="全局搜索">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised global-search-panel" role="dialog" aria-modal="true" aria-label="全局搜索">
       <div class="global-search-input-row">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="search" placeholder="搜索课堂、材料、作业考试、博客…" data-global-search-input autocomplete="off">
-        <button type="button" class="global-search-close" data-global-search-close>Esc 关闭</button>
+        <input data-lq-component="input" class="lq-input" type="search" placeholder="搜索课堂、材料、作业考试、博客…" data-global-search-input autocomplete="off">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost global-search-close" data-global-search-close>Esc 关闭</button>
       </div>
       <div class="global-search-results" data-global-search-results>
         <div class="global-search-hint">输入至少 ${MIN_QUERY_LENGTH} 个字开始搜索。</div>
@@ -86,7 +87,7 @@ function renderResults(payload) {
     <div class="global-search-group">
       <div class="global-search-group-title">${escapeHtml(group.kind_label)}</div>
       ${(group.results || []).map((item) => `
-        <a class="global-search-item" href="${escapeHtml(item.link_url)}">
+        <a data-lq-component="choice" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice global-search-item" href="${escapeHtml(item.link_url)}">
           <strong>${escapeHtml(item.title)}</strong>
           <small>${escapeHtml(item.subtitle || '')}</small>
         </a>

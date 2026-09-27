@@ -1,3 +1,4 @@
+import { LqButton } from '@/components/lq-presentation';
 import { Bell, Bot, CalendarClock, CheckCircle2, ClipboardList, FileType2, Save } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -50,45 +51,45 @@ function AssignmentAuthoringIslandView({ snapshot }: { snapshot: AssignmentAutho
       </div>
 
       <div className="assignment-authoring-sync__chips" aria-label="作业发布配置">
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-assessment-kind' })}>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-assessment-kind' })}>
           <ClipboardList size={14} aria-hidden="true" />{snapshot.assessmentKindLabel}
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-grading-mode' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-grading-mode' })}>
           {snapshot.gradingMode === 'ai' ? <Bot size={14} aria-hidden="true" /> : <CheckCircle2 size={14} aria-hidden="true" />}
           {modeLabel}
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-availability-mode' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-availability-mode' })}>
           <CalendarClock size={14} aria-hidden="true" />
           {scheduleLabel}
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-learning-stage-key' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-learning-stage-key' })}>
           <CheckCircle2 size={14} aria-hidden="true" />
           {stageLabel}
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-allowed-file-types' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-allowed-file-types' })}>
           <FileType2 size={14} aria-hidden="true" />
           {allowedTypesLabel}
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-send-email-notification' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-send-email-notification' })}>
           <Bell size={14} aria-hidden="true" />
           {snapshot.sendEmailNotification ? '邮件通知' : '站内通知'}
-        </button>
+        </LqButton>
       </div>
 
       <div className="assignment-authoring-sync__actions" aria-label="作业编辑快捷操作">
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-title' })}>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-title' })}>
           标题
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-requirements' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-requirements' })}>
           要求
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-rubric' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('focus-field', { fieldId: 'assignment-rubric' })}>
           评分
-        </button>
-        <button type="button" onClick={() => sendAuthoringCommand('save')} disabled={!snapshot.canSave || snapshot.isSaving}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendAuthoringCommand('save')} disabled={!snapshot.canSave || snapshot.isSaving}>
           <Save size={15} aria-hidden="true" />
           保存
-        </button>
+        </LqButton>
       </div>
     </section>
   );

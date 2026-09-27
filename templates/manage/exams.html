@@ -5,20 +5,20 @@
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action, app_topbar_icon %}
-<div class="exam-reverse-topbar" id="materialReverseTopbar">
-    <button type="button" class="app-topbar-action app-topbar-action--solid app-topbar-action--tone-amber" onclick="toggleMaterialReverseMenu(event)" aria-haspopup="menu" aria-expanded="false" id="materialReverseMenuButton">
+<div data-lq-component="toolbar" class="lq-domain-toolbar exam-reverse-topbar" id="materialReverseTopbar">
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--solid app-topbar-action--tone-amber" onclick="toggleMaterialReverseMenu(event)" aria-haspopup="menu" aria-expanded="false" id="materialReverseMenuButton">
         <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
         <span class="app-topbar-action__text">
             <strong>材料反推</strong>
             <small>试卷生成表单</small>
         </span>
     </button>
-    <div class="exam-reverse-dropdown" id="materialReverseDropdown" role="menu" aria-labelledby="materialReverseMenuButton">
-        <button type="button" role="menuitem" onclick="openMaterialReverseModal('assessment_plan')">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised exam-reverse-dropdown" id="materialReverseDropdown" role="menu" aria-labelledby="materialReverseMenuButton">
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" role="menuitem" onclick="openMaterialReverseModal('assessment_plan')">
             <strong>考核计划表</strong>
             <small>按试卷内容反推考核项目</small>
         </button>
-        <button type="button" role="menuitem" onclick="openMaterialReverseModal('grading_rubric')">
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" role="menuitem" onclick="openMaterialReverseModal('grading_rubric')">
             <strong>评分细则表</strong>
             <small>逐题生成给分与扣分标准</small>
         </button>
@@ -67,12 +67,12 @@
             description='您还没有创建任何试卷。点击上方按钮开始创建您的第一份试卷。',
             actions=[{'label': '新建试卷', 'variant': 'prominent', 'href': '/exam/new', 'icon': 'plus'}]) }}
 {% else %}
-<div class="card">
+<div data-lq-component="surface" class="lq-surface card">
     <div class="card-body text-center p-xl">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-muted mx-auto mb-3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
         <h3 class="text-lg font-medium text-primary mb-2">试卷库为空</h3>
         <p class="text-muted mb-4">您还没有创建任何试卷。点击上方按钮开始创建您的第一份试卷。</p>
-        <a href="/exam/new" class="btn btn-primary">
+        <a data-lq-component="button" href="/exam/new" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             新建试卷
         </a>

@@ -60,6 +60,29 @@ test.describe('LQ manage pilot presentation adapter', () => {
   });
   test.describe('real legacy stylesheet mobile navigation hit area', () => {
     test.use({ hasTouch: true });
+    test('compact 1024px shell keeps every class action and 44px touch target inline', async ({ page }) => {
+      await page.setViewportSize({ width: 1024, height: 900 }); await mount(page, { header: 'classes' });
+      await page.evaluate(() => document.fonts.ready);
+      const topbar = page.locator('#manage-pilot-topbar');
+      const controls = topbar.locator('.lq-manage-context-actions .app-topbar-action, .lq-manage-utility .lq-btn, .lq-manage-utility [data-ui-preferences-toggle]');
+      await expect(controls).toHaveCount(10);
+      const bounds = await topbar.boundingBox(); expect(bounds!.height).toBeLessThanOrEqual(64);
+      for (const control of await controls.all()) {
+        await expect(control).toBeVisible();
+        const hit = await control.evaluate(node => {
+          const rect = node.getBoundingClientRect();
+          const target = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return { label: node.getAttribute('aria-label') || node.textContent, width: rect.width, height: rect.height,
+            top: rect.top, bottom: rect.bottom, matches: target === node || node.contains(target) };
+        });
+        expect(hit.width, hit.label!).toBeGreaterThanOrEqual(44); expect(hit.height, hit.label!).toBeGreaterThanOrEqual(44);
+        expect(hit.top).toBeGreaterThanOrEqual(bounds!.y); expect(hit.bottom).toBeLessThanOrEqual(bounds!.y + bounds!.height);
+        expect(hit.matches, hit.label!).toBe(true);
+      }
+      await topbar.locator('[data-ui-preferences-toggle]').tap();
+      await expect(topbar.locator('[data-ui-preferences-panel]')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024);
+    });
     for (const width of [320, 390, 768]) test(`native nav tap survives topbar stacking at ${width}`, async ({ page }, info) => {
       await page.setViewportSize({ width: 1440, height: 900 }); await mount(page, { header: 'courses' });
       await page.setViewportSize({ width, height: 900 });

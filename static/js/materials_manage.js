@@ -810,7 +810,7 @@ function renderOrdinaryRetakePicker() {
                 const number = String(student.student_number || '');
                 const isSelected = selected.has(number);
                 return `
-                    <button type="button" class="ordinary-retake-chip${isSelected ? ' is-selected' : ''}" data-materials-retake-number="${escapeHtml(number)}" title="${isSelected ? '点击取消重修标记' : '点击标记为重修/免修学生'}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ordinary-retake-chip${isSelected ? ' is-selected' : ''}" data-materials-retake-number="${escapeHtml(number)}" title="${isSelected ? '点击取消重修标记' : '点击标记为重修/免修学生'}">
                         <b>${escapeHtml(student.student_name || '未命名')}</b>
                         <small>${escapeHtml(number)}</small>
                     </button>
@@ -917,9 +917,9 @@ function renderManageOrdinaryGradePicker() {
             : `均分 ${item.average_score}`;
         const source = '已确认分类';
         return `
-            <button
+            <button data-lq-component="choice"
                 type="button"
-                class="ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass ordinary-grade-candidate${isCurrent ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
                 data-materials-ordinary-candidate-id="${escapeHtml(String(candidateId))}"
                 ${disabled ? 'disabled' : ''}
             >
@@ -1238,9 +1238,9 @@ function renderManageExamGradeWizard() {
                 const sourceTitle = item?.exam_paper_title || '未绑定结构化试卷';
                 const timing = item?.due_at ? `截止 ${formatDateLabel(item.due_at)}` : '未设置截止时间';
                 return `
-                    <button
+                    <button data-lq-component="choice"
                         type="button"
-                        class="ordinary-grade-candidate exam-grade-candidate${selected ? ' is-selected' : ''}${usable ? '' : ' is-disabled'}"
+                        class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass ordinary-grade-candidate exam-grade-candidate${selected ? ' is-selected' : ''}${usable ? '' : ' is-disabled'}"
                         data-materials-exam-candidate-id="${escapeHtml(String(candidateId))}"
                         ${usable ? '' : 'disabled'}
                     >
@@ -1407,7 +1407,7 @@ function renderFinalGradeSourceCard(source, key) {
     };
     const issueDetails = issueItems.length ? `
         <details class="final-grade-source-card__issues">
-            <summary>查看 ${escapeHtml(String(issueItems.length))} 项人员明细</summary>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看 ${escapeHtml(String(issueItems.length))} 项人员明细</summary>
             <div>${issueItems.map((item) => `
                 <span data-tone="${escapeHtml(item.tone)}"><b>${escapeHtml(item.label)}</b><span class="final-grade-issue-body">${renderIssueBody(item)}</span></span>
             `).join('')}</div>
@@ -1417,7 +1417,7 @@ function renderFinalGradeSourceCard(source, key) {
     const selectionLabel = isManual ? '手动选择' : '自动匹配';
     const contextWarning = contextMismatches.length ? `
         <details class="final-grade-source-card__issues">
-            <summary>查看 ${escapeHtml(String(contextMismatches.length))} 项归属差异</summary>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看 ${escapeHtml(String(contextMismatches.length))} 项归属差异</summary>
             <div>${contextMismatches.map((item) => `
                 <span data-tone="extra"><b>已记录</b><span class="final-grade-issue-body">${escapeHtml(item)}</span></span>
             `).join('')}</div>
@@ -1434,8 +1434,8 @@ function renderFinalGradeSourceCard(source, key) {
             ${contextWarning}
             ${isReady ? `<span>记录 #${escapeHtml(String(source?.record_id || ''))} · ${escapeHtml(formatDateLabel(source?.updated_at))} · 近似度 ${escapeHtml(String(source?.similarity_score ?? '—'))}</span>` : ''}
             <div>
-                ${isReady ? '' : `<a class="btn btn-outline btn-sm" href="${escapeHtml(source?.generate_url || '#')}" target="_blank" rel="noopener">${escapeHtml(actionLabel)}</a>`}
-                <button type="button" class="btn btn-outline btn-sm" data-materials-final-grade-manual-source="${escapeHtml(key)}">${isManual ? '更换材料' : '手动选择'}</button>
+                ${isReady ? '' : `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${escapeHtml(source?.generate_url || '#')}" target="_blank" rel="noopener">${escapeHtml(actionLabel)}</a>`}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-materials-final-grade-manual-source="${escapeHtml(key)}">${isManual ? '更换材料' : '手动选择'}</button>
             </div>
         </article>
     `;
@@ -1466,9 +1466,9 @@ function renderFinalGradeSourceCandidate(candidate, selectedId) {
         Number(candidate?.extra_count || 0) ? `多出 ${Number(candidate.extra_count)} 人（忽略）` : '',
     ].filter(Boolean).join(' · ');
     return `
-        <button
+        <button data-lq-component="choice"
             type="button"
-            class="ordinary-grade-candidate${selected ? ' is-selected' : ''}"
+            class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass ordinary-grade-candidate${selected ? ' is-selected' : ''}"
             data-materials-final-grade-source-record-id="${escapeHtml(String(candidate?.record_id || ''))}"
             ${selectable ? '' : 'disabled aria-disabled="true"'}
             title="${escapeHtml(candidate?.selection_message || '')}">
@@ -1498,8 +1498,8 @@ function openManageFinalGradeSourcePicker(documentType) {
         {
             wide: true,
             footerHtml: `
-                <button type="button" class="lp-btn lp-btn--ghost" data-materials-final-grade-source-auto ${overrideId ? '' : 'disabled'}>恢复自动匹配</button>
-                <button type="button" class="lp-btn lp-btn--ghost" data-pm-close>关闭</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-materials-final-grade-source-auto ${overrideId ? '' : 'disabled'}>恢复自动匹配</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-pm-close>关闭</button>
             `,
             onMount: (overlay, close) => {
                 const body = overlay.querySelector('.lp-modal__body');
@@ -1600,7 +1600,7 @@ function renderManageFinalGradeWizard() {
             const key = String(candidate?.exam_course_key || '');
             const selected = key === generation.examCourseKey;
             return `
-                <button type="button" class="ordinary-grade-candidate${selected ? ' is-selected' : ''}" data-materials-final-grade-course-key="${escapeHtml(key)}"${isWaiting ? ' disabled aria-disabled="true"' : ''}>
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass ordinary-grade-candidate${selected ? ' is-selected' : ''}" data-materials-final-grade-course-key="${escapeHtml(key)}"${isWaiting ? ' disabled aria-disabled="true"' : ''}>
                     <span class="ordinary-grade-candidate__main">
                         <strong>${escapeHtml(candidate?.course_name || '未命名课程')}</strong>
                         <small>${escapeHtml([candidate?.course_code, candidate?.teaching_class_name, candidate?.class_composition].filter(Boolean).join(' · '))}</small>
@@ -1632,7 +1632,7 @@ function renderManageFinalGradeWizard() {
             <div class="final-grade-student-preview__chips">${preview.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
             ${students.length > preview.length ? `
                 <details class="final-grade-student-preview__all">
-                    <summary>查看并核对全部 ${escapeHtml(String(students.length))} 人</summary>
+                    <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看并核对全部 ${escapeHtml(String(students.length))} 人</summary>
                     <div>${students.map((student) => `<span><b>${escapeHtml(String(student.row_order || ''))}</b>${escapeHtml(student.student_name || '')}<small>${escapeHtml(student.student_number || '')}</small></span>`).join('')}</div>
                 </details>
             ` : ''}
@@ -1884,21 +1884,21 @@ function renderClassroomGenerateOptions(policy) {
         `;
         if (isOrdinaryGrade) {
             return `
-                <button type="button" class="materials-modal-option ${sourceReady ? 'is-source-ready' : 'is-source-missing'}" data-materials-ordinary-offering-id="${escapeHtml(String(offering.id))}">
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass materials-modal-option ${sourceReady ? 'is-source-ready' : 'is-source-missing'}" data-materials-ordinary-offering-id="${escapeHtml(String(offering.id))}">
                     ${content}
                 </button>
             `;
         }
         if (isExamGrade) {
             return `
-                <button type="button" class="materials-modal-option" data-materials-exam-offering-id="${escapeHtml(String(offering.id))}">
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass materials-modal-option" data-materials-exam-offering-id="${escapeHtml(String(offering.id))}">
                     ${content}
                 </button>
             `;
         }
         if (isFinalGrade) {
             return `
-                <button type="button" class="materials-modal-option" data-materials-final-grade-offering-id="${escapeHtml(String(offering.id))}">
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass materials-modal-option" data-materials-final-grade-offering-id="${escapeHtml(String(offering.id))}">
                     ${content}
                 </button>
             `;
@@ -2189,7 +2189,7 @@ function renderBreadcrumbs(breadcrumbs) {
 
     refs.breadcrumbs.innerHTML = `${breadcrumbs.map((crumb, index) => `
         ${index > 0 ? '<span class="separator">/</span>' : ''}
-        <button type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
     `).join('')}${countMarkup}`;
 }
 
@@ -2234,9 +2234,9 @@ function renderAiPendingCards() {
         const active = tone === 'info';
         const dismissAction = active
             ? ''
-            : `<button type="button" class="btn btn-ghost btn-sm" data-ai-pending-dismiss="${escapeHtml(key)}">关闭</button>`;
+            : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-ai-pending-dismiss="${escapeHtml(key)}">关闭</button>`;
         return `
-            <section class="materials-ai-task-card is-${tone}" data-ai-pending-key="${escapeHtml(key)}">
+            <section data-lq-component="surface" class="lq-surface materials-ai-task-card is-${tone}" data-ai-pending-key="${escapeHtml(key)}">
                 <div class="materials-ai-task-indicator" aria-hidden="true">${active ? '<span></span>' : ''}</div>
                 <div class="materials-ai-task-main">
                     <div class="materials-ai-task-head">
@@ -2288,7 +2288,7 @@ function renderList() {
         const primaryAction = getMaterialPrimaryAction(item);
         const primaryActionHtml = item.node_type === 'folder'
             ? ''
-            : `<button type="button" class="btn btn-ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>`;
+            : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="${primaryAction.action}">${primaryAction.label}</button>`;
         const aiStatus = item.can_ai_parse ? `<span class="materials-meta-item">AI ${escapeHtml(item.ai_parse_status || 'idle')}</span>` : '';
         const optimizingBadge = item.ai_optimize_status === 'running'
             ? '<span class="materials-meta-item" style="color:#0d9488;">AI 优化中…</span>'
@@ -2299,23 +2299,23 @@ function renderList() {
         const scopeBadge = item.scope_label ? `<span class="materials-meta-item">${escapeHtml(item.scope_label)}</span>` : '';
         const sharedBadge = item.can_manage === false ? '<span class="materials-meta-item">共享材料</span>' : '';
         const documentAction = hasLearningDocument(item)
-            ? `<button type="button" class="btn btn-outline btn-sm" data-action="view-doc">${isFinalMaterialCatalogue ? '查看正文' : '文档'}</button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="view-doc">${isFinalMaterialCatalogue ? '查看正文' : '文档'}</button>`
             : '';
         const materialMetaText = isFinalMaterialCatalogue && item.node_type === 'folder'
             ? '最终材料'
             : getMetaText(item);
         const renderAction = isRenderable(item)
-            ? `<button type="button" class="btn btn-outline btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
             : '';
         const repositoryAction = isGitRepository(item) && item.can_manage !== false
-            ? '<button type="button" class="btn btn-outline btn-sm" data-action="repository">仓库</button>'
+            ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="repository">仓库</button>'
             : '';
         const refreshableCatalogueTypes = ['ordinary_grade_record', 'exam_grade_record'];
         const refreshAction = isFinalMaterialCatalogue
             && refreshableCatalogueTypes.includes(String(state.filters.documentType || ''))
             && item.node_type === 'folder'
             && item.can_manage !== false
-            ? '<button type="button" class="btn btn-outline btn-sm materials-refresh-btn" data-action="refresh-final-material" title="按原有作业/考试重新取最新成绩，原地更新本材料">一键更新</button>'
+            ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm materials-refresh-btn" data-action="refresh-final-material" title="按原有作业/考试重新取最新成绩，原地更新本材料">一键更新</button>'
             : '';
         const repositoryBadge = visualMeta.badge
             ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
@@ -2332,7 +2332,7 @@ function renderList() {
             ? `<span class="materials-meta-item">${escapeHtml(String(lessondocPack.ready_count))} / ${escapeHtml(String(lessondocPack.total_count))} 课就绪</span>`
             : '';
         const lessondocAction = lessondocPack && item.can_manage !== false
-            ? `<a class="btn btn-outline btn-sm" data-action="lessondoc-edit" href="/materials/lessondoc-editor/${Number(lessondocPack.pack_id)}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑学习文档</a><button type="button" class="btn btn-outline btn-sm" data-action="lessondoc-manage" data-pack-id="${lessondocPack.pack_id}">管理课次</button>`
+            ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="lessondoc-edit" href="/materials/lessondoc-editor/${Number(lessondocPack.pack_id)}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑学习文档</a><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="lessondoc-manage" data-pack-id="${lessondocPack.pack_id}">管理课次</button>`
             : '';
         const assignedCourses = Array.isArray(item.assigned_course_names) ? item.assigned_course_names.filter(Boolean) : [];
         const assignedClasses = Array.isArray(item.assigned_class_names) ? item.assigned_class_names.filter(Boolean) : [];
@@ -2356,7 +2356,7 @@ function renderList() {
         return `
             <div class="materials-row materials-manage-row ${activeClass} ${selectedClass} ${generatedClass}" data-id="${item.id}">
                 <div class="materials-row-check">
-                    <input type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(Number(item.id)) ? 'checked' : ''}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-role="select-item" data-id="${item.id}" ${state.selectedIds.has(Number(item.id)) ? 'checked' : ''}>
                 </div>
                 <div class="materials-row-main">
                     <div class="materials-name-cell">
@@ -2385,15 +2385,15 @@ function renderList() {
                     <span><strong>更新</strong>${escapeHtml(formatDateLabel(item.updated_at || item.created_at))}</span>
                 </div>
                 <div class="materials-row-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-resource-attributes data-resource-type="material" data-resource-id="${item.id}">属性</button>
                     ${primaryActionHtml}
                     ${renderAction}
                     ${lessondocAction}
                     ${refreshAction}
                     ${documentAction}
                     ${repositoryAction}
-                    ${item.node_type === 'file' && primaryAction.action !== 'download' ? '<button type="button" class="btn btn-ghost btn-sm" data-action="download">下载</button>' : ''}
-                    <button type="button" class="btn btn-ghost btn-sm" data-action="details">查看</button>
+                    ${item.node_type === 'file' && primaryAction.action !== 'download' ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="download">下载</button>' : ''}
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="details">查看</button>
                 </div>
             </div>
         `;
@@ -2569,25 +2569,25 @@ function renderWorkspaceTopbar(detail) {
     return `
         <section class="materials-workspace-top">
             <div class="materials-workspace-actions">
-                ${isFolder && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="create-folder">新建文件夹</button>' : ''}
-                ${isFolder && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="create-file">新建文档</button>' : ''}
-                ${previewUrl ? `<a href="${escapeHtml(previewUrl)}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">全屏预览</a>` : ''}
-                ${isRenderable(detail) ? `<a href="${escapeHtml(getRenderUrl(detail))}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
-                ${optimizedUrl ? `<a href="${escapeHtml(optimizedUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看优化稿</a>` : ''}
-                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
-                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
-                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出PDF</button>` : ''}
-                ${detail.ai_import_record?.document_type === 'ordinary_grade_record' && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="edit-grade-scores" title="查看并编辑全部学生的原始成绩，系统自动重算或反推平时成绩">编辑原始成绩</button>' : ''}
-                ${detail.node_type === 'file' ? `<a href="/materials/download/${detail.id}" class="btn btn-outline btn-sm">下载</a>` : ''}
-                ${isGitRepository(detail) && canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="repository">仓库</button>' : ''}
-                <button type="button" class="btn btn-outline btn-sm" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
-                ${isBindable && canManage && config.canAssign ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="bind">绑定课次 / 首页</button>' : ''}
-                ${canManage ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="move">移动</button>' : ''}
-                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
-                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
-                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-polish" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 润色</button>
-                <button type="button" class="btn btn-outline btn-sm" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重生成</button>
-                ${canManage ? '<button type="button" class="btn btn-danger btn-sm" data-detail-action="delete">删除</button>' : ''}
+                ${isFolder && canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="create-folder">新建文件夹</button>' : ''}
+                ${isFolder && canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="create-file">新建文档</button>' : ''}
+                ${previewUrl ? `<a data-lq-component="button" href="${escapeHtml(previewUrl)}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" target="_blank" rel="noopener">全屏预览</a>` : ''}
+                ${isRenderable(detail) ? `<a data-lq-component="button" href="${escapeHtml(getRenderUrl(detail))}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" target="_blank" rel="noopener">${escapeHtml(getRenderLabel(detail))}</a>` : ''}
+                ${optimizedUrl ? `<a data-lq-component="button" href="${escapeHtml(optimizedUrl)}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">查看优化稿</a>` : ''}
+                ${renderPreviewUrl ? `<a data-lq-component="button" href="${escapeHtml(renderPreviewUrl)}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
+                ${exportUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出PDF</button>` : ''}
+                ${detail.ai_import_record?.document_type === 'ordinary_grade_record' && canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="edit-grade-scores" title="查看并编辑全部学生的原始成绩，系统自动重算或反推平时成绩">编辑原始成绩</button>' : ''}
+                ${detail.node_type === 'file' ? `<a data-lq-component="button" href="/materials/download/${detail.id}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">下载</a>` : ''}
+                ${isGitRepository(detail) && canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="repository">仓库</button>' : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="assign" ${config.canAssign ? '' : 'disabled'}>分配课堂</button>
+                ${isBindable && canManage && config.canAssign ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="bind">绑定课次 / 首页</button>' : ''}
+                ${canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="move">移动</button>' : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="ai-parse" ${canManage && detail.can_ai_parse ? '' : 'disabled'}>AI 解析</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="ai-optimize" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 优化</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="ai-polish" ${canManage && detail.can_ai_optimize ? '' : 'disabled'}>AI 润色</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="ai-regenerate" ${canManage && detail.can_ai_regenerate ? '' : 'disabled'}>AI 重生成</button>
+                ${canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-detail-action="delete">删除</button>' : ''}
             </div>
             ${renderWorkspaceStats()}
         </section>
@@ -2605,10 +2605,10 @@ function renderTreeNode(node, depth = 0) {
     return `
         <div class="materials-tree-node" style="--tree-depth:${depth}">
             <div class="materials-tree-row ${selected ? 'is-selected' : ''}" data-node-id="${node.id}">
-                <button type="button" class="materials-tree-toggle" data-tree-toggle="${node.id}" ${hasChildren ? '' : 'disabled'} aria-label="${expanded ? '收起' : '展开'}">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass materials-tree-toggle" data-tree-toggle="${node.id}" ${hasChildren ? '' : 'disabled'} aria-label="${expanded ? '收起' : '展开'}">
                     ${hasChildren ? (expanded ? '-' : '+') : ''}
                 </button>
-                <button type="button" class="materials-tree-select" data-tree-select="${node.id}" title="${escapeHtml(node.material_path || node.name || '')}">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass materials-tree-select" data-tree-select="${node.id}" title="${escapeHtml(node.material_path || node.name || '')}">
                     <span class="materials-tree-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</span>
                     <span class="materials-tree-copy">
                         <strong>${escapeHtml(node.name || '未命名')}</strong>
@@ -2642,7 +2642,7 @@ function renderFolderChildCards(detail) {
             ${children.map((child) => {
                 const visualMeta = getVisualMeta(child);
                 return `
-                    <button type="button" class="materials-folder-child" data-tree-select="${child.id}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass materials-folder-child" data-tree-select="${child.id}">
                         <span class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</span>
                         <span>
                             <strong>${escapeHtml(child.name || '未命名')}</strong>
@@ -2658,7 +2658,7 @@ function renderFolderChildCards(detail) {
 function renderFolderPreview(detail) {
     const aiSummary = detail.ai_parse_result?.summary || '文件夹用于组织课程材料。选择左侧目录树或下方项目，可继续查看下一层内容。';
     return `
-        <section class="materials-workspace-preview-card">
+        <section data-lq-component="surface" class="lq-surface materials-workspace-preview-card">
             <div class="materials-section-header">
                 <h3>文件夹概览</h3>
                 <span class="materials-type-pill">${escapeHtml(getMetaText(detail))}</span>
@@ -2668,7 +2668,7 @@ function renderFolderPreview(detail) {
                     <strong>${escapeHtml(detail.name || '未命名文件夹')}</strong>
                     <p>${escapeHtml(aiSummary)}</p>
                 </div>
-                ${hasLearningDocument(detail) ? `<a href="${escapeHtml(getLearningDocumentUrl(detail))}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">查看 README</a>` : ''}
+                ${hasLearningDocument(detail) ? `<a data-lq-component="button" href="${escapeHtml(getLearningDocumentUrl(detail))}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">查看 README</a>` : ''}
             </div>
             <div class="materials-folder-child-title">下一层内容</div>
             ${renderFolderChildCards(detail)}
@@ -2693,19 +2693,19 @@ function renderEditableFilePreview(detail) {
         `
         : '';
     return `
-        <section class="materials-workspace-preview-card materials-workspace-preview-card--editor">
+        <section data-lq-component="surface" class="lq-surface materials-workspace-preview-card materials-workspace-preview-card--editor">
             <div class="materials-workspace-editor-head">
                 <div>
                     <h3>文件内容</h3>
                     <p>${escapeHtml(detail.preview_type === 'markdown' ? 'Markdown 源码与渲染预览同步展示。' : '文本材料可直接在这里编辑保存。')}</p>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm" data-detail-action="save-content" ${content.dirty && !content.loading ? '' : 'disabled'}>保存内容</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-detail-action="save-content" ${content.dirty && !content.loading ? '' : 'disabled'}>保存内容</button>
             </div>
             ${status}
             <div class="materials-workspace-editor-grid ${markdownPreview ? '' : 'materials-workspace-editor-grid--single'}">
                 <label class="materials-workspace-source">
                     <span class="materials-workspace-pane-title">源码</span>
-                    <textarea data-material-content-editor spellcheck="false" ${content.loading ? 'disabled' : ''}>${escapeHtml(text)}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" data-material-content-editor spellcheck="false" ${content.loading ? 'disabled' : ''}>${escapeHtml(text)}</textarea>
                 </label>
                 ${markdownPreview}
             </div>
@@ -2720,7 +2720,7 @@ function renderFilePreview(detail) {
     const previewUrl = getMaterialPreviewUrl(detail);
     if (previewUrl) {
         return `
-            <section class="materials-workspace-preview-card materials-workspace-preview-card--frame">
+            <section data-lq-component="surface" class="lq-surface materials-workspace-preview-card materials-workspace-preview-card--frame">
                 <div class="materials-section-header">
                     <h3>文件预览</h3>
                     <a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener">全屏查看</a>
@@ -2730,10 +2730,10 @@ function renderFilePreview(detail) {
         `;
     }
     return `
-        <section class="materials-workspace-preview-card">
+        <section data-lq-component="surface" class="lq-surface materials-workspace-preview-card">
             <div class="materials-workspace-empty">
                 当前文件暂不支持内嵌预览，可下载后查看。
-                <div class="mt-3"><a class="btn btn-outline btn-sm" href="/materials/download/${detail.id}">下载文件</a></div>
+                <div class="mt-3"><a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/materials/download/${detail.id}">下载文件</a></div>
             </div>
         </section>
     `;
@@ -2758,7 +2758,7 @@ function renderScopePropertyControl(detail) {
         return `
             <label class="materials-property-field">
                 <span>开放范围</span>
-                <select class="form-control" data-property-scope>
+                <select data-lq-component="select" class="lq-select form-control" data-property-scope>
                     ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
             </label>
@@ -2824,15 +2824,15 @@ function renderAiImportDetailSummary(detail) {
                 ${fieldsHtml}
             </div>
             <details class="materials-ai-import-summary-detail" ${warningCount > 0 ? 'open' : ''}>
-                <summary>解析警告与核对点</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">解析警告与核对点</summary>
                 ${warningsHtml}
             </details>
             <div class="materials-ai-import-summary-actions">
-                ${['final_grade_transcript', 'academic_grade_register'].includes(record.document_type) && detail.can_manage !== false ? '<button type="button" class="btn btn-primary btn-sm" data-detail-action="publish-grades">公布课程成绩</button>' : ''}
-                ${record.document_type === 'ordinary_grade_record' && detail.can_manage !== false ? '<button type="button" class="btn btn-outline btn-sm" data-detail-action="edit-grade-scores">编辑原始成绩</button>' : ''}
-                ${renderPreviewUrl ? `<a href="${escapeHtml(renderPreviewUrl)}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
-                ${exportUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
-                ${exportPdfUrl ? `<button type="button" class="btn btn-outline btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
+                ${['final_grade_transcript', 'academic_grade_register'].includes(record.document_type) && detail.can_manage !== false ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-detail-action="publish-grades">公布课程成绩</button>' : ''}
+                ${record.document_type === 'ordinary_grade_record' && detail.can_manage !== false ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-detail-action="edit-grade-scores">编辑原始成绩</button>' : ''}
+                ${renderPreviewUrl ? `<a data-lq-component="button" href="${escapeHtml(renderPreviewUrl)}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">渲染预览</a>` : ''}
+                ${exportUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportUrl)}" data-process-export-label="${escapeHtml(exportDownloadLabel)}">${escapeHtml(exportLabel)}</button>` : ''}
+                ${exportPdfUrl ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-export-url="${escapeHtml(exportPdfUrl)}" data-process-export-label="PDF">导出 PDF</button>` : ''}
             </div>
         </section>
     `;
@@ -2847,12 +2847,12 @@ function renderWorkspaceProperties(detail) {
         <aside class="materials-workspace-properties">
             <div class="materials-section-header">
                 <h3>属性</h3>
-                ${canManage ? '<button type="button" class="btn btn-primary btn-sm" data-detail-action="save-properties">保存</button>' : ''}
+                ${canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-detail-action="save-properties">保存</button>' : ''}
             </div>
             ${renderAiImportDetailSummary(detail)}
             <label class="materials-property-field">
                 <span>名称</span>
-                <input type="text" class="form-control" data-property-name value="${escapeHtml(detail.name || '')}" maxlength="120" ${canManage ? '' : 'disabled'}>
+                <input data-lq-component="input" type="text" class="lq-input form-control" data-property-name value="${escapeHtml(detail.name || '')}" maxlength="120" ${canManage ? '' : 'disabled'}>
             </label>
             ${renderScopePropertyControl(detail)}
             <div class="materials-property-readonly">
@@ -2879,11 +2879,11 @@ function renderWorkspaceProperties(detail) {
                 ${keywords ? `<small>关键词：${escapeHtml(keywords)}</small>` : ''}
             </div>
             <details class="materials-property-more">
-                <summary>解析目录</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">解析目录</summary>
                 ${renderOutline(detail.ai_parse_result?.outline)}
             </details>
             <details class="materials-property-more">
-                <summary>课堂分配</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">课堂分配</summary>
                 ${renderAssignments(detail.assignments || [])}
             </details>
         </aside>
@@ -2916,7 +2916,7 @@ function renderDetail(detail) {
         <div class="materials-workspace-shell">
             ${renderWorkspaceTopbar(detail)}
             <div class="materials-workspace-layout">
-                <aside class="materials-workspace-tree-panel">
+                <aside data-lq-component="surface" class="lq-surface materials-workspace-tree-panel">
                     <div class="materials-workspace-panel-head">
                         <span>目录树</span>
                         ${state.materialWorkspace.treeLoading ? '<small>刷新中...</small>' : ''}
@@ -3310,7 +3310,7 @@ function renderGradeScoresModal() {
         const homeworkAvg = Math.round(((gradeScoreNumber(row.draft.hw0) + gradeScoreNumber(row.draft.hw1) + gradeScoreNumber(row.draft.hw2)) / 3) * 100) / 100;
         const inputCell = (field, title) => `
             <td style="padding:4px;">
-                <input type="number" min="0" max="100" step="0.5" class="form-control" style="${inputStyle}"
+                <input data-lq-component="input" type="number" min="0" max="100" step="0.5" class="lq-input form-control" style="${inputStyle}"
                     value="${escapeHtml(String(row.draft[field] ?? ''))}"
                     data-grade-row="${escapeHtml(row.studentNumber)}" data-grade-field="${field}" title="${escapeHtml(title)}">
             </td>`;
@@ -4048,14 +4048,14 @@ function renderAiImportTaskCards() {
             ? `<span>质量 ${escapeHtml(task.content_quality_label)}</span>`
             : '';
         const dismissAction = isAiImportTaskTerminal(task)
-            ? `<button type="button" class="btn btn-ghost btn-sm" data-ai-import-action="dismiss" data-ai-import-task-id="${task.id}">关闭</button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-ai-import-action="dismiss" data-ai-import-task-id="${task.id}">关闭</button>`
             : '';
         const queueText = task.queue_position && task.parse_status === 'queued'
             ? `<span>队列第 ${escapeHtml(String(task.queue_position))} 位</span>`
             : '';
 
         return `
-            <section class="materials-ai-task-card is-${tone}" data-ai-import-task-id="${task.id}">
+            <section data-lq-component="surface" class="lq-surface materials-ai-task-card is-${tone}" data-ai-import-task-id="${task.id}">
                 <div class="materials-ai-task-indicator" aria-hidden="true">${active ? '<span></span>' : ''}</div>
                 <div class="materials-ai-task-main">
                     <div class="materials-ai-task-head">
@@ -4495,7 +4495,7 @@ function renderAiGenerateSelected() {
         <span class="materials-ai-generate-chip" title="${escapeHtml(item.meta)}">
             <strong>${escapeHtml(item.kind === 'file' ? '上传' : (item.kind === 'assignment' ? '作业' : '材料'))}</strong>
             <span>${escapeHtml(item.title)}</span>
-            <button type="button" data-ai-generate-remove="${escapeHtml(item.kind)}" data-id="${escapeHtml(String(item.id))}" aria-label="移除 ${escapeHtml(item.title)}"${removeDisabledAttr}>&times;</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-ai-generate-remove="${escapeHtml(item.kind)}" data-id="${escapeHtml(String(item.id))}" aria-label="移除 ${escapeHtml(item.title)}"${removeDisabledAttr}>&times;</button>
         </span>
     `).join('');
 }
@@ -4513,7 +4513,7 @@ function renderAiGenerateUploadList() {
                 <strong title="${escapeHtml(entry.file.name)}">${escapeHtml(entry.file.name)}</strong>
                 <span>${escapeHtml(formatSize(entry.file.size || 0))}</span>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" data-ai-generate-remove="file" data-id="${escapeHtml(entry.id)}"${removeDisabledAttr}>移除</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-ai-generate-remove="file" data-id="${escapeHtml(entry.id)}"${removeDisabledAttr}>移除</button>
         </div>
     `).join('');
 }
@@ -4541,8 +4541,8 @@ function renderAiGenerateCandidateList(kind) {
             ? [materialTypeLabel, item.node_type === 'folder' ? `${item.child_count || 0} 项` : formatSize(item.file_size || 0)].filter(Boolean).join(' · ')
             : [`${item.question_count || 0} 题`, item.status || ''].filter(Boolean).join(' · ');
         return `
-            <button type="button"
-                class="materials-ai-generate-candidate ${selected ? 'is-selected' : ''}"
+            <button data-lq-component="choice" type="button"
+                class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass materials-ai-generate-candidate ${selected ? 'is-selected' : ''}"
                 data-ai-generate-add="${escapeHtml(kind)}"
                 data-id="${escapeHtml(String(item.id))}"
                 ${selected || reachedLimit || locked ? 'disabled' : ''}
@@ -5141,8 +5141,8 @@ function openMaterialDeleteImpactConfirm(material, impact) {
             </div>
         `;
         const footer = `
-            <button type="button" class="lp-btn lp-btn--ghost" data-material-delete-cancel>取消</button>
-            <button type="button" class="lp-btn lp-btn--danger" data-material-delete-confirm autofocus>解除关联并删除</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-material-delete-cancel>取消</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--danger lq-btn--destructive" data-material-delete-confirm autofocus>解除关联并删除</button>
         `;
         const settle = (value, close) => {
             if (settled) return;
@@ -5811,7 +5811,7 @@ function renderBindTargets() {
         const key = getBindTargetKey(offering.id, session.id);
         return `
             <label class="materials-modal-option">
-                <input type="checkbox" data-bind-target="${escapeHtml(key)}" ${state.bind.selected.has(key) ? 'checked' : ''}>
+                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-bind-target="${escapeHtml(key)}" ${state.bind.selected.has(key) ? 'checked' : ''}>
                 <div>
                     <strong>第 ${escapeHtml(String(session.order_index || ''))} 次课</strong>
                     <div class="text-muted text-sm">${escapeHtml(session.title || '未命名课次')}</div>
@@ -5821,7 +5821,7 @@ function renderBindTargets() {
     }).join('');
     refs.bindTargets.innerHTML = `
         <label class="materials-modal-option">
-            <input type="checkbox" data-bind-target="${escapeHtml(homeKey)}" ${state.bind.selected.has(homeKey) ? 'checked' : ''}>
+            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-bind-target="${escapeHtml(homeKey)}" ${state.bind.selected.has(homeKey) ? 'checked' : ''}>
             <div>
                 <strong>课堂材料区首页</strong>
                 <div class="text-muted text-sm">学生打开课堂材料区时的首页按钮</div>

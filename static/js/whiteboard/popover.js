@@ -1,4 +1,4 @@
 /** Compatibility entry point: retain whiteboard classes and one-open behavior. */
-import { createPopoverSystem } from '../ui_popover.js';
+import { createDomainPopoverSystem } from '../lq/domain-controls.js';
 export { POPOVER_TIMING } from '../ui_popover.js';
-export const { createPopover, popoverManager } = createPopoverSystem({ prefix: 'twb' });
+export const { createPopover, popoverManager } = createDomainPopoverSystem({ prefix: 'twb' });

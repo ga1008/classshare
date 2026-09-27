@@ -6,9 +6,9 @@
 <ul class="wrong-answer-list">
     {% for wrong in item.top_wrong_answers %}
     <li>
-        <button
+        <button data-lq-component="button"
             type="button"
-            class="wrong-answer-item"
+            class="lq-btn lq-btn--sm lq-btn--glass wrong-answer-item"
             data-wrong-answer-group
             data-detail-title="{{ wrong.label }}"
             data-detail-count="{{ wrong.count }}"
@@ -1513,7 +1513,7 @@
 {% endblock %}
 
 {% block body %}
-<header class="wrong-summary-topbar">
+<header data-lq-component="toolbar" class="lq-domain-toolbar wrong-summary-topbar">
     <div class="wrong-summary-brand">
         <span class="wrong-summary-brand__icon" aria-hidden="true">{{ app_topbar_icon('alert') }}</span>
         <span class="wrong-summary-brand__copy">
@@ -1523,16 +1523,16 @@
     </div>
     <nav class="wrong-summary-actions" aria-label="错题归集页面操作">
         {% if not summary.unsupported_reason %}
-        <button type="button" class="app-topbar-action app-topbar-action--tone-cyan" data-wrong-summary-reorganize title="手动启动 AI 错答整理；不会修改学生答案、分数和评语" aria-label="开始整理错题归集">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-cyan" data-wrong-summary-reorganize title="手动启动 AI 错答整理；不会修改学生答案、分数和评语" aria-label="开始整理错题归集">
             <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
             <span class="app-topbar-action__text"><strong>开始整理</strong><small>手动归集</small></span>
         </button>
         {% endif %}
-        <a href="{{ assignment_back_url }}" class="app-topbar-action app-topbar-action--tone-blue" title="返回作业详情" aria-label="返回作业详情">
+        <a data-lq-component="button" href="{{ assignment_back_url }}" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-blue" title="返回作业详情" aria-label="返回作业详情">
             <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
             <span class="app-topbar-action__text"><strong>作业详情</strong><small>提交批改</small></span>
         </a>
-        <a href="{{ classroom_back_url }}#assignment-panel" class="app-topbar-action app-topbar-action--primary" title="返回课堂任务区" aria-label="返回课堂任务区">
+        <a data-lq-component="button" href="{{ classroom_back_url }}#assignment-panel" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary" title="返回课堂任务区" aria-label="返回课堂任务区">
             <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
             <span class="app-topbar-action__text"><strong>课堂任务</strong><small>列表入口</small></span>
         </a>
@@ -1548,8 +1548,8 @@
                 客观题按当前参考答案统计错答，主观题按逐题得分统计未满分；选择题展示全选项选择柱图，填空/问答题在错答发生变化后归集常见错误写法与原因。
                 难题归集用于辅助安排讲评优先级，结果按错答/未满分情况与平均得分率排序。
             </p>
-            <div
-                class="wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"
+            <div data-lq-component="surface"
+                class="lq-surface wrong-summary-ai-strip{% if summary.ai_status.job_status == 'failed' %} is-failed{% elif summary.ai_status.job_status == 'manual_required' %} is-manual{% endif %}"
                 data-wrong-summary-status-strip
                 data-wrong-summary-reorganize-trigger
                 role="button"
@@ -1563,7 +1563,7 @@
         </div>
         {% set knowledge = summary.knowledge_analysis or {} %}
         {% set weak_points = knowledge.weak_points or [] %}
-        <div class="wrong-summary-insight-panel" aria-label="知识点掌握度与统计摘要">
+        <div data-lq-component="surface" class="lq-surface wrong-summary-insight-panel" aria-label="知识点掌握度与统计摘要">
             <div class="wrong-summary-tag-row" aria-label="错答统计">
                 <span class="wrong-summary-stat-tag">
                     <span>出现错答题目</span>
@@ -1574,7 +1574,7 @@
                     <strong>{{ summary.stats.worst_wrong_count }}</strong>
                 </span>
             </div>
-            <section class="knowledge-mastery-card" aria-label="知识点掌握度柱状图">
+            <section data-lq-component="surface" class="lq-surface knowledge-mastery-card" aria-label="知识点掌握度柱状图">
                 <div class="knowledge-mastery-card__head">
                     <div>
                         <strong>知识点掌握度</strong>
@@ -1585,7 +1585,7 @@
                     </span>
                 </div>
                 {% if knowledge.points %}
-                <div class="knowledge-mastery-chart is-clickable" role="button" tabindex="0" data-knowledge-detail-open aria-label="点击查看整卷知识点掌握度归因详情">
+                <div data-lq-component="content-slot" class="lq-domain-content-slot knowledge-mastery-chart is-clickable" role="button" tabindex="0" data-knowledge-detail-open aria-label="点击查看整卷知识点掌握度归因详情">
                     {% for point in knowledge.points %}
                     <div
                         class="knowledge-mastery-bar is-clickable is-{{ point.tone or 'normal' }}"
@@ -1607,7 +1607,7 @@
                         <li><i class="is-normal"></i>一般78–94</li>
                         <li><i class="is-mastered"></i>掌握≥95</li>
                     </ul>
-                    <button type="button" class="knowledge-detail-trigger" data-knowledge-detail-open>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass knowledge-detail-trigger" data-knowledge-detail-open>
                         查看完整归因 →
                     </button>
                 </div>
@@ -1630,11 +1630,11 @@
         <span>{{ summary.unsupported_reason }}</span>
     </section>
     {% else %}
-    <div class="wrong-summary-tabs" data-wrong-summary-tabs>
-        <div class="wrong-summary-tablist" role="tablist" aria-label="错题归集维度">
-            <button
+    <div data-lq-component="tab" class="lq-tabs wrong-summary-tabs" data-wrong-summary-tabs>
+        <div data-lq-component="tab" class="lq-tabs__list wrong-summary-tablist" role="tablist" aria-label="错题归集维度">
+            <button data-lq-component="button"
                 type="button"
-                class="wrong-summary-tab"
+                class="lq-btn lq-btn--sm lq-btn--glass wrong-summary-tab"
                 id="wrong-summary-tab-errors"
                 role="tab"
                 aria-selected="true"
@@ -1644,9 +1644,9 @@
                 <strong>错误人数归集</strong>
                 <small>{{ summary.wrong_questions|length }} 题</small>
             </button>
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="wrong-summary-tab"
+                class="lq-btn lq-btn--sm lq-btn--glass wrong-summary-tab"
                 id="wrong-summary-tab-hard"
                 role="tab"
                 aria-selected="false"
@@ -1659,8 +1659,8 @@
             </button>
         </div>
 
-        <section
-            class="wrong-summary-section wrong-summary-tab-panel"
+        <section data-lq-component="surface"
+            class="lq-surface wrong-summary-section wrong-summary-tab-panel"
             id="wrong-summary-panel-errors"
             role="tabpanel"
             aria-labelledby="wrong-summary-tab-errors"
@@ -1678,7 +1678,7 @@
             <div class="wrong-question-list">
                 {% for item in summary.wrong_questions %}
                 {% set question = item.question %}
-                <article class="wrong-question-card" id="wrong-summary-errors-q-{{ question.ordinal }}">
+                <article data-lq-component="surface" class="lq-surface wrong-question-card" id="wrong-summary-errors-q-{{ question.ordinal }}">
                     <div class="wrong-question-card__head">
                         <span class="wrong-question-rank">{{ loop.index }}</span>
                         <div class="wrong-question-title">
@@ -1701,9 +1701,9 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <button
+                                <button data-lq-component="button"
                                     type="button"
-                                    class="wrong-option-stat is-{{ option.tone }}"
+                                    class="lq-btn lq-btn--sm lq-btn--glass wrong-option-stat is-{{ option.tone }}"
                                     style="--option-percent: {{ option.percent }}%;"
                                     data-wrong-answer-group
                                     data-detail-title="{{ option.label }}"
@@ -1791,8 +1791,8 @@
             {% endif %}
         </section>
 
-        <section
-            class="wrong-summary-section wrong-summary-tab-panel"
+        <section data-lq-component="surface"
+            class="lq-surface wrong-summary-section wrong-summary-tab-panel"
             id="wrong-summary-panel-hard"
             role="tabpanel"
             aria-labelledby="wrong-summary-tab-hard"
@@ -1814,7 +1814,7 @@
             <div class="hard-question-list">
                 {% for item in summary.hard_questions %}
                 {% set question = item.question %}
-                <article class="hard-question-card" id="wrong-summary-hard-q-{{ question.ordinal }}">
+                <article data-lq-component="surface" class="lq-surface hard-question-card" id="wrong-summary-hard-q-{{ question.ordinal }}">
                     <div class="hard-question-card__head">
                         <span class="hard-question-rank">{{ loop.index }}</span>
                         <div class="hard-question-title">
@@ -1837,9 +1837,9 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <button
+                                <button data-lq-component="button"
                                     type="button"
-                                    class="wrong-option-stat is-{{ option.tone }}"
+                                    class="lq-btn lq-btn--sm lq-btn--glass wrong-option-stat is-{{ option.tone }}"
                                     style="--option-percent: {{ option.percent }}%;"
                                     data-wrong-answer-group
                                     data-detail-title="{{ option.label }}"
@@ -1930,14 +1930,14 @@
     </div>
     {% endif %}
 </main>
-<div class="wrong-answer-modal" data-wrong-answer-modal hidden>
-    <div class="wrong-answer-dialog" role="dialog" aria-modal="true" aria-labelledby="wrong-answer-dialog-title">
+<div data-lq-component="layer" class="lq-domain-region wrong-answer-modal" data-wrong-answer-modal hidden>
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised wrong-answer-dialog" role="dialog" aria-modal="true" aria-labelledby="wrong-answer-dialog-title">
         <div class="wrong-answer-dialog__head">
             <div>
                 <strong id="wrong-answer-dialog-title" data-wrong-answer-modal-title>错答明细</strong>
                 <small data-wrong-answer-modal-subtitle></small>
             </div>
-            <button type="button" class="wrong-answer-dialog__close" data-wrong-answer-modal-close aria-label="关闭">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass wrong-answer-dialog__close" data-wrong-answer-modal-close aria-label="关闭">×</button>
         </div>
         <div class="wrong-answer-dialog__body">
             <div class="wrong-answer-dialog__issue" data-wrong-answer-modal-issue hidden>
@@ -1949,14 +1949,14 @@
         </div>
     </div>
 </div>
-<div class="knowledge-detail-modal" data-knowledge-detail-modal hidden>
-    <div class="knowledge-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-detail-title">
+<div data-lq-component="layer" class="lq-domain-region knowledge-detail-modal" data-knowledge-detail-modal hidden>
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised knowledge-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-detail-title">
         <div class="knowledge-detail-dialog__head">
             <div>
                 <strong id="knowledge-detail-title">整卷知识点掌握度归因</strong>
                 <small data-knowledge-detail-summary></small>
             </div>
-            <button type="button" class="knowledge-detail-dialog__close" data-knowledge-detail-close aria-label="关闭">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass knowledge-detail-dialog__close" data-knowledge-detail-close aria-label="关闭">×</button>
         </div>
         <div class="knowledge-detail-dialog__body">
             <div class="knowledge-detail-metrics" data-knowledge-detail-metrics></div>

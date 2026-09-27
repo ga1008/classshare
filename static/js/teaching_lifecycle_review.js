@@ -23,7 +23,7 @@ export function renderTeachingReview(review) {
 
 export function renderTeachingConfirmationFields(review) {
     return `<label class="materials-property-field"><span>输入完整名称“${escapeHtml(review.expected_confirmation_text || '')}”确认</span>
-        <input class="form-control" type="text" maxlength="500" autocomplete="off" data-teaching-confirmation-text></label>`;
+        <input data-lq-component="input" class="lq-input form-control" type="text" maxlength="500" autocomplete="off" data-teaching-confirmation-text></label>`;
 }
 
 export function readTeachingConfirmationInputs(container) {
@@ -47,9 +47,9 @@ export function openTeachingDeleteConfirmation({ kind, resourceId }) {
             <div data-teaching-delete-content></div></div>`, {
         wide: true, canClose: () => !submitting,
         onClose: () => { closed = true; resolveClosed(outcome); },
-        footerHtml: '<button type="button" class="lp-btn lp-btn--ghost" data-pm-close>取消</button>'
-            + '<button type="button" class="lp-btn lp-btn--ghost" data-teaching-delete-refresh>重新读取影响</button>'
-            + '<button type="button" class="lp-btn lp-btn--primary" data-teaching-delete-submit disabled>确认删除</button>',
+        footerHtml: '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-pm-close>取消</button>'
+            + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-teaching-delete-refresh>重新读取影响</button>'
+            + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-teaching-delete-submit disabled>确认删除</button>',
     });
     const { overlay } = modal;
     const content = overlay.querySelector('[data-teaching-delete-content]');
@@ -76,9 +76,9 @@ export function openTeachingDeleteConfirmation({ kind, resourceId }) {
             if (closed) return;
             current = data.review;
             content.innerHTML = `${renderTeachingReview(current)}
-                ${(current.warnings || []).length ? `<fieldset class="grade-publication__checks"><legend>请逐项确认</legend>${current.warnings.map((warning) => `<label><input type="checkbox" data-teaching-delete-warning value="${escapeHtml(warning.code)}"><span>${escapeHtml(warning.message)}</span></label>`).join('')}</fieldset>` : ''}
+                ${(current.warnings || []).length ? `<fieldset data-lq-component="field" class="lq-form-section grade-publication__checks"><legend>请逐项确认</legend>${current.warnings.map((warning) => `<label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-teaching-delete-warning value="${escapeHtml(warning.code)}"><span>${escapeHtml(warning.message)}</span></label>`).join('')}</fieldset>` : ''}
                 ${renderTeachingConfirmationFields(current)}
-                <label class="materials-property-field"><span>核对说明（必填）</span><textarea class="form-control" rows="2" maxlength="2000" data-teaching-delete-note></textarea></label>`;
+                <label class="materials-property-field"><span>核对说明（必填）</span><textarea data-lq-component="textarea" class="lq-textarea form-control" rows="2" maxlength="2000" data-teaching-delete-note></textarea></label>`;
             content.querySelector('[data-teaching-confirmation-text]').value = name;
             content.querySelector('[data-teaching-delete-note]').value = note;
             feedback.textContent = current.can_execute ? '请核对当前影响后确认。重新读取后需重新勾选警告。' : '关联问题处理完成后，可重新读取影响。';

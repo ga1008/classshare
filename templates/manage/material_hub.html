@@ -18,11 +18,11 @@
     {# 分类 chips：JS 契约与旧侧栏 rail 完全一致（#libraryCategoryRail / data-cat-key / data-cat-action / .is-checked）。 #}
     <div class="mh-cats" id="libraryCategoryRail" data-hub-active="1" role="group" aria-label="材料分类">
         <span class="mh-cats__actions">
-            <button type="button" class="manage-cat-rail__action" data-cat-action="all">全选</button>
-            <button type="button" class="manage-cat-rail__action" data-cat-action="none">全部取消</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass manage-cat-rail__action" data-cat-action="all">全选</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass manage-cat-rail__action" data-cat-action="none">全部取消</button>
         </span>
         {% for category in manage_nav.library_categories %}
-        <button type="button" class="manage-cat-item is-checked" data-cat-key="{{ category.key }}" data-explain data-explain-title="{{ category.label }}" data-explain-text="{{ category.hint }}">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass manage-cat-item is-checked" data-cat-key="{{ category.key }}" data-explain data-explain-title="{{ category.label }}" data-explain-text="{{ category.hint }}">
             <span class="manage-cat-item__box" aria-hidden="true">
                 <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
             </span>
@@ -32,17 +32,17 @@
         {% endfor %}
     </div>
 
-    <div class="mh-search-card">
+    <div data-lq-component="surface" class="lq-surface mh-search-card">
         <div class="mh-search-row">
             <div class="mh-search-input">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                <input type="search" id="mh-query" placeholder="搜索标题 / 内容 / 标签 / 归属人，或用自然语言描述需求…" autocomplete="off" maxlength="200">
+                <input data-lq-component="input" class="lq-input" type="search" id="mh-query" placeholder="搜索标题 / 内容 / 标签 / 归属人，或用自然语言描述需求…" autocomplete="off" maxlength="200">
             </div>
             {% if _mh_lq_enabled %}
             {# 真实 <select> 原样保留（material_hub.js 只读 #mh-scope 的 .value），只追加
                既有的 .filter-proxy-select（display:none，courses.html 同款先例）把它变成代理载体；
                可见的选择器换成 lq_chip_row，点击由 manage_filter_chips.js 写回真实 select 并派发 change。 #}
-            <select class="form-control mh-scope-select filter-proxy-select" id="mh-scope" aria-label="归属层级筛选" tabindex="-1">
+            <select data-lq-component="select" class="lq-select form-control mh-scope-select filter-proxy-select" id="mh-scope" aria-label="归属层级筛选" tabindex="-1">
                 <option value="all">全部范围</option>
                 <option value="private">本人</option>
                 <option value="department">本系部</option>
@@ -61,7 +61,7 @@
                 ]) }}
             </div>
             {% else %}
-            <select class="form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
+            <select data-lq-component="select" class="lq-select form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
                 <option value="all">全部范围</option>
                 <option value="private">本人</option>
                 <option value="department">本系部</option>
@@ -70,11 +70,11 @@
                 <option value="public">完全公开</option>
             </select>
             {% endif %}
-            <button type="button" class="mh-btn-search" id="mh-search-btn">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass mh-btn-search" id="mh-search-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                 搜索
             </button>
-            <button type="button" class="mh-btn-ai" id="mh-ai-btn" title="AI 会先理解你的需求，再提炼关键词与分类进行检索">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass mh-btn-ai" id="mh-ai-btn" title="AI 会先理解你的需求，再提炼关键词与分类进行检索">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"></path><path d="M18.4 5.6 16.3 7.7"></path><path d="M21 12h-3"></path><path d="M12 21v-3"></path><path d="M5.6 18.4l2.1-2.1"></path><path d="M3 12h3"></path><path d="M5.6 5.6l2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle></svg>
                 AI 搜索
             </button>

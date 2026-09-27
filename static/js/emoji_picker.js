@@ -14,6 +14,7 @@ import {
     getEmojiMeta,
     buildTwemojiUrl,
 } from './chat_emoji_catalog.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 
 const MAX_FREQUENT_ITEMS = 8;
 
@@ -31,7 +32,8 @@ export function createEmojiPicker(options) {
 
     let isOpen = false;
     const container = document.createElement('div');
-    container.className = 'emoji-picker';
+    container.className = 'emoji-picker lq-glass lq-domain-raised';
+    container.dataset.lqComponent = 'popover'; container.dataset.lqMaterial = 'raised';
     container.hidden = true;
     container.setAttribute('role', 'dialog');
     container.setAttribute('aria-label', '表情选择器');
@@ -88,6 +90,8 @@ export function createEmojiPicker(options) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'emoji-picker-item';
+        adoptDomainControl(button, { kind: 'choice', variant: 'ghost' });
+        button.dataset.lqShape = 'surface';
         button.title = meta.name || char;
         button.setAttribute('aria-label', meta.name || char || 'emoji');
 

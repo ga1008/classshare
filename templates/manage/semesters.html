@@ -19,22 +19,22 @@
     {{ page_head('学期', lq_enabled=lq_pilot_enabled|default(false), explain='管理学期时间范围与校历。新增学期后自动对齐教务系统教学日历，并结合 AI 与爬虫核对广西节假日和补课安排；周次自动计算。', actions=[{'label': '新建学期', 'id': 'heroSemesterCreateBtn', 'variant': 'primary'}]) }}
 
     <section class="academic-stat-grid">
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">学期数量</div>
             <div class="academic-stat-value">{{ semesters|length }}</div>
             <div class="academic-stat-help">当前教师所在学校可复用的学期总数。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">进行中</div>
             <div class="academic-stat-value">{{ semesters|selectattr('is_current')|list|length }}</div>
             <div class="academic-stat-help">当前日期落入学期区间的学期数量。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">累计周数</div>
             <div class="academic-stat-value">{{ semesters|sum(attribute='week_count') }}</div>
             <div class="academic-stat-help">所有学期自动计算后的总周次。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">默认草稿</div>
             <div class="academic-stat-value" style="font-size: 1.1rem;">{{ semester_defaults.name }}</div>
             <div class="academic-stat-help">建议时间：{{ semester_defaults.start_date }} 至 {{ semester_defaults.end_date }}</div>
@@ -43,23 +43,23 @@
     {% endif %}
 
     <section class="academic-content-grid{% if not embedded_mode %} two-column{% endif %}">
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">学期列表</h3>
                     <p class="academic-card-subtitle">支持搜索与复用；同校共享学期由创建者维护，其他教师可直接用于开课。</p>
                 </div>
                 {% if embedded_mode %}
-                <button type="button" class="btn btn-primary" id="heroSemesterCreateBtn">新建学期</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="heroSemesterCreateBtn">新建学期</button>
                 {% endif %}
             </div>
             <div class="academic-card-body">
-                <div class="academic-toolbar academic-toolbar-between">
+                <div data-lq-component="toolbar" class="lq-domain-toolbar academic-toolbar academic-toolbar-between">
                     <label class="academic-search" for="semesterSearchInput">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
-                        <input type="search" id="semesterSearchInput" class="form-control" placeholder="搜索学期名称、日期或周数">
+                        <input data-lq-component="input" type="search" id="semesterSearchInput" class="lq-input form-control" placeholder="搜索学期名称、日期或周数">
                     </label>
-                    <button type="button" class="btn btn-outline" id="semesterClearSearchBtn">清空</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="semesterClearSearchBtn">清空</button>
                 </div>
                 <div class="academic-list" id="semesterList"></div>
                 <div class="academic-empty" id="semesterListEmpty" hidden>
@@ -70,7 +70,7 @@
         </article>
 
         {% if not embedded_mode %}
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">当前焦点</h3>
@@ -105,14 +105,14 @@
     {% endif %}
 </div>
 
-<div class="academic-modal-backdrop" id="semesterModalBackdrop">
-    <div class="academic-modal slim" role="dialog" aria-modal="true" aria-labelledby="semesterModalTitle">
+<div class="lq-domain-region academic-modal-backdrop" id="semesterModalBackdrop" data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised academic-modal slim" role="dialog" aria-modal="true" aria-labelledby="semesterModalTitle">
         <div class="academic-modal-header">
             <div>
                 <h3 class="academic-modal-title" id="semesterModalTitle">新增学期</h3>
                 <p class="academic-modal-subtitle">留空时系统将自动生成学期名称，保存后仍可修改。</p>
             </div>
-            <button type="button" class="academic-modal-close" id="semesterModalCloseBtn" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-modal-close" id="semesterModalCloseBtn" aria-label="关闭">&times;</button>
         </div>
         <form id="semesterForm" action="/api/manage/semesters/save" method="post">
             <div class="academic-modal-body">
@@ -135,7 +135,7 @@
                 <div class="academic-form-grid two-col">
                     <div class="academic-field">
                         <label for="semesterNameInput">学期名称</label>
-                        <input type="text" id="semesterNameInput" name="name" class="form-control" placeholder="例如：2025-2026 第一学期">
+                        <input data-lq-component="input" type="text" id="semesterNameInput" name="name" class="lq-input form-control" placeholder="例如：2025-2026 第一学期">
                         <div class="academic-hint">根据所选日期自动生成，保存后可随时修改。</div>
                     </div>
                     <div class="academic-field">
@@ -147,19 +147,19 @@
                     </div>
                     <div class="academic-field">
                         <label for="semesterStartInput">开始日期</label>
-                        <input type="date" id="semesterStartInput" name="start_date" class="form-control" required data-dp-pair="#semesterEndInput" data-dp-role="start">
+                        <input data-lq-component="input" type="date" id="semesterStartInput" name="start_date" class="lq-input form-control" required data-dp-pair="#semesterEndInput" data-dp-role="start">
                     </div>
                     <div class="academic-field">
                         <label for="semesterEndInput">结束日期</label>
-                        <input type="date" id="semesterEndInput" name="end_date" class="form-control" required data-dp-pair="#semesterStartInput" data-dp-role="end">
+                        <input data-lq-component="input" type="date" id="semesterEndInput" name="end_date" class="lq-input form-control" required data-dp-pair="#semesterStartInput" data-dp-role="end">
                     </div>
                 </div>
                 {% endif %}
             </div>
             <div class="academic-modal-footer">
-                <button type="button" class="btn btn-ghost" id="semesterModalCancelBtn">取消</button>
-                <button type="button" class="btn btn-outline" id="semesterSyncCurrentBtn">从教务系统同步</button>
-                <button type="submit" class="btn btn-primary" id="semesterSubmitBtn">保存学期</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" id="semesterModalCancelBtn">取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="semesterSyncCurrentBtn">从教务系统同步</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="semesterSubmitBtn">保存学期</button>
             </div>
         </form>
     </div>

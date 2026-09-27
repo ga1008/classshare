@@ -4,6 +4,21 @@
 (function () {
   'use strict';
 
+  // Classic scripts retain their synchronous load order. Adopt only the exact
+  // controls supplied by their constructors; never scan or replace page DOM.
+  var domainControls = null, domainControlsReady = null;
+  function adoptControl(node, options) {
+    if (domainControls) domainControls.adoptDomainControl(node, options);
+    else {
+      if (!domainControlsReady) domainControlsReady = import('/static/js/lq/domain-controls.js')
+        .then(function (module) { domainControls = module; return module; })
+        .catch(function (error) { domainControlsReady = null; throw error; });
+      domainControlsReady.then(function (module) { module.adoptDomainControl(node, options); })
+        .catch(function (error) { console.error('Resume control presentation could not load', error); });
+    }
+    return node;
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
@@ -79,11 +94,12 @@
   function openModal(opts) {
     opts = opts || {};
     var root = document.createElement('div');
-    root.className = 'rz-modal';
+    root.className = 'lq-domain-region rz-modal';
+    root.dataset.lqComponent = 'layer';
     root.innerHTML =
-      '<div data-lq-material="raised" class="rz-modal__panel ' + (opts.wide ? 'rz-modal__panel--wide' : '') + '">' +
+      '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised rz-modal__panel ' + (opts.wide ? 'rz-modal__panel--wide' : '') + '">' +
       '<div class="rz-modal__head"><h3>' + esc(opts.title || '') + '</h3>' +
-      '<button type="button" class="rz-modal__close" aria-label="关闭">&times;</button></div>' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-modal__close" aria-label="关闭">&times;</button></div>' +
       '<div class="rz-modal__body"></div>' +
       '<div class="rz-modal__foot"></div></div>';
     document.body.appendChild(root);
@@ -132,7 +148,7 @@
         if (!job) return;
         ['retry', 'cancel'].forEach(function (action) {
           if (!(action === 'retry' ? job.can_retry || job.retryable : job.can_cancel || job.cancellable)) return;
-          var button = document.createElement('button'); button.className = 'rz-btn'; button.textContent = action === 'retry' ? '重试' : '取消任务';
+          var button = document.createElement('button'); button.className = 'rz-btn'; adoptControl(button, { kind: 'button', variant: 'glass' }); button.textContent = action === 'retry' ? '重试' : '取消任务';
           button.onclick = async function () {
             button.disabled = true;
             try { await api(options.base + '/job/' + action, { method: 'POST', body: { revision: options.revision } });
@@ -174,8 +190,8 @@
         error.status === 401 ? '登录已失效。请重新登录后回到此页重试，当前页面和草稿仍保留。' :
         error.name === 'AbortError' ? '文件准备超时，可以稍后重试。当前页面和所选版本仍保留。' : error.message;
       modal.body.textContent = message + (error.retryAfter ? ' 建议等待 ' + error.retryAfter + ' 秒。' : '');
-      if (error.status === 401) { var login = document.createElement('a'); login.className = 'rz-btn'; login.href = '/student/login'; login.target = '_blank'; login.rel = 'noopener'; login.textContent = '在新页登录'; modal.foot.appendChild(login); }
-      var retry = document.createElement('button'); retry.className = 'rz-btn rz-btn--primary'; retry.textContent = '重试下载';
+      if (error.status === 401) { var login = document.createElement('a'); login.className = 'rz-btn'; adoptControl(login, { kind: 'button', variant: 'glass' }); login.href = '/student/login'; login.target = '_blank'; login.rel = 'noopener'; login.textContent = '在新页登录'; modal.foot.appendChild(login); }
+      var retry = document.createElement('button'); retry.className = 'rz-btn rz-btn--primary'; adoptControl(retry, { kind: 'button', variant: 'prominent' }); retry.textContent = '重试下载';
       var waitSeconds = error.status === 429 ? Math.max(1, Math.min(300, Number(error.retryAfter || 10))) : 0;
       if (waitSeconds) { retry.disabled = true; retry.textContent = waitSeconds + ' 秒后可重试'; setTimeout(function () { if (retry.isConnected) { retry.disabled = false; retry.textContent = '重试下载'; } }, waitSeconds * 1000); }
       retry.onclick = function () { modal.close(); downloadFile(url, trigger); }; modal.foot.appendChild(retry);
@@ -210,13 +226,13 @@
         modal.body.innerHTML = '<h4>' + esc(window.CareerTools.taskLabel(result.job || {})) + '</h4><p>' + esc((result.job || {}).error_message || '原始资料保持不变，核对建议后再采用。') + '</p>';
         modal.foot.innerHTML = '';
         if (result.result) {
-          var review = document.createElement('button'); review.className = 'rz-btn rz-btn--primary'; review.textContent = '查看并核对建议';
+          var review = document.createElement('button'); review.className = 'rz-btn rz-btn--primary'; adoptControl(review, { kind: 'button', variant: 'prominent' }); review.textContent = '查看并核对建议';
           review.onclick = function () { modal.close(); if (options.onResult) options.onResult(result.result, forget, result); };
           modal.foot.appendChild(review);
         }
         ['retry', 'cancel'].forEach(function (action) {
           var job = result.job || {}; if (!(action === 'retry' ? job.retryable || job.can_retry : job.cancellable || job.can_cancel)) return;
-          var button = document.createElement('button'); button.className = 'rz-btn'; button.textContent = action === 'retry' ? '重试建议' : '取消建议任务';
+          var button = document.createElement('button'); button.className = 'rz-btn'; adoptControl(button, { kind: 'button', variant: 'glass' }); button.textContent = action === 'retry' ? '重试建议' : '取消建议任务';
           button.onclick = async function () {
             button.disabled = true;
             try { var updated = await api('/api/resume/suggestions/jobs/' + id + '/' + action, { method: 'POST' });
@@ -232,8 +248,8 @@
   function confirmDialog(message, onYes) {
     var m = openModal({ title: '确认操作' });
     m.body.innerHTML = '<p style="margin:0;font-size:.94rem">' + esc(message) + '</p>';
-    var cancel = document.createElement('button'); cancel.className = 'rz-btn'; cancel.textContent = '取消';
-    var ok = document.createElement('button'); ok.className = 'rz-btn rz-btn--danger'; ok.textContent = '确定删除';
+    var cancel = document.createElement('button'); cancel.className = 'rz-btn'; adoptControl(cancel, { kind: 'button', variant: 'glass' }); cancel.textContent = '取消';
+    var ok = document.createElement('button'); ok.className = 'rz-btn rz-btn--danger'; adoptControl(ok, { kind: 'button', variant: 'destructive' }); ok.textContent = '确定删除';
     cancel.onclick = m.close;
     ok.onclick = function () { m.close(); onYes(); };
     m.foot.appendChild(cancel); m.foot.appendChild(ok);
@@ -298,9 +314,9 @@
     // Freeze a complete backup independently of subsequent form edits. No raw
     // payload is added to the DOM, and no download starts without a click.
     var backup = JSON.stringify(typeof localContent === 'string' ? { content: localContent } : (localContent || {}), null, 2);
-    modal.body.innerHTML += '<label class="rz-field">当前草稿摘要<textarea class="rz-textarea" readonly rows="10"></textarea></label>';
+    modal.body.innerHTML += '<label class="rz-field">当前草稿摘要<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" readonly rows="10"></textarea></label>';
     modal.body.querySelector('textarea').value = draftSummary(localContent);
-    var download = document.createElement('button'); download.type = 'button'; download.className = 'rz-btn';
+    var download = document.createElement('button'); download.type = 'button'; download.className = 'rz-btn'; adoptControl(download, { kind: 'button', variant: 'glass' });
     download.textContent = '下载草稿备份';
     download.onclick = function () {
       var url = URL.createObjectURL(new Blob([backup], { type: 'application/json;charset=utf-8' }));
@@ -319,24 +335,24 @@
       var unavailable = openModal({ title: '资料暂不可用', wide: true });
       unavailable.body.innerHTML = '<p>' + esc(error.message) + '。当前草稿仍保留在这个页面中。你可以复制摘要或下载完整备份后，返回自己的资料页面。</p>';
       conflictContent(unavailable, localContent);
-      var returnLink = document.createElement('a'); returnLink.className = 'rz-btn'; returnLink.href = '/resume'; returnLink.textContent = '返回我的工作台'; unavailable.foot.appendChild(returnLink);
+      var returnLink = document.createElement('a'); returnLink.className = 'rz-btn'; adoptControl(returnLink, { kind: 'button', variant: 'glass' }); returnLink.href = '/resume'; returnLink.textContent = '返回我的工作台'; unavailable.foot.appendChild(returnLink);
       return;
     }
     if (error.status !== 409 && error.status !== 428) { toast(error.message, 'error'); return; }
     var m = openModal({ title: '这份资料有了新版本', wide: true });
     m.body.innerHTML = '<p>另一页面或任务已更新这份资料。当前草稿仍保留在这个页面中。你可以继续编辑，或先复制摘要、下载完整备份，再载入最新版本核对。</p>';
     conflictContent(m, localContent);
-    var stay = document.createElement('button'); stay.className = 'rz-btn'; stay.textContent = '继续查看当前输入'; stay.onclick = m.close;
+    var stay = document.createElement('button'); stay.className = 'rz-btn'; adoptControl(stay, { kind: 'button', variant: 'glass' }); stay.textContent = '继续查看当前输入'; stay.onclick = m.close;
     m.foot.appendChild(stay);
-    if (reload) { var latest = document.createElement('button'); latest.className = 'rz-btn rz-btn--primary'; latest.textContent = '我已保留输入，载入最新版本';
+    if (reload) { var latest = document.createElement('button'); latest.className = 'rz-btn rz-btn--primary'; adoptControl(latest, { kind: 'button', variant: 'prominent' }); latest.textContent = '我已保留输入，载入最新版本';
       latest.onclick = function () { m.close(); reload(); }; m.foot.appendChild(latest); }
   }
   function compareSuggestion(original, proposed, accept) {
     var m = openModal({ title: '核对 AI 建议', wide: true });
     m.body.innerHTML = '<p>请核对姓名、经历、数字和技能是否真实，再决定是否采用。</p><div class="rz-candidate-compare"><section><h4>当前内容</h4><div class="rz-md">' + md(original) +
       '</div></section><section><h4>建议内容</h4><div class="rz-md">' + md(proposed) + '</div></section></div>';
-    var keep = document.createElement('button'); keep.className = 'rz-btn'; keep.textContent = '保留当前内容'; keep.onclick = m.close;
-    var use = document.createElement('button'); use.className = 'rz-btn rz-btn--primary'; use.textContent = '采用建议';
+    var keep = document.createElement('button'); keep.className = 'rz-btn'; adoptControl(keep, { kind: 'button', variant: 'glass' }); keep.textContent = '保留当前内容'; keep.onclick = m.close;
+    var use = document.createElement('button'); use.className = 'rz-btn rz-btn--primary'; adoptControl(use, { kind: 'button', variant: 'prominent' }); use.textContent = '采用建议';
     use.onclick = function () { accept(); m.close(); }; m.foot.appendChild(keep); m.foot.appendChild(use);
   }
 
@@ -386,10 +402,10 @@
     var label = formatMonthLabel(value) || placeholder;
     return '<div class="rz-month-field" data-rz-month-picker data-year="' + monthYear(value) + '">' +
       '<input type="hidden" name="' + esc(name) + '" value="' + esc(value) + '">' +
-      '<button type="button" class="rz-month-trigger" data-rz-month-open aria-expanded="false">' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-month-trigger" data-rz-month-open aria-expanded="false">' +
       '<span class="rz-month-trigger__label' + (value ? '' : ' is-placeholder') + '">' + esc(label) + '</span>' +
       '<span class="rz-month-trigger__icon">' + MONTH_ICON + '</span></button>' +
-      '<div class="rz-month-panel" data-rz-month-panel hidden></div></div>';
+      '<div data-lq-component="surface" class="lq-surface rz-month-panel" data-rz-month-panel hidden></div></div>';
   }
 
   function monthRangePickerHtml(startName, endName, values, opts) {
@@ -400,11 +416,11 @@
     return '<div class="rz-month-range" data-rz-month-range data-role="start" data-year="' + monthYear(anchor) + '">' +
       '<input type="hidden" name="' + esc(startName) + '" value="' + esc(start) + '" data-rz-range-start>' +
       '<input type="hidden" name="' + esc(endName) + '" value="' + esc(end) + '" data-rz-range-end>' +
-      '<button type="button" class="rz-month-trigger" data-rz-month-open aria-expanded="false">' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-month-trigger" data-rz-month-open aria-expanded="false">' +
       '<span class="rz-month-trigger__label' + (start || end ? '' : ' is-placeholder') + '">' +
       esc(rangeLabel(start, end, opts.placeholder || '请选择起止年月')) + '</span>' +
       '<span class="rz-month-trigger__icon">' + MONTH_ICON + '</span></button>' +
-      '<div class="rz-month-panel rz-month-panel--range" data-rz-month-panel hidden></div></div>';
+      '<div data-lq-component="surface" class="lq-surface rz-month-panel rz-month-panel--range" data-rz-month-panel hidden></div></div>';
   }
 
   function rangeLabel(start, end, placeholder) {
@@ -472,10 +488,10 @@
       MONTH_NAMES.map(function (label, index) {
         var value = monthValue(year, index);
         var cls = 'rz-month-option' + (value === selected ? ' is-selected' : '') + (value === now ? ' is-current' : '');
-        return '<button type="button" class="' + cls + '" data-rz-month-value="' + value + '">' + label + '</button>';
+        return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ' + cls + '" data-rz-month-value="' + value + '">' + label + '</button>';
       }).join('') + '</div><div class="rz-month-panel__actions">' +
-      '<button type="button" data-rz-month-clear>清空</button>' +
-      '<button type="button" data-rz-month-today>本月</button></div>';
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-clear>清空</button>' +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-today>本月</button></div>';
   }
 
   function renderRangeMonthPicker(root) {
@@ -491,27 +507,27 @@
     var role = root.dataset.role === 'end' ? 'end' : 'start';
     setTriggerLabel(root, rangeLabel(start, end, '请选择起止年月'), !(start || end));
     var now = currentMonthValue();
-    panel.innerHTML = '<div class="rz-month-range__roles" role="tablist" aria-label="选择时间类型">' +
-      '<button type="button" data-rz-range-role="start" class="' + (role === 'start' ? 'is-active' : '') + '">开始</button>' +
-      '<button type="button" data-rz-range-role="end" class="' + (role === 'end' ? 'is-active' : '') + '">结束</button></div>' +
+    panel.innerHTML = '<div data-lq-component="tab" class="lq-tabs__list rz-month-range__roles" role="tablist" aria-label="选择时间类型">' +
+      '<button data-lq-component="button" type="button" data-rz-range-role="start" class="lq-btn lq-btn--sm lq-btn--glass ' + (role === 'start' ? 'is-active' : '') + '">开始</button>' +
+      '<button data-lq-component="button" type="button" data-rz-range-role="end" class="lq-btn lq-btn--sm lq-btn--glass ' + (role === 'end' ? 'is-active' : '') + '">结束</button></div>' +
       monthPanelHead(year) + '<div class="rz-month-grid">' +
       MONTH_NAMES.map(function (label, index) {
         var value = monthValue(year, index);
         var inRange = start && end && compareMonth(value, start) >= 0 && compareMonth(value, end) <= 0;
         var cls = 'rz-month-option' + (value === now ? ' is-current' : '') +
           (inRange ? ' is-range' : '') + (value === start ? ' is-start' : '') + (value === end ? ' is-end' : '');
-        return '<button type="button" class="' + cls + '" data-rz-month-value="' + value + '">' + label + '</button>';
+        return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ' + cls + '" data-rz-month-value="' + value + '">' + label + '</button>';
       }).join('') + '</div><div class="rz-month-panel__result">' +
       esc(rangeLabel(start, end, '先选开始，再选结束')) + '</div><div class="rz-month-panel__actions">' +
-      '<button type="button" data-rz-month-clear>清空</button>' +
-      '<button type="button" data-rz-month-today>本月</button></div>';
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-clear>清空</button>' +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-today>本月</button></div>';
   }
 
   function monthPanelHead(year) {
     return '<div class="rz-month-panel__head">' +
-      '<button type="button" data-rz-month-nav="-1" aria-label="上一年">‹</button>' +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-nav="-1" aria-label="上一年">‹</button>' +
       '<strong>' + year + '年</strong>' +
-      '<button type="button" data-rz-month-nav="1" aria-label="下一年">›</button></div>';
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-rz-month-nav="1" aria-label="下一年">›</button></div>';
   }
 
   function bindMonthGlobals() {
@@ -606,7 +622,7 @@
     scope.querySelectorAll('[data-rz-month-range]').forEach(renderRangeMonthPicker);
   }
 
-  window.RZ = { esc: esc, md: md, toast: toast, api: api, track: track, openModal: openModal,
+  window.RZ = { adoptControl: adoptControl, esc: esc, md: md, toast: toast, api: api, track: track, openModal: openModal,
     conflict: conflict, compareSuggestion: compareSuggestion, openJob: openJob, downloadFile: downloadFile, requestSuggestion: requestSuggestion, pendingSuggestion: pendingSuggestion,
     confirmDialog: confirmDialog, fmtRange: fmtRange, monthPickerHtml: monthPickerHtml,
     monthRangePickerHtml: monthRangePickerHtml, initMonthPickers: initMonthPickers,

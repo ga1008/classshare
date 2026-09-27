@@ -6,27 +6,27 @@
         <div class="rz-page-head__title">新建简历</div>
         <div class="rz-page-head__sub">选择内容后，可以直接修改本份简历的文字。随时保存草稿，确认内容后再生成文件。</div>
     </div>
-    <div class="rz-builder-actions"><button type="button" class="rz-btn" id="rzEditContent">编辑本份文字</button><button type="button" class="rz-btn" id="rzSaveDraft">保存草稿</button><button type="button" class="rz-btn rz-btn--primary" id="rzBuildSubmit">生成文件</button></div>
+    <div class="rz-builder-actions"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" id="rzEditContent">编辑本份文字</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" id="rzSaveDraft">保存草稿</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--primary" id="rzBuildSubmit">生成文件</button></div>
 </div>
 <div id="rzDraftStatus" class="rz-draft-status" role="status">尚未保存</div>
 
 <div class="rz-builder">
     <div class="rz-builder__main" data-lq-material="content">
         <div id="rzBuildProgress" class="rz-build-progress"></div>
-        <div class="rz-target-card">
+        <div data-lq-component="surface" class="lq-surface rz-target-card">
             <div class="rz-target-card__copy">
                 <strong>目标岗位</strong>
                 <span>一份简历只服务一个主要岗位；需要投不同方向时，可以为每个岗位单独生成一版。</span>
             </div>
             <div class="rz-target-card__input">
-                <input class="rz-input" id="rzTargetPosition" placeholder="选择职业推荐岗位，或输入自定义目标岗位">
+                <input data-lq-component="input" class="lq-input rz-input" id="rzTargetPosition" placeholder="选择职业推荐岗位，或输入自定义目标岗位">
                 <div class="rz-target-options" id="rzTargetOptions"></div>
             </div>
         </div>
 
         <div class="rz-field">
             <label>简历标题</label>
-            <input class="rz-input" id="rzResumeTitle" placeholder="例如：后端开发工程师 - 张三">
+            <input data-lq-component="input" class="lq-input rz-input" id="rzResumeTitle" placeholder="例如：后端开发工程师 - 张三">
         </div>
 
         <div class="rz-field">
@@ -43,7 +43,7 @@
                 <div class="rz-palette-head__title">可选内容</div>
                 <div class="rz-palette-head__sub">拖动或点击卡片加入左侧区域</div>
             </div>
-            <button type="button" class="rz-palette-head__close" id="rzPaletteClose">收起</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-palette-head__close" id="rzPaletteClose">收起</button>
         </div>
         <div id="rzPalette"></div>
     </div>

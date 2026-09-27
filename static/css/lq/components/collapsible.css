@@ -2,7 +2,7 @@
 .lq-collapsible__summary { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-3); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-3) var(--ls-s-4); color: hsl(var(--ls-ink)); cursor: pointer; list-style: none; border-radius: inherit; }
 .lq-collapsible__summary::-webkit-details-marker { display: none; }
 .lq-collapsible__title { min-width: 0; font-size: var(--ls-t-headline); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
-.lq-collapsible__indicator { flex-shrink: 0; font-size: var(--ls-t-title2); transition: transform var(--ls-dur-fast) var(--ls-ease-out); }
+.lq-collapsible__indicator { flex-shrink: 0; font-size: var(--ls-t-title2); transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-ease, var(--ls-ease-out)); }
 .lq-collapsible[open] > .lq-collapsible__summary .lq-collapsible__indicator { transform: rotate(180deg); }
 .lq-collapsible__summary[aria-disabled="true"] { cursor: default; }
 .lq-collapsible__summary[aria-disabled="true"] .lq-collapsible__indicator { visibility: hidden; }

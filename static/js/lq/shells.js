@@ -326,14 +326,18 @@ function subscribeViewport(win, callback) {
   service.subscribers.add(callback);
   return () => { service.subscribers.delete(callback); if (!service.subscribers.size) { win.removeEventListener('resize', service.fire); win.visualViewport?.removeEventListener('resize', service.fire); win.document.removeEventListener('focusin', service.fire); win.document.removeEventListener('focusout', service.fire); delete win[viewportKey]; } };
 }
-export function enhanceDock(root, { contentRoot, fallbacks = {} } = {}) {
+export function enhanceDock(root, { contentRoot, floatingRoot = null, fallbacks = {} } = {}) {
   if (!root?.matches?.('[data-lq-shell="dock"]') || !root.isConnected || !contentRoot?.isConnected || contentRoot.ownerDocument !== root.ownerDocument || root.contains(contentRoot) || !object(fallbacks)) throw new TypeError('Dock needs a connected, separate content root');
+  if (floatingRoot && (!floatingRoot.isConnected || floatingRoot.ownerDocument !== root.ownerDocument || root.contains(floatingRoot))) throw new TypeError('Dock floating root must share its connected document');
   if (root[dockOwner]) return root[dockOwner];
   const doc = root.ownerDocument, win = doc.defaultView;
   const commands = [...root.querySelectorAll('button[data-lq-command]')].map(el => el.dataset.lqCommand);
   if (Object.keys(fallbacks).some(key => !commands.includes(key))) throw new TypeError('Fallback does not match a Dock command');
   for (const [key, target] of Object.entries(fallbacks)) if (target?.ownerDocument !== doc || root.contains(target) || target.dataset.lqCommand !== key) throw new TypeError('Fallback must be the same explicit command outside the Dock');
   const original = { hidden: root.hidden, inert: root.inert, state: root.getAttribute('data-lq-keyboard-hidden'), padding: contentRoot.style.getPropertyValue('--lq-dock-h'), priority: contentRoot.style.getPropertyPriority('--lq-dock-h'), compensated: contentRoot.getAttribute('data-lq-dock-content') };
+  // Body-level FABs are siblings of the compensated main content. Share the
+  // same measured value without a second observer or a second layout read.
+  const floating = floatingRoot && floatingRoot !== contentRoot ? { root: floatingRoot, height: floatingRoot.style.getPropertyValue('--lq-dock-h'), priority: floatingRoot.style.getPropertyPriority('--lq-dock-h') } : null;
   let disposed = false, moreHandle = null, morePending = null;
   const more = root.querySelector('[data-lq-dock-more]'), summary = more?.querySelector('summary'), overflow = more?.querySelector('[data-lq-dock-overflow]'), originalMoreOpen = more?.open;
   const openMore = () => {
@@ -353,6 +357,7 @@ export function enhanceDock(root, { contentRoot, fallbacks = {} } = {}) {
     if (disposed) return;
     const height = root.hidden || win.innerWidth >= 768 ? '0px' : `${root.getBoundingClientRect().height + 24}px`;
     if (contentRoot.style.getPropertyValue('--lq-dock-h') !== height) contentRoot.style.setProperty('--lq-dock-h', height);
+    if (floating && floating.root.style.getPropertyValue('--lq-dock-h') !== height) floating.root.style.setProperty('--lq-dock-h', height);
   };
   const usable = key => visible(fallbacks[key]) && !fallbacks[key].matches(':disabled,[aria-disabled="true"]');
   const update = event => {
@@ -380,6 +385,7 @@ export function enhanceDock(root, { contentRoot, fallbacks = {} } = {}) {
     if (original.state === null) root.removeAttribute('data-lq-keyboard-hidden'); else root.setAttribute('data-lq-keyboard-hidden', original.state);
     if (original.compensated === null) contentRoot.removeAttribute('data-lq-dock-content'); else contentRoot.setAttribute('data-lq-dock-content', original.compensated);
     if (original.padding) contentRoot.style.setProperty('--lq-dock-h', original.padding, original.priority); else contentRoot.style.removeProperty('--lq-dock-h'); delete root[dockOwner];
+    if (floating) { if (floating.height) floating.root.style.setProperty('--lq-dock-h', floating.height, floating.priority); else floating.root.style.removeProperty('--lq-dock-h'); }
   } };
   root[dockOwner] = handle; update(); return handle;
 }

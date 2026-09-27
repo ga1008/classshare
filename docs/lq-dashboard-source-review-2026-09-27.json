@@ -1,0 +1,38 @@
+{
+  "reviewedAt": "2026-09-27",
+  "scope": "Shared dashboard template source review; no migration acceptance status changed.",
+  "sources": [
+    {
+      "path": "templates/dashboard.html",
+      "sha256": "cb75621532d79343803d366481c44036a2fb39e6ca5b63e2cce4f3e2c2000010",
+      "onlyClassAndLqAttributesChanged": true,
+      "jinjaControlFlowIdentical": true,
+      "contract": "Retains native details/summary, both feature branches, all descendants, IDs, names, href/action URLs, data hooks and permissions; only shared presentation declarations/classes added."
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "sha256": "2806cf50148ef9cf1556cf6b7319fb561850c8f9b72c517a82252ff8236372fd",
+      "onlyClassAndLqAttributesChanged": true,
+      "jinjaControlFlowIdentical": true,
+      "contract": "Retains native details/summary, both feature branches, all descendants, IDs, names, href/action URLs, data hooks and permissions; only shared presentation declarations/classes added."
+    }
+  ],
+  "tests": [
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_navbar_shell.py",
+      "passed": 11
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_manage_lq_pilot_templates.py",
+      "passed": 11
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_guard_sources.py",
+      "passed": 4
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_partial_scope.py",
+      "passed": 12
+    }
+  ]
+}

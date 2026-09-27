@@ -25,18 +25,18 @@
     var req = REQUIRED.indexOf(def.key) >= 0 ? '<span class="req">*</span>' : '';
     var input;
     if (def.type === 'select') {
-      input = '<select class="rz-select" name="' + def.key + '"><option value="">请选择</option>' +
+      input = '<select data-lq-component="select" class="lq-select rz-select" name="' + def.key + '"><option value="">请选择</option>' +
         def.options.map(function (o) { return '<option value="' + o + '">' + o + '</option>'; }).join('') + '</select>';
     } else if (def.type === 'month') {
       input = RZ.monthPickerHtml(def.key, '', { placeholder: '请选择生日年月' });
     } else if (def.type === 'position') {
       input = '<div class="rz-combo" data-rz-position-combo>' +
-        '<input class="rz-input rz-combo__input" type="text" name="' + def.key + '" autocomplete="off" placeholder="选择推荐岗位或直接输入">' +
-        '<button type="button" class="rz-combo__toggle" data-rz-combo-toggle aria-label="展开推荐岗位" aria-expanded="false">' +
+        '<input data-lq-component="input" class="lq-input rz-input rz-combo__input" type="text" name="' + def.key + '" autocomplete="off" placeholder="选择推荐岗位或直接输入">' +
+        '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-combo__toggle" data-rz-combo-toggle aria-label="展开推荐岗位" aria-expanded="false">' +
         '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>' +
-        '</button><div class="rz-combo__menu" data-rz-combo-menu hidden></div></div>';
+        '</button><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised rz-combo__menu" data-rz-combo-menu hidden></div></div>';
     } else {
-      input = '<input class="rz-input" type="' + (def.type === 'email' ? 'email' : 'text') + '" name="' + def.key + '">';
+      input = '<input data-lq-component="input" class="lq-input rz-input" type="' + (def.type === 'email' ? 'email' : 'text') + '" name="' + def.key + '">';
     }
     return '<div class="rz-field' + (def.full ? ' rz-field--full' : '') + '">' +
       '<label>' + RZ.esc(def.label) + req + '</label>' + input + '</div>';
@@ -90,7 +90,7 @@
   function positionOptionHtml(option, active) {
     var label = option.label || option.value || '';
     var meta = option.meta || option.tag || '职业推荐';
-    return '<button type="button" class="rz-combo__option' + (active ? ' is-active' : '') + '" data-rz-position-value="' + RZ.esc(label) + '">' +
+    return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-combo__option' + (active ? ' is-active' : '') + '" data-rz-position-value="' + RZ.esc(label) + '">' +
       '<span class="rz-combo__name">' + RZ.esc(label) + '</span>' +
       '<span class="rz-combo__meta">' + RZ.esc(meta) + '</span>' +
       '</button>';
@@ -109,7 +109,7 @@
     });
     var html = '';
     if (query && !exists) {
-      html += '<button type="button" class="rz-combo__option rz-combo__option--custom is-active" data-rz-position-value="' + RZ.esc(query) + '">' +
+      html += '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-combo__option rz-combo__option--custom is-active" data-rz-position-value="' + RZ.esc(query) + '">' +
         '<span class="rz-combo__name">' + RZ.esc(query) + '</span>' +
         '<span class="rz-combo__meta">自定义</span></button>';
     }
@@ -246,8 +246,8 @@
       var review = RZ.openModal({ title: '核对个人资料建议', wide: true });
       review.body.innerHTML = '<p>勾选需要采用的字段，确认后填入当前表单；保存后才会更新资料。</p>' +
         (meta.profile_revision != null && Number(meta.profile_revision) !== formRevision ? '<p>生成期间资料版本已变化，请逐项重新核对。</p>' : '') +
-        available.map(function (field) { return '<section class="rz-snapshot-fields"><label><input type="checkbox" data-suggest-field="' + field.key + '"' + (!baseline[field.key] ? ' checked' : '') + '> ' + RZ.esc(field.label) + '</label><div class="rz-candidate-compare"><p>当前：' + RZ.esc(baseline[field.key] || '未填写') + '</p><p>建议：' + RZ.esc(suggestions[field.key]) + '</p></div></section>'; }).join('');
-      var apply = document.createElement('button'); apply.className = 'rz-btn rz-btn--primary'; apply.textContent = '采用选中的建议';
+        available.map(function (field) { return '<section class="rz-snapshot-fields"><label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-suggest-field="' + field.key + '"' + (!baseline[field.key] ? ' checked' : '') + '> ' + RZ.esc(field.label) + '</label><div class="rz-candidate-compare"><p>当前：' + RZ.esc(baseline[field.key] || '未填写') + '</p><p>建议：' + RZ.esc(suggestions[field.key]) + '</p></div></section>'; }).join('');
+      var apply = document.createElement('button'); apply.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(apply, { kind: 'button', variant: 'prominent' }); apply.textContent = '采用选中的建议';
       apply.onclick = function () {
         review.body.querySelectorAll('[data-suggest-field]:checked').forEach(function (check) {
           var input = document.querySelector('[name="' + check.dataset.suggestField + '"]');
@@ -255,11 +255,11 @@
         });
         renderPositionCombo(); forget(); review.close(); RZ.toast('已填入所选建议，请核对后保存', 'success');
       };
-      var keep = document.createElement('button'); keep.className = 'rz-btn'; keep.textContent = '保留现有信息'; keep.onclick = function () { forget(); review.close(); };
+      var keep = document.createElement('button'); keep.className = 'rz-btn'; RZ.adoptControl(keep, { kind: 'button', variant: 'glass' }); keep.textContent = '保留现有信息'; keep.onclick = function () { forget(); review.close(); };
       review.foot.appendChild(keep); review.foot.appendChild(apply);
     }
     var suggestButton = document.getElementById('rzSuggestBtn');
-    var recoverSuggestion = document.createElement('button'); recoverSuggestion.type = 'button'; recoverSuggestion.className = 'rz-btn'; recoverSuggestion.textContent = '查看上次建议'; recoverSuggestion.hidden = !RZ.pendingSuggestion('personal'); suggestButton.after(recoverSuggestion);
+    var recoverSuggestion = document.createElement('button'); recoverSuggestion.type = 'button'; recoverSuggestion.className = 'rz-btn'; RZ.adoptControl(recoverSuggestion, { kind: 'button', variant: 'glass' }); recoverSuggestion.textContent = '查看上次建议'; recoverSuggestion.hidden = !RZ.pendingSuggestion('personal'); suggestButton.after(recoverSuggestion);
     async function suggest(resume) {
       suggestButton.disabled = true;
       try { await RZ.requestSuggestion({ kind: 'personal', url: '/api/resume/personal/suggest', resume: resume, onResult: reviewPersonalSuggestion }); recoverSuggestion.hidden = false; }

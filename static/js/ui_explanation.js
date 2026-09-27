@@ -130,7 +130,9 @@ function createPanel() {
     if (state.panel) return state.panel;
     const panel = document.createElement('aside');
     panel.id = 'ui-explanation-popover';
-    panel.className = 'ui-explain-popover';
+    panel.className = 'ui-explain-popover lq-glass lq-domain-raised';
+    panel.dataset.lqComponent = 'popover';
+    panel.dataset.lqMaterial = 'raised';
     panel.hidden = true;
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'false');
@@ -139,7 +141,7 @@ function createPanel() {
     panel.innerHTML = `
         <div class="ui-explain-popover__head">
             <strong id="ui-explanation-title"></strong>
-            <button type="button" class="ui-explain-popover__close" aria-label="关闭说明">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ui-explain-popover__close" aria-label="关闭说明">×</button>
         </div>
         <p id="ui-explanation-text" class="ui-explain-popover__text"></p>
         <img class="ui-explain-popover__media" alt="" loading="lazy" decoding="async" hidden>

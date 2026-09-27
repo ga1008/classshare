@@ -11,9 +11,25 @@
  * state badges, permissions, timeline — is shared.
  */
 import { showToast, escapeHtml } from './ui.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const API = '/api/approvals';
 const STATUS_TONE = { pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'muted', expired: 'muted' };
+
+// Called only at this module's render boundaries. Native values and the existing
+// delegated data-apr actions keep their owner; LQ owns controls and layer motion.
+function adoptControls(container) {
+    for (const node of container.querySelectorAll('button,input,textarea,select')) {
+        const choice = node.matches('.apr-item');
+        adoptDomainControl(node, { ...(choice ? { kind: 'choice' } : {}),
+            variant: node.classList.contains('btn-primary') ? 'prominent' : node.matches('.apr-drawer-close,.modal-close') ? 'ghost' : 'glass' });
+        if (choice) node.dataset.lqShape = 'surface';
+        if (node.tagName === 'BUTTON' && node.querySelector('svg')) node.classList.add('lq-btn--icon');
+    }
+    for (const field of container.querySelectorAll('.form-group')) field.classList.add('lq-field');
+    for (const label of container.querySelectorAll('.form-label')) label.classList.add('lq-field__label');
+}
 
 function fmtDate(value) {
     if (!value) return '-';
@@ -66,7 +82,7 @@ const DETAIL_RENDERERS = {
         ];
         const table = rows.map(([k, v]) => `<div class="apr-kv"><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v ?? '-'))}</strong></div>`).join('');
         const frame = d.review_url
-            ? `<details class="apr-review" open><summary>学生答题与批改详情</summary>
+            ? `<details class="apr-review" open><summary data-lq-component="disclosure" class="lq-disclosure-trigger">学生答题与批改详情</summary>
                  <iframe class="apr-review-frame" src="${escapeHtml(d.review_url)}" title="答题与批改详情" loading="lazy"></iframe>
                </details>`
             : '';
@@ -115,11 +131,15 @@ export function mountLauncher(root, options) {
         requestType, subjectId, currentRequest = null, hoverDelay = 1000,
         title = '分数有异议？', text = '如果你认为分数不合理，可以申请撤回本次提交并重新作答。教师审批通过后会开放重交窗口。',
         actionLabel = '申请撤回重做', placeholder = '请说明申请理由（必填），例如：截图未上传完整、作答内容被误判……',
-        onSubmitted = null, disabledReason = '',
+        onSubmitted = null, disabledReason = '', beforeClose = null,
     } = options;
     let request = currentRequest;
     let timer = null;
-    let open = false;
+    let open = false, busy = false, destroyed = false, editing = false, draft = '';
+    let handle = null;
+    const layer = getLayerSystem(root.ownerDocument);
+    const abort = new AbortController();
+    const listen = (node, event, callback) => node.addEventListener(event, callback, { signal: abort.signal });
 
     root.classList.add('apr-launcher');
     root.innerHTML = `
@@ -129,23 +149,16 @@ export function mountLauncher(root, options) {
         <div class="apr-popover" role="dialog" aria-label="${escapeHtml(title)}" hidden></div>`;
     const trigger = root.querySelector('.apr-trigger');
     const popover = root.querySelector('.apr-popover');
-    // Body-level, fixed-position popover: never clipped by card overflow.
-    document.body.appendChild(popover);
-
-    function place() {
-        const rect = trigger.getBoundingClientRect();
-        const width = Math.min(352, window.innerWidth - 24);
-        let left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
-        popover.style.width = `${width}px`;
-        popover.style.left = `${left}px`;
-        popover.style.top = '0px';
-        const height = popover.offsetHeight || 160;
-        const below = rect.bottom + 8;
-        const top = below + height > window.innerHeight - 12 ? Math.max(12, rect.top - height - 8) : below;
-        popover.style.top = `${top}px`;
-    }
+    popover.classList.add('lq-popover', 'lq-glass');
+    popover.dataset.lqComponent = 'popover';
+    popover.dataset.lqMaterial = 'raised';
+    popover.remove();
+    adoptControls(root);
+    const captureDraft = () => { const input = popover.querySelector('textarea'); if (input) draft = input.value; };
+    const reposition = () => { if (handle && open) handle.update({}); };
 
     function render() {
+        captureDraft(); editing = false;
         let body = '';
         if (request && request.status === 'pending') {
             body = `<p class="apr-pop-state">${statusBadge(request)} 已于 ${escapeHtml(fmtDate(request.created_at))} 提交申请，等待教师处理。</p>
@@ -165,10 +178,11 @@ export function mountLauncher(root, options) {
                     <div class="apr-pop-actions"><button type="button" class="btn btn-primary btn-sm" data-apr-start>${escapeHtml(actionLabel)}</button></div>`;
         }
         popover.innerHTML = `<div class="apr-pop-title">${escapeHtml(title)}</div>${body}`;
+        adoptControls(popover); reposition();
     }
 
     function renderForm() {
-        cancelHide();
+        cancelHide(); editing = true;
         popover.innerHTML = `
             <div class="apr-pop-title">${escapeHtml(actionLabel)}</div>
             <textarea class="form-control apr-pop-textarea" rows="4" maxlength="1000" placeholder="${escapeHtml(placeholder)}"></textarea>
@@ -176,106 +190,113 @@ export function mountLauncher(root, options) {
                 <button type="button" class="btn btn-outline btn-sm" data-apr-back>返回</button>
                 <button type="button" class="btn btn-primary btn-sm" data-apr-submit>提交申请</button>
             </div>`;
-        popover.querySelector('textarea')?.focus();
+        adoptControls(popover);
+        popover.querySelector('textarea').value = draft;
+        reposition(); popover.querySelector('textarea')?.focus();
     }
 
     function show() {
-        if (open) return;
+        if (destroyed || open) return;
+        cancelHide();
+        if (editing) renderForm(); else render();
         open = true;
-        render();
-        popover.hidden = false;
-        place();
+        handle = layer.open(popover, { type: 'popover', modality: 'non-modal', trigger, anchor: trigger, owner: root,
+            placement: 'bottom-start', initialFocus: false,
+            beforeClose: reason => { captureDraft(); return busy ? false : beforeClose?.(reason); },
+            onClose: () => { open = false; trigger.setAttribute('aria-expanded', 'false'); },
+            onDestroy: () => { open = false; trigger.setAttribute('aria-expanded', 'false'); cancelTimer(); cancelHide(); },
+        });
         trigger.setAttribute('aria-expanded', 'true');
     }
-    window.addEventListener('resize', () => { if (open) place(); });
-    window.addEventListener('scroll', () => { if (open) place(); }, true);
-    function hide() {
-        if (!open) return;
-        open = false;
-        popover.hidden = true;
-        trigger.setAttribute('aria-expanded', 'false');
+    function hide(reason = 'programmatic') {
+        cancelTimer(); cancelHide();
+        return open ? layer.close(handle, reason) : Promise.resolve(true);
     }
     function cancelTimer() { if (timer) { clearTimeout(timer); timer = null; } }
 
-    trigger.addEventListener('mouseenter', () => { cancelTimer(); timer = setTimeout(show, hoverDelay); });
-    trigger.addEventListener('mouseleave', cancelTimer);
-    trigger.addEventListener('click', () => { cancelTimer(); open ? hide() : show(); });
+    listen(trigger, 'mouseenter', () => { cancelTimer(); timer = setTimeout(show, hoverDelay); });
+    listen(trigger, 'mouseleave', cancelTimer);
+    listen(trigger, 'click', () => { cancelTimer(); open ? hide() : show(); });
     let leaveTimer = null;
     const scheduleHide = () => {
         if (leaveTimer) clearTimeout(leaveTimer);
         leaveTimer = setTimeout(() => { if (open && !popover.querySelector('textarea')) hide(); }, 250);
     };
     const cancelHide = () => { if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } };
-    root.addEventListener('mouseleave', () => { cancelTimer(); scheduleHide(); });
-    popover.addEventListener('mouseenter', cancelHide);
-    popover.addEventListener('mouseleave', scheduleHide);
-    trigger.addEventListener('mouseenter', cancelHide);
-    document.addEventListener('click', (event) => {
-        // composedPath() still lists the popover when the clicked button was re-rendered away.
-        const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-        if (open && !path.includes(root) && !path.includes(popover)) hide();
-    });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hide(); });
+    listen(root, 'mouseleave', () => { cancelTimer(); scheduleHide(); });
+    listen(popover, 'mouseenter', cancelHide);
+    listen(popover, 'mouseleave', scheduleHide);
+    listen(trigger, 'mouseenter', cancelHide);
+    listen(popover, 'input', event => { if (event.target.matches('textarea')) draft = event.target.value; });
 
-    popover.addEventListener('click', async (event) => {
+    listen(popover, 'click', async (event) => {
         const target = event.target.closest('button');
-        if (!target) return;
+        if (!target || busy || destroyed) return;
         if (target.hasAttribute('data-apr-start')) { renderForm(); return; }
         if (target.hasAttribute('data-apr-back')) { render(); return; }
         if (target.hasAttribute('data-apr-reload')) { window.location.reload(); return; }
         if (target.hasAttribute('data-apr-cancel')) {
-            target.disabled = true;
+            busy = true; target.disabled = true;
             try {
                 const data = await api(`/${request.id}/cancel`, { method: 'POST', body: JSON.stringify({}) });
+                if (destroyed) return;
                 request = data.request;
                 showToast('已撤销申请', 'info');
                 render();
             } catch (error) {
-                showToast(error.message, 'error');
-                target.disabled = false;
-            }
+                if (!destroyed) { showToast(error.message, 'error'); target.disabled = false; }
+            } finally { busy = false; }
             return;
         }
         if (target.hasAttribute('data-apr-submit')) {
             const reason = popover.querySelector('textarea')?.value.trim();
             if (!reason) { showToast('请填写申请理由', 'warning'); return; }
-            target.disabled = true;
+            busy = true; target.disabled = true;
             target.textContent = '提交中…';
             try {
                 const data = await api('', { method: 'POST', body: JSON.stringify({ request_type: requestType, subject_id: subjectId, reason }) });
-                request = data.request;
+                if (destroyed) return;
+                request = data.request; draft = '';
+                popover.querySelector('textarea').value = '';
                 showToast('申请已提交，教师会收到消息和邮件提醒', 'success');
                 render();
                 if (typeof onSubmitted === 'function') onSubmitted(request);
             } catch (error) {
-                showToast(error.message, 'error');
-                target.disabled = false;
-                target.textContent = '提交申请';
-            }
+                if (!destroyed) { showToast(error.message, 'error'); target.disabled = false; target.textContent = '提交申请'; }
+            } finally { busy = false; }
         }
     });
 
-    return { getRequest: () => request, refresh: render, open: show, close: hide };
+    return { getRequest: () => request, refresh: () => { if (!busy && !destroyed) render(); }, open: show, close: hide,
+        destroy() { destroyed = true; cancelTimer(); cancelHide(); abort.abort(); handle?.destroy(); popover.remove(); } };
 }
 
 /* ------------------------------------------------------------------ panel (reviewer) */
 export function mountPanel(root, options) {
     const {
         scope = 'incoming', assignmentId = '', requestType = '', autoOpenId = null,
-        title = '申请办理', onDecided = null, startOpen = false, limit = 50,
+        title = '申请办理', onDecided = null, startOpen = false, limit = 50, beforeClose = null,
     } = options;
     let items = [];
     let pendingCount = 0;
-    let activeId = null;
+    let activeId = null, busy = false, destroyed = false, detailVersion = 0, listVersion = 0;
+    let drawerLayer = null, modalLayer = null;
+    const drafts = new Map();
+    const layer = getLayerSystem(root.ownerDocument);
+    const abort = new AbortController();
+    const listen = (node, event, callback) => node.addEventListener(event, callback, { signal: abort.signal });
+    const identity = Symbol.for('lanshare.approval.drawer-id');
+    const sequence = root.ownerDocument[identity] = (root.ownerDocument[identity] || 0) + 1;
+    const drawerId = sequence === 1 ? 'apr-drawer' : `apr-drawer-${sequence}`;
 
     root.classList.add('apr-drawer-root');
     root.innerHTML = `
-        <button type="button" class="apr-drawer-toggle" aria-expanded="false" aria-controls="apr-drawer" title="${escapeHtml(title)}">
+        <button type="button" class="apr-drawer-toggle" aria-expanded="false" aria-controls="${drawerId}" title="${escapeHtml(title)}">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
             <span class="apr-drawer-toggle-label">${escapeHtml(title)}</span>
             <span class="apr-drawer-count" hidden>0</span>
         </button>
-        <aside class="apr-drawer" id="apr-drawer" aria-label="${escapeHtml(title)}" hidden>
+        <aside class="apr-drawer lq-glass" data-lq-component="drawer" data-lq-material="raised" id="${drawerId}" aria-label="${escapeHtml(title)}" hidden>
             <div class="apr-drawer-header">
                 <div><strong>${escapeHtml(title)}</strong><small class="apr-drawer-sub">待办优先，最新在前</small></div>
                 <div class="apr-drawer-tools">
@@ -285,9 +306,10 @@ export function mountPanel(root, options) {
             </div>
             <div class="apr-list" data-apr-list><div class="apr-empty">正在加载…</div></div>
         </aside>
-        <div class="modal-backdrop apr-modal" data-apr-modal>
-            <div class="modal-dialog modal-dialog-wide">
-                <div class="modal-content">
+        <div class="lq-dialog-root apr-modal" data-lq-dialog="modal" data-lq-component="dialog" data-apr-modal hidden>
+            <div class="lq-scrim" aria-hidden="true"></div>
+            <div class="modal-dialog modal-dialog-wide lq-dialog__surface lq-modal lq-modal--xl lq-glass" role="dialog" aria-label="申请详情">
+                <div class="apr-modal-content">
                     <div class="modal-header">
                         <h3 class="modal-title" data-apr-modal-title>申请详情</h3>
                         <button class="modal-close" type="button" data-apr-modal-close aria-label="关闭">&times;</button>
@@ -304,10 +326,30 @@ export function mountPanel(root, options) {
     const modalTitle = root.querySelector('[data-apr-modal-title]');
     const modalBody = root.querySelector('[data-apr-modal-body]');
 
+    const modalSurface = modal.querySelector('.lq-dialog__surface');
+    adoptControls(root);
+    // The layer portal keeps all three surfaces outside clipping ancestors and
+    // establishes their parent relationship; only it owns Escape/scroll/focus.
+    const drawerClose = root.querySelector('[data-apr-close]');
+    const refresh = root.querySelector('[data-apr-refresh]');
+    const modalClose = root.querySelector('[data-apr-modal-close]');
+    drawer.remove(); modal.remove();
+    const drawerClosed = () => { toggle.setAttribute('aria-expanded', 'false'); root.classList.remove('is-open'); };
     function setDrawer(openState) {
-        drawer.hidden = !openState;
-        toggle.setAttribute('aria-expanded', String(openState));
-        root.classList.toggle('is-open', openState);
+        if (destroyed) return Promise.resolve(false);
+        if (!openState) return drawerLayer ? layer.close(drawerLayer, 'button') : Promise.resolve(true);
+        drawerLayer = layer.open(drawer, { type: 'drawer', modality: 'non-modal', owner: root, trigger: toggle,
+            closeOnOutside: false, initialFocus: false, onClose: drawerClosed, onDestroy: drawerClosed });
+        toggle.setAttribute('aria-expanded', 'true'); root.classList.add('is-open');
+        return Promise.resolve(true);
+    }
+
+    function captureDraft() {
+        if (activeId === null || !modalBody.querySelector('[data-apr-decision]')) return;
+        drafts.set(activeId, Object.fromEntries([...modalBody.querySelectorAll('[data-apr-field]')].map(node => [node.dataset.aprField, node.value])));
+    }
+    function modalClosed() {
+        detailVersion++; modalBody.replaceChildren(); modalBody._decisionForm = null; activeId = null;
     }
 
     function renderList() {
@@ -327,17 +369,22 @@ export function mountPanel(root, options) {
                 <div class="apr-item-reason">${escapeHtml(item.reason || '')}</div>
                 <div class="apr-item-meta">${escapeHtml(fmtDate(item.created_at))}</div>
             </button>`).join('');
+        adoptControls(listEl);
     }
 
     async function load() {
+        if (destroyed) return;
+        const version = ++listVersion;
         const params = new URLSearchParams({ scope, limit: String(limit) });
         if (assignmentId) params.set('assignment_id', String(assignmentId));
         if (requestType) params.set('request_type', requestType);
         try {
             const data = await api(`?${params.toString()}`);
+            if (destroyed || version !== listVersion) return;
             items = data.items || [];
             pendingCount = Number(data.pending_count || 0);
         } catch (error) {
+            if (destroyed || version !== listVersion) return;
             items = [];
             pendingCount = 0;
             listEl.innerHTML = `<div class="apr-empty">${escapeHtml(error.message)}</div>`;
@@ -346,11 +393,8 @@ export function mountPanel(root, options) {
         renderList();
     }
 
-    function closeModal() {
-        modal.classList.remove('show');
-        setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; }, 250);
-        modalBody.innerHTML = '';
-        activeId = null;
+    function closeModal(reason = 'button') {
+        return modalLayer ? layer.close(modalLayer, reason) : Promise.resolve(true);
     }
 
     function renderTimeline(item) {
@@ -404,66 +448,103 @@ export function mountPanel(root, options) {
                 ${renderTimeline(item)}
             </section>`;
         modalBody._decisionForm = decisionForm;
+        adoptControls(modalBody);
+        const draft = item.can_decide ? drafts.get(Number(item.id)) : null;
+        if (!item.can_decide) drafts.delete(Number(item.id));
+        if (draft) for (const node of modalBody.querySelectorAll('[data-apr-field]')) {
+            if (Object.hasOwn(draft, node.dataset.aprField)) node.value = draft[node.dataset.aprField];
+        }
     }
 
     async function openItem(id) {
+        if (destroyed || busy) return false;
+        captureDraft();
+        const version = ++detailVersion;
         activeId = Number(id);
         modalTitle.textContent = '加载中…';
         modalBody.innerHTML = '<div class="apr-empty">正在加载申请详情…</div>';
-        modal.style.display = 'flex';
-        requestAnimationFrame(() => modal.classList.add('show'));
-        document.body.style.overflow = 'hidden';
+        modalBody._decisionForm = null;
+        const parent = drawerLayer && !['closed', 'destroyed'].includes(drawerLayer.state) ? drawerLayer : null;
+        modalLayer = layer.open(modal, { type: 'modal', surface: modalSurface, owner: root,
+            trigger: parent ? drawer : toggle, parentLayer: parent,
+            returnFocus: () => listEl.querySelector(`[data-apr-open="${activeId}"]`) || toggle,
+            beforeClose: reason => { captureDraft(); return busy ? false : beforeClose?.(reason); },
+            onCloseRequested: () => { detailVersion++; },
+            onClose: modalClosed, onDestroy: modalClosed,
+        });
         try {
             const data = await api(`/${id}`);
+            if (destroyed || version !== detailVersion || activeId !== Number(id)) return false;
             renderModal(data.request);
         } catch (error) {
+            if (destroyed || version !== detailVersion) return false;
             modalBody.innerHTML = `<div class="apr-empty">${escapeHtml(error.message)}</div>`;
         }
+        return true;
     }
 
     async function decide(decision, button) {
-        const section = modalBody.querySelector('[data-apr-decision]');
-        const note = section?.querySelector('[data-apr-field="note"]')?.value.trim() || '';
+        if (busy || destroyed || activeId === null) return;
+        const id = activeId, section = modalBody.querySelector('[data-apr-decision]');
+        if (!section) return;
+        const note = section.querySelector('[data-apr-field="note"]')?.value.trim() || '';
         if (decision === 'reject' && !note) { showToast('拒绝时请填写审批意见', 'warning'); return; }
         const decisionPayload = modalBody._decisionForm ? modalBody._decisionForm.collect(section) : {};
         const originalLabel = button.textContent;
+        captureDraft(); busy = true;
         section.querySelectorAll('button').forEach((b) => { b.disabled = true; });
         button.textContent = '处理中…';
+        let decided = false, decidedRequest;
         try {
-            const data = await api(`/${activeId}/${decision}`, {
+            const data = await api(`/${id}/${decision}`, {
                 method: 'POST', body: JSON.stringify({ note, decision_payload: decisionPayload }),
             });
+            decided = true; decidedRequest = data.request; drafts.delete(id);
+            if (destroyed) return;
             showToast(decision === 'approve' ? '已通过申请，学生将收到通知' : '已拒绝申请，学生将收到通知', 'success');
             await load();
-            const fresh = await api(`/${activeId}`);
-            renderModal(fresh.request);
-            if (typeof onDecided === 'function') onDecided(data.request);
+            // A committed decision is never exposed as a retryable action just
+            // because refreshing its detail fails afterwards.
+            if (destroyed) return;
+            const fresh = await api(`/${id}`);
+            if (!destroyed && activeId === id) renderModal(fresh.request);
         } catch (error) {
+            if (destroyed) return;
             showToast(error.message, 'error');
-            section.querySelectorAll('button').forEach((b) => { b.disabled = false; });
-            button.textContent = originalLabel;
+            if (!decided) {
+                section.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+                button.textContent = originalLabel;
+            } else {
+                modalBody.innerHTML = '<div class="apr-empty">处理已完成，详情刷新失败。请关闭后重新打开查看。</div>';
+            }
+        } finally {
+            busy = false;
+            if (decided && !destroyed && typeof onDecided === 'function') onDecided(decidedRequest);
         }
     }
 
-    toggle.addEventListener('click', () => { setDrawer(drawer.hidden); if (!drawer.hidden) load(); });
-    root.querySelector('[data-apr-close]').addEventListener('click', () => setDrawer(false));
-    root.querySelector('[data-apr-refresh]').addEventListener('click', load);
-    listEl.addEventListener('click', (event) => {
+    listen(toggle, 'click', () => { const opening = drawer.hidden; setDrawer(opening); if (opening) load(); });
+    listen(drawerClose, 'click', () => setDrawer(false));
+    listen(refresh, 'click', load);
+    listen(listEl, 'click', (event) => {
         const target = event.target.closest('[data-apr-open]');
         if (target) openItem(target.getAttribute('data-apr-open'));
     });
-    root.querySelector('[data-apr-modal-close]').addEventListener('click', closeModal);
-    modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
-    modalBody.addEventListener('click', (event) => {
+    listen(modalClose, 'click', () => closeModal());
+    listen(modalBody, 'input', captureDraft);
+    listen(modalBody, 'click', (event) => {
         const target = event.target.closest('[data-apr-decide]');
         if (target) decide(target.getAttribute('data-apr-decide'), target);
     });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && activeId !== null) closeModal(); });
 
     load();
     if (startOpen) setDrawer(true);
     if (autoOpenId) { setDrawer(true); openItem(autoOpenId); }
-    return { reload: load, open: openItem, setDrawer };
+    return { reload: load, open: openItem, close: closeModal, setDrawer,
+        destroy() {
+            destroyed = true; detailVersion++; listVersion++; abort.abort();
+            modalLayer?.destroy(); drawerLayer?.destroy(); modal.remove(); drawer.remove(); drafts.clear();
+        } };
 }
 
 export default { mountLauncher, mountPanel };

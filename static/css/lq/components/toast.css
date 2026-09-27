@@ -29,7 +29,7 @@
     color: hsl(var(--lq-material-ink, var(--ls-ink)));
     opacity: 1;
     transform: none;
-    transition: opacity 160ms var(--ls-ease-out), transform 160ms var(--ls-ease-out);
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, var(--ls-ease-out)), transform var(--lq-motion-menu-duration, 160ms) var(--lq-motion-spring, var(--ls-ease-out));
 }
 /* .lq-surface has no rim of its own; a layer must read like the other layers. */
 .lq-toast::before {
@@ -44,7 +44,7 @@
     pointer-events: none;
 }
 .lq-toast[hidden] { display: none; }
-.lq-toast[data-ui-overlay-state="closed"] { opacity: 0; transform: translateY(-8px); }
+.lq-toast[data-ui-overlay-state="closed"] { opacity: 0; transform: translateY(calc(var(--lq-motion-overlay-distance, 24px) / -3)); }
 .lq-toast__icon {
     display: inline-flex;
     flex: none;

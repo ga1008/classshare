@@ -10,7 +10,7 @@
 {{ page_head('压测与诊断', description='查看后端健康状态、运行时指标与推荐压测命令。可先确认系统稳定性后再发起性能测试。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
 <div class="dg-grid">
-    <section class="dg-card">
+    <section data-lq-component="surface" class="lq-surface dg-card">
         <div class="dg-card__header">
             <h3>后端健康状态</h3>
             <span class="dg-pill loading" id="dg-health-pill">检测中</span>
@@ -36,7 +36,7 @@
         </div>
     </section>
 
-    <section class="dg-card">
+    <section data-lq-component="surface" class="lq-surface dg-card">
         <div class="dg-card__header">
             <h3>运行时指标</h3>
             <span class="dg-pill loading" id="dg-metrics-pill">收集中</span>
@@ -94,7 +94,7 @@
     <div class="dg-job-list" id="dg-ai-job-list"></div>
 </section>
 
-<section class="dg-command-card">
+<section data-lq-component="surface" class="lq-surface dg-command-card">
     <div class="dg-command-card__header">
         <h3>推荐压测命令</h3>
         <span class="badge badge-primary">隔离数据库</span>
@@ -102,8 +102,8 @@
     <p class="dg-command-card__desc">使用项目自带的全链路压测脚本。它会复制当前数据库、自动插入测试学生、启动主后端与 AI mock、执行登录/课堂/材料/私信/助教/WebSocket/作业链路，并在结束后自动清理临时库与日志。</p>
     <div class="dg-command" id="dg-command-text">venv\Scripts\python.exe tools\full_stack_load_test.py --profile classroom-200 --runtime-root .codex-temp\p11-load-runtime --json-output .codex-temp\p11-artifacts\classroom-200.json --keep-artifacts --ai-mode mock</div>
     <div class="dg-actions">
-        <button type="button" class="btn btn-primary btn-sm" id="dg-copy-command">复制命令</button>
-        <button type="button" class="btn btn-outline btn-sm" id="dg-refresh">刷新状态</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" id="dg-copy-command">复制命令</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="dg-refresh">刷新状态</button>
     </div>
 </section>
 {% endblock %}
@@ -237,8 +237,8 @@
                     <div><strong>#${job.id} ${escapeHtml(job.task_type)}</strong><br>${error}</div>
                     <div>${escapeHtml(job.source_ref || '-')}<br><small>${escapeHtml(job.status)} · ${job.attempt_count}/${job.max_attempts}</small></div>
                     <div class="dg-actions">
-                        ${terminal ? `<button class="btn btn-outline btn-sm" data-job-action="requeue" data-job-id="${job.id}">重试</button>` : ''}
-                        ${active ? `<button class="btn btn-outline btn-sm" data-job-action="cancel" data-job-id="${job.id}">取消</button>` : ''}
+                        ${terminal ? `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-job-action="requeue" data-job-id="${job.id}">重试</button>` : ''}
+                        ${active ? `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-job-action="cancel" data-job-id="${job.id}">取消</button>` : ''}
                     </div>
                 </div>`;
             }).join('') : '<p class="dg-card__desc">当前没有排队、运行、待复核或死信 AI 任务。</p>';

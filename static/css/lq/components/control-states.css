@@ -27,22 +27,22 @@
  * Both come from the same component factory and must look equally selected. */
 :root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], [aria-expanded="true"]):not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
 :root .lq-menu > .lq-menu__item:focus-visible:not([aria-disabled="true"]) {
-    background: hsl(var(--lq-state-fill));
-    color: hsl(var(--lq-state-ink));
-    border-color: hsl(var(--lq-state-fill));
+    --lq-control-background: hsl(var(--lq-state-fill)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-state-ink)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--lq-state-fill)); border-color: var(--lq-control-border);
 }
 
 /* Real pointer/Space presses use the same pair as selected controls. The
  * prominent action reverses its existing pair so its response remains clear. */
 :root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):active:not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
-    background: hsl(var(--lq-state-fill));
-    color: hsl(var(--lq-state-ink));
-    border-color: hsl(var(--lq-state-fill));
+    --lq-control-background: hsl(var(--lq-state-fill)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-state-ink)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--lq-state-fill)); border-color: var(--lq-control-border);
 }
 :root :is(.lq-btn--prominent, .btn-primary):active:not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
-    background: hsl(var(--ls-on-primary));
-    color: hsl(var(--ls-primary));
-    border-color: hsl(var(--ls-primary));
+    --lq-control-background: hsl(var(--ls-on-primary)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--ls-primary)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--ls-primary)); border-color: var(--lq-control-border);
 }
 
 /* A selected segment owns its fill instead of showing the moving neutral
@@ -59,8 +59,13 @@
 
 /* Compatibility controls keep their size and business classes. Their neutral
  * surfaces consume the same local scene pair as .lq-btn--glass and fields. */
-:root .btn:is(.btn-secondary, .btn-ghost, .btn-outline):not(:active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
-    color: hsl(var(--lq-control-ink, var(--ls-ink)));
+:root [data-lq-component].lq-btn:is(.active, .is-active, .selected, .is-selected):not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    --lq-control-background: hsl(var(--lq-state-fill));
+    --lq-control-color: hsl(var(--lq-state-ink));
+    --lq-control-border: hsl(var(--lq-state-fill));
+}
+:root .btn:is(.btn-secondary, .btn-ghost, .btn-outline):not(.lq-btn--destructive, :active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color);
 }
 :root .btn.btn-secondary:not(:active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
     background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
@@ -77,8 +82,8 @@
     :root :is(.lq-btn, .btn, .lq-chip--filter, .lq-selection__option, .lq-tabs__tab):is(:active, [aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], [aria-expanded="true"]):not(:disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"]),
     :root .lq-menu > .lq-menu__item:focus-visible,
     :root .lq-segment > .lq-tabs__list[data-lq-thumb] > .lq-tabs__tab[aria-selected="true"] {
-        background: Highlight;
-        color: HighlightText;
-        border-color: Highlight;
+        --lq-control-background: Highlight; background: var(--lq-control-background);
+        --lq-control-color: HighlightText; color: var(--lq-control-color);
+        --lq-control-border: Highlight; border-color: var(--lq-control-border);
     }
 }

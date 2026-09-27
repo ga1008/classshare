@@ -147,7 +147,7 @@ function renderQuestionInput(question, index) {
             <div class="exam-paper-preview__options">
                 ${options.map((option, optionIndex) => `
                     <label class="exam-paper-preview__option">
-                        <input type="${inputType}" disabled tabindex="-1" name="preview-${index}-${type}" value="${escapeHtml(option)}">
+                        <input data-lq-component="input" class="lq-input" type="${inputType}" disabled tabindex="-1" name="preview-${index}-${type}" value="${escapeHtml(option)}">
                         <div>${markdown(option, '（空选项）')}</div>
                     </label>
                 `).join('')}
@@ -156,12 +156,12 @@ function renderQuestionInput(question, index) {
     }
     if (type === 'text') {
         return `
-            <input class="exam-paper-preview__input" type="text" disabled
+            <input data-lq-component="input" class="lq-input exam-paper-preview__input" type="text" disabled
                 placeholder="${escapeHtml(question?.placeholder || '请输入答案')}">
         `;
     }
     return `
-        <textarea class="exam-paper-preview__input exam-paper-preview__textarea" disabled rows="5"
+        <textarea data-lq-component="textarea" class="lq-textarea exam-paper-preview__input exam-paper-preview__textarea" disabled rows="5"
             placeholder="${escapeHtml(question?.placeholder || '请在此作答...')}"></textarea>
     `;
 }

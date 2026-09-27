@@ -249,7 +249,7 @@ function renderCards() {
             <div class="afm-filter-empty">
                 <strong>当前筛选下暂无${escapeHtml(typeLabel)}</strong>
                 <p>该学期/课程/班级还没有同步记录，可调整筛选或查看全部。</p>
-                <button type="button" class="afm-btn afm-btn--ghost" data-afm-clear-semester>清除筛选</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" data-afm-clear-semester>清除筛选</button>
             </div>`;
         return;
     }
@@ -258,22 +258,22 @@ function renderCards() {
         const documentComplete = readyItem && isDocumentComplete(item);
         const syncActive = activeSyncStatuses.has(item.sync_status);
         const confirmationCandidates = item.sync_options?.candidates;
-        let action = `<button type="button" class="afm-btn afm-btn--primary" data-afm-resync="${item.class_offering_id}">重新同步</button>`;
+        let action = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-resync="${item.class_offering_id}">重新同步</button>`;
         if (readyItem) {
             action = `
-                <button type="button" class="afm-btn afm-btn--primary" data-afm-edit="${escapeHtml(item.id)}">${documentComplete ? '查看与调整' : '补全与签名'}</button>
-                <button type="button" class="afm-btn afm-btn--ghost" data-afm-preview="${escapeHtml(item.preview_url)}" data-title="${escapeHtml(item.course_name)}">预览</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-edit="${escapeHtml(item.id)}">${documentComplete ? '查看与调整' : '补全与签名'}</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" data-afm-preview="${escapeHtml(item.preview_url)}" data-title="${escapeHtml(item.course_name)}">预览</button>
                 ${documentComplete
-                    ? `<a class="afm-btn afm-btn--ghost" href="${escapeHtml(item.export_url)}">下载 Word</a>`
-                    : '<button type="button" class="afm-btn afm-btn--ghost" disabled title="请先补齐必填项和签名">补全后下载</button>'}
+                    ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" href="${escapeHtml(item.export_url)}">下载 Word</a>`
+                    : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" disabled title="请先补齐必填项和签名">补全后下载</button>'}
               `;
         } else if (syncActive) {
-            action = '<button type="button" class="afm-btn afm-btn--ghost" disabled>后台处理中</button>';
+            action = '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" disabled>后台处理中</button>';
         } else if (item.sync_status === 'needs_confirmation' && Array.isArray(confirmationCandidates) && confirmationCandidates.length) {
-            action = `<button type="button" class="afm-btn afm-btn--primary" data-afm-confirm-course="${escapeHtml(item.id)}">确认教务课程</button>`;
+            action = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-confirm-course="${escapeHtml(item.id)}">确认教务课程</button>`;
         }
         return `
-            <article class="afm-card" ${readyItem ? `data-material-key="academic_final_material:${Number(item.record_id)}"` : ''}>
+            <article data-lq-component="surface" class="lq-surface afm-card" ${readyItem ? `data-material-key="academic_final_material:${Number(item.record_id)}"` : ''}>
                 <div class="afm-card__top">
                     <div class="afm-card__doc">
                         <div class="afm-card__icon">${isGrade ? '绩' : '析'}</div>
@@ -387,7 +387,7 @@ function renderCandidates() {
         ].join(' ').toLocaleLowerCase().includes(query));
     els.courseList.innerHTML = items.length ? items.map((item) => `
         <label class="afm-course-option">
-            <input type="radio" name="afm-course" value="${item.class_offering_id}">
+            <input data-lq-component="radio" class="lq-radio" type="radio" name="afm-course" value="${item.class_offering_id}">
             <span>
                 <strong>${escapeHtml(item.course_name || '未命名课程')}</strong>
                 <small>${escapeHtml(item.teaching_class_name || item.class_name || '未命名班级')} · ${escapeHtml(item.semester || '未设置学期')}</small>
@@ -401,7 +401,7 @@ function renderExamCourseCandidates() {
     const items = state.pendingExamCandidates;
     els.courseList.innerHTML = items.length ? items.map((item) => `
         <label class="afm-course-option">
-            <input type="radio" name="afm-exam-course" value="${escapeHtml(item.exam_course_key)}">
+            <input data-lq-component="radio" class="lq-radio" type="radio" name="afm-exam-course" value="${escapeHtml(item.exam_course_key)}">
             <span>
                 <strong>${escapeHtml(item.course_name || '未命名教务课程')}</strong>
                 <small>${escapeHtml(item.teaching_class_name || item.class_composition || '未命名教学班')}

@@ -169,13 +169,13 @@ export function createScheduleDeck(container, options = {}) {
                 <h3>${escapeHtml(config.title)}</h3>
                 <p>${escapeHtml(config.description)}</p>
             </div>
-            ${config.showTermSelect ? '<select class="cs-deck-term" data-csd-term aria-label="学年学期"></select>' : ''}
+            ${config.showTermSelect ? '<select data-lq-component="select" class="lq-select cs-deck-term" data-csd-term aria-label="学年学期"></select>' : ''}
             <div class="cs-deck-nav">
-                <button type="button" class="cs-deck-nav__btn" data-csd-prev title="上一周">‹</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-deck-nav__btn" data-csd-prev title="上一周">‹</button>
                 <div class="cs-week-indicator" data-csd-indicator aria-live="polite">—</div>
-                <button type="button" class="cs-deck-nav__btn" data-csd-next title="下一周">›</button>
-                <input type="range" class="cs-deck-slider" data-csd-slider min="1" max="1" value="1" aria-label="周次选择滑杆" />
-                ${config.editorUrl ? '<a class="cs-deck-nav__btn cs-deck-nav__btn--edit" data-csd-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-deck-nav__btn" data-csd-next title="下一周">›</button>
+                <input data-lq-component="range" type="range" class="lq-range cs-deck-slider" data-csd-slider min="1" max="1" value="1" aria-label="周次选择滑杆" />
+                ${config.editorUrl ? '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cs-deck-nav__btn cs-deck-nav__btn--edit" data-csd-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
             </div>
         </div>
         <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮、方向键或左右拖拽切换周次">
@@ -183,22 +183,23 @@ export function createScheduleDeck(container, options = {}) {
         </div><div class="cs-deck-feedback" data-csd-feedback role="status"></div>`;
 
     const expand = document.createElement('div');
-    expand.className = 'cs-expand';
+    expand.className = 'lq-domain-region cs-expand';
+    expand.dataset.lqComponent = 'layer';
     expand.hidden = true;
     expand.setAttribute('role', 'dialog');
     expand.setAttribute('aria-modal', 'true');
     expand.setAttribute('aria-label', '整周课表');
     expand.innerHTML = `
-        <div class="cs-expand__card">
+        <div data-lq-component="surface" class="lq-surface cs-expand__card">
             <div class="cs-expand__bar">
                 <strong data-csd-expand-title>第1周</strong>
                 <span data-csd-expand-sub></span>
                 <span data-csd-expand-feedback role="status"></span>
                 <div class="cs-expand__nav">
-                    <button type="button" data-csd-expand-prev>‹ 上一周</button>
-                    <button type="button" data-csd-expand-next>下一周 ›</button>
-                    ${config.editorUrl ? '<a data-csd-expand-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
-                    <button type="button" data-csd-expand-close>返回 3D 视图</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-csd-expand-prev>‹ 上一周</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-csd-expand-next>下一周 ›</button>
+                    ${config.editorUrl ? '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" data-csd-expand-editor href="#" title="进入编辑模式：拖拽调课并保存到教务草稿">编辑模式</a>' : ''}
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-csd-expand-close>返回 3D 视图</button>
                 </div>
             </div>
             <div class="cs-expand__body" data-csd-expand-body></div>
@@ -277,14 +278,14 @@ export function createScheduleDeck(container, options = {}) {
             const jump = counterpart ? ` ${proposed ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
             const actionLabel = scheduleChangeLabel(lesson) + jump;
             const shortLabel = adjustmentActionText(lesson);
-            button = `<button type="button" class="cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-expanded="false" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
+            button = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-expanded="false" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
             const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
             const detail = `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`;
             comparison = `<div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div>`;
         }
         const mainTag = change && href ? 'a' : 'div';
         const mainAttrs = change ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
-        const content = `<div class="cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
+        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
         const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${proposed ? ' cs-lesson--proposed' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
         const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
         if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(`${lesson.course_name} · ${fullRoom}`)}">${content}</div>`;
@@ -430,7 +431,9 @@ export function createScheduleDeck(container, options = {}) {
         state.activeWeekIndex = Math.min(Math.max(state.activeWeekIndex, 0), weeks.length - 1);
         weeks.forEach((week, index) => {
             const card = document.createElement('div');
-            card.className = 'cs-card';
+            // A week is content, never a backdrop-filter carrier per card/cell.
+            card.className = 'cs-card lq-surface';
+            card.dataset.lqComponent = 'surface';
             card.dataset.weekIndex = String(index);
             card.innerHTML = `
                 <div class="cs-card__bar">

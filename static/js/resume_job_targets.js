@@ -73,9 +73,9 @@
       + (insufficient ? '<div class="rz-job-callout">识别不足，待核对</div>' : '<div class="rz-job-score" style="--rz-job-score:' + score + '%"><strong>' + score + '</strong><span>能力词资料覆盖度</span></div>')
       + '<div><span class="rz-home-eyebrow">' + RZ.esc(item.company_name || '目标岗位') + '</span><h3>'
       + RZ.esc(item.target_position || '') + '</h3><p>' + RZ.esc(analysis.summary || '') + '</p></div></div>'
-      + '<div class="rz-job-result__actions"><a class="rz-btn rz-btn--primary" href="' + RZ.esc(builderUrl(item)) + '">生成定向简历</a>'
-      + '<a class="rz-btn" href="/resume/applications?job_id=' + Number(item.id || 0) + '">加入投递跟踪</a>'
-      + '<a class="rz-btn" href="/resume/profile/experience">补充经历证据</a></div>'
+      + '<div class="rz-job-result__actions"><a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--primary" href="' + RZ.esc(builderUrl(item)) + '">生成定向简历</a>'
+      + '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" href="/resume/applications?job_id=' + Number(item.id || 0) + '">加入投递跟踪</a>'
+      + '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" href="/resume/profile/experience">补充经历证据</a></div>'
       + '<section class="rz-job-result__section"><h4>岗位条件核对</h4>' + renderHardRequirements(analysis.hard_requirements) + '</section>'
       + '<section class="rz-job-result__section"><h4>能力证据与缺口</h4><p class="rz-job-muted">能力词覆盖度仅反映现有资料中的关键词证据，不代表整个岗位的匹配度或录用概率。</p>' + renderCapabilities(analysis.capabilities) + '</section>'
       + '<div class="rz-job-result__cols"><section><h4>核心要求</h4>'
@@ -95,10 +95,10 @@
       return '<article class="rz-job-history__item" data-job-id="' + Number(item.id) + '">'
         + '<div><span>' + RZ.esc(item.company_name || '未填写公司') + '</span><strong>' + RZ.esc(item.target_position) + '</strong>'
         + '<small>' + ((item.analysis || {}).coverage_status === 'insufficient_extraction' || item.coverage_status === 'insufficient_extraction' ? '识别不足，待核对' : '能力词资料覆盖度 ' + Number(item.coverage_score || 0) + '%') + '</small></div>'
-        + '<div><button type="button" data-job-open="' + Number(item.id) + '">查看</button>'
+        + '<div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-job-open="' + Number(item.id) + '">查看</button>'
         + '<a href="' + RZ.esc(builderUrl(item)) + '">生成简历</a>'
         + '<a href="/resume/applications?job_id=' + Number(item.id) + '">跟踪</a>'
-        + '<button type="button" class="is-danger" data-job-delete="' + Number(item.id) + '">归档</button></div></article>';
+        + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive is-danger" data-job-delete="' + Number(item.id) + '">归档</button></div></article>';
     }).join('');
     history.querySelectorAll('[data-job-open]').forEach(function (button) {
       button.addEventListener('click', function () { openTarget(button.dataset.jobOpen); });

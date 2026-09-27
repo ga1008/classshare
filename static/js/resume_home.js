@@ -60,11 +60,11 @@
       return;
     }
     var processing = ['rendering', 'optimizing', 'parsing'].indexOf(resume.status) >= 0;
-    box.innerHTML = '<div class="rz-home-recent__card"><div><span>' +
+    box.innerHTML = '<div data-lq-component="surface" class="lq-surface rz-home-recent__card"><div><span>' +
       RZ.esc(processing ? '处理中' : resume.status === 'ready' ? '可投递' : '待检查') + '</span>' +
       '<strong>' + RZ.esc(resume.title || '我的简历') + '</strong>' +
       '<small>' + RZ.esc(resume.target_position ? '目标岗位：' + resume.target_position : '尚未设置目标岗位') + '</small></div>' +
-      '<a class="rz-btn rz-btn--primary" href="/resume/list">' + (processing ? '查看进度' : '预览与导出') + '</a></div>';
+      '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--primary" href="/resume/list">' + (processing ? '查看进度' : '预览与导出') + '</a></div>';
   }
 
   function hasReusableContent(readiness) {

@@ -1,4 +1,5 @@
 import { legacyModuleUrl } from '@/lib/static-assets';
+import { createComponent } from '../../../static/js/lq/components.js';
 
 // Keep SSR available while secondary controllers wait for the first paint.
 const selectors = '[data-ls-open], [data-agenda-add-todo], [data-agenda-item], [data-agenda-calendar-feed], [data-agenda-sync], [data-group-mode], [data-student-schedule-mode], [data-student-week-prev], [data-student-week-next], [data-student-week-today], [data-student-schedule-expand]';
@@ -16,8 +17,8 @@ function announce(message: string, retry = false, kind = 'workspace') {
   notice.setAttribute('role', retry ? 'alert' : 'status');
   notice.append(message);
   if (retry) {
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'ls-link'; button.textContent = '刷新重试';
+    const button = createComponent('button', { label: '刷新重试', variant: 'link' });
+    button.classList.add('ls-link');
     button.addEventListener('click', () => window.location.reload());
     notice.append(button);
   }

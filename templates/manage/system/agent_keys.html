@@ -51,7 +51,7 @@
     </section>
 
     <section class="agent-key-grid">
-        <article class="agent-key-panel">
+        <article data-lq-component="surface" class="lq-surface agent-key-panel">
             <h3>新增 Key</h3>
             {% set _agent_key_family_enabled = lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages') %}
             {% if _agent_key_family_enabled %}
@@ -72,59 +72,59 @@
             <form id="agent-key-form" class="agent-key-form">
                 <div class="form-group">
                     <label for="agent-key-label">名称</label>
-                    <input id="agent-key-label" name="key_label" class="form-control" autocomplete="off" placeholder="如：主任务中心 Key">
+                    <input data-lq-component="input" id="agent-key-label" name="key_label" class="lq-input form-control" autocomplete="off" placeholder="如：主任务中心 Key">
                 </div>
                 <div class="form-group">
                     <label for="agent-key-value">DeepSeek API Key</label>
-                    <input id="agent-key-value" name="api_key" type="password" class="form-control" autocomplete="new-password" required>
+                    <input data-lq-component="input" id="agent-key-value" name="api_key" type="password" class="lq-input form-control" autocomplete="new-password" required>
                 </div>
                 <div class="form-group">
                     <label for="agent-key-base-url">Base URL</label>
-                    <input id="agent-key-base-url" name="base_url" class="form-control" required>
+                    <input data-lq-component="input" id="agent-key-base-url" name="base_url" class="lq-input form-control" required>
                 </div>
                 <div class="form-group">
                     <label for="agent-key-model">Agent 模型</label>
-                    <input id="agent-key-model" name="model" class="form-control" required>
+                    <input data-lq-component="input" id="agent-key-model" name="model" class="lq-input form-control" required>
                 </div>
                 <div class="agent-key-check-row">
                     <label class="agent-key-check">
-                        <input id="agent-key-test-on-save" name="test_on_save" type="checkbox" checked>
+                        <input data-lq-component="checkbox" class="lq-checkbox" id="agent-key-test-on-save" name="test_on_save" type="checkbox" checked>
                         保存前测试
                     </label>
                     <label class="agent-key-check">
-                        <input id="agent-key-make-active" name="make_active" type="checkbox" checked>
+                        <input data-lq-component="checkbox" class="lq-checkbox" id="agent-key-make-active" name="make_active" type="checkbox" checked>
                         保存后启用
                     </label>
                 </div>
-                <button id="agent-key-save-btn" type="submit" class="btn btn-primary">测试并保存</button>
+                <button data-lq-component="button" id="agent-key-save-btn" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">测试并保存</button>
             </form>
             {% endif %}
             <p class="agent-key-note">启用始终先测试当前模型。这里展示平台记录的请求及上游实际报告的用量；缺少完整回执或费用时显示“未提供”。</p>
         </article>
 
         <div class="agent-key-shell">
-            <article class="agent-key-panel">
+            <article data-lq-component="surface" class="lq-surface agent-key-panel">
                 <div class="agent-key-panel-header">
                     <div>
                         <h3>运行用量</h3>
                         <p class="agent-key-note">来自平台模型请求账本。用量回执计数表示已返回输入或输出 token 数的请求数量；历史数据保留，测试请求不计入任务用量。</p>
                     </div>
                     <div class="agent-key-actions">
-                        <button id="agent-usage-refresh-btn" type="button" class="btn btn-outline btn-sm">刷新用量</button>
+                        <button data-lq-component="button" id="agent-usage-refresh-btn" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">刷新用量</button>
                     </div>
                 </div>
                 <div id="agent-usage-summary" class="agent-key-usage-grid"></div>
                 <div id="agent-usage-buckets" class="agent-key-buckets"></div>
             </article>
 
-            <article class="agent-key-panel">
+            <article data-lq-component="surface" class="lq-surface agent-key-panel">
                 <div class="agent-key-panel-header">
                     <div>
                         <h3>已保存 Key</h3>
                         <p class="agent-key-note">列表只展示尾号、测试状态和启用状态。</p>
                     </div>
                     <div class="agent-key-actions">
-                        <button id="agent-key-refresh-btn" type="button" class="btn btn-outline btn-sm">刷新列表</button>
+                        <button data-lq-component="button" id="agent-key-refresh-btn" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">刷新列表</button>
                     </div>
                 </div>
                 <div id="agent-key-list" class="agent-key-list"></div>

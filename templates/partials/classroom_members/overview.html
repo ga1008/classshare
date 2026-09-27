@@ -61,7 +61,7 @@
             {% endif %}
             {% set trend = lo.trend_summary if lo.trend_summary is defined else none %}
             {% if trend %}
-            <div class="learning-trend-panel" aria-label="班级修为趋势">
+            <div data-lq-component="surface" class="lq-surface learning-trend-panel" aria-label="班级修为趋势">
                 <div class="learning-trend-panel__main">
                     <div class="learning-trend-panel__head">
                         <div>

@@ -100,16 +100,16 @@ function renderScoreControls(card, plan) {
         <label class="closeout-card__score-label" for="closeout-score-input-${escapeHtml(key)}">
           未提交者默认分
         </label>
-        <input type="range" class="closeout-card__slider" data-closeout-score-range="${escapeHtml(key)}"
+        <input data-lq-component="range" type="range" class="lq-range closeout-card__slider" data-closeout-score-range="${escapeHtml(key)}"
                min="0" max="100" step="1" value="${plan.score}" aria-label="未提交者默认分滑块">
-        <input type="number" class="form-control closeout-card__number" id="closeout-score-input-${escapeHtml(key)}"
+        <input data-lq-component="input" type="number" class="lq-input form-control closeout-card__number" id="closeout-score-input-${escapeHtml(key)}"
                data-closeout-score-input="${escapeHtml(key)}" min="0" max="100" step="1" value="${plan.score}">
       </div>`;
   }
   if (ungraded > 0) {
     html += `
       <label class="closeout-card__toggle">
-        <input type="checkbox" data-closeout-ungraded="${escapeHtml(key)}" ${plan.includeUngraded ? 'checked' : ''}>
+        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-closeout-ungraded="${escapeHtml(key)}" ${plan.includeUngraded ? 'checked' : ''}>
         <span>把 ${ungraded} 份“已提交未批改”也按默认分记（会顶掉真实批改）</span>
       </label>`;
   }
@@ -147,7 +147,7 @@ function renderCards() {
             <span class="closeout-card__kind closeout-card__kind--${kindTone(card.kind)}">${escapeHtml(card.kind_label || '')}</span>
             <h4 class="closeout-card__title">${titleHtml}</h4>
             <label class="closeout-card__skip">
-              <input type="checkbox" data-closeout-skip="${escapeHtml(key)}" ${plan.skip ? 'checked' : ''}>
+              <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-closeout-skip="${escapeHtml(key)}" ${plan.skip ? 'checked' : ''}>
               <span>本次跳过</span>
             </label>
           </header>

@@ -1,6 +1,14 @@
 // Agenda reminder widget: clicking an item opens a detail popover anchored to
 // it, with a button to jump to the related page. Keyboard + outside-click close.
 import { setOverlayOpen } from './ui_overlay_motion.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
+
+function adoptAgendaControls(root) {
+  for (const node of root.querySelectorAll('button,input,textarea,select,a[data-pop-go],a[data-feed-open]')) {
+    adoptDomainControl(node, { ...(node.tagName === 'A' ? {kind:'button'} : {}),
+      variant: node.matches('[data-todo-submit],.btn-primary') ? 'prominent' : node.matches('[data-todo-close],[data-feed-close],.btn-ghost') ? 'ghost' : 'glass' });
+  }
+}
 
 const GO_LABELS = {
   invigilation: '前往监考安排',
@@ -26,12 +34,13 @@ const STRUCTURED_KINDS = new Set(['invigilation', 'exam']);
 
 function buildPopover() {
   const pop = document.createElement('div');
-  pop.className = 'agenda-popover';
+  pop.className = 'agenda-popover lq-glass lq-domain-raised';
+  pop.dataset.lqComponent = 'popover'; pop.dataset.lqMaterial = 'raised';
   pop.setAttribute('role', 'dialog');
   pop.setAttribute('aria-label', '待办详情');
   pop.hidden = true;
   pop.innerHTML = `
-    <button type="button" class="agenda-popover__close" data-pop-close aria-label="关闭">
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__close" data-pop-close aria-label="关闭">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
     </button>
     <span class="agenda-popover__kind" data-pop-kind></span>
@@ -44,7 +53,7 @@ function buildPopover() {
     </div>
     <div class="agenda-popover__actions">
       <a class="agenda-popover__go" data-pop-go href="#">前往查看</a>
-      <button type="button" class="agenda-popover__remind" data-pop-remind hidden>
+      <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__remind" data-pop-remind hidden>
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
         设置邮件提醒
       </button>
@@ -52,8 +61,8 @@ function buildPopover() {
     <form class="agenda-popover__remind-form" data-pop-remind-form hidden>
       <div class="agenda-popover__remind-row">
         <span>提前</span>
-        <input type="number" min="1" max="999" value="30" inputmode="numeric" data-remind-value aria-label="提前时间数值" />
-        <select data-remind-unit aria-label="提前时间单位">
+        <input data-lq-component="input" class="lq-input" type="number" min="1" max="999" value="30" inputmode="numeric" data-remind-value aria-label="提前时间数值" />
+        <select data-lq-component="select" class="lq-select" data-remind-unit aria-label="提前时间单位">
           <option value="minute">分钟</option>
           <option value="hour">小时</option>
           <option value="day">天</option>
@@ -61,27 +70,28 @@ function buildPopover() {
         <span>发送邮件</span>
       </div>
       <div class="agenda-popover__remind-actions">
-        <button type="submit" class="agenda-popover__remind-submit" data-remind-submit>确认</button>
-        <button type="button" class="agenda-popover__remind-cancel" data-remind-cancel hidden>取消提醒</button>
+        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__remind-submit" data-remind-submit>确认</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__remind-cancel" data-remind-cancel hidden>取消提醒</button>
       </div>
       <p class="agenda-popover__remind-status" data-remind-status role="status"></p>
     </form>
     <div class="agenda-popover__manage" data-pop-manage hidden>
-      <button type="button" class="agenda-popover__manage-btn is-complete" data-pop-complete>
+      <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__manage-btn is-complete" data-pop-complete>
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
         完成
       </button>
-      <button type="button" class="agenda-popover__manage-btn" data-pop-edit>
+      <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass agenda-popover__manage-btn" data-pop-edit>
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         编辑
       </button>
-      <button type="button" class="agenda-popover__manage-btn is-danger" data-pop-delete>
+      <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive agenda-popover__manage-btn is-danger" data-pop-delete>
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
         删除
       </button>
       <p class="agenda-popover__manage-status" data-manage-status role="status"></p>
     </div>
   `;
+  adoptAgendaControls(pop);
   document.body.appendChild(pop);
   return pop;
 }
@@ -641,7 +651,7 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
   const classroomField = isTeacher
     ? `
         <details class="agenda-todo-scope" data-todo-scope>
-          <summary>
+          <summary data-lq-component="disclosure" class="lq-disclosure-trigger">
             <span class="agenda-todo-scope__icon" aria-hidden="true">
               <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             </span>
@@ -665,11 +675,12 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
           <select name="class_offering_id" data-todo-course required></select>
         </label>`;
   const modal = document.createElement('div');
-  modal.className = 'agenda-todo-modal';
+  modal.className = 'lq-domain-region agenda-todo-modal';
+  modal.dataset.lqComponent = 'layer';
   modal.hidden = true;
   modal.innerHTML = `
     <div class="agenda-todo-modal__backdrop" data-ui-overlay-surface data-todo-close></div>
-    <div class="agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaTodoTitle">
       <div class="agenda-todo-modal__head">
         <div>
           <span class="agenda-todo-modal__eyebrow" data-todo-eyebrow>我的待办</span>
@@ -747,6 +758,7 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
       </div>
     </div>
   `;
+  adoptAgendaControls(modal);
   document.body.appendChild(modal);
   return modal;
 }
@@ -1128,11 +1140,12 @@ function syncAgendaModalScroll() {
 
 function buildCalendarFeedModal() {
   const modal = document.createElement('div');
-  modal.className = 'agenda-todo-modal';
+  modal.className = 'lq-domain-region agenda-todo-modal';
+  modal.dataset.lqComponent = 'layer';
   modal.hidden = true;
   modal.innerHTML = `
     <div class="agenda-todo-modal__backdrop" data-ui-overlay-surface data-feed-close></div>
-    <div class="agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaCalendarFeedTitle">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised agenda-todo-modal__card" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="agendaCalendarFeedTitle">
       <div class="agenda-todo-modal__head">
         <div>
           <span class="agenda-todo-modal__eyebrow">日历订阅</span>
@@ -1159,6 +1172,7 @@ function buildCalendarFeedModal() {
         <p class="agenda-todo-hint" data-feed-status aria-live="polite"></p>
       </div>
     </div>`;
+  adoptAgendaControls(modal);
   document.body.appendChild(modal);
   return modal;
 }

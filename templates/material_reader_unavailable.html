@@ -25,6 +25,6 @@
     <h1 id="reader-unavailable-title">{{ error_title }}</h1>
     <p role="status">{{ error_message }}</p>
     <p class="reader-source">{{ source.course_name }}{% if source.session_title %} · {{ source.session_title }}{% endif %}</p>
-    <a class="btn btn-primary" data-classroom-reader-return href="{{ source.url }}">← {{ source.label }}</a>
+    <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-classroom-reader-return href="{{ source.url }}">← {{ source.label }}</a>
 </section>
 {% endblock %}

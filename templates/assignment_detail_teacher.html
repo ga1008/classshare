@@ -18,7 +18,7 @@
 {% elif assignment.status == 'closed' %}已截止
 {% else %}{{ assignment.status }}{% endif %}
 {% endset %}
-<header data-lq-material="chrome" class="navbar app-topbar assignment-header assignment-topbar role-teacher" aria-label="作业提交管理导航">
+<header data-lq-component="toolbar" data-lq-material="chrome" class="lq-domain-toolbar navbar app-topbar assignment-header assignment-topbar role-teacher" aria-label="作业提交管理导航">
     <a href="{{ assignment_back_url }}" class="navbar-brand app-topbar-brand assignment-topbar-brand" aria-label="返回课堂">
         <span class="app-topbar-brand__mark" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
         <span class="app-topbar-brand__copy">
@@ -39,14 +39,14 @@
         </div>
 
         <div class="app-topbar-actions app-topbar-actions--primary assignment-topbar-actions assignment-topbar-actions--submissions" aria-label="提交列表快捷操作">
-            <a href="#submission-section" class="app-topbar-action app-topbar-action--primary" title="跳转到学生提交列表" aria-label="跳转到学生提交列表">
+            <a data-lq-component="button" href="#submission-section" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary" title="跳转到学生提交列表" aria-label="跳转到学生提交列表">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('list') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>列表</strong>
                     <small>学生提交</small>
                 </span>
             </a>
-            <button type="button" class="app-topbar-action app-topbar-action--tone-cyan" onclick="refreshSubmissions()" title="刷新提交状态" aria-label="刷新提交状态">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-cyan" onclick="refreshSubmissions()" title="刷新提交状态" aria-label="刷新提交状态">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('refresh') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>刷新</strong>
@@ -56,30 +56,30 @@
         </div>
 
         <div class="app-topbar-actions app-topbar-actions--utility assignment-topbar-actions assignment-topbar-actions--management" aria-label="作业管理操作">
-            <details class="assignment-more-dropdown">
-                <summary class="app-topbar-action app-topbar-action--tone-blue" title="筛选提交列表" aria-label="打开筛选菜单">
+            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-blue" title="筛选提交列表" aria-label="打开筛选菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('file-plus') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>筛选</strong>
                         <small>待批未交</small>
                     </span>
                 </summary>
-                <div class="assignment-more-menu" data-lq-material="raised" role="menu" aria-label="筛选提交列表">
+                <div data-lq-component="surface" class="lq-surface lq-domain-raised assignment-more-menu" data-lq-material="raised" role="menu" aria-label="筛选提交列表">
                     <div class="assignment-more-menu__label">快速筛选</div>
-                    <button type="button" class="dropdown-item" data-topbar-filter="submitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('submitted')" title="只看待批改提交" aria-label="只看待批改提交" aria-pressed="false" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-topbar-filter="submitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('submitted')" title="只看待批改提交" aria-label="只看待批改提交" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('file-plus') }} 待批提交
                     </button>
-                    <button type="button" class="dropdown-item" data-topbar-filter="returned" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('returned')" title="只看待重交学生" aria-label="只看待重交学生" aria-pressed="false" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-topbar-filter="returned" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('returned')" title="只看待重交学生" aria-label="只看待重交学生" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('folder-up') }} 待重交
                     </button>
-                    <button type="button" class="dropdown-item" data-topbar-filter="unsubmitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('unsubmitted')" title="只看未提交学生" aria-label="只看未提交学生" aria-pressed="false" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-topbar-filter="unsubmitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('unsubmitted')" title="只看未提交学生" aria-label="只看未提交学生" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('users') }} 未交学生
                     </button>
                 </div>
             </details>
 
             {% if assignment.exam_paper_id %}
-            <a href="/assignment/{{ assignment.id }}/wrong-summary" class="app-topbar-action app-topbar-action--tone-cyan" title="查看全班错题归集" aria-label="查看全班错题归集">
+            <a data-lq-component="button" href="/assignment/{{ assignment.id }}/wrong-summary" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-cyan" title="查看全班错题归集" aria-label="查看全班错题归集">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('alert') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>错题</strong>
@@ -88,25 +88,25 @@
             </a>
             {% endif %}
 
-            <details class="assignment-more-dropdown">
-                <summary class="app-topbar-action app-topbar-action--tone-teal" title="批改处理" aria-label="打开批改处理菜单">
+            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-teal" title="批改处理" aria-label="打开批改处理菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('robot') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>批改</strong>
                         <small>AI 与缺交</small>
                     </span>
                 </summary>
-                <div class="assignment-more-menu" data-lq-material="raised" role="menu" aria-label="批改处理">
+                <div data-lq-component="surface" class="lq-surface lq-domain-raised assignment-more-menu" data-lq-material="raised" role="menu" aria-label="批改处理">
                     <div class="assignment-more-menu__label">批改处理</div>
-                    <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); aiGradeAll()" id="topbar-ai-grade-all-btn" title="AI 批量批改未评分作业" aria-label="AI 批量批改未评分作业" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); aiGradeAll()" id="topbar-ai-grade-all-btn" title="AI 批量批改未评分作业" aria-label="AI 批量批改未评分作业" role="menuitem">
                         {{ app_topbar_icon('robot') }} AI 批量批改
                         <span data-topbar-caption>批量处理</span>
                     </button>
-                    <button type="button" class="dropdown-item text-danger" onclick="this.closest('details')?.removeAttribute('open'); zeroUnsubmittedScores()" id="topbar-zero-unsubmitted-btn" title="将未提交学生标记为 0 分" aria-label="将未提交学生标记为 0 分" disabled role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive dropdown-item text-danger" onclick="this.closest('details')?.removeAttribute('open'); zeroUnsubmittedScores()" id="topbar-zero-unsubmitted-btn" title="将未提交学生标记为 0 分" aria-label="将未提交学生标记为 0 分" disabled role="menuitem">
                         {{ app_topbar_icon('gauge') }} 未交记 0
                         <span data-topbar-caption>缺交处理</span>
                     </button>
-                    <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); openWithdrawModalForSelected()" id="topbar-withdraw-selected-btn" title="撤回选中的提交并开放重交" aria-label="撤回选中的提交并开放重交" disabled role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); openWithdrawModalForSelected()" id="topbar-withdraw-selected-btn" title="撤回选中的提交并开放重交" aria-label="撤回选中的提交并开放重交" disabled role="menuitem">
                         {{ app_topbar_icon('folder-up') }} 撤回选中提交
                         <span data-topbar-caption>先勾选</span>
                     </button>
@@ -114,7 +114,7 @@
             </details>
 
             {% if assignment.status == 'published' %}
-            <button type="button" class="app-topbar-action app-topbar-action--tone-amber" onclick="openCloseAssignmentModal()" id="close-assignment-btn" title="立即截止本作业，并为未提交者记默认分" aria-label="立即截止本作业" aria-haspopup="dialog" aria-controls="close-assignment-modal">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-amber" onclick="openCloseAssignmentModal()" id="close-assignment-btn" title="立即截止本作业，并为未提交者记默认分" aria-label="立即截止本作业" aria-haspopup="dialog" aria-controls="close-assignment-modal">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>截止</strong>
@@ -123,62 +123,62 @@
             </button>
             {% endif %}
 
-            <div class="dropdown assignment-status-dropdown">
-                <button type="button" class="app-topbar-action app-topbar-action--solid" onclick="toggleStatusDropdown()" id="status-btn" title="切换作业状态" aria-label="切换作业状态" aria-haspopup="menu" aria-expanded="false">
+            <div data-lq-component="menu" class="lq-domain-region dropdown assignment-status-dropdown">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--solid" onclick="toggleStatusDropdown()" id="status-btn" title="切换作业状态" aria-label="切换作业状态" aria-haspopup="menu" aria-expanded="false">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>状态</strong>
                         <small>{{ assignment_status_label|trim }}</small>
                     </span>
                 </button>
-                <div class="dropdown-menu" data-lq-material="raised" id="status-dropdown" role="menu">
+                <div data-lq-component="menu" class="lq-domain-region dropdown-menu" data-lq-material="raised" id="status-dropdown" role="menu">
                     <label class="assignment-email-notice" for="status-email-notify">
-                        <input type="checkbox" id="status-email-notify">
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="status-email-notify">
                         <span>
                             <strong>发布时发送邮件通知</strong>
                             <small>默认只创建站内通知；勾选后才进入邮件队列分批发送。</small>
                         </span>
                     </label>
-                    <button class="dropdown-item" onclick="changeStatus('new')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
-                    <button class="dropdown-item" onclick="changeStatus('published')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
-                    <button class="dropdown-item" onclick="toggleStatusDropdown(); openCloseAssignmentModal()" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止（含缺交记分）</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="changeStatus('new')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> 草稿</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="changeStatus('published')" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg> 进行中 (发布给学生)</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="toggleStatusDropdown(); openCloseAssignmentModal()" role="menuitem"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止（含缺交记分）</button>
                 </div>
             </div>
-            <details class="assignment-more-dropdown">
-                <summary class="app-topbar-action app-topbar-action--tone-slate" title="管理作业" aria-label="打开管理作业菜单">
+            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-slate" title="管理作业" aria-label="打开管理作业菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>管理</strong>
                         <small>编辑导出</small>
                     </span>
                 </summary>
-                <div class="assignment-more-menu" data-lq-material="raised" role="menu" aria-label="管理作业">
+                <div data-lq-component="surface" class="lq-surface lq-domain-raised assignment-more-menu" data-lq-material="raised" role="menu" aria-label="管理作业">
                     <div class="assignment-more-menu__label">作业管理</div>
-                    <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); openEditModal()" role="menuitem">{{ app_topbar_icon('blog') }} 编辑作业</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); openEditModal()" role="menuitem">{{ app_topbar_icon('blog') }} 编辑作业</button>
                     {% if assignment.source_feature != 'personal_stage' %}
-                    <button type="button" class="dropdown-item" data-assessment-kind-open="assignment-kind-modal" role="menuitem" aria-haspopup="dialog" aria-controls="assignment-kind-modal">{{ app_topbar_icon('list') }} 作业分类</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-assessment-kind-open="assignment-kind-modal" role="menuitem" aria-haspopup="dialog" aria-controls="assignment-kind-modal">{{ app_topbar_icon('list') }} 作业分类</button>
                     {% endif %}
-                    <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportGrades()" role="menuitem">{{ app_topbar_icon('download') }} 导出成绩</button>
-                    <button type="button" class="dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportAttachments()" id="export-attachments-btn" role="menuitem">{{ app_topbar_icon('folder-up') }} 导出附件</button>
-                    <button type="button" class="dropdown-item text-danger" onclick="this.closest('details')?.removeAttribute('open'); openDeleteModal()" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportGrades()" role="menuitem">{{ app_topbar_icon('download') }} 导出成绩</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" onclick="this.closest('details')?.removeAttribute('open'); exportAttachments()" id="export-attachments-btn" role="menuitem">{{ app_topbar_icon('folder-up') }} 导出附件</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive dropdown-item text-danger" onclick="this.closest('details')?.removeAttribute('open'); openDeleteModal()" role="menuitem">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
                         删除作业
                     </button>
                 </div>
             </details>
 
-            <details class="assignment-more-dropdown">
-                <summary class="app-topbar-action app-topbar-action--tone-cyan" title="个人入口" aria-label="打开个人入口菜单">
+            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-cyan" title="个人入口" aria-label="打开个人入口菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                     <span class="app-topbar-action__text">
                         <strong>个人</strong>
                         <small>消息反馈</small>
                     </span>
                 </summary>
-                <div class="assignment-more-menu" data-lq-material="raised" role="menu" aria-label="个人入口">
+                <div data-lq-component="surface" class="lq-surface lq-domain-raised assignment-more-menu" data-lq-material="raised" role="menu" aria-label="个人入口">
                     <div class="assignment-more-menu__label">常用入口</div>
                     <div class="message-center-bell-anchor assignment-menu-bell" data-message-center-bell-shell>
-                        <a href="/profile?section=notifications#profile-message-center" class="dropdown-item message-center-bell" data-message-center-bell title="通知中心" aria-label="打开通知中心" role="menuitem">
+                        <a data-lq-component="menu" href="/profile?section=notifications#profile-message-center" class="lq-menu__item dropdown-item message-center-bell" data-message-center-bell title="通知中心" aria-label="打开通知中心" role="menuitem">
                             {{ app_topbar_icon('message') }}
                             <span>消息中心</span>
                             <span data-message-center-bell-caption>通知与私信</span>
@@ -190,10 +190,10 @@
                             <div class="message-center-bell-toast__meta" data-message-center-bell-toast-meta>点击消息入口进入通知中心</div>
                         </div>
                     </div>
-                    <button type="button" class="dropdown-item" data-open-feedback title="问题反馈" aria-label="打开问题反馈" role="menuitem">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-open-feedback title="问题反馈" aria-label="打开问题反馈" role="menuitem">
                         {{ app_topbar_icon('gauge') }} 问题反馈
                     </button>
-                    <a href="/profile" class="dropdown-item" title="个人中心" aria-label="打开个人中心" role="menuitem">
+                    <a data-lq-component="menu" href="/profile" class="lq-menu__item dropdown-item" title="个人中心" aria-label="打开个人中心" role="menuitem">
                         {{ app_topbar_icon('users') }} 个人中心
                     </a>
                 </div>
@@ -206,7 +206,7 @@
 
 <main class="workspace-container">
     <!-- ====== 作业信息板块 (上方) ====== -->
-    <div data-lq-material="content" class="card">
+    <div data-lq-component="surface" data-lq-material="content" class="lq-surface card">
         <div class="card-header flex justify-between items-center">
             <h2 class="card-title text-base m-0">作业信息</h2>
             <span class="badge {% if assignment.status == 'new' %}badge-warning{% elif assignment.status == 'published' %}badge-success{% else %}badge-danger{% endif %}">
@@ -219,7 +219,7 @@
         <div class="card-body">
             <section class="teacher-insight" aria-label="提交与批改概览">
                 <div class="teacher-insight-main">
-                    <section class="teacher-insight-panel teacher-insight-panel--focus" data-submission-stat>
+                    <section data-lq-component="surface" class="lq-surface teacher-insight-panel teacher-insight-panel--focus" data-submission-stat>
                         <div class="teacher-insight-kicker">当前最需要处理</div>
                         <div class="teacher-insight-value">
                             <strong id="stat-action-needed">-</strong>
@@ -227,13 +227,13 @@
                         </div>
                         <p class="teacher-insight-hint" id="stat-action-hint">等待提交数据同步。</p>
                         <div class="teacher-insight-actions">
-                            <button type="button" class="teacher-insight-action" onclick="quickFilterSubmissions('submitted')">看待批改</button>
-                            <button type="button" class="teacher-insight-action" onclick="quickFilterSubmissions('unsubmitted')">看未提交</button>
-                            <button type="button" class="teacher-insight-action" onclick="refreshSubmissions()">刷新数据</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-insight-action" onclick="quickFilterSubmissions('submitted')">看待批改</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-insight-action" onclick="quickFilterSubmissions('unsubmitted')">看未提交</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-insight-action" onclick="refreshSubmissions()">刷新数据</button>
                         </div>
                     </section>
 
-                    <section class="teacher-insight-panel teacher-progress-panel" data-submission-stat>
+                    <section data-lq-component="surface" class="lq-surface teacher-insight-panel teacher-progress-panel" data-submission-stat>
                         <div class="teacher-progress-ring" id="submission-progress-ring" style="--progress: 0%;">
                             <div>
                                 <strong id="stat-submit-rate">-</strong>
@@ -250,13 +250,13 @@
                             </div>
                             <div class="teacher-progress-bar" id="submission-progress-bar" style="--progress: 0%;" aria-hidden="true"><span></span></div>
                             <div class="teacher-insight-actions">
-                                <button type="button" class="teacher-insight-action" onclick="quickFilterSubmissions('all')">查看全部</button>
-                                <button type="button" class="teacher-insight-action" onclick="quickFilterSubmissions('returned')">待重交</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-insight-action" onclick="quickFilterSubmissions('all')">查看全部</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-insight-action" onclick="quickFilterSubmissions('returned')">待重交</button>
                             </div>
                         </div>
                     </section>
 
-                    <section class="teacher-insight-panel teacher-insight-panel--score" data-submission-stat>
+                    <section data-lq-component="surface" class="lq-surface teacher-insight-panel teacher-insight-panel--score" data-submission-stat>
                         <div class="teacher-insight-kicker">成绩质量</div>
                         <div class="teacher-score-grid">
                             <div class="teacher-score-item">
@@ -280,27 +280,27 @@
                 </div>
 
                 <div class="teacher-stat-strip" aria-label="快捷筛选统计">
-                    <button type="button" class="teacher-stat-pill" data-tone="warning" data-submission-stat onclick="quickFilterSubmissions('submitted')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="warning" data-submission-stat onclick="quickFilterSubmissions('submitted')">
                         <span>待批改</span>
                         <strong id="stat-pending">-</strong>
                     </button>
-                    <button type="button" class="teacher-stat-pill" data-tone="success" data-submission-stat onclick="quickFilterSubmissions('graded')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="success" data-submission-stat onclick="quickFilterSubmissions('graded')">
                         <span>已批改</span>
                         <strong id="stat-graded">-</strong>
                     </button>
-                    <button type="button" class="teacher-stat-pill" data-tone="primary" data-submission-stat onclick="quickFilterSubmissions('returned')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="primary" data-submission-stat onclick="quickFilterSubmissions('returned')">
                         <span>待重交</span>
                         <strong id="stat-returned">-</strong>
                     </button>
-                    <button type="button" class="teacher-stat-pill" data-tone="danger" data-submission-stat onclick="quickFilterSubmissions('unsubmitted')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="danger" data-submission-stat onclick="quickFilterSubmissions('unsubmitted')">
                         <span>未提交</span>
                         <strong id="stat-unsubmitted-strip">-</strong>
                     </button>
-                    <button type="button" class="teacher-stat-pill" data-tone="warning" data-submission-stat onclick="quickFilterSubmissions('all')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="warning" data-submission-stat onclick="quickFilterSubmissions('all')">
                         <span>批改中</span>
                         <strong id="stat-grading">-</strong>
                     </button>
-                    <button type="button" class="teacher-stat-pill" data-tone="danger" data-submission-stat onclick="setScoreRangeFilter('fail')">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teacher-stat-pill" data-tone="danger" data-submission-stat onclick="setScoreRangeFilter('fail')">
                         <span>不及格</span>
                         <strong id="stat-fail">-</strong>
                     </button>
@@ -327,20 +327,20 @@
 
             {% if assignment.rubric_md or exam_questions %}
             <div class="req-section">
-                <div class="rubric-hidden-panel">
+                <div data-lq-component="surface" class="lq-surface rubric-hidden-panel">
                     <div class="rubric-hidden-panel__copy">
                         <strong>试卷与评分资料已收起</strong>
                         <span>批改主视图保持聚焦，需要核对原始试卷或评分标准时再打开浮窗查看。</span>
                     </div>
                     <div class="rubric-hidden-panel__actions">
                         {% if exam_questions %}
-                        <button type="button" class="btn btn-outline btn-sm rubric-open-btn" onclick="openExamPaperModal()">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm rubric-open-btn" onclick="openExamPaperModal()">
                             {{ app_topbar_icon('book') }}
                             查看原始试卷
                         </button>
                         {% endif %}
                         {% if assignment.rubric_md %}
-                        <button type="button" class="btn btn-primary btn-sm rubric-open-btn" onclick="openRubricModal()">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm rubric-open-btn" onclick="openRubricModal()">
                             {{ app_topbar_icon('shield') }}
                             查看评分细则
                         </button>
@@ -379,7 +379,7 @@
                 </p>
                 {% endif %}
                 {% if assignment.late_submission_enabled %}
-                <div class="late-policy-panel">
+                <div data-lq-component="surface" class="lq-surface late-policy-panel">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="badge badge-warning">补交开放</span>
                         {% if assignment.is_late_submission_open %}
@@ -411,7 +411,7 @@
     </div>
 
     <!-- ====== 学生提交板块 (下方) ====== -->
-    <div data-lq-material="content" class="card" id="submission-section">
+    <div data-lq-component="surface" data-lq-material="content" class="lq-surface card" id="submission-section">
         <div class="card-header flex justify-between items-center">
             <h2 class="card-title text-base m-0">学生提交</h2>
             <div class="submission-header-actions flex items-center gap-2">
@@ -419,45 +419,45 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                     自动刷新
                 </span>
-                <button class="btn btn-outline btn-sm text-danger" type="button" onclick="zeroUnsubmittedScores()" id="zero-unsubmitted-btn" disabled>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--destructive btn-sm text-danger" type="button" onclick="zeroUnsubmittedScores()" id="zero-unsubmitted-btn" disabled>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"></path><path d="M7 15h10"></path><path d="M8 11h8"></path><path d="M12 5v6"></path></svg>
                     未提交记 0
                 </button>
-                <button class="btn btn-outline btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-primary" onclick="aiGradeAll()" id="ai-grade-all-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                     AI 批量批改
                 </button>
             </div>
         </div>
-        <div class="filter-bar">
-            <input type="text" class="filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号 / 附件后缀..." oninput="filterSubmissions()">
-            <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
-            <button class="filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
-            <button class="filter-btn" data-filter="grading_review" onclick="setFilter('grading_review', this)">待人工复核</button>
-            <button class="filter-btn" data-filter="returned" onclick="setFilter('returned', this)">待重交</button>
-            <button class="filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
-            <button class="filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
-            <button class="filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
+        <div data-lq-component="toolbar" class="lq-domain-toolbar filter-bar">
+            <input data-lq-component="input" type="text" class="lq-input filter-input" id="submission-filter" placeholder="搜索学生姓名 / 学号 / 附件后缀..." oninput="filterSubmissions()">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn active" data-filter="all" onclick="setFilter('all', this)">全部</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="submitted" onclick="setFilter('submitted', this)">待批改</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="grading_review" onclick="setFilter('grading_review', this)">待人工复核</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="returned" onclick="setFilter('returned', this)">待重交</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="graded" onclick="setFilter('graded', this)">已批改</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="unsubmitted" onclick="setFilter('unsubmitted', this)">未提交</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-btn" data-filter="fail" onclick="setFilter('fail', this)">不及格</button>
             <span class="score-range-filter-chip" id="score-range-filter-chip" style="display:none;">
                 <span id="score-range-filter-label"></span>
-                <button class="score-range-filter-clear" onclick="clearScoreRangeFilter()" title="取消分数筛选">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass score-range-filter-clear" onclick="clearScoreRangeFilter()" title="取消分数筛选">&times;</button>
             </span>
-            <div class="selection-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar selection-toolbar">
                 <span class="selection-count" id="selection-count">已选 0</span>
-                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForSelected()" id="withdraw-selected-btn" disabled>撤回选中</button>
-                <button class="btn btn-outline btn-sm text-warning" type="button" onclick="openWithdrawModalForAll()">全部撤回</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-warning" type="button" onclick="openWithdrawModalForSelected()" id="withdraw-selected-btn" disabled>撤回选中</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-warning" type="button" onclick="openWithdrawModalForAll()">全部撤回</button>
             </div>
         </div>
         <div class="table-responsive">
             <table class="table table-hover table-clickable submissions-table">
                 <thead>
                     <tr>
-                        <th style="width:36px;"><input type="checkbox" class="submission-checkbox" id="select-all-submissions" onchange="toggleSelectAll(this)"></th>
-                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_id_number" onclick="setSubmissionSort('student_id_number')">学号<span class="sort-indicator" aria-hidden="true"></span></button></th>
-                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="student_name" onclick="setSubmissionSort('student_name')">学生姓名<span class="sort-indicator" aria-hidden="true"></span></button></th>
-                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="status" onclick="setSubmissionSort('status')">状态<span class="sort-indicator" aria-hidden="true"></span></button></th>
-                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="score" onclick="setSubmissionSort('score')">得分<span class="sort-indicator" aria-hidden="true"></span></button></th>
-                        <th aria-sort="none"><button type="button" class="sort-header" data-sort-key="submitted_at" onclick="setSubmissionSort('submitted_at')">提交时间<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th style="width:36px;"><input data-lq-component="checkbox" type="checkbox" class="lq-checkbox submission-checkbox" id="select-all-submissions" onchange="toggleSelectAll(this)"></th>
+                        <th aria-sort="none"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass sort-header" data-sort-key="student_id_number" onclick="setSubmissionSort('student_id_number')">学号<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass sort-header" data-sort-key="student_name" onclick="setSubmissionSort('student_name')">学生姓名<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass sort-header" data-sort-key="status" onclick="setSubmissionSort('status')">状态<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass sort-header" data-sort-key="score" onclick="setSubmissionSort('score')">得分<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                        <th aria-sort="none"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass sort-header" data-sort-key="submitted_at" onclick="setSubmissionSort('submitted_at')">提交时间<span class="sort-indicator" aria-hidden="true"></span></button></th>
                         <th>附件类型</th>
                         <th>操作</th>
                     </tr>
@@ -473,8 +473,8 @@
 <div id="approval-panel-root" data-assignment-id="{{ assignment.id }}" data-auto-open="{{ approval_request_id or "" }}"></div>
 
 <!-- 导出附件进度遮罩 -->
-<div class="export-overlay" id="export-overlay">
-    <div class="export-dialog">
+<div data-lq-component="layer" class="lq-domain-region export-overlay" id="export-overlay">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised export-dialog">
         <div class="export-spinner" id="export-spinner-icon"></div>
         <p id="export-overlay-text">正在打包附件...</p>
         <p class="text-muted" id="export-overlay-sub">请勿关闭页面</p>
@@ -483,12 +483,12 @@
 
 {% if assignment.rubric_md %}
 <!-- 评分细则浮窗 -->
-<div class="modal-backdrop" id="rubric-modal" role="dialog" aria-modal="true" aria-labelledby="rubric-modal-title" style="display:none;">
-    <div class="modal-dialog rubric-modal-dialog modal-dialog-scrollable">
-        <div class="modal-content" data-lq-material="raised">
+<div data-lq-component="layer" class="lq-domain-region modal-backdrop" id="rubric-modal" role="dialog" aria-modal="true" aria-labelledby="rubric-modal-title" style="display:none;">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog rubric-modal-dialog modal-dialog-scrollable">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title" id="rubric-modal-title">评分细则</h3>
-                <button class="modal-close" type="button" onclick="closeRubricModal()" aria-label="关闭评分细则">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" type="button" onclick="closeRubricModal()" aria-label="关闭评分细则">&times;</button>
             </div>
             <div class="modal-body rubric-modal-body">
                 <div class="md-content" id="assignment-rubric-modal-content">
@@ -502,11 +502,11 @@
 
 {% if exam_questions %}
 <!-- 原始试卷浮窗 -->
-<div class="modal-backdrop exam-paper-preview-backdrop" id="exam-paper-modal" role="dialog" aria-modal="true" aria-labelledby="exam-paper-modal-title" style="display:none;">
-    <div class="exam-paper-preview-dialog" role="document">
+<div data-lq-component="layer" class="lq-domain-region modal-backdrop exam-paper-preview-backdrop" id="exam-paper-modal" role="dialog" aria-modal="true" aria-labelledby="exam-paper-modal-title" style="display:none;">
+    <div data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region exam-paper-preview-dialog" role="document" data-lq-material="raised">
         <div class="exam-paper-preview-dialog__header">
             <h3 class="exam-paper-preview-dialog__title" id="exam-paper-modal-title">原始试卷</h3>
-            <button class="exam-paper-preview-dialog__close" type="button" onclick="closeExamPaperModal()" aria-label="关闭原始试卷">&times;</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass exam-paper-preview-dialog__close" type="button" onclick="closeExamPaperModal()" aria-label="关闭原始试卷">&times;</button>
         </div>
         <div class="exam-paper-preview-dialog__body">
             <div id="assignment-exam-paper-preview">
@@ -518,10 +518,10 @@
 {% endif %}
 
 {% if assignment.source_feature != 'personal_stage' %}
-<dialog id="assignment-kind-modal" class="assignment-kind-dialog" data-assessment-kind-dialog aria-labelledby="assignment-kind-modal-title">
+<dialog data-lq-component="surface" id="assignment-kind-modal" class="lq-surface lq-domain-raised lq-domain-region assignment-kind-dialog" data-assessment-kind-dialog aria-labelledby="assignment-kind-modal-title" data-lq-material="raised">
     <div class="modal-header">
         <h3 class="modal-title" id="assignment-kind-modal-title">作业分类</h3>
-        <button type="button" class="modal-close" data-assessment-kind-close aria-label="关闭作业分类">&times;</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-assessment-kind-close aria-label="关闭作业分类">&times;</button>
     </div>
     <p class="assignment-kind-dialog__context"><small>当前作业</small><strong>{{ assignment.title }}</strong></p>
     {% with assessment=assignment, assessment_control_suffix='-modal', assessment_control_modal=true %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
@@ -529,38 +529,38 @@
 {% endif %}
 
 <!-- 编辑作业模态框 -->
-<div class="modal-backdrop" id="edit-modal">
-    <div class="modal-dialog">
-        <div class="modal-content" data-lq-material="raised">
+<div class="lq-domain-region modal-backdrop" id="edit-modal" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title">编辑作业</h3>
-                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeEditModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="edit-assignment-form">
                     {% with assessment=assignment %}{% include 'partials/assessment_kind_control.html' %}{% endwith %}
                     <div class="form-group">
                         <label class="form-label required">作业标题</label>
-                        <input type="text" id="edit-title" class="form-control" value="{{ assignment.title }}" required>
+                        <input data-lq-component="input" type="text" id="edit-title" class="lq-input form-control" value="{{ assignment.title }}" required>
                     </div>
                     <div class="form-group">
                         <label class="form-label required">作业要求 (Markdown)</label>
-                        <textarea id="edit-requirements" class="form-control" rows="8">{{ assignment.requirements_md }}</textarea>
+                        <textarea data-lq-component="textarea" id="edit-requirements" class="lq-textarea form-control" rows="8">{{ assignment.requirements_md }}</textarea>
                     </div>
                     <div class="form-group">
                         <label class="form-label">评分标准 (Markdown)</label>
-                        <textarea id="edit-rubric" class="form-control" rows="4">{{ assignment.rubric_md }}</textarea>
+                        <textarea data-lq-component="textarea" id="edit-rubric" class="lq-textarea form-control" rows="4">{{ assignment.rubric_md }}</textarea>
                     </div>
                     <div class="form-group">
                         <label class="form-label">批改模式</label>
-                        <select id="edit-grading-mode" class="form-select">
+                        <select data-lq-component="select" id="edit-grading-mode" class="lq-select form-select">
                             <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
                             <option value="ai" {{ 'selected' if assignment.grading_mode in ['ai', 'auto', 'mixed'] else '' }}>AI 辅助批改</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">试炼阶段</label>
-                        <select id="edit-learning-stage-key" class="form-select">
+                        <select data-lq-component="select" id="edit-learning-stage-key" class="lq-select form-select">
                             <option value="">普通经验，不绑定境界试炼</option>
                             {% for stage in learning_stage_options %}
                             <option value="{{ stage.key }}" {{ 'selected' if assignment.learning_stage_key == stage.key else '' }}>{{ stage.level_name }} · 通过后点亮至此境界</option>
@@ -570,10 +570,10 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">允许附件类型</label>
-                        <input
+                        <input data-lq-component="input"
                             type="text"
                             id="edit-allowed-file-types"
-                            class="form-control"
+                            class="lq-input form-control"
                             value="{{ assignment.allowed_file_types | join(', ') }}"
                             placeholder="例如：.pdf,.docx,image/*"
                         >
@@ -581,7 +581,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-availability-mode">答题时间策略</label>
-                        <select id="edit-availability-mode" class="form-select">
+                        <select data-lq-component="select" id="edit-availability-mode" class="lq-select form-select">
                             <option value="permanent" {{ 'selected' if assignment.availability_mode == 'permanent' else '' }}>长期有效</option>
                             <option value="deadline" {{ 'selected' if assignment.availability_mode == 'deadline' else '' }}>截止时间</option>
                             <option value="countdown" {{ 'selected' if assignment.availability_mode == 'countdown' else '' }}>倒计时</option>
@@ -589,20 +589,20 @@
                     </div>
                     <div class="form-group" id="edit-deadline-group">
                         <label class="form-label" for="edit-due-at">截止时间</label>
-                        <input
+                        <input data-lq-component="input"
                             type="datetime-local"
                             id="edit-due-at"
-                            class="form-control"
+                            class="lq-input form-control"
                             value="{{ assignment.due_at[:16] if assignment.due_at else '' }}"
                         >
                     </div>
                     <div id="edit-countdown-group">
                         <div class="form-group">
                             <label class="form-label" for="edit-duration-minutes">倒计时（分钟）</label>
-                            <input
+                            <input data-lq-component="input"
                                 type="number"
                                 id="edit-duration-minutes"
-                                class="form-control"
+                                class="lq-input form-control"
                                 min="1"
                                 step="1"
                                 value="{{ assignment.duration_minutes or '' }}"
@@ -611,10 +611,10 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="edit-starts-at">开始时间（可选）</label>
-                            <input
+                            <input data-lq-component="input"
                                 type="datetime-local"
                                 id="edit-starts-at"
-                                class="form-control"
+                                class="lq-input form-control"
                                 value="{{ assignment.starts_at[:16] if assignment.starts_at else '' }}"
                             >
                             <p class="text-xs text-muted mt-1">留空表示发布后从当前时间开始计时。</p>
@@ -622,7 +622,7 @@
                     </div>
                     <div class="form-group">
                         <label class="late-policy-toggle" for="edit-late-submission-enabled">
-                            <input
+                            <input data-lq-component="checkbox" class="lq-checkbox"
                                 type="checkbox"
                                 id="edit-late-submission-enabled"
                                 {{ 'checked' if assignment.late_submission_enabled else '' }}
@@ -633,45 +633,45 @@
                             </span>
                         </label>
                     </div>
-                    <div id="edit-late-policy-group" class="late-policy-panel" style="{{ '' if assignment.late_submission_enabled else 'display:none;' }}">
+                    <div data-lq-component="surface" id="edit-late-policy-group" class="lq-surface late-policy-panel" style="{{ '' if assignment.late_submission_enabled else 'display:none;' }}">
                         <div class="late-policy-grid">
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-submission-until">二次截止时间（可选）</label>
-                                <input
+                                <input data-lq-component="input"
                                     type="datetime-local"
                                     id="edit-late-submission-until"
-                                    class="form-control"
+                                    class="lq-input form-control"
                                     value="{{ assignment.late_submission_until[:16] if assignment.late_submission_until else '' }}"
                                 >
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-penalty-strategy">扣分策略</label>
-                                <select id="edit-late-penalty-strategy" class="form-select">
+                                <select data-lq-component="select" id="edit-late-penalty-strategy" class="lq-select form-select">
                                     <option value="gradient" {{ 'selected' if assignment.late_penalty_strategy == 'gradient' else '' }}>梯度扣分</option>
                                     <option value="fixed" {{ 'selected' if assignment.late_penalty_strategy == 'fixed' else '' }}>定量扣分</option>
                                 </select>
                             </div>
                             <div class="form-group" data-late-gradient-field>
                                 <label class="form-label" for="edit-late-penalty-interval-hours">每多少小时增加扣分</label>
-                                <input type="number" id="edit-late-penalty-interval-hours" class="form-control" min="0.1" step="0.1" value="{{ assignment.late_penalty_interval_hours or 1 }}">
+                                <input data-lq-component="input" type="number" id="edit-late-penalty-interval-hours" class="lq-input form-control" min="0.1" step="0.1" value="{{ assignment.late_penalty_interval_hours or 1 }}">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-penalty-points">每次/统一扣分</label>
-                                <input type="number" id="edit-late-penalty-points" class="form-control" min="0" max="100" step="0.5" value="{{ assignment.late_penalty_points or 0 }}">
+                                <input data-lq-component="input" type="number" id="edit-late-penalty-points" class="lq-input form-control" min="0" max="100" step="0.5" value="{{ assignment.late_penalty_points or 0 }}">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-penalty-min-score">最低保留分</label>
-                                <input type="number" id="edit-late-penalty-min-score" class="form-control" min="0" max="100" step="1" value="{{ assignment.late_penalty_min_score if assignment.late_penalty_min_score is not none else 0 }}">
+                                <input data-lq-component="input" type="number" id="edit-late-penalty-min-score" class="lq-input form-control" min="0" max="100" step="1" value="{{ assignment.late_penalty_min_score if assignment.late_penalty_min_score is not none else 0 }}">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-score-cap">补交最高分（可选）</label>
-                                <input type="number" id="edit-late-score-cap" class="form-control" min="0" max="100" step="1" value="{{ assignment.late_score_cap if assignment.late_score_cap is not none else '' }}" placeholder="例如：80">
+                                <input data-lq-component="input" type="number" id="edit-late-score-cap" class="lq-input form-control" min="0" max="100" step="1" value="{{ assignment.late_score_cap if assignment.late_score_cap is not none else '' }}" placeholder="例如：80">
                             </div>
                         </div>
                     </div>
                     <div class="flex justify-end gap-2 mt-4">
-                        <button type="button" class="btn btn-outline" onclick="closeEditModal()">取消</button>
-                        <button type="submit" class="btn btn-primary">保存修改</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeEditModal()">取消</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存修改</button>
                     </div>
                 </form>
             </div>
@@ -680,15 +680,15 @@
 </div>
 
 <!-- 删除确认模态框 -->
-<div class="modal-backdrop" id="delete-modal">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content" data-lq-material="raised">
+<div class="lq-domain-region modal-backdrop" id="delete-modal" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-sm">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title text-danger flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                     确认删除
                 </h3>
-                <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeDeleteModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <p>确定要删除作业 "<strong>{{ assignment.title }}</strong>" 吗？</p>
@@ -696,8 +696,8 @@
                     此操作不可逆，将会删除所有相关的学生提交记录和文件！
                 </p>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button class="btn btn-outline" onclick="closeDeleteModal()">取消</button>
-                    <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeDeleteModal()">取消</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive" onclick="confirmDelete()">确认删除</button>
                 </div>
             </div>
         </div>
@@ -705,31 +705,31 @@
 </div>
 
 <!-- 撤回提交模态框 -->
-<div class="modal-backdrop" id="withdraw-submissions-modal">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content" data-lq-material="raised">
+<div class="lq-domain-region modal-backdrop" id="withdraw-submissions-modal" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-sm">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title">撤回提交</h3>
-                <button class="modal-close" onclick="closeWithdrawModal()">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeWithdrawModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <p id="withdraw-modal-summary" class="text-sm text-muted mb-md">将撤回选中的提交。</p>
                 <div class="form-group">
                     <label class="form-label" for="withdraw-resubmission-due-at">重交截止时间</label>
-                    <input type="datetime-local" id="withdraw-resubmission-due-at" class="form-control">
+                    <input data-lq-component="input" type="datetime-local" id="withdraw-resubmission-due-at" class="lq-input form-control">
                     <p class="text-xs text-muted mt-1">已按作业截止时间预填（作业已截止则为 24 小时后）。留空且不填延后分钟时按同一规则自动计算；填写的时间早于作业截止时以作业截止为准。</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="withdraw-extension-minutes">延后时间（分钟）</label>
-                    <input type="number" id="withdraw-extension-minutes" class="form-control" min="1" step="1" value="120">
+                    <input data-lq-component="input" type="number" id="withdraw-extension-minutes" class="lq-input form-control" min="1" step="1" value="120">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="withdraw-reason">备注（可选）</label>
-                    <textarea id="withdraw-reason" class="form-control" rows="3" placeholder="例如：线下补交、网络异常、需要重新提交附件"></textarea>
+                    <textarea data-lq-component="textarea" id="withdraw-reason" class="lq-textarea form-control" rows="3" placeholder="例如：线下补交、网络异常、需要重新提交附件"></textarea>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button class="btn btn-outline" onclick="closeWithdrawModal()">取消</button>
-                    <button class="btn btn-warning" onclick="confirmWithdrawSubmissions()" id="confirm-withdraw-btn">确认撤回</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeWithdrawModal()">取消</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-warning" onclick="confirmWithdrawSubmissions()" id="confirm-withdraw-btn">确认撤回</button>
                 </div>
             </div>
         </div>
@@ -737,12 +737,12 @@
 </div>
 
 <!-- 截止作业模态框 -->
-<div class="modal-backdrop" id="close-assignment-modal" role="dialog" aria-modal="true" aria-labelledby="close-assignment-modal-title">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content" data-lq-material="raised">
+<div data-lq-component="layer" class="lq-domain-region modal-backdrop" id="close-assignment-modal" role="dialog" aria-modal="true" aria-labelledby="close-assignment-modal-title">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-sm">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title" id="close-assignment-modal-title">截止作业</h3>
-                <button class="modal-close" type="button" onclick="closeCloseAssignmentModal()" aria-label="关闭截止作业弹窗">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" type="button" onclick="closeCloseAssignmentModal()" aria-label="关闭截止作业弹窗">&times;</button>
             </div>
             <div class="modal-body">
                 <p id="close-assignment-summary" class="text-sm text-muted mb-md">正在统计提交情况…</p>
@@ -750,14 +750,14 @@
                 <div class="form-group" id="close-assignment-score-group" hidden>
                     <label class="form-label" for="close-assignment-score-input">未提交者的默认分</label>
                     <div class="flex items-center gap-2">
-                        <input type="range" id="close-assignment-score-range" min="0" max="100" step="1" value="0" aria-label="默认分滑块" style="flex:1;">
-                        <input type="number" id="close-assignment-score-input" class="form-control" min="0" max="100" step="1" value="0" style="width:6.5rem;">
+                        <input data-lq-component="range" class="lq-range" type="range" id="close-assignment-score-range" min="0" max="100" step="1" value="0" aria-label="默认分滑块" style="flex:1;">
+                        <input data-lq-component="input" type="number" id="close-assignment-score-input" class="lq-input form-control" min="0" max="100" step="1" value="0" style="width:6.5rem;">
                     </div>
                     <p class="text-xs text-muted mt-1">未提交者会被记为“缺交”占位成绩，与真正提交后得 0 分在成绩单里始终可区分。</p>
                 </div>
 
                 <label class="assignment-email-notice" for="close-assignment-include-ungraded" id="close-assignment-ungraded-group" hidden>
-                    <input type="checkbox" id="close-assignment-include-ungraded">
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="close-assignment-include-ungraded">
                     <span>
                         <strong>已提交但未批改的也按默认分记</strong>
                         <small id="close-assignment-ungraded-hint">这会顶掉真实批改的机会，请谨慎勾选。</small>
@@ -765,8 +765,8 @@
                 </label>
 
                 <div class="flex justify-end gap-2 mt-4">
-                    <button class="btn btn-outline" type="button" onclick="closeCloseAssignmentModal()">取消</button>
-                    <button class="btn btn-danger" type="button" onclick="confirmCloseAssignment()" id="confirm-close-assignment-btn">确认截止</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" type="button" onclick="closeCloseAssignmentModal()">取消</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive" type="button" onclick="confirmCloseAssignment()" id="confirm-close-assignment-btn">确认截止</button>
                 </div>
             </div>
         </div>
@@ -774,12 +774,12 @@
 </div>
 
 <!-- 教师线下代交模态框 -->
-<div class="modal-backdrop" id="offline-submit-modal">
-    <div class="modal-dialog" style="max-width: 1120px;">
-        <div class="modal-content" data-lq-material="raised">
+<div class="lq-domain-region modal-backdrop" id="offline-submit-modal" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog" style="max-width: 1120px;">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-content" data-lq-material="raised">
             <div class="modal-header">
                 <h3 class="modal-title">线下代交</h3>
-                <button class="modal-close" onclick="closeOfflineSubmitModal()">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeOfflineSubmitModal()">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="flex items-center justify-between gap-2 flex-wrap mb-md">
@@ -794,12 +794,12 @@
                         <label class="form-label mb-2 block">答案与题目附件</label>
                         <div id="offline-answer-area" class="offline-question-list"></div>
                     </div>
-                    <div class="offline-upload-panel">
+                    <div data-lq-component="surface" class="lq-surface offline-upload-panel">
                         <label class="form-label mb-2 block">整份附件上传 <span class="text-muted font-normal">(可选)</span></label>
                         <p class="text-xs text-muted mb-2">需要绑定到某一道题的附件，请在左侧对应题目下上传；这里适合放整份说明、补充材料或不要求题号归属的文件。</p>
                         <div class="flex items-center gap-2 mb-2 flex-wrap">
-                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-files-btn">选择文件</button>
-                            <button type="button" class="btn btn-outline btn-sm" id="offline-pick-folder-btn">选择文件夹</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="offline-pick-files-btn">选择文件</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="offline-pick-folder-btn">选择文件夹</button>
                             <span class="text-xs text-muted" id="offline-upload-summary">未选择文件</span>
                         </div>
                         <div class="upload-dropzone" id="offline-drop-zone">
@@ -809,14 +809,14 @@
                                 {% if assignment.allowed_file_types %}，允许类型: {{ assignment.allowed_file_types_label }}{% endif %}
                             </p>
                         </div>
-                        <input type="file" id="offline-file-input" class="hidden" multiple>
-                        <input type="file" id="offline-folder-input" class="hidden" webkitdirectory directory multiple>
+                        <input data-lq-component="file" type="file" id="offline-file-input" class="lq-native-file hidden" multiple>
+                        <input data-lq-component="file" type="file" id="offline-folder-input" class="lq-native-file hidden" webkitdirectory directory multiple>
                         <div class="file-chips" id="offline-file-chips"></div>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button class="btn btn-outline" onclick="closeOfflineSubmitModal()">取消</button>
-                    <button class="btn btn-primary" onclick="confirmOfflineSubmit()" id="confirm-offline-submit-btn">提交</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeOfflineSubmitModal()">取消</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" onclick="confirmOfflineSubmit()" id="confirm-offline-submit-btn">提交</button>
                 </div>
             </div>
         </div>
@@ -1569,19 +1569,19 @@
                 : (isReturned ? '待重交提交不能批改' : (sub.status === 'grading' ? '批改中' : 'AI 辅助批改'));
             const attachmentTypesHtml = renderAttachmentTypes(sub, isUnsubmitted);
             const withdrawButton = selectable && !isReturned
-                ? `<button class="btn btn-outline btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
+                ? `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-warning" onclick="event.stopPropagation(); openWithdrawModalForOne(${sub.student_pk_id})" title="撤回后开放重交">撤回</button>`
                 : '';
             const aiActionButtons = sub.status === 'grading'
                 ? `
-                        <button class="btn btn-outline btn-sm text-warning" data-testid="p03-submission-ai-force" onclick="event.stopPropagation(); aiForceRegrade(${sub.id})" title="让旧批改结果失效，并重新进入 AI 队列">强制重批</button>
-                        <button class="btn btn-outline btn-sm text-danger" data-testid="p03-submission-ai-stop" onclick="event.stopPropagation(); stopAiGrading(${sub.id})" title="停止当前 AI 批改，提交回到可处理状态">停止</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-warning" data-testid="p03-submission-ai-force" onclick="event.stopPropagation(); aiForceRegrade(${sub.id})" title="让旧批改结果失效，并重新进入 AI 队列">强制重批</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--destructive btn-sm text-danger" data-testid="p03-submission-ai-stop" onclick="event.stopPropagation(); stopAiGrading(${sub.id})" title="停止当前 AI 批改，提交回到可处理状态">停止</button>
                   `
-                : `<button class="btn btn-outline btn-sm text-warning" data-testid="p03-submission-ai" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
+                : `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-warning" data-testid="p03-submission-ai" onclick="event.stopPropagation(); aiRegrade(${sub.id})"
                             ${aiDisabled ? `disabled title="${aiTitle}"` : `title="${aiTitle}"`}>AI</button>`;
 
             row.innerHTML = `
                 <td data-label="选择">
-                    ${selectable ? `<input type="checkbox" class="submission-checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();" onchange="toggleSubmissionSelection(${sub.student_pk_id}, this.checked)">` : ''}
+                    ${selectable ? `<input data-lq-component="checkbox" type="checkbox" class="lq-checkbox submission-checkbox" ${selected ? 'checked' : ''} onclick="event.stopPropagation();" onchange="toggleSubmissionSelection(${sub.student_pk_id}, this.checked)">` : ''}
                 </td>
                 <td data-label="学号" class="text-sm text-muted">${escapeHtml(sub.student_id_number || '-')}</td>
                 <td data-label="学生姓名" class="font-medium">${escapeHtml(sub.student_name || '-')}</td>
@@ -1592,11 +1592,11 @@
                 <td data-label="操作">
                     <div class="action-btns">
                         ${!isUnsubmitted ? `
-                        <button class="btn btn-ghost btn-sm text-primary" data-testid="p03-submission-detail" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm text-primary" data-testid="p03-submission-detail" onclick="event.stopPropagation(); goDetail(${sub.id})" title="查看详情">详情</button>
                         ${aiActionButtons}
                         ${withdrawButton}
                         ` : ''}
-                        <button class="btn btn-outline btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm text-primary" onclick="event.stopPropagation(); openOfflineSubmit(${sub.student_pk_id})"
                             ${canOfflineSubmit ? `title="${offlineTitle}"` : `disabled title="${offlineTitle}"`}>线下</button>
                     </div>
                 </td>
@@ -2202,7 +2202,7 @@
             body = `
                 <div class="offline-option-list">
                     ${q.options.map((opt) => `
-                        <label><input type="radio" name="${groupName}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                        <label><input data-lq-component="radio" class="lq-radio" type="radio" name="${groupName}" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
                     `).join('')}
                 </div>
             `;
@@ -2210,14 +2210,14 @@
             body = `
                 <div class="offline-option-list">
                     ${q.options.map((opt) => `
-                        <label><input type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
+                        <label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" value="${escapeHtml(opt)}"> <span>${escapeHtml(opt)}</span></label>
                     `).join('')}
                 </div>
             `;
         } else if (type === 'text') {
-            body = '<input type="text" class="form-control" placeholder="输入答案">';
+            body = '<input data-lq-component="input" type="text" class="lq-input form-control" placeholder="输入答案">';
         } else {
-            body = '<textarea class="form-control" rows="5" placeholder="输入答案"></textarea>';
+            body = '<textarea data-lq-component="textarea" class="lq-textarea form-control" rows="5" placeholder="输入答案"></textarea>';
         }
         return `
             <div class="offline-question" data-offline-question data-question-id="${qid}" data-question="${question}" data-type="${escapeHtml(type)}">
@@ -2241,21 +2241,21 @@
         const assignmentTypeHint = currentAllowedFileTypes?.length ? ` 交卷允许类型：${escapeHtml({{ assignment.allowed_file_types_label | tojson }})}。` : '';
         const hint = policy.description || '上传本题对应的截图、报告、代码或线下材料；这些文件会随答案绑定到题号，供教师查看和 AI 批改识别。';
         return `
-            <div class="offline-question-attachment-panel" data-offline-question-attachment-panel="${escapeHtml(qid)}">
+            <div data-lq-component="surface" class="lq-surface offline-question-attachment-panel" data-offline-question-attachment-panel="${escapeHtml(qid)}">
                 <div class="offline-question-attachment-head">
                     <span>本题附件</span>
                     <span class="offline-question-attachment-status ${policy.required ? 'required' : ''}" data-offline-question-attachment-status="${escapeHtml(qid)}">${statusText}</span>
                 </div>
                 <div class="offline-question-attachment-hint">${escapeHtml(hint)}${typeHint}${assignmentTypeHint}</div>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <button type="button" class="btn btn-outline btn-sm" id="offline-question-pick-${safeQId}">添加本题文件</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="offline-question-pick-${safeQId}">添加本题文件</button>
                     <span class="text-xs text-muted" id="offline-question-summary-${safeQId}">未选择文件</span>
                 </div>
                 <div class="upload-dropzone" id="offline-question-drop-zone-${safeQId}">
                     <p class="mb-1 text-primary font-medium">拖拽本题附件到此处</p>
                     <p class="text-xs text-muted">附件会绑定到第 ${escapeHtml(qid)} 题；若本题为必传，请至少上传要求数量后再提交。</p>
                 </div>
-                <input type="file" id="offline-question-file-input-${safeQId}" class="hidden" multiple>
+                <input data-lq-component="file" type="file" id="offline-question-file-input-${safeQId}" class="lq-native-file hidden" multiple>
                 <div class="file-chips" id="offline-question-file-chips-${safeQId}"></div>
             </div>
         `;

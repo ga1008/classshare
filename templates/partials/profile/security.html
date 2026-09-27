@@ -30,7 +30,7 @@
                             </div>
                         </div>
                         <div class="{% if _profile_lq %}lq-form-actions {% endif %}profile-form-actions">
-                            {% if _profile_lq %}{{ lq_btn('更新密码', variant='prominent', type='submit') }}{% else %}<button type="submit" class="btn btn-primary">更新密码</button>{% endif %}
+                            {% if _profile_lq %}{{ lq_btn('更新密码', variant='prominent', type='submit') }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">更新密码</button>{% endif %}
                         </div>
                     </form>
                 </section>

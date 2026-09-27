@@ -27,19 +27,19 @@
     {% endcall %}
 
     <div class="org-workspace">
-        <section class="org-panel" aria-label="组织树">
-            <div class="org-toolbar">
-                <input class="form-control org-search" type="search" id="org-search-input" placeholder="搜索学校、学院或系部" autocomplete="off">
+        <section data-lq-component="surface" class="lq-surface org-panel" aria-label="组织树">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar org-toolbar">
+                <input data-lq-component="input" class="lq-input form-control org-search" type="search" id="org-search-input" placeholder="搜索学校、学院或系部" autocomplete="off">
                 <label class="org-toggle">
-                    <input type="checkbox" id="org-include-inactive-input">
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="org-include-inactive-input">
                     显示停用
                 </label>
-                <button type="button" class="btn btn-outline btn-sm" id="org-refresh-btn">刷新</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="org-refresh-btn">刷新</button>
             </div>
             <div class="org-list" id="org-tree"></div>
         </section>
 
-        <aside class="org-panel" aria-label="组织维护">
+        <aside data-lq-component="surface" class="lq-surface org-panel" aria-label="组织维护">
             <div>
                 <h3>新增学校</h3>
                 <p class="org-section-note">学校代码是未来权限隔离的稳定键，创建后请尽量保持不变。</p>
@@ -59,18 +59,18 @@
             <form id="org-school-form" class="org-form-grid">
                 <label class="org-field">
                     <span>学校代码</span>
-                    <input class="form-control" name="school_code" maxlength="40" placeholder="例如 gxufl" required>
+                    <input data-lq-component="input" class="lq-input form-control" name="school_code" maxlength="40" placeholder="例如 gxufl" required>
                 </label>
                 <label class="org-field">
                     <span>显示顺序</span>
-                    <input class="form-control" type="number" name="display_order" value="0">
+                    <input data-lq-component="input" class="lq-input form-control" type="number" name="display_order" value="0">
                 </label>
                 <label class="org-field is-full">
                     <span>学校名称</span>
-                    <input class="form-control" name="school_name" maxlength="120" placeholder="例如 广西外国语学院" required>
+                    <input data-lq-component="input" class="lq-input form-control" name="school_name" maxlength="120" placeholder="例如 广西外国语学院" required>
                 </label>
                 <div class="org-actions is-full">
-                    <button type="submit" class="btn btn-primary">保存学校</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存学校</button>
                 </div>
             </form>
             {% endif %}
@@ -115,50 +115,50 @@
             <form id="org-current-school-form" class="org-form-grid" hidden>
                 <label class="org-field is-full">
                     <span>学校名称</span>
-                    <input class="form-control" name="school_name" maxlength="120" required>
+                    <input data-lq-component="input" class="lq-input form-control" name="school_name" maxlength="120" required>
                 </label>
                 <label class="org-field">
                     <span>显示顺序</span>
-                    <input class="form-control" type="number" name="display_order" value="0">
+                    <input data-lq-component="input" class="lq-input form-control" type="number" name="display_order" value="0">
                 </label>
                 <label class="org-field">
                     <span>状态</span>
-                    <select class="form-control" name="is_active">
+                    <select data-lq-component="select" class="lq-select form-control" name="is_active">
                         <option value="1">启用</option>
                         <option value="0">停用</option>
                     </select>
                 </label>
                 <div class="org-actions is-full">
-                    <button type="submit" class="btn btn-primary">更新学校</button>
-                    <button type="button" class="btn btn-danger" id="org-deactivate-school-btn">停用学校</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">更新学校</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive" id="org-deactivate-school-btn">停用学校</button>
                 </div>
             </form>
 
             <form id="org-college-form" class="org-form-grid" hidden>
                 <label class="org-field is-full">
                     <span>新增学院</span>
-                    <input class="form-control" name="college_name" maxlength="120" placeholder="学院名称">
+                    <input data-lq-component="input" class="lq-input form-control" name="college_name" maxlength="120" placeholder="学院名称">
                 </label>
                 <label class="org-field">
                     <span>显示顺序</span>
-                    <input class="form-control" type="number" name="display_order" value="0">
+                    <input data-lq-component="input" class="lq-input form-control" type="number" name="display_order" value="0">
                 </label>
                 <div class="org-actions">
-                    <button type="submit" class="btn btn-outline">保存学院</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">保存学院</button>
                 </div>
             </form>
 
             <form id="org-department-form" class="org-form-grid" hidden>
                 <label class="org-field is-full">
                     <span>新增系部</span>
-                    <input class="form-control" name="department_name" maxlength="120" placeholder="先在左侧选择学院">
+                    <input data-lq-component="input" class="lq-input form-control" name="department_name" maxlength="120" placeholder="先在左侧选择学院">
                 </label>
                 <label class="org-field">
                     <span>显示顺序</span>
-                    <input class="form-control" type="number" name="display_order" value="0">
+                    <input data-lq-component="input" class="lq-input form-control" type="number" name="display_order" value="0">
                 </label>
                 <div class="org-actions">
-                    <button type="submit" class="btn btn-outline">保存系部</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">保存系部</button>
                 </div>
             </form>
             {% endif %}

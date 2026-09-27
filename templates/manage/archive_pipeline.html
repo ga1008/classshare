@@ -44,7 +44,7 @@
             <a class="ap-step__label" href="{{ entry.href }}">{{ entry.label }}</a>
             <span class="ap-step__hint">{{ entry.hint }}</span>
             <span class="ap-step__count">{% if entry.count %}{{ entry.count }} 份{% else %}尚无{% endif %}</span>
-            <a class="btn btn-outline btn-sm" href="{{ entry.href }}">{% if entry.count %}查看{% else %}开始{% endif %}</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="{{ entry.href }}">{% if entry.count %}查看{% else %}开始{% endif %}</a>
         </li>
         {% endfor %}
     </ol>

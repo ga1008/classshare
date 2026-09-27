@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from '/static/js/api.js';
 import { getLayerSystem } from './lq/layer.js';
 import { bindSelection } from './lq/selection.js';
@@ -1023,6 +1024,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const card = document.createElement('button');
         card.type = 'button';
         card.className = `semester-week-todo-peek is-${position}`;
+        adoptDomainControl(card, { kind: 'choice', variant: 'glass' });
         if (!week) {
             card.disabled = true;
             card.appendChild(createWeekDateAxis(null, { compact: true }));
@@ -1048,7 +1050,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     function createTodoItemCard(todo, week) {
         const row = document.createElement('article');
         const isActive = String(todo.id || '') === String(activeTodoId || '');
-        row.className = `semester-week-todo-item-card is-${sourceTone(todo)}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}${todo.link_url ? ' has-link' : ''}`;
+        row.dataset.lqComponent = 'surface';
+        row.className = `lq-surface semester-week-todo-item-card is-${sourceTone(todo)}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}${todo.link_url ? ' has-link' : ''}`;
         row.dataset.semesterTodoId = String(todo.id || '');
         if (todo.link_url) {
             row.dataset.todoHref = String(todo.link_url);
@@ -1108,6 +1111,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             const completeBtn = document.createElement('button');
             completeBtn.type = 'button';
             completeBtn.className = 'btn btn-outline btn-sm';
+        adoptDomainControl(completeBtn, { variant: 'glass' });
             completeBtn.dataset.semesterTodoComplete = String(manualTodoId(todo));
             completeBtn.dataset.semesterTodoId = String(todo.id || '');
             completeBtn.textContent = todo.is_completed ? '标记未完成' : '完成';
@@ -1116,6 +1120,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             const deleteBtn = document.createElement('button');
             deleteBtn.type = 'button';
             deleteBtn.className = 'btn btn-ghost btn-sm text-danger';
+        adoptDomainControl(deleteBtn, { variant: 'destructive' });
             deleteBtn.dataset.semesterTodoDelete = String(manualTodoId(todo));
             deleteBtn.dataset.semesterTodoId = String(todo.id || '');
             deleteBtn.textContent = '删除';
@@ -1150,6 +1155,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const prevBtn = document.createElement('button');
         prevBtn.type = 'button';
         prevBtn.className = 'semester-week-todos__arrow is-prev';
+        adoptDomainControl(prevBtn, { variant: 'ghost' });
         prevBtn.dataset.weekShift = '-1';
         prevBtn.disabled = activeIndex <= 0;
         prevBtn.setAttribute('aria-label', '切换到上一周待办');
@@ -1158,6 +1164,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const nextBtn = document.createElement('button');
         nextBtn.type = 'button';
         nextBtn.className = 'semester-week-todos__arrow is-next';
+        adoptDomainControl(nextBtn, { variant: 'ghost' });
         nextBtn.dataset.weekShift = '1';
         nextBtn.disabled = activeIndex >= weeks.length - 1;
         nextBtn.setAttribute('aria-label', '切换到下一周待办');
@@ -1168,7 +1175,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         rail.appendChild(createWeekPreviewCard(semester, weeks[activeIndex - 1], 'prev'));
 
         const card = document.createElement('article');
-        card.className = 'semester-week-todo-card is-active';
+        card.className = 'lq-surface semester-week-todo-card is-active';
+        card.dataset.lqComponent = 'surface';
         card.dataset.weekKey = activeWeekKey;
 
         const head = document.createElement('div');
@@ -1242,6 +1250,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (todo.link_url) {
             const link = document.createElement('a');
             link.className = 'btn btn-outline btn-sm';
+        adoptDomainControl(link, { kind: 'button', variant: 'glass' });
             link.href = todo.link_url;
             link.textContent = '打开';
             actions.appendChild(link);
@@ -1251,6 +1260,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             const completeBtn = document.createElement('button');
             completeBtn.type = 'button';
             completeBtn.className = 'btn btn-outline btn-sm';
+        adoptDomainControl(completeBtn, { variant: 'glass' });
             completeBtn.dataset.semesterTodoComplete = String(manualTodoId(todo));
             completeBtn.textContent = todo.is_completed ? '标记未完成' : '完成';
             actions.appendChild(completeBtn);
@@ -1258,6 +1268,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             const deleteBtn = document.createElement('button');
             deleteBtn.type = 'button';
             deleteBtn.className = 'btn btn-ghost btn-sm text-danger';
+        adoptDomainControl(deleteBtn, { variant: 'destructive' });
             deleteBtn.dataset.semesterTodoDelete = String(manualTodoId(todo));
             deleteBtn.textContent = '删除';
             actions.appendChild(deleteBtn);
@@ -1272,6 +1283,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const isActive = String(todo.id || '') === String(activeTodoId || '');
         const compactEvent = isAcademicCalendarEvent(todo);
         button.className = `semester-calendar-todo-bar is-${sourceTone(todo)}${compactEvent ? ' is-compact-academic' : ''}${todo.is_completed ? ' is-completed' : ''}${isActive ? ' is-active' : ''}`;
+        adoptDomainControl(button, { kind: 'choice', variant: 'glass' });
         button.dataset.semesterTodoId = String(todo.id || '');
         const position = todo.canonical_workspace ? getTodoMinutePosition(todo, week) : { left: Number(todo.bar_left || 0), width: Number(todo.bar_width || 0) };
         button.style.setProperty('--todo-left', `${position.left.toFixed(3)}%`);
@@ -1393,42 +1405,43 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     function ensureTodoModal() {
         if (todoModal) return todoModal;
         const modal = document.createElement('div');
-        modal.className = 'semester-todo-modal-shell';
+        modal.className = 'lq-domain-region semester-todo-modal-shell';
+        modal.dataset.lqComponent = 'layer';
         modal.hidden = true;
         modal.innerHTML = `
             <div class="semester-todo-modal-backdrop" data-semester-todo-modal-close></div>
-            <div class="semester-todo-modal-card" role="dialog" aria-modal="true" aria-labelledby="semesterDashboardTodoTitle">
+            <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised semester-todo-modal-card" role="dialog" aria-modal="true" aria-labelledby="semesterDashboardTodoTitle">
                 <div class="semester-todo-modal-head">
                     <div>
                         <span>我的待办</span>
                         <h3 id="semesterDashboardTodoTitle">新增待办事项</h3>
                     </div>
-                    <button type="button" class="modal-close" data-semester-todo-modal-close aria-label="关闭">×</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-semester-todo-modal-close aria-label="关闭">×</button>
                 </div>
                 <form class="semester-todo-modal-form">
                     <label class="form-group">
                         <span>所属课堂</span>
-                        <select name="class_offering_id" class="form-control" required></select>
+                        <select data-lq-component="select" name="class_offering_id" class="lq-select form-control" required></select>
                     </label>
                     <label class="form-group">
                         <span>待办名称</span>
-                        <input type="text" name="title" maxlength="120" required placeholder="例如：完成第二章实验报告">
+                        <input data-lq-component="input" class="lq-input" type="text" name="title" maxlength="120" required placeholder="例如：完成第二章实验报告">
                     </label>
                     <label class="form-group">
                         <span>备注</span>
-                        <textarea name="notes" maxlength="1200" rows="3" placeholder="可以写下任务要求、材料位置或提醒自己的话"></textarea>
+                        <textarea data-lq-component="textarea" class="lq-textarea" name="notes" maxlength="1200" rows="3" placeholder="可以写下任务要求、材料位置或提醒自己的话"></textarea>
                     </label>
                     <input type="hidden" name="start_date">
                     <input type="hidden" name="due_date">
                     <div class="semester-todo-picker" data-semester-todo-picker>
-                        <div class="semester-todo-picker__roles" role="tablist" aria-label="选择日期类型">
-                            <button type="button" class="is-active" data-picker-role="due">截止日</button>
-                            <button type="button" data-picker-role="start">开始日</button>
+                        <div data-lq-component="tab" class="lq-tabs__list semester-todo-picker__roles" role="tablist" aria-label="选择日期类型">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass is-active" data-picker-role="due">截止日</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-picker-role="start">开始日</button>
                         </div>
                         <div class="semester-todo-picker__head">
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" data-picker-nav="prev" aria-label="上个月">‹</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm btn-icon" data-picker-nav="prev" aria-label="上个月">‹</button>
                             <strong data-picker-title></strong>
-                            <button type="button" class="btn btn-ghost btn-sm btn-icon" data-picker-nav="next" aria-label="下个月">›</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm btn-icon" data-picker-nav="next" aria-label="下个月">›</button>
                         </div>
                         <div class="semester-todo-picker__weekdays" aria-hidden="true">
                             ${compactDayLabels.map((label) => `<span>周${label}</span>`).join('')}
@@ -1439,16 +1452,16 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                     <div class="semester-todo-modal-grid">
                         <label class="form-group">
                             <span>开始时间</span>
-                            <input type="time" name="start_time" value="00:00" step="60">
+                            <input data-lq-component="input" class="lq-input" type="time" name="start_time" value="00:00" step="60">
                         </label>
                         <label class="form-group">
                             <span>截止时间（精确到分钟）</span>
-                            <input type="time" name="due_time" value="23:59" step="60">
+                            <input data-lq-component="input" class="lq-input" type="time" name="due_time" value="23:59" step="60">
                         </label>
                     </div>
                     <div class="modal-actions">
-                        <button type="button" class="btn btn-ghost" data-semester-todo-modal-close>取消</button>
-                        <button type="submit" class="btn btn-primary">保存待办</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-semester-todo-modal-close>取消</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存待办</button>
                     </div>
                 </form>
             </div>
@@ -1535,6 +1548,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'semester-todo-picker__day';
+        adoptDomainControl(button, { kind: 'choice', variant: 'ghost' });
             button.dataset.date = isoDate;
             button.textContent = String(current.getDate());
             if (current.getMonth() !== todoPickerState.monthDate.getMonth()) {
@@ -1807,6 +1821,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 bandCell.dataset.semesterSwitch = String(segment.semesterId);
                 bandCell.tabIndex = 0;
                 bandCell.setAttribute('role', 'button');
+                bandCell.dataset.lqComponent = 'choice';
+                bandCell.dataset.lqShape = 'surface';
+                bandCell.classList.add('lq-btn', 'lq-btn--sm', 'lq-btn--glass', 'lq-domain-choice');
                 bandCell.title = `切换查看 ${segment.label}`;
             } else if (segment.kind === 'current') {
                 bandCell.title = `${segment.label}（当前查看）`;
@@ -1844,6 +1861,9 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 weekCell.dataset.weekKey = weekKey;
                 weekCell.tabIndex = 0;
                 weekCell.setAttribute('role', 'button');
+                weekCell.dataset.lqComponent = 'choice';
+                weekCell.dataset.lqShape = 'surface';
+                weekCell.classList.add('lq-btn', 'lq-btn--sm', 'lq-btn--glass', 'lq-domain-choice');
             } else {
                 weekCell.setAttribute('aria-hidden', 'true');
             }

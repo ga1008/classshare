@@ -15,7 +15,7 @@
 {% else %}
 {% set next_hint = raw_next_hint %}
 {% endif %}
-<div class="cultivation-card cultivation-card--{{ variant }}" data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
+<div data-lq-component="surface" class="lq-surface cultivation-card cultivation-card--{{ variant }}" data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
     <div class="cultivation-card__mark" aria-hidden="true">
         <span>{{ card.level_short or level.short_name or '未入道' }}</span>
     </div>

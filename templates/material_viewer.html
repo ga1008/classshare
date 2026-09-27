@@ -98,7 +98,7 @@
                 {% endif %}
                 {% if ai_summary.warnings %}
                 <details class="materials-ai-import-summary-detail">
-                    <summary>查看解析提醒</summary>
+                    <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看解析提醒</summary>
                     <ul class="materials-ai-import-summary-warnings">
                         {% for warning in ai_summary.warnings %}
                         <li>{{ warning }}</li>
@@ -111,19 +111,19 @@
                 {% endif %}
                 <div class="materials-ai-import-summary-actions">
                     {% if ai_record.render_preview_url %}
-                    <a href="{{ ai_record.render_preview_url }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener">渲染预览</a>
+                    <a data-lq-component="button" href="{{ ai_record.render_preview_url }}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" target="_blank" rel="noopener">渲染预览</a>
                     {% endif %}
                     {% if ai_record.export_url %}
-                    <button type="button"
-                            class="btn btn-primary btn-sm"
+                    <button data-lq-component="button" type="button"
+                            class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm"
                             data-process-export-url="{{ ai_record.export_url }}"
                             data-process-export-label="{{ 'Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else 'Word' }}">
                         {{ '导出 Excel' if ai_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else '导出 Word' }}
                     </button>
                     {% endif %}
                     {% if ai_record.export_pdf_url %}
-                    <button type="button"
-                            class="btn btn-outline btn-sm"
+                    <button data-lq-component="button" type="button"
+                            class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm"
                             data-process-export-url="{{ ai_record.export_pdf_url }}"
                             data-process-export-label="PDF">导出 PDF</button>
                     {% endif %}
@@ -141,9 +141,9 @@
     </aside>
 
     <main class="materials-viewer-main">
-        <div class="materials-viewer-topbar">
+        <div data-lq-component="toolbar" class="lq-domain-toolbar materials-viewer-topbar">
             <div class="materials-toolbar-group">
-                <button type="button" class="btn btn-ghost"{% if reader_return %} data-classroom-reader-return{% endif %} onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost"{% if reader_return %} data-classroom-reader-return{% endif %} onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
                 <div>
                     <div class="text-muted text-sm">课程材料预览</div>
                     <strong>{{ material.name }}</strong>
@@ -151,35 +151,35 @@
             </div>
             <div class="materials-viewer-actions">
                 {% if material.is_renderable and (material.render_shell_url or material.render_url) %}
-                <a href="{{ material.render_shell_url or material.render_url }}" class="btn btn-primary" target="_blank" rel="noopener">{{ material.render_label or '渲染' }}</a>
+                <a data-lq-component="button" href="{{ material.render_shell_url or material.render_url }}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" target="_blank" rel="noopener">{{ material.render_label or '渲染' }}</a>
                 {% endif %}
                 {% if material.can_edit_source %}
-                <button type="button" class="btn btn-outline" id="viewer-edit-source-btn">编辑源码</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="viewer-edit-source-btn">编辑源码</button>
                 {% endif %}
                 {% if material.optimized_available %}
-                <a href="{{ material.viewer_url }}?variant={{ 'original' if material.preview_variant == 'optimized' else 'optimized' }}" class="btn btn-outline">
+                <a data-lq-component="button" href="{{ material.viewer_url }}?variant={{ 'original' if material.preview_variant == 'optimized' else 'optimized' }}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">
                     {{ '查看原稿' if material.preview_variant == 'optimized' else '查看优化稿' }}
                 </a>
                 {% endif %}
                 {% if material.ai_import_record and material.ai_import_record.render_preview_url %}
-                <a href="{{ material.ai_import_record.render_preview_url }}" class="btn btn-outline" target="_blank" rel="noopener">渲染预览</a>
+                <a data-lq-component="button" href="{{ material.ai_import_record.render_preview_url }}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" target="_blank" rel="noopener">渲染预览</a>
                 {% endif %}
                 {% if material.ai_import_record and material.ai_import_record.export_url %}
-                <button type="button"
-                        class="btn btn-primary"
+                <button data-lq-component="button" type="button"
+                        class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent"
                         data-process-export-url="{{ material.ai_import_record.export_url }}"
                         data-process-export-label="{{ 'Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else 'Word' }}">
                     {{ '导出 Excel' if material.ai_import_record.document_type in ['ordinary_grade_record', 'exam_grade_record', 'final_grade_transcript'] else '导出 Word' }}
                 </button>
                 {% endif %}
                 {% if material.ai_import_record and material.ai_import_record.export_pdf_url %}
-                <button type="button"
-                        class="btn btn-outline"
+                <button data-lq-component="button" type="button"
+                        class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass"
                         data-process-export-url="{{ material.ai_import_record.export_pdf_url }}"
                         data-process-export-label="PDF">导出 PDF</button>
                 {% endif %}
                 {% if material.node_type == 'file' %}
-                <a href="{{ material.download_url }}" class="btn btn-primary">下载材料</a>
+                <a data-lq-component="button" href="{{ material.download_url }}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">下载材料</a>
                 {% endif %}
             </div>
         </div>
@@ -191,9 +191,9 @@
 </div>
 
 {% if material.can_edit_source %}
-<div id="viewer-source-editor" class="materials-editor-backdrop" hidden aria-hidden="true">
-    <div class="materials-editor-shell" role="dialog" aria-modal="true" aria-labelledby="viewer-editor-title">
-        <div class="materials-editor-toolbar">
+<div id="viewer-source-editor" class="lq-domain-region materials-editor-backdrop" hidden aria-hidden="true" data-lq-component="layer">
+    <div data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region materials-editor-shell" role="dialog" aria-modal="true" aria-labelledby="viewer-editor-title" data-lq-material="raised">
+        <div data-lq-component="toolbar" class="lq-domain-toolbar materials-editor-toolbar">
             <div class="materials-editor-copy">
                 <div class="text-muted text-sm">文本源码编辑</div>
                 <strong id="viewer-editor-title">{{ material.name }}</strong>
@@ -201,12 +201,12 @@
             </div>
             <div class="materials-toolbar-group">
                 <div class="materials-editor-encoding" id="viewer-editor-encoding">编码检测中</div>
-                <button type="button" class="btn btn-ghost" id="viewer-editor-cancel-btn">取消</button>
-                <button type="button" class="btn btn-primary" id="viewer-editor-save-btn">保存</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" id="viewer-editor-cancel-btn">取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="viewer-editor-save-btn">保存</button>
             </div>
         </div>
         <div class="materials-editor-body">
-            <textarea id="viewer-editor-textarea" class="materials-editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            <textarea data-lq-component="textarea" id="viewer-editor-textarea" class="lq-textarea materials-editor-textarea" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </div>
     </div>
 </div>

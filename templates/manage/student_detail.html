@@ -40,7 +40,7 @@
                 </div>
             </div>
         </div>
-        <aside class="student-insight-hero-panel">
+        <aside data-lq-component="surface" class="lq-surface student-insight-hero-panel">
             <span>当前最强科目</span>
             {% if best_course %}
             <strong>{{ best_course.sect_level_label }}</strong>
@@ -88,10 +88,10 @@
                     {% endif %}
                 </div>
                 <div class="student-current-alert__actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="private_message">私信学生</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="support_note">记备注</button>
-                    <button type="button" class="btn btn-ghost btn-sm" data-student-cultivation-alert-action="snoozed">本周静音</button>
-                    <button type="button" class="btn btn-primary btn-sm" data-student-cultivation-alert-action="handled">已处理</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-student-cultivation-alert-action="private_message">私信学生</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-student-cultivation-alert-action="support_note">记备注</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-student-cultivation-alert-action="snoozed">本周静音</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-student-cultivation-alert-action="handled">已处理</button>
                 </div>
             </article>
             {% endfor %}
@@ -131,7 +131,7 @@
     </section>
 
     <section class="student-support-grid">
-        <article class="student-insight-band student-support-card">
+        <article data-lq-component="surface" class="lq-surface student-insight-band student-support-card">
             <div class="student-insight-band__head">
                 <div>
                     <h3>学习支持摘要</h3>
@@ -162,7 +162,7 @@
             {% endif %}
         </article>
 
-        <article class="student-insight-band student-support-card">
+        <article data-lq-component="surface" class="lq-surface student-insight-band student-support-card">
             <div class="student-insight-band__head">
                 <div>
                     <h3>教师共享说明</h3>
@@ -178,7 +178,7 @@
             {% endif %}
             <form class="student-support-note-form" data-student-support-note-form data-student-id="{{ student.id }}">
                 <label for="student-support-note">补充说明</label>
-                <textarea id="student-support-note" name="note_text" maxlength="2400" placeholder="例如：长期请病假、家庭照护压力、无障碍支持需要、情绪状态、课堂外困难、需要避开的刺激点或更适合的沟通方式。">{{ teacher_note.note_text }}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" id="student-support-note" name="note_text" maxlength="2400" placeholder="例如：长期请病假、家庭照护压力、无障碍支持需要、情绪状态、课堂外困难、需要避开的刺激点或更适合的沟通方式。">{{ teacher_note.note_text }}</textarea>
                 <div class="student-support-note-meta">
                     <span data-student-support-note-status>
                         {% if teacher_note.has_note %}
@@ -190,8 +190,8 @@
                     <span><b data-student-support-note-count>{{ teacher_note.note_text | length }}</b>/2400</span>
                 </div>
                 <div class="student-support-note-actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-student-support-note-clear>清空</button>
-                    <button type="submit" class="btn btn-primary btn-sm">保存说明</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-student-support-note-clear>清空</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">保存说明</button>
                 </div>
             </form>
         </article>
@@ -236,7 +236,7 @@
             </div>
             <div class="student-course-list">
                 {% for course in insight.courses %}
-                <a class="student-course-card" href="/classroom/{{ course.class_offering_id }}">
+                <a data-lq-component="surface" class="lq-surface student-course-card" href="/classroom/{{ course.class_offering_id }}">
                     <div class="student-course-card__top">
                         <div>
                             <h4>{{ course.course_name }}</h4>
@@ -370,12 +370,12 @@
                 </div>
             </div>
             <div class="student-activity-grid">
-                <div class="student-activity-card"><span>课堂互动</span><strong>{{ activity.event_count }}</strong></div>
-                <div class="student-activity-card"><span>活跃天数</span><strong>{{ activity.active_days }}</strong></div>
-                <div class="student-activity-card"><span>聊天发言</span><strong>{{ activity.chat_message_count }}</strong></div>
-                <div class="student-activity-card"><span>AI 提问</span><strong>{{ activity.ai_question_count }}</strong></div>
-                <div class="student-activity-card"><span>在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
-                <div class="student-activity-card"><span>专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂互动</span><strong>{{ activity.event_count }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>活跃天数</span><strong>{{ activity.active_days }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>聊天发言</span><strong>{{ activity.chat_message_count }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>AI 提问</span><strong>{{ activity.ai_question_count }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
             </div>
         </aside>
     </section>

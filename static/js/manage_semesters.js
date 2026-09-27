@@ -177,7 +177,7 @@ function renderSemesterList() {
             data-semester-id="${semester.id}"
             aria-busy="${isSyncing ? 'true' : 'false'}"
         >
-            <button type="button" class="academic-list-main semester-select" data-action="select" data-semester-id="${semester.id}"
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-list-main semester-select" data-action="select" data-semester-id="${semester.id}"
                 aria-pressed="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
                 aria-label="切换当前焦点到 ${escapeHtml(semester.name || '该学期')}">
                 <strong>${escapeHtml(semester.name || '未命名学期')}</strong>
@@ -191,10 +191,10 @@ function renderSemesterList() {
                 </span>
             </button>
             <div class="academic-list-side">
-                ${config.embeddedMode ? '' : `<button type="button" class="btn btn-ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>`}
-                ${canManage ? `<button type="button" class="btn btn-outline btn-sm${isSyncing ? ' is-loading' : ''}" data-action="sync-calendar" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true"' : ''}>${isSyncing ? '<span class="semester-button-spinner" aria-hidden="true"></span><span>正在同步</span>' : '同步校历'}</button>` : ''}
-                ${canManage ? `<button type="button" class="btn btn-outline btn-sm" data-action="edit" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可编辑"' : ''}>编辑</button>` : ''}
-                ${canManage ? `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可删除"' : ''}>删除</button>` : ''}
+                ${config.embeddedMode ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="focus" data-semester-id="${semester.id}">查看日历</button>`}
+                ${canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm${isSyncing ? ' is-loading' : ''}" data-action="sync-calendar" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true"' : ''}>${isSyncing ? '<span class="semester-button-spinner" aria-hidden="true"></span><span>正在同步</span>' : '同步校历'}</button>` : ''}
+                ${canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="edit" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可编辑"' : ''}>编辑</button>` : ''}
+                ${canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-action="delete" data-semester-id="${semester.id}" ${isSyncing ? 'disabled aria-disabled="true" title="校历同步完成后可删除"' : ''}>删除</button>` : ''}
             </div>
         </div>
             `;

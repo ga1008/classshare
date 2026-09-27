@@ -75,12 +75,27 @@ class ManageLqPilotTemplateTests(unittest.TestCase):
         implicit = str(self.macros.page_head('原页头', **kwargs)).strip()
         explicit = str(self.macros.page_head('原页头', lq_enabled=False, **kwargs)).strip()
         self.assertEqual(implicit, explicit)
-        self.assertIn('class="page-head"', implicit)
+        tags = Tags(implicit)
+        header = next(attrs for tag, attrs in tags.tags if tag == 'header')
+        # The native branch now shares the material recipe but keeps the old
+        # macro interface, raw author attributes and existing controller hooks.
+        self.assertIn('page-head', header['class'].split())
+        self.assertIn('lq-page-head', header['class'].split())
+        self.assertEqual('surface', header['data-lq-component'])
+        self.assertEqual('h2', tags.ids('old-title')[0][0])
+        action = tags.ids('create')[0][1]
+        self.assertEqual('button', action['type'])
+        self.assertEqual('yes', action['data-legacy'])
+        self.assertIn('lq-btn--prominent', action['class'].split())
         self.assertIn('既有眉题', implicit)
         self.assertIn('data-legacy="yes"', implicit)
-        self.assertNotIn('lq-page-head', implicit)
         for macro, props in ((self.macros.filter_bar, {'search_id': 'search', 'search_attrs': 'data-legacy="yes"'}), (self.macros.empty_state, {'title': '暂无', 'action_label': '创建', 'action_attrs': 'data-legacy="yes"'})):
             self.assertEqual(str(macro(**props)), str(macro(lq_enabled=False, **props)))
+        search = Tags(str(self.macros.filter_bar('search', search_attrs='data-legacy="yes"'))).ids('search')[0][1]
+        self.assertEqual('input', search['data-lq-component'])
+        self.assertEqual('yes', search['data-legacy'])
+        self.assertEqual('search', search['type'])
+        self.assertNotIn('name', search)
 
     def test_pilot_page_head_retains_ids_explanation_actions_and_author_caller(self):
         source = '''{% from "macros/manage_page.html" import page_head %}{% call page_head('课程', lq_enabled=true, description='说明', title_id='course-title', explain='帮助', actions=[{'label':'创建','id':'create','variant':'primary'},{'label':'开课','href':'/manage/teaching/offerings','variant':'outline'}]) %}<input id="caller-draft" name="draft" value="0"><iframe id="caller-frame" title="预览" src="/preview"></iframe>{% endcall %}'''

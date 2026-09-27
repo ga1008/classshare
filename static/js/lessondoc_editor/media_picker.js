@@ -1,9 +1,10 @@
+import {adoptDomainControl} from '../lq/domain-controls.js';
 import {request,jsonRequest} from './api.js';
 import {dialog,el,button,field} from './ui.js';
 
 export function openMedia(config,onPick,onError) {
     dialog('包内素材',({body,foot,close})=>{
-        const input=el('input');input.type='file';input.accept='image/png,image/jpeg,image/gif,image/webp,image/svg+xml,audio/mpeg,audio/wav,audio/ogg,audio/mp4,video/mp4,video/webm';
+        const input=el('input');input.type='file';adoptDomainControl(input);input.accept='image/png,image/jpeg,image/gif,image/webp,image/svg+xml,audio/mpeg,audio/wav,audio/ogg,audio/mp4,video/mp4,video/webm';
         const status=el('p','lde-muted','图片 8 MiB · 音频 20 MiB · 视频 100 MiB。素材会保留在当前学习文档包内。'),grid=el('div','lde-media-grid'),more=button('加载更多',()=>load(cursor));body.append(input,status,grid,more);
         let cursor=0,busy=false;
         const choose=item=>{onPick(item);close();};

@@ -9,11 +9,11 @@
 {% endif %}
 {% set cert_student = cert.student_name|default(user_info.name|default('')) %}
 {% set cert_pattern_id = 'learning-certificate-pattern-' ~ cert.id %}
-<div class="learning-certificate-backdrop" id="learning-certificate-backdrop" hidden aria-hidden="true">
-    <div class="learning-certificate-shell" role="dialog" aria-modal="false" aria-labelledby="learning-certificate-title" aria-describedby="learning-certificate-description">
+<div class="lq-domain-region learning-certificate-backdrop" id="learning-certificate-backdrop" hidden aria-hidden="true" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region learning-certificate-shell" role="dialog" aria-modal="false" aria-labelledby="learning-certificate-title" aria-describedby="learning-certificate-description">
         <div class="learning-certificate-rays" aria-hidden="true"></div>
-        <div
-            class="learning-certificate-card"
+        <div data-lq-component="surface"
+            class="lq-surface learning-certificate-card"
             data-learning-certificate-card
             data-theme="{{ cert.theme|default(cert.level_key)|default(cert.stage_key) }}"
             data-certificate-id="{{ cert.id }}"
@@ -43,8 +43,8 @@
             <p id="learning-certificate-description">{{ cert_course }} · {{ cert_student }}</p>
             <code>{{ cert.certificate_code }}</code>
             <div class="learning-certificate-actions">
-                <button type="button" class="btn btn-secondary" id="learning-certificate-save">保存图片</button>
-                <button type="button" class="btn btn-primary" id="learning-certificate-close">收下道印</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass" id="learning-certificate-save">保存图片</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="learning-certificate-close">收下道印</button>
             </div>
         </div>
     </div>

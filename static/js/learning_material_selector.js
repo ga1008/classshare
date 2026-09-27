@@ -122,10 +122,10 @@ function renderBreadcrumbs() {
         return;
     }
 
-    const parts = ['<button type="button" data-crumb-root="true">材料库</button>'];
+    const parts = ['<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-root="true">材料库</button>'];
     state.breadcrumbs.forEach((crumb) => {
         parts.push('<span class="separator">/</span>');
-        parts.push(`<button type="button" data-crumb-id="${Number(crumb.id)}">${escapeHtml(crumb.name || '')}</button>`);
+        parts.push(`<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${Number(crumb.id)}">${escapeHtml(crumb.name || '')}</button>`);
     });
     dom.breadcrumbs.innerHTML = parts.join('');
 }
@@ -206,8 +206,8 @@ function renderList() {
             ? (item.is_renderable ? '可整体绑定为可渲染网页，或进入查找' : '进入子目录继续查找')
             : (item.is_renderable ? '可绑定并直接渲染的网页' : '可绑定为课堂学习文档');
         const action = isFolder
-            ? `<button type="button" class="btn btn-ghost btn-sm" data-action="open">进入</button>${item.is_renderable ? '<button type="button" class="btn btn-primary btn-sm" data-action="select">选择此目录</button>' : ''}`
-            : '<button type="button" class="btn btn-primary btn-sm" data-action="select">选择</button>';
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="open">进入</button>${item.is_renderable ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="select">选择此目录</button>' : ''}`
+            : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="select">选择</button>';
 
         return `
             <div class="learning-material-selector-row${isSelected ? ' is-selected' : ''}" data-id="${item.id}" data-node-type="${item.node_type}">

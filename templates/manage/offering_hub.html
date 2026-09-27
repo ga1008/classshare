@@ -49,16 +49,16 @@
         </div>
     {% endcall %}
 
-    <section class="class-control-panel offering-hub-controls" aria-label="课堂筛选与搜索">
+    <section data-lq-component="surface" class="lq-surface class-control-panel offering-hub-controls" aria-label="课堂筛选与搜索">
         <div class="class-control-main">
             <label class="academic-search class-search" for="offeringHubSearchInput">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                <input id="offeringHubSearchInput" type="search" class="form-control" placeholder="搜索课程、班级或教学班">
+                <input data-lq-component="input" id="offeringHubSearchInput" type="search" class="lq-input form-control" placeholder="搜索课程、班级或教学班">
             </label>
             <div class="class-filter-fields">
                 <label class="academic-filter-field" for="offeringHubSemesterFilter">
                     <span>学期</span>
-                    <select id="offeringHubSemesterFilter" class="form-control">
+                    <select data-lq-component="select" id="offeringHubSemesterFilter" class="lq-select form-control">
                         <option value="all">全部学期</option>
                         {% for option in hub_semester_options %}
                         <option value="{{ option.value }}"{% if option.is_default %} selected{% endif %}>{{ option.label }}</option>
@@ -67,7 +67,7 @@
                 </label>
                 <label class="academic-filter-field" for="offeringHubStatusFilter">
                     <span>状态</span>
-                    <select id="offeringHubStatusFilter" class="form-control">
+                    <select data-lq-component="select" id="offeringHubStatusFilter" class="lq-select form-control">
                         <option value="all">全部状态</option>
                         <option value="active">进行中</option>
                         <option value="upcoming">未开始</option>
@@ -80,7 +80,7 @@
                 </label>
                 <label class="academic-filter-field" for="offeringHubSortSelect">
                     <span>排序</span>
-                    <select id="offeringHubSortSelect" class="form-control">
+                    <select data-lq-component="select" id="offeringHubSortSelect" class="lq-select form-control">
                         <option value="next-session">按下次上课时间</option>
                         <option value="course">按课程与班级</option>
                         <option value="progress-desc">进度从高到低</option>
@@ -105,19 +105,19 @@
         </div>
         {% else %}
         <div class="filter-chips offering-hub-chips" data-filter-chips data-filter-target="#offeringHubStatusFilter" aria-label="按状态快速筛选">
-            <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ hub_offerings | length }}</span></button>
-            <button type="button" class="filter-chip" data-value="active">进行中<span class="filter-chip__count">{{ _active_count }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ hub_offerings | length }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="active">进行中<span class="filter-chip__count">{{ _active_count }}</span></button>
             {% if _combined_count %}
-            <button type="button" class="filter-chip" data-value="combined">合班<span class="filter-chip__count">{{ _combined_count }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="combined">合班<span class="filter-chip__count">{{ _combined_count }}</span></button>
             {% endif %}
             {% if _missing_textbook_count %}
-            <button type="button" class="filter-chip" data-value="missing-textbook">缺教材<span class="filter-chip__count">{{ _missing_textbook_count }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="missing-textbook">缺教材<span class="filter-chip__count">{{ _missing_textbook_count }}</span></button>
             {% endif %}
             {% if _missing_ai_count %}
-            <button type="button" class="filter-chip" data-value="missing-ai">缺 AI 配置<span class="filter-chip__count">{{ _missing_ai_count }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="missing-ai">缺 AI 配置<span class="filter-chip__count">{{ _missing_ai_count }}</span></button>
             {% endif %}
             {% if _finished_count %}
-            <button type="button" class="filter-chip" data-value="finished">课次已结束<span class="filter-chip__count">{{ _finished_count }}</span></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="finished">课次已结束<span class="filter-chip__count">{{ _finished_count }}</span></button>
             {% endif %}
         </div>
         {% endif %}
@@ -130,13 +130,13 @@
                     <h3>课堂资产</h3>
                     <p><span id="offeringHubResultCount">{{ hub_offerings | length }}</span> 个课堂符合当前条件</p>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" id="offeringHubFilterResetBtn">清除筛选</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="offeringHubFilterResetBtn">清除筛选</button>
             </div>
 
             <div class="class-card-list offering-hub-card-list" id="offeringHubList">
                 {% for offering in hub_offerings %}
-                <article
-                    class="class-manage-card offering-hub-card"
+                <article data-lq-component="surface"
+                    class="lq-surface class-manage-card offering-hub-card"
                     data-offering-card
                     data-offering-id="{{ offering.id }}"
                     data-semester-key="{{ offering.semester_id or offering.semester }}"
@@ -233,25 +233,25 @@
                     </div>
 
                     <div class="class-card-actions">
-                        <a class="btn btn-primary btn-sm" href="/classroom/{{ offering.id }}">进入课堂</a>
-                        <a class="btn btn-outline btn-sm" href="/manage/teaching/offerings?offering_id={{ offering.id }}" data-action="edit-config" data-offering-title="{{ offering.course_name }} — {{ offering.class_name }}">编辑配置</a>
-                        <a class="btn btn-outline btn-sm" href="/manage/teaching/ai">AI 助教</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="/classroom/{{ offering.id }}">进入课堂</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/offerings?offering_id={{ offering.id }}" data-action="edit-config" data-offering-title="{{ offering.course_name }} — {{ offering.class_name }}">编辑配置</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/ai">AI 助教</a>
                         {% if offering.lessondoc_pack %}
-                        <a class="btn btn-outline btn-sm" href="{{ offering.lessondoc_pack.render_shell_url }}" target="_blank" rel="noopener">学习文档</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="{{ offering.lessondoc_pack.render_shell_url }}" target="_blank" rel="noopener">学习文档</a>
                         {% else %}
-                        <button
+                        <button data-lq-component="button"
                             type="button"
-                            class="btn btn-outline btn-sm"
+                            class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm"
                             data-action="bind-lessondoc"
                             data-offering-id="{{ offering.id }}"
                             data-course-id="{{ offering.course_id }}"
                             title="把本课程的学习文档包绑定到这个课堂（首页 + 各课次一次绑齐）"
                         >绑定学习文档</button>
                         {% endif %}
-                        <button type="button" class="btn btn-ghost btn-sm" data-action="toggle-detail">明细</button>
-                        <button
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="toggle-detail">明细</button>
+                        <button data-lq-component="button"
                             type="button"
-                            class="btn btn-ghost btn-sm text-danger"
+                            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger"
                             data-action="delete-offering"
                             data-offering-id="{{ offering.id }}"
                             data-offering-name="{{ offering.course_name }} — {{ offering.class_name }}"
@@ -265,7 +265,7 @@
                     <strong>还没有课堂</strong>
                     先完成教务同步，再到「开设课堂」一键把课程与班级组合成课堂。
                     <div class="offering-hub-empty-actions">
-                        <a class="btn btn-primary btn-sm" href="/manage/teaching/offerings">去开设课堂</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="/manage/teaching/offerings">去开设课堂</a>
                     </div>
                 </div>
                 {% endfor %}
@@ -277,7 +277,7 @@
             </div>
         </div>
 
-        <aside class="class-import-panel offering-hub-aside">
+        <aside data-lq-component="surface" class="lq-surface class-import-panel offering-hub-aside">
             {% if hub_bootstrap %}
             <div class="offering-hub-aside-block offering-hub-bootstrap">
                 <div class="class-import-head">
@@ -293,7 +293,7 @@
                     </li>
                     {% endfor %}
                 </ul>
-                <a class="btn btn-primary" href="/manage/teaching/offerings">一键开设课堂</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/manage/teaching/offerings">一键开设课堂</a>
             </div>
             {% endif %}
 
@@ -304,16 +304,16 @@
                     <p>点击待办直接过滤对应课堂。</p>
                 </div>
                 <div class="offering-hub-todo-list">
-                    <button type="button" class="offering-hub-todo{% if not hub_todo.missing_textbook %} is-done{% endif %}" data-todo-status="missing-textbook" {% if not hub_todo.missing_textbook %}disabled{% endif %}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass offering-hub-todo{% if not hub_todo.missing_textbook %} is-done{% endif %}" data-todo-status="missing-textbook" {% if not hub_todo.missing_textbook %}disabled{% endif %}>
                         <b>{{ hub_todo.missing_textbook }}</b><span>个课堂缺教材</span>
                     </button>
-                    <button type="button" class="offering-hub-todo{% if not hub_todo.missing_ai %} is-done{% endif %}" data-todo-status="missing-ai" {% if not hub_todo.missing_ai %}disabled{% endif %}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass offering-hub-todo{% if not hub_todo.missing_ai %} is-done{% endif %}" data-todo-status="missing-ai" {% if not hub_todo.missing_ai %}disabled{% endif %}>
                         <b>{{ hub_todo.missing_ai }}</b><span>个课堂缺 AI 配置</span>
                     </button>
-                    <button type="button" class="offering-hub-todo{% if not hub_todo.unscheduled %} is-done{% endif %}" data-todo-status="unscheduled" {% if not hub_todo.unscheduled %}disabled{% endif %}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass offering-hub-todo{% if not hub_todo.unscheduled %} is-done{% endif %}" data-todo-status="unscheduled" {% if not hub_todo.unscheduled %}disabled{% endif %}>
                         <b>{{ hub_todo.unscheduled }}</b><span>个课堂未排课</span>
                     </button>
-                    <button type="button" class="offering-hub-todo{% if not hub_todo.finished %} is-done{% endif %}" data-todo-status="finished" {% if not hub_todo.finished %}disabled{% endif %}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass offering-hub-todo{% if not hub_todo.finished %} is-done{% endif %}" data-todo-status="finished" {% if not hub_todo.finished %}disabled{% endif %}>
                         <b>{{ hub_todo.finished }}</b><span>个课堂课次已结束，待收尾</span>
                     </button>
                 </div>
@@ -345,16 +345,16 @@
     </section>
 </div>
 
-<div class="offering-hub-drawer-backdrop" id="offeringHubEditDrawer" hidden aria-hidden="true">
-    <aside class="offering-hub-drawer" role="dialog" aria-modal="true" aria-labelledby="offeringHubDrawerTitle" tabindex="-1">
+<div class="lq-domain-region offering-hub-drawer-backdrop" id="offeringHubEditDrawer" hidden aria-hidden="true" data-lq-component="layer">
+    <aside data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised offering-hub-drawer" role="dialog" aria-modal="true" aria-labelledby="offeringHubDrawerTitle" tabindex="-1">
         <div class="offering-hub-drawer-head">
             <div>
                 <span>Edit Offering</span>
                 <h3 id="offeringHubDrawerTitle">编辑课堂配置</h3>
             </div>
             <div class="offering-hub-drawer-tools">
-                <a class="btn btn-outline btn-sm" id="offeringHubDrawerOpenFull" href="/manage/teaching/offerings">整页打开</a>
-                <button type="button" class="class-student-drawer-close" id="offeringHubDrawerClose" aria-label="关闭编辑抽屉">&times;</button>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="offeringHubDrawerOpenFull" href="/manage/teaching/offerings">整页打开</a>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-student-drawer-close" id="offeringHubDrawerClose" aria-label="关闭编辑抽屉">&times;</button>
             </div>
         </div>
         <iframe id="offeringHubDrawerFrame" data-lq-theme-bridge="app" title="课堂配置编辑器"></iframe>

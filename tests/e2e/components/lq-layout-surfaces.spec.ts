@@ -46,7 +46,7 @@ result = dict(workspace=workspace)
 result['calendar'] = env.get_template('partials/semester_calendar_panel.html').render()
 result['collapsible'] = env.from_string("{% from 'macros/lq/collapsible.html' import lq_collapsible %}{% call lq_collapsible('layout-courses', '我的课堂', mode='responsive') %}<p>保留课程内容</p>{% endcall %}").render()
 classroom = (root / 'templates/classroom_main_v4.html').read_text(encoding='utf-8')
-card = re.search(r'<article\s+class="card assignment-card assignment-card-unified[\s\S]+?</article>', classroom)
+card = re.search(r'<article\b[^>]*class="[^"]*\bassignment-card-unified[\s\S]+?</article>', classroom)
 assert card
 # Full production article; synthetic optional values exclude unrelated controls.
 assignment = dict.fromkeys(re.findall(r'assignment\.(\w+)', card.group()))
@@ -65,7 +65,7 @@ for role in ['student', 'teacher']:
                    workspace=workspace, inbox=dict(total=3, items=items, sources=[]))
     template = 'dashboard.html' if role == 'student' else 'dashboard_teacher.html'
     source = (root / 'templates' / template).read_text(encoding='utf-8')
-    section = re.search(r'<section class="ls-focus[\s\S]+?</section>', source)
+    section = re.search(r'<section\b[^>]*class="[^"]*\bls-focus\b[\s\S]+?</section>', source)
     assert section, template
     result[role] = dict(
         topbar=env.get_template('partials/lq_navbar_topbar.html' if role == 'student' else 'manage/lq_topbar.html').render(**context),

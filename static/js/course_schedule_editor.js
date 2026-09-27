@@ -415,7 +415,7 @@ function init(boot) {
                 ...swaps.map(swap => `<span class="cse-week__swap" data-cse-swap-dot="${escapeHtml(swap.workday_date)}" style="--cse-swap:${swapColor(swap)}" title="${escapeHtml(swapTitle(swap))}">${Number(swap.week) === index ? '调休' : '被补'}</span>`),
             ].filter(Boolean).join('');
             const lockedTitle = locked ? '本周全部日期已过去或已超出学期，不可放置' : (selection && free === 0 ? '本周没有学生与本人都有空的时段' : '');
-            return `<button type="button" class="${classes}" data-cse-week="${index}"${locked ? ' data-locked="1"' : ''} aria-pressed="${index === state.activeWeek}"${lockedTitle ? ` title="${escapeHtml(lockedTitle)}"` : ''}>
+            return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ${classes}" data-cse-week="${index}"${locked ? ' data-locked="1"' : ''} aria-pressed="${index === state.activeWeek}"${lockedTitle ? ` title="${escapeHtml(lockedTitle)}"` : ''}>
                 <strong class="cse-week__title">${escapeHtml(week.label)}</strong>
                 <small class="cse-week__range">${escapeHtml(week.date_range_label || '')}${week.lesson_count ? ` · ${week.lesson_count} 节` : ''}</small>
                 ${marks ? `<span class="cse-week__marks">${marks}</span>` : ''}
@@ -443,7 +443,7 @@ function init(boot) {
         const selected = state.selectedKey && (state.selectedKey === key || (ghost && state.selectedKey === lesson.source_event_key) || (moved && state.selectedKey === `draft:${lesson.edit_draft.id}`));
         const dragging = state.drag && (state.drag.sourceKey === key || state.drag.ghostKey === key);
         const pendingChange = lesson.adjustment && lesson.counts_towards_total === false;
-        const classes = ['cs-lesson', 'cs-lesson--cell', 'cse-lesson', ghost ? 'cse-lesson--ghost' : '', moved ? 'cse-lesson--moved' : '', mirror ? 'cse-lesson--mirror' : '', past ? 'cse-lesson--past' : '',
+        const classes = ['lq-domain-region', 'cs-lesson', 'cs-lesson--cell', 'cse-lesson', ghost ? 'cse-lesson--ghost' : '', moved ? 'cse-lesson--moved' : '', mirror ? 'cse-lesson--mirror' : '', past ? 'cse-lesson--past' : '',
             selected ? 'is-selected' : '', dragging ? 'is-drag-source' : '', pendingChange ? 'cs-lesson--proposed' : ''].filter(Boolean).join(' ');
         const roomBusy = ghost ? lesson.edit_room_status === 'busy' : (moved && lesson.edit_draft.room_status === 'busy');
         const tag = mirror ? `<span class="cse-tag cse-tag--workday">${escapeHtml(lesson.mirror_label || '调休上课')}</span>`
@@ -453,9 +453,9 @@ function init(boot) {
                         : past ? '<span class="cse-tag cse-tag--muted">已上过 · 不可调整</span>' : '';
         const time = [lesson.actual_date, lesson.section_label].filter(Boolean).join(' · ');
         return `<div class="cs-lesson-slot" style="${gridPos}">
-            <div class="${classes}" data-cse-lesson="${escapeHtml(key)}" data-status="${escapeHtml(status)}"${mirror ? ' data-mirror="1"' : ''}${past ? ' data-past="1"' : ''} tabindex="0" role="button"
+            <div data-lq-component="region" class="${classes}" data-cse-lesson="${escapeHtml(key)}" data-status="${escapeHtml(status)}"${mirror ? ' data-mirror="1"' : ''}${past ? ' data-past="1"' : ''} tabindex="0" role="button"
                  aria-label="${escapeHtml(`${lesson.course_name} ${time} ${room}`)}" title="${escapeHtml(`${lesson.course_name} · ${room}`)}" style="--cs-accent:hsl(var(--ls-primary))">
-                <div class="cs-lesson__surface">
+                <div data-lq-component="surface" class="lq-surface cs-lesson__surface">
                     <div class="cs-lesson__main">
                         <strong class="cs-lesson__title">${escapeHtml(lesson.course_name)}</strong>
                         <div class="cs-lesson__details">
@@ -692,15 +692,15 @@ function init(boot) {
         const proofs = draft ? (draft.proofs || []) : [];
         const proofsBlock = draft ? `<section class="cse-section" data-cse-proofs>
                     <div class="cse-section__title">证明材料 <span class="cse-section__hint">放假通知、会议通知等；提交教务申请时需一并附上</span></div>
-                    ${proofs.length ? `<div class="cse-proofs">${proofs.map(p => `<span class="cse-proof"><a href="${API}/drafts/${draft.id}/proofs/${escapeHtml(p.id)}" target="_blank" rel="noopener" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a><small>${formatBytes(p.size)}</small><button type="button" class="cse-proof__remove" data-cse-proof-del="${escapeHtml(p.id)}" aria-label="删除 ${escapeHtml(p.name)}"${locked ? ' disabled' : ''}>×</button></span>`).join('')}</div>` : '<div class="cse-materials__empty">还没有上传证明材料。</div>'}
-                    <label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-proof-input multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden${locked ? ' disabled' : ''}>${state.proofsBusy ? '上传中…' : '添加证明材料'}</label>
+                    ${proofs.length ? `<div class="cse-proofs">${proofs.map(p => `<span class="cse-proof"><a href="${API}/drafts/${draft.id}/proofs/${escapeHtml(p.id)}" target="_blank" rel="noopener" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a><small>${formatBytes(p.size)}</small><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-proof__remove" data-cse-proof-del="${escapeHtml(p.id)}" aria-label="删除 ${escapeHtml(p.name)}"${locked ? ' disabled' : ''}>×</button></span>`).join('')}</div>` : '<div class="cse-materials__empty">还没有上传证明材料。</div>'}
+                    <label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input data-lq-component="file" class="lq-native-file" type="file" data-cse-proof-input multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden${locked ? ' disabled' : ''}>${state.proofsBusy ? '上传中…' : '添加证明材料'}</label>
                 </section>` : '';
         const materialsBlock = renderMaterialsBlock(lesson);
         refs.drawer.hidden = false;
         refs.drawer.innerHTML = `
             <div class="cse-drawer__head">
                 <div><h3>${escapeHtml(lesson.course_name)}</h3><p>${escapeHtml(lesson.class_label || lesson.teaching_class_name || '')}${lesson.teaching_class_name && lesson.class_label !== lesson.teaching_class_name ? ` · ${escapeHtml(lesson.teaching_class_name)}` : ''}</p></div>
-                <button type="button" class="cse-drawer__close" data-cse-close aria-label="关闭课次属性">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-drawer__close" data-cse-close aria-label="关闭课次属性">×</button>
             </div>
             <div class="cse-drawer__body">
                 ${statusBlock}
@@ -714,27 +714,27 @@ function init(boot) {
                 <section class="cse-section">
                     <div class="cse-section__title">调整到</div>
                     <div class="cse-field-grid">
-                        <div class="cse-field"><label for="cseWeek">周次</label><select id="cseWeek" data-cse-field="week" data-lq-dropdown aria-label="周次"${locked ? ' disabled' : ''}>${weekOptions}</select></div>
-                        <div class="cse-field"><label for="cseStart">节次</label><select id="cseStart" data-cse-field="start" data-lq-dropdown aria-label="节次"${locked ? ' disabled' : ''}>${startOptions}</select></div>
-                        <div class="cse-field cse-field--full"><label for="cseWeekday">星期</label><select id="cseWeekday" data-cse-field="weekday" data-lq-dropdown aria-label="星期"${locked ? ' disabled' : ''}>${dayOptions}</select></div>
+                        <div class="cse-field"><label for="cseWeek">周次</label><select data-lq-component="select" class="lq-select" id="cseWeek" data-cse-field="week" data-lq-dropdown aria-label="周次"${locked ? ' disabled' : ''}>${weekOptions}</select></div>
+                        <div class="cse-field"><label for="cseStart">节次</label><select data-lq-component="select" class="lq-select" id="cseStart" data-cse-field="start" data-lq-dropdown aria-label="节次"${locked ? ' disabled' : ''}>${startOptions}</select></div>
+                        <div class="cse-field cse-field--full"><label for="cseWeekday">星期</label><select data-lq-component="select" class="lq-select" id="cseWeekday" data-cse-field="weekday" data-lq-dropdown aria-label="星期"${locked ? ' disabled' : ''}>${dayOptions}</select></div>
                     </div>
                     ${dayNote}
                     <div class="cse-field" data-cse-room-dropdown>
                         <label for="cseRoom">教室（教务场地）</label>
-                        <select id="cseRoom" data-cse-field="room" data-lq-dropdown data-lq-searchable data-lq-placeholder="沿用原教室" aria-label="教室"${locked ? ' disabled' : ''}>${roomOptions}</select>
+                        <select data-lq-component="select" class="lq-select" id="cseRoom" data-cse-field="room" data-lq-dropdown data-lq-searchable data-lq-placeholder="沿用原教室" aria-label="教室"${locked ? ' disabled' : ''}>${roomOptions}</select>
                         <div class="cse-field__hint">${form.room_id ? `已选教务场地 ${escapeHtml(form.room_id)}` : '输入楼名或教室号搜索教务场地；不选则沿用原教室'}</div>
                     </div>
                     <div class="cse-verdict" data-cse-verdict></div>
                     <div class="cse-field cse-free-rooms" data-cse-free-rooms-panel>
                         <div class="cse-free-rooms__head">
                             <label>该时段空闲教室（实时查教务）</label>
-                            <button type="button" class="cse-btn cse-btn--sm" data-cse-free-rooms${locked ? ' disabled' : ''}>查询空闲教室</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-free-rooms${locked ? ' disabled' : ''}>查询空闲教室</button>
                         </div>
                         <div class="cse-free-rooms__body" data-cse-free-rooms-list></div>
                     </div>
                     <div class="cse-field">
-                        <div class="cse-field__labelrow"><label for="cseReason">调课原因</label><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-reason-ai${locked ? ' disabled' : ''}>AI 填写</button></div>
-                        <textarea id="cseReason" class="cse-textarea" data-cse-field="reason" maxlength="400" rows="2" placeholder="简短说明，例如：国庆假期调休，课程顺延"${locked ? ' disabled' : ''}>${escapeHtml(form.reason)}</textarea>
+                        <div class="cse-field__labelrow"><label for="cseReason">调课原因</label><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm cse-btn--ai" data-cse-reason-ai${locked ? ' disabled' : ''}>AI 填写</button></div>
+                        <textarea data-lq-component="textarea" id="cseReason" class="lq-textarea cse-textarea" data-cse-field="reason" maxlength="400" rows="2" placeholder="简短说明，例如：国庆假期调休，课程顺延"${locked ? ' disabled' : ''}>${escapeHtml(form.reason)}</textarea>
                         <div class="cse-field__hint">随草稿一并写入教务，可在教务提交时修改。</div>
                     </div>
                 </section>
@@ -742,10 +742,10 @@ function init(boot) {
                 ${materialsBlock}
             </div>
             <div class="cse-drawer__foot">
-                ${locked ? '' : '<button type="button" class="cse-btn cse-btn--primary" data-cse-save>保存变更</button>'}
-                ${draft && draft.status !== 'pushed' ? `<button type="button" class="cse-btn cse-btn--danger" data-cse-discard="${draft.id}">撤销变更</button>` : ''}
-                ${draft && draft.status === 'pushed' ? `<button type="button" class="cse-btn cse-btn--danger" data-cse-withdraw="${draft.id}">从教务撤回</button>` : ''}
-                ${lesson.classroom_url ? `<a class="cse-btn" href="${escapeHtml(lesson.classroom_url)}">进入课堂</a>` : ''}
+                ${locked ? '' : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--primary lq-btn--prominent" data-cse-save>保存变更</button>'}
+                ${draft && draft.status !== 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--danger lq-btn--destructive" data-cse-discard="${draft.id}">撤销变更</button>` : ''}
+                ${draft && draft.status === 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--danger lq-btn--destructive" data-cse-withdraw="${draft.id}">从教务撤回</button>` : ''}
+                ${lesson.classroom_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn" href="${escapeHtml(lesson.classroom_url)}">进入课堂</a>` : ''}
             </div>`;
         bindDrawerDropdowns();
         if (lesson.class_offering_id && lesson.session_id) loadMaterials(lesson);
@@ -871,7 +871,7 @@ function init(boot) {
         if (fr.status !== 'success') { list.innerHTML = `<div class="cse-materials__empty">${escapeHtml(fr.message || '查询失败')}</div>`; return; }
         const roomLine = fr.roomStatus === 'busy' ? '<div class="cse-status cse-status--conflict">原教室该时段已被占用，请从下方选择一间空闲教室。</div>'
             : fr.roomStatus === 'free' ? '<div class="cse-status cse-status--pushed">原教室该时段空闲，可直接保存。</div>' : '';
-        const items = fr.items.slice(0, 40).map(room => `<button type="button" class="cse-rooms__item" data-cse-room="${escapeHtml(room.place_id || room.room_code || '')}" data-cse-room-name="${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}"><span>${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}</span><small>${escapeHtml([room.campus_name, room.building_name, room.seat_count ? `${room.seat_count} 座` : '', room.room_type_name].filter(Boolean).join(' · '))}</small></button>`).join('');
+        const items = fr.items.slice(0, 40).map(room => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-rooms__item" data-cse-room="${escapeHtml(room.place_id || room.room_code || '')}" data-cse-room-name="${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}"><span>${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}</span><small>${escapeHtml([room.campus_name, room.building_name, room.seat_count ? `${room.seat_count} 座` : '', room.room_type_name].filter(Boolean).join(' · '))}</small></button>`).join('');
         list.innerHTML = `${roomLine}${items ? `<div class="cse-free-rooms__grid">${items}</div><div class="cse-field__hint">共 ${fr.items.length} 间空闲教室，点击即选用。</div>` : '<div class="cse-materials__empty">该时段没有空闲教室。</div>'}`;
     }
 
@@ -930,7 +930,7 @@ function init(boot) {
         } else if (cache.key === cacheKey && cache.error) {
             body = `<div class="cse-materials__empty">${escapeHtml(cache.error)}</div>`;
         }
-        return `<section class="cse-section" data-cse-materials><div class="cse-section__title">上课材料</div>${body}<div><a class="cse-btn cse-btn--sm" href="${escapeHtml(manageUrl)}">管理课次材料 →</a></div></section>`;
+        return `<section class="cse-section" data-cse-materials><div class="cse-section__title">上课材料</div>${body}<div><a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" href="${escapeHtml(manageUrl)}">管理课次材料 →</a></div></section>`;
     }
 
     async function loadMaterials(lesson) {
@@ -1005,10 +1005,10 @@ function init(boot) {
             ${precheckOf(draft) && draft.status !== 'pushed' && !draft.remote_message ? `<div class="cse-draft__msg">${escapeHtml(precheckOf(draft).message || '')}</div>` : ''}
             ${conflictDetailsHtml(draft.remote_conflict?.details?.length ? draft.remote_conflict : precheckOf(draft))}
             <div class="cse-draft__actions">
-                <button type="button" class="cse-btn cse-btn--sm" data-cse-locate="${draft.id}">定位</button>
-                ${draft.status === 'pushed' ? `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-withdraw="${draft.id}">从教务撤回</button>` : `<button type="button" class="cse-btn cse-btn--sm cse-btn--danger" data-cse-discard="${draft.id}">撤销</button>`}
-                ${draft.status !== 'pushed' ? `<button type="button" class="cse-btn cse-btn--sm" data-cse-precheck="${draft.id}">${precheckOf(draft) ? '重新预检' : '预检冲突'}</button>` : ''}
-                ${draft.status === 'conflict' && !draft.remote_conflict?.hard ? `<button type="button" class="cse-btn cse-btn--sm" data-cse-force="${draft.id}">冲突仍保存</button>` : ''}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-locate="${draft.id}">定位</button>
+                ${draft.status === 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--danger lq-btn--destructive" data-cse-withdraw="${draft.id}">从教务撤回</button>` : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--danger lq-btn--destructive" data-cse-discard="${draft.id}">撤销</button>`}
+                ${draft.status !== 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-precheck="${draft.id}">${precheckOf(draft) ? '重新预检' : '预检冲突'}</button>` : ''}
+                ${draft.status === 'conflict' && !draft.remote_conflict?.hard ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-force="${draft.id}">冲突仍保存</button>` : ''}
             </div>
         </div>`).join('');
         const next = pushed ? `<div class="cse-drafts__next"><span>已有 ${pushed} 项保存到教务草稿。下一步：</span><a href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」 ↗</a></div>` : '';
@@ -1200,17 +1200,17 @@ function init(boot) {
         };
         const renderCheckNote = () => {
             if (!check) return '';
-            if (check.status === 'missing_credential') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>未配置教务账号，无法提前检测</strong><span>${escapeHtml(check.message || '')}</span><a class="cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a></div>`;
-            if (check.status !== 'success') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>检测未完成</strong><span>${escapeHtml(check.message || '')} 可重试，或直接尝试保存（保存时教务仍会逐项检测，有冲突的不会写入）。</span><button type="button" class="cse-btn cse-btn--sm" data-cse-push-recheck>重试检测</button></div>`;
+            if (check.status === 'missing_credential') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>未配置教务账号，无法提前检测</strong><span>${escapeHtml(check.message || '')}</span><a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a></div>`;
+            if (check.status !== 'success') return `<div class="cse-push__block cse-status cse-status--conflict"><strong>检测未完成</strong><span>${escapeHtml(check.message || '')} 可重试，或直接尝试保存（保存时教务仍会逐项检测，有冲突的不会写入）。</span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-push-recheck>重试检测</button></div>`;
             const clean = !check.conflicts && !check.hard && !check.failed;
-            return `<div class="cse-push__block cse-status ${clean ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>教务预检结果</strong><span>${escapeHtml(check.message || '')}</span><button type="button" class="cse-btn cse-btn--sm" data-cse-push-recheck>重新检测</button></div>`;
+            return `<div class="cse-push__block cse-status ${clean ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>教务预检结果</strong><span>${escapeHtml(check.message || '')}</span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-push-recheck>重新检测</button></div>`;
         };
         const renderDoneNote = () => {
             if (!pushResult) return '';
             const title = pushResult.status === 'success' ? '已保存到教务草稿' : pushResult.status === 'partial' ? '部分已保存，其余需处理' : pushResult.status === 'missing_credential' ? '未配置教务账号' : '未能保存';
             const proofCount = current().reduce((n, d) => n + ((d.proofs || []).length), 0);
-            const steps = pushResult.pushed ? `<div class="cse-push__block"><strong>下一步</strong><span>1) 登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」；2) 提交时附上证明材料${proofCount ? '（变更清单可下载已上传的材料）' : '（本批尚未上传）'}；3) 审批通过并同步后，剩余课次自动重排，材料随序号不变。</span><a class="cse-btn cse-btn--sm cse-btn--primary" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">打开教务调停课申请 ↗</a></div>` : '';
-            const fix = pushResult.status === 'missing_credential' ? `<a class="cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a>` : '';
+            const steps = pushResult.pushed ? `<div class="cse-push__block"><strong>下一步</strong><span>1) 登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」；2) 提交时附上证明材料${proofCount ? '（变更清单可下载已上传的材料）' : '（本批尚未上传）'}；3) 审批通过并同步后，剩余课次自动重排，材料随序号不变。</span><a data-lq-component="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--primary lq-btn--prominent" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">打开教务调停课申请 ↗</a></div>` : '';
+            const fix = pushResult.status === 'missing_credential' ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a>` : '';
             return `<div class="cse-push__block cse-status ${pushResult.status === 'success' ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>${title}</strong><span>${escapeHtml(pushResult.message || '')}</span>${fix}</div>${steps}`;
         };
         const renderBody = () => {
@@ -1224,17 +1224,17 @@ function init(boot) {
             body.innerHTML = `<p class="cse-push__lead">${done ? '结果如下，有问题的项已给出建议。' : `${list.length} 项变更会先交给教务做冲突检测（不保存）；确认没有冲突的才写入教务的调停课申请草稿（待提交），平台不会替您提交申请。`}</p>
                 ${done ? renderDoneNote() : renderCheckNote()}
                 <ul class="cse-push__list">${list.map(renderItem).join('')}</ul>
-                ${done || !missingReason.length ? '' : `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button type="button" class="cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>`}
-                ${done ? '' : `<div class="cse-push__block"><strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span><label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label></div>`}
+                ${done || !missingReason.length ? '' : `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>`}
+                ${done ? '' : `<div class="cse-push__block"><strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span><label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input data-lq-component="file" class="lq-native-file" type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label></div>`}
                 ${done ? '' : planHtml}`;
             const busy = phase === 'checking' || phase === 'saving';
             const blocked = check && (check.status === 'missing_credential' || check.status === 'nothing');
             const confirmLabel = phase === 'checking' ? '正在检测…' : phase === 'saving' ? '正在保存…' : unchecked() ? '直接尝试保存' : `保存无冲突的 ${okIds().length} 项`;
             footer.innerHTML = done
-                ? '<button type="button" class="cse-btn cse-btn--primary" data-cse-push-cancel>完成</button>'
-                : `<button type="button" class="cse-btn" data-cse-push-cancel>取消</button>
-                   ${softIds().length ? `<button type="button" class="cse-btn cse-btn--danger" data-cse-push-force${busy ? ' disabled' : ''}>连同 ${softIds().length} 项冲突一起保存</button>` : ''}
-                   <button type="button" class="cse-btn cse-btn--primary" data-cse-push-confirm${busy || blocked || (!unchecked() && !okIds().length) ? ' disabled' : ''} title="${unchecked() ? '预检未完成；保存时教务仍会逐项检测冲突，有冲突的不会写入' : ''}">${confirmLabel}</button>`;
+                ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--primary lq-btn--prominent" data-cse-push-cancel>完成</button>'
+                : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn" data-cse-push-cancel>取消</button>
+                   ${softIds().length ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--danger lq-btn--destructive" data-cse-push-force${busy ? ' disabled' : ''}>连同 ${softIds().length} 项冲突一起保存</button>` : ''}
+                   <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--primary lq-btn--prominent" data-cse-push-confirm${busy || blocked || (!unchecked() && !okIds().length) ? ' disabled' : ''} title="${unchecked() ? '预检未完成；保存时教务仍会逐项检测冲突，有冲突的不会写入' : ''}">${confirmLabel}</button>`;
         };
         renderBody();
         const root = dialogs.createDialog({ title: '检测冲突并保存到教务', body, footer, size: 'lg', attrs: { 'data-cse-push-dialog': '' } });

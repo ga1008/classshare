@@ -9,10 +9,10 @@
 {% from "macros/app_topbar.html" import app_topbar_icon, topbar_action %}
 {% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
 <div class="materials-toolbar-group materials-header-actions">
-    <div class="materials-upload-menu" id="materials-create-menu">
-        <button
+    <div data-lq-component="menu" class="lq-domain-region materials-upload-menu" id="materials-create-menu">
+        <button data-lq-component="button"
             type="button"
-            class="app-topbar-action app-topbar-action--primary app-topbar-action--tone-indigo materials-upload-menu__trigger"
+            class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary app-topbar-action--tone-indigo materials-upload-menu__trigger"
             id="materials-create-menu-btn"
             title="新建"
             aria-label="新建"
@@ -25,12 +25,12 @@
                 <small>文件夹 / 文档</small>
             </span>
         </button>
-        <div class="materials-upload-dropdown" id="materials-create-dropdown" hidden>
-            <button type="button" id="materials-create-folder-btn">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised materials-upload-dropdown" id="materials-create-dropdown" hidden>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-create-folder-btn">
                 <strong>新建文件夹</strong>
                 <small>在当前目录下创建</small>
             </button>
-            <button type="button" id="materials-create-file-btn">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-create-file-btn">
                 <strong>新建文档</strong>
                 <small>Markdown 材料文件</small>
             </button>
@@ -43,10 +43,10 @@
         {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
     {% endif %}
     {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
-    <div class="materials-upload-menu" id="materials-upload-menu">
-        <button
+    <div data-lq-component="menu" class="lq-domain-region materials-upload-menu" id="materials-upload-menu">
+        <button data-lq-component="button"
             type="button"
-            class="app-topbar-action app-topbar-action--primary app-topbar-action--tone-teal materials-upload-menu__trigger"
+            class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary app-topbar-action--tone-teal materials-upload-menu__trigger"
             id="materials-upload-menu-btn"
             data-testid="p03-materials-upload-menu"
             title="上传文件"
@@ -60,12 +60,12 @@
                 <small>单个资料 / zip 自动解压</small>
             </span>
         </button>
-        <div class="materials-upload-dropdown" id="materials-upload-dropdown" hidden>
-            <button type="button" id="materials-ai-import-open-btn">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised materials-upload-dropdown" id="materials-upload-dropdown" hidden>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-ai-import-open-btn">
                 <strong>AI解析</strong>
                 <small>按材料类型导入</small>
             </button>
-            <button type="button" id="materials-upload-direct-btn" data-testid="p03-materials-upload-direct">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-upload-direct-btn" data-testid="p03-materials-upload-direct">
                 <strong>直接上传</strong>
                 <small>保留原始文件</small>
             </button>
@@ -137,26 +137,26 @@
         {% endif %}
     </div>
     <div class="materials-process-guide__actions">
-        <button type="button" class="btn btn-primary btn-sm" data-process-classroom-generate>从课堂生成</button>
-        <button type="button" class="btn btn-outline btn-sm" data-process-ai-import>导入 Excel 解析</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-process-classroom-generate>从课堂生成</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-process-ai-import>导入 Excel 解析</button>
     </div>
 </section>
 {% endif %}
 
 {% include "partials/materials/library_card.html" %}
 
-<input type="file" id="materials-file-input" class="hidden" data-testid="p03-materials-file-input" multiple>
-<input type="file" id="materials-folder-input" class="hidden" webkitdirectory directory multiple>
-<input
+<input data-lq-component="file" type="file" id="materials-file-input" class="lq-native-file hidden" data-testid="p03-materials-file-input" multiple>
+<input data-lq-component="file" type="file" id="materials-folder-input" class="lq-native-file hidden" webkitdirectory directory multiple>
+<input data-lq-component="file"
     type="file"
     id="materials-ai-import-file-input"
-    class="hidden"
+    class="lq-native-file hidden"
     accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.md,.markdown,.csv,.png,.jpg,.jpeg,.webp,.bmp,.gif"
 >
-<input
+<input data-lq-component="file"
     type="file"
     id="materials-ai-generate-file-input"
-    class="hidden"
+    class="lq-native-file hidden"
     multiple
     accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.md,.markdown,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.gif,.ppt,.pptx"
 >

@@ -40,6 +40,10 @@
 @import "./pages/manage-archive.css";
 @import "./components/nav-menu.css";
 @import "./pages/page-material.css";
-@import "./components/material-boundaries.css";
 @import "./components/control-states.css";
 @import "./components/control-geometry.css";
+@import "./components/declarative.css";
+@import "./components/domain-controls.css";
+@import "./components/motion.css";
+/* User transparency/contrast preferences have the final material authority. */
+@import "./components/material-boundaries.css";

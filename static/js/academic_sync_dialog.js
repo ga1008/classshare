@@ -175,7 +175,7 @@ function renderCourseNav(groups, states, activeKey) {
                 const status = groupReviewStatus(group, states);
                 const differenceCount = group.items.reduce((sum, item) => sum + (item.fields || []).length, 0);
                 return `
-                    <button type="button" class="academic-sync-course-item is-${status.key} ${group.key === activeKey ? 'is-active' : ''}" data-academic-sync-course-key="${escapeHtml(group.key)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-sync-course-item is-${status.key} ${group.key === activeKey ? 'is-active' : ''}" data-academic-sync-course-key="${escapeHtml(group.key)}">
                         <span><strong>${escapeHtml(group.course.title || '未命名课程')}</strong><small>${escapeHtml(group.course.subtitle || '课程号待核验')}</small></span>
                         <i>${escapeHtml(status.label)}${status.pendingCount ? ` · ${status.pendingCount}` : ''}</i>
                         <em>${differenceCount} 处差异</em>
@@ -219,11 +219,11 @@ function renderField(item, field, state) {
     return `
         <div class="academic-sync-diff-field ${choice ? 'is-confirmed' : 'is-unresolved'}" data-academic-sync-field-row data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" tabindex="0" role="group" aria-label="${escapeHtml(field.label)}差异，点击空白处查看完整对比">
             <span class="academic-sync-diff-field__label"><b>${escapeHtml(field.label)}</b><small>展开完整对比 ↗</small></span>
-            <button type="button" class="academic-sync-diff-field__value is-local ${choice === 'local' ? 'is-selected' : ''}" data-academic-sync-choice="local" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'local'}" ${choicesDisabled ? 'disabled' : ''}>
+            <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass academic-sync-diff-field__value is-local ${choice === 'local' ? 'is-selected' : ''}" data-academic-sync-choice="local" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'local'}" ${choicesDisabled ? 'disabled' : ''}>
                 <small>本地</small><b>${escapeHtml(field.local)}</b><span>${choice === 'local' ? '已采用' : '采用本地'}</span>
             </button>
             <span class="academic-sync-diff-field__versus" aria-hidden="true">VS</span>
-            <button type="button" class="academic-sync-diff-field__value is-remote ${choice === 'remote' ? 'is-selected' : ''}" data-academic-sync-choice="remote" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'remote'}" ${choicesDisabled ? 'disabled' : ''}>
+            <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass academic-sync-diff-field__value is-remote ${choice === 'remote' ? 'is-selected' : ''}" data-academic-sync-choice="remote" data-item-key="${escapeHtml(item.key)}" data-field-name="${escapeHtml(field.name)}" aria-pressed="${choice === 'remote'}" ${choicesDisabled ? 'disabled' : ''}>
                 <small>教务</small><b>${escapeHtml(field.remote)}</b><span>${choice === 'remote' ? '已采用' : '采用教务'}</span>
             </button>
             <span class="academic-sync-diff-field__resolution ${choice ? 'is-done' : ''}" data-field-key="${escapeHtml(fieldKey)}">${choice ? '已确认' : '请选择一侧'}</span>
@@ -249,8 +249,8 @@ function renderDiffItem(item, states) {
                     <span class="academic-sync-diff-item__status">${escapeHtml(statusLabels[item.status] || item.status)}</span>
                 </div>
             </header>
-            <div class="academic-sync-diff-item__toolbar">
-                <label><span>本次处理</span><select data-academic-sync-action>${actionOptions(item, state)}</select></label>
+            <div data-lq-component="toolbar" class="lq-domain-toolbar academic-sync-diff-item__toolbar">
+                <label><span>本次处理</span><select data-lq-component="select" class="lq-select" data-academic-sync-action>${actionOptions(item, state)}</select></label>
                 ${item.local_id ? `<span>保留本地 ID ${escapeHtml(item.local_id)}</span>` : '<span>尚无本地对象</span>'}
             </div>
             <div class="academic-sync-diff-item__fields">

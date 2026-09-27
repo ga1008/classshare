@@ -50,7 +50,7 @@
     {% endcall %}
     {% else %}
     <div class="gw-hero">
-        <article class="gw-card gw-intro">
+        <article data-lq-component="surface" class="lq-surface gw-card gw-intro">
             <div>
                 <h3>同步方式</h3>
                 <div class="gw-chip-row">
@@ -62,7 +62,7 @@
             </div>
         </article>
 
-        <aside class="gw-card gw-profile">
+        <aside data-lq-component="surface" class="lq-surface gw-card gw-profile">
             <h3>当前适配器</h3>
             <p id="gw-profile-note">正在读取平台对接方式。</p>
             <div class="gw-profile-meta">
@@ -73,7 +73,7 @@
         </aside>
     </div>
 
-    <section class="gw-card gw-sync-board">
+    <section data-lq-component="surface" class="lq-surface gw-card gw-sync-board">
         <div style="margin-bottom: var(--spacing-md);">
             <h3>可同步功能</h3>
             <p class="gw-help">同步过程会顺序访问公文通，避免高频并发；仅读取公文与附件，不会回写、标记已读或反馈。</p>
@@ -84,14 +84,14 @@
     </section>
     {% endif %}
 
-    <div class="gw-modal-backdrop" id="gw-account-modal" hidden>
-        <article class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="gw-account-modal-title">
+    <div class="lq-domain-region gw-modal-backdrop" id="gw-account-modal" hidden data-lq-component="layer">
+        <article data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised gw-modal" role="dialog" aria-modal="true" aria-labelledby="gw-account-modal-title">
             <div class="gw-modal-head">
                 <div>
                     <p class="gw-kicker">ACCOUNT</p>
                     <h3 id="gw-account-modal-title">账号管理</h3>
                 </div>
-                <button type="button" class="gw-modal-close" id="gw-account-modal-close" aria-label="关闭">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass gw-modal-close" id="gw-account-modal-close" aria-label="关闭">&times;</button>
             </div>
             <div class="gw-modal-body">
                 <div class="gw-account-grid">
@@ -112,13 +112,13 @@
                                 autocomplete='current-password', placeholder='重新验证时填写新密码') }}
                             {# 保存按钮不迁 lq_btn：manage_gongwen_integrations.js 的 setBusy() 直接写
                                button.textContent，会把 lq-btn 的 .lq-btn__label 结构一次性抹掉且无法还原。 #}
-                            <button type="submit" class="btn btn-primary" id="gw-save-btn">验证并保存</button>
+                            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="gw-save-btn">验证并保存</button>
                         </form>
                         {% else %}
                         <form id="gw-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="gw-system-code">系统</label>
-                                <select class="form-control" id="gw-system-code" name="system_code" required>
+                                <select data-lq-component="select" class="lq-select form-control" id="gw-system-code" name="system_code" required>
                                     {% for profile in gongwen_profiles %}
                                     <option value="{{ profile.system_code }}">{{ profile.system_name }}</option>
                                     {% endfor %}
@@ -126,16 +126,16 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="gw-username">统一认证账号</label>
-                                <input class="form-control" type="text" id="gw-username" name="username" autocomplete="username" placeholder="请输入学号 / 工号 / 统一账号" required>
+                                <input data-lq-component="input" class="lq-input form-control" type="text" id="gw-username" name="username" autocomplete="username" placeholder="请输入学号 / 工号 / 统一账号" required>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="gw-password">统一认证密码</label>
-                                <input class="form-control" type="password" id="gw-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                                <input data-lq-component="input" class="lq-input form-control" type="password" id="gw-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
                             </div>
-                            <button type="submit" class="btn btn-primary" id="gw-save-btn">验证并保存</button>
+                            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="gw-save-btn">验证并保存</button>
                         </form>
                         {% endif %}
-                        <div class="gw-sync-panel" id="gw-auto-sync-panel" hidden>
+                        <div data-lq-component="surface" class="lq-surface gw-sync-panel" id="gw-auto-sync-panel" hidden>
                             <h3 id="gw-auto-sync-title">公文自动同步</h3>
                             <p id="gw-auto-sync-message"></p>
                             <div class="gw-stage-list" id="gw-auto-sync-stages"></div>
@@ -143,9 +143,9 @@
                     </section>
 
                     <section class="gw-account-list">
-                        <div class="gw-account-toolbar">
+                        <div data-lq-component="toolbar" class="lq-domain-toolbar gw-account-toolbar">
                             <h3>已对接信息</h3>
-                            <button type="button" class="btn btn-outline btn-sm" id="gw-refresh-btn">刷新</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="gw-refresh-btn">刷新</button>
                         </div>
                         <div class="gw-list" id="gw-credential-list"></div>
                     </section>

@@ -22,7 +22,7 @@
 /* A surface's own opacity preference must also cover plain content, controls
  * and nested opt-out islands. Previously only .lq-glass/.lq-surface--frost were
  * made opaque, so turning transparency off left most panels translucent. */
-[data-lq-glass="off"], :root[data-lq-tier="C"], :root[data-lq-contrast="more"] {
+:root[data-lq-glass="off"], [data-lq-glass="off"], :root[data-lq-tier="C"], :root[data-lq-contrast="more"] {
     --ls-glass-fill: var(--ls-surface-1);
     --ls-glass-fill-content: var(--ls-surface-1);
     --ls-glass-fill-control: var(--ls-surface-2);
@@ -32,6 +32,7 @@
 }
 [data-lq-glass="off"]:is(.lq-glass, .lq-surface, [data-lq-material]),
 [data-lq-glass="off"] :is(.lq-glass, .lq-surface, [data-lq-material]),
+:root[data-lq-glass="off"] :is(.lq-glass, .lq-surface, [data-lq-material]),
 :root[data-lq-tier="C"] :is(.lq-glass, .lq-surface, [data-lq-material]),
 :root[data-lq-contrast="more"] :is(.lq-glass, .lq-surface, [data-lq-material]) {
     background: hsl(var(--ls-surface-1)) !important;

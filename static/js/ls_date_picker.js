@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 // ls_date_picker.js — 全站统一日期/时间选择器
 // 自动接管页面上所有原生 input[type=date|datetime-local|time]（含动态插入的节点），
 // 原生 input 保留在 DOM 中作为取值载体（value 格式不变），现有读写 .value 的代码零改动。
@@ -146,6 +147,7 @@ import { getLayerSystem } from './lq/layer.js';
         container.className = 'ls-dp-layer';
         const root = document.createElement('div');
         root.className = `ls-dp-pop ls-dp-pop--${kind}${mobile ? ' is-sheet' : ''}`;
+        root.dataset.lqComponent = 'popover'; root.dataset.lqMaterial = 'raised'; root.classList.add('lq-domain-raised');
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-label', placeholderFor(kind));
         let backdrop = null;
@@ -203,6 +205,7 @@ import { getLayerSystem } from './lq/layer.js';
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = `ls-dp-nav ${cls}`;
+                adoptDomainControl(b, { variant: 'glass' });
                 b.setAttribute('aria-label', label);
                 b.innerHTML = cls === 'prev'
                     ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>'
@@ -213,6 +216,7 @@ import { getLayerSystem } from './lq/layer.js';
             const title = document.createElement('button');
             title.type = 'button';
             title.className = 'ls-dp-title';
+                adoptDomainControl(title, { variant: 'glass' });
             if (state.mode === 'days') {
                 title.textContent = `${state.viewY}年${state.viewMo + 1}月`;
             } else if (state.mode === 'months') {
@@ -294,6 +298,7 @@ import { getLayerSystem } from './lq/layer.js';
                 const cell = document.createElement('button');
                 cell.type = 'button';
                 cell.className = 'ls-dp-day';
+                adoptDomainControl(cell, { variant: 'glass' });
                 cell.textContent = String(d);
                 if (outside) cell.classList.add('is-outside');
                 if (k === todayK) cell.classList.add('is-today');
@@ -332,6 +337,7 @@ import { getLayerSystem } from './lq/layer.js';
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'ls-dp-cell';
+                adoptDomainControl(b, { variant: 'glass' });
                 b.textContent = `${mo + 1}月`;
                 if (mo === state.viewMo) b.classList.add('is-selected');
                 if (state.viewY === today.getFullYear() && mo === today.getMonth()) b.classList.add('is-today');
@@ -353,6 +359,7 @@ import { getLayerSystem } from './lq/layer.js';
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'ls-dp-cell';
+                adoptDomainControl(b, { variant: 'glass' });
                 b.textContent = String(y);
                 if (y === state.viewY) b.classList.add('is-selected');
                 if (y === today.getFullYear()) b.classList.add('is-today');
@@ -385,6 +392,7 @@ import { getLayerSystem } from './lq/layer.js';
                     const b = document.createElement('button');
                     b.type = 'button';
                     b.className = 'ls-dp-time-item';
+                adoptDomainControl(b, { variant: 'glass' });
                     b.textContent = pad2(i);
                     b.setAttribute('aria-pressed', String(i === selected));
                     if (i === selected) b.classList.add('is-selected');
@@ -423,6 +431,7 @@ import { getLayerSystem } from './lq/layer.js';
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = `ls-dp-btn ${cls}`;
+                adoptDomainControl(b, { variant: 'glass' });
                 b.textContent = text;
                 b.addEventListener('click', fn);
                 return b;
@@ -535,6 +544,7 @@ import { getLayerSystem } from './lq/layer.js';
         const display = document.createElement('button');
         display.type = 'button';
         display.className = 'ls-dp-display';
+                adoptDomainControl(display, { variant: 'glass' });
         display.innerHTML = `<span class="ls-dp-icon">${kind === 'time' ? ICON_CLOCK : ICON_CALENDAR}</span><span class="ls-dp-text"></span>`;
         wrap.appendChild(display);
 

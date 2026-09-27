@@ -1,0 +1,65 @@
+/* Domain adapters keep compact tool/inspector geometry. Material, interaction,
+   tone and accessibility states are owned by the shared LQ recipes. */
+.lq-btn[data-lq-domain-control] { min-width: 0; }
+.lq-btn[data-lq-domain-control] > .lq-btn__icon > svg { width: 100%; height: 100%; }
+.twb-btn-icon.lq-btn { --lq-btn-height: 32px; --lq-btn-icon-size: 18px; flex-shrink: 0; }
+.twb-chip.lq-btn { --lq-btn-icon-size: 16px; }
+.twb-swatch.lq-btn { min-height: 0; padding: 0; aspect-ratio: 1; }
+.twb-menu-item.lq-btn { justify-content: flex-start; width: 100%; }
+.twb-menu-item.lq-btn .twb-menu-label { flex: 1; text-align: start; }
+.lde-choice.lq-btn, .lde-element.lq-btn, .lde-layout-choice.lq-btn { white-space: normal; }
+.lde-layer.lq-btn { justify-content: flex-start; }
+.lde-layer.lq-btn .lq-btn__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lde-range-head .lq-range__value { min-width: 0; padding: 0; border: 0; }
+.ls-color-trigger.lq-btn { justify-content: flex-start; width: 100%; }
+.ls-color-chip.lq-btn { min-height: 0; padding: 0; aspect-ratio: 1; }
+.apr-trigger.lq-btn { --lq-btn-height: 26px; padding: 0; min-height: 26px; }
+.apr-item.lq-btn { display: block; width: 100%; text-align: start; white-space: normal; }
+.apr-modal .lq-dialog__surface { width: min(96vw, 76rem); margin: 0; }
+.apr-modal-content { display: flex; flex-direction: column; min-height: 0; }
+.att-cell.lq-btn { --lq-btn-height: 0px; min-height: 0; padding: 5px 7px; min-width: 58px; white-space: nowrap; }
+/* React workspace compositions use native shared fields/chips/buttons. Only
+ * their domain arrangement lives here; material and state stay in LQ. */
+.lq-chip-group { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); align-items: center; }
+.lq-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--ls-s-3); }
+.cw-filterbar > .lq-field { display: flex; align-items: center; gap: var(--ls-s-2); width: auto; flex: 0 1 auto; }
+.cw-filterbar > .lq-field > .lq-field__label { flex: 0 0 auto; }
+.cw-filterbar > .lq-field > .lq-field__control { flex: 1 1 auto; }
+.cw-filterbar > .lq-field.cw-search-label { flex: 1 1 220px; }
+.ls-action-summary > .lq-btn > .lq-btn__label,
+.cw-timeline-index-item.lq-btn > .lq-btn__label { display: contents; }
+.cw-timeline-index-item.lq-btn { white-space: normal; }
+.ls-item-filters > .lq-field { min-width: 0; }
+/* Existing command islands compose an icon and text, or a three-column jump
+ * row. The shared button remains the native event/disabled owner. */
+:is(.assignment-authoring-sync,.exam-assign-sync,.message-center-workspace-sync) .lq-btn > .lq-btn__label,
+.submission-jump-question.lq-btn > .lq-btn__label { display: contents; }
+@media (max-width: 600px) {
+    .cw-filterbar > .lq-field { max-width: 100%; }
+    .cw-filterbar > .lq-field > .lq-field__control { min-width: 0; }
+}
+
+/* Calendar grid choices and course filters share Button paint while preserving
+ * their registered grid geometry; no node, hit-target or business slot moves. */
+.semester-header-cell.lq-domain-choice[data-lq-shape="surface"] {
+    display: flex; min-height: 46px; padding: 9px 10px; border-radius: 0;
+    border-width: 0 1px 1px 0; text-align: center; font-weight: 700;
+}
+.semester-band-cell.lq-domain-choice[data-lq-shape="surface"] {
+    display: block; min-height: 46px; padding: 11px 12px; border-radius: 0;
+    border-width: 0 1px 1px 0; text-align: center; font-weight: 700; white-space: nowrap;
+}
+.cs-course-card.lq-domain-choice[data-lq-shape="surface"] {
+    display: grid; justify-content: normal; gap: 6px; padding: 12px 14px;
+    border-left-width: 4px; border-radius: var(--ls-r-md); text-align: start;
+}
+
+/* SVG graph choices keep authored position, fill, radius and zoom transforms.
+ * This geometry contract owns keyboard focus only; the graph owns selection. */
+.lq-domain-graph-choice[role="button"] { cursor: pointer; }
+.lq-domain-graph-choice[role="button"]:focus-visible {
+    outline: 2px solid hsl(var(--ls-ring)); outline-offset: 4px;
+}
+.lq-domain-graph-choice[role="button"]:focus-visible [data-lq-graph-hit] {
+    stroke: hsl(var(--ls-fixed-white)); stroke-width: 3px;
+}

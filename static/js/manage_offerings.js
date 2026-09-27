@@ -92,8 +92,8 @@ function syncScheduleWorkbench() {
         const state = scheduleRowState(row);
         const isActive = index === activeScheduleIndex;
         return `
-            <button type="button"
-                    class="offering-schedule-tab is-${state}${isActive ? ' is-active' : ''}"
+            <button data-lq-component="button" type="button"
+                    class="lq-btn lq-btn--sm lq-btn--glass offering-schedule-tab is-${state}${isActive ? ' is-active' : ''}"
                     data-action="select-schedule"
                     data-schedule-index="${index}"
                     aria-current="${isActive ? 'true' : 'false'}">

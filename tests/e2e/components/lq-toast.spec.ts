@@ -186,7 +186,7 @@ test.describe('LQ toast', () => {
         })).toEqual({ roots: 0, timers: 0, listeners: 0, observers: 0, overflow: '' });
     });
 
-    for (const palette of ['indigo', 'sky', 'mint', 'violet', 'rose', 'teal']) for (const appearance of ['light', 'dark']) test(`${palette}/${appearance} mobile long text has no overflow, blur or serious axe findings`, async ({ page }) => {
+    for (const palette of ['indigo', 'sky', 'mint', 'violet', 'rose', 'teal']) for (const appearance of ['light', 'dark']) test(`${palette}/${appearance} mobile long text keeps bounded shared glass without overflow or serious axe findings`, async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 }); await mount(page);
         await page.evaluate(({ palette, appearance }) => {
             document.documentElement.dataset.uiPalette = palette; document.documentElement.dataset.appearance = appearance;
@@ -197,8 +197,16 @@ test.describe('LQ toast', () => {
             w.notifications.toast('设置已保存', { tone: 'success', duration: 0 });
         }, { palette, appearance });
         const box = await page.locator('#lq-toasts').boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(390); expect(box!.y).toBeGreaterThanOrEqual(40);
-        expect(await page.locator('.lq-toast').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).backdropFilter))).toEqual(['none', 'none', 'none']);
+        // Toasts already use the shared thick material. Keep the three-host
+        // budget and prevent action/close controls from adding nested blur.
+        expect(await page.locator('.lq-toast').evaluateAll(nodes => nodes.map(node => ({
+            shared: node.matches('.lq-glass.lq-glass--thick'),
+            blur: getComputedStyle(node).backdropFilter.includes('blur('),
+            leafBlur: [...node.querySelectorAll('button,a,input')].some(leaf => getComputedStyle(leaf).backdropFilter !== 'none'),
+        })))).toEqual(Array.from({ length: 3 }, () => ({ shared: true, blur: true, leafBlur: false })));
         const results = await new AxeBuilder({ page }).analyze(); expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact || ''))).toEqual([]);
         if (palette === 'teal') { fs.mkdirSync('.codex-temp/lq-audit/s2/toast', { recursive: true }); await page.screenshot({ path: `.codex-temp/lq-audit/s2/toast/${appearance}-390.png` }); }
+        await page.evaluate(() => { document.documentElement.dataset.lqGlass = 'off'; });
+        expect(await page.locator('.lq-toast').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).backdropFilter))).toEqual(['none', 'none', 'none']);
     });
 });

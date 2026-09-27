@@ -4,6 +4,7 @@ import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 import { bindSelection } from './lq/selection.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 
 const root = document.querySelector('[data-dashboard-root]');
 initStudentDashboardSchedule(root);
@@ -295,6 +296,7 @@ if (root) {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'dashboard-empty-search__chip';
+                adoptDomainControl(button);
                 button.dataset.emptySearchChip = chip.kind;
                 button.textContent = `${chip.label} ×`;
                 emptySearchChips.appendChild(button);
@@ -327,6 +329,7 @@ if (root) {
             const link = document.createElement('a');
             link.href = href;
             link.className = 'dashboard-empty-search__suggestion';
+            adoptDomainControl(link, { kind: 'choice' }); link.dataset.lqShape = 'surface';
             const name = document.createElement('span');
             name.textContent = state.courseName || card.dataset.courseName || '课堂';
             const meta = document.createElement('small');
@@ -859,7 +862,7 @@ if (root) {
             const message = error instanceof Error ? error.message : '课表加载失败。';
             setScheduleDeckStatus(
                 `${normalizeText(message) ? message.replace(/[<>&"]/g, '') : '课表加载失败。'} `
-                + '<button type="button" class="dashboard-schedule3d__retry" data-schedule3d-retry>重试</button>',
+                + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dashboard-schedule3d__retry" data-schedule3d-retry>重试</button>',
             );
             showMessage(message, 'error');
         } finally {
@@ -1013,6 +1016,7 @@ if (root) {
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'dashboard-group-toggle';
+        adoptDomainControl(toggle, { variant: 'ghost' });
         toggle.setAttribute('aria-label', `${isCollapsed ? '展开' : '折叠'}${title || '当前分组'}`);
         toggle.setAttribute('aria-expanded', String(!isCollapsed));
         const icon = document.createElement('span');
@@ -1360,7 +1364,7 @@ if (root) {
     }
 
     function cardSummaryHtml(overview) {
-        return `<span data-academic-evaluation-summary><button type="button" class="ls-link" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">教学评价 ${escapeHtml(overview?.score_display || scoreText(overview?.score))}</button></span>`;
+        return `<span data-academic-evaluation-summary><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-academic-evaluation-open="${escapeHtml(overview?.offering_id || '')}">教学评价 ${escapeHtml(overview?.score_display || scoreText(overview?.score))}</button></span>`;
     }
 
     function updateOfferingCards(overviews) {
@@ -1474,7 +1478,7 @@ if (root) {
                 <span class="academic-evaluation-comment__index">${index + 1}</span>
                 <p>${escapeHtml(comment?.text || '')}</p>
             </article>`).join('')}</div>
-            ${comments.length > 8 ? `<button type="button" class="academic-evaluation-comments__toggle" data-comment-toggle aria-expanded="false">展开其余 ${comments.length - 8} 条</button>` : ''}`;
+            ${comments.length > 8 ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-evaluation-comments__toggle" data-comment-toggle aria-expanded="false">展开其余 ${comments.length - 8} 条</button>` : ''}`;
     }
 
     function sourcePanelHtml(source, index) {
@@ -1490,9 +1494,9 @@ if (root) {
             <div class="academic-evaluation-section__header academic-evaluation-section__header--metrics">
                 <div><h3>分项指标</h3><span>${metrics.length} 项 · 悬停查看完整说明</span></div>
                 <div class="academic-evaluation-sort" role="group" aria-label="分项指标排序">
-                    <button type="button" class="is-active" data-metric-sort="desc" aria-pressed="true">高到低</button>
-                    <button type="button" data-metric-sort="asc" aria-pressed="false">低到高</button>
-                    <button type="button" data-metric-sort="source" aria-pressed="false">原顺序</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass is-active" data-metric-sort="desc" aria-pressed="true">高到低</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-metric-sort="asc" aria-pressed="false">低到高</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-metric-sort="source" aria-pressed="false">原顺序</button>
                 </div>
             </div>
             ${metrics.length ? `<div class="academic-evaluation-metrics" data-metric-grid>${metricGridHtml(metrics)}</div>` : '<div class="academic-evaluation-muted">暂无分项评分数据</div>'}
@@ -1521,11 +1525,11 @@ if (root) {
         modalSubtitle.textContent = `${payload.offering?.class_name || '课堂'} · ${payload.offering?.semester_name || '当前学期'} · ${overall.freshness_label || '本地同步数据'}`;
         modalBody.innerHTML = `
             <div class="academic-evaluation-overview">
-                <section class="academic-evaluation-score-panel">
+                <section data-lq-component="surface" class="lq-surface academic-evaluation-score-panel">
                     <div class="academic-evaluation-score-panel__number" style="--evaluation-score:${score}">${escapeHtml(overall.score_display || scoreText(score))}</div>
                     <div class="academic-evaluation-score-panel__copy"><span>Overall score</span><strong>总体评价 / 100</strong><small>${Math.max(0, finite(overall.valid_response_count))} 份有效评价 · ${Math.max(0, finite(overall.comment_count))} 条有效评语</small></div>
                 </section>
-                <section class="academic-evaluation-insight-panel">
+                <section data-lq-component="surface" class="lq-surface academic-evaluation-insight-panel">
                     <h3>评价洞察</h3>
                     <p>${escapeHtml(summaries[0] || '匿名评语仅用于聚合教学反馈，不推断或识别学生身份。')}</p>
                     <div class="academic-evaluation-heatmaps">
@@ -1536,8 +1540,8 @@ if (root) {
             </div>
             <section class="academic-evaluation-section">
                 <div class="academic-evaluation-section__header"><h3>评价明细</h3><span>${sources.length} 组课时类型</span></div>
-                <div class="academic-evaluation-source-tabs" role="tablist" aria-label="评价课时类型">
-                    ${sources.map((source, index) => `<button type="button" role="tab" aria-selected="${index === 0}" class="academic-evaluation-source-tab${index === 0 ? ' is-active' : ''}" data-evaluation-source-tab="${index}">${escapeHtml(source?.hour_type_name || `评价 ${index + 1}`)}</button>`).join('')}
+                <div data-lq-component="tab" class="lq-tabs__list academic-evaluation-source-tabs" role="tablist" aria-label="评价课时类型">
+                    ${sources.map((source, index) => `<button data-lq-component="button" type="button" role="tab" aria-selected="${index === 0}" class="lq-btn lq-btn--sm lq-btn--glass academic-evaluation-source-tab${index === 0 ? ' is-active' : ''}" data-evaluation-source-tab="${index}">${escapeHtml(source?.hour_type_name || `评价 ${index + 1}`)}</button>`).join('')}
                 </div>
                 ${sources.map(sourcePanelHtml).join('')}
             </section>

@@ -1,3 +1,4 @@
+import {adoptDomainControl} from '../lq/domain-controls.js';
 import {clone,locate} from './model.js';
 import {el,button,field,panelSection} from './ui.js';
 import {seconds} from './appearance_controls.js';
@@ -14,7 +15,7 @@ export function renderTable(root,block,commit,refresh,onError) {
         item.body.append(button('删除行',()=>run('删除表格行',b=>{if(b.rows.length<=1)throw new Error('表格至少保留一行。');b.rows.splice(r,1);})));
     });
     part.body.append(button('添加行',()=>run('添加表格行',b=>{if(b.rows.length>=12)throw new Error('一张表格最多 12 行，请拆分表格或页面。');b.rows.push(Array(cols).fill('新内容'));})),button('添加列',()=>run('添加表格列',b=>{b.head??=Array(cols).fill('');while(b.head.length<cols)b.head.push('');b.head.push('新列');b.rows.forEach(row=>{while(row.length<cols)row.push('');row.push('');});})));
-    const remove=el('select');remove.setAttribute('aria-label','选择要删除的列');remove.append(new Option('选择要删除的列',''));for(let i=0;i<cols;i++)remove.append(new Option(String(i+1),String(i)));
+    const remove=adoptDomainControl(el('select'));remove.setAttribute('aria-label','选择要删除的列');remove.append(new Option('选择要删除的列',''));for(let i=0;i<cols;i++)remove.append(new Option(String(i+1),String(i)));
     remove.addEventListener('change',()=>{if(remove.value==='')return;const c=Number(remove.value);run('删除表格列',b=>{if(cols<=1)throw new Error('表格至少保留一列。');b.head?.splice(c,1);b.rows.forEach(row=>row.splice(c,1));});});part.body.append(remove);
 }
 export function renderQuiz(root,block,commit,refresh,onError) {

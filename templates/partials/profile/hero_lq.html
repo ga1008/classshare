@@ -26,7 +26,7 @@
     {% if profile.role == 'student' and cultivation %}
     {# The existing cultivation card stays authored by its own subsystem. #}
     <details class="lq-profile-head__growth">
-        <summary>成长概览 · {{ cultivation.highest_level.level_name }} · {{ cultivation.score }} 分</summary>
+        <summary data-lq-component="disclosure" class="lq-disclosure-trigger">成长概览 · {{ cultivation.highest_level.level_name }} · {{ cultivation.score }} 分</summary>
         {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
         {% set cultivation_card = {
             'variant': 'full', 'title': cultivation.highest_level.level_name,

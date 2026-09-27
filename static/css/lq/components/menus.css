@@ -10,10 +10,10 @@
     border-radius: var(--ls-r-lg);
     opacity: 1;
     transform: none;
-    transition: opacity 160ms var(--ls-ease-out), transform 160ms var(--ls-ease-out);
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, var(--ls-ease-out)), transform var(--lq-motion-menu-duration, 160ms) var(--lq-motion-spring, var(--ls-ease-out));
 }
 .lq-menu[hidden] { display: none; }
-.lq-menu[data-ui-overlay-state="closed"] { opacity: 0; transform: scale(.96); }
+.lq-menu[data-ui-overlay-state="closed"] { opacity: 0; transform: scale(var(--lq-motion-overlay-scale, .96)); }
 .lq-menu > .lq-menu__item {
     display: flex;
     justify-content: flex-start;

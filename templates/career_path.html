@@ -12,22 +12,22 @@
      data-answers-url="/api/career-path/answers">
 
   <!-- 顶部细条：返回 + 专业/毕业摘要 -->
-  <header class="career-topbar" id="career-topbar" hidden>
+  <header data-lq-component="toolbar" class="lq-domain-toolbar career-topbar" id="career-topbar" hidden>
     <a class="career-topbar__back" href="/dashboard">← 返回首页</a>
     <div class="career-topbar__meta" id="career-topbar-meta"></div>
     <a class="career-topbar__back" href="/resume">简历工作台</a>
-    <button type="button" class="career-topbar__redo" id="career-redo" hidden>重新测试</button>
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-topbar__redo" id="career-redo" hidden>重新测试</button>
   </header>
 
   <!-- 主舞台：时间轴 SVG 网络图 + 详情/知识卡片 -->
   <main class="career-stage" id="career-stage" hidden>
     <div class="career-view-tools" id="career-view-tools" role="group" aria-label="职业方向视图">
-      <button type="button" data-career-view="list" aria-pressed="true">方向列表</button>
-      <button type="button" data-career-view="network" aria-pressed="false">网络图</button>
-      <label><span class="career-sr-only">搜索职业方向</span><input id="career-search" type="search" placeholder="搜索方向、技能" maxlength="100"></label>
-      <button type="button" id="career-preferences">职业偏好</button>
-      <button type="button" id="career-job-postings">真实在招职位</button>
-      <label><span class="career-sr-only">筛选方向</span><select id="career-direction-filter"><option value="all">全部方向</option><option value="saved">已收藏</option><option value="dismissed">暂不考虑</option></select></label>
+      <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-career-view="list" aria-pressed="true">方向列表</button>
+      <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-career-view="network" aria-pressed="false">网络图</button>
+      <label><span class="career-sr-only">搜索职业方向</span><input data-lq-component="input" class="lq-input" id="career-search" type="search" placeholder="搜索方向、技能" maxlength="100"></label>
+      <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="career-preferences">职业偏好</button>
+      <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="career-job-postings">真实在招职位</button>
+      <label><span class="career-sr-only">筛选方向</span><select data-lq-component="select" class="lq-select" id="career-direction-filter"><option value="all">全部方向</option><option value="saved">已收藏</option><option value="dismissed">暂不考虑</option></select></label>
     </div>
     <div class="career-directions" id="career-directions" aria-label="职业方向列表"></div>
     <div class="career-scroll" id="career-scroll">

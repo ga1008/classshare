@@ -60,7 +60,7 @@ describe('LQ presentation contract', () => {
   });
   it('keeps skeletons out of accessible content and rejects unbounded placeholders', () => {
     const attrs = componentProps('skeleton', { lines: 3, attrs: { 'aria-hidden': false, 'aria-label': 'Fake content', 'aria-busy': true } }).attrs;
-    expect(attrs).toEqual({ 'aria-hidden': 'true' });
+    expect(attrs).toEqual({ 'aria-hidden': 'true', 'data-lq-component': 'skeleton' });
     expect(html.skeleton({ lines: 3 }).match(/class="lq-skeleton__part"/g)).toHaveLength(3);
     for (const lines of [0, 9, 1.5, true, '3']) expect(() => html.skeleton({ lines })).toThrow();
     expect(() => html.skeleton({ shape: 'avatar', lines: 3 })).toThrow();

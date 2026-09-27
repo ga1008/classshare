@@ -22,10 +22,10 @@
                 </div>
             </div>
             <div class="profile-hero__actions">
-                <a class="btn btn-primary" href="{{ _sec }}{{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
-                {% if profile.role == 'student' and active_section != 'portfolio' %}<a class="btn btn-outline" href="{{ _sec }}portfolio">成长档案</a>{% endif %}
-                {% if active_section != 'notifications' %}<a class="btn btn-outline" href="{{ _sec }}notifications">通知</a>{% endif %}
-                {% if active_section != 'private' %}<a class="btn btn-outline" href="{{ _sec }}private">私信</a>{% endif %}
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="{{ _sec }}{{ 'settings' if active_section == 'overview' else 'overview' }}">{{ '完善资料' if active_section == 'overview' else '回到总览' }}</a>
+                {% if profile.role == 'student' and active_section != 'portfolio' %}<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" href="{{ _sec }}portfolio">成长档案</a>{% endif %}
+                {% if active_section != 'notifications' %}<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" href="{{ _sec }}notifications">通知</a>{% endif %}
+                {% if active_section != 'private' %}<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" href="{{ _sec }}private">私信</a>{% endif %}
             </div>
         </div>
         <aside class="profile-hero__signal">
@@ -63,7 +63,7 @@
         <div>
             <strong>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</strong>
         </div>
-        <a class="btn btn-outline btn-sm" href="{{ _sec }}settings#profile-email">去补充</a>
+        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="{{ _sec }}settings#profile-email">去补充</a>
     </section>
     {% endif %}
 {% endif %}

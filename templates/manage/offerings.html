@@ -13,22 +13,22 @@
     {{ page_head('开设课堂', explain='选择学期、班级、课程和教材后，系统优先使用教务系统真实课表生成每一次课；没有教务排课时，再按固定周循环生成课堂时间轴和任务列表。', actions=[{'label': '先完善课程模板', 'href': '/manage/library/courses'}, {'label': '新增学期', 'href': '/manage/teaching/semesters?open=new'}, {'label': '新增教材', 'href': '/manage/library/textbooks?open=new'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
     <section class="academic-stat-grid">
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">班级模板</div>
             <div class="academic-stat-value">{{ my_classes|length }}</div>
             <div class="academic-stat-help">已可直接用于课堂绑定的班级数量。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">课程模板</div>
             <div class="academic-stat-value">{{ my_courses|length }}</div>
             <div class="academic-stat-help">已配置课程信息与课堂模板的课程数量。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">学期配置</div>
             <div class="academic-stat-value">{{ my_semesters|length }}</div>
             <div class="academic-stat-help">用于计算周次和课堂日期范围。</div>
         </article>
-        <article class="academic-stat-card">
+        <article data-lq-component="surface" class="lq-surface academic-stat-card">
             <div class="academic-stat-label">已开设课堂</div>
             <div class="academic-stat-value">{{ my_offerings|length }}</div>
             <div class="academic-stat-help">支持继续编辑，重新生成时间轴。</div>
@@ -36,18 +36,18 @@
     </section>
 
     <section class="academic-content-grid two-column">
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">开设新课堂</h3>
                     <p class="academic-card-subtitle">同一张表单同时支持新建与编辑课堂，预览区会实时展示生成的上课日期与课堂内容。</p>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm" data-teacher-onboarding-open>逐步开设</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-teacher-onboarding-open>逐步开设</button>
             </div>
             <div class="academic-card-body">
                 <div class="offering-editor-state" id="offeringEditorState">
                     <strong id="offeringEditorStateText">正在编辑课堂</strong>
-                    <button type="button" class="btn btn-ghost btn-sm" id="offeringCancelEditBtn">退出编辑</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="offeringCancelEditBtn">退出编辑</button>
                 </div>
 
                 <form id="offeringSaveForm" class="offering-form-grid">
@@ -56,26 +56,26 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringSemesterSelect">学期</label>
                         <div class="academic-split-field">
-                            <select id="offeringSemesterSelect" class="form-control" required>
+                            <select data-lq-component="select" id="offeringSemesterSelect" class="lq-select form-control" required>
                                 <option value="">请选择学期</option>
                                 {% for semester in my_semesters %}
                                 <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}{% if semester.is_shared_semester %} · 同校共享{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/teaching/semesters?open=new" class="academic-link-btn">新增学期</a>
+                            <a data-lq-component="button" href="/manage/teaching/semesters?open=new" class="lq-btn lq-btn--sm lq-btn--glass academic-link-btn">新增学期</a>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label required" for="offeringClassSelect">班级</label>
                         <div class="academic-split-field">
-                            <select id="offeringClassSelect" class="form-control" required>
+                            <select data-lq-component="select" id="offeringClassSelect" class="lq-select form-control" required>
                                 <option value="">请选择班级</option>
                                 {% for class_item in my_classes %}
                                 <option value="{{ class_item.id }}">{{ class_item.name }}{% if class_item.department %} · {{ class_item.department }}{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/teaching/classes" class="academic-link-btn">新增班级</a>
+                            <a data-lq-component="button" href="/manage/teaching/classes" class="lq-btn lq-btn--sm lq-btn--glass academic-link-btn">新增班级</a>
                         </div>
                     </div>
 
@@ -91,7 +91,7 @@
                         <div class="offering-extra-class-list" id="offeringExtraClassList">
                             {% for class_item in my_classes %}
                             <label class="offering-extra-class-item" data-class-id="{{ class_item.id }}">
-                                <input type="checkbox" value="{{ class_item.id }}">
+                                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" value="{{ class_item.id }}">
                                 <span>{{ class_item.name }}</span>
                             </label>
                             {% endfor %}
@@ -102,32 +102,32 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringCourseSelect">课程</label>
                         <div class="academic-split-field">
-                            <select id="offeringCourseSelect" class="form-control" required>
+                            <select data-lq-component="select" id="offeringCourseSelect" class="lq-select form-control" required>
                                 <option value="">请选择课程</option>
                                 {% for course in my_courses %}
                                 <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}{% if course.is_shared_course %} · 系内共享{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/library/courses" class="academic-link-btn">新增课程</a>
+                            <a data-lq-component="button" href="/manage/library/courses" class="lq-btn lq-btn--sm lq-btn--glass academic-link-btn">新增课程</a>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label required" for="offeringTextbookSelect">教材</label>
                         <div class="academic-split-field">
-                            <select id="offeringTextbookSelect" class="form-control" required>
+                            <select data-lq-component="select" id="offeringTextbookSelect" class="lq-select form-control" required>
                                 <option value="">请选择教材</option>
                                 {% for textbook in my_textbooks %}
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
                                 {% endfor %}
                             </select>
-                            <a href="/manage/library/textbooks?open=new" class="academic-link-btn">新增教材</a>
+                            <a data-lq-component="button" href="/manage/library/textbooks?open=new" class="lq-btn lq-btn--sm lq-btn--glass academic-link-btn">新增教材</a>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label required" for="offeringScheduleSourceSelect">排课来源</label>
-                        <select id="offeringScheduleSourceSelect" class="form-control">
+                        <select data-lq-component="select" id="offeringScheduleSourceSelect" class="lq-select form-control">
                             <option value="academic_sync">优先使用教务实际排课</option>
                             <option value="fixed_cycle">手动固定周循环</option>
                         </select>
@@ -135,7 +135,7 @@
 
                     <div class="form-group">
                         <label class="form-label" for="offeringFirstClassDateInput">固定排课首次日期</label>
-                        <input id="offeringFirstClassDateInput" class="form-control" type="date">
+                        <input data-lq-component="input" id="offeringFirstClassDateInput" class="lq-input form-control" type="date">
                     </div>
 
                     <div class="form-group">
@@ -145,11 +145,11 @@
                         </div>
                     </div>
 
-                    <div class="offering-academic-panel full-span" id="offeringAcademicPanel">
+                    <div data-lq-component="surface" class="lq-surface offering-academic-panel full-span" id="offeringAcademicPanel">
                         <div class="offering-academic-class-grid">
                             <div class="form-group">
                                 <label class="form-label" for="offeringAcademicClassSelect">教务教学班</label>
-                                <select id="offeringAcademicClassSelect" class="form-control">
+                                <select data-lq-component="select" id="offeringAcademicClassSelect" class="lq-select form-control">
                                     <option value="">自动匹配或请选择教学班</option>
                                 </select>
                             </div>
@@ -160,18 +160,18 @@
                         </div>
                     </div>
 
-                    <div class="offering-schedule-panel full-span" id="fixedSchedulePanel">
+                    <div data-lq-component="surface" class="lq-surface offering-schedule-panel full-span" id="fixedSchedulePanel">
                         <div class="offering-schedule-head">
                             <div>
                                 <h4>每周上课安排</h4>
                                 <p class="academic-card-subtitle">用于没有教务真实排课的课程；支持一周一天或多天上课。</p>
                             </div>
                             <div class="academic-action-group">
-                                <button type="button" class="btn btn-outline" id="addWeeklyScheduleBtn">新增一行</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="addWeeklyScheduleBtn">新增一行</button>
                             </div>
                         </div>
                         <div class="offering-schedule-workbench">
-                            <nav class="offering-schedule-menu" id="weeklyScheduleMenu" aria-label="每周上课安排快捷跳转"></nav>
+                            <nav data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised offering-schedule-menu" id="weeklyScheduleMenu" aria-label="每周上课安排快捷跳转"></nav>
                             <div class="offering-schedule-list" id="weeklyScheduleContainer"></div>
                         </div>
                     </div>
@@ -206,14 +206,14 @@
                     </div>
 
                     <div class="academic-action-group full-span" style="justify-content:flex-end;">
-                        <button type="button" class="btn btn-outline" id="offeringPreviewBtn">刷新预览</button>
-                        <button type="submit" class="btn btn-primary" id="offeringSaveBtn">开设课堂</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="offeringPreviewBtn">刷新预览</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="offeringSaveBtn">开设课堂</button>
                     </div>
                 </form>
             </div>
         </article>
 
-        <article class="academic-card">
+        <article data-lq-component="surface" class="lq-surface academic-card">
             <div class="academic-card-header">
                 <div>
                     <h3 class="academic-card-title">课程模板概览</h3>
@@ -234,15 +234,15 @@
     <section id="offeringBootstrapSection" hidden></section>
 
     {% if not embedded_mode %}
-    <section class="academic-card offering-hub-pointer">
+    <section data-lq-component="surface" class="lq-surface academic-card offering-hub-pointer">
         <div class="academic-card-body offering-hub-pointer__body">
             <div>
                 <h3 class="academic-card-title">已开设 {{ my_offerings | length }} 个课堂</h3>
                 <p class="academic-card-subtitle">课堂列表、授课进度与配置治理已移至「课堂运行 &gt; 课堂管理」；疑似双开课堂的合并向导在「课堂运行 &gt; 课堂合并」。</p>
             </div>
             <div class="academic-action-group">
-                <a class="btn btn-primary" href="/manage/teaching/classroom-hub">前往课堂管理</a>
-                <a class="btn btn-outline" href="/manage/teaching/offering-merge">课堂合并</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/manage/teaching/classroom-hub">前往课堂管理</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" href="/manage/teaching/offering-merge">课堂合并</a>
             </div>
         </div>
     </section>
@@ -257,7 +257,7 @@
         </div>
         <div class="form-group">
             <label class="form-label">周几上课</label>
-            <select class="form-control" data-field="weekday">
+            <select data-lq-component="select" class="lq-select form-control" data-field="weekday">
                 <option value="0">周一</option>
                 <option value="1">周二</option>
                 <option value="2">周三</option>
@@ -269,9 +269,9 @@
         </div>
         <div class="form-group">
             <label class="form-label">当天节数</label>
-            <input class="form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
+            <input data-lq-component="input" class="lq-input form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
         </div>
-        <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-schedule">删除</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-action="remove-schedule">删除</button>
     </div>
 </template>
 

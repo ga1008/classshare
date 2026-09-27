@@ -37,7 +37,7 @@ function pointButtons(peerId) {
   let row2 = '';
   for (let i = 1; i <= MAX_POINTS; i += 1) {
     const selected = i === DEFAULT_POINTS ? ' is-selected' : '';
-    const btn = `<button type="button" class="peer-eval-pt${selected}" data-peer-id="${peerId}" data-points="${i}">${i}</button>`;
+    const btn = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass peer-eval-pt${selected}" data-peer-id="${peerId}" data-points="${i}">${i}</button>`;
     if (i <= 10) row1 += btn; else row2 += btn;
   }
   return `<div class="peer-eval-scale"><div class="peer-eval-scale__row">${row1}</div><div class="peer-eval-scale__row">${row2}</div></div>`;
@@ -63,22 +63,23 @@ function render(assignmentId, peers) {
   peers.forEach((p) => { selections[p.student_id] = DEFAULT_POINTS; });
 
   overlayEl = document.createElement('div');
-  overlayEl.className = 'peer-eval-overlay';
+  overlayEl.className = 'lq-domain-region peer-eval-overlay';
+    overlayEl.dataset.lqComponent = 'layer';
   overlayEl.innerHTML = `
-    <div class="peer-eval-modal" role="dialog" aria-modal="true" aria-label="小组互评">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised peer-eval-modal" role="dialog" aria-modal="true" aria-label="小组互评">
       <header class="peer-eval-modal__header">
         <div>
           <h3 class="peer-eval-modal__title">小组互评</h3>
           <p class="peer-eval-modal__subtitle">请为每位组员的贡献度打分，评分仅教师与系统可见，组员之间互相保密。</p>
         </div>
-        <button type="button" class="peer-eval-modal__close" data-peer-close aria-label="关闭">&times;</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass peer-eval-modal__close" data-peer-close aria-label="关闭">&times;</button>
       </header>
       <div class="peer-eval-modal__body">
         ${peers.map(peerBlock).join('')}
       </div>
       <footer class="peer-eval-modal__footer">
         <span class="peer-eval-modal__hint">未填写将自动按 ${DEFAULT_POINTS} 分计入</span>
-        <button type="button" class="btn btn-primary" data-peer-submit>确认提交评分</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-peer-submit>确认提交评分</button>
       </footer>
     </div>`;
   document.body.appendChild(overlayEl);

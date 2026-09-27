@@ -1,4 +1,5 @@
 import {COLOR_TOKENS,DEFAULT_COLORS,normalizeColor,hexToHsv,hsvToHex,clamp,recordColor,commonColors,colorTextColor} from './ui_color_model.js';
+import {adoptDomainControl,createDomainButton} from './lq/domain-controls.js';
 
 let settings={userId:'local',resolveColor:color=>color};
 export function configureColorPicker(options) { settings={...settings,...options}; }
@@ -7,7 +8,7 @@ export function displayColor(color) {
     return normalizeColor(settings.resolveColor(color))||normalizeColor(color)||'#ffffff';
 }
 function node(tag,cls,text) {const n=document.createElement(tag);n.className=cls||'';if(text)n.textContent=text;return n;}
-function action(text,fn,cls='ls-color-action') {const b=node('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;}
+function action(text,fn,cls='ls-color-action') {const b=createDomainButton({label:text,className:cls});if(['ls-color-trigger','ls-color-chip'].includes(cls))b.dataset.lqVisual='color';b.addEventListener('click',fn);return b;}
 function readUsage() {try{return JSON.parse(localStorage.getItem('lanshare:colors:v1:'+settings.userId)||'[]');}catch{return [];}}
 function remember(color) {try{localStorage.setItem('lanshare:colors:v1:'+settings.userId,JSON.stringify(recordColor(readUsage(),color)));}catch{/* Picking still works when browser storage is unavailable. */}}
 function swatchBackground(color) {const css=displayColor(color);return 'linear-gradient('+css+','+css+'),repeating-conic-gradient(#e2e8f0 0 25%,white 0 50%) 0 / 8px 8px';}
@@ -25,15 +26,15 @@ export function colorControl({label,value,onChange,onPreview,popovers,allowReset
         const panel=node('section','ls-color-picker'),heading=node('div','ls-color-heading');
         const close=action('完成',()=>popup.close(),'ls-color-done');heading.append(node('strong','',label),close);panel.append(heading);
         const plane=node('div','ls-color-plane'),cursor=node('span','ls-color-cursor');plane.append(cursor);plane.tabIndex=0;plane.setAttribute('role','group');plane.setAttribute('aria-label','色盘，左右调整饱和度，上下调整明度');plane.dataset.autofocus='';panel.append(plane);
-        const slider=(label,max,step=1)=>{const wrap=node('label','ls-color-slider'),text=node('span','',label),input=node('input');input.type='range';input.min=0;input.max=max;input.step=step;wrap.append(text,input);panel.append(wrap);return input;};
-        const hue=slider('色相',360),alpha=slider('不透明度',100);hue.className='ls-color-hue';alpha.className='ls-color-alpha';
+        const slider=(label,max,step=1)=>{const wrap=node('label','ls-color-slider lq-field'),text=node('span','lq-field__label',label),input=node('input');input.type='range';input.min=0;input.max=max;input.step=step;adoptDomainControl(input);wrap.append(text,input);panel.append(wrap);return input;};
+        const hue=slider('色相',360),alpha=slider('不透明度',100);hue.classList.add('ls-color-hue');alpha.classList.add('ls-color-alpha');
         const row=node('div','ls-color-common');row.setAttribute('aria-label','常用颜色');panel.append(node('span','ls-color-label','常用颜色'),row);
         const drawCommon=()=>{const hadFocus=row.contains(document.activeElement);row.replaceChildren();for(const color of commonColors(readUsage())){
             const b=action('',()=>pick(color),'ls-color-chip');b.style.background=swatchBackground(color);b.setAttribute('aria-label','常用颜色 '+(COLOR_TOKENS[color]||color));b.title=COLOR_TOKENS[color]||color;b.setAttribute('aria-pressed',String(color===current));row.append(b);
         }if(hadFocus)(row.querySelector('[aria-pressed="true"]')||plane).focus({preventScroll:true});};
         const theme=node('details','ls-color-theme');theme.append(node('summary','','跟随文档主题'));const tokens=node('div','ls-color-tokens');theme.append(tokens);panel.append(theme);
         for(const [color,name]of Object.entries(COLOR_TOKENS)){const b=action(name,()=>pick(color),'ls-color-token');b.style.setProperty('--color',displayColor(color));tokens.append(b);}
-        const exact=node('label','ls-color-exact');exact.append(node('span','','色值'));const hex=node('input');hex.type='text';hex.spellcheck=false;hex.maxLength=24;hex.setAttribute('aria-label','精确色值');exact.append(hex);panel.append(exact);
+        const exact=node('label','ls-color-exact lq-field');exact.append(node('span','lq-field__label','色值'));const hex=node('input');hex.type='text';hex.spellcheck=false;hex.maxLength=24;hex.setAttribute('aria-label','精确色值');adoptDomainControl(hex);exact.append(hex);panel.append(exact);
         const message=node('span','ls-color-error');message.setAttribute('role','status');panel.append(message);
         if(allowReset)panel.append(action('恢复默认颜色',()=>{current='';paint(current);onChange(undefined);popup.close('reset');}));
         function draw() {

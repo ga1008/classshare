@@ -115,7 +115,7 @@ test('closed workspace does not bootstrap or poll Agent tasks and ordinary histo
   await expect(page.locator('#ai-chat-history-toggle')).toHaveAttribute('aria-label', '我的对话');
   await page.locator('#ai-chat-history-toggle').click();
   await expect(page.getByRole('complementary', { name: '我的 AI 对话' })).toBeVisible();
-  await page.getByRole('button', { name: /之前的课程备课/ }).click();
+  await page.getByRole('button', { name: /^之前的课程备课/ }).click();
   await expect(page.locator('#ai-chat-messages-box')).toContainText('这是之前会话的完整备课回复。');
   await expect(page.getByRole('complementary', { name: '我的 AI 对话' })).toBeHidden();
   expect(await page.evaluate(() => (window as any).aiChat.currentSessionUUID)).toBe('fixture-earlier-session');

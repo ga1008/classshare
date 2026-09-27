@@ -229,7 +229,7 @@ function renderFailedActions(plan) {
     if (!plan.can_manage) {
         return `<small>来源教师需处理该失败记录</small>`;
     }
-    return `<button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>`;
+    return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--danger lq-btn--destructive" data-action="delete" data-id="${plan.id}">删除</button>`;
 }
 
 function renderCard(plan) {
@@ -243,7 +243,7 @@ function renderCard(plan) {
         const p = plan.ai_gen_progress || {};
         const pct = p.total ? Math.round((Number(p.done || 0) / Number(p.total)) * 100) : 35;
         return `
-        <article class="lp-card lp-card--busy ${meta.tone}" data-ap-card="${plan.id}">
+        <article data-lq-component="surface" class="lq-surface lp-card lp-card--busy ${meta.tone}" data-ap-card="${plan.id}">
             <div class="lp-card__top"><span class="lp-status ${meta.tone}">${meta.label}</span>${sourceBadge}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <div class="lp-progress"><div class="lp-progress__bar" style="width:${pct}%"></div></div>
@@ -251,14 +251,14 @@ function renderCard(plan) {
             ${importSummary}
             <div class="lp-card__foot">
                 <small>请稍候，可能需要几分钟…</small>
-                <button type="button" class="lp-btn lp-btn--ghost" data-action="delete" data-id="${plan.id}">取消并删除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-action="delete" data-id="${plan.id}">取消并删除</button>
             </div>
         </article>`;
     }
 
     if (plan.status === 'failed') {
         return `
-        <article class="lp-card lp-card--failed" data-ap-card="${plan.id}">
+        <article data-lq-component="surface" class="lq-surface lp-card lp-card--failed" data-ap-card="${plan.id}">
             <div class="lp-card__top"><span class="lp-status is-failed">失败</span>${sourceBadge}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <p class="lp-card__error">${escapeHtml(plan.ai_gen_error || '生成/解析失败')}</p>
@@ -275,18 +275,18 @@ function renderCard(plan) {
     if (plan.reviewer_signature) sig.push('系主任签名');
     const sigBadge = sig.length ? `<span class="lp-tag">${sig.join(' · ')}</span>` : '';
     const manageActions = plan.can_manage ? `
-        <button type="button" class="lp-btn" data-action="edit" data-id="${plan.id}">编辑</button>
-        <button type="button" class="lp-btn" data-action="preview" data-id="${plan.id}">预览/导出</button>
-        <button type="button" class="lp-btn lp-btn--ghost" data-action="attributes" data-id="${plan.id}">属性</button>
-        <button type="button" class="lp-btn lp-btn--ghost" data-action="tags" data-id="${plan.id}">标签</button>
-        <button type="button" class="lp-btn lp-btn--danger" data-action="delete" data-id="${plan.id}">删除</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn" data-action="edit" data-id="${plan.id}">编辑</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn" data-action="preview" data-id="${plan.id}">预览/导出</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-action="attributes" data-id="${plan.id}">属性</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-action="tags" data-id="${plan.id}">标签</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--danger lq-btn--destructive" data-action="delete" data-id="${plan.id}">删除</button>
     ` : `
-        <button type="button" class="lp-btn" data-action="preview" data-id="${plan.id}">预览/导出</button>
-        <button type="button" class="lp-btn lp-btn--primary" data-action="inherit" data-id="${plan.id}">一键继承</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn" data-action="preview" data-id="${plan.id}">预览/导出</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-action="inherit" data-id="${plan.id}">一键继承</button>
     `;
 
     return `
-        <article class="lp-card" data-ap-card="${plan.id}" data-material-key="assessment_plan:${escapeHtml(plan.id)}">
+        <article data-lq-component="surface" class="lq-surface lp-card" data-ap-card="${plan.id}" data-material-key="assessment_plan:${escapeHtml(plan.id)}">
             <div class="lp-card__top"><span class="lp-status ${meta.tone}">${meta.label}</span>${sourceBadge}${scopeBadge}${scoreBadge(plan)}</div>
             <strong class="lp-card__title">${escapeHtml(plan.title)}</strong>
             <div class="lp-card__meta">
@@ -380,13 +380,13 @@ function offeringOptionsHtml(includeBlank) {
 function openCreateBlankModal() {
     const body = `
         <form data-ap-form-blank class="lp-form">
-            <label>标题<input name="title" placeholder="如：服务器配置与管理 考核计划表"></label>
+            <label>标题<input data-lq-component="input" class="lq-input" name="title" placeholder="如：服务器配置与管理 考核计划表"></label>
             <label>绑定课堂（自动带入课程/班级/考核类型，可选）
-                <select name="class_offering_id">${offeringOptionsHtml(true)}</select>
+                <select data-lq-component="select" class="lq-select" name="class_offering_id">${offeringOptionsHtml(true)}</select>
             </label>
             <p class="lp-form__hint">创建后进入编辑器，用完整表单填写基础信息和考核项目（分值合计须为 100）。</p>
         </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>创建并编辑</button>`;
+    const footer = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-ap-submit>创建并编辑</button>`;
     let createBusy = false;
     const setCreateBusy = (overlay, busy) => {
         createBusy = Boolean(busy);
@@ -525,9 +525,9 @@ function openImportModal({ retryingFailedId = null } = {}) {
         <div class="lp-import">
             ${retryNote}
             <div class="lp-dropzone" data-ap-dropzone>
-                <p>拖拽文件到此处，或<button type="button" class="lp-link" data-ap-pick>点击选择文件</button></p>
+                <p>拖拽文件到此处，或<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link" data-ap-pick>点击选择文件</button></p>
                 <small>${escapeHtml(PROCESS_DOCUMENT_IMPORT_FORMAT_HINT)} 单文件 ≤ 30MB，最多 8 个。docx 中的签名图片会自动入签名库（去重）。</small>
-                <input type="file" data-ap-file multiple hidden
+                <input data-lq-component="file" class="lq-native-file" type="file" data-ap-file multiple hidden
                        accept="${PROCESS_DOCUMENT_IMPORT_ACCEPT}">
             </div>
             <div class="lp-import-policy" data-ap-import-policy>
@@ -539,11 +539,11 @@ function openImportModal({ retryingFailedId = null } = {}) {
                 <span id="ap-import-selection-message" class="lp-import-selection__message" data-selection-message role="status" aria-live="polite">尚未选择文件，请先选择要导入解析的文件。</span>
             </div>
             <label class="lp-form__full">给 AI 的额外提示（可选）
-                <textarea data-ap-extra data-prompt-pool-key="assessment_plan.import" rows="3" placeholder="如：这是《服务器配置与管理》机试考核计划表，请忠实还原考核项与分值。"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" data-ap-extra data-prompt-pool-key="assessment_plan.import" rows="3" placeholder="如：这是《服务器配置与管理》机试考核计划表，请忠实还原考核项与分值。"></textarea>
             </label>
             <p class="lp-form__hint">点击导入后将调用<strong>思考 + 多模态 AI</strong>解析，并自动归集签名图片。窗口会关闭并在列表中以占位卡显示「解析中」。</p>
         </div>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit aria-describedby="ap-import-selection-message">开始导入解析</button>`;
+    const footer = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-ap-submit aria-describedby="ap-import-selection-message">开始导入解析</button>`;
     let importBusy = false;
     const setImportBusy = (overlay, busy) => {
         importBusy = Boolean(busy);
@@ -610,13 +610,13 @@ async function openAttributesModal(id) {
         .join('');
     const body = `
         <form data-ap-form-attr class="lp-form">
-            <label>标题<input name="title" value="${escapeHtml(data.title || '')}"></label>
+            <label>标题<input data-lq-component="input" class="lq-input" name="title" value="${escapeHtml(data.title || '')}"></label>
             <label>公开范围
-                <select name="scope_level">${scopeOptions}</select>
+                <select data-lq-component="select" class="lq-select" name="scope_level">${scopeOptions}</select>
             </label>
             <p class="lp-form__hint">默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可一键继承。</p>
         </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>保存</button>`;
+    const footer = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-ap-submit>保存</button>`;
     let modalBusy = false;
     const setModalBusy = (overlay, busy) => {
         modalBusy = Boolean(busy);
@@ -656,10 +656,10 @@ async function openTagsModal(id) {
     const body = `
         <form data-ap-form-tags class="lp-form">
             <label>标签（用、或逗号分隔）
-                <input name="tags" value="${escapeHtml(current)}" placeholder="如：机试、2025秋、专升本">
+                <input data-lq-component="input" class="lq-input" name="tags" value="${escapeHtml(current)}" placeholder="如：机试、2025秋、专升本">
             </label>
         </form>`;
-    const footer = `<button type="button" class="lp-btn lp-btn--primary" data-ap-submit>保存标签</button>`;
+    const footer = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-ap-submit>保存标签</button>`;
     let modalBusy = false;
     const setModalBusy = (overlay, busy) => {
         modalBusy = Boolean(busy);
@@ -713,16 +713,16 @@ function renderAssessmentPreviewExportActions(plan, id) {
         const reason = `考核项分值合计为 ${formatScoreValue(plan.score_total)}，调整到 100 后才能导出。`;
         return `
             <span>导出：</span>
-            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">Word (.docx)</button>
-            <button type="button" class="lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">PDF (.pdf)</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">Word (.docx)</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn lp-btn--disabled" disabled title="${escapeHtml(reason)}">PDF (.pdf)</button>
             <span class="lp-preview__notice">${escapeHtml(reason)}</span>
-            <a class="lp-btn lp-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+            <a data-lq-component="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
     }
     return `
         <span>导出：</span>
-        <button type="button" class="lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=docx" data-process-export-label="Word">Word (.docx)</button>
-        <button type="button" class="lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=pdf" data-process-export-label="PDF">PDF (.pdf)</button>
-        <a class="lp-btn lp-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=docx" data-process-export-label="Word">Word (.docx)</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-btn" data-process-export-url="/api/assessment-plans/${id}/export?fmt=pdf" data-process-export-label="PDF">PDF (.pdf)</button>
+        <a data-lq-component="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" href="/assessment-plan/${id}/preview" target="_blank" rel="noopener">在新标签页打开</a>`;
 }
 
 async function inheritPlan(id, trigger) {

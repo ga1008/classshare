@@ -50,7 +50,7 @@
     {% endcall %}
     {% else %}
     <div class="smart-classroom-hero">
-        <article class="smart-classroom-card smart-classroom-intro">
+        <article data-lq-component="surface" class="lq-surface smart-classroom-card smart-classroom-intro">
             <div>
                 <h3>同步方式</h3>
                 <div class="smart-classroom-chip-row">
@@ -62,7 +62,7 @@
             </div>
         </article>
 
-        <aside class="smart-classroom-card smart-classroom-profile">
+        <aside data-lq-component="surface" class="lq-surface smart-classroom-card smart-classroom-profile">
             <h3>当前适配器</h3>
             <p id="smart-profile-note">正在读取平台对接方式。</p>
             <div class="smart-classroom-profile-meta">
@@ -73,7 +73,7 @@
         </aside>
     </div>
 
-    <section class="smart-classroom-card smart-classroom-sync-board">
+    <section data-lq-component="surface" class="lq-surface smart-classroom-card smart-classroom-sync-board">
         <div class="smart-classroom-sync-board-head">
             <div>
                 <h3>可同步功能</h3>
@@ -86,14 +86,14 @@
     </section>
     {% endif %}
 
-    <div class="smart-classroom-modal-backdrop" id="smart-account-modal" hidden>
-        <article class="smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-account-modal-title">
+    <div class="lq-domain-region smart-classroom-modal-backdrop" id="smart-account-modal" hidden data-lq-component="layer">
+        <article data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-account-modal-title">
             <div class="smart-classroom-modal-head">
                 <div>
                     <p class="smart-classroom-kicker">ACCOUNT</p>
                     <h3 id="smart-account-modal-title">账号管理</h3>
                 </div>
-                <button type="button" class="smart-classroom-modal-close" id="smart-account-modal-close" aria-label="关闭">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass smart-classroom-modal-close" id="smart-account-modal-close" aria-label="关闭">&times;</button>
             </div>
             <div class="smart-classroom-modal-body">
                 <div class="smart-classroom-account-grid">
@@ -114,13 +114,13 @@
                             {# 保存按钮不迁 lq_btn：manage_smart_classroom_integrations.js 的 setBusy()
                                直接写 button.textContent，会把 lq-btn 的 .lq-btn__label 结构抹掉。
                                该 JS 不属于任何 S5 包，本轮不改，故模板侧保持原生按钮。 #}
-                            <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
+                            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="smart-save-btn">验证并保存</button>
                         </form>
                         {% else %}
                         <form id="smart-classroom-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="smart-platform-code">平台</label>
-                                <select class="form-control" id="smart-platform-code" name="platform_code" required>
+                                <select data-lq-component="select" class="lq-select form-control" id="smart-platform-code" name="platform_code" required>
                                     {% for profile in smart_classroom_profiles %}
                                     <option value="{{ profile.platform_code }}">{{ profile.platform_name }}</option>
                                     {% endfor %}
@@ -128,16 +128,16 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="smart-username">智慧课堂账号</label>
-                                <input class="form-control" type="text" id="smart-username" name="username" autocomplete="username" placeholder="请输入工号或统一账号" required>
+                                <input data-lq-component="input" class="lq-input form-control" type="text" id="smart-username" name="username" autocomplete="username" placeholder="请输入工号或统一账号" required>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="smart-password">智慧课堂密码</label>
-                                <input class="form-control" type="password" id="smart-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                                <input data-lq-component="input" class="lq-input form-control" type="password" id="smart-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
                             </div>
-                            <button type="submit" class="btn btn-primary" id="smart-save-btn">验证并保存</button>
+                            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="smart-save-btn">验证并保存</button>
                         </form>
                         {% endif %}
-                        <div class="smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
+                        <div data-lq-component="surface" class="lq-surface smart-classroom-sync-panel" id="smart-auto-sync-panel" hidden>
                             <h3 id="smart-auto-sync-title">智慧课堂自动同步</h3>
                             <p id="smart-auto-sync-message"></p>
                             <div class="smart-classroom-stage-list" id="smart-auto-sync-stages"></div>
@@ -145,9 +145,9 @@
                     </section>
 
                     <section class="smart-classroom-account-list">
-                        <div class="smart-classroom-account-toolbar">
+                        <div data-lq-component="toolbar" class="lq-domain-toolbar smart-classroom-account-toolbar">
                             <h3>已对接信息</h3>
-                            <button type="button" class="btn btn-outline btn-sm" id="smart-refresh-btn">刷新</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="smart-refresh-btn">刷新</button>
                         </div>
                         <div class="smart-classroom-list" id="smart-credential-list"></div>
                     </section>
@@ -157,14 +157,14 @@
     </div>
 </section>
 
-<div class="smart-classroom-modal-backdrop" id="smart-sync-modal" hidden>
-    <article class="smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-sync-modal-title">
+<div class="lq-domain-region smart-classroom-modal-backdrop" id="smart-sync-modal" hidden data-lq-component="layer">
+    <article data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised smart-classroom-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="smart-sync-modal-title">
         <div class="smart-classroom-modal-head">
             <div>
                 <p class="smart-classroom-kicker">SYNC DETAIL</p>
                 <h3 id="smart-sync-modal-title">同步详情</h3>
             </div>
-            <button type="button" class="smart-classroom-modal-close" id="smart-sync-modal-close" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass smart-classroom-modal-close" id="smart-sync-modal-close" aria-label="关闭">&times;</button>
         </div>
         <div class="smart-classroom-modal-body">
             <p id="smart-sync-modal-description"></p>
@@ -181,27 +181,27 @@
                 <div class="smart-classroom-request-grid">
                     <div class="form-group">
                         <label class="form-label" for="smart-probe-method">方法</label>
-                        <select class="form-control" id="smart-probe-method">
+                        <select data-lq-component="select" class="lq-select form-control" id="smart-probe-method">
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="smart-probe-url">请求地址</label>
-                        <input class="form-control" type="text" id="smart-probe-url" autocomplete="off">
+                        <input data-lq-component="input" class="lq-input form-control" type="text" id="smart-probe-url" autocomplete="off">
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="smart-probe-params">查询参数 JSON</label>
-                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-params" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control smart-classroom-code-field" id="smart-probe-params" spellcheck="false"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="smart-probe-headers">请求头 JSON</label>
-                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-headers" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control smart-classroom-code-field" id="smart-probe-headers" spellcheck="false"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="smart-probe-body-mode">载荷格式</label>
-                    <select class="form-control" id="smart-probe-body-mode">
+                    <select data-lq-component="select" class="lq-select form-control" id="smart-probe-body-mode">
                         <option value="form">Form 表单</option>
                         <option value="json">JSON</option>
                         <option value="raw">Raw 文本</option>
@@ -209,10 +209,10 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="smart-probe-body">请求载荷</label>
-                    <textarea class="form-control smart-classroom-code-field" id="smart-probe-body" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control smart-classroom-code-field" id="smart-probe-body" spellcheck="false"></textarea>
                 </div>
                 <div class="smart-classroom-modal-actions">
-                    <button type="button" class="btn btn-outline" id="smart-sync-modal-probe">验证请求</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="smart-sync-modal-probe">验证请求</button>
                 </div>
                 <div class="smart-classroom-probe-result" id="smart-probe-result" hidden>
                     <div class="smart-classroom-probe-result-head" id="smart-probe-result-head"></div>
@@ -221,8 +221,8 @@
             </div>
             <p class="smart-classroom-help" id="smart-sync-modal-safe"></p>
             <div class="smart-classroom-modal-actions">
-                <button type="button" class="btn btn-primary" id="smart-sync-modal-run">同步</button>
-                <button type="button" class="btn btn-outline" id="smart-sync-modal-cancel">关闭</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="smart-sync-modal-run">同步</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="smart-sync-modal-cancel">关闭</button>
             </div>
         </div>
     </article>

@@ -18,7 +18,7 @@ beforeEach(() => {
         createElement: () => {
             const listeners = {};
             return {
-                style: {}, listeners, addEventListener: (name, listener) => { listeners[name] = listener; },
+                style: {}, dataset: {}, classList: { add: vi.fn() }, listeners, addEventListener: (name, listener) => { listeners[name] = listener; },
                 remove: () => listeners.blur?.(), focus: vi.fn(),
             };
         },

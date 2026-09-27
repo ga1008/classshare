@@ -51,16 +51,16 @@
         </div>
     {% endcall %}
 
-    <section class="class-control-panel" aria-label="班级筛选与搜索">
+    <section data-lq-component="surface" class="lq-surface class-control-panel" aria-label="班级筛选与搜索">
         <div class="class-control-main">
             <label class="academic-search class-search" for="classSearchInput">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                <input id="classSearchInput" type="search" class="form-control" placeholder="搜索班级、学生姓名、学号或邮箱">
+                <input data-lq-component="input" id="classSearchInput" type="search" class="lq-input form-control" placeholder="搜索班级、学生姓名、学号或邮箱">
             </label>
             <div class="class-filter-fields">
                 <label class="academic-filter-field" for="classDepartmentFilter">
                     <span>系别</span>
-                    <select id="classDepartmentFilter" class="form-control">
+                    <select data-lq-component="select" id="classDepartmentFilter" class="lq-select form-control">
                         <option value="all">全部系别</option>
                         {% for department in department_options %}
                         <option value="{{ department }}">{{ department }}</option>
@@ -70,7 +70,7 @@
                 </label>
                 <label class="academic-filter-field" for="classHealthFilter">
                     <span>名单状态</span>
-                    <select id="classHealthFilter" class="form-control">
+                    <select data-lq-component="select" id="classHealthFilter" class="lq-select form-control">
                         <option value="all">全部状态</option>
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
@@ -83,7 +83,7 @@
                 </label>
                 <label class="academic-filter-field" for="classSortSelect">
                     <span>排序</span>
-                    <select id="classSortSelect" class="form-control">
+                    <select data-lq-component="select" id="classSortSelect" class="lq-select form-control">
                         <option value="department">按系别与名称</option>
                         <option value="students-desc">学生数从多到少</option>
                         <option value="missing-desc">缺邮箱优先</option>
@@ -128,14 +128,14 @@
         </div>
         {% else %}
         <div class="class-department-chips" id="classDepartmentChips" aria-label="按系别快速筛选">
-            <button type="button" class="class-chip is-active" data-department-chip="all">全部 <b>{{ class_stats.class_count }}</b></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-chip is-active" data-department-chip="all">全部 <b>{{ class_stats.class_count }}</b></button>
             {% for department in department_options %}
             {% set dept_count = my_classes | selectattr("department_label", "equalto", department) | list | length %}
-            <button type="button" class="class-chip" data-department-chip="{{ department }}">{{ department }} <b>{{ dept_count }}</b></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-chip" data-department-chip="{{ department }}">{{ department }} <b>{{ dept_count }}</b></button>
             {% endfor %}
             {% set uncategorized_count = my_classes | selectattr("department_label", "equalto", "未分类") | list | length %}
             {% if uncategorized_count %}
-            <button type="button" class="class-chip" data-department-chip="未分类">未分类 <b>{{ uncategorized_count }}</b></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-chip" data-department-chip="未分类">未分类 <b>{{ uncategorized_count }}</b></button>
             {% endif %}
         </div>
         {% endif %}
@@ -148,14 +148,14 @@
                     <h3>班级资产</h3>
                     <p><span id="classResultCount">{{ my_classes | length }}</span> 个班级符合当前条件</p>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm" id="classFilterResetBtn">清除筛选</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classFilterResetBtn">清除筛选</button>
             </div>
 
             <div class="class-card-list" id="classList">
                 {% for class_item in my_classes %}
                 {% set latest_time = class_item.latest_student_created_at or class_item.created_at or '' %}
-                <article
-                    class="class-manage-card"
+                <article data-lq-component="surface"
+                    class="lq-surface class-manage-card"
                     data-class-card
                     data-class-id="{{ class_item.id }}"
                     data-class-name="{{ class_item.name }}"
@@ -249,21 +249,21 @@
                     {% endif %}
 
                     <div class="class-card-actions">
-                        <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="class" data-resource-id="{{ class_item.id }}">属性</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-resource-attributes data-resource-type="class" data-resource-id="{{ class_item.id }}">属性</button>
                         {% if class_item.can_view_content %}
-                        <button type="button" class="btn btn-primary btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">学生</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="open-students" data-class-id="{{ class_item.id }}">学生</button>
                         {% endif %}
                         {% if class_item.can_manage %}
-                        <button type="button" class="btn btn-outline btn-sm" data-action="add-student" data-class-id="{{ class_item.id }}" data-class-name="{{ class_item.name }}">新增学生</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="add-student" data-class-id="{{ class_item.id }}" data-class-name="{{ class_item.name }}">新增学生</button>
                         {% endif %}
                         {% if class_item.can_view_content %}
-                        <button type="button" class="btn btn-outline btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="export-class" data-class-id="{{ class_item.id }}">导出名单</button>
                         {% endif %}
-                        <a class="btn btn-outline btn-sm" href="/manage/teaching/offerings">开设课堂</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/offerings">开设课堂</a>
                         {% if class_item.can_manage %}
-                        <button
+                        <button data-lq-component="button"
                             type="button"
-                            class="btn btn-ghost btn-sm text-danger"
+                            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger"
                             data-action="delete-class"
                             data-class-id="{{ class_item.id }}"
                             data-class-name="{{ class_item.name }}"
@@ -287,7 +287,7 @@
             </div>
         </div>
 
-        <aside class="class-import-panel" id="classImportPanel">
+        <aside data-lq-component="surface" class="lq-surface class-import-panel" id="classImportPanel">
             <div class="class-import-head">
                 <span>Roster Import</span>
                 <h3>导入班级名单</h3>
@@ -296,19 +296,19 @@
             <form id="classCreateForm" action="/api/manage/classes/create" method="post" enctype="multipart/form-data" class="academic-form-grid">
                 <div class="academic-field">
                     <label for="classNameInput">班级名称</label>
-                    <input type="text" id="classNameInput" name="class_name" class="form-control" required placeholder="例如：软件工程 2406 班">
+                    <input data-lq-component="input" type="text" id="classNameInput" name="class_name" class="lq-input form-control" required placeholder="例如：软件工程 2406 班">
                 </div>
                 <div class="academic-field">
                     <label for="classSchoolInput">学校</label>
-                    <input type="text" id="classSchoolInput" name="school_name" class="form-control" placeholder="留空则使用当前教师所在学校">
+                    <input data-lq-component="input" type="text" id="classSchoolInput" name="school_name" class="lq-input form-control" placeholder="留空则使用当前教师所在学校">
                 </div>
                 <div class="academic-field">
                     <label for="classCollegeInput">学院</label>
-                    <input type="text" id="classCollegeInput" name="college" class="form-control" placeholder="例如：信息工程学院">
+                    <input data-lq-component="input" type="text" id="classCollegeInput" name="college" class="lq-input form-control" placeholder="例如：信息工程学院">
                 </div>
                 <div class="academic-field">
                     <label for="classDepartmentInput">所属系别</label>
-                    <input type="text" id="classDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="例如：软件工程系">
+                    <input data-lq-component="input" type="text" id="classDepartmentInput" name="department" class="lq-input form-control" list="classDepartmentOptions" placeholder="例如：软件工程系">
                     <datalist id="classDepartmentOptions">
                         {% for department in department_options %}
                         <option value="{{ department }}"></option>
@@ -318,32 +318,32 @@
                 </div>
                 <div class="academic-field">
                     <label for="classRosterInput">学生名单文件</label>
-                    <input type="file" id="classRosterInput" name="file" class="form-control" required accept=".xlsx,.xls,.csv">
+                    <input data-lq-component="file" type="file" id="classRosterInput" name="file" class="lq-native-file form-control" required accept=".xlsx,.xls,.csv">
                     <div class="academic-hint">至少包含“姓名”和“学号”；建议包含“邮箱/email”。</div>
                 </div>
                 <div class="class-form-note">
                     缺邮箱不阻止导入；缺失学生会在列表中标出。
                 </div>
-                <button type="submit" class="btn btn-primary">创建班级并导入学生</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">创建班级并导入学生</button>
             </form>
         </aside>
     </section>
 </div>
 
-<div class="class-student-drawer-backdrop" id="classStudentDrawer" hidden aria-hidden="true">
-    <aside class="class-student-drawer" role="dialog" aria-modal="true" aria-labelledby="classStudentDrawerTitle" tabindex="-1">
+<div class="lq-domain-region class-student-drawer-backdrop" id="classStudentDrawer" hidden aria-hidden="true" data-lq-component="layer">
+    <aside data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised class-student-drawer" role="dialog" aria-modal="true" aria-labelledby="classStudentDrawerTitle" tabindex="-1">
         <div class="class-student-drawer-head">
             <div>
                 <span id="classStudentDrawerKicker">学生名单</span>
                 <h3 id="classStudentDrawerTitle">班级学生</h3>
                 <p id="classStudentDrawerMeta">选择学生查看详情统计。</p>
             </div>
-            <button type="button" class="class-student-drawer-close" id="classStudentDrawerClose" aria-label="关闭学生名单">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-student-drawer-close" id="classStudentDrawerClose" aria-label="关闭学生名单">&times;</button>
         </div>
-        <div class="class-student-drawer-toolbar">
-            <input type="search" class="form-control" id="classStudentSearchInput" placeholder="搜索姓名、学号或邮箱">
-            <button type="button" class="btn btn-primary btn-sm" id="classStudentAddBtn">新增学生</button>
-            <button type="button" class="btn btn-outline btn-sm" id="classStudentExportBtn">导出本班</button>
+        <div data-lq-component="toolbar" class="lq-domain-toolbar class-student-drawer-toolbar">
+            <input data-lq-component="input" type="search" class="lq-input form-control" id="classStudentSearchInput" placeholder="搜索姓名、学号或邮箱">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" id="classStudentAddBtn">新增学生</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="classStudentExportBtn">导出本班</button>
         </div>
         <div class="class-student-drawer-list" id="classStudentList"></div>
         <div class="academic-empty class-student-drawer-empty" id="classStudentEmpty" hidden>
@@ -353,29 +353,29 @@
     </aside>
 </div>
 
-<div class="class-student-modal-backdrop" id="classStudentAddModal" hidden aria-hidden="true">
-    <section class="class-student-modal" role="dialog" aria-modal="true" aria-labelledby="classStudentAddTitle" tabindex="-1">
+<div class="lq-domain-region class-student-modal-backdrop" id="classStudentAddModal" hidden aria-hidden="true" data-lq-component="layer">
+    <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised class-student-modal" role="dialog" aria-modal="true" aria-labelledby="classStudentAddTitle" tabindex="-1">
         <div class="class-student-modal-head">
             <div>
                 <span id="classStudentAddKicker">新增学生</span>
                 <h3 id="classStudentAddTitle">加入班级</h3>
                 <p id="classStudentAddMeta">填写基础信息后，学生会正式进入该班级名单。</p>
             </div>
-            <button type="button" class="class-student-drawer-close" id="classStudentAddClose" aria-label="关闭新增学生表单">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-student-drawer-close" id="classStudentAddClose" aria-label="关闭新增学生表单">&times;</button>
         </div>
         <form id="classStudentAddForm" class="class-student-modal-form academic-form-grid">
             <input type="hidden" name="class_id" id="classStudentAddClassId">
             <div class="academic-field">
                 <label for="classStudentAddName">姓名</label>
-                <input type="text" id="classStudentAddName" name="name" class="form-control" required placeholder="例如：张三">
+                <input data-lq-component="input" type="text" id="classStudentAddName" name="name" class="lq-input form-control" required placeholder="例如：张三">
             </div>
             <div class="academic-field">
                 <label for="classStudentAddIdNumber">学号</label>
-                <input type="text" id="classStudentAddIdNumber" name="student_id_number" class="form-control" required placeholder="例如：20260001">
+                <input data-lq-component="input" type="text" id="classStudentAddIdNumber" name="student_id_number" class="lq-input form-control" required placeholder="例如：20260001">
             </div>
             <div class="academic-field">
                 <label for="classStudentAddGender">性别</label>
-                <select id="classStudentAddGender" name="gender" class="form-control">
+                <select data-lq-component="select" id="classStudentAddGender" name="gender" class="lq-select form-control">
                     <option value="">未填写</option>
                     <option value="男">男</option>
                     <option value="女">女</option>
@@ -383,57 +383,57 @@
             </div>
             <div class="academic-field">
                 <label for="classStudentAddPhone">手机号</label>
-                <input type="tel" id="classStudentAddPhone" name="phone" class="form-control" placeholder="用于后续联系">
+                <input data-lq-component="input" type="tel" id="classStudentAddPhone" name="phone" class="lq-input form-control" placeholder="用于后续联系">
             </div>
             <div class="academic-field class-student-modal-wide">
                 <label for="classStudentAddEmail">邮箱</label>
-                <input type="email" id="classStudentAddEmail" name="email" class="form-control" placeholder="student@example.com">
+                <input data-lq-component="input" type="email" id="classStudentAddEmail" name="email" class="lq-input form-control" placeholder="student@example.com">
             </div>
             <div class="class-form-note class-student-modal-wide">
                 新增学生默认为在读状态，会被纳入课堂任务、统计和通知范围；休学可在学生名单中单独设置。
             </div>
             <div class="class-student-modal-actions">
-                <button type="button" class="btn btn-outline" id="classStudentAddCancel">取消</button>
-                <button type="submit" class="btn btn-primary">确认加入班级</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="classStudentAddCancel">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">确认加入班级</button>
             </div>
         </form>
     </section>
 </div>
 
-<div class="class-custom-modal-backdrop class-student-modal-backdrop" id="classCustomCreateModal" hidden aria-hidden="true">
-    <section class="class-student-modal class-custom-modal" role="dialog" aria-modal="true" aria-labelledby="classCustomCreateTitle" tabindex="-1">
+<div class="lq-domain-region class-custom-modal-backdrop class-student-modal-backdrop" id="classCustomCreateModal" hidden aria-hidden="true" data-lq-component="layer">
+    <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised class-student-modal class-custom-modal" role="dialog" aria-modal="true" aria-labelledby="classCustomCreateTitle" tabindex="-1">
         <div class="class-student-modal-head">
             <div>
                 <span>Custom Class</span>
                 <h3 id="classCustomCreateTitle">创建自定义班级</h3>
                 <p>用于额外辅导、跨专业学生或临时学生名单。</p>
             </div>
-            <button type="button" class="class-student-drawer-close" id="classCustomCreateClose" aria-label="关闭自定义班级表单">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass class-student-drawer-close" id="classCustomCreateClose" aria-label="关闭自定义班级表单">&times;</button>
         </div>
         <form id="classCustomCreateForm" class="class-student-modal-form class-custom-modal-form academic-form-grid">
             <div class="academic-field">
                 <label for="classCustomNameInput">班级名称</label>
-                <input type="text" id="classCustomNameInput" name="class_name" class="form-control" required placeholder="例如：2026 春季专项辅导班">
+                <input data-lq-component="input" type="text" id="classCustomNameInput" name="class_name" class="lq-input form-control" required placeholder="例如：2026 春季专项辅导班">
             </div>
             <div class="academic-field">
                 <label for="classCustomSchoolInput">学校</label>
-                <input type="text" id="classCustomSchoolInput" name="school_name" class="form-control" placeholder="留空则使用当前教师所在学校">
+                <input data-lq-component="input" type="text" id="classCustomSchoolInput" name="school_name" class="lq-input form-control" placeholder="留空则使用当前教师所在学校">
             </div>
             <div class="academic-field">
                 <label for="classCustomCollegeInput">归属学院</label>
-                <input type="text" id="classCustomCollegeInput" name="college" class="form-control" placeholder="例如：信息工程学院">
+                <input data-lq-component="input" type="text" id="classCustomCollegeInput" name="college" class="lq-input form-control" placeholder="例如：信息工程学院">
             </div>
             <div class="academic-field">
                 <label for="classCustomDepartmentInput">项目或方向</label>
-                <input type="text" id="classCustomDepartmentInput" name="department" class="form-control" list="classDepartmentOptions" placeholder="可留空">
+                <input data-lq-component="input" type="text" id="classCustomDepartmentInput" name="department" class="lq-input form-control" list="classDepartmentOptions" placeholder="可留空">
             </div>
             <div class="academic-field">
                 <label for="classCustomMajorInput">专业</label>
-                <input type="text" id="classCustomMajorInput" name="major" class="form-control" placeholder="跨专业或临时学生可留空">
+                <input data-lq-component="input" type="text" id="classCustomMajorInput" name="major" class="lq-input form-control" placeholder="跨专业或临时学生可留空">
             </div>
             <div class="academic-field">
                 <label for="classCustomScopeInput">可见范围</label>
-                <select id="classCustomScopeInput" name="scope_level" class="form-control">
+                <select data-lq-component="select" id="classCustomScopeInput" name="scope_level" class="lq-select form-control">
                     <option value="private">仅维护教师</option>
                     <option value="department">本系部</option>
                     <option value="school">本学校</option>
@@ -441,15 +441,15 @@
             </div>
             <div class="academic-field class-student-modal-wide">
                 <label for="classCustomDescriptionInput">说明</label>
-                <textarea id="classCustomDescriptionInput" name="description" class="form-control" rows="3" placeholder="例如：竞赛辅导、补修答疑、校外临时学习支持"></textarea>
+                <textarea data-lq-component="textarea" id="classCustomDescriptionInput" name="description" class="lq-textarea form-control" rows="3" placeholder="例如：竞赛辅导、补修答疑、校外临时学习支持"></textarea>
             </div>
             <label class="class-form-note class-student-modal-wide">
-                <input type="checkbox" id="classCustomCreateAndAddStudent" checked>
+                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="classCustomCreateAndAddStudent" checked>
                 <span>创建后添加第一个学生</span>
             </label>
             <div class="class-student-modal-actions">
-                <button type="button" class="btn btn-outline" id="classCustomCreateCancel">取消</button>
-                <button type="submit" class="btn btn-primary">创建班级</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="classCustomCreateCancel">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">创建班级</button>
             </div>
         </form>
     </section>

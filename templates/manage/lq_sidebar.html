@@ -25,7 +25,7 @@
                 </div>
                 {% else %}
                 <details id="manage-domain-{{ domain.key }}" class="lq-sidebar__group lq-manage-domain{% if domain.active %} is-active{% endif %}" data-lq-nav-group="{{ domain.key }}" data-manage-domain="{{ domain.key }}" data-nav-domain="{{ domain.key }}"{% if domain.active %} open{% endif %}>
-                    <summary class="lq-manage-domain__toggle" aria-controls="manage-domain-items-{{ domain.key }}" {{ explain_attrs(domain.title, domain.description, placement='right') }}>
+                    <summary data-lq-component="disclosure" class="lq-disclosure-trigger lq-manage-domain__toggle" aria-controls="manage-domain-items-{{ domain.key }}" {{ explain_attrs(domain.title, domain.description, placement='right') }}>
                         <span class="lq-manage-domain__dot" aria-hidden="true"></span><span class="lq-manage-sidebar__copy">{{ domain.label }}</span><span class="lq-manage-domain__count">{{ domain.item_count }}</span>
                     </summary>
                     <div id="manage-domain-items-{{ domain.key }}">

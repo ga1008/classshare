@@ -1,3 +1,4 @@
+import { adoptDomainControl, adoptDomainContentSlot } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
 import {
     DEFAULT_FREQUENT_EMOJIS,
@@ -1704,6 +1705,7 @@ export class ClassroomChat {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'chat-emoji-item';
+        adoptDomainControl(button, { kind: 'choice', variant: 'ghost' });
         button.title = meta.name || value;
         button.setAttribute('aria-label', meta.name || value || 'emoji');
         button.appendChild(this.createUnicodeEmojiVisual(value, meta.code));
@@ -1736,6 +1738,7 @@ export class ClassroomChat {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'chat-emoji-item chat-emoji-item-custom';
+        adoptDomainControl(button, { kind: 'choice', variant: 'ghost' });
         button.title = item?.name || '自定义表情';
         button.setAttribute('aria-label', item?.name || '自定义表情');
 
@@ -1814,6 +1817,7 @@ export class ClassroomChat {
 
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
+            adoptDomainControl(removeButton, { variant: 'ghost' });
             removeButton.setAttribute('aria-label', `移除 ${emoji.name || '表情'}`);
             removeButton.title = '移除';
             removeButton.textContent = '×';
@@ -1909,7 +1913,8 @@ export class ClassroomChat {
         const fragment = document.createDocumentFragment();
         this.pendingAttachments.forEach((attachment, index) => {
             const card = document.createElement('div');
-            card.className = 'chat-attachment-preview-card';
+            card.className = 'chat-attachment-preview-card lq-surface';
+            card.dataset.lqComponent = 'surface';
 
             const previewLink = document.createElement('a');
             previewLink.className = 'chat-attachment-preview-link';
@@ -1946,6 +1951,7 @@ export class ClassroomChat {
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
             removeButton.className = 'chat-attachment-preview-remove';
+        adoptDomainControl(removeButton, { kind: 'button', variant: 'ghost' });
             removeButton.textContent = '×';
             removeButton.title = '移除图片';
             removeButton.setAttribute('aria-label', `移除 ${attachment.name || '图片'}`);
@@ -2294,6 +2300,7 @@ export class ClassroomChat {
             const link = document.createElement('button');
             link.type = 'button';
             link.className = `chat-message-attachment-link${options.quote ? ' chat-quote-attachment-link' : ''}`;
+        adoptDomainControl(link, { kind: 'choice', variant: 'ghost' });
             link.title = '\u9884\u89c8\u56fe\u7247';
             link.addEventListener('click', () => this.openAttachmentPreview(attachment, items));
 
@@ -2377,6 +2384,7 @@ export class ClassroomChat {
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
             removeButton.className = 'chat-quote-remove';
+        adoptDomainControl(removeButton, { kind: 'button', variant: 'ghost' });
             removeButton.textContent = '×';
             removeButton.title = DISCUSSION_UI_TEXT.cancelQuote;
             removeButton.setAttribute('aria-label', DISCUSSION_UI_TEXT.cancelQuote);
@@ -2978,6 +2986,7 @@ export class ClassroomChat {
         }
 
         const textarea = document.createElement('textarea');
+        adoptDomainContentSlot(textarea);
         textarea.value = normalizedText;
         textarea.setAttribute('readonly', 'readonly');
         textarea.style.position = 'fixed';

@@ -34,6 +34,7 @@ export function showToast(message, type = 'success', duration = 3000) {
         // One plaintext failure notice, never a second timer/notification queue.
         bridge.fallback.textContent = `${normalized}（通知组件暂不可用）`;
         const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = '关闭通知';
+        dismiss.className = 'lq-btn lq-btn--glass lq-btn--sm'; dismiss.dataset.lqComponent = 'button';
         dismiss.addEventListener('click', () => { bridge.fallbackLease?.destroy(); bridge.fallbackLease = null; bridge.fallback?.remove(); bridge.fallback = null; }, { once: true });
         bridge.fallback.append(dismiss);
     });

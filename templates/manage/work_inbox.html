@@ -94,7 +94,7 @@
                 {% if item.status_label %}<span{% if item.date_bucket == 'overdue' %} class="wi-warn"{% endif %}>{{ item.status_label }}</span>{% endif %}
                 <span>{{ item.date_label }}{% if item.time_label %} · {{ item.time_label }}{% endif %}</span>
             </span>
-            <a href="{{ item.href }}" class="btn btn-outline btn-sm">{{ item.action_label or '查看' }}</a>
+            <a data-lq-component="button" href="{{ item.href }}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">{{ item.action_label or '查看' }}</a>
         </li>
         {% endfor %}
     </ul>
@@ -102,7 +102,7 @@
     <div class="wi-empty">
         <strong>没有需要处理的事项</strong>
         <p>{% if inbox.source %}换一个来源看看，或回到全部。{% else %}批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。{% endif %}</p>
-        <a href="/dashboard" class="btn btn-primary btn-sm">回首页</a>
+        <a data-lq-component="button" href="/dashboard" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">回首页</a>
     </div>
     {% endif %}
     {% endif %}

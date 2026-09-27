@@ -37,19 +37,6 @@
     animation: none;
     transform-origin: 80% 85%;
 }
-/* A separate material plane blurs the page rather than merely tinting its
-   text. It also leaves children free to draw their own glass surfaces. */
-#ai-chat-modal .ai-workspace-container::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    background: var(--ls-glass-sheen), linear-gradient(135deg, hsl(var(--ls-primary) / .09), transparent 70%), hsl(var(--ls-glass-fill-strong));
-    backdrop-filter: blur(calc(var(--ls-blur-thick, 24px) + 10px)) saturate(var(--ls-glass-saturate, 170%));
-    -webkit-backdrop-filter: blur(calc(var(--ls-blur-thick, 24px) + 10px)) saturate(var(--ls-glass-saturate, 170%));
-    pointer-events: none;
-}
 #ai-chat-modal .ai-workspace-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -122,30 +109,12 @@
     font: inherit; font-size: 14px; line-height: 1.5;
 }
 #ai-chat-modal .ai-chat-input-area textarea::placeholder { color: hsl(var(--ls-glass-muted)); opacity: .85; }
-#ai-chat-modal :is(button:not([class*="lq-"]), .ai-workspace-title__mark) {
-    border-radius: var(--ls-r-capsule, 999px);
-    border: 1px solid hsl(var(--ls-glass-rim));
-    color: hsl(var(--ls-glass-ink));
-    background: var(--ls-glass-sheen), hsl(var(--ls-glass-fill-control));
-    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-line)), 0 2px 6px hsl(var(--ls-ink) / .04);
-    /* The window/history surface already supplies live frost. Repeated
-       controls keep their sheen and rim without a filter for every row. */
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms var(--ls-ease-out);
-}
-#ai-chat-modal button:not([class*="lq-"]) { cursor: pointer; }
-#ai-chat-modal button:not([class*="lq-"]):hover:not(:disabled) { background-color: hsl(var(--ls-primary) / .14); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), 0 3px 12px hsl(var(--ls-primary) / .12); }
-#ai-chat-modal button:not([class*="lq-"]):active:not(:disabled) { transform: scale(.96); background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); }
-#ai-chat-modal button:not([class*="lq-"]):is(.active, .is-active, .send):not(:disabled) { background: linear-gradient(hsl(var(--ls-primary) / .92), hsl(var(--ls-primary) / .92)), var(--ls-glass-sheen); color: hsl(var(--ls-on-primary)); }
-#ai-chat-modal button:not([class*="lq-"]):is(.active, .is-active, .send) :is(strong, small, svg, span) { color: inherit; }
-#ai-chat-modal :is(button:not([class*="lq-"]),textarea):focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
-#ai-chat-modal button:not([class*="lq-"]):disabled { opacity: .48; cursor: not-allowed; }
 #ai-chat-modal .chat-btn { width: 36px; height: 36px; min-width: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 #ai-chat-modal .ai-workspace-modebar { display: flex; gap: 6px; border: 0; background: transparent; padding: 0; margin-bottom: 9px; }
 #ai-chat-modal .ai-workspace-mode-option { flex: 1; min-width: 0; padding: 7px 12px; gap: 8px; }
 #ai-chat-modal .ai-workspace-mode-option strong { font-size: 12px; }
 #ai-chat-modal .ai-workspace-mode-option small { font-size: 10px; color: hsl(var(--ls-glass-muted)); }
+#ai-chat-modal .ai-workspace-mode-option:is(.active,.is-active) :is(strong,small,span,svg) { color: inherit; }
 #ai-chat-modal .ai-workspace-mode-option__icon { width: 26px; height: 26px; background: transparent; }
 #ai-chat-modal .ai-agent-starters { max-height: 150px; overflow: auto; background: hsl(var(--ls-glass-fill-inset)); border-color: hsl(var(--ls-glass-line)); border-radius: 18px; padding: 10px; margin-bottom: 8px; }
 #ai-chat-modal .ai-agent-starter { min-width: 0; padding: 9px 14px; }
@@ -167,11 +136,12 @@
 #ai-chat-modal .ai-agent-history-drawer[hidden] { display: none; }
 #ai-chat-modal .ai-conversation-history { display: flex; flex-direction: column; z-index: 15; }
 #ai-chat-modal .ai-conversation-history > header { display: flex; align-items: center; justify-content: space-between; padding: 12px; }
-#ai-chat-modal .ai-conversation-history .ai-task-list { flex: 1; border: 0; }
+#ai-chat-modal .ai-conversation-history .ai-task-list { flex: 1; border: 0; max-height: none; }
 #ai-chat-modal .ai-conversation-row { display: flex; gap: 6px; align-items: center; min-width: 0; }
 #ai-chat-modal .ai-conversation-entry { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 18px; width: 100%; }
 #ai-chat-modal .ai-conversation-entry strong { font-size: 13px; overflow-wrap: anywhere; }
 #ai-chat-modal .ai-conversation-entry small { font-size: 11px; color: hsl(var(--ls-glass-muted)); }
+#ai-chat-modal .ai-conversation-entry[aria-current="true"] :is(strong,small) { color: inherit; }
 #ai-chat-modal .ai-conversation-entry[aria-current="true"] { border-color: hsl(var(--ls-primary)); background-color: hsl(var(--ls-primary) / .16); }
 #ai-chat-modal :is(.ai-task-list,.ai-task-detail,.ai-agent-history-drawer > header,.ai-agent-subscriptions,.ai-agent-task-card,.ai-agent-question-card,.thinking-header,.thinking-content) { background: hsl(var(--ls-glass-fill-inset)); color: hsl(var(--ls-glass-ink)); border-color: hsl(var(--ls-glass-line)); }
 #ai-chat-modal .ai-chat-attachment-previews { flex-shrink: 0; max-height: 100px; overflow: auto; background: transparent; padding-inline: 16px; }
@@ -213,5 +183,5 @@ dialog.ai-agent-reconciliation-dialog button { border-radius: 999px; }
     #ai-chat-modal .right-buttons { grid-column: 2; grid-row: 2; }
     #ai-chat-modal .ai-agent-starters { max-height: 100px; }
 }
-@media (prefers-reduced-motion: reduce) { #ai-chat-modal .ai-workspace-container, #ai-chat-modal button:not([class*="lq-"]) { animation: none; transition: none; } }
-@supports not (backdrop-filter: blur(1px)) { #ai-chat-modal .ai-workspace-container::before, #ai-chat-modal .ai-agent-history-drawer { background: hsl(var(--ls-surface-1)); } }
+@media (prefers-reduced-motion: reduce) { #ai-chat-modal .ai-workspace-container { animation: none; transition: none; } }
+@supports not (backdrop-filter: blur(1px)) { #ai-chat-modal .ai-agent-history-drawer { background: hsl(var(--ls-surface-1)); } }

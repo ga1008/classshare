@@ -5,8 +5,8 @@
                     <p>邮件仅用于成绩公布、教师私信与回复、批改失败及重要事务；作业提交、低置信度复核和日常动态仅站内提醒。发布作业时可主动选择邮件通知。</p>
                 </div>
                 <div class="profile-section-head__actions">
-                    {% if _profile_lq %}{{ lq_btn('新增配置', variant='soft', type='button', attrs={'data-profile-email-new': ''}) }}{% else %}<button type="button" class="btn btn-outline" data-profile-email-new>新增配置</button>{% endif %}
-                    {% if _profile_lq %}{{ lq_btn('刷新状态', variant='soft', type='button', attrs={'data-profile-email-refresh': ''}) }}{% else %}<button type="button" class="btn btn-outline" data-profile-email-refresh>刷新状态</button>{% endif %}
+                    {% if _profile_lq %}{{ lq_btn('新增配置', variant='soft', type='button', attrs={'data-profile-email-new': ''}) }}{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-profile-email-new>新增配置</button>{% endif %}
+                    {% if _profile_lq %}{{ lq_btn('刷新状态', variant='soft', type='button', attrs={'data-profile-email-refresh': ''}) }}{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-profile-email-refresh>刷新状态</button>{% endif %}
                 </div>
             </section>
 
@@ -59,14 +59,14 @@
                                     <input id="profile-email-smtp-password" name="smtp_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="new-password" placeholder="邮箱授权码">
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-email-toggle-row">
-                                    <label><input type="checkbox" name="enabled" id="profile-email-enabled" checked> 启用</label>
-                                    <label><input type="checkbox" name="is_default" id="profile-email-default" checked> 默认</label>
+                                    <label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="enabled" id="profile-email-enabled" checked> 启用</label>
+                                    <label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="is_default" id="profile-email-default" checked> 默认</label>
                                 </div>
                             </div>
                         </div>
 
                         <details class="profile-form-section profile-email-advanced">
-                            <summary>高级服务器参数</summary>
+                            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">高级服务器参数</summary>
                             <div class="profile-form-section__head">
                                 <h3>服务器连接</h3>
                             </div>
@@ -135,10 +135,10 @@
                         </div>
 
                         <div class="{% if _profile_lq %}lq-form-actions {% endif %}profile-form-actions profile-email-actions">
-                            {% if _profile_lq %}{{ lq_btn('测试发信', variant='soft', type='button', attrs={'data-profile-email-test': 'smtp'}) }}{% else %}<button type="button" class="btn btn-outline" data-profile-email-test="smtp">测试发信</button>{% endif %}
-                            {% if _profile_lq %}{{ lq_btn('测试收信', variant='soft', type='button', attrs={'data-profile-email-test': 'imap'}) }}{% else %}<button type="button" class="btn btn-outline" data-profile-email-test="imap">测试收信</button>{% endif %}
-                            <button type="button" class="btn btn-ghost" data-profile-email-delete hidden>删除</button>
-                            {% if _profile_lq %}{{ lq_btn('保存配置', variant='prominent', type='submit') }}{% else %}<button type="submit" class="btn btn-primary">保存配置</button>{% endif %}
+                            {% if _profile_lq %}{{ lq_btn('测试发信', variant='soft', type='button', attrs={'data-profile-email-test': 'smtp'}) }}{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-profile-email-test="smtp">测试发信</button>{% endif %}
+                            {% if _profile_lq %}{{ lq_btn('测试收信', variant='soft', type='button', attrs={'data-profile-email-test': 'imap'}) }}{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-profile-email-test="imap">测试收信</button>{% endif %}
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-profile-email-delete hidden>删除</button>
+                            {% if _profile_lq %}{{ lq_btn('保存配置', variant='prominent', type='submit') }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存配置</button>{% endif %}
                         </div>
                     </form>
                 </section>

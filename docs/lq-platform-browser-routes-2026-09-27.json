@@ -1,0 +1,2193 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "pending",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/achievements",
+      "templates": [
+        "templates/achievements.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/achievements.py",
+      "line": 26,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/api/classrooms/{class_offering_id}/member-panels/{panel_key}",
+      "templates": [
+        "templates/partials/classroom_members/alerts.html",
+        "templates/partials/classroom_members/exams.html",
+        "templates/partials/classroom_members/overview.html",
+        "templates/partials/classroom_members/settings.html",
+        "templates/partials/classroom_members/workspace.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/classroom.py",
+      "line": 13,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "fragment",
+      "status": "pending",
+      "parameters": [
+        "class_offering_id",
+        "panel_key"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/assessment-plan/{plan_id}/edit",
+      "templates": [
+        "templates/assessment_plan_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/assessment_plan_pages.py",
+      "line": 87,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "plan_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/assignment/{assignment_id}",
+      "templates": [
+        "templates/assignment_detail_student.html",
+        "templates/assignment_detail_teacher.html",
+        "templates/status.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/assignment_pages.py",
+      "line": 30,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "assignment_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/assignment/{assignment_id}/wrong-summary",
+      "templates": [
+        "templates/assignment_wrong_summary.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/assignment_pages.py",
+      "line": 248,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "assignment_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/auth/forbidden",
+      "templates": [
+        "templates/permission_denied.html"
+      ],
+      "dependencies": [
+        "get_current_user_optional"
+      ],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 198,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/blog",
+      "templates": [
+        "templates/blog.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/blog.py",
+      "line": 101,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/career-path",
+      "templates": [
+        "templates/career_path.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/career_path.py",
+      "line": 70,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/classroom/{class_offering_id}",
+      "templates": [
+        "templates/classroom_main_v4.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/classroom.py",
+      "line": 38,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "class_offering_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/dashboard",
+      "templates": [
+        "templates/dashboard.html",
+        "templates/dashboard_teacher.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/dashboard.py",
+      "line": 10,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/dev/lq",
+      "templates": [
+        "templates/dev/lq.html",
+        "templates/dev/lq_centered.html",
+        "templates/dev/lq_shell.html"
+      ],
+      "dependencies": [
+        "get_current_user_optional"
+      ],
+      "source": "classroom_app/routers/ui_parts/design_system.py",
+      "line": 14,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "development",
+      "status": "pending",
+      "parameters": [],
+      "execution": "requires-preview-feature-flag"
+    },
+    {
+      "method": "GET",
+      "path": "/exam/new",
+      "templates": [
+        "templates/exam_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/exam_pages.py",
+      "line": 219,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/exam/take/{assignment_id}",
+      "templates": [
+        "templates/exam_take.html",
+        "templates/status.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/exam_pages.py",
+      "line": 241,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "assignment_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/exam/{exam_id}/edit",
+      "templates": [
+        "templates/exam_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/exam_pages.py",
+      "line": 185,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "exam_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/feedback-review",
+      "templates": [
+        "templates/feedback_review.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/review.py",
+      "line": 24,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/learning-path",
+      "templates": [
+        "templates/learning_path.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/learning_path.py",
+      "line": 24,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/lesson-plan/{plan_id}/edit",
+      "templates": [
+        "templates/lesson_plan_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/lesson_plan_pages.py",
+      "line": 91,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "plan_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage",
+      "templates": [
+        "templates/manage/offering_hub.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 356,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic",
+      "templates": [
+        "templates/manage/academic_overview.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('academic')"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 16,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/classrooms",
+      "templates": [
+        "templates/manage/classrooms.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 37,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/course-schedule",
+      "templates": [
+        "templates/manage/course_schedule.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 120,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/course-schedule/editor",
+      "templates": [
+        "templates/manage/course_schedule_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 148,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/gongwen",
+      "templates": [
+        "templates/manage/gongwen.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 201,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/gongwen-sync",
+      "templates": [
+        "templates/manage/system/gongwen_integrations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 178,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/integrations",
+      "templates": [
+        "templates/manage/system/academic_integrations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 74,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/academic/smart-classroom",
+      "templates": [
+        "templates/manage/system/smart_classroom_integrations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_academic.py",
+      "line": 97,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive",
+      "templates": [
+        "templates/manage/archive_pipeline.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('archive')"
+      ],
+      "source": "classroom_app/routers/archive_pipeline.py",
+      "line": 60,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/academic-exam-analyses",
+      "templates": [
+        "templates/manage/academic_final_materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/academic_final_materials.py",
+      "line": 603,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/academic-grade-registers",
+      "templates": [
+        "templates/manage/academic_final_materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/academic_final_materials.py",
+      "line": 598,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/assessment-plans",
+      "templates": [
+        "templates/manage/assessment_plans.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/assessment_plan_pages.py",
+      "line": 42,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/attendance-reports",
+      "templates": [
+        "templates/manage/attendance_reports.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('archive')"
+      ],
+      "source": "classroom_app/routers/attendance_reports.py",
+      "line": 218,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/attendance-reports/{report_id}",
+      "templates": [
+        "templates/manage/attendance_reports.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('archive')"
+      ],
+      "source": "classroom_app/routers/attendance_reports.py",
+      "line": 218,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "report_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/exam-grade-records",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 409,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/final-grade-transcripts",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 424,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/grading-rubrics",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 376,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/ordinary-grade-records",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 394,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/postclass-materials",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 362,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/archive/teacher-evaluations",
+      "templates": [
+        "templates/manage/teacher_evaluations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/teacher_evaluation_pages.py",
+      "line": 64,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library",
+      "templates": [
+        "templates/manage/material_hub.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('library')"
+      ],
+      "source": "classroom_app/routers/material_hub.py",
+      "line": 30,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/courses",
+      "templates": [
+        "templates/manage/courses.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_library.py",
+      "line": 16,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/exams",
+      "templates": [
+        "templates/manage/exams.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/exam_pages.py",
+      "line": 13,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/lesson-plans",
+      "templates": [
+        "templates/manage/lesson_plans.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/lesson_plan_pages.py",
+      "line": 46,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/materials",
+      "templates": [
+        "templates/manage/materials.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/materials_parts/library.py",
+      "line": 350,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/polls",
+      "templates": [
+        "templates/manage/polls.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/poll_pages.py",
+      "line": 8,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/library/textbooks",
+      "templates": [
+        "templates/manage/textbooks.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_library.py",
+      "line": 69,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/appearance",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/credentials",
+      "templates": [
+        "templates/manage/me_credentials.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('me')"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_me.py",
+      "line": 16,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/email",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/inbox",
+      "templates": [
+        "templates/manage/work_inbox.html"
+      ],
+      "dependencies": [
+        "require_teacher_domain('me')"
+      ],
+      "source": "classroom_app/routers/work_inbox.py",
+      "line": 18,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/notifications",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/password-resets",
+      "templates": [
+        "templates/manage/system/password_resets.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_me.py",
+      "line": 83,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/private",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/security",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/settings",
+      "templates": [
+        "templates/manage/profile.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "provenance": "explicit-registration-loop",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/signature-workflows",
+      "templates": [
+        "templates/manage/signature_workflows.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_me.py",
+      "line": 59,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/me/signatures",
+      "templates": [
+        "templates/manage/signatures.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_me.py",
+      "line": 65,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/students/{student_id}",
+      "templates": [
+        "templates/manage/student_detail.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 228,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "student_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/agent-keys",
+      "templates": [
+        "templates/manage/system/agent_keys.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 170,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/ai-usage",
+      "templates": [
+        "templates/manage/system/ai_usage.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 148,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/blog-crawler",
+      "templates": [
+        "templates/manage/system/blog_crawler.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 192,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/diagnostics",
+      "templates": [
+        "templates/manage/system/diagnostics.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 114,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/feedback",
+      "templates": [
+        "templates/manage/system/feedback.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 83,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/life-tips",
+      "templates": [
+        "templates/manage/life_tips.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/life_tip_pages.py",
+      "line": 14,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/monitor",
+      "templates": [
+        "templates/manage/system/monitor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 131,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/organizations",
+      "templates": [
+        "templates/manage/system/organizations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 59,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/users",
+      "templates": [
+        "templates/manage/system/users.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+      "line": 26,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teacher-evaluations",
+      "templates": [
+        "templates/manage/teacher_evaluations.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/teacher_evaluation_pages.py",
+      "line": 64,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching",
+      "templates": [
+        "templates/manage/offering_hub.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 356,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/ai",
+      "templates": [
+        "templates/manage/ai.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 411,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/classes",
+      "templates": [
+        "templates/manage/classes.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 25,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/classroom-hub",
+      "templates": [
+        "templates/manage/offering_hub.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 356,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/offering-merge",
+      "templates": [
+        "templates/manage/offering_merge.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 397,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/offerings",
+      "templates": [
+        "templates/manage/offerings.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 283,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/teaching/semesters",
+      "templates": [
+        "templates/manage/semesters.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/manage_pages_teaching.py",
+      "line": 256,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/materials/lessondoc-editor/{pack_id}",
+      "templates": [
+        "templates/lessondoc_editor.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/lessondoc_editor.py",
+      "line": 37,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "pack_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/materials/render-view/{material_id}",
+      "templates": [
+        "templates/material_render_shell.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/materials_parts/exports.py",
+      "line": 434,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "material_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/materials/view/{material_id}",
+      "templates": [
+        "templates/material_viewer.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/materials_parts/exports.py",
+      "line": 289,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "material_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/points",
+      "templates": [
+        "templates/points_shop.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/points_shop.py",
+      "line": 32,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "templates": [
+        "templates/manage/profile.html",
+        "templates/profile.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/profile.py",
+      "line": 200,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/report-card",
+      "templates": [
+        "templates/report_card.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/report_card.py",
+      "line": 28,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume",
+      "templates": [
+        "templates/resume/home.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 129,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/applications",
+      "templates": [
+        "templates/resume/applications.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 158,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/builder",
+      "templates": [
+        "templates/resume/builder.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 183,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/job-targets",
+      "templates": [
+        "templates/resume/job_targets.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 147,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/list",
+      "templates": [
+        "templates/resume/list.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 190,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/profile/personal",
+      "templates": [
+        "templates/resume/personal.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 136,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/resume/profile/{section}",
+      "templates": [
+        "templates/resume/section.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/resume_console.py",
+      "line": 169,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "section"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/student/login",
+      "templates": [
+        "templates/student_login_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 163,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/student/login/identity",
+      "templates": [
+        "templates/student_auth_flow_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 65,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/student/password/forgot",
+      "templates": [
+        "templates/student_auth_flow_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 120,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/submission/{submission_id}",
+      "templates": [
+        "templates/submission_detail.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/ui_parts/assignment_pages.py",
+      "line": 315,
+      "provenance": "source-registry",
+      "roles": [
+        "student",
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "submission_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/teacher-evaluation/{evaluation_id}/edit",
+      "templates": [
+        "templates/teacher_evaluation_editor.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/ui_parts/teacher_evaluation_pages.py",
+      "line": 109,
+      "provenance": "source-registry",
+      "roles": [
+        "teacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [
+        "evaluation_id"
+      ],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/teacher/login",
+      "templates": [
+        "templates/teacher_login_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 173,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/teacher/register",
+      "templates": [
+        "templates/status.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 182,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/wrong-book",
+      "templates": [
+        "templates/wrong_book.html"
+      ],
+      "dependencies": [
+        "get_current_user"
+      ],
+      "source": "classroom_app/routers/wrong_book.py",
+      "line": 26,
+      "provenance": "source-registry",
+      "roles": [
+        "student"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "POST",
+      "path": "/student/login",
+      "templates": [
+        "templates/student_login_v4.html",
+        "templates/teacher_login_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 505,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    },
+    {
+      "method": "POST",
+      "path": "/student/login/identity",
+      "templates": [
+        "templates/student_auth_flow_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 70,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    },
+    {
+      "method": "POST",
+      "path": "/student/password/forgot",
+      "templates": [
+        "templates/student_auth_flow_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 125,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    },
+    {
+      "method": "POST",
+      "path": "/student/password/setup",
+      "templates": [
+        "templates/student_auth_flow_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 94,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    },
+    {
+      "method": "POST",
+      "path": "/teacher/login",
+      "templates": [
+        "templates/student_login_v4.html",
+        "templates/teacher_login_v4.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 568,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    },
+    {
+      "method": "POST",
+      "path": "/teacher/register",
+      "templates": [
+        "templates/status.html"
+      ],
+      "dependencies": [],
+      "source": "classroom_app/routers/ui_parts/auth.py",
+      "line": 552,
+      "provenance": "source-registry",
+      "roles": [
+        "anonymous"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "domain-scenario-required-no-generic-post"
+    }
+  ],
+  "exceptionalDocuments": [
+    "error.html",
+    "session_expired.html",
+    "material_reader_unavailable.html"
+  ],
+  "domainScenarioSuites": [
+    "tests/e2e/components/lq-dialogs.spec.ts",
+    "tests/e2e/components/lq-legacy-bridges.spec.ts",
+    "tests/e2e/components/lq-shells.spec.ts",
+    "tests/e2e/components/lq-schedule-bridge.spec.ts",
+    "tests/e2e/specs/lq-s4-manage-pages.spec.ts",
+    "tests/e2e/specs/lq-s4-profile-appearance-business.spec.ts",
+    "tests/e2e/specs/lq-s5-archive.spec.ts",
+    "tests/e2e/specs/lq-s6-attendance.spec.ts"
+  ],
+  "limitations": [
+    "Role candidates and GET reachability do not prove authorization or business-state coverage.",
+    "POST, exceptional response documents, missing synthetic entities, preview flags, and dynamic dialogs remain explicit gaps until their named domain scenarios execute.",
+    "Never substitute a 200 login/status/redirect page for the requested template."
+  ]
+}

@@ -348,9 +348,9 @@ function renderStudentRows(classItem) {
                     ${student.academic_school_status ? `<span class="class-student-row__status is-muted">${escapeHtml(student.academic_school_status)}</span>` : ''}
                 </span>
                 <span class="class-student-row__actions">
-                    <a class="btn btn-outline btn-sm" href="/manage/students/${Number(student.id)}">详情</a>
-                    <button type="button" class="btn btn-outline btn-sm" data-student-action="status" data-student-id="${Number(student.id)}" data-next-status="${nextStatus}" data-student-name="${escapeHtml(name)}">${statusActionText}</button>
-                    <button type="button" class="btn btn-ghost btn-sm text-danger" data-student-action="delete" data-student-id="${Number(student.id)}" data-student-name="${escapeHtml(name)}">删除</button>
+                    <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/students/${Number(student.id)}">详情</a>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-student-action="status" data-student-id="${Number(student.id)}" data-next-status="${nextStatus}" data-student-name="${escapeHtml(name)}">${statusActionText}</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-student-action="delete" data-student-id="${Number(student.id)}" data-student-name="${escapeHtml(name)}">删除</button>
                 </span>
             </article>
         `;

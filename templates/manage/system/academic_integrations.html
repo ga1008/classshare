@@ -62,7 +62,7 @@
         </div>
     </div>
 
-    <aside class="edu-profile-card">
+    <aside data-lq-component="surface" class="lq-surface edu-profile-card">
         <h3>当前适配器</h3>
         <p id="edu-profile-note">正在读取学校对接方式。</p>
         <div class="edu-profile-meta">
@@ -86,14 +86,14 @@
 </section>
 {% endif %}
 
-<div class="edu-sync-modal-backdrop" id="academic-account-modal" hidden>
-    <article class="edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-account-modal-title">
+<div class="lq-domain-region edu-sync-modal-backdrop" id="academic-account-modal" hidden data-lq-component="layer">
+    <article data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-account-modal-title">
         <div class="edu-sync-modal-head">
             <div>
                 <p class="edu-sync-modal-kicker">ACCOUNT</p>
                 <h3 id="academic-account-modal-title">账号管理</h3>
             </div>
-            <button type="button" class="edu-sync-modal-close" id="academic-account-modal-close" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass edu-sync-modal-close" id="academic-account-modal-close" aria-label="关闭">&times;</button>
         </div>
         <div class="edu-sync-modal-body">
             <div class="edu-account-grid">
@@ -113,13 +113,13 @@
                             autocomplete='current-password', placeholder='重新验证时填写新密码') }}
                         {# 保存按钮不迁 lq_btn：manage_academic_integrations.js 的 setBusy() 直接写
                            button.textContent，会把 lq-btn 的 .lq-btn__label 结构抹掉且无法还原。 #}
-                        <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="academic-save-btn">验证并保存</button>
                     </form>
                     {% else %}
                     <form id="academic-credential-form" autocomplete="off">
                         <div class="form-group">
                             <label class="form-label" for="academic-school-code">学校</label>
-                            <select class="form-control" id="academic-school-code" name="school_code" required>
+                            <select data-lq-component="select" class="lq-select form-control" id="academic-school-code" name="school_code" required>
                                 {% for profile in academic_profiles %}
                                 <option value="{{ profile.school_code }}">{{ profile.school_name }}</option>
                                 {% endfor %}
@@ -127,13 +127,13 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="academic-username">教务账号</label>
-                            <input class="form-control" type="text" id="academic-username" name="username" autocomplete="username" placeholder="请输入教职工号或统一账号" required>
+                            <input data-lq-component="input" class="lq-input form-control" type="text" id="academic-username" name="username" autocomplete="username" placeholder="请输入教职工号或统一账号" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="academic-password">教务密码</label>
-                            <input class="form-control" type="password" id="academic-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
+                            <input data-lq-component="input" class="lq-input form-control" type="password" id="academic-password" name="password" autocomplete="current-password" placeholder="重新验证时填写新密码" required>
                         </div>
-                        <button type="submit" class="btn btn-primary" id="academic-save-btn">验证并保存</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="academic-save-btn">验证并保存</button>
                     </form>
                     {% endif %}
                     <div class="edu-auto-sync" id="academic-auto-sync-panel" hidden>
@@ -144,9 +144,9 @@
                 </section>
 
                 <section class="edu-account-list">
-                    <div class="edu-account-toolbar">
+                    <div data-lq-component="toolbar" class="lq-domain-toolbar edu-account-toolbar">
                         <h3>已对接信息</h3>
-                        <button type="button" class="btn btn-outline btn-sm" id="academic-refresh-btn">刷新</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="academic-refresh-btn">刷新</button>
                     </div>
                     <div class="edu-list" id="academic-credential-list"></div>
                 </section>
@@ -155,14 +155,14 @@
     </article>
 </div>
 
-<div class="edu-sync-modal-backdrop" id="academic-sync-modal" hidden>
-    <article class="edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-sync-modal-title">
+<div class="lq-domain-region edu-sync-modal-backdrop" id="academic-sync-modal" hidden data-lq-component="layer">
+    <article data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised edu-sync-modal is-wide" role="dialog" aria-modal="true" aria-labelledby="academic-sync-modal-title">
         <div class="edu-sync-modal-head">
             <div>
                 <p class="edu-sync-modal-kicker">SYNC DETAIL</p>
                 <h3 id="academic-sync-modal-title">同步详情</h3>
             </div>
-            <button type="button" class="edu-sync-modal-close" id="academic-sync-modal-close" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass edu-sync-modal-close" id="academic-sync-modal-close" aria-label="关闭">&times;</button>
         </div>
         <div class="edu-sync-modal-body">
             <p id="academic-sync-modal-description"></p>
@@ -179,27 +179,27 @@
                 <div class="edu-request-grid">
                     <div class="form-group">
                         <label class="form-label" for="academic-probe-method">方法</label>
-                        <select class="form-control" id="academic-probe-method">
+                        <select data-lq-component="select" class="lq-select form-control" id="academic-probe-method">
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="academic-probe-url">请求地址</label>
-                        <input class="form-control" type="text" id="academic-probe-url" autocomplete="off">
+                        <input data-lq-component="input" class="lq-input form-control" type="text" id="academic-probe-url" autocomplete="off">
                     </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="academic-probe-params">查询参数 JSON</label>
-                    <textarea class="form-control edu-code-field" id="academic-probe-params" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control edu-code-field" id="academic-probe-params" spellcheck="false"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="academic-probe-headers">请求头 JSON</label>
-                    <textarea class="form-control edu-code-field" id="academic-probe-headers" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control edu-code-field" id="academic-probe-headers" spellcheck="false"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="academic-probe-body-mode">载荷格式</label>
-                    <select class="form-control" id="academic-probe-body-mode">
+                    <select data-lq-component="select" class="lq-select form-control" id="academic-probe-body-mode">
                         <option value="form">Form 表单</option>
                         <option value="json">JSON</option>
                         <option value="raw">Raw 文本</option>
@@ -207,10 +207,10 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="academic-probe-body">请求载荷</label>
-                    <textarea class="form-control edu-code-field" id="academic-probe-body" spellcheck="false"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea form-control edu-code-field" id="academic-probe-body" spellcheck="false"></textarea>
                 </div>
                 <div class="edu-sync-modal-actions">
-                    <button type="button" class="btn btn-outline" id="academic-sync-modal-probe">验证请求</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="academic-sync-modal-probe">验证请求</button>
                 </div>
                 <div class="edu-probe-result" id="academic-probe-result" hidden>
                     <div class="edu-probe-result-head" id="academic-probe-result-head"></div>
@@ -219,8 +219,8 @@
             </div>
             <p class="edu-form-help" id="academic-sync-modal-safe"></p>
             <div class="edu-sync-modal-actions">
-                <button type="button" class="btn btn-primary" id="academic-sync-modal-run">同步</button>
-                <button type="button" class="btn btn-outline" id="academic-sync-modal-cancel">关闭</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="academic-sync-modal-run">同步</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="academic-sync-modal-cancel">关闭</button>
             </div>
         </div>
     </article>

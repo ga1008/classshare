@@ -91,12 +91,12 @@ function createRoot() {
                 </div>
                 <div class="ls-lightbox__actions lq-lightbox__actions">
                     <span class="ls-lightbox__counter lq-lightbox__counter" data-ref="counter"></span>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-out" aria-label="缩小" title="缩小（−）">−</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-out" aria-label="缩小" title="缩小（−）">−</button>
                     <span class="ls-lightbox__scale lq-lightbox__scale" data-ref="scale">100%</span>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-in" aria-label="放大" title="放大（+）">+</button>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="fit" title="适应窗口（0）">适应</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="zoom-in" aria-label="放大" title="放大（+）">+</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="fit" title="适应窗口（0）">适应</button>
                     <a class="ls-glass-pill ls-lightbox__pill lq-lightbox__pill" data-act="original" target="_blank" rel="noopener noreferrer" title="在新标签页打开原图">原图</a>
-                    <button type="button" class="ls-glass-pill ls-lightbox__pill ls-lightbox__close lq-lightbox__pill lq-lightbox__close" data-act="close" aria-label="关闭预览" title="关闭（Esc）">×</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-glass-pill ls-lightbox__pill ls-lightbox__close lq-lightbox__pill lq-lightbox__close" data-act="close" aria-label="关闭预览" title="关闭（Esc）">×</button>
                 </div>
             </header>
             <div class="ls-lightbox__stage lq-lightbox__stage" data-ref="stage">
@@ -104,8 +104,8 @@ function createRoot() {
                 <div class="ls-lightbox__spinner lq-lightbox__spinner" data-ref="spinner" hidden></div>
                 <div class="ls-lightbox__error lq-lightbox__error" data-ref="error" hidden>图片加载失败</div>
             </div>
-            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--prev ls-glass lq-lightbox__nav lq-lightbox__nav--prev" data-act="prev" aria-label="上一张" title="上一张（←）">‹</button>
-            <button type="button" class="ls-lightbox__nav ls-lightbox__nav--next ls-glass lq-lightbox__nav lq-lightbox__nav--next" data-act="next" aria-label="下一张" title="下一张（→）">›</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-lightbox__nav ls-lightbox__nav--prev ls-glass lq-lightbox__nav lq-lightbox__nav--prev" data-act="prev" aria-label="上一张" title="上一张（←）">‹</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-lightbox__nav ls-lightbox__nav--next ls-glass lq-lightbox__nav lq-lightbox__nav--next" data-act="next" aria-label="下一张" title="下一张（→）">›</button>
             <div class="ls-lightbox__hint ls-glass-pill lq-lightbox__hint" aria-hidden="true">滚轮缩放 · 拖拽移动 · ← → 切换 · Esc 关闭</div>
         </div>
     `;

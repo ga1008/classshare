@@ -6,18 +6,18 @@
 {{ page_head('问题反馈', description='与用户逐条沟通，跟进问题处理。处理完成后由超管关闭，历史消息和截图会完整保留。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 {% if current_teacher_is_super_admin %}
 <section class="fb-admin" data-feedback-admin aria-label="反馈工作台">
-    <div class="fb-admin-toolbar">
+    <div data-lq-component="toolbar" class="lq-domain-toolbar fb-admin-toolbar">
         <div class="fb-admin-filters" aria-label="反馈状态筛选">
-            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="all">全部反馈</button>
-            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="open">待跟进</button>
-            <button type="button" class="fb-thread-button fb-admin-filter" data-feedback-filter="closed">已关闭</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass fb-thread-button fb-admin-filter" data-feedback-filter="all">全部反馈</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass fb-thread-button fb-admin-filter" data-feedback-filter="open">待跟进</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass fb-thread-button fb-admin-filter" data-feedback-filter="closed">已关闭</button>
         </div>
-        <button type="button" class="fb-thread-button" data-feedback-refresh>刷新列表</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass fb-thread-button" data-feedback-refresh>刷新列表</button>
     </div>
     <p class="fb-admin-count" data-feedback-count aria-live="polite">正在加载反馈…</p>
     <p class="fb-thread-notice" data-feedback-notice role="status" hidden></p>
     <div class="fb-list" data-feedback-list></div>
-    <button type="button" class="fb-thread-button fb-admin-more" data-feedback-more hidden>加载更多反馈</button>
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass fb-thread-button fb-admin-more" data-feedback-more hidden>加载更多反馈</button>
     <noscript><p>请启用 JavaScript，以查看反馈、发送回复和管理处理状态。</p></noscript>
 </section>
 {% if feedback_page is defined %}<script type="application/json" id="feedback-initial-page">{{ feedback_page | tojson }}</script>{% endif %}

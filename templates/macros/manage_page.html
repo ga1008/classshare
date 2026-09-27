@@ -18,7 +18,7 @@
 {{ lq_page_head(title, description=description, explain=explain, explain_label=explain_label, actions=actions, eyebrow=eyebrow, title_id=title_id) }}
 {% endif %}
 {% else %}
-<header class="page-head" data-page-head>
+<header class="page-head lq-page-head lq-scene-heading lq-surface" data-lq-component="surface" data-page-head>
     <div class="page-head__copy">
         {% if eyebrow %}<span class="page-head__eyebrow">{{ eyebrow }}</span>{% endif %}
         <div class="manage-pagehead__title-row">
@@ -31,11 +31,11 @@
     {% if actions %}
     <div class="page-head__actions">
         {% for action in actions %}
-        {% set _cls = 'btn btn-sm ' ~ ('btn-primary' if action.variant == 'primary' else ('btn-ghost' if action.variant == 'ghost' else 'btn-outline')) %}
+        {% set _cls = 'lq-btn lq-btn--sm btn btn-sm ' ~ ('lq-btn--prominent btn-primary' if action.variant == 'primary' else ('lq-btn--ghost btn-ghost' if action.variant == 'ghost' else 'lq-btn--glass btn-outline')) %}
         {% if action.href %}
-        <a class="{{ _cls }}" href="{{ action.href }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</a>
+        <a data-lq-component="button" class="{{ _cls }}" href="{{ action.href }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</a>
         {% else %}
-        <button type="button" class="{{ _cls }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</button>
+        <button data-lq-component="button" type="button" class="{{ _cls }}"{% if action.id %} id="{{ action.id }}"{% endif %} {{ action.attrs|default('')|safe }}>{{ action.label }}</button>
         {% endif %}
         {% endfor %}
     </div>
@@ -49,11 +49,11 @@
 {% from "macros/lq/content.html" import lq_empty %}
 {{ lq_empty(reason=reason, title=title, description=description, attrs={'data-page-empty': ''}, actions=[{'label': action_label, 'href': action_href or none, 'variant': 'prominent', 'attrs': action_attrs or {}}] if action_label else []) }}
 {% else %}
-<div class="page-empty" data-page-empty>
+<div class="page-empty lq-empty lq-empty--card lq-surface" data-lq-component="surface" data-page-empty>
     <strong>{{ title }}</strong>
     {% if description %}<p>{{ description }}</p>{% endif %}
     {% if action_label %}
-    {% if action_href %}<a class="btn btn-primary btn-sm" href="{{ action_href }}" {{ action_attrs|safe }}>{{ action_label }}</a>{% else %}<button type="button" class="btn btn-primary btn-sm" {{ action_attrs|safe }}>{{ action_label }}</button>{% endif %}
+    {% if action_href %}<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="{{ action_href }}" {{ action_attrs|safe }}>{{ action_label }}</a>{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" {{ action_attrs|safe }}>{{ action_label }}</button>{% endif %}
     {% endif %}
 </div>
 {% endif %}
@@ -68,11 +68,11 @@
     {% if caller %}<div class="lq-filter-bar__controls">{{ caller() }}</div>{% endif %}
 </div>
 {% else %}
-<div class="filter-bar" data-filter-bar>
+<div class="filter-bar lq-filter-bar" data-lq-component="toolbar" data-filter-bar>
     {% if search_id %}
     <label class="filter-bar__search">
         <span class="sr-only">搜索</span>
-        <input type="search" id="{{ search_id }}" placeholder="{{ search_placeholder }}" autocomplete="off" {{ search_attrs|safe }}>
+        <input data-lq-component="input" class="lq-input" type="search" id="{{ search_id }}" placeholder="{{ search_placeholder }}" autocomplete="off" {{ search_attrs|safe }}>
     </label>
     {% endif %}
     {% if caller %}<div class="filter-bar__controls">{{ caller() }}</div>{% endif %}

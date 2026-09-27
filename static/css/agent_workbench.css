@@ -206,9 +206,8 @@
 
 /* ── drawers (short-lived overlays may blur) ─────────────────────────────── */
 #ai-chat-modal .awb-drawer { position: absolute; z-index: 20; inset: 52px 10px 10px auto; width: min(380px, calc(100% - 20px)); display: flex; flex-direction: column;
-    border-radius: 22px; border: 1px solid hsl(var(--ls-glass-rim)); color: hsl(var(--ls-glass-ink));
-    background: var(--ls-glass-sheen), hsl(var(--ls-glass-fill-strong)); box-shadow: var(--ls-glass-shadow-strong);
-    backdrop-filter: blur(28px) saturate(var(--ls-glass-saturate)); -webkit-backdrop-filter: blur(28px) saturate(var(--ls-glass-saturate)); overflow: hidden; }
+    border-radius: var(--ls-r-xl); border: 1px solid hsl(var(--ls-glass-rim));
+    box-shadow: var(--ls-glass-shadow-strong); overflow: hidden; }
 #ai-chat-modal .awb-drawer[hidden] { display: none; }
 #ai-chat-modal .awb-drawer__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid hsl(var(--ls-glass-line)); }
 #ai-chat-modal .awb-drawer__tools { display: flex; gap: 4px; }
@@ -245,5 +244,4 @@
     #ai-chat-modal .awb-composer__tools .lq-btn__label { display: none; }
     #ai-chat-modal .ai-mode-switch__option { padding: 0 10px; }
 }
-@supports not (backdrop-filter: blur(1px)) { #ai-chat-modal .awb-drawer { background: hsl(var(--ls-surface-1)); } }
 #ai-chat-modal .awb-step__body :is(p, ol, ul) { margin-block: 2px 0; }

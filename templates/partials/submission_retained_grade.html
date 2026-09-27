@@ -7,6 +7,6 @@
 <div class="alert alert-info" role="status">
     <strong>重新批改中 · 当前有效成绩 {{ submission.score }} 分</strong>
     <p>新结果尚未生效，原成绩继续保留。</p>
-    {% if submission.feedback_md %}<details><summary>查看原评语</summary><p style="white-space:pre-wrap">{{ submission.feedback_md }}</p></details>{% endif %}
+    {% if submission.feedback_md %}<details><summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看原评语</summary><p style="white-space:pre-wrap">{{ submission.feedback_md }}</p></details>{% endif %}
 </div>
 {% endif %}

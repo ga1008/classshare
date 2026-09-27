@@ -55,16 +55,16 @@ export class SignatureScopeFields {
         this.root.classList.add('signature-scope-control');
         this.root.innerHTML = `
             <label class="signature-scope-field"><span>可见范围</span>
-                <select data-scope-level aria-describedby="${this.id}-help">${this.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === this.scope ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>
+                <select data-lq-component="select" class="lq-select" data-scope-level aria-describedby="${this.id}-help">${this.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === this.scope ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>
             </label>
             <label class="signature-scope-field" data-scope-membership-field><span>共享到的组织</span>
-                <select data-scope-membership aria-label="共享到的组织"></select>
+                <select data-lq-component="select" class="lq-select" data-scope-membership aria-label="共享到的组织"></select>
             </label>
             <div class="signature-scope-org" data-scope-admin-org>
-                <label class="signature-scope-field"><span>学校</span><input data-scope-school list="${this.id}-schools" placeholder="选择学校或输入学校代码" autocomplete="off"></label>
+                <label class="signature-scope-field"><span>学校</span><input data-lq-component="input" class="lq-input" data-scope-school list="${this.id}-schools" placeholder="选择学校或输入学校代码" autocomplete="off"></label>
                 <datalist id="${this.id}-schools" data-scope-school-options>${this.schools.map(school => `<option value="${escapeHtml(`${school.school_name || school.school_code}（${school.school_code}）`)}"></option>`).join('')}</datalist>
-                <label class="signature-scope-field" data-scope-college-field><span>学院</span><input data-scope-college list="${this.id}-colleges" maxlength="120" placeholder="选择所属学院"><datalist id="${this.id}-colleges" data-scope-college-options></datalist></label>
-                <label class="signature-scope-field" data-scope-department-field><span>系部</span><input data-scope-department list="${this.id}-departments" maxlength="120" placeholder="选择所属系部"><datalist id="${this.id}-departments" data-scope-department-options></datalist></label>
+                <label class="signature-scope-field" data-scope-college-field><span>学院</span><input data-lq-component="input" class="lq-input" data-scope-college list="${this.id}-colleges" maxlength="120" placeholder="选择所属学院"><datalist id="${this.id}-colleges" data-scope-college-options></datalist></label>
+                <label class="signature-scope-field" data-scope-department-field><span>系部</span><input data-lq-component="input" class="lq-input" data-scope-department list="${this.id}-departments" maxlength="120" placeholder="选择所属系部"><datalist id="${this.id}-departments" data-scope-department-options></datalist></label>
             </div>
             <p id="${this.id}-help" class="signature-scope-help" data-scope-help></p><p class="signature-scope-help" data-scope-directory-status hidden></p>`;
         this.root.querySelector('[data-scope-school]').value = this.org.school_name

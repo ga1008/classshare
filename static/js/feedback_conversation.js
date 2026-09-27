@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
 
 export const FEEDBACK_TYPES = { bug: 'Bug 修复', feature: '功能建议', report: '举报' };
@@ -18,11 +19,13 @@ export function node(tag, className, text) {
     const el = document.createElement(tag);
     if (className) el.className = className;
     if (text != null) el.textContent = String(text);
+    if (tag === 'textarea' || tag === 'select') adoptDomainControl(el);
     return el;
 }
 export function button(text, handler, className = 'fb-thread-button') {
     const el = node('button', className, text);
     el.type = 'button';
+    adoptDomainControl(el);
     el.addEventListener('click', handler);
     return el;
 }
@@ -157,6 +160,7 @@ export class FeedbackConversation {
         this.counter = node('span', 'fb-thread-context', '0 / 5000');
         this.send = node('button', 'fb-thread-button fb-thread-button--primary', '发送回复');
         this.send.type = 'submit';
+        adoptDomainControl(this.send, { variant: 'prominent' });
         actions.append(this.counter, this.send);
         this.form.append(label, this.input, actions);
         this.updateCounter();

@@ -1,32 +1,37 @@
-import {createPopoverSystem} from '../ui_popover.js';
+import {adoptDomainControl,createDomainButton,createDomainPopoverSystem} from '../lq/domain-controls.js';
 import {colorControl} from '../ui_color_picker.js';
-export const popovers=createPopoverSystem();
+export const popovers=createDomainPopoverSystem();
 export function el(tag, className='', text='') { const node=document.createElement(tag);if(className)node.className=className;if(text)node.textContent=text;return node; }
-export function button(label, action, className='lde-button') { const b=el('button',className,label);b.type='button';b.addEventListener('click',action);return b; }
+export function button(label, action, className='lde-button') {
+    const variant=className.split(/\s+/).includes('lde-danger')?'destructive':className.split(/\s+/).includes('lde-primary')?'prominent':className==='lde-icon-button'?'ghost':'glass';
+    const kind=!label||/(?:^|\s)lde-(?:choice|element|layer|media-card|layout-choice)(?:\s|$)/.test(className)?'choice':'button';
+    const b=createDomainButton({label,className,kind,variant});b.addEventListener('click',action);return b;
+}
 export function field(label,value,change,options={}) {
     if(options.type==='color'){
-        const wrap=el('div','lde-field');wrap.append(el('span','lde-field-label',label),colorControl({label,value,onChange:change,onPreview:options.preview,popovers,mixed:options.mixed,allowReset:options.allowReset}));return wrap;
+        const wrap=el('div','lde-field lq-field');wrap.append(el('span','lde-field-label lq-field__label',label),colorControl({label,value,onChange:change,onPreview:options.preview,popovers,mixed:options.mixed,allowReset:options.allowReset}));return wrap;
     }
     if(options.type==='number'&&options.min!=null&&options.max!=null&&!options.exact){
-        const wrap=el('label','lde-field lde-range-field'),head=el('span','lde-range-head'),output=el('output'),input=el('input');
-        head.append(el('span','lde-field-label',label),output);input.type='range';input.min=options.min;input.max=options.max;input.step=options.step??1;input.value=value??options.defaultValue??options.min;input.setAttribute('aria-label',label);
+        const wrap=el('label','lde-field lde-range-field lq-field'),head=el('span','lde-range-head'),output=el('output','lq-range__value'),input=el('input');
+        head.append(el('span','lde-field-label lq-field__label',label),output);input.type='range';input.min=options.min;input.max=options.max;input.step=options.step??1;input.value=value??options.defaultValue??options.min;input.setAttribute('aria-label',label);adoptDomainControl(input);
         const draw=()=>{const n=Number(input.value),text=options.format?options.format(n):String(n)+(options.unit||'');output.value=text;input.setAttribute('aria-valuetext',text);input.style.setProperty('--progress',((n-options.min)/(options.max-options.min||1))*100+'%');};draw();
         if(value==null)output.value=options.mixed?'混合值':options.defaultValue!=null?output.value:'默认';
         input.addEventListener('input',()=>{draw();options.preview?.(Number(input.value));});
         input.addEventListener('change',()=>change(Number(input.value)));wrap.append(head,input);return wrap;
     }
     if(options.visual&&options.choices){
-        const wrap=el('div','lde-field'),choices=el('div','lde-visual-choices');choices.setAttribute('role','group');choices.setAttribute('aria-label',label);wrap.append(el('span','lde-field-label',label),choices);
+        const wrap=el('div','lde-field lq-field'),choices=el('div','lde-visual-choices');choices.setAttribute('role','group');choices.setAttribute('aria-label',label);wrap.append(el('span','lde-field-label lq-field__label',label),choices);
         for(const [key,title]of Object.entries(options.choices)){
             const b=button('',()=>{for(const node of choices.children)node.setAttribute('aria-pressed',String(node===b));change(key);},'lde-choice');b.setAttribute('aria-label',title);b.setAttribute('aria-pressed',String(String(value)===key));b.append(choiceSample(options.visual,key),el('span','',title));choices.append(b);
         }return wrap;
     }
-    const wrap=el('label','lde-field'),caption=el('span','lde-field-label',label);wrap.append(caption);
+    const wrap=el('label','lde-field lq-field'),caption=el('span','lde-field-label lq-field__label',label);wrap.append(caption);
     let input;
     if(options.choices){input=el('select');if(value==null)input.append(new Option(options.mixed?'混合值':'默认',''));for(const [v,t] of Object.entries(Array.isArray(options.choices)?Object.fromEntries(options.choices.map(x=>[x,x])):options.choices))input.append(new Option(t,v));input.value=value??'';}
     else if(options.multiline){input=el('textarea');input.rows=options.rows||3;input.value=value??'';input.spellcheck=false;}
     else{input=el('input');input.type=options.type||'text';if(input.type==='checkbox'){input.checked=!!value;input.indeterminate=!!options.mixed;}else input.value=value??'';}
     if(options.mixed)input.placeholder='混合值';if(options.min!=null)input.min=options.min;if(options.max!=null)input.max=options.max;if(options.step!=null)input.step=options.step;
+    adoptDomainControl(input);
     // Text/number fields commit valid input while focus remains in the field.
     // Rebuilding on blur can otherwise detach the next control during focus transfer.
     const eventName=options.live||(input.tagName!=='SELECT'&&input.type!=='checkbox')?'input':'change';

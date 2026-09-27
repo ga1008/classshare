@@ -17,10 +17,10 @@
         explain_label='教务日程说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}
         <p class="ah-lead">本周 {{ home.week_total }} 项{% for item in home.kind_counts %} · {{ item.label }} {{ item.count }}{% endfor %}</p>
         <nav class="ah-weeknav" aria-label="切换周">
-            <a class="btn btn-outline btn-sm" href="?week={{ home.prev_week }}" aria-label="上一周">‹</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="?week={{ home.prev_week }}" aria-label="上一周">‹</a>
             <strong>{{ home.week_label }}</strong>
-            <a class="btn btn-outline btn-sm" href="?week={{ home.next_week }}" aria-label="下一周">›</a>
-            {% if not home.is_current_week %}<a class="ls-link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="?week={{ home.next_week }}" aria-label="下一周">›</a>
+            {% if not home.is_current_week %}<a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="{{ manage_nav.hrefs.academic_overview }}">回到本周</a>{% endif %}
         </nav>
     {% endcall %}
 
@@ -28,8 +28,8 @@
         <section class="ah-week" aria-label="本周教务时间线" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
             {% if home.kind_counts|length > 1 %}
             <div class="ah-filters" data-ah-filters>
-                <button type="button" class="wi-chip is-active" data-ah-kind="">全部 <b>{{ home.week_total }}</b></button>
-                {% for item in home.kind_counts %}<button type="button" class="wi-chip" data-ah-kind="{{ item.kind }}">{{ item.label }} <b>{{ item.count }}</b></button>{% endfor %}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass wi-chip is-active" data-ah-kind="">全部 <b>{{ home.week_total }}</b></button>
+                {% for item in home.kind_counts %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass wi-chip" data-ah-kind="{{ item.kind }}">{{ item.label }} <b>{{ item.count }}</b></button>{% endfor %}
             </div>
             {% endif %}
             <ol class="ah-days">
@@ -41,7 +41,7 @@
                         <article class="ah-event ah-event--{{ event.kind }}" data-ah-event data-kind="{{ event.kind }}">
                             <span class="ah-event__time">{{ event.hour_label }}</span>
                             <span class="ah-event__copy"><span class="ah-event__kind">{{ event.kind_label }}</span><strong>{{ event.title }}</strong>{% if event.subtitle %}<small>{{ event.subtitle }}</small>{% endif %}</span>
-                            {% if event.can_email_reminder %}<button type="button" class="ls-link" data-agenda-item data-kind="{{ event.kind }}" data-status="{{ event.status }}" data-kind-label="{{ event.kind_label }}" data-title="{{ event.title }}" data-subtitle="{{ event.subtitle }}" data-when="{{ event.date_label }} {{ event.hour_label }}" data-href="{{ event.href }}" data-event-id="{{ event.event_id|default('') }}" data-can-reminder="1" data-start-at="{{ event.starts_at }}" aria-haspopup="dialog">详情 / 邮件提醒</button>{% elif event.href and event.href != '#' %}<a class="ls-link" href="{{ event.href }}">查看</a>{% endif %}
+                            {% if event.can_email_reminder %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-item data-kind="{{ event.kind }}" data-status="{{ event.status }}" data-kind-label="{{ event.kind_label }}" data-title="{{ event.title }}" data-subtitle="{{ event.subtitle }}" data-when="{{ event.date_label }} {{ event.hour_label }}" data-href="{{ event.href }}" data-event-id="{{ event.event_id|default('') }}" data-can-reminder="1" data-start-at="{{ event.starts_at }}" aria-haspopup="dialog">详情 / 邮件提醒</button>{% elif event.href and event.href != '#' %}<a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="{{ event.href }}">查看</a>{% endif %}
                         </article>
                         {% else %}
                         <span class="ah-day__none">无安排</span>
@@ -53,7 +53,7 @@
         </section>
 
         <aside class="ah-side">
-            <section class="ah-card">
+            <section data-lq-component="surface" class="lq-surface ah-card">
                 <h3>同步状态</h3>
                 <ul class="ah-sync">
                     {% for card in home.sync_cards %}
@@ -66,7 +66,7 @@
                 </ul>
             </section>
             {% if home.upcoming %}
-            <section class="ah-card">
+            <section data-lq-component="surface" class="lq-surface ah-card">
                 <h3>之后的安排</h3>
                 <ul class="ah-upcoming">
                     {% for event in home.upcoming %}
@@ -75,11 +75,11 @@
                 </ul>
             </section>
             {% endif %}
-            <section class="ah-card ah-card--links">
+            <section data-lq-component="surface" class="lq-surface ah-card ah-card--links">
                 <h3>教务入口</h3>
-                <a class="ls-link" href="{{ manage_nav.hrefs.course_schedule }}">课时统计与 3D 课表</a>
-                <a class="ls-link" href="{{ manage_nav.hrefs.classrooms }}">教室查询</a>
-                <a class="ls-link" href="{{ manage_nav.hrefs.gongwen }}">公文列表</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="{{ manage_nav.hrefs.course_schedule }}">课时统计与 3D 课表</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="{{ manage_nav.hrefs.classrooms }}">教室查询</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="{{ manage_nav.hrefs.gongwen }}">公文列表</a>
             </section>
         </aside>
     </div>

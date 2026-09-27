@@ -3,6 +3,7 @@
  */
 import { escapeHtml } from '../../ui.js';
 import { COLOR_SWATCHES, ICONS } from '../constants.js';
+import { adoptDomainControl } from '../../lq/domain-controls.js';
 
 export function h(tag, attrs = {}, children = []) {
     const el = document.createElement(tag);
@@ -19,6 +20,19 @@ export function h(tag, attrs = {}, children = []) {
         if (child === null || child === undefined || child === false) continue;
         el.append(child instanceof Node ? child : document.createTextNode(String(child)));
     }
+    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) {
+        const choice = el.matches('.twb-swatch,.twb-segment');
+        const variant = el.matches('.twb-btn--danger,.is-danger') ? 'destructive' : el.matches('.twb-btn--primary') ? 'prominent'
+            : el.matches('.twb-btn--ghost,.twb-icon-btn,.twb-menu-item') ? 'ghost' : 'glass';
+        adoptDomainControl(el, { ...(choice ? { kind: 'choice' } : {}), variant });
+        if (el.matches('.twb-swatch,input[type="color"]')) el.dataset.lqVisual = 'color';
+        // Keep authored icon/menu slots; a plain label uses the standard span.
+        if (el.tagName === 'BUTTON' && attrs.text) {
+            const label = document.createElement('span'); label.className = 'lq-btn__label';
+            while (el.firstChild) label.append(el.firstChild);
+            el.append(label);
+        }
+    }
     return el;
 }
 
@@ -33,15 +47,17 @@ export function sectionTitle(text, hint = '') {
  * @returns {{el:HTMLElement, set:(value:number)=>void}}
  */
 export function rangeRow({ id, label, min, max, step = 1, value, format = (v) => String(v), onInput }) {
-    const output = h('output', { className: 'twb-range-value', text: format(value) });
+    const output = h('output', { className: 'twb-range-value lq-range__value', text: format(value) });
     const input = h('input', {
         id, type: 'range', min, max, step, value, className: 'twb-range', 'aria-label': label,
         onInput: () => {
             const next = Number(input.value);
             output.textContent = format(next);
+            input.setAttribute('aria-valuetext', format(next));
             onInput(next);
         },
     });
+    input.setAttribute('aria-valuetext', format(value));
     const el = h('label', { className: 'twb-row twb-row--range' }, [
         h('span', { className: 'twb-row-label', text: label }),
         input,
@@ -52,6 +68,7 @@ export function rangeRow({ id, label, min, max, step = 1, value, format = (v) =>
         set(next) {
             input.value = String(next);
             output.textContent = format(next);
+            input.setAttribute('aria-valuetext', format(next));
         },
     };
 }
@@ -130,6 +147,6 @@ export function menuItem({ icon, label, hint = '', onClick, disabled = false, da
         className: `twb-menu-item${danger ? ' is-danger' : ''}`,
         disabled,
         onClick,
-        html: `<span class="twb-menu-icon">${ICONS[icon] || ''}</span><span class="twb-menu-label">${escapeHtml(label)}</span>${hint ? `<kbd class="twb-menu-hint">${escapeHtml(hint)}</kbd>` : ''}`,
+        html: `<span class="twb-menu-icon lq-btn__icon">${ICONS[icon] || ''}</span><span class="twb-menu-label lq-btn__label">${escapeHtml(label)}</span>${hint ? `<kbd class="twb-menu-hint">${escapeHtml(hint)}</kbd>` : ''}`,
     });
 }

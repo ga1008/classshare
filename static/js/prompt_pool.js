@@ -107,14 +107,15 @@ function ensurePanel(input, featureKey) {
     shareRow.setAttribute('for', shareId);
     shareRow.title = '取消勾选后，本次输入只用于当前生成，不进入共享提示词池。';
     shareRow.innerHTML = `
-        <input id="${shareId}" type="checkbox" data-prompt-pool-share checked>
+        <input data-lq-component="checkbox" class="lq-checkbox" id="${shareId}" type="checkbox" data-prompt-pool-share checked>
         <span>${escapeHtml(labelText(input))}</span>
         <small>取消则不记录</small>
     `;
     const checkbox = shareRow.querySelector('[data-prompt-pool-share]');
 
     const panel = document.createElement('div');
-    panel.className = 'prompt-pool-panel';
+    panel.className = 'prompt-pool-panel lq-domain-raised';
+    panel.dataset.lqComponent = 'selection'; panel.dataset.lqMaterial = 'raised';
     panel.hidden = true;
     panel.id = `prompt-pool-panel-${++panelIdSeed}`;
     panel.dataset.promptPoolPanel = featureKey;
@@ -166,10 +167,10 @@ function renderPanel(panel, items, { loading = false, query = '', activeIndex = 
                 const optionId = `${panel.id}-option-${index}`;
                 const prompt = normalizePrompt(item.prompt);
                 return `
-                    <button
+                    <button data-lq-component="button"
                         type="button"
                         id="${optionId}"
-                        class="prompt-pool-item${isActive ? ' is-active' : ''}"
+                        class="lq-btn lq-btn--sm lq-btn--glass prompt-pool-item${isActive ? ' is-active' : ''}"
                         data-prompt-pool-use-index="${index}"
                         role="option"
                         aria-selected="${isActive ? 'true' : 'false'}"

@@ -187,7 +187,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             return;
         }
         placeResultsEl.innerHTML = items.map((place) => `
-            <button type="button" class="learning-exam-place-option" data-place-key="${escapeHtml(place.place_key || '')}" data-place-id="${escapeHtml(place.place_id || '')}" data-place-label="${escapeHtml(place.display_name || '')}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass learning-exam-place-option" data-place-key="${escapeHtml(place.place_key || '')}" data-place-id="${escapeHtml(place.place_id || '')}" data-place-label="${escapeHtml(place.display_name || '')}">
                 <strong>${escapeHtml(place.display_name || place.room_name || place.room_code || '')}</strong>
                 <span>${escapeHtml(formatPlaceMeta(place))}</span>
             </button>
@@ -264,7 +264,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             <div class="learning-exam-roster-candidates__title">请选择本课堂对应的考试课程</div>
             <div class="learning-exam-roster-candidates__list">
                 ${candidates.map((item) => `
-                    <button type="button" class="learning-exam-roster-candidate" data-exam-course-key="${escapeHtml(item.exam_course_key)}">
+                    <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass learning-exam-roster-candidate" data-exam-course-key="${escapeHtml(item.exam_course_key)}">
                         <strong>${escapeHtml(item.course_code || '')} ${escapeHtml(item.course_name || '')}</strong>
                         <span>${escapeHtml(item.teaching_class_name || '')} · ${escapeHtml(item.class_composition || '')}</span>
                         <small>${Number(item.declared_student_count || 0)} 人 · 匹配 ${Number(item.score || 0)}</small>

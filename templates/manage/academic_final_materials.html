@@ -40,7 +40,7 @@ data-afm-open-sync {{ explain_attrs(
     {% call page_head(document_type_label, eyebrow='期末材料 · 教务系统闭环',
         description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。', lq_enabled=_afm_lq_enabled) %}
             <div class="afm-hero__actions">
-                <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
                     '同步教务双表',
                     '任务提交后在后台登录教务系统，成对获取成绩登记表和试卷分析表，并自动完成交叉校验。页面可以关闭，稍后回来查看结果。',
                     links=sync_links,
@@ -48,7 +48,7 @@ data-afm-open-sync {{ explain_attrs(
                 ) }}>
                     <span aria-hidden="true">↻</span> 同步教务双表
                 </button>
-                <a class="afm-btn afm-btn--ghost" href="{{ sibling_url }}">查看{{ sibling_label }}</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" href="{{ sibling_url }}">查看{{ sibling_label }}</a>
             </div>
         <div class="afm-hero__flow" aria-label="处理流程">
             <div><strong>01</strong><span>确认成绩已提交</span></div>
@@ -59,25 +59,25 @@ data-afm-open-sync {{ explain_attrs(
         </div>
     {% endcall %}
 
-    <div class="afm-toolbar">
+    <div data-lq-component="toolbar" class="lq-domain-toolbar afm-toolbar">
         <div class="afm-toolbar__filters">
             <label class="afm-semester-filter" {{ explain_attrs(
                 '学期筛选',
                 '期末材料按学期归档。默认显示当前日期所在学期；假期期间默认显示刚结束的上一学期，可切换到任意学期或全部。',
                 placement='bottom'
             ) }}>
-                <select data-afm-semester-filter aria-label="按学期筛选"></select>
+                <select data-lq-component="select" class="lq-select" data-afm-semester-filter aria-label="按学期筛选"></select>
             </label>
             <label class="afm-semester-filter">
-                <select data-afm-course-filter aria-label="按课程筛选"></select>
+                <select data-lq-component="select" class="lq-select" data-afm-course-filter aria-label="按课程筛选"></select>
             </label>
             <label class="afm-semester-filter">
-                <select data-afm-class-filter aria-label="按班级筛选"></select>
+                <select data-lq-component="select" class="lq-select" data-afm-class-filter aria-label="按班级筛选"></select>
             </label>
         </div>
         <label class="afm-search">
             <span aria-hidden="true">⌕</span>
-            <input type="search" data-afm-search placeholder="搜索课程、班级或学期">
+            <input data-lq-component="input" class="lq-input" type="search" data-afm-search placeholder="搜索课程、班级或学期">
         </label>
         <div class="afm-toolbar__summary" data-afm-summary></div>
     </div>
@@ -96,52 +96,52 @@ data-afm-open-sync {{ explain_attrs(
         <div aria-hidden="true">期</div>
         <strong>还没有{{ document_type_label }}</strong>
         <p>从已有课堂发起同步；系统会同时准备两份期末材料。</p>
-        <button type="button" class="afm-btn afm-btn--primary" data-afm-open-sync>开始同步</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-open-sync>开始同步</button>
     </div>
     {% endif %}
 </section>
 
-<dialog class="afm-dialog afm-dialog--sync" data-afm-sync-dialog>
-    <form method="dialog" class="afm-dialog__panel" data-afm-sync-form>
+<dialog data-lq-component="layer" class="lq-domain-region afm-dialog afm-dialog--sync" data-afm-sync-dialog>
+    <form data-lq-component="surface" data-lq-material="raised" method="dialog" class="lq-surface lq-domain-raised afm-dialog__panel" data-afm-sync-form>
         <header class="afm-dialog__header">
             <div>
                 <span class="afm-eyebrow">教务系统 · 成对同步</span>
                 <h3>选择要同步的课堂</h3>
                 <p>系统会先确认成绩提交状态，通过后自动下载两份 Word 并交叉校验。</p>
             </div>
-            <button type="button" class="afm-icon-btn" data-afm-close-sync aria-label="关闭">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-icon-btn" data-afm-close-sync aria-label="关闭">×</button>
         </header>
         <div class="afm-sync-filters" data-afm-sync-filters>
             <label class="afm-semester-filter">
-                <select data-afm-sync-semester aria-label="按学期筛选课堂"></select>
+                <select data-lq-component="select" class="lq-select" data-afm-sync-semester aria-label="按学期筛选课堂"></select>
             </label>
             <label class="afm-search afm-search--dialog">
                 <span aria-hidden="true">⌕</span>
-                <input type="search" data-afm-course-search placeholder="搜索课程、班级、学期">
+                <input data-lq-component="input" class="lq-input" type="search" data-afm-course-search placeholder="搜索课程、班级、学期">
             </label>
         </div>
         <div class="afm-course-list" data-afm-course-list></div>
         <label class="afm-force">
-            <input type="checkbox" data-afm-force>
+            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-afm-force>
             <span><strong>强制重新同步</strong><small>忽略 30 分钟缓存，适合刚在教务系统重新提交成绩的情况。</small></span>
         </label>
         <footer class="afm-dialog__footer">
             <span data-afm-sync-hint>请选择一个课堂。</span>
-            <button type="button" class="afm-btn afm-btn--ghost" data-afm-close-sync>取消</button>
-            <button type="submit" class="afm-btn afm-btn--primary" data-afm-sync-submit disabled>确认并同步两份表</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" data-afm-close-sync>取消</button>
+            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-sync-submit disabled>确认并同步两份表</button>
         </footer>
     </form>
 </dialog>
 
-<dialog class="afm-dialog afm-dialog--editor" data-afm-editor-dialog>
-    <form method="dialog" class="afm-dialog__panel" data-afm-editor-form>
+<dialog data-lq-component="layer" class="lq-domain-region afm-dialog afm-dialog--editor" data-afm-editor-dialog>
+    <form data-lq-component="surface" data-lq-material="raised" method="dialog" class="lq-surface lq-domain-raised afm-dialog__panel" data-afm-editor-form>
         <header class="afm-dialog__header">
             <div>
                 <span class="afm-eyebrow" data-afm-editor-eyebrow>期末材料定稿</span>
                 <h3 data-afm-editor-title>编辑{{ document_type_label }}</h3>
                 <p data-afm-editor-subtitle></p>
             </div>
-            <button type="button" class="afm-icon-btn" data-afm-close-editor aria-label="关闭">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-icon-btn" data-afm-close-editor aria-label="关闭">×</button>
         </header>
 
         <div class="afm-editor__body">
@@ -162,27 +162,27 @@ data-afm-open-sync {{ explain_attrs(
                 </div>
                 <div class="afm-fields-grid">
                     <label class="afm-field"><span>命题形式</span>
-                        <select data-afm-field="proposition_form">
+                        <select data-lq-component="select" class="lq-select" data-afm-field="proposition_form">
                             <option value="">请选择</option><option>试题库</option><option>试卷库</option><option>教师组题</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>考试形式</span>
-                        <select data-afm-field="exam_form">
+                        <select data-lq-component="select" class="lq-select" data-afm-field="exam_form">
                             <option value="">请选择</option><option>开卷</option><option>闭卷</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>教考分离</span>
-                        <select data-afm-field="separate_teaching_exam">
+                        <select data-lq-component="select" class="lq-select" data-afm-field="separate_teaching_exam">
                             <option value="">请选择</option><option>是</option><option>否</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>课程性质</span>
-                        <select data-afm-field="course_nature">
+                        <select data-lq-component="select" class="lq-select" data-afm-field="course_nature">
                             <option value="">请选择</option><option>选修</option><option>必修</option>
                         </select>
                     </label>
                     <label class="afm-field afm-field--wide"><span>阅卷形式</span>
-                        <select data-afm-field="marking_form">
+                        <select data-lq-component="select" class="lq-select" data-afm-field="marking_form">
                             <option value="">请选择</option><option>本人阅卷</option><option>同行阅卷</option>
                             <option>集体阅卷</option><option>机器阅卷</option><option>其他</option>
                         </select>
@@ -191,15 +191,15 @@ data-afm-open-sync {{ explain_attrs(
 
                 <div class="afm-section-heading afm-section-heading--analysis">
                     <div><span>思考型 AI</span><h4>试题与成绩简要分析</h4></div>
-                    <button type="button" class="afm-btn afm-btn--ai" data-afm-regenerate>重新生成</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ai" data-afm-regenerate>重新生成</button>
                 </div>
                 <label class="afm-field">
                     <span>教师分析（建议约 200 字，可直接编辑）</span>
-                    <textarea rows="8" maxlength="1200" data-afm-analysis-text></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="8" maxlength="1200" data-afm-analysis-text></textarea>
                 </label>
                 <label class="afm-field afm-field--prompt">
                     <span>重新生成强化要求（可选）</span>
-                    <textarea
+                    <textarea data-lq-component="textarea" class="lq-textarea"
                         rows="3"
                         maxlength="2000"
                         data-afm-regenerate-prompt
@@ -213,33 +213,33 @@ data-afm-open-sync {{ explain_attrs(
                     <p>两处签名分别申请、分别授权。意见位于签名上方，确认签名时同步保存本栏意见。</p>
                 </div>
                 <div class="afm-review-grid">
-                    <article class="afm-review-card">
+                    <article data-lq-component="surface" class="lq-surface afm-review-card">
                         <div class="afm-review-opinion">
                             <label class="afm-field" for="afm-department-opinion">
                                 <span class="afm-review-opinion__heading">系（教研室）审核意见 <small data-afm-opinion-status="department_review_opinion" aria-live="polite"></small></span>
-                                <input id="afm-department-opinion" type="text" maxlength="80" data-afm-review-opinion="department_review_opinion" data-afm-opinion-default="已核" aria-describedby="afm-department-opinion-help" placeholder="填写审核意见，留空不显示">
+                                <input data-lq-component="input" class="lq-input" id="afm-department-opinion" type="text" maxlength="80" data-afm-review-opinion="department_review_opinion" data-afm-opinion-default="已核" aria-describedby="afm-department-opinion-help" placeholder="填写审核意见，留空不显示">
                             </label>
                             <div class="afm-review-opinion__help">
                                 <small id="afm-department-opinion-help">批语可选；“已核”可从下方签名框选取。</small>
                                 <div class="afm-review-opinion__actions">
-                                    <button type="button" data-afm-use-opinion="department_review_opinion">填入“已核”</button>
-                                    <button type="button" data-afm-clear-opinion="department_review_opinion" aria-label="清空系（教研室）审核意见">清空</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-afm-use-opinion="department_review_opinion">填入“已核”</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-afm-clear-opinion="department_review_opinion" aria-label="清空系（教研室）审核意见">清空</button>
                                 </div>
                             </div>
                         </div>
                         <div data-afm-department-signature-point></div>
                     </article>
-                    <article class="afm-review-card">
+                    <article data-lq-component="surface" class="lq-surface afm-review-card">
                         <div class="afm-review-opinion">
                             <label class="afm-field" for="afm-dean-opinion">
                                 <span class="afm-review-opinion__heading">教学院长审核意见 <small data-afm-opinion-status="dean_review_opinion" aria-live="polite"></small></span>
-                                <input id="afm-dean-opinion" type="text" maxlength="80" data-afm-review-opinion="dean_review_opinion" data-afm-opinion-default="同意" aria-describedby="afm-dean-opinion-help" placeholder="填写审核意见，留空不显示">
+                                <input data-lq-component="input" class="lq-input" id="afm-dean-opinion" type="text" maxlength="80" data-afm-review-opinion="dean_review_opinion" data-afm-opinion-default="同意" aria-describedby="afm-dean-opinion-help" placeholder="填写审核意见，留空不显示">
                             </label>
                             <div class="afm-review-opinion__help">
                                 <small id="afm-dean-opinion-help">批语可选；“同意”可从下方签名框选取。</small>
                                 <div class="afm-review-opinion__actions">
-                                    <button type="button" data-afm-use-opinion="dean_review_opinion">填入“同意”</button>
-                                    <button type="button" data-afm-clear-opinion="dean_review_opinion" aria-label="清空教学院长审核意见">清空</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-afm-use-opinion="dean_review_opinion">填入“同意”</button>
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-afm-clear-opinion="dean_review_opinion" aria-label="清空教学院长审核意见">清空</button>
                                 </div>
                             </div>
                         </div>
@@ -250,22 +250,22 @@ data-afm-open-sync {{ explain_attrs(
         </div>
 
         <footer class="afm-dialog__footer">
-            <button type="button" class="afm-btn afm-btn--ghost" data-afm-preview-current>预览当前文档</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" data-afm-preview-current>预览当前文档</button>
             <span class="afm-editor-status" data-afm-editor-status aria-live="polite"></span>
             <span class="afm-dialog__spacer"></span>
-            <button type="button" class="afm-btn afm-btn--ghost" data-afm-close-editor>取消</button>
-            <button type="submit" class="afm-btn afm-btn--primary" data-afm-save>保存并更新文档</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ghost" data-afm-close-editor>取消</button>
+            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-save>保存并更新文档</button>
         </footer>
     </form>
 </dialog>
 
-<dialog class="afm-dialog afm-dialog--preview" data-afm-preview-dialog>
-    <div class="afm-dialog__panel">
+<dialog data-lq-component="layer" class="lq-domain-region afm-dialog afm-dialog--preview" data-afm-preview-dialog>
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised afm-dialog__panel">
         <header class="afm-dialog__header">
             <div><span class="afm-eyebrow">导出一致预览</span><h3 data-afm-preview-title>文档预览</h3></div>
-            <button type="button" class="afm-icon-btn" data-afm-close-preview aria-label="关闭">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-icon-btn" data-afm-close-preview aria-label="关闭">×</button>
         </header>
-        <iframe title="期末材料文档预览" data-afm-preview-frame></iframe>
+        <iframe title="期末材料文档预览" data-lq-theme-bridge="app" data-afm-preview-frame></iframe>
     </div>
 </dialog>
 

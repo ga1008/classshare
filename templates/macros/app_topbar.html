@@ -52,7 +52,7 @@
 {% if href %}
 <a href="{{ href }}" class="{{ class_name }}" aria-label="{{ label }}"{{ explain|safe }} {{ attrs|safe }}>
 {% else %}
-<button type="button" class="{{ class_name }}" aria-label="{{ label }}"{% if button_id %} id="{{ button_id }}"{% endif %}{{ explain|safe }} {{ attrs|safe }}>
+<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass {{ class_name }}" aria-label="{{ label }}"{% if button_id %} id="{{ button_id }}"{% endif %}{{ explain|safe }} {{ attrs|safe }}>
 {% endif %}
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon(icon) }}</span>
     <span class="app-topbar-action__text">

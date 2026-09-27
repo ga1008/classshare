@@ -1,3 +1,4 @@
+import { LqButton } from '@/components/lq-presentation';
 import { Bell, BookOpenCheck, CalendarClock, CheckCircle2, FileType2, RefreshCw, Send, TimerReset } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -51,50 +52,50 @@ function ExamAssignIslandView({ snapshot }: { snapshot: ExamAssignSnapshot }) {
       </div>
 
       <div className="exam-assign-sync__chips" aria-label="考试发布配置">
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-assessment-kind' })}>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-assessment-kind' })}>
           <BookOpenCheck size={14} aria-hidden="true" />{snapshot.assessmentKindLabel}
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-list')}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-list')}>
           <BookOpenCheck size={14} aria-hidden="true" />
           {snapshot.paperCount} 份试卷
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-availability-mode' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-availability-mode' })}>
           <CalendarClock size={14} aria-hidden="true" />
           {scheduleLabel}
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-late-submission-enabled' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-late-submission-enabled' })}>
           <TimerReset size={14} aria-hidden="true" />
           {latePolicyLabel}
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-learning-stage-key' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-learning-stage-key' })}>
           <CheckCircle2 size={14} aria-hidden="true" />
           {stageLabel}
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-allowed-file-types' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-allowed-file-types' })}>
           <FileType2 size={14} aria-hidden="true" />
           {allowedTypesLabel}
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-send-email-notification' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-send-email-notification' })}>
           <Bell size={14} aria-hidden="true" />
           {snapshot.sendEmailNotification ? '邮件通知' : '站内通知'}
-        </button>
+        </LqButton>
       </div>
 
       <div className="exam-assign-sync__actions" aria-label="考试发布快捷操作">
-        <button type="button" onClick={() => sendExamAssignCommand('reload-papers')} disabled={snapshot.isLoading || snapshot.isPublishing}>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('reload-papers')} disabled={snapshot.isLoading || snapshot.isPublishing}>
           <RefreshCw size={15} aria-hidden="true" />
           刷新
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-list')}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-list')}>
           选择试卷
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-availability-mode' })}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('focus-field', { fieldId: 'exam-availability-mode' })}>
           时间
-        </button>
-        <button type="button" onClick={() => sendExamAssignCommand('publish')} disabled={!snapshot.canPublish}>
+        </LqButton>
+        <LqButton size="sm" variant="glass" type="button" onClick={() => sendExamAssignCommand('publish')} disabled={!snapshot.canPublish}>
           <Send size={15} aria-hidden="true" />
           发布
-        </button>
+        </LqButton>
       </div>
     </section>
   );

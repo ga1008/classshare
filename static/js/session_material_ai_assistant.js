@@ -144,7 +144,7 @@ export function initSessionMaterialAiAssistant({
                     <strong>${file.name}</strong>
                     <span>${formatSize(file.size)} · ${file.type || 'document'}</span>
                 </div>
-                <button type="button" class="session-material-ai-file-remove" data-remove-file="${index}">移除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass session-material-ai-file-remove" data-remove-file="${index}">移除</button>
             </div>
         `).join('');
     };

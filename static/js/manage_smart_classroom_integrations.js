@@ -199,7 +199,7 @@ function renderCapabilities() {
             ? `<span>已同步</span>${syncedAt ? `<span>${escapeHtml(syncedAt)}</span>` : ''}`
             : '<span class="is-muted">未同步</span>';
         return `
-            <button type="button" data-lq-shape="surface" class="smart-classroom-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
+            <button data-lq-component="button" type="button" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass smart-classroom-sync-card" data-sync-key="${escapeHtml(item.key || '')}">
                 <div class="smart-classroom-sync-card-meta">${statusMeta}</div>
                 <h4>${escapeHtml(item.label || '同步功能')}</h4>
                 <p>${escapeHtml(item.description || '')}</p>
@@ -368,10 +368,10 @@ function renderCredentials() {
                     </div>
                 </div>
                 <div class="smart-classroom-actions">
-                    <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-id="${item.id}">修改</button>
-                    <button type="button" class="btn btn-primary btn-sm" data-action="sync" data-id="${item.id}">同步点名</button>
-                    <button type="button" class="btn btn-outline btn-sm" data-action="verify" data-id="${item.id}">重新验证</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${item.id}">删除</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="edit" data-id="${item.id}">修改</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-action="sync" data-id="${item.id}">同步点名</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="verify" data-id="${item.id}">重新验证</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-action="delete" data-id="${item.id}">删除</button>
                 </div>
             </article>
         `;

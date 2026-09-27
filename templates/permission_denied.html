@@ -23,7 +23,7 @@
     {% if required_role == 'student' %}<div class="lq-status-card__note">{{ lq_btn('学生入口', href=student_login_url, variant='link') }}</div>{% endif %}
 </section>
 {% else %}
-<div class="status-card warning">
+<div data-lq-component="surface" class="lq-surface status-card warning">
     <div class="status-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -43,11 +43,11 @@
     </div>
     <div class="status-actions" style="display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
         {% if show_teacher_login %}
-        <a href="{{ teacher_login_url }}" class="btn btn-primary" style="min-width: 160px; justify-content: center;">
+        <a data-lq-component="button" href="{{ teacher_login_url }}" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" style="min-width: 160px; justify-content: center;">
             教师登录
         </a>
         {% endif %}
-        <a href="{{ dashboard_url }}" class="btn btn-outline" style="min-width: 160px; justify-content: center;">
+        <a data-lq-component="button" href="{{ dashboard_url }}" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" style="min-width: 160px; justify-content: center;">
             返回页面
         </a>
     </div>

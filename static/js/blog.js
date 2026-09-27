@@ -1045,7 +1045,7 @@ class BlogCenter {
         const allSignalClass = total ? ' has-content' : ' is-empty';
         const tabs = [
             `
-                <button class="blog-section-tab${allActive ? ' is-active' : ''}${allSignalClass}" data-blog-section="" data-blog-section-count="${total}" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#2563eb">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-section-tab${allActive ? ' is-active' : ''}${allSignalClass}" data-blog-section="" data-blog-section-count="${total}" type="button" role="tab" aria-selected="${allActive ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${allActive ? '0' : '-1'}" style="--section-accent:#2563eb">
                     <span class="blog-section-tab__icon" aria-hidden="true">◎</span>
                     <span class="blog-section-tab__name">全部</span>
                     <span class="blog-section-tab__count">${formatCompactNumber(total)}</span>
@@ -1055,7 +1055,7 @@ class BlogCenter {
                 const active = section.section_key === this.state.currentSection;
                 const postCount = Number(section.post_count || 0);
                 return `
-                    <button class="blog-section-tab${active ? ' is-active' : ''}${postCount ? ' has-content' : ' is-empty'}" data-blog-section="${escapeHtml(section.section_key || '')}" data-blog-section-count="${postCount}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-section-tab${active ? ' is-active' : ''}${postCount ? ' has-content' : ' is-empty'}" data-blog-section="${escapeHtml(section.section_key || '')}" data-blog-section-count="${postCount}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="blog-feed-panel" tabindex="${active ? '0' : '-1'}" style="--section-accent:${this.sectionAccent(section)}">
                         <span class="blog-section-tab__icon" aria-hidden="true">${escapeHtml(section.icon || '•')}</span>
                         <span class="blog-section-tab__name">${escapeHtml(section.short_name || section.name || '板块')}</span>
                         <span class="blog-section-tab__count">${formatCompactNumber(postCount)}</span>
@@ -1080,7 +1080,7 @@ class BlogCenter {
         intro.innerHTML = `
             <span>${escapeHtml(section.name || '')}</span>
             <p>${escapeHtml(section.description || '')}</p>
-            <button type="button" class="blog-section-follow${following ? ' is-following' : ''}" data-blog-follow-type="section" data-blog-follow-key="${escapeHtml(section.section_key)}">${following ? '已关注' : '关注板块'}</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-section-follow${following ? ' is-following' : ''}" data-blog-follow-type="section" data-blog-follow-key="${escapeHtml(section.section_key)}">${following ? '已关注' : '关注板块'}</button>
         `;
     }
 
@@ -1186,7 +1186,7 @@ class BlogCenter {
         const deadlineClass = Number.isFinite(deadlineDays) && deadlineDays <= 3 ? ' is-urgent' : '';
         const officialLink = opportunity.application_url || opportunity.source_url || '';
         return `
-            <section class="blog-opportunity-card" aria-label="就业机会摘要">
+            <section data-lq-component="surface" class="lq-surface blog-opportunity-card" aria-label="就业机会摘要">
                 <div class="blog-opportunity-card__topline">
                     <span class="blog-opportunity-source is-level-${escapeHtml(String(opportunity.source_level || 'C').toLowerCase())}">${escapeHtml(opportunity.source_level_label || '来源待核验')}</span>
                     <span class="blog-opportunity-deadline${deadlineClass}">${escapeHtml(this.opportunityDeadlineLabel(opportunity))}</span>
@@ -1198,7 +1198,7 @@ class BlogCenter {
                     ${targets.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
                 </div>
                 <div class="blog-opportunity-card__actions">
-                    <button type="button" data-blog-opportunity-save="${opportunity.id}" data-current-state="${escapeHtml(state)}">${escapeHtml(state ? OPPORTUNITY_STATE_LABELS[state] || '已跟进' : '收藏机会')}</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-opportunity-save="${opportunity.id}" data-current-state="${escapeHtml(state)}">${escapeHtml(state ? OPPORTUNITY_STATE_LABELS[state] || '已跟进' : '收藏机会')}</button>
                     ${officialLink ? `<a href="${escapeHtml(officialLink)}" target="_blank" rel="noopener noreferrer">查看原公告</a>` : '<span>原公告入口待核验</span>'}
                 </div>
             </section>
@@ -1227,12 +1227,12 @@ class BlogCenter {
                         <h2>${escapeHtml(opportunity.employer_name || '就业机会')}</h2>
                         <p>${escapeHtml(this.opportunityDeadlineLabel(opportunity))} · 最近核验 ${escapeHtml(timeAgo(opportunity.last_verified_at) || '时间未知')}</p>
                     </div>
-                    ${officialLink ? `<a class="btn btn-primary btn-sm" href="${escapeHtml(officialLink)}" target="_blank" rel="noopener noreferrer">打开官方公告</a>` : ''}
+                    ${officialLink ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="${escapeHtml(officialLink)}" target="_blank" rel="noopener noreferrer">打开官方公告</a>` : ''}
                 </div>
                 ${facts.length ? `<dl class="blog-opportunity-detail__grid">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>` : ''}
                 <div class="blog-opportunity-detail__workflow">
                     <label for="blog-opportunity-state-${opportunity.id}">我的求职进度</label>
-                    <select id="blog-opportunity-state-${opportunity.id}" data-blog-opportunity-state="${opportunity.id}">
+                    <select data-lq-component="select" class="lq-select" id="blog-opportunity-state-${opportunity.id}" data-blog-opportunity-state="${opportunity.id}">
                         <option value=""${!opportunity.user_state ? ' selected' : ''}>尚未跟进</option>
                         ${Object.entries(OPPORTUNITY_STATE_LABELS).map(([value, label]) => `<option value="${value}"${opportunity.user_state === value ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
                     </select>
@@ -1404,9 +1404,9 @@ class BlogCenter {
         popover.innerHTML = `
             <div class="blog-user-popover__name">${escapeHtml(name)}</div>
             <div class="blog-user-popover__actions">
-                <button type="button" class="blog-user-popover__btn" data-blog-author-posts="${escapeHtml(identity)}" data-author-name="${escapeHtml(name)}">ta的帖子</button>
-                ${isSelf ? '' : `<button type="button" class="blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="author" data-blog-follow-key="${escapeHtml(identity)}">${isFollowing ? '已关注作者' : '关注作者'}</button>`}
-                <button type="button" class="blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-posts="${escapeHtml(identity)}" data-author-name="${escapeHtml(name)}">ta的帖子</button>
+                ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="author" data-blog-follow-key="${escapeHtml(identity)}">${isFollowing ? '已关注作者' : '关注作者'}</button>`}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>
             </div>
         `;
         popover.hidden = false;
@@ -1500,7 +1500,7 @@ class BlogCenter {
                             <h2>先看这些</h2>
                             <p>精选、置顶和高讨论内容会优先出现在这里。</p>
                         </div>
-                        <button type="button" data-blog-sort="featured">全部精华</button>
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-sort="featured">全部精华</button>
                     </div>
                     <div class="blog-spotlight__grid">
                         ${spotlightPosts.map((post, index) => this.spotlightPostHtml(post, index)).join('')}
@@ -1522,7 +1522,7 @@ class BlogCenter {
             const hotTags = data.hot_tags || [];
             tags.innerHTML = hotTags.length
                 ? hotTags.map((tag) => `
-                    <button type="button" class="blog-tag blog-tag--hot" data-blog-tag="${escapeHtml(tag.name)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-tag blog-tag--hot" data-blog-tag="${escapeHtml(tag.name)}">
                         #${escapeHtml(tag.name)}
                         <span>${formatCompactNumber(tag.count)}</span>
                     </button>
@@ -1548,7 +1548,7 @@ class BlogCenter {
     spotlightPostHtml(post, index) {
         const cover = this.postCoverMediaHtml(post);
         return `
-            <button type="button" data-lq-shape="surface" class="blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
+            <button data-lq-component="button" type="button" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass blog-spotlight-card${index === 0 ? ' blog-spotlight-card--lead' : ''}" data-blog-open-post="${post.id}">
                 <div class="blog-spotlight-card__media">${cover}</div>
                 <div class="blog-spotlight-card__body">
                     ${this.sectionBadgeHtml(post.section_key, 'blog-section-badge--spotlight')}
@@ -1566,7 +1566,7 @@ class BlogCenter {
 
     trendingPostHtml(post, index) {
         return `
-            <button type="button" class="blog-rail-post" data-blog-open-post="${post.id}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-rail-post" data-blog-open-post="${post.id}">
                 <span class="blog-rail-post__rank">${index + 1}</span>
                 <span class="blog-rail-post__body">
                     <strong>${escapeHtml(post.title || '')}</strong>
@@ -1582,7 +1582,7 @@ class BlogCenter {
             is_anonymous: false,
         }, 'blog-author-cultivation--rank');
         return `
-            <button type="button" class="blog-author-rank__item" data-blog-author-posts="${escapeHtml(author.identity || '')}" data-author-name="${escapeHtml(author.display_name || '')}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-author-rank__item" data-blog-author-posts="${escapeHtml(author.identity || '')}" data-author-name="${escapeHtml(author.display_name || '')}">
                 <img src="${escapeHtml(author.avatar_url || '/api/profile/avatar')}" alt="${escapeHtml(author.display_name || '')}" loading="lazy" decoding="async">
                 <span class="blog-author-rank__body">
                     <strong>${escapeHtml(author.display_name || '未命名用户')}</strong>
@@ -2477,7 +2477,7 @@ class BlogCenter {
         container.innerHTML = this.state.uploadedImages.map((item, index) => `
             <div class="blog-image-preview__item">
                 <img src="${escapeHtml(item.url || '')}" alt="${escapeHtml(item.filename || item.name || '图片')}">
-                <button type="button" class="blog-image-preview__remove" data-remove-image="${index}" aria-label="移除图片">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-image-preview__remove" data-remove-image="${index}" aria-label="移除图片">×</button>
             </div>
         `).join('');
     }
@@ -2581,7 +2581,7 @@ class BlogCenter {
                 this.composeUserMap.set(user.identity, user);
                 const exists = this.state.selectedUsers.some((item) => item.identity === user.identity);
                 return `
-                    <button type="button" class="blog-user-chip blog-user-chip--pickable${exists ? ' is-active' : ''}" data-pick-user="${escapeHtml(user.identity)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-chip blog-user-chip--pickable${exists ? ' is-active' : ''}" data-pick-user="${escapeHtml(user.identity)}">
                         <span>${escapeHtml(user.name || user.nickname || user.identity)}</span>
                         <span class="blog-user-chip__meta">${escapeHtml(user.role_label || '')}${user.class_name ? ` · ${escapeHtml(user.class_name)}` : ''}</span>
                     </button>
@@ -2613,7 +2613,7 @@ class BlogCenter {
             <span class="blog-user-chip">
                 ${escapeHtml(user.name || user.identity)}
                 <span class="blog-user-chip__meta">${escapeHtml(user.role_label || '')}</span>
-                <button type="button" class="blog-user-chip__remove" data-remove-user="${index}" aria-label="移除用户">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-chip__remove" data-remove-user="${index}" aria-label="移除用户">×</button>
             </span>
         `).join('');
     }
@@ -2685,7 +2685,7 @@ class BlogCenter {
             panel.innerHTML = `
                 <div class="blog-comment-custom-emoji-panel__header">
                     <div class="blog-comment-custom-emoji-panel__title">自定义表情</div>
-                    <button type="button" class="blog-comment-custom-emoji-panel__close" data-blog-close-custom-emoji-panel>×</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-custom-emoji-panel__close" data-blog-close-custom-emoji-panel>×</button>
                 </div>
                 <div class="blog-comment-panel-empty">还没有可用的自定义表情</div>
             `;
@@ -2694,11 +2694,11 @@ class BlogCenter {
         panel.innerHTML = `
             <div class="blog-comment-custom-emoji-panel__header">
                 <div class="blog-comment-custom-emoji-panel__title">自定义表情</div>
-                <button type="button" class="blog-comment-custom-emoji-panel__close" data-blog-close-custom-emoji-panel>×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-custom-emoji-panel__close" data-blog-close-custom-emoji-panel>×</button>
             </div>
             <div class="blog-comment-custom-emoji-panel__grid">
                 ${this.state.customEmojiLibrary.map((item) => `
-                    <button type="button" class="blog-custom-emoji-picker__item" data-blog-custom-emoji-pick data-file-hash="${escapeHtml(item.file_hash)}" title="${escapeHtml(item.name || '自定义表情')}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-custom-emoji-picker__item" data-blog-custom-emoji-pick data-file-hash="${escapeHtml(item.file_hash)}" title="${escapeHtml(item.name || '自定义表情')}">
                         <img src="${escapeHtml(item.image_url || '')}" alt="${escapeHtml(item.name || '自定义表情')}" loading="lazy" decoding="async">
                     </button>
                 `).join('')}
@@ -2770,7 +2770,7 @@ class BlogCenter {
             emojiPreview.innerHTML = this.commentDraft.customEmojis.map((item, index) => `
                 <div class="blog-comment-media-chip">
                     <img src="${escapeHtml(item.image_url || '')}" alt="${escapeHtml(item.name || '自定义表情')}" loading="lazy" decoding="async">
-                    <button type="button" data-remove-comment-emoji="${index}" aria-label="移除表情">×</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-remove-comment-emoji="${index}" aria-label="移除表情">×</button>
                 </div>
             `).join('');
             emojiPreview.hidden = !this.commentDraft.customEmojis.length;
@@ -2781,7 +2781,7 @@ class BlogCenter {
             attachmentPreview.innerHTML = this.commentDraft.attachments.map((item, index) => `
                 <div class="blog-comment-media-chip blog-comment-media-chip--image">
                     <img src="${escapeHtml(item.url || '')}" alt="${escapeHtml(item.filename || item.name || '图片')}" loading="lazy" decoding="async">
-                    <button type="button" data-remove-comment-attachment="${index}" aria-label="移除图片">×</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-remove-comment-attachment="${index}" aria-label="移除图片">×</button>
                 </div>
             `).join('');
             attachmentPreview.hidden = !this.commentDraft.attachments.length;
@@ -2806,7 +2806,7 @@ class BlogCenter {
         if (headings.length < 2) return;
         list.innerHTML = headings.map((heading, index) => {
             if (!heading.id) heading.id = `blog-toc-${index}`;
-            return `<a class="blog-toc__item blog-toc__item--${heading.tagName.toLowerCase()}" href="#${escapeHtml(heading.id)}" data-blog-toc-target="${escapeHtml(heading.id)}">${escapeHtml(heading.textContent.trim())}</a>`;
+            return `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toc__item blog-toc__item--${heading.tagName.toLowerCase()}" href="#${escapeHtml(heading.id)}" data-blog-toc-target="${escapeHtml(heading.id)}">${escapeHtml(heading.textContent.trim())}</a>`;
         }).join('');
         this.tocObserver = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
@@ -2863,13 +2863,13 @@ class BlogCenter {
     authorAvatarHtml(author = {}, className = '', fallbackUrl = this.currentAvatarUrl) {
         const avatar = `<img class="${escapeHtml(className)}" src="${escapeHtml(author.avatar_url || fallbackUrl)}" alt="${escapeHtml(author.display_name || '')}">`;
         if (!this.canOpenUserPopover(author)) return avatar;
-        return `<button type="button" class="blog-user-link blog-user-link--avatar" ${this.userMenuAttrs(author)}>${avatar}</button>`;
+        return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-link blog-user-link--avatar" ${this.userMenuAttrs(author)}>${avatar}</button>`;
     }
 
     authorNameHtml(author = {}, className = '') {
         const name = escapeHtml(author.display_name || '');
         if (!this.canOpenUserPopover(author)) return `<span class="${escapeHtml(className)}">${name}</span>`;
-        return `<button type="button" class="blog-user-link blog-user-link--name ${escapeHtml(className)}" ${this.userMenuAttrs(author)}>${name}</button>`;
+        return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-link blog-user-link--name ${escapeHtml(className)}" ${this.userMenuAttrs(author)}>${name}</button>`;
     }
 
     authorCultivationBadgeHtml(author = {}, className = '') {
@@ -2892,7 +2892,7 @@ class BlogCenter {
         if (post.visibility !== 'public') badges.push(`<span class="blog-badge blog-badge--visibility">${escapeHtml(post.visibility_label || '权限可见')}</span>`);
 
         const tags = (post.tags || []).map((tag) => (
-            `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
         const coverMedia = this.postCoverMediaHtml(post);
         const cover = coverMedia ? `<div class="blog-post-card__media">${coverMedia}</div>` : '';
@@ -2928,12 +2928,12 @@ class BlogCenter {
                         </div>
                     </div>
                     <div class="blog-post-card__actions">
-                        <button type="button" class="blog-card-action${likedClass}" data-like-post="${post.id}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${likedClass}" data-like-post="${post.id}">
                             ${post.is_liked ? SVG.heartFill : SVG.heart}
                             <span>点赞</span>
                             <span class="blog-card-action__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
                         </button>
-                        <button type="button" class="blog-card-action${bookmarkedClass}" data-bookmark-post="${post.id}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${bookmarkedClass}" data-bookmark-post="${post.id}">
                             ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
                             <span>收藏</span>
                             <span class="blog-card-action__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
@@ -2965,17 +2965,17 @@ class BlogCenter {
         if (post.visibility !== 'public') metaBadges.push(`<span class="blog-badge blog-badge--visibility">${escapeHtml(post.visibility_label || '权限可见')}</span>`);
 
         const actionButtons = [
-            permissions.can_edit ? `<button type="button" class="blog-action-btn" data-edit-post="${post.id}">${SVG.edit}<span>编辑</span></button>` : '',
-            permissions.can_toggle_comments ? `<button type="button" class="blog-action-btn" data-toggle-comments="${post.id}">${post.allow_comments ? '关闭评论' : '开启评论'}</button>` : '',
-            permissions.can_pin ? `<button type="button" class="blog-action-btn blog-action-btn--warning" data-pin-post="${post.id}">${post.is_pinned ? '取消置顶' : '置顶'}</button>` : '',
-            permissions.can_feature ? `<button type="button" class="blog-action-btn blog-action-btn--warning" data-feature-post="${post.id}">${post.is_featured ? '取消精华' : '设为精华'}</button>` : '',
-            permissions.can_hide ? `<button type="button" class="blog-action-btn blog-action-btn--warning" data-hide-post="${post.id}">${post.status === 'moderated' ? '恢复可见' : '转为私密'}</button>` : '',
-            permissions.can_delete ? `<button type="button" class="blog-action-btn blog-action-btn--danger" data-delete-post="${post.id}">删除</button>` : '',
-            `<button type="button" class="blog-action-btn" data-blog-report-post="${post.id}">反馈问题</button>`,
+            permissions.can_edit ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-edit-post="${post.id}">${SVG.edit}<span>编辑</span></button>` : '',
+            permissions.can_toggle_comments ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-toggle-comments="${post.id}">${post.allow_comments ? '关闭评论' : '开启评论'}</button>` : '',
+            permissions.can_pin ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-pin-post="${post.id}">${post.is_pinned ? '取消置顶' : '置顶'}</button>` : '',
+            permissions.can_feature ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-feature-post="${post.id}">${post.is_featured ? '取消精华' : '设为精华'}</button>` : '',
+            permissions.can_hide ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-hide-post="${post.id}">${post.status === 'moderated' ? '恢复可见' : '转为私密'}</button>` : '',
+            permissions.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--danger" data-delete-post="${post.id}">删除</button>` : '',
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-blog-report-post="${post.id}">反馈问题</button>`,
         ].filter(Boolean).join('');
 
         const tags = (post.tags || []).map((tag) => (
-            `<button type="button" class="blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-tag" data-blog-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
         )).join('');
         const editorialCover = post.cover_image_kind === 'editorial'
             ? `<div class="blog-detail__editorial-cover">${this.postCoverFallbackHtml(post)}</div>`
@@ -3013,12 +3013,12 @@ class BlogCenter {
                 ${editorialCover}
                 <div class="blog-detail__body">${renderMarkdownHtml(post.content_md || '')}</div>
                 <div class="blog-detail__interactions">
-                    <button type="button" class="blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}">
                         ${post.is_liked ? SVG.heartFill : SVG.heart}
                         <span class="blog-interact-btn__label">点赞</span>
                         <span class="blog-interact-btn__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
                     </button>
-                    <button type="button" class="blog-interact-btn${post.is_bookmarked ? ' is-active--bookmark' : ''}" data-bookmark-post="${post.id}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_bookmarked ? ' is-active--bookmark' : ''}" data-bookmark-post="${post.id}">
                         ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
                         <span class="blog-interact-btn__label">收藏</span>
                         <span class="blog-interact-btn__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
@@ -3044,31 +3044,31 @@ class BlogCenter {
                 </div>
                 <div class="blog-comment-composer" data-blog-comment-composer>
                     <img class="blog-comment-composer__avatar" src="${escapeHtml(this.currentAvatarUrl)}" alt="${escapeHtml(this.userName)}">
-                    <div class="blog-comment-composer__panel">
+                    <div data-lq-component="surface" class="lq-surface blog-comment-composer__panel">
                         <div class="blog-comment-replying" data-blog-replying hidden></div>
-                        <textarea class="blog-comment-composer__input" data-blog-comment-input rows="3" placeholder="写下你的观点或补充说明。输入 @管家 可邀请 AI 回复并查看本条评论的图片（最多 4 张）。"></textarea>
+                        <textarea data-lq-component="textarea" class="lq-textarea blog-comment-composer__input" data-blog-comment-input rows="3" placeholder="写下你的观点或补充说明。输入 @管家 可邀请 AI 回复并查看本条评论的图片（最多 4 张）。"></textarea>
                         <div class="blog-comment-media-strip" data-blog-comment-custom-emoji-preview hidden></div>
                         <div class="blog-comment-media-strip" data-blog-comment-attachment-preview hidden></div>
-                        <div class="blog-comment-toolbar" data-blog-comment-toolbar>
+                        <div data-lq-component="toolbar" class="lq-domain-toolbar blog-comment-toolbar" data-blog-comment-toolbar>
                             <div class="blog-comment-toolbar__group">
-                                <button type="button" class="blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="quote">引用</button>
-                                <button type="button" class="blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="code">代码</button>
-                                <button type="button" class="blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="codeblock">代码块</button>
-                                <button type="button" class="blog-toolbar-chip blog-toolbar-chip--ai" data-blog-comment-format="mention-housekeeper">@管家</button>
-                                <button type="button" class="blog-toolbar-chip" data-blog-comment-emoji-toggle>${SVG.smile}<span>表情</span></button>
-                                <button type="button" class="blog-toolbar-chip" data-blog-comment-custom-emoji-toggle>${SVG.image}<span>自定义表情</span></button>
-                                <button type="button" class="blog-toolbar-chip" data-blog-comment-upload>${SVG.plus}<span>图片</span></button>
-                                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-comment-file-input hidden multiple>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="quote">引用</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="code">代码</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip blog-toolbar-chip--format" data-blog-comment-format="codeblock">代码块</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip blog-toolbar-chip--ai" data-blog-comment-format="mention-housekeeper">@管家</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip" data-blog-comment-emoji-toggle>${SVG.smile}<span>表情</span></button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip" data-blog-comment-custom-emoji-toggle>${SVG.image}<span>自定义表情</span></button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-toolbar-chip" data-blog-comment-upload>${SVG.plus}<span>图片</span></button>
+                                <input data-lq-component="file" class="lq-native-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-comment-file-input hidden multiple>
                             </div>
                             <div class="blog-comment-toolbar__hint">支持 Markdown、图片和表情；@管家 可邀请 AI 回复。</div>
                             <div class="blog-comment-toolbar__panels">
                                 <div class="blog-comment-emoji-anchor" data-blog-comment-emoji-anchor></div>
-                                <div class="blog-comment-custom-emoji-panel" data-blog-comment-custom-emoji-panel hidden></div>
+                                <div data-lq-component="surface" class="lq-surface blog-comment-custom-emoji-panel" data-blog-comment-custom-emoji-panel hidden></div>
                             </div>
                         </div>
                         <div class="blog-comment-composer__actions">
-                            <button type="button" class="btn btn-ghost btn-sm" data-blog-reply-cancel hidden>取消回复</button>
-                            <button type="button" class="btn btn-primary btn-sm" data-blog-submit-comment>发送评论</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-reply-cancel hidden>取消回复</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-blog-submit-comment>发送评论</button>
                         </div>
                     </div>
                 </div>
@@ -3078,12 +3078,12 @@ class BlogCenter {
 
     commentHtml(comment) {
         const actions = [
-            `<button type="button" class="blog-comment-action${comment.is_liked ? ' blog-comment-action--liked' : ''}" data-like-comment="${comment.id}">
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action${comment.is_liked ? ' blog-comment-action--liked' : ''}" data-like-comment="${comment.id}">
                 ${comment.is_liked ? SVG.heartFill : SVG.heart}
                 <span class="blog-comment-action__count">${comment.like_count || 0}</span>
             </button>`,
-            comment.can_reply ? `<button type="button" class="blog-comment-action" data-reply-to="${comment.id}" data-reply-name="${escapeHtml(comment.author?.display_name || '')}">回复</button>` : '',
-            comment.can_delete ? `<button type="button" class="blog-comment-action blog-comment-action--delete" data-delete-comment="${comment.id}">删除</button>` : '',
+            comment.can_reply ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-reply-to="${comment.id}" data-reply-name="${escapeHtml(comment.author?.display_name || '')}">回复</button>` : '',
+            comment.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action blog-comment-action--delete" data-delete-comment="${comment.id}">删除</button>` : '',
         ].filter(Boolean).join('');
 
         return `

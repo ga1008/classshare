@@ -43,14 +43,14 @@ function renderList() {
         const confirmControls = item.status === 'confirmed'
             ? `
                 <span class="classroom-retake-score">默认平时分 <b>${escapeHtml(String(score))}</b> 分</span>
-                <button type="button" class="btn btn-ghost btn-sm text-warning" data-retake-revoke="${escapeHtml(String(item.student_id))}">撤销</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm text-warning" data-retake-revoke="${escapeHtml(String(item.student_id))}">撤销</button>
             `
             : `
                 <label class="classroom-retake-score-input">
                     <span>默认平时分</span>
-                    <input type="number" min="0" max="100" step="1" value="${escapeHtml(String(score))}" data-retake-score-input="${escapeHtml(String(item.student_id))}" inputmode="decimal">
+                    <input data-lq-component="input" class="lq-input" type="number" min="0" max="100" step="1" value="${escapeHtml(String(score))}" data-retake-score-input="${escapeHtml(String(item.student_id))}" inputmode="decimal">
                 </label>
-                <button type="button" class="btn btn-primary btn-sm" data-retake-confirm="${escapeHtml(String(item.student_id))}">确认为插班生</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-retake-confirm="${escapeHtml(String(item.student_id))}">确认为插班生</button>
             `;
         return `
             <article class="classroom-retake-item" data-tone="${escapeHtml(meta.tone)}">
@@ -92,7 +92,7 @@ async function loadList() {
         if (abort.signal.aborted || epoch !== state.epoch) return;
         const list = panel.querySelector('[data-retake-list]');
         list.hidden = false;
-        list.innerHTML = `<p role="alert">${escapeHtml(error.message || '读取插班生名单失败')}</p><button type="button" class="btn btn-outline btn-sm" data-retake-retry>重新读取</button>`;
+        list.innerHTML = `<p role="alert">${escapeHtml(error.message || '读取插班生名单失败')}</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-retake-retry>重新读取</button>`;
     } finally { if (state.abort === abort) state.abort = null; }
 }
 

@@ -40,14 +40,14 @@
                     <strong>课堂互动平台</strong>
                     <small>教师工作台</small>
                 </a>
-                <button type="button" class="manage-sidebar-collapse" id="sidebarCollapseBtn" aria-label="折叠或展开菜单" title="折叠 / 展开菜单">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass manage-sidebar-collapse" id="sidebarCollapseBtn" aria-label="折叠或展开菜单" title="折叠 / 展开菜单">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"></path><path d="m18 17-5-5 5-5"></path></svg>
                 </button>
             </div>
 
             <div class="manage-nav-search">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-                <input type="search" id="manageNavSearch" placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项">
+                <input data-lq-component="input" class="lq-input" type="search" id="manageNavSearch" placeholder="搜索菜单…" autocomplete="off" spellcheck="false" aria-label="搜索菜单项">
             </div>
 
             <nav class="manage-nav" id="manageNav" data-active-domain="{{ manage_nav.active_domain|default('teaching') }}" aria-label="教师工作台导航">
@@ -72,9 +72,9 @@
                     </a>
                     {% endfor %}{% endfor %}
                     {% else %}
-                    <button
+                    <button data-lq-component="button"
                         type="button"
-                        class="manage-nav-domain-toggle"
+                        class="lq-btn lq-btn--sm lq-btn--glass manage-nav-domain-toggle"
                         aria-expanded="{{ 'true' if domain.active else 'false' }}"
                         aria-controls="manage-domain-items-{{ domain.key }}"
                         {{ explain_attrs(domain.title, domain.description, placement='right') }}
@@ -142,9 +142,9 @@
             {% set manage_pilot_actions = self.header_actions() %}
             {% include "manage/lq_topbar.html" %}
             {% else %}
-            <header class="navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="工作台顶栏">
+            <header data-lq-component="toolbar" class="lq-domain-toolbar navbar app-topbar manage-topbar role-teacher manage-page-{{ active_page }}" aria-label="工作台顶栏">
                 <div class="manage-topbar-start">
-                    <button type="button" class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开菜单">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')" aria-label="展开菜单">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                     </button>
                     <a href="/dashboard" class="navbar-brand app-topbar-brand manage-topbar-brand" aria-label="返回首页">

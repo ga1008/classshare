@@ -62,7 +62,7 @@ export function renderProcessImportSummary(item) {
         : '';
     const fullWarningDetails = allWarnings.length > warnings.length
         ? `<details class="lp-import-summary__details">
-            <summary>查看全部 ${allWarnings.length} 项核对点</summary>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看全部 ${allWarnings.length} 项核对点</summary>
             <ol>
                 ${allWarnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')}
             </ol>
@@ -71,7 +71,7 @@ export function renderProcessImportSummary(item) {
     const actionText = actionTextForSummary(summary, item, qualityKey, action);
     const actionLabel = `${actionText}：${sourceTitle}`;
     const actionHtml = action
-        ? `<button type="button" class="lp-import-summary__action" data-action="${escapeHtml(action)}" data-id="${escapeHtml(String(item.id))}" aria-label="${escapeHtml(actionLabel)}">${escapeHtml(actionText)}</button>`
+        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-import-summary__action" data-action="${escapeHtml(action)}" data-id="${escapeHtml(String(item.id))}" aria-label="${escapeHtml(actionLabel)}">${escapeHtml(actionText)}</button>`
         : `<small class="lp-import-summary__action">${escapeHtml(actionText)}</small>`;
     return `
         <div class="lp-import-summary" data-import-quality="${escapeHtml(qualityKey)}">

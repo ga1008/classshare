@@ -877,13 +877,13 @@ export class SubmissionUploadManager {
             ? `<span class="text-muted" style="font-size:0.75rem">${escapeHtml(pathParts.slice(0, -1).join('/'))}/</span>${displayName}`
             : displayName;
         const sizeStyle = `white-space:nowrap;${isNearLimit ? 'color:var(--warning-color);font-weight:600;' : ''}`;
-        const removeButton = `<button type="button" class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto file-chip__remove" style="flex-shrink:0;line-height:1;" data-remove-upload="${index}" title="移除">&times;</button>`;
+        const removeButton = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm p-1 ml-1 text-danger h-auto file-chip__remove" style="flex-shrink:0;line-height:1;" data-remove-upload="${index}" title="移除">&times;</button>`;
         const thumbnail = this.isImageEntry(entry) ? this.entryThumbnailUrl(entry) : '';
 
         if (thumbnail) {
             return `
                 <div class="file-chip file-chip--image${isNearLimit ? ' is-near-limit' : ''}" data-upload-index="${index}">
-                    <button type="button" class="file-chip__thumb" data-preview-upload="${index}" title="点击查看大图" aria-label="查看大图 ${displayName}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass file-chip__thumb" data-preview-upload="${index}" title="点击查看大图" aria-label="查看大图 ${displayName}">
                         <img src="${escapeHtml(thumbnail)}" alt="${displayName}" loading="lazy" decoding="async">
                     </button>
                     <div class="file-chip__body">

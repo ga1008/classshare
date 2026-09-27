@@ -1,3 +1,4 @@
+import {adoptDomainHandle} from '../lq/domain-controls.js';
 import {clone,locate,rootSelection,at} from './model.js';
 import {bounds,corners,parentMatrix,inverse,transform,movedSelection,resizedFrame,overlaps,RESIZE_HANDLES,resizeCursor,multiply,frameMatrix} from './geometry.js';
 import {sizeFrame,commitFrames} from './resize_commands.js';
@@ -136,7 +137,7 @@ export class CanvasController {
             const line=this.doc.createElementNS(svgNS,closed?'polygon':'polyline');line.setAttribute('points',points.map(p=>p.x+','+p.y).join(' '));line.setAttribute('fill',fill);line.setAttribute('stroke',color);line.setAttribute('stroke-width','2');line.setAttribute('vector-effect','non-scaling-stroke');svg.append(line);layer.append(svg);
         };
         const handle=(p,id,kind,direction,matrix,hitSize=24)=>{
-            const b=this.doc.createElement('button');b.type='button';b.dataset.ldeHandle=kind;b.dataset.id=id;if(direction)b.dataset.resizeDirection=direction;
+            const b=this.doc.createElement('button');b.type='button';adoptDomainHandle(b,{kind});b.dataset.ldeHandle=kind;b.dataset.id=id;if(direction)b.dataset.resizeDirection=direction;
             const labels={nw:'左上角等比缩放',n:'上边调整高度',ne:'右上角等比缩放',e:'右边调整宽度',se:'右下角等比缩放',s:'下边调整高度',sw:'左下角等比缩放',w:'左边调整宽度'};
             b.setAttribute('aria-label',kind==='resize'?labels[direction]:'旋转');b.title=b.getAttribute('aria-label');
             const scale=this.bridge.api.geometry().scale,size=hitSize/scale,visual=Math.min(10,hitSize-2)/scale;

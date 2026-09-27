@@ -140,7 +140,7 @@ function renderQuestionStatic(event, answered) {
 export function renderQuestionCard(question) {
     const groups = (question.questions || []).map((item, index) => {
         const options = (item.options || []).map((option, optionIndex) => `
-            <button type="button" class="awb-option" data-awb-option="${escapeHtml(option.label)}" aria-pressed="false">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass awb-option" data-awb-option="${escapeHtml(option.label)}" aria-pressed="false">
                 <span class="awb-option__head">
                     <span class="awb-option__label">${escapeHtml(option.label)}</span>
                     ${optionIndex === 0 ? '<span class="awb-option__badge">推荐</span>' : ''}
@@ -148,17 +148,17 @@ export function renderQuestionCard(question) {
                 ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ''}
             </button>`).join('');
         return `
-            <fieldset class="awb-question__group" data-awb-qid="${escapeHtml(item.id)}" data-multi="${item.multi_select ? '1' : '0'}">
+            <fieldset data-lq-component="region" class="lq-domain-region awb-question__group" data-awb-qid="${escapeHtml(item.id)}" data-multi="${item.multi_select ? '1' : '0'}">
                 <legend><span class="awb-question__num">${index + 1}</span>${escapeHtml(item.question)}${item.multi_select ? '<span class="awb-dim">（可多选）</span>' : ''}</legend>
                 ${item.detail ? `<p class="awb-question__detail">${escapeHtml(item.detail)}</p>` : ''}
                 <div class="awb-options">
                     ${options}
-                    <button type="button" class="awb-option awb-option--custom" data-awb-custom aria-pressed="false">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass awb-option awb-option--custom" data-awb-custom aria-pressed="false">
                         <span class="awb-option__head"><span class="awb-option__label">自定义输入…</span></span>
                         <small>以上都不合适，我来详细说明</small>
                     </button>
                 </div>
-                <textarea class="awb-custom" data-awb-custom-input rows="2" hidden aria-label="自定义回答" placeholder="直接告诉 Agent 你的想法或正确做法…"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea awb-custom" data-awb-custom-input rows="2" hidden aria-label="自定义回答" placeholder="直接告诉 Agent 你的想法或正确做法…"></textarea>
             </fieldset>`;
     }).join('');
     return { key: `q:${question.id}`, kind: 'question', html: `
@@ -204,7 +204,7 @@ export function buildTimeline(task) {
         } else if (type === 'thinking') {
             const text = String(detail.text || event.message || '');
             entries.push(step('thinking', `e${event.id}`, `
-                <details class="awb-thinking"><summary><span class="awb-thinking__preview">${escapeHtml(text.slice(0, 90))}</span></summary>
+                <details class="awb-thinking"><summary data-lq-component="disclosure" class="lq-disclosure-trigger"><span class="awb-thinking__preview">${escapeHtml(text.slice(0, 90))}</span></summary>
                 <div class="awb-thinking__text">${escapeHtml(text)}</div></details>`));
         } else if (type === 'decision') {
             const next = (detail.next_steps || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
@@ -270,7 +270,19 @@ export function renderResult(task) {
     const ok = task.status === 'completed';
     const deliverable = renderMarkdown(detail.deliverable_markdown || '');
     const operations = Array.isArray(detail.operations) ? detail.operations : [];
-    const artifacts = Array.isArray(detail.artifacts) ? detail.artifacts : [];
+    // Failed tasks can retain recoverable output even without a final result.
+    // The backend publishes those separately; keep each file visible once.
+    const artifactPaths = new Set();
+    const artifacts = [
+        ...(Array.isArray(detail.artifacts) ? detail.artifacts : []),
+        ...(Array.isArray(detail.recovered_artifacts) ? detail.recovered_artifacts : []),
+    ].filter((item) => {
+        if (!item || typeof item !== 'object') return false;
+        if (!item.path) return true;
+        if (artifactPaths.has(item.path)) return false;
+        artifactPaths.add(item.path);
+        return true;
+    });
     const usage = detail.usage || {};
     const opsHtml = operations.length ? `
         <div class="awb-result__section"><h4>已执行的操作</h4><ul class="awb-ops">${operations.map((item) => `
@@ -307,7 +319,7 @@ export function renderTaskListItem(task, selectedId) {
     const meta = [task.origin_label, formatTime(task.created_at)].filter(Boolean).join(' · ');
     return `
         <li class="awb-list__row${Number(task.id) === Number(selectedId) ? ' is-current' : ''}">
-            <button type="button" class="awb-list__item" data-awb-open="${task.id}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass awb-list__item" data-awb-open="${task.id}">
                 <span class="awb-list__title">${escapeHtml(task.title || task.public_summary || `任务 #${task.id}`)}</span>
                 <span class="awb-list__meta">${statusChip(task)}<small>${escapeHtml(meta)}</small></span>
             </button>

@@ -9,7 +9,7 @@
         <span>外观</span>
         <span class="ui-preferences-summary-status" data-ui-preferences-summary-status aria-live="polite" hidden>未保存</span>
     </summary>
-    <div class="ui-preferences-panel" data-ui-preferences-panel data-lq-material="raised" aria-label="界面外观设置">
+    <div data-lq-component="surface" class="lq-surface ui-preferences-panel" data-ui-preferences-panel data-lq-material="raised" aria-label="界面外观设置">
         <label class="ui-preferences-field"><span>配色</span>
             <select class="ui-palette-select lq-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
                 {% for preset in preferences.presets %}
@@ -53,12 +53,12 @@
         </select>
     </label>
     <label class="ui-preferences-field ui-preferences-field--backdrop-color"><span>背景纯色</span>
-        <input class="ui-backdrop-color" type="color" data-ui-preference-input="backdrop_color" value="{{ scene.color|default(preferences.backdrop_color|default('#ffffff', true), true) }}" aria-label="背景纯色">
+        <input data-lq-component="color" class="lq-native-color ui-backdrop-color" type="color" data-ui-preference-input="backdrop_color" value="{{ scene.color|default(preferences.backdrop_color|default('#ffffff', true), true) }}" aria-label="背景纯色">
     </label>
     {% if gallery %}
     <p>背景铺满页面并柔和模糊。跟随开屏、选定分类或固定一张喜欢的图片，选择会保存到当前账号。</p>
     <details class="ui-backdrop-gallery" data-ui-backdrop-gallery>
-        <summary>浏览背景图库</summary>
+        <summary data-lq-component="disclosure" class="lq-disclosure-trigger">浏览背景图库</summary>
         <label class="ui-preferences-field"><span>筛选图库</span>
             <select class="ui-palette-select lq-select" data-ui-backdrop-category aria-label="筛选背景图库">
                 <option value="">全部图片</option>

@@ -25,7 +25,7 @@ export function openGradePublicationModal(detail) {
         <div class="grade-publication">
             <p>${materialId ? `从「${escapeHtml(detail.name || '当前成绩材料')}」公布课程成绩。` : '查看课堂成绩的公布状态与历史记录。重新公布请进入已分配的正式成绩材料。'}学生在成绩查看页仅能看到本人的公布分数。</p>
             <label class="materials-property-field"><span>公布到课堂</span>
-                <select class="form-control" data-gp-offering>
+                <select data-lq-component="select" class="lq-select form-control" data-gp-offering>
                     <option value="">请选择已分配的课堂</option>
                     ${offerings.map((item) => `<option value="${Number(item.class_offering_id)}" ${Number(item.class_offering_id) === offeringId ? 'selected' : ''}>${escapeHtml([item.course_name, item.class_name, item.semester].filter(Boolean).join(' · '))}</option>`).join('')}
                 </select>
@@ -38,7 +38,7 @@ export function openGradePublicationModal(detail) {
         wide: true,
         canClose: () => !busy,
         onClose: () => { revision += 1; },
-        footerHtml: '<button type="button" class="lp-btn lp-btn--ghost" data-pm-close>关闭</button>' + (materialId ? '<button type="button" class="lp-btn lp-btn--primary" data-gp-publish disabled>确认并公布本版成绩</button>' : ''),
+        footerHtml: '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-pm-close>关闭</button>' + (materialId ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" data-gp-publish disabled>确认并公布本版成绩</button>' : ''),
     });
     const { overlay } = modal;
     const select = overlay.querySelector('[data-gp-offering]');
@@ -67,7 +67,7 @@ export function openGradePublicationModal(detail) {
             <section class="grade-publication__status">
                 <strong>${current ? `当前公布第 ${Number(current.version)} 版` : '本课堂尚无正在公布的成绩'}</strong>
                 ${current?.source_stale ? '<p>来源已变化，学生仍看到原公布分数。请核对并更新材料，再重新公布。</p>' : ''}
-                ${current ? `<details><summary>撤回当前公布</summary><p>撤回后学生暂时无法查看这版正式成绩，历史记录仍保留。</p><label class="materials-property-field"><span>撤回原因</span><textarea class="form-control" data-gp-reason maxlength="2000" rows="2"></textarea></label><button type="button" class="lp-btn lp-btn--danger" data-gp-withdraw disabled>撤回第 ${Number(current.version)} 版</button></details>` : ''}
+                ${current ? `<details><summary data-lq-component="disclosure" class="lq-disclosure-trigger">撤回当前公布</summary><p>撤回后学生暂时无法查看这版正式成绩，历史记录仍保留。</p><label class="materials-property-field"><span>撤回原因</span><textarea data-lq-component="textarea" class="lq-textarea form-control" data-gp-reason maxlength="2000" rows="2"></textarea></label><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--danger lq-btn--destructive" data-gp-withdraw disabled>撤回第 ${Number(current.version)} 版</button></details>` : ''}
             </section>
             ${preview ? `<section>
                 <h4>${escapeHtml(preview.course_name)} · ${escapeHtml(preview.semester_name)}</h4>
@@ -79,10 +79,10 @@ export function openGradePublicationModal(detail) {
                         ${rows.map((item) => `<tr><td>${escapeHtml(item.student_number)}</td><td>${escapeHtml(item.student_name)}</td><td>${escapeHtml(score(item.ordinary_score))}</td><td>${escapeHtml(score(item.final_exam_score))}</td><td><strong>${escapeHtml(score(item.overall_score))}</strong></td></tr>`).join('')}
                     </tbody></table>
                 </div>
-                ${warnings.length ? `<fieldset class="grade-publication__checks"><legend>逐项核对来源提示</legend>${warnings.map((item) => `<label><input type="checkbox" data-gp-warning value="${escapeHtml(item.code)}"><span>${escapeHtml(item.message)}</span></label>`).join('')}</fieldset><label class="materials-property-field"><span>核对说明（必填）</span><textarea class="form-control" data-gp-note maxlength="2000" rows="2"></textarea></label>` : ''}
-                <label class="grade-publication__confirm"><input type="checkbox" data-gp-confirm ${!preview.can_publish ? 'disabled' : ''}><span>我已核对课堂、学期、名单及分数，确认向学生公布以上成绩。</span></label>
+                ${warnings.length ? `<fieldset data-lq-component="field" class="lq-form-section grade-publication__checks"><legend>逐项核对来源提示</legend>${warnings.map((item) => `<label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-gp-warning value="${escapeHtml(item.code)}"><span>${escapeHtml(item.message)}</span></label>`).join('')}</fieldset><label class="materials-property-field"><span>核对说明（必填）</span><textarea data-lq-component="textarea" class="lq-textarea form-control" data-gp-note maxlength="2000" rows="2"></textarea></label>` : ''}
+                <label class="grade-publication__confirm"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-gp-confirm ${!preview.can_publish ? 'disabled' : ''}><span>我已核对课堂、学期、名单及分数，确认向学生公布以上成绩。</span></label>
             </section>` : ''}
-            ${(status.history || []).length ? `<details><summary>公布历史（${status.history.length} 条）</summary><ul>${status.history.map((item) => `<li>第 ${Number(item.version)} 版 · ${escapeHtml(publicationLabels[item.status] || item.status)} · ${escapeHtml(item.published_at || '')}${item.withdrawal_reason ? ` · 撤回原因：${escapeHtml(item.withdrawal_reason)}` : ''}</li>`).join('')}</ul></details>` : ''}`;
+            ${(status.history || []).length ? `<details><summary data-lq-component="disclosure" class="lq-disclosure-trigger">公布历史（${status.history.length} 条）</summary><ul>${status.history.map((item) => `<li>第 ${Number(item.version)} 版 · ${escapeHtml(publicationLabels[item.status] || item.status)} · ${escapeHtml(item.published_at || '')}${item.withdrawal_reason ? ` · 撤回原因：${escapeHtml(item.withdrawal_reason)}` : ''}</li>`).join('')}</ul></details>` : ''}`;
         refreshButtons();
     }
     async function load(successMessage = '') {

@@ -68,7 +68,8 @@
     border-radius: var(--ls-r-capsule);
     background: hsl(var(--ls-surface-0));
     box-shadow: var(--ls-shadow-1);
-    transition: transform var(--ls-dur-base) var(--ls-spring-snappy), width var(--ls-dur-base) var(--ls-spring-snappy);
+    /* Width follows the selected label immediately; only its travel animates. */
+    transition: transform var(--lq-motion-control-duration, var(--ls-dur-base)) var(--lq-motion-spring, var(--ls-spring-snappy));
     pointer-events: none;
 }
 .lq-segment > .lq-tabs__list[data-lq-thumb] > .lq-tabs__tab[aria-selected="true"] { background: transparent; box-shadow: none; }

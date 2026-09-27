@@ -442,15 +442,14 @@
        the reduced-motion cancel below cannot lose on specificity. A `:not()`
        added to the hover selector later would otherwise silently outrank it and
        the motion would come back for users who asked for none. */
-    --lq-lift: -1px;
-    transition: transform var(--ls-dur-fast) var(--ls-ease-out),
-                box-shadow var(--ls-dur-fast) var(--ls-ease-out),
-                background-color var(--ls-dur-fast) var(--ls-ease-out),
-                border-color var(--ls-dur-fast) var(--ls-ease-out);
+    --lq-lift: var(--lq-motion-hover-y, -1px);
+    transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)),
+                box-shadow var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-ease, var(--ls-ease-out)),
+                border-color var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-ease, var(--ls-ease-out));
 }
 
 @media (hover: hover) and (pointer: fine) {
-[data-lq-interactive]:hover:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+[data-lq-interactive]:hover:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"], [aria-busy="true"], .is-loading, [data-lq-shape="surface"]) {
     border-color: hsl(var(--ls-primary) / .35);
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
                 inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
@@ -460,7 +459,10 @@
 }
 }
 
-[data-lq-interactive]:active:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) { transform: translateY(0) scale(var(--lq-press, .995)); }
+[data-lq-interactive]:active:not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"], [aria-busy="true"], .is-loading, [data-lq-shape="surface"]) {
+    transition-duration: var(--lq-motion-press-duration, var(--ls-dur-fast));
+    transform: translateY(0) scale(var(--lq-motion-press-x, .995), var(--lq-motion-press-y, .995));
+}
 
 [data-lq-interactive]:focus-visible {
     outline: 2px solid hsl(var(--ls-ring));

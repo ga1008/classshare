@@ -68,7 +68,7 @@ export function setupProcessMaterialImportPicker({
             if (ready) {
                 const summary = `已选择 ${picked.length} 个文件，共 ${formatProcessImportFileSize(totalSize)}。`;
                 const disabledAttr = busy ? ' disabled aria-disabled="true"' : '';
-                selectionEl.innerHTML = `${renderSelectionMessage(summary)}<button type="button" class="lp-link lp-import-selection__clear" data-clear-files aria-label="清空已选择的导入文件"${disabledAttr}>清空</button>`;
+                selectionEl.innerHTML = `${renderSelectionMessage(summary)}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link lp-import-selection__clear" data-clear-files aria-label="清空已选择的导入文件"${disabledAttr}>清空</button>`;
             } else {
                 selectionEl.innerHTML = renderSelectionMessage(emptyText);
             }
@@ -96,7 +96,7 @@ export function setupProcessMaterialImportPicker({
                 const name = escapeHtml(file.name);
                 return `
                 <li><span class="lp-filelist__main"><strong title="${name}">${name}</strong><small>${formatProcessImportFileSize(file.size)}</small></span>
-                <button type="button" class="lp-link" data-rm="${index}" aria-label="移除 ${name}">移除</button></li>`;
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link" data-rm="${index}" aria-label="移除 ${name}">移除</button></li>`;
             }).join('');
         }
         updateSubmitState();

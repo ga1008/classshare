@@ -83,9 +83,9 @@ function renderFields() {
         let control;
         if (def.type === 'select') {
             const opts = def.options.map((o) => `<option value="${escapeHtml(o)}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('');
-            control = `<select data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
+            control = `<select data-lq-component="select" class="lq-select" data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
         } else {
-            control = `<input data-field="${def.key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.placeholder || '')}">`;
+            control = `<input data-lq-component="input" class="lq-input" data-field="${def.key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.placeholder || '')}">`;
         }
         return `<label class="ap-field${def.full ? ' ap-field--full' : ''}"><span>${escapeHtml(def.label)}</span>${control}</label>`;
     }).join('');
@@ -105,7 +105,7 @@ function renderItems() {
             <div class="te-item-row" data-row="${index}">
                 <span class="te-item-text">${escapeHtml(item.indicator || '')}</span>
                 <span class="te-item-max">${item.max_score ?? 10}</span>
-                <input class="te-item-score" data-item-score="${index}" value="${escapeHtml(score)}"
+                <input data-lq-component="input" class="lq-input te-item-score" data-item-score="${index}" value="${escapeHtml(score)}"
                        inputmode="decimal" placeholder="0-10" aria-label="第${index + 1}项评价得分">
             </div>`;
     }).join('');
@@ -392,22 +392,22 @@ function ensureRewriteModal() {
     modal.className = 'te-ai-modal-backdrop';
     modal.hidden = true;
     modal.innerHTML = `
-        <section class="te-ai-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">
+        <section data-lq-component="layer" class="lq-domain-region te-ai-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">
             <header class="te-ai-modal__header">
                 <div>
                     <p>分析建议重写</p>
                     <h3 id="te-ai-rewrite-title">AI重新编写</h3>
                 </div>
-                <button type="button" class="te-ai-modal__close" id="te-ai-rewrite-close" aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass te-ai-modal__close" id="te-ai-rewrite-close" aria-label="关闭">×</button>
             </header>
             <label class="te-ai-modal__field">
                 <span>额外提示（可选，优先级更高）</span>
-                <textarea id="te-ai-rewrite-prompt" rows="7" data-prompt-pool-key="teacher_evaluation.rewrite_analysis"
+                <textarea data-lq-component="textarea" class="lq-textarea" id="te-ai-rewrite-prompt" rows="7" data-prompt-pool-key="teacher_evaluation.rewrite_analysis"
                     placeholder="例如：写得更详细一些，分 3 点，每点结合课堂表现、作业考试和后续改革建议，总字数约 600 字。"></textarea>
             </label>
             <footer class="te-ai-modal__footer">
-                <button type="button" class="lp-btn lp-btn--ghost" id="te-ai-rewrite-cancel">取消</button>
-                <button type="button" class="lp-btn lp-btn--primary" id="te-ai-rewrite-confirm">确认并重新编写</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" id="te-ai-rewrite-cancel">取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" id="te-ai-rewrite-confirm">确认并重新编写</button>
             </footer>
         </section>`;
     document.body.appendChild(modal);

@@ -75,7 +75,7 @@
     {%- endif -%}
     {% endcall %}
     {% else %}
-    <section class="academic-card">
+    <section data-lq-component="surface" class="lq-surface academic-card">
         <div class="academic-card-header">
             <div>
                 <h3 class="academic-card-title">教材卡片库</h3>
@@ -83,29 +83,29 @@
             </div>
         </div>
         <div class="academic-card-body">
-            <div class="academic-toolbar academic-toolbar-between" style="margin-bottom: 14px;">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar academic-toolbar academic-toolbar-between" style="margin-bottom: 14px;">
                 <label class="academic-search" for="textbookSearchInput">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
-                    <input type="search" id="textbookSearchInput" class="form-control" placeholder="搜索教材名称、作者、出版社、简介、目录或标签">
+                    <input data-lq-component="input" type="search" id="textbookSearchInput" class="lq-input form-control" placeholder="搜索教材名称、作者、出版社、简介、目录或标签">
                 </label>
-                <button type="button" class="btn btn-outline" id="textbookClearFiltersBtn">清空筛选</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="textbookClearFiltersBtn">清空筛选</button>
             </div>
             <div class="academic-filter-row" style="margin-bottom: 18px;">
                 <label class="academic-filter-field">
                     <span>出版社</span>
-                    <select id="textbookPublisherFilter" class="form-control">
+                    <select data-lq-component="select" id="textbookPublisherFilter" class="lq-select form-control">
                         <option value="">全部出版社</option>
                     </select>
                 </label>
                 <label class="academic-filter-field">
                     <span>标签</span>
-                    <select id="textbookTagFilter" class="form-control">
+                    <select data-lq-component="select" id="textbookTagFilter" class="lq-select form-control">
                         <option value="">全部标签</option>
                     </select>
                 </label>
                 <label class="academic-filter-field">
                     <span>附件状态</span>
-                    <select id="textbookAttachmentFilter" class="form-control">
+                    <select data-lq-component="select" id="textbookAttachmentFilter" class="lq-select form-control">
                         <option value="">全部</option>
                         <option value="has">仅看有附件</option>
                         <option value="none">仅看无附件</option>
@@ -122,14 +122,14 @@
     {% endif %}
 </div>
 
-<div class="academic-modal-backdrop" id="textbookModalBackdrop">
-    <div class="academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookModalTitle">
+<div class="lq-domain-region academic-modal-backdrop" id="textbookModalBackdrop" data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookModalTitle">
         <div class="academic-modal-header">
             <div>
                 <h3 class="academic-modal-title" id="textbookModalTitle">新增教材</h3>
                 <p class="academic-modal-subtitle">填写教材信息后保存即可。</p>
             </div>
-            <button type="button" class="academic-modal-close" id="textbookModalCloseBtn" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-modal-close" id="textbookModalCloseBtn" aria-label="关闭">&times;</button>
         </div>
         <form id="textbookForm" action="/api/manage/textbooks/save" method="post" enctype="multipart/form-data">
             <div class="academic-modal-body">
@@ -145,19 +145,19 @@
                     {% else %}
                     <div class="academic-field">
                         <label for="textbookTitleInput">教材名称</label>
-                        <input type="text" id="textbookTitleInput" name="title" class="form-control" required maxlength="120" placeholder="例如：Python 程序设计基础">
+                        <input data-lq-component="input" type="text" id="textbookTitleInput" name="title" class="lq-input form-control" required maxlength="120" placeholder="例如：Python 程序设计基础">
                     </div>
                     <div class="academic-field">
                         <label for="textbookPublisherInput">出版社</label>
-                        <input type="text" id="textbookPublisherInput" name="publisher" class="form-control" maxlength="80" placeholder="例如：高等教育出版社">
+                        <input data-lq-component="input" type="text" id="textbookPublisherInput" name="publisher" class="lq-input form-control" maxlength="80" placeholder="例如：高等教育出版社">
                     </div>
                     {% endif %}
                     <div class="academic-field" style="grid-column: 1 / -1;">
                         <label>作者（可多个）</label>
                         <div class="academic-chip-list" id="textbookAuthorChipList"></div>
                         <div class="academic-chip-input-row">
-                            <input type="text" id="textbookAuthorInput" class="form-control" maxlength="30" placeholder="输入作者后回车或点击添加">
-                            <button type="button" class="btn btn-outline" id="textbookAuthorAddBtn">添加作者</button>
+                            <input data-lq-component="input" type="text" id="textbookAuthorInput" class="lq-input form-control" maxlength="30" placeholder="输入作者后回车或点击添加">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="textbookAuthorAddBtn">添加作者</button>
                         </div>
                     </div>
                     {% if _tb_lq_enabled %}
@@ -165,7 +165,7 @@
                     {% else %}
                     <div class="academic-field">
                         <label for="textbookPublicationDateInput">出版年份 / 日期</label>
-                        <input type="date" id="textbookPublicationDateInput" name="publication_date" class="form-control">
+                        <input data-lq-component="input" type="date" id="textbookPublicationDateInput" name="publication_date" class="lq-input form-control">
                         <div class="academic-hint">填写出版日期后，系统会自动提取年份。</div>
                     </div>
                     {% endif %}
@@ -173,14 +173,14 @@
                         <label>自定义标签</label>
                         <div class="academic-chip-list" id="textbookTagChipList"></div>
                         <div class="academic-chip-input-row">
-                            <input type="text" id="textbookTagInput" class="form-control" maxlength="12" placeholder="例如：主教材、实验课、必修">
-                            <button type="button" class="btn btn-outline" id="textbookTagAddBtn">添加标签</button>
+                            <input data-lq-component="input" type="text" id="textbookTagInput" class="lq-input form-control" maxlength="12" placeholder="例如：主教材、实验课、必修">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="textbookTagAddBtn">添加标签</button>
                         </div>
                     </div>
                     <div class="academic-field" style="grid-column: 1 / -1;">
                         <label>教材简介与目录</label>
                         <div class="textbook-intro-catalog-row">
-                            <button type="button" class="btn btn-primary" id="textbookOpenIntroCatalogBtn">简介与目录</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="textbookOpenIntroCatalogBtn">简介与目录</button>
                             <span class="textbook-intro-catalog-status" id="textbookIntroCatalogStatus" hidden>AI 正在整理...</span>
                         </div>
                         <input type="hidden" name="introduction" id="textbookIntroductionInput" value="">
@@ -194,12 +194,12 @@
                                 <div class="textbook-formatted-label">目录</div>
                                 <div class="textbook-formatted-content" id="textbookFormattedCatalog"></div>
                             </div>
-                            <button type="button" class="btn btn-outline btn-sm" id="textbookReformatBtn">重新整理</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="textbookReformatBtn">重新整理</button>
                         </div>
                     </div>
                     <div class="academic-field" style="grid-column: 1 / -1;">
                         <label for="textbookAttachmentInput">附件（可选）</label>
-                        <input type="file" id="textbookAttachmentInput" name="attachment" class="form-control">
+                        <input data-lq-component="file" type="file" id="textbookAttachmentInput" name="attachment" class="lq-native-file form-control">
                         <div class="textbook-file-note">支持上传教材样章、说明文档等，支持 PDF、Word 等常见格式。</div>
                         <div class="textbook-attachment-row" id="textbookExistingAttachmentRow" hidden>
                             <div>
@@ -207,29 +207,29 @@
                                 <div class="academic-hint" id="textbookExistingAttachmentHint">可以直接保留，或改为上传新的附件。</div>
                             </div>
                             <div class="academic-action-group">
-                                <a href="#" class="btn btn-outline btn-sm" id="textbookAttachmentDownloadLink" target="_blank" rel="noopener">下载附件</a>
-                                <button type="button" class="btn btn-danger btn-sm" id="textbookRemoveAttachmentBtn">移除附件</button>
+                                <a data-lq-component="button" href="#" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="textbookAttachmentDownloadLink" target="_blank" rel="noopener">下载附件</a>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" id="textbookRemoveAttachmentBtn">移除附件</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="academic-modal-footer">
-                <button type="button" class="btn btn-ghost" id="textbookModalCancelBtn">取消</button>
-                <button type="submit" class="btn btn-primary" id="textbookSubmitBtn">保存教材</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" id="textbookModalCancelBtn">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="textbookSubmitBtn">保存教材</button>
             </div>
         </form>
     </div>
 </div>
 
-<div class="academic-modal-backdrop textbook-intro-catalog-backdrop" id="textbookIntroCatalogBackdrop">
-    <div class="academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookIntroCatalogModalTitle">
+<div class="lq-domain-region academic-modal-backdrop textbook-intro-catalog-backdrop" id="textbookIntroCatalogBackdrop" data-lq-component="layer">
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised academic-modal" role="dialog" aria-modal="true" aria-labelledby="textbookIntroCatalogModalTitle">
         <div class="academic-modal-header">
             <div>
                 <h3 class="academic-modal-title" id="textbookIntroCatalogModalTitle">简介与目录</h3>
                 <p class="academic-modal-subtitle">粘贴简介、目录等内容，AI 自动整理格式。</p>
             </div>
-            <button type="button" class="academic-modal-close" id="textbookIntroCatalogCloseBtn" aria-label="关闭">&times;</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-modal-close" id="textbookIntroCatalogCloseBtn" aria-label="关闭">&times;</button>
         </div>
         <div class="academic-modal-body">
             {% if _tb_lq_enabled %}
@@ -242,22 +242,22 @@
             <div class="academic-form-grid">
                 <div class="academic-field">
                     <label for="textbookRawIntroInput">教材简介</label>
-                    <textarea id="textbookRawIntroInput" class="form-control" rows="5" placeholder="粘贴或填写教材简介，支持任意格式。"></textarea>
+                    <textarea data-lq-component="textarea" id="textbookRawIntroInput" class="lq-textarea form-control" rows="5" placeholder="粘贴或填写教材简介，支持任意格式。"></textarea>
                 </div>
                 <div class="academic-field">
                     <label for="textbookRawCatalogInput">教材目录</label>
-                    <textarea id="textbookRawCatalogInput" class="form-control" rows="12" placeholder="粘贴完整的教材目录，支持任意格式。内容不会丢失。"></textarea>
+                    <textarea data-lq-component="textarea" id="textbookRawCatalogInput" class="lq-textarea form-control" rows="12" placeholder="粘贴完整的教材目录，支持任意格式。内容不会丢失。"></textarea>
                 </div>
                 <div class="academic-field">
                     <label for="textbookCustomRequirementsInput">自定义要求 <span style="font-weight:normal;color:var(--text-muted)">（可选）</span></label>
-                    <textarea id="textbookCustomRequirementsInput" class="form-control" rows="3" placeholder="对 AI 整理的额外要求，如"保留原文风格"、"突出实践内容"等。"></textarea>
+                    <textarea data-lq-component="textarea" id="textbookCustomRequirementsInput" class="lq-textarea form-control" rows="3" placeholder="对 AI 整理的额外要求，如"保留原文风格"、"突出实践内容"等。"></textarea>
                 </div>
             </div>
             {% endif %}
         </div>
         <div class="academic-modal-footer">
-            <button type="button" class="btn btn-ghost" id="textbookIntroCatalogCancelBtn">取消</button>
-            <button type="button" class="btn btn-primary" id="textbookIntroCatalogConfirmBtn">确定</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" id="textbookIntroCatalogCancelBtn">取消</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="textbookIntroCatalogConfirmBtn">确定</button>
         </div>
     </div>
 </div>

@@ -53,7 +53,7 @@
     </section>
 
     <section class="ai-usage-grid">
-        <article class="ai-usage-panel">
+        <article data-lq-component="surface" class="lq-surface ai-usage-panel">
             <div class="ai-usage-panel-head">
                 <div>
                     <h2>任务类型</h2>
@@ -92,7 +92,7 @@
         </article>
 
         <div class="ai-usage-shell">
-            <article class="ai-usage-panel">
+            <article data-lq-component="surface" class="lq-surface ai-usage-panel">
                 <div class="ai-usage-panel-head">
                     <div>
                         <h3>周趋势</h3>
@@ -111,7 +111,7 @@
                 </div>
             </article>
 
-            <article class="ai-usage-panel">
+            <article data-lq-component="surface" class="lq-surface ai-usage-panel">
                 <div class="ai-usage-panel-head">
                     <div>
                         <h3>异常</h3>
@@ -134,7 +134,7 @@
         </div>
     </section>
 
-    <article class="ai-usage-panel">
+    <article data-lq-component="surface" class="lq-surface ai-usage-panel">
         <div class="ai-usage-panel-head">
             <div>
                 <h2>供应商与模型实际用量</h2>
@@ -185,7 +185,7 @@
     </article>
 
     {% if provider_profile_items %}
-    <article class="ai-usage-panel">
+    <article data-lq-component="surface" class="lq-surface ai-usage-panel">
         <div class="ai-usage-panel-head"><div><h2>模型档位与复核费用</h2><p class="ai-usage-note">每次实际请求只计一次；主调用与风险复核分别统计。失败、截断或断流也可能产生费用，未知用量不按零元处理。</p></div></div>
         <div class="ai-usage-table-wrap"><table class="ai-usage-table">
             <thead><tr><th>档位</th><th>用途</th><th>实际尝试</th><th>成功率</th><th>未完整返回</th><th>估算费用</th></tr></thead>
@@ -199,7 +199,7 @@
     </article>
     {% endif %}
 
-    <article class="ai-usage-panel">
+    <article data-lq-component="surface" class="lq-surface ai-usage-panel">
         <div class="ai-usage-panel-head">
             <div>
                 <h2>课程预算</h2>
@@ -239,8 +239,8 @@
                         </td>
                         <td>
                             <div class="ai-usage-budget">
-                                <input type="number" min="0" max="100000" step="1" value="{{ item.stage_exam_generation_budget }}" data-stage-budget-input aria-label="出卷周预算">
-                                <button type="button" class="btn btn-outline btn-sm" data-save-stage-budget>保存</button>
+                                <input data-lq-component="input" class="lq-input" type="number" min="0" max="100000" step="1" value="{{ item.stage_exam_generation_budget }}" data-stage-budget-input aria-label="出卷周预算">
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-save-stage-budget>保存</button>
                             </div>
                         </td>
                         <td>{{ item.count }}</td>

@@ -71,11 +71,11 @@ function panelMarkup(isAdmin, isTeacher) {
         </div>
         <form class="awb-composer" data-awb-composer>
             <div class="awb-composer__files" data-awb-files hidden></div>
-            <textarea class="awb-composer__input" data-awb-input rows="2" aria-label="给 Agent 的指令"></textarea>
+            <textarea data-lq-component="textarea" class="lq-textarea awb-composer__input" data-awb-input rows="2" aria-label="给 Agent 的指令"></textarea>
             <div class="awb-composer__bar">
                 <div class="awb-composer__toggles" data-awb-toggles>
-                    <label class="awb-toggle" title="更充分的推理与核对，耗时更长"><input type="checkbox" data-awb-deep><span>深度思考</span></label>
-                    <label class="awb-toggle" title="不参考你以往的 Agent 任务记录"><input type="checkbox" data-awb-nohistory><span>不带历史</span></label>
+                    <label class="awb-toggle" title="更充分的推理与核对，耗时更长"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-awb-deep><span>深度思考</span></label>
+                    <label class="awb-toggle" title="不参考你以往的 Agent 任务记录"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-awb-nohistory><span>不带历史</span></label>
                 </div>
                 <div class="awb-composer__tools">
                     ${lq.button({ label: '截图', size: 'sm', variant: 'ghost', icon: 'layout-dashboard', attrs: { 'data-awb-capture': '', title: '截取并标注当前页面，作为任务附件' } })}
@@ -84,15 +84,15 @@ function panelMarkup(isAdmin, isTeacher) {
                 </div>
             </div>
             <small class="awb-composer__hint" data-awb-hint></small>
-            <input type="file" data-awb-file-input multiple hidden accept="image/*,.txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.py,.js,.ts,.html,.htm,.css,.sql,.log,.docx,.doc,.pdf,.pptx,.ppt,.xlsx,.xls">
+            <input data-lq-component="file" class="lq-native-file" type="file" data-awb-file-input multiple hidden accept="image/*,.txt,.md,.markdown,.csv,.json,.xml,.yaml,.yml,.py,.js,.ts,.html,.htm,.css,.sql,.log,.docx,.doc,.pdf,.pptx,.ppt,.xlsx,.xls">
         </form>
-        <aside class="awb-drawer" data-awb-drawer="history" hidden aria-label="我的 Agent 任务">
+        <aside class="awb-drawer lq-domain-raised" data-lq-component="drawer" data-lq-material="raised" data-awb-drawer="history" hidden aria-label="我的 Agent 任务">
             <header class="awb-drawer__head"><strong>我的任务</strong>
                 <span class="awb-drawer__tools">${lq.button({ label: '清理已结束', size: 'sm', variant: 'ghost', icon: 'trash-2', attrs: { 'data-awb-clear-history': '' } })}${closeButton}</span></header>
-            ${isTeacher ? '<details class="awb-subs" data-awb-subs><summary>定时任务（每天自动执行）</summary><div data-awb-subs-list class="awb-subs__list"></div></details>' : ''}
+            ${isTeacher ? '<details class="awb-subs" data-awb-subs><summary data-lq-component="disclosure" class="lq-disclosure-trigger">定时任务（每天自动执行）</summary><div data-awb-subs-list class="awb-subs__list"></div></details>' : ''}
             <ul class="awb-list" data-awb-list></ul>
         </aside>
-        ${isAdmin ? `<aside class="awb-drawer awb-drawer--admin" data-awb-drawer="admin" hidden aria-label="Agent 队列管理">
+        ${isAdmin ? `<aside class="awb-drawer awb-drawer--admin lq-domain-raised" data-lq-component="drawer" data-lq-material="raised" data-awb-drawer="admin" hidden aria-label="Agent 队列管理">
             <header class="awb-drawer__head"><strong>全平台 Agent 队列</strong>${closeButton}</header>
             <div class="awb-admin__state" data-awb-admin-state></div>
             <div class="awb-admin__controls" data-awb-admin-controls></div>
@@ -363,7 +363,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
                 <p class="awb-welcome__safety">高危操作会被拦截；批量修改前会先确认。</p>
                 ${starters.length ? `<div class="awb-welcome__label">推荐（${escapeHtml(contextLabel(context))}）</div>
                 <div class="awb-starters">${starters.map((item) => `
-                    <button type="button" class="awb-starter${item.key === state.workflowKey ? ' is-selected' : ''}" data-awb-starter="${escapeHtml(item.key)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass awb-starter${item.key === state.workflowKey ? ' is-selected' : ''}" data-awb-starter="${escapeHtml(item.key)}">
                         <strong>${escapeHtml(item.name || '教学事务')}</strong>
                         <small>${escapeHtml(clampText((item.steps || [])[0] || '', 28))}</small>
                     </button>`).join('')}</div>` : ''}
@@ -435,7 +435,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         if (!el.files) return;
         el.files.hidden = !state.files.length;
         el.files.innerHTML = state.files.map((file, index) => `
-            <span class="awb-filechip">${escapeHtml(file.name)}<button type="button" data-awb-file-remove="${index}" aria-label="移除 ${escapeHtml(file.name)}">×</button></span>`).join('');
+            <span class="awb-filechip">${escapeHtml(file.name)}<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-awb-file-remove="${index}" aria-label="移除 ${escapeHtml(file.name)}">×</button></span>`).join('');
     }
 
     function autoSize() {
@@ -459,8 +459,19 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         return undefined;
     }
 
+    // The POST receipt is authoritative. A later advisory read cannot turn an
+    // accepted task/answer into a failed submission or invite another POST.
+    async function refreshAcceptedTask(taskId, { show = true, scroll = true } = {}) {
+        if (show) {
+            try { await openTask(taskId, { scroll }); }
+            catch { notify('任务已接收，详情暂时无法刷新，可在“我的任务”中查看。', 'warning'); }
+        }
+        await refreshList();
+    }
+
     async function submitComposer() {
-        const text = el.input.value.trim();
+        const submittedDraft = el.input.value;
+        const text = submittedDraft.trim();
         const mode = composerMode();
         if (state.busy) return;
         if (mode === 'answer') {
@@ -475,31 +486,37 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         renderComposer();
         try {
             if (mode === 'new') {
+                const submittedFiles = [...state.files];
+                const submittedWorkflow = state.workflowKey;
+                const submittedNoHistory = Boolean(el.nohistory?.checked);
                 const context = collectPageContext(state.workflowKey ? { agentWorkflowKey: state.workflowKey } : {});
                 const workflow = (state.bootstrap?.workflow_catalog || []).find((item) => item.key === state.workflowKey);
                 const payload = { task_type: workflow?.task_type || inferTaskType(text, context), instruction: text, page_context: context,
                     deep_thinking: Boolean(el.deep?.checked), no_history: Boolean(el.nohistory?.checked) };
                 let body = JSON.stringify(payload);
-                if (state.files.length) {
+                if (submittedFiles.length) {
                     body = new FormData();
                     body.append('payload', JSON.stringify(payload));
-                    state.files.forEach((file) => body.append('files', file));
+                    submittedFiles.forEach((file) => body.append('files', file));
                 }
                 const data = await apiJson('/api/agent-tasks', { method: 'POST', body });
-                state.files = [];
-                state.workflowKey = '';
-                el.input.value = '';
+                state.files = state.files.filter((file) => !submittedFiles.includes(file));
+                const hasNextDraft = el.input.value !== submittedDraft || state.files.length > 0;
+                if (state.workflowKey === submittedWorkflow) state.workflowKey = '';
+                if (el.input.value === submittedDraft) el.input.value = '';
                 saveDraft();
-                if (el.nohistory) el.nohistory.checked = false;
+                if (el.nohistory?.checked === submittedNoHistory) el.nohistory.checked = false;
                 notify('已加入全平台 Agent 队列。', 'success');
-                await openTask(data.task.id);
+                // A next draft remains a new task, so its added files can still
+                // be sent instead of silently becoming an attachmentless supplement.
+                await refreshAcceptedTask(data.task.id, { show: !hasNextDraft });
             } else {
                 const data = await apiJson(`/api/agent-tasks/${state.current.id}/follow-up`, { method: 'POST', body: JSON.stringify({ instruction: text }) });
-                el.input.value = '';
+                if (el.input.value === submittedDraft) el.input.value = '';
+                saveDraft();
                 notify(data.supplemented ? '补充说明已送达当前任务。' : '追问任务已加入队列。', 'success');
-                await openTask(data.task?.id || state.current.id);
+                await refreshAcceptedTask(data.task?.id || state.current.id);
             }
-            await refreshList();
         } catch (error) {
             notify(error.message || '提交失败', 'error');
         } finally {
@@ -526,6 +543,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
     async function submitAnswer(form, fallbackText = '') {
         const task = state.current;
         if (!task?.pending_question || state.busy) return;
+        const submittedDraft = el.input.value;
         const { answers, missing } = collectAnswers(form, fallbackText);
         if (missing) {
             notify(`请先回答：${missing}`, 'warning');
@@ -537,10 +555,10 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
             await apiJson(`/api/agent-tasks/${task.id}/answer`, {
                 method: 'POST', body: JSON.stringify({ question_id: task.pending_question.id, answers }),
             });
-            el.input.value = '';
+            if (el.input.value === submittedDraft) el.input.value = '';
+            saveDraft();
             notify('已提交回答，Agent 会优先继续。', 'success');
-            await openTask(task.id, { scroll: true });
-            await refreshList();
+            await refreshAcceptedTask(task.id);
         } catch (error) {
             notify(error.message || '回答提交失败', 'error');
         } finally {
@@ -621,11 +639,11 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         const hours = Array.from({ length: 24 }, (_, hour) => `<option value="${hour}">${String(hour).padStart(2, '0')}:00</option>`).join('');
         el['subs-list'].innerHTML = subscriptions.length ? subscriptions.map((item) => `
             <label class="awb-sub${item.enabled ? ' is-on' : ''}">
-                <input type="checkbox" data-awb-sub="${escapeHtml(item.key)}" ${item.enabled ? 'checked' : ''}>
+                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-awb-sub="${escapeHtml(item.key)}" ${item.enabled ? 'checked' : ''}>
                 <span class="awb-sub__copy"><strong>${escapeHtml(item.label || item.key)}</strong>
                 <small>${escapeHtml(item.enabled ? `下次 ${item.next_run_at || ''}${item.last_run_message ? ` · 上次：${item.last_run_message}` : ''}` : (item.description || ''))}</small>
                 ${item.attention_message ? `<small class="awb-warn">${escapeHtml(item.attention_message)}</small>` : ''}</span>
-                <select data-awb-sub-hour="${escapeHtml(item.key)}" aria-label="执行时间">${hours}</select>
+                <select data-lq-component="select" class="lq-select" data-awb-sub-hour="${escapeHtml(item.key)}" aria-label="执行时间">${hours}</select>
             </label>`).join('') : '<p class="awb-dim">暂无可用的定时任务模板。</p>';
         subscriptions.forEach((item) => {
             const select = el['subs-list'].querySelector(`[data-awb-sub-hour="${CSS.escape(String(item.key))}"]`);

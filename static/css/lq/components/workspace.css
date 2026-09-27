@@ -20,3 +20,34 @@
 .lq-viewer__content > iframe { display: block; width: 100%; max-width: 100%; min-height: 20rem; border: 0; }
 @media (pointer: coarse) { .lq-split[data-lq-split-enhanced="wide"] > .lq-split__panes { grid-template-columns: var(--lq-split, 280px) 44px minmax(0,1fr); } }
 @media (forced-colors: active) { .lq-split__separator::before { background: CanvasText; } .lq-split__separator:focus-visible { outline-color: Highlight; } }
+
+/* Modeless workspace variant: one material plane, never a blur per control.
+ * Position/size/drag remain with the existing domain owner. */
+.lq-domain-workspace { isolation: isolate; color: hsl(var(--ls-glass-ink)); }
+/* A separate material plane blurs the page rather than merely tinting its
+   text. It also leaves children free to draw their own glass surfaces. */
+.lq-domain-workspace::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: var(--ls-z-material-sheen);
+    border-radius: inherit;
+    background: var(--ls-glass-sheen), linear-gradient(135deg, hsl(var(--ls-primary) / .09), transparent 70%), hsl(var(--ls-glass-fill-strong));
+    backdrop-filter: blur(calc(var(--ls-blur-thick, 24px) + 10px)) saturate(var(--ls-glass-saturate, 170%));
+    -webkit-backdrop-filter: blur(calc(var(--ls-blur-thick, 24px) + 10px)) saturate(var(--ls-glass-saturate, 170%));
+    pointer-events: none;
+}
+
+[data-lq-glass="off"] .lq-domain-workspace::before,
+[data-lq-tier="C"] .lq-domain-workspace::before,
+[data-lq-contrast="more"] .lq-domain-workspace::before {
+    background: hsl(var(--ls-surface-1));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+@supports not (backdrop-filter: blur(1px)) {
+    .lq-domain-workspace::before { background: hsl(var(--ls-surface-1)); }
+}
+@media (prefers-contrast: more) {
+    .lq-domain-workspace::before { background: hsl(var(--ls-surface-1)); }
+}

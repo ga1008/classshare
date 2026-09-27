@@ -28,7 +28,7 @@ function renderTipCard(tip) {
         ? `<span class="life-tip-card__votes">👍 ${tip.up_votes} · 👎 ${tip.down_votes}</span>`
         : '';
     return `
-        <article class="life-tip-card" data-tip-id="${tip.id}">
+        <article data-lq-component="surface" class="lq-surface life-tip-card" data-tip-id="${tip.id}">
             <header>
                 <span class="life-tip-card__status ${meta.tone}">${meta.label}</span>
                 <span class="life-tip-card__chip">${escapeHtml(tip.category || '')}</span>
@@ -41,7 +41,7 @@ function renderTipCard(tip) {
             <footer>
                 <span class="life-tip-card__source">${tip.source_ref ? escapeHtml(`来源：${tip.source_ref}`) : ''}</span>
                 <span class="life-tip-card__weight">权重 ${tip.weight}</span>
-                <button type="button" class="btn btn-secondary btn-sm" data-tip-status="${nextStatus}">${nextLabel}</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" data-tip-status="${nextStatus}">${nextLabel}</button>
             </footer>
         </article>
     `;
@@ -105,9 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const pageCount = Math.max(1, Math.ceil(result.total / result.page_size));
             if (pageCount > 1) {
                 pagerNode.innerHTML = `
-                    <button type="button" class="btn btn-secondary btn-sm" data-page-prev ${currentPage <= 1 ? 'disabled' : ''}>上一页</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" data-page-prev ${currentPage <= 1 ? 'disabled' : ''}>上一页</button>
                     <span>${result.page} / ${pageCount}</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-page-next ${currentPage >= pageCount ? 'disabled' : ''}>下一页</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" data-page-next ${currentPage >= pageCount ? 'disabled' : ''}>下一页</button>
                 `;
                 pagerNode.hidden = false;
             }

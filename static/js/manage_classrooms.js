@@ -169,7 +169,7 @@ function renderWeeks() {
     if (!refs.freeWeekRow) return;
     refs.freeWeekRow.innerHTML = Array.from({ length: weekCount }, (_, index) => {
         const week = index + 1;
-        return `<button type="button" class="classroom-toggle-chip${week === state.selectedWeek ? ' is-active' : ''}" data-week="${week}">${week}</button>`;
+        return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip${week === state.selectedWeek ? ' is-active' : ''}" data-week="${week}">${week}</button>`;
     }).join('');
 }
 
@@ -183,7 +183,7 @@ function renderSections(sections = []) {
         const number = numberValue(id);
         const active = state.selectedSections.has(number);
         const title = item.time ? ` title="${escapeHtml(item.time)}"` : '';
-        return `<button type="button" class="classroom-toggle-chip${active ? ' is-active' : ''}" data-section="${number}"${title}>${escapeHtml(item.name || `第 ${number} 节`)}</button>`;
+        return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-toggle-chip${active ? ' is-active' : ''}" data-section="${number}"${title}>${escapeHtml(item.name || `第 ${number} 节`)}</button>`;
     }).join('');
 }
 

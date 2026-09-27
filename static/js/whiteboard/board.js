@@ -1,3 +1,4 @@
+import { adoptDomainControl } from '../lq/domain-controls.js';
 /**
  * 讲课白板主类：编排 DOM、指针交互、撤销、面板、本地缓存与线上同步。
  * 设计真源：docs/whiteboard-upgrade-2026-09.md
@@ -219,6 +220,8 @@ export class TeacherWhiteboard {
         fab.setAttribute('aria-label', '打开讲课白板');
         fab.setAttribute('aria-pressed', 'false');
         fab.innerHTML = ICONS.board;
+        adoptDomainControl(fab);
+        fab.classList.add('lq-btn--icon');
         document.body.append(root, fab);
     }
 

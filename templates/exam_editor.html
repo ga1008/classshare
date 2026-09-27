@@ -24,24 +24,24 @@
             {% if paper %}{{ paper.title }} - 编辑{% else %}新建试卷{% endif %}
         </div>
         <div class="editor-action-group">
-            <a href="/manage/library/exams" class="btn btn-ghost btn-sm text-muted">取消</a>
-            <button class="btn btn-outline btn-sm" onclick="previewExam()">
+            <a data-lq-component="button" href="/manage/library/exams" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm text-muted">取消</a>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="previewExam()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 全屏预览
             </button>
-            <button class="btn btn-sm editor-assist-btn is-ai" onclick="openAIGenerateModal()">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-sm editor-assist-btn is-ai" onclick="openAIGenerateModal()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 9.6 8.4 4 11l5.6 2.6L12 19l2.4-5.4L20 11l-5.6-2.6Z"/><path d="M19 3v4"/><path d="M21 5h-4"/></svg>
                 AI 辅助出题
             </button>
-            <button class="btn btn-sm editor-assist-btn is-json" onclick="openNativeJsonImportModal()">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-sm editor-assist-btn is-json" onclick="openNativeJsonImportModal()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
                 导入 JSON
             </button>
-            <button class="btn btn-outline btn-sm" onclick="openScoringModal(false)">
+            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="openScoringModal(false)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><path d="m15 5 3 3"/></svg>
                 评分标准
             </button>
-            <button id="exam-save-button" class="btn btn-primary btn-sm" onclick="saveExam()" aria-busy="false">
+            <button data-lq-component="button" id="exam-save-button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" onclick="saveExam()" aria-busy="false">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 0-2-2V5a2 2 0 0 0 2-2h11l5 5v11a2 2 0 0 0 2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                 保存试卷
             </button>
@@ -52,28 +52,28 @@
 
     <div class="editor-layout">
         <!-- 左侧：设置与页面列表 -->
-        <aside class="sidebar-panel" data-lq-material="content">
+        <aside data-lq-component="surface" class="lq-surface sidebar-panel" data-lq-material="content">
             <div class="sidebar-section">
                 <h3 class="section-title">基本设置</h3>
                 <div class="form-group mb-sm">
                     <label class="form-label text-xs text-muted mb-1">试卷标题</label>
-                    <input type="text" id="exam-title" class="form-control form-control-sm" value="{{ paper.title if paper else '' }}" placeholder="例如：期中测试卷">
+                    <input data-lq-component="input" type="text" id="exam-title" class="lq-input form-control form-control-sm" value="{{ paper.title if paper else '' }}" placeholder="例如：期中测试卷">
                 </div>
                 <div class="form-group mb-0">
                     <label class="form-label text-xs text-muted mb-1">试卷说明</label>
-                    <textarea id="exam-desc" class="form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
+                    <textarea data-lq-component="textarea" id="exam-desc" class="lq-textarea form-control form-control-sm" rows="3" placeholder="填写注意事项或考试说明...">{{ paper.description if paper and paper.description else '' }}</textarea>
                 </div>
                 <div class="form-group mt-3 mb-0">
                     <label class="form-label text-xs text-muted mb-1">开放范围</label>
-                    <select id="exam-scope-level" class="form-control form-control-sm">
+                    <select data-lq-component="select" id="exam-scope-level" class="lq-select form-control form-control-sm">
                         <option value="private" {% if paper and paper.scope_level == 'private' %}selected{% endif %}>仅自己可见</option>
                         <option value="department" {% if not paper or not paper.scope_level or paper.scope_level == 'department' %}selected{% endif %}>本系部开放</option>
                         <option value="school" {% if paper and paper.scope_level == 'school' %}selected{% endif %}>全校开放</option>
                     </select>
                 </div>
-                <div class="exam-ai-policy-card">
+                <div data-lq-component="surface" class="lq-surface exam-ai-policy-card">
                     <label class="exam-ai-policy-toggle">
-                        <input type="checkbox" id="exam-allow-student-ai">
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="exam-allow-student-ai">
                         <span>整卷允许学生使用课堂 AI</span>
                     </label>
                     <small>适合开放实验、综合项目和论述题；开启后学生答题页会出现同课堂一致的 AI 助手，并携带当前试卷上下文。</small>
@@ -83,7 +83,7 @@
             <div class="sidebar-section flex flex-col min-h-0">
                 <div class="flex justify-between items-center mb-sm">
                     <h3 class="section-title m-0">页面 / 题组</h3>
-                    <button class="btn btn-ghost btn-sm p-1 h-auto text-primary" onclick="addPage()" title="添加新页">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm p-1 h-auto text-primary" onclick="addPage()" title="添加新页">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                     </button>
                 </div>
@@ -94,7 +94,7 @@
         </aside>
 
         <!-- 中间：题目编辑 -->
-        <main class="main-panel" id="main-panel" data-lq-material="content">
+        <main data-lq-component="region" class="lq-domain-region main-panel" id="main-panel" data-lq-material="content">
             <div class="editor-content-wrapper" id="question-editor">
                 <div class="empty-state">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 opacity-50"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
@@ -104,7 +104,7 @@
         </main>
 
         <!-- 右侧：实时预览 -->
-        <aside class="preview-panel" data-lq-material="content">
+        <aside data-lq-component="surface" class="lq-surface preview-panel" data-lq-material="content">
             <div class="preview-header">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 实时预览
@@ -118,14 +118,14 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- 评分标准浮窗 -->
-    <div class="modal-overlay" id="scoring-modal" style="display: none;">
-        <div class="modal-box scoring-modal-box">
+    <div data-lq-component="layer" class="lq-domain-region modal-overlay" id="scoring-modal" style="display: none;">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-box scoring-modal-box">
             <div class="modal-header">
                 <div class="assist-modal-title">
                     <span class="assist-modal-kicker">Rubric</span>
                     <h3>补充评分标准</h3>
                 </div>
-                <button class="modal-close" onclick="closeScoringModal()">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeScoringModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -145,11 +145,11 @@
                     <div class="scoring-overview-grid">
                         <div class="form-group mb-0">
                             <label class="form-label">整体评分描述</label>
-                            <textarea id="scoring-description" class="form-control" rows="3" placeholder="例如：按标准答案、关键步骤和附件证据综合评分，重点看核心概念、过程完整度和结论准确性。"></textarea>
+                            <textarea data-lq-component="textarea" id="scoring-description" class="lq-textarea form-control" rows="3" placeholder="例如：按标准答案、关键步骤和附件证据综合评分，重点看核心概念、过程完整度和结论准确性。"></textarea>
                         </div>
                         <div class="form-group mb-0">
                             <label class="form-label">评分风格</label>
-                            <select id="scoring-style" class="form-control">
+                            <select data-lq-component="select" id="scoring-style" class="lq-select form-control">
                                 <option value="strict">严格</option>
                                 <option value="medium" selected>中等</option>
                                 <option value="loose">宽松</option>
@@ -158,12 +158,12 @@
                         </div>
                         <div class="form-group mb-0">
                             <label class="form-label">目标总分</label>
-                            <input type="number" id="scoring-target-total" class="form-control" min="1" max="1000" step="1" value="100">
+                            <input data-lq-component="input" type="number" id="scoring-target-total" class="lq-input form-control" min="1" max="1000" step="1" value="100">
                         </div>
                     </div>
                     <div class="scoring-summary-strip">
                         <span id="scoring-total-summary">当前合计：0 分</span>
-                        <button type="button" class="btn btn-outline btn-sm" onclick="distributeScoringPoints()">按目标总分均分</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="distributeScoringPoints()">按目标总分均分</button>
                     </div>
                     <div class="scoring-warning" id="scoring-warning" style="display:none;"></div>
                 </div>
@@ -173,14 +173,14 @@
                         <small>选择题可直接点选正确答案</small>
                     </div>
                     <div class="scoring-question-workbench">
-                        <nav class="scoring-question-menu" id="scoring-question-menu" aria-label="评分题目快捷跳转"></nav>
+                        <nav data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised scoring-question-menu" id="scoring-question-menu" aria-label="评分题目快捷跳转"></nav>
                         <div class="scoring-question-list" id="scoring-question-list"></div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline" onclick="closeScoringModal()">取消</button>
-                <button class="btn btn-primary" onclick="applyScoringModal()" id="apply-scoring-btn">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeScoringModal()">取消</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" onclick="applyScoringModal()" id="apply-scoring-btn">
                     应用评分标准
                 </button>
             </div>
@@ -188,14 +188,14 @@
     </div>
 
     <!-- AI 辅助出题模态框 -->
-    <div class="modal-overlay" id="ai-exam-modal" style="display: none;">
-        <div class="modal-box" data-lq-material="raised" style="max-width: 760px;">
+    <div data-lq-component="layer" class="lq-domain-region modal-overlay" id="ai-exam-modal" style="display: none;">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-box" data-lq-material="raised" style="max-width: 760px;">
             <div class="modal-header">
                 <div class="assist-modal-title">
                     <span class="assist-modal-kicker">Built-in AI</span>
                     <h3>AI 辅助出题</h3>
                 </div>
-                <button class="modal-close" onclick="closeAIGenerateModal()">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeAIGenerateModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -214,7 +214,7 @@
                 <form id="ai-exam-form">
                     <div class="form-group">
                         <label class="form-label" for="ai-exam-assessment-kind">本次出题用途</label>
-                        <select id="ai-exam-assessment-kind" class="form-control">
+                        <select data-lq-component="select" id="ai-exam-assessment-kind" class="lq-select form-control">
                             <option value="">尚未确定</option>
                             <option value="homework">平时作业</option>
                             <option value="midterm">期中测验</option>
@@ -230,11 +230,11 @@
                         <div class="assist-form-grid">
                             <div class="form-group mb-0">
                                 <label class="form-label">试卷标题 *</label>
-                                <input type="text" id="ai-exam-title" class="form-control" required placeholder="例如：期中测试卷">
+                                <input data-lq-component="input" type="text" id="ai-exam-title" class="lq-input form-control" required placeholder="例如：期中测试卷">
                             </div>
                             <div class="form-group mb-0">
                                 <label class="form-label">关联课堂（可选）</label>
-                                <select id="ai-exam-offering" class="form-control">
+                                <select data-lq-component="select" id="ai-exam-offering" class="lq-select form-control">
                                     <option value="">不关联特定课堂</option>
                                     {% for offering in offerings %}
                                     <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
@@ -247,24 +247,24 @@
                     <div class="assist-section">
                         <div class="assist-section-head">
                             <strong>生成依据</strong>
-                            <button type="button" class="btn btn-outline btn-sm" onclick="suggestTopics()" id="suggest-topics-btn">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="suggestTopics()" id="suggest-topics-btn">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
                                 推荐范围
                             </button>
                         </div>
                         <div class="form-group">
                             <label class="form-label">出题范围</label>
-                            <textarea id="ai-exam-scope" class="form-control" data-prompt-pool-key="exam.generate_scope" rows="4" placeholder="例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。上传参考文件时可填写补充要求。"></textarea>
+                            <textarea data-lq-component="textarea" id="ai-exam-scope" class="lq-textarea form-control" data-prompt-pool-key="exam.generate_scope" rows="4" placeholder="例如：计算机网络基础、TCP/IP协议栈、HTTP协议等。上传参考文件时可填写补充要求。"></textarea>
                             <div class="text-xs text-muted mt-1">未上传参考文件时需要填写出题范围。</div>
                         </div>
                         <div class="source-lane">
                             <label class="form-label">参考文件（由内置 AI 解析）</label>
-                            <input type="file" id="ai-exam-files" class="form-control" multiple accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.json,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.svg">
+                            <input data-lq-component="file" type="file" id="ai-exam-files" class="lq-native-file form-control" multiple accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.json,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.svg">
                             <div class="text-xs text-muted mt-1">支持 PDF、TXT、Markdown、Word、Excel、PPT、JSON、图片等格式；本站材料和本地上传合计最多 10 份。</div>
                             <div class="source-picker">
                                 <div class="source-picker-row">
-                                    <input type="search" id="ai-exam-material-query" class="form-control form-control-sm" placeholder="搜索本人可访问的本站材料">
-                                    <button type="button" class="btn btn-outline btn-sm" onclick="searchExamSourceMaterials()">搜索</button>
+                                    <input data-lq-component="input" type="search" id="ai-exam-material-query" class="lq-input form-control form-control-sm" placeholder="搜索本人可访问的本站材料">
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="searchExamSourceMaterials()">搜索</button>
                                 </div>
                                 <div class="source-candidate-list" id="ai-exam-material-list">
                                     <div class="text-xs text-muted">输入关键词或打开弹窗后会列出最近可用材料。</div>
@@ -282,7 +282,7 @@
                         <div class="assist-form-grid">
                             <div class="form-group">
                                 <label class="form-label">难度</label>
-                                <select id="ai-exam-difficulty" class="form-control">
+                                <select data-lq-component="select" id="ai-exam-difficulty" class="lq-select form-control">
                                     <option value="easy">简单</option>
                                     <option value="medium" selected>中等</option>
                                     <option value="hard">困难</option>
@@ -290,24 +290,24 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label">总题数</label>
-                                <input type="number" id="ai-exam-total" class="form-control" min="1" max="50" placeholder="自动">
+                                <input data-lq-component="input" type="number" id="ai-exam-total" class="lq-input form-control" min="1" max="50" placeholder="自动">
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-3">
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">单选题</label><input type="number" id="ai-exam-radio" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">多选题</label><input type="number" id="ai-exam-checkbox" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">填空题</label><input type="number" id="ai-exam-text" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">问答题</label><input type="number" id="ai-exam-textarea" class="form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">单选题</label><input data-lq-component="input" type="number" id="ai-exam-radio" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">多选题</label><input data-lq-component="input" type="number" id="ai-exam-checkbox" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">填空题</label><input data-lq-component="input" type="number" id="ai-exam-text" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">问答题</label><input data-lq-component="input" type="number" id="ai-exam-textarea" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
                         </div>
                         <div class="form-group mt-3 mb-0">
                             <label class="form-label">问答题附件要求（可选）</label>
-                            <textarea id="ai-exam-attachment-requirements" class="form-control" rows="2" placeholder="例如：实验题至少上传 1 张运行截图，可附代码文件；普通问答题不需要附件。"></textarea>
+                            <textarea data-lq-component="textarea" id="ai-exam-attachment-requirements" class="lq-textarea form-control" rows="2" placeholder="例如：实验题至少上传 1 张运行截图，可附代码文件；普通问答题不需要附件。"></textarea>
                         </div>
                     </div>
 
                     <!-- 任务状态显示区域 -->
                     <div id="ai-task-status" class="hidden">
-                        <div class="border border-border rounded-lg p-4 mb-4 bg-surface">
+                        <div data-lq-component="surface" class="lq-surface border border-border rounded-lg p-4 mb-4 bg-surface">
                             <div class="flex items-center justify-between mb-2">
                                 <h4 class="font-medium text-primary">生成进度</h4>
                                 <span id="ai-task-status-badge" class="badge badge-primary">准备中</span>
@@ -323,10 +323,10 @@
                             </div>
                             <div id="ai-task-message" class="text-sm text-muted mb-3">正在初始化任务...</div>
                             <div class="flex gap-2">
-                                <button type="button" class="btn btn-outline btn-sm flex-1" onclick="cancelAITask()" id="cancel-ai-task-btn">
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm flex-1" onclick="cancelAITask()" id="cancel-ai-task-btn">
                                     中断生成
                                 </button>
-                                <button type="button" class="btn btn-ghost btn-sm" onclick="refreshTaskStatus()">
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" onclick="refreshTaskStatus()">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
                                     刷新状态
                                 </button>
@@ -336,8 +336,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline" onclick="closeAIGenerateModal()">取消</button>
-                <button class="btn btn-primary" onclick="startAIGeneration()" id="start-ai-generate-btn">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeAIGenerateModal()">取消</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" onclick="startAIGeneration()" id="start-ai-generate-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h6v5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-6V4a2 2 0 0 0-2-2h-2Z"></path></svg>
                     开始生成
                 </button>
@@ -346,14 +346,14 @@
     </div>
 
     <!-- 原生 JSON 导入模态框 -->
-    <div class="modal-overlay" id="json-exam-modal" style="display: none;">
-        <div class="modal-box" data-lq-material="raised" style="max-width: 680px;">
+    <div data-lq-component="layer" class="lq-domain-region modal-overlay" id="json-exam-modal" style="display: none;">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised modal-box" data-lq-material="raised" style="max-width: 680px;">
             <div class="modal-header">
                 <div class="assist-modal-title">
                     <span class="assist-modal-kicker">Native JSON</span>
                     <h3>导入原生 JSON</h3>
                 </div>
-                <button class="modal-close" onclick="closeNativeJsonImportModal()">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" onclick="closeNativeJsonImportModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
@@ -371,8 +371,8 @@
 
                 <div class="json-dropzone" id="json-import-dropzone">
                     <div>
-                        <input type="file" id="json-exam-file" accept=".json,application/json" hidden>
-                        <button type="button" class="btn btn-outline" onclick="chooseNativeJsonFile()">
+                        <input data-lq-component="file" class="lq-native-file" type="file" id="json-exam-file" accept=".json,application/json" hidden>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="chooseNativeJsonFile()">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
                             选择 JSON 文件
                         </button>
@@ -382,8 +382,8 @@
                 <div class="json-file-chip" id="json-file-chip"></div>
                 <div class="source-picker">
                     <div class="source-picker-row">
-                        <input type="search" id="json-material-query" class="form-control form-control-sm" placeholder="搜索本站 JSON 材料">
-                        <button type="button" class="btn btn-outline btn-sm" onclick="searchJsonSourceMaterials()">搜索</button>
+                        <input data-lq-component="input" type="search" id="json-material-query" class="lq-input form-control form-control-sm" placeholder="搜索本站 JSON 材料">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="searchJsonSourceMaterials()">搜索</button>
                     </div>
                     <div class="source-candidate-list" id="json-material-list">
                         <div class="text-xs text-muted">可选择本人可访问的 .json 材料，且只能选择一份。</div>
@@ -392,29 +392,29 @@
                 <div class="import-summary" id="json-import-summary"></div>
 
                 <div class="json-template-actions">
-                    <a class="btn btn-ghost btn-sm" href="/api/exam-papers/json-template" download>
+                    <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" href="/api/exam-papers/json-template" download>
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
                         下载 JSON 模板
                     </a>
-                    <button type="button" class="btn btn-outline btn-sm" onclick="closeNativeJsonImportModal(); openAIGenerateModal();">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" onclick="closeNativeJsonImportModal(); openAIGenerateModal();">
                         改用 AI 辅助出题
                     </button>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline" onclick="closeNativeJsonImportModal()">取消</button>
-                <button class="btn btn-primary" onclick="importNativeJsonExam()" id="import-json-btn" disabled>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" onclick="closeNativeJsonImportModal()">取消</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" onclick="importNativeJsonExam()" id="import-json-btn" disabled>
                     导入到编辑器
                 </button>
             </div>
         </div>
     </div>
 
-    <div class="exam-paper-preview-backdrop" id="paper-preview-modal" role="dialog" aria-modal="true" aria-labelledby="paper-preview-modal-title" style="display:none;">
-        <div class="exam-paper-preview-dialog" role="document">
+    <div data-lq-component="layer" class="lq-domain-region exam-paper-preview-backdrop" id="paper-preview-modal" role="dialog" aria-modal="true" aria-labelledby="paper-preview-modal-title" style="display:none;">
+        <div data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region exam-paper-preview-dialog" role="document" data-lq-material="raised">
             <div class="exam-paper-preview-dialog__header">
                 <h3 class="exam-paper-preview-dialog__title" id="paper-preview-modal-title">试卷预览</h3>
-                <button class="exam-paper-preview-dialog__close" type="button" onclick="closePaperPreviewModal()" aria-label="关闭试卷预览">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass exam-paper-preview-dialog__close" type="button" onclick="closePaperPreviewModal()" aria-label="关闭试卷预览">&times;</button>
             </div>
             <div class="exam-paper-preview-dialog__body">
                 <div id="paper-preview-body">
@@ -739,7 +739,7 @@
                             const value = optionAnswerValue(option, optionIdx);
                             return `
                                 <label class="scoring-answer-option">
-                                    <input type="${inputType}" ${name} value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} onchange="window.updateScoringChoiceAnswer(${idx})">
+                                    <input data-lq-component="input" class="lq-input" type="${inputType}" ${name} value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} onchange="window.updateScoringChoiceAnswer(${idx})">
                                     <span><strong>${escapeHtml(value)}.</strong> ${escapeHtml(String(option || '').replace(/^[A-Za-z][\.\、\)\s]+/, ''))}</span>
                                 </label>
                             `;
@@ -748,7 +748,7 @@
                 `;
             }
             return `
-                <textarea class="form-control" rows="${q.type === 'textarea' ? 4 : 2}" placeholder="${q.type === 'text' ? '填写填空题参考答案' : '填写问答题参考答案、关键步骤或参考结论'}" oninput="window.updateScoringTextAnswer(${idx}, this.value)">${escapeHtml(q.answer || '')}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="${q.type === 'textarea' ? 4 : 2}" placeholder="${q.type === 'text' ? '填写填空题参考答案' : '填写问答题参考答案、关键步骤或参考结论'}" oninput="window.updateScoringTextAnswer(${idx}, this.value)">${escapeHtml(q.answer || '')}</textarea>
             `;
         }
 
@@ -825,8 +825,8 @@
                 const stateKey = scoringQuestionState(q);
                 const isActive = idx === activeScoringIndex;
                 return `
-                    <button type="button"
-                            class="scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                    <button data-lq-component="button" type="button"
+                            class="lq-btn lq-btn--sm lq-btn--glass scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}"
                             data-action="select-scoring-question"
                             data-scoring-index="${idx}"
                             aria-current="${isActive ? 'true' : 'false'}"
@@ -850,7 +850,7 @@
                         </div>
                         <div class="form-group mb-0 scoring-points-input">
                             <label class="form-label">分值</label>
-                            <input type="number" min="0.5" max="1000" step="0.5" class="form-control" value="${escapeHtml(formatScoreValue(getQuestionPoints(q) || 1))}" oninput="window.updateScoringPoints(${idx}, this.value)">
+                            <input data-lq-component="input" type="number" min="0.5" max="1000" step="0.5" class="lq-input form-control" value="${escapeHtml(formatScoreValue(getQuestionPoints(q) || 1))}" oninput="window.updateScoringPoints(${idx}, this.value)">
                         </div>
                     </div>
                     <div class="form-group">
@@ -860,11 +860,11 @@
                     <div class="scoring-fields-grid">
                         <div class="form-group mb-0">
                             <label class="form-label">评分指导 / 得分点</label>
-                            <textarea class="form-control" rows="3" oninput="window.updateScoringGuidance(${idx}, this.value)">${escapeHtml(getQuestionGuidance(q))}</textarea>
+                            <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="3" oninput="window.updateScoringGuidance(${idx}, this.value)">${escapeHtml(getQuestionGuidance(q))}</textarea>
                         </div>
                         <div class="form-group mb-0">
                             <label class="form-label">扣分点 / 失分点</label>
-                            <textarea class="form-control" rows="3" oninput="window.updateScoringDeduction(${idx}, this.value)">${escapeHtml(getQuestionDeduction(q))}</textarea>
+                            <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="3" oninput="window.updateScoringDeduction(${idx}, this.value)">${escapeHtml(getQuestionDeduction(q))}</textarea>
                         </div>
                     </div>
                 </section>
@@ -1045,7 +1045,7 @@
                         ${escapeHtml(p.name)}
                     </span>
                     <span class="page-count">${(p.questions||[]).length}题</span>
-                    <button class="page-delete" onclick="event.stopPropagation(); window.removePage(${i})" title="删除">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass page-delete" onclick="event.stopPropagation(); window.removePage(${i})" title="删除">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                     </button>
                 </div>
@@ -1085,16 +1085,16 @@
             html += `
                 <div class="add-question-bar">
                     <span class="text-sm text-muted font-medium mr-2">添加题目:</span>
-                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('radio')">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('radio')">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>单选题
                     </button>
-                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('checkbox')">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('checkbox')">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 12 12 15 15 9"></polyline></svg>多选题
                     </button>
-                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('text')">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('text')">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>填空题
                     </button>
-                    <button class="btn btn-outline btn-sm bg-surface" onclick="window.addQuestion('textarea')">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('textarea')">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="17" y2="21"></line><path d="M12 8h8"></path><path d="M12 12h8"></path><path d="M12 16h8"></path><path d="M4 4h4"></path><path d="M4 8h4"></path><path d="M4 12h4"></path><path d="M4 16h4"></path><path d="M4 20h4"></path></svg>问答题
                     </button>
                 </div>
@@ -1108,39 +1108,39 @@
             const typeLabels = {radio:'单选', checkbox:'多选', text:'填空', textarea:'问答'};
 
             let html = `
-            <div class="question-card group">
+            <div data-lq-component="surface" class="lq-surface question-card group">
                 <div class="q-header">
                     <div class="flex items-center gap-3">
                         <span class="q-badge">第 ${idx+1} 题</span>
                         <div class="flex items-center border border-border rounded-md px-2 py-1 bg-bg group-hover:border-primary-light transition-colors">
                             <span class="text-xs text-muted mr-1">ID:</span>
-                            <input class="q-id-input" value="${escapeHtml(q.id||'')}" placeholder="唯一标识" oninput="window.updateQId(${idx}, this.value)">
+                            <input data-lq-component="input" class="lq-input q-id-input" value="${escapeHtml(q.id||'')}" placeholder="唯一标识" oninput="window.updateQId(${idx}, this.value)">
                         </div>
                     </div>
                     <div class="q-actions opacity-50 group-hover:opacity-100 transition-opacity">
-                        <select class="q-type-select" onchange="window.changeQType(${idx}, this.value)">
+                        <select data-lq-component="select" class="lq-select q-type-select" onchange="window.changeQType(${idx}, this.value)">
                             <option value="radio" ${q.type==='radio'?'selected':''}>单选题</option>
                             <option value="checkbox" ${q.type==='checkbox'?'selected':''}>多选题</option>
                             <option value="text" ${q.type==='text'?'selected':''}>填空题</option>
                             <option value="textarea" ${q.type==='textarea'?'selected':''}>问答题</option>
                         </select>
-                        <div class="flex bg-surface border border-border rounded-md overflow-hidden ml-1">
-                            <button class="btn btn-ghost btn-sm p-1 rounded-none border-r border-border text-muted h-auto ${idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},-1)" ${idx === 0 ? 'disabled' : ''} title="上移">
+                        <div data-lq-component="surface" class="lq-surface flex bg-surface border border-border rounded-md overflow-hidden ml-1">
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm p-1 rounded-none border-r border-border text-muted h-auto ${idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},-1)" ${idx === 0 ? 'disabled' : ''} title="上移">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
                             </button>
-                            <button class="btn btn-ghost btn-sm p-1 rounded-none text-muted h-auto ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},1)" ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'disabled' : ''} title="下移">
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm p-1 rounded-none text-muted h-auto ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},1)" ${idx === (examData.pages[currentPageIdx].questions||[]).length-1 ? 'disabled' : ''} title="下移">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                             </button>
                         </div>
-                        <button class="btn btn-ghost btn-sm p-1 ml-1 text-danger h-auto hover:bg-danger-light rounded-md" onclick="window.removeQ(${idx})" title="删除该题">
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm p-1 ml-1 text-danger h-auto hover:bg-danger-light rounded-md" onclick="window.removeQ(${idx})" title="删除该题">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                         </button>
                     </div>
                 </div>
 
-                <textarea class="q-title-input" rows="3" placeholder="在此输入题目内容，可使用 Markdown，例如 **重点**、列表、行内命令或代码块" oninput="window.updateQText(${idx}, this.value)">${escapeHtml(q.text||'')}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea q-title-input" rows="3" placeholder="在此输入题目内容，可使用 Markdown，例如 **重点**、列表、行内命令或代码块" oninput="window.updateQText(${idx}, this.value)">${escapeHtml(q.text||'')}</textarea>
                 <label class="question-ai-toggle">
-                    <input type="checkbox" ${isQuestionAiAllowed(q) ? 'checked' : ''} onchange="window.updateQuestionAllowAi(${idx}, this.checked)">
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" ${isQuestionAiAllowed(q) ? 'checked' : ''} onchange="window.updateQuestionAllowAi(${idx}, this.checked)">
                     <span>允许学生答本题时使用课堂 AI</span>
                 </label>
             `;
@@ -1151,35 +1151,35 @@
                     html += `
                     <div class="option-item group/opt">
                         <div class="option-marker ${q.type}"></div>
-                        <input class="option-input" value="${escapeHtml(opt)}" placeholder="选项 ${oi+1}" oninput="window.updateOption(${idx},${oi},this.value)">
-                        <button class="btn btn-ghost btn-sm p-1 h-auto text-muted hover:text-danger opacity-0 group-hover/opt:opacity-100 transition-opacity" onclick="window.removeOption(${idx},${oi})" title="移除选项">
+                        <input data-lq-component="input" class="lq-input option-input" value="${escapeHtml(opt)}" placeholder="选项 ${oi+1}" oninput="window.updateOption(${idx},${oi},this.value)">
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm p-1 h-auto text-muted hover:text-danger opacity-0 group-hover/opt:opacity-100 transition-opacity" onclick="window.removeOption(${idx},${oi})" title="移除选项">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
                     </div>`;
                 });
                 html += `</div>
-                <button class="btn btn-ghost btn-sm text-primary pl-1 flex items-center gap-1 hover:bg-primary-light mt-2" onclick="window.addOption(${idx})">
+                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm text-primary pl-1 flex items-center gap-1 hover:bg-primary-light mt-2" onclick="window.addOption(${idx})">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                     添加选项
                 </button>`;
             } else {
                 if (q.type === 'text') {
-                    html += `<input class="text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
+                    html += `<input data-lq-component="input" class="lq-input text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
                 } else {
                     const attachmentReq = normalizeAttachmentRequirementForEditor(q);
-                    html += `<textarea class="text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
+                    html += `<textarea data-lq-component="textarea" class="lq-textarea text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
                     html += `
                         <div class="attachment-requirement-box">
                             <label class="attachment-requirement-head">
-                                <input type="checkbox" ${attachmentReq.required ? 'checked' : ''} onchange="window.updateAttachmentRequired(${idx}, this.checked)">
+                                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" ${attachmentReq.required ? 'checked' : ''} onchange="window.updateAttachmentRequired(${idx}, this.checked)">
                                 要求学生上传本题附件
                             </label>
                             <div class="attachment-requirement-grid">
-                                <input class="text-preview-input" type="number" min="0" max="20" value="${attachmentReq.min_count ?? (attachmentReq.required ? 1 : 0)}" placeholder="最少数量" oninput="window.updateAttachmentMin(${idx}, this.value)">
-                                <input class="text-preview-input" type="number" min="1" max="20" value="${attachmentReq.max_count ?? ''}" placeholder="最多数量" oninput="window.updateAttachmentMax(${idx}, this.value)">
+                                <input data-lq-component="input" class="lq-input text-preview-input" type="number" min="0" max="20" value="${attachmentReq.min_count ?? (attachmentReq.required ? 1 : 0)}" placeholder="最少数量" oninput="window.updateAttachmentMin(${idx}, this.value)">
+                                <input data-lq-component="input" class="lq-input text-preview-input" type="number" min="1" max="20" value="${attachmentReq.max_count ?? ''}" placeholder="最多数量" oninput="window.updateAttachmentMax(${idx}, this.value)">
                             </div>
-                            <input class="text-preview-input mt-2" value="${escapeHtml((attachmentReq.allowed_file_types || []).join(', '))}" placeholder="本题允许类型，如 .png, .jpg, .py；留空则沿用作业设置" oninput="window.updateAttachmentAllowedTypes(${idx}, this.value)">
-                            <input class="text-preview-input mt-2" value="${escapeHtml(attachmentReq.description || '')}" placeholder="附件说明，例如：请上传实验截图、核心代码或报告" oninput="window.updateAttachmentDescription(${idx}, this.value)">
+                            <input data-lq-component="input" class="lq-input text-preview-input mt-2" value="${escapeHtml((attachmentReq.allowed_file_types || []).join(', '))}" placeholder="本题允许类型，如 .png, .jpg, .py；留空则沿用作业设置" oninput="window.updateAttachmentAllowedTypes(${idx}, this.value)">
+                            <input data-lq-component="input" class="lq-input text-preview-input mt-2" value="${escapeHtml(attachmentReq.description || '')}" placeholder="附件说明，例如：请上传实验截图、核心代码或报告" oninput="window.updateAttachmentDescription(${idx}, this.value)">
                         </div>
                     `;
                 }
@@ -1330,15 +1330,15 @@
                     q.options.forEach(opt => {
                         html += `
                         <label class="preview-q-option">
-                            <input type="${inputType}" disabled class="cursor-not-allowed">
+                            <input data-lq-component="input" type="${inputType}" disabled class="lq-input cursor-not-allowed">
                             <div class="md-content">${renderEditorMarkdown(opt, '(空)')}</div>
                         </label>`;
                     });
                     html += `</div>`;
                 } else if (q.type === 'text') {
-                    html += `<input type="text" class="preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
+                    html += `<input data-lq-component="input" type="text" class="lq-input preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
                 } else {
-                    html += `<textarea class="preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
+                    html += `<textarea data-lq-component="textarea" class="lq-textarea preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
                     const attachmentReq = normalizeAttachmentRequirementForEditor(q);
                     if (attachmentReq.required || attachmentReq.description) {
                         const minText = attachmentReq.required ? `至少 ${Math.max(attachmentReq.min_count || 1, 1)} 个附件` : '可附加文件';
@@ -1529,7 +1529,7 @@
                 const selected = selectedMap.has(Number(item.id));
                 const meta = [item.file_ext, formatSourceSize(item.file_size), item.scope_label].filter(Boolean).join(' · ');
                 return `
-                    <button type="button" class="source-candidate-btn ${selected ? 'is-selected' : ''}" onclick="${onClickName}(${Number(item.id)})" data-source-id="${Number(item.id)}">
+                    <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass source-candidate-btn ${selected ? 'is-selected' : ''}" onclick="${onClickName}(${Number(item.id)})" data-source-id="${Number(item.id)}">
                         <span>
                             <strong>${escapeHtml(item.name)}</strong>
                             <small>${escapeHtml(item.material_path || '')}</small>
@@ -2065,7 +2065,7 @@
                             if (task.exam_data) {
                                 messageEl.innerHTML = `
                                     试卷生成完成！
-                                    <button class="btn btn-primary btn-sm mt-2" onclick="importAIGeneratedExam('${taskId}')">
+                                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm mt-2" onclick="importAIGeneratedExam('${taskId}')">
                                         导入到编辑器
                                     </button>
                                 `;

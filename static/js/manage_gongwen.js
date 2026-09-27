@@ -145,15 +145,15 @@ function setBusy(button, busy, label) {
 function fileButtons(doc) {
     const buttons = [];
     if (doc.file_url || doc.has_local_file) {
-        buttons.push(`<a class="btn btn-outline btn-sm" href="/api/manage/gongwen/documents/${doc.id}/file?which=primary" target="_blank" rel="noopener">正文</a>`);
+        buttons.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/api/manage/gongwen/documents/${doc.id}/file?which=primary" target="_blank" rel="noopener">正文</a>`);
     }
     if (doc.attachment_url || doc.has_local_attachment) {
-        buttons.push(`<a class="btn btn-outline btn-sm" href="/api/manage/gongwen/documents/${doc.id}/file?which=attachment" target="_blank" rel="noopener">附件</a>`);
+        buttons.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/api/manage/gongwen/documents/${doc.id}/file?which=attachment" target="_blank" rel="noopener">附件</a>`);
     }
     if (doc.file_url || doc.has_local_file || doc.attachment_url || doc.has_local_attachment) {
-        buttons.push(`<button type="button" class="btn btn-outline btn-sm" data-package="${doc.id}" title="正文与全部附件打包为 zip，并按「文号 标题」重命名">打包</button>`);
+        buttons.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-package="${doc.id}" title="正文与全部附件打包为 zip，并按「文号 标题」重命名">打包</button>`);
     }
-    buttons.push(`<button type="button" class="btn btn-ghost btn-sm" data-scope-edit="${doc.id}">归属</button>`);
+    buttons.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-scope-edit="${doc.id}">归属</button>`);
     return buttons.join('');
 }
 
@@ -537,7 +537,7 @@ function partBodyHtml(part) {
     if (part.kind === 'pdf') {
         let inner = `<iframe class="gw-reader-iframe" src="${escapeHtml(part.view_url)}" title="${escapeHtml(part.name || 'PDF')}"></iframe>`;
         if (part.text && part.text.trim()) {
-            inner += `<details class="gw-reader-extract" open><summary>解析文本（用于检索 / 智能提醒）</summary><pre class="gw-reader-text">${escapeHtml(part.text)}</pre></details>`;
+            inner += `<details class="gw-reader-extract" open><summary data-lq-component="disclosure" class="lq-disclosure-trigger">解析文本（用于检索 / 智能提醒）</summary><pre class="gw-reader-text">${escapeHtml(part.text)}</pre></details>`;
         }
         return inner;
     }
@@ -562,12 +562,12 @@ function partBodyHtml(part) {
 
 function fullscreenButtonHtml(part) {
     if (typeof part._idx !== 'number') return '';
-    return `<button type="button" class="btn btn-ghost btn-sm" data-fullscreen="${part._idx}" title="全屏阅览 / 编辑解析文本">全屏</button>`;
+    return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-fullscreen="${part._idx}" title="全屏阅览 / 编辑解析文本">全屏</button>`;
 }
 
 function renderPart(part) {
     const headBadge = part.truncated ? '<span class="gwlist-cat">已截断</span>' : '';
-    const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
+    const download = part.download_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
     const head = `<div class="gw-reader-part-head"><strong>${escapeHtml(part.label || '内容')}${part.name ? '：' + escapeHtml(part.name) : ''}</strong>
         <span>${headBadge}${fullscreenButtonHtml(part)}${download}</span></div>`;
     return `<section class="gw-reader-part">${head}${partNoteHtml(part)}${partBodyHtml(part)}</section>`;
@@ -629,14 +629,14 @@ function renderReader(doc) {
     bodyParts.forEach((part) => blocks.push(renderPart(part)));
     if (state.attachParts.length) {
         const items = state.attachParts.map((part, index) => `
-            <li><button type="button" data-attach-open="${index}">
+            <li><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-attach-open="${index}">
                 <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
                 <span>${escapeHtml(part.name || '附件')}</span>
                 ${part.archive ? `<span class="gw-attach-from">来自 ${escapeHtml(part.archive)}</span>` : ''}
             </button></li>`).join('');
         blocks.push(`<section class="gw-reader-part">
             <div class="gw-reader-part-head"><strong>附件（${state.attachParts.length}）</strong>
-                <span><button type="button" class="btn btn-primary btn-sm" data-attach-open="0">查看附件</button></span></div>
+                <span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-attach-open="0">查看附件</button></span></div>
             <ul class="gw-attach-names">${items}</ul>
         </section>`);
     }
@@ -655,7 +655,7 @@ function selectAttachment(index) {
     refs.attachList.querySelectorAll('.gw-attach-item').forEach((el, i) => {
         el.classList.toggle('is-active', i === index);
     });
-    const download = part.download_url ? `<a class="btn btn-outline btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
+    const download = part.download_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${escapeHtml(part.download_url)}" download>下载</a>` : '';
     refs.attachView.innerHTML = `
         <div class="gw-attach-view-head"><strong>${escapeHtml(part.name || '附件')}</strong><span>${fullscreenButtonHtml(part)}${download}</span></div>
         ${partNoteHtml(part)}${partBodyHtml(part)}`;
@@ -685,7 +685,7 @@ function openAttachModal(index = 0) {
     if (!state.attachParts.length || !refs.attachModal) return;
     rememberOverlayTrigger(refs.attachModal);
     refs.attachList.innerHTML = state.attachParts.map((part, i) => `
-        <button type="button" class="gw-attach-item" data-attach-index="${i}">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass gw-attach-item" data-attach-index="${i}">
             <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
             <span>${escapeHtml(part.name || '附件')}</span>
         </button>`).join('');
@@ -790,8 +790,8 @@ function closeReader() {
 function followItemRowHtml(value = '') {
     return `
         <div class="gw-follow-item-row">
-            <input type="text" value="${escapeHtml(value)}" maxlength="60" placeholder="如：师范专业认证 / 教学比赛 / 实验室安全">
-            <button type="button" class="gw-follow-item-remove" data-follow-remove-item title="删除该关注项">&times;</button>
+            <input data-lq-component="input" class="lq-input" type="text" value="${escapeHtml(value)}" maxlength="60" placeholder="如：师范专业认证 / 教学比赛 / 实验室安全">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass gw-follow-item-remove" data-follow-remove-item title="删除该关注项">&times;</button>
         </div>`;
 }
 
@@ -815,7 +815,7 @@ function renderFollowKeywordTags() {
     state.followKeywords.forEach((keyword, index) => {
         refs.followKeywordInput.insertAdjacentHTML('beforebegin', `
             <span class="gw-follow-tag">${escapeHtml(keyword)}
-                <button type="button" data-follow-remove-keyword="${index}" title="删除关键字">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-follow-remove-keyword="${index}" title="删除关键字">&times;</button>
             </span>`);
     });
 }

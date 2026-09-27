@@ -6,7 +6,7 @@
 
             <section class="profile-metric-grid">
                 {% for item in overview.metric_cards %}
-                <article class="profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}" data-explain data-explain-title="{{ item.label }}" data-explain-text="{{ item.note }}">
+                <article data-lq-component="surface" class="lq-surface profile-metric-card profile-reveal" data-tone="{{ loop.index0 }}" data-explain data-explain-title="{{ item.label }}" data-explain-text="{{ item.note }}">
                     <span>{{ item.label }}</span>
                     <strong>{{ item.value }}</strong>
                 </article>
@@ -19,11 +19,11 @@
                     <div>
                         <h3>各课堂修炼进度</h3>
                     </div>
-                    <a class="btn btn-outline btn-sm" href="/dashboard">查看课堂</a>
+                    <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/dashboard">查看课堂</a>
                 </div>
                 <div class="profile-cultivation-grid">
                     {% for course in cultivation.courses %}
-                    <a class="profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
+                    <a data-lq-component="surface" class="lq-surface profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
                         {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                         {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
                         {% set cultivation_card = {
@@ -65,7 +65,7 @@
                 <div class="profile-overview-primary">
                     <section class="profile-chart-grid">
                         {% for chart in overview.charts %}
-                        <article class="profile-chart-card profile-reveal">
+                        <article data-lq-component="surface" class="lq-surface profile-chart-card profile-reveal">
                             <div class="profile-band__head">
                                 <div>
                                     <h3>{{ chart.title }}</h3>

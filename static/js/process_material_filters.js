@@ -60,7 +60,7 @@ export function renderTagButtons({ container, tags, selectedTags, dataAttr }) {
         '<span class="manage-lp__quick-tags-label">标签</span>',
         ...tags.map(({ tag, count }) => {
             const active = selectedTags.has(tag) ? ' is-active' : '';
-            return `<button type="button" class="manage-lp__tag-filter${active}" ${dataAttr}="${escapeHtml(tag)}">` +
+            return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass manage-lp__tag-filter${active}" ${dataAttr}="${escapeHtml(tag)}">` +
                 `<span>${escapeHtml(tag)}</span><small>${count}</small></button>`;
         }),
     ].join('');

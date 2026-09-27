@@ -22,16 +22,45 @@ class ElementDouble extends EventTarget {
   get nextSibling(): ElementDouble | null { return this.parentNode?.children[this.parentNode.children.indexOf(this) + 1] || null; }
   contentWindow: any;
   dataset: Record<string, string> = {};
-  classList = { add: vi.fn(), remove: vi.fn(), toggle: vi.fn() };
+  // A live DOMTokenList view: attribute/className writes and token operations
+  // must observe the same state, including toggle(token, force)'s return value.
+  get className() { return this.getAttribute('class') || ''; }
+  set className(value: string) { this.setAttribute('class', value); }
+  private classTokens() { return new Set(this.className.split(/\s+/).filter(Boolean)); }
+  classList = {
+    contains: vi.fn((token: string) => this.classTokens().has(token)),
+    add: vi.fn((...tokens: string[]) => { this.className = [...new Set([...this.classTokens(), ...tokens])].join(' '); }),
+    remove: vi.fn((...tokens: string[]) => { this.className = [...this.classTokens()].filter(token => !tokens.includes(token)).join(' '); }),
+    toggle: vi.fn((token: string, force?: boolean) => {
+      const tokens = this.classTokens(), next = force === undefined ? !tokens.has(token) : Boolean(force);
+      if (next) tokens.add(token); else tokens.delete(token);
+      this.className = [...tokens].join(' ');
+      return next;
+    }),
+  };
   hidden = false;
   textContent = '';
-  value = '';
+  private fieldValue = '';
+  get value(): string { return this.tagName === 'SELECT' ? this.selectedOptions[0]?.value || '' : this.fieldValue; }
+  set value(value: string) { this.fieldValue = value; if (this.tagName === 'SELECT') this.options.forEach(option => { option.selected = option.value === value; }); }
+  selected = false;
+  required = false;
+  multiple = false;
+  get id() { return this.getAttribute('id') || ''; }
+  set id(value: string) { this.setAttribute('id', value); }
+  get label() { return this.getAttribute('label') || this.textContent; }
+  get options(): ElementDouble[] { return this.children.flatMap(child => child.tagName === 'OPTION' ? [child] : child.tagName === 'OPTGROUP' ? child.options : []); }
+  get selectedOptions() { return this.options.filter(option => option.selected); }
+  get labels(): ElementDouble[] { return this.ownerDocument?.querySelectorAll('label').filter((node: ElementDouble) => node.tagName === 'LABEL' && node.getAttribute('for') === this.id) || []; }
+  get validity() { return { valid: !this.required || Boolean(this.value) }; }
   open = false;
   disabled = false;
   children: ElementDouble[] = [];
   querySelectorAll(_query: string): ElementDouble[] { return []; }
   querySelector(_query: string): ElementDouble | null { return null; }
-  append(node: ElementDouble) { this.insertBefore(node, null); }
+  append(...nodes: ElementDouble[]) { nodes.forEach(node => this.insertBefore(node, null)); }
+  after(node: ElementDouble) { this.parentNode?.insertBefore(node, this.nextSibling); }
+  replaceChildren(...nodes: ElementDouble[]) { [...this.children].forEach(node => node.remove()); this.append(...nodes); }
   insertBefore(node: ElementDouble, next: ElementDouble | null) {
     node.remove(); node.parentNode = this;
     const index = next ? this.children.indexOf(next) : -1;
@@ -79,6 +108,8 @@ function environment({ attributes = {}, media = {}, full = true, nav = {}, cssTh
     MutationObserver: class { observe() {} disconnect() {} } });
   doc.getElementById = () => null;
   doc.createElement = (tag: string) => { const node = new ElementDouble(); node.tagName = tag.toUpperCase(); node.ownerDocument = doc; return node; };
+  doc.createElementNS = (_namespace: string, tag: string) => doc.createElement(tag);
+  doc.createTextNode = (text: string) => { const node = doc.createElement('#text'); node.nodeType = 3; node.textContent = text; return node; };
   win.parent = win;
   if (full) {
     win.CSS = { supports: () => { if (cssThrows) throw new Error('unsupported API'); return true; } };
@@ -329,7 +360,12 @@ describe('preference controls lifecycle and collapsed failure feedback', () => {
     const appearance = new ElementDouble(); appearance.dataset.uiPreferenceSelect = 'appearance';
     const glass = new ElementDouble(); glass.dataset.uiPreferenceSelect = 'glass';
     const select = [palette, appearance, glass];
-    select.forEach(node => { node.tagName = 'SELECT'; });
+    select.forEach((node, index) => {
+      node.tagName = 'SELECT';
+      node.setAttribute('aria-label', ['配色', '外观', '玻璃效果'][index]);
+      const values = [['teal', 'rose'], ['auto', 'light', 'dark'], ['tinted', 'off']][index];
+      values.forEach((value, optionIndex) => { const option = env.doc.createElement('option'); option.value = value; option.textContent = value; option.selected = optionIndex === 0; node.append(option); });
+    });
     const details = new ElementDouble();
     const toggle = new ElementDouble(); toggle.tagName = 'SUMMARY';
     const panel = new ElementDouble();

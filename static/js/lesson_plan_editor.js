@@ -73,7 +73,7 @@ function renderCover() {
     const grid = document.getElementById('lp-cover-grid');
     grid.innerHTML = COVER_FIELDS.map(([key, label]) => `
         <label class="lp-field">${escapeHtml(label)}
-            <input data-cover="${key}" value="${escapeHtml(state.cover[key] || '')}">
+            <input data-lq-component="input" class="lq-input" data-cover="${key}" value="${escapeHtml(state.cover[key] || '')}">
         </label>`).join('');
     grid.querySelectorAll('[data-cover]').forEach((el) => {
         el.addEventListener('input', () => {
@@ -102,20 +102,20 @@ function renderSessions() {
         const fields = SESSION_FIELDS.map(([key, label, kind]) => {
             const value = escapeHtml(session[key] || '');
             if (kind === 'input') {
-                return `<label class="lp-field">${label}<input data-s="${idx}" data-k="${key}" value="${value}"></label>`;
+                return `<label class="lp-field">${label}<input data-lq-component="input" class="lq-input" data-s="${idx}" data-k="${key}" value="${value}"></label>`;
             }
             const rows = kind === 'textarea-lg' ? 12 : 3;
-            return `<label class="lp-field lp-field--full">${label}<textarea data-s="${idx}" data-k="${key}" rows="${rows}">${value}</textarea></label>`;
+            return `<label class="lp-field lp-field--full">${label}<textarea data-lq-component="textarea" class="lq-textarea" data-s="${idx}" data-k="${key}" rows="${rows}">${value}</textarea></label>`;
         }).join('');
         return `
         <details class="lp-editor__session" ${idx === 0 ? 'open' : ''}>
-            <summary>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger">
                 <span>第 ${idx + 1} 次课</span>
                 <small>${escapeHtml(scheduleText(session) || '未排课')}</small>
-                <button type="button" class="lp-link lp-link--danger" data-remove="${idx}">删除本次课</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-link lp-link--danger" data-remove="${idx}">删除本次课</button>
             </summary>
             <label class="lp-field lp-field--full">授课时间
-                <input data-s="${idx}" data-k="__schedule_text" value="${escapeHtml(scheduleText(session))}">
+                <input data-lq-component="input" class="lq-input" data-s="${idx}" data-k="__schedule_text" value="${escapeHtml(scheduleText(session))}">
             </label>
             ${fields}
         </details>`;

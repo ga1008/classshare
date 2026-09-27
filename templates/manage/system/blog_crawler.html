@@ -12,26 +12,26 @@
 {% set can_manage = current_teacher_is_super_admin %}
 {{ page_head('AI博客管家', description='按板块与课程关键词抓取近日报道，兼顾科技、人文、计算机、AI 与毕业生就业信息，筛选后由 AI 管家改写并归档到对应板块。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 
-<div class="bc-toolbar">
-    <button type="button" class="btn btn-outline btn-sm" id="bc-refresh-btn">刷新状态</button>
-    <button type="button" class="btn btn-outline btn-sm" id="bc-cancel-btn" {% if not can_manage %}disabled{% endif %}>取消待执行</button>
-    <button type="button" class="btn btn-primary btn-sm" id="bc-run-btn" {% if not can_manage %}disabled{% endif %}>立即运行一次</button>
+<div data-lq-component="toolbar" class="lq-domain-toolbar bc-toolbar">
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="bc-refresh-btn">刷新状态</button>
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="bc-cancel-btn" {% if not can_manage %}disabled{% endif %}>取消待执行</button>
+    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" id="bc-run-btn" {% if not can_manage %}disabled{% endif %}>立即运行一次</button>
 </div>
 
 <div class="bc-summary" id="bc-summary">
-    <div class="bc-stat">
+    <div data-lq-component="surface" class="lq-surface bc-stat">
         <span>运行状态</span>
         <strong id="bc-worker-status">{{ config.worker_status or '未连接' }}</strong>
     </div>
-    <div class="bc-stat">
+    <div data-lq-component="surface" class="lq-surface bc-stat">
         <span>下一次</span>
         <strong id="bc-next-run">{{ config.next_run_at or '待生成' }}</strong>
     </div>
-    <div class="bc-stat">
+    <div data-lq-component="surface" class="lq-surface bc-stat">
         <span>最近一次</span>
         <strong id="bc-last-run">{{ config.last_run_at or '暂无' }}</strong>
     </div>
-    <div class="bc-stat">
+    <div data-lq-component="surface" class="lq-surface bc-stat">
         <span>已发布</span>
         <strong id="bc-published-count">{{ dashboard.published_count or 0 }}</strong>
     </div>
@@ -39,150 +39,150 @@
 
 <div class="bc-main-grid">
     <div class="bc-main-column">
-    <section class="bc-panel">
+    <section data-lq-component="surface" class="lq-surface bc-panel">
         <h3>运行设置</h3>
         <form id="bc-config-form">
             <div class="bc-switch-list">
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>每日自动运行</span>
-                    <input type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="enabled" {% if config.enabled %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>自动发布</span>
-                    <input type="checkbox" name="auto_publish" {% if config.auto_publish %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="auto_publish" {% if config.auto_publish %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>设为精选</span>
-                    <input type="checkbox" name="featured_posts" {% if config.featured_posts %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="featured_posts" {% if config.featured_posts %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>抓取正文摘要</span>
-                    <input type="checkbox" name="fetch_article_pages" {% if config.fetch_article_pages %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="fetch_article_pages" {% if config.fetch_article_pages %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>保存新闻配图</span>
-                    <input type="checkbox" name="fetch_images" {% if config.fetch_images %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="fetch_images" {% if config.fetch_images %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
-                <label class="bc-switch">
+                <label data-lq-component="surface" class="lq-surface bc-switch">
                     <span>启用境外兜底源</span>
-                    <input type="checkbox" name="enable_global_search_sources" {% if config.enable_global_search_sources %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="enable_global_search_sources" {% if config.enable_global_search_sources %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
                 </label>
             </div>
 
             <div class="bc-form-grid">
                 <label class="form-group">
                     <span class="form-label">随机窗口开始</span>
-                    <input class="form-control" type="time" name="schedule_window_start" value="{{ config.schedule_window_start }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="time" name="schedule_window_start" value="{{ config.schedule_window_start }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">随机窗口结束</span>
-                    <input class="form-control" type="time" name="schedule_window_end" value="{{ config.schedule_window_end }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="time" name="schedule_window_end" value="{{ config.schedule_window_end }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">关键词数量</span>
-                    <input class="form-control" type="number" min="1" max="50" name="max_keywords" value="{{ config.max_keywords }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="1" max="50" name="max_keywords" value="{{ config.max_keywords }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">每词搜索条数</span>
-                    <input class="form-control" type="number" min="5" max="50" name="search_limit_per_keyword" value="{{ config.search_limit_per_keyword }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="5" max="50" name="search_limit_per_keyword" value="{{ config.search_limit_per_keyword }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">每次发文数</span>
-                    <input class="form-control" type="number" min="1" max="8" name="max_posts_per_run" value="{{ config.max_posts_per_run }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="1" max="8" name="max_posts_per_run" value="{{ config.max_posts_per_run }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">正文抓取上限</span>
-                    <input class="form-control" type="number" min="0" max="80" name="article_fetch_limit" value="{{ config.article_fetch_limit }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="0" max="80" name="article_fetch_limit" value="{{ config.article_fetch_limit }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">最小间隔秒</span>
-                    <input class="form-control" type="number" min="0.5" max="30" step="0.5" name="min_request_interval_seconds" value="{{ config.min_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="0.5" max="30" step="0.5" name="min_request_interval_seconds" value="{{ config.min_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
                 <label class="form-group">
                     <span class="form-label">最大间隔秒</span>
-                    <input class="form-control" type="number" min="0.5" max="60" step="0.5" name="max_request_interval_seconds" value="{{ config.max_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" min="0.5" max="60" step="0.5" name="max_request_interval_seconds" value="{{ config.max_request_interval_seconds }}" {% if not can_manage %}disabled{% endif %}>
                 </label>
             </div>
 
             <label class="form-group">
                 <span class="form-label">补充关键词</span>
-                <textarea class="form-control" name="extra_keywords" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.extra_keywords or []) | join('\n') }}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea form-control" name="extra_keywords" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.extra_keywords or []) | join('\n') }}</textarea>
             </label>
             <label class="form-group">
                 <span class="form-label">自定义信息源</span>
-                <textarea class="form-control" name="source_templates" rows="4" placeholder="名称 | https://example.com/rss.xml | fixed_rss | match&#10;课程搜索 | https://example.com/rss?q={{ '{{keyword_q}}' }} | keyword_rss | all" {% if not can_manage %}disabled{% endif %}>{{ config.custom_source_template_text or '' }}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea form-control" name="source_templates" rows="4" placeholder="名称 | https://example.com/rss.xml | fixed_rss | match&#10;课程搜索 | https://example.com/rss?q={{ '{{keyword_q}}' }} | keyword_rss | all" {% if not can_manage %}disabled{% endif %}>{{ config.custom_source_template_text or '' }}</textarea>
             </label>
             <label class="form-group">
                 <span class="form-label">跳过域名</span>
-                <textarea class="form-control" name="blocked_domains" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.blocked_domains or []) | join('\n') }}</textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea form-control" name="blocked_domains" rows="3" {% if not can_manage %}disabled{% endif %}>{{ (config.blocked_domains or []) | join('\n') }}</textarea>
             </label>
-            <button type="submit" class="btn btn-primary" {% if not can_manage %}disabled{% endif %}>保存设置</button>
+            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" {% if not can_manage %}disabled{% endif %}>保存设置</button>
             {% if not can_manage %}
             <p class="bc-muted" style="margin-top: var(--spacing-sm);">当前账号可查看状态，调整设置需要超管教师权限。</p>
             {% endif %}
         </form>
     </section>
 
-    <section class="bc-panel">
+    <section data-lq-component="surface" class="lq-surface bc-panel">
         <div class="bc-panel-header">
             <div>
                 <h3>板块采集计划</h3>
                 <p class="bc-muted">板块、视觉和采集关键词都由数据驱动，新增板块无需修改博客页面。</p>
             </div>
-            <button type="button" class="btn btn-outline btn-sm" id="bc-add-section-btn" {% if not can_manage %}disabled{% endif %}>新增板块</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="bc-add-section-btn" {% if not can_manage %}disabled{% endif %}>新增板块</button>
         </div>
-        <form class="bc-section-editor" id="bc-section-form" hidden>
+        <form data-lq-component="surface" class="lq-surface bc-section-editor" id="bc-section-form" hidden>
             <div class="bc-form-grid">
-                <label class="form-group"><span class="form-label">板块标识</span><input class="form-control" name="section_key" placeholder="例如 design" required></label>
-                <label class="form-group"><span class="form-label">板块名称</span><input class="form-control" name="name" required></label>
-                <label class="form-group"><span class="form-label">短名称</span><input class="form-control" name="short_name" maxlength="16" required></label>
-                <label class="form-group"><span class="form-label">图标</span><input class="form-control" name="icon" maxlength="12" value="•"></label>
-                <label class="form-group"><span class="form-label">主题色</span><input class="form-control" name="accent_color" type="color" value="#2563eb"></label>
-                <label class="form-group"><span class="form-label">排序</span><input class="form-control" name="sort_order" type="number" min="0" max="9999" value="100"></label>
+                <label class="form-group"><span class="form-label">板块标识</span><input data-lq-component="input" class="lq-input form-control" name="section_key" placeholder="例如 design" required></label>
+                <label class="form-group"><span class="form-label">板块名称</span><input data-lq-component="input" class="lq-input form-control" name="name" required></label>
+                <label class="form-group"><span class="form-label">短名称</span><input data-lq-component="input" class="lq-input form-control" name="short_name" maxlength="16" required></label>
+                <label class="form-group"><span class="form-label">图标</span><input data-lq-component="input" class="lq-input form-control" name="icon" maxlength="12" value="•"></label>
+                <label class="form-group"><span class="form-label">主题色</span><input data-lq-component="color" class="lq-native-color form-control" name="accent_color" type="color" value="#2563eb"></label>
+                <label class="form-group"><span class="form-label">排序</span><input data-lq-component="input" class="lq-input form-control" name="sort_order" type="number" min="0" max="9999" value="100"></label>
             </div>
-            <label class="form-group"><span class="form-label">板块说明</span><textarea class="form-control" name="description" rows="2" maxlength="300"></textarea></label>
-            <label class="form-group"><span class="form-label">采集关键词（每行一个）</span><textarea class="form-control" name="source_keywords" rows="4"></textarea></label>
-            <label class="form-group"><span class="form-label">专属信息源 JSON</span><textarea class="form-control" name="source_templates" rows="4" placeholder='[{"name":"官方源","url":"https://example.com/rss","kind":"fixed_rss"}]'></textarea></label>
+            <label class="form-group"><span class="form-label">板块说明</span><textarea data-lq-component="textarea" class="lq-textarea form-control" name="description" rows="2" maxlength="300"></textarea></label>
+            <label class="form-group"><span class="form-label">采集关键词（每行一个）</span><textarea data-lq-component="textarea" class="lq-textarea form-control" name="source_keywords" rows="4"></textarea></label>
+            <label class="form-group"><span class="form-label">专属信息源 JSON</span><textarea data-lq-component="textarea" class="lq-textarea form-control" name="source_templates" rows="4" placeholder='[{"name":"官方源","url":"https://example.com/rss","kind":"fixed_rss"}]'></textarea></label>
             <div class="bc-switch-list">
-                <label class="bc-switch"><span>启用板块</span><input type="checkbox" name="is_enabled" checked></label>
-                <label class="bc-switch"><span>允许用户投稿</span><input type="checkbox" name="allow_user_posts" checked></label>
-                <label class="bc-switch"><span>就业机会板块</span><input type="checkbox" name="is_career"></label>
+                <label data-lq-component="surface" class="lq-surface bc-switch"><span>启用板块</span><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="is_enabled" checked></label>
+                <label data-lq-component="surface" class="lq-surface bc-switch"><span>允许用户投稿</span><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="allow_user_posts" checked></label>
+                <label data-lq-component="surface" class="lq-surface bc-switch"><span>就业机会板块</span><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="is_career"></label>
             </div>
             <div class="flex gap-2">
-                <button type="submit" class="btn btn-primary btn-sm">保存板块</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="bc-cancel-section-btn">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">保存板块</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="bc-cancel-section-btn">取消</button>
             </div>
         </form>
         <div class="bc-section-grid" id="bc-sections">
             {% for section in dashboard.sections %}
-            <article class="bc-section-card" style="--section-accent:{{ section.accent_color }}">
+            <article data-lq-component="surface" class="lq-surface bc-section-card" style="--section-accent:{{ section.accent_color }}">
                 <strong>{{ section.icon }} {{ section.name }}</strong>
                 <p>{{ section.description }}</p>
                 <div class="bc-section-card__actions">
                     <span class="bc-muted">{% if section.is_career %}就业信息优先采集{% else %}按关键词轮换采集{% endif %}</span>
-                    <button type="button" class="btn btn-ghost btn-sm" data-bc-edit-section="{{ section.section_key }}">编辑</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-bc-edit-section="{{ section.section_key }}">编辑</button>
                 </div>
             </article>
             {% endfor %}
         </div>
     </section>
 
-    <section class="bc-panel">
+    <section data-lq-component="surface" class="lq-surface bc-panel">
         <div class="bc-panel-header">
             <div>
                 <h3>内容反馈待办</h3>
                 <p class="bc-muted">核验失效就业信息、招聘风险和普通内容举报。</p>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" id="bc-refresh-reports-btn">刷新</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="bc-refresh-reports-btn">刷新</button>
         </div>
         <div class="bc-post-list" id="bc-report-list">
             <p class="bc-muted">正在读取待处理反馈...</p>
         </div>
     </section>
 
-    <section class="bc-panel">
+    <section data-lq-component="surface" class="lq-surface bc-panel">
         <h3>运行记录</h3>
-        <div class="bc-table-wrap">
+        <div data-lq-component="surface" class="lq-surface bc-table-wrap">
             <table class="bc-table">
                 <thead>
                     <tr>
@@ -216,7 +216,7 @@
     </section>
     </div>
 
-    <aside class="bc-panel">
+    <aside data-lq-component="surface" class="lq-surface bc-panel">
         <h3>本次板块关键词</h3>
         <div class="bc-keywords" id="bc-keywords">
             {% for item in dashboard.keywords %}
@@ -238,7 +238,7 @@
         <h3 style="margin-top: var(--spacing-xl);">最近发布</h3>
         <div class="bc-post-list" id="bc-post-list">
             {% for post in dashboard.recent_posts %}
-            <article class="bc-post">
+            <article data-lq-component="surface" class="lq-surface bc-post">
                 <strong>{{ post.post_title }}</strong>
                 <div class="bc-muted">{{ post.section_key or 'general' }} · {{ post.keyword }} · {{ post.post_created_at }}</div>
                 <a href="/blog?post={{ post.post_id }}" target="_blank" rel="noopener noreferrer">打开博客</a>

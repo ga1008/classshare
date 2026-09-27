@@ -179,7 +179,7 @@ function renderSummary() {
            </div>`
         : '';
     refs.summary.innerHTML = progressHtml + cards.map((card) => `
-        <div class="cs-summary__card cs-summary__card--${card.tone}">
+        <div data-lq-component="surface" class="lq-surface cs-summary__card cs-summary__card--${card.tone}">
             <strong>${escapeHtml(card.value)}</strong>
             <span>${escapeHtml(card.label)}</span>
             <small>${escapeHtml(card.hint)}</small>
@@ -206,7 +206,7 @@ function renderCourses() {
         ].filter(Boolean);
         const isActive = course.course_name === activeCourse;
         return `
-        <div class="cs-course-card ${isActive ? 'is-active' : ''}"
+        <div data-lq-component="choice" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice cs-course-card ${isActive ? 'is-active' : ''}"
              style="--cs-accent:${accent}" data-course="${escapeHtml(course.course_name)}" role="button" tabindex="0"
              aria-pressed="${isActive}"
              title="${isActive ? '再次点击取消筛选' : '点击筛选该课程'}">

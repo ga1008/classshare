@@ -1,0 +1,72 @@
+{
+  "acceptance": "scoped-contract-evidence-only",
+  "suites": [
+    {
+      "name": "authentication",
+      "command": [
+        "venv/Scripts/python.exe",
+        "-B",
+        "tools/test_backend.py",
+        "--pattern",
+        "test_auth_*.py"
+      ],
+      "passed": 45,
+      "log": ".codex-temp/lq-platform-auth-contracts.log",
+      "logSha256": "ea690593282455a5060c2d7f2417bfbe7e616782fe7a869fcf9198c7c5d5a2bd",
+      "sourceHashes": {
+        "tests/test_auth_form_fallback.py": "f3be9430bb013dd5bd37b1444bb40031310bf4408aaef38441edfea202961066",
+        "tests/test_auth_native_flows.py": "830ee71da69c8c7dc4972ac8794b8d29b389e3fe06108b0a2f9145aa2ea1cf90",
+        "tests/test_auth_session_recovery.py": "aecb7adf6dbfb54a5e65102348466eeb0f9d7cc1a788e33c2376aea1dd5ddd3b",
+        "templates/student_login_v4.html": "6c1667732ea20eb6d8b7e5387912df51f9032fc531219ecc83826683480433bf",
+        "templates/teacher_login_v4.html": "b8e243701add641e3c315cee8c18b56232610d238823b8078976a2d95be70e9e",
+        "templates/teacher_register_v4.html": "0cb5102b6a359e1efa7bc1a82db9dd5a64f39a24c8226835d2579528ce6e4814",
+        "templates/student_auth_flow_v4.html": "79ece6746cb738231291432d9f1cf490ee4e3c58eb6409387e816f5398c3880f",
+        "templates/session_expired.html": "282c102e7b2a9e3cca77b7a75ae83c54572f16da30f999485a7c5d65a95ed0e6",
+        "classroom_app/routers/ui_parts/auth.py": "f2925d64e65fc34cc19dd5c4d7734b4613008c082bbc35c2d1dd29ea04629c92"
+      },
+      "limitations": "In-memory/template contracts, not a replacement for full browser workflows."
+    },
+    {
+      "name": "material-reader-return",
+      "command": [
+        "venv/Scripts/python.exe",
+        "-B",
+        "tools/test_backend.py",
+        "--pattern",
+        "test_material_reader_return.py"
+      ],
+      "passed": 8,
+      "log": ".codex-temp/lq-platform-reader-contracts.log",
+      "logSha256": "2c6063fc3ee650868d757b696da5be804dc68b49c45136f2dd4e61d335f59929",
+      "sourceHashes": {
+        "tests/test_material_reader_return.py": "d637fe591a0b83a2f1e6539fd821df2ffec88434f3ba9b14a3ceb24e24850db5",
+        "templates/material_reader_unavailable.html": "fb9625040c782e3d5b701d01ef3fc25afda2ffd7f5aa922c7a984c494f173c04"
+      },
+      "limitations": "In-memory/template contracts, not a replacement for full browser workflows."
+    },
+    {
+      "name": "exceptional-templates",
+      "command": [
+        "venv/Scripts/python.exe",
+        "-B",
+        "tools/test_backend.py",
+        "--pattern",
+        "test_lq_centered.py"
+      ],
+      "passed": 6,
+      "log": ".codex-temp/lq-platform-centered-contracts.log",
+      "logSha256": "d76fc1490b3219c7f8b95f23edecc20a4ae9efb9d02a24b4bc67d5cee66d78b2",
+      "sourceHashes": {
+        "tests/test_lq_centered.py": "8948d31c6488d8a72139e8c9b28ead4d8de6e5c598511b4a382fd59e61cf3930",
+        "templates/error.html": "e63b8e429ffd4e121d250f1604bc8d4f85322778c919fd2e31ba98aa1c42566b",
+        "templates/session_expired.html": "282c102e7b2a9e3cca77b7a75ae83c54572f16da30f999485a7c5d65a95ed0e6",
+        "templates/status.html": "3e2604e6aab333fcc5ee3e40247220a89b571fe2b3bdd0643845f94a48dea62c"
+      },
+      "limitations": "In-memory/template contracts, not a replacement for full browser workflows."
+    }
+  ],
+  "notes": [
+    "Material reader minimal fixture logs a recovered missing user_ui_preferences table; all 8 assertions passed.",
+    "POST routes are exercised by the auth contract rather than generic GET matrix mutation."
+  ]
+}

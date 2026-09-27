@@ -20,25 +20,25 @@
     {{ topbar_action('刷新', '更新列表', 'refresh', button_id='signature-refresh-btn', variant='primary', tone='cyan') }}
 </div>
 
-<div id="signature-edit-modal" class="modal-backdrop signature-edit-modal" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <form class="modal-content" id="signature-edit-form">
+<div data-lq-component="layer" id="signature-edit-modal" class="lq-domain-region modal-backdrop signature-edit-modal" style="display:none;">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable">
+        <form data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content" id="signature-edit-form">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title">编辑签名属性</h3>
                     <p class="modal-subtitle">归属人可维护签名信息；超管可调整学校、学院、系部与归属教师。</p>
                 </div>
-                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="signature-edit-grid">
                     <label class="signature-field">
                         <span>签名名称</span>
-                        <input type="text" class="form-control" id="signature-edit-name-input" name="name" maxlength="80" required>
+                        <input data-lq-component="input" type="text" class="lq-input form-control" id="signature-edit-name-input" name="name" maxlength="80" required>
                     </label>
                     <label class="signature-field">
                         <span>签名人</span>
-                        <input type="text" class="form-control" id="signature-edit-subject-name-input" name="subject_name" maxlength="80">
+                        <input data-lq-component="input" type="text" class="lq-input form-control" id="signature-edit-subject-name-input" name="subject_name" maxlength="80">
                     </label>
                     {% if _sig_lq_enabled %}
                     {{ lq_field('signature-edit-subject-input', '签名者教师账号', control='input', control_props={
@@ -47,12 +47,12 @@
                     {% else %}
                     <label class="signature-field">
                         <span>签名者教师账号</span>
-                        <input type="search" class="form-control" id="signature-edit-subject-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
+                        <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-edit-subject-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
                     {% endif %}
                     <label class="signature-field">
                         <span>账号类型</span>
-                        <select class="form-control" id="signature-edit-subject-role-input" name="subject_role">
+                        <select data-lq-component="select" class="lq-select form-control" id="signature-edit-subject-role-input" name="subject_role">
                             <option value="teacher">教师</option>
                             <option value="student">学生</option>
                             <option value="other">其他</option>
@@ -61,7 +61,7 @@
                     </label>
                     <label class="signature-field">
                         <span>职务身份</span>
-                        <select class="form-control" id="signature-edit-identity-input" name="identity_category">
+                        <select data-lq-component="select" class="lq-select form-control" id="signature-edit-identity-input" name="identity_category">
                             <option value="">未设置</option>
                             <option value="principal">校长</option>
                             <option value="vice_principal">副校长</option>
@@ -86,20 +86,20 @@
                     {% else %}
                     <label class="signature-field">
                         <span>归属教师</span>
-                        <input type="search" class="form-control" id="signature-edit-owner-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="输入姓名、邮箱、学院筛选">
+                        <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-edit-owner-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="输入姓名、邮箱、学院筛选">
                         <datalist id="signature-owner-teacher-options"></datalist>
                     </label>
                     {% endif %}
                     <label class="signature-field signature-field--full">
                         <span>备注</span>
-                        <textarea class="form-control" id="signature-edit-description-input" name="description" rows="3" maxlength="300"></textarea>
+                        <textarea data-lq-component="textarea" class="lq-textarea form-control" id="signature-edit-description-input" name="description" rows="3" maxlength="300"></textarea>
                     </label>
                 </div>
                 <div class="signature-upload-status" id="signature-edit-status"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
-                <button type="submit" class="btn btn-primary" id="signature-edit-submit-btn">保存属性</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-dismiss="modal">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="signature-edit-submit-btn">保存属性</button>
             </div>
         </form>
     </div>
@@ -145,7 +145,7 @@
     {% endcall %}
 
     <div class="signature-shell">
-        <section class="signature-panel signature-library-panel" aria-label="签名列表">
+        <section data-lq-component="surface" class="lq-surface signature-panel signature-library-panel" aria-label="签名列表">
             <div class="signature-school-switcher" id="signature-school-switcher">
                 {% if _sig_lq_enabled %}
                 <div class="signature-field signature-field--lq" id="signature-school-field">
@@ -157,7 +157,7 @@
                 {% else %}
                 <label class="signature-field" id="signature-school-field">
                     <span>学校</span>
-                    <input type="search" class="form-control" id="signature-school-search-input" list="signature-school-options" placeholder="全部学校；输入学校名称或代码筛选" autocomplete="off">
+                    <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-school-search-input" list="signature-school-options" placeholder="全部学校；输入学校名称或代码筛选" autocomplete="off">
                     <datalist id="signature-school-options"></datalist>
                 </label>
                 {% endif %}
@@ -166,7 +166,7 @@
                 </div>
             </div>
             {% if _sig_lq_enabled %}
-            <div class="signature-toolbar signature-toolbar--lq">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar signature-toolbar signature-toolbar--lq">
                 {{ lq_field('signature-search-input', '搜索', control='input', control_props={
                     'type': 'search', 'placeholder': '姓名、签名名、归属人或上传者', 'autocomplete': 'off'}) }}
                 {{ lq_field('signature-scope-filter', '范围', control='select', control_props={
@@ -197,14 +197,14 @@
                         {'value': 'system', 'label': '平台'}]}) }}
             </div>
             {% else %}
-            <div class="signature-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar signature-toolbar">
                 <label class="signature-field">
                     <span>搜索</span>
-                    <input type="search" class="form-control" id="signature-search-input" placeholder="姓名、签名名、归属人或上传者" autocomplete="off">
+                    <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-search-input" placeholder="姓名、签名名、归属人或上传者" autocomplete="off">
                 </label>
                 <label class="signature-field">
                     <span>范围</span>
-                    <select class="form-control" id="signature-scope-filter">
+                    <select data-lq-component="select" class="lq-select form-control" id="signature-scope-filter">
                         <option value="">全部可见</option>
                         <option value="mine">我的签名（归属或本人）</option>
                         <option value="platform">平台可见</option>
@@ -217,7 +217,7 @@
                 </label>
                 <label class="signature-field">
                     <span>职务身份</span>
-                    <select class="form-control" id="signature-identity-filter">
+                    <select data-lq-component="select" class="lq-select form-control" id="signature-identity-filter">
                         <option value="">全部职务</option>
                         <option value="principal">校长（含副）</option>
                         <option value="dean">院长（含副）</option>
@@ -230,7 +230,7 @@
                 </label>
                 <label class="signature-field">
                     <span>归属人</span>
-                    <select class="form-control" id="signature-owner-filter">
+                    <select data-lq-component="select" class="lq-select form-control" id="signature-owner-filter">
                         <option value="">全部归属人</option>
                         <option value="teacher">教师</option>
                         <option value="student">学生</option>
@@ -241,12 +241,12 @@
             {% endif %}
             <div class="signature-list-summary">
                 <span id="signature-result-summary">正在加载签名...</span>
-                <button type="button" class="btn btn-ghost btn-sm" id="signature-clear-filter-btn">清空筛选</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="signature-clear-filter-btn">清空筛选</button>
             </div>
             <div class="signature-grid" id="signature-grid"></div>
         </section>
 
-        <aside class="signature-panel signature-detail-panel" aria-label="签名详情">
+        <aside data-lq-component="surface" class="lq-surface signature-panel signature-detail-panel" aria-label="签名详情">
             <div class="signature-detail-preview" id="signature-detail-preview">
                 {% if _sig_lq_enabled %}{% from "macros/lq/content.html" import lq_empty %}{{ lq_empty('empty', title='未选择签名', description='选择签名后查看预览与调用信息。') }}{% else %}<div class="signature-empty">选择签名后查看预览与调用信息。</div>{% endif %}
             </div>
@@ -256,47 +256,47 @@
             </div>
             <dl class="signature-detail-list" id="signature-detail-list"></dl>
             <div class="signature-actions">
-                <a class="btn btn-outline btn-sm" id="signature-download-link" href="#" hidden>下载</a>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-request-btn" hidden>申请使用</button>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-replace-image-btn" hidden>更换图片</button>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-unbind-btn" hidden>解除绑定</button>
-                <button type="button" class="btn btn-outline btn-sm" id="signature-merge-btn" hidden>归并同名</button>
-                <input type="file" id="signature-replace-image-input" accept=".png,.jpg,.jpeg" hidden>
-                <button type="button" class="btn btn-danger btn-sm" id="signature-delete-btn" hidden>删除</button>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-download-link" href="#" hidden>下载</a>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-request-btn" hidden>申请使用</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-edit-btn" hidden>编辑属性</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-replace-image-btn" hidden>更换图片</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-unbind-btn" hidden>解除绑定</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-merge-btn" hidden>归并同名</button>
+                <input data-lq-component="file" class="lq-native-file" type="file" id="signature-replace-image-input" accept=".png,.jpg,.jpeg" hidden>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" id="signature-delete-btn" hidden>删除</button>
             </div>
         </aside>
     </div>
 
 </section>
 
-<div id="signature-upload-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <form class="modal-content" id="signature-upload-form">
+<div data-lq-component="layer" id="signature-upload-modal" class="lq-domain-region modal-backdrop signature-upload-modal" style="display:none;">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable">
+        <form data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content" id="signature-upload-form">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title">上传电子签名</h3>
                     <p class="modal-subtitle">支持 PNG、JPG、JPEG，单个文件不超过 5 MB。</p>
                 </div>
-                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="signature-upload-grid">
                     <label class="signature-upload-drop signature-field--full" for="signature-file-input">
                         <strong id="signature-file-label">选择签名图片</strong>
                         <span>可一次选择多个文件，未填写名称时使用文件名。</span>
-                        <input type="file" id="signature-file-input" name="file" accept=".png,.jpg,.jpeg" multiple hidden>
+                        <input data-lq-component="file" class="lq-native-file" type="file" id="signature-file-input" name="file" accept=".png,.jpg,.jpeg" multiple hidden>
                     </label>
                     <div class="signature-field--full" style="display:flex;justify-content:center;">
-                        <button type="button" class="btn btn-outline btn-sm" id="signature-open-pad-btn">或使用手写板直接签名</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="signature-open-pad-btn">或使用手写板直接签名</button>
                     </div>
                     <label class="signature-field">
                         <span>签名名称</span>
-                        <input type="text" class="form-control" id="signature-name-input" name="name" maxlength="80" placeholder="例如：张海林-常用签名">
+                        <input data-lq-component="input" type="text" class="lq-input form-control" id="signature-name-input" name="name" maxlength="80" placeholder="例如：张海林-常用签名">
                     </label>
                     <label class="signature-field" id="signature-identity-field">
                         <span>职务身份</span>
-                        <select class="form-control" id="signature-identity-input" name="identity_category">
+                        <select data-lq-component="select" class="lq-select form-control" id="signature-identity-input" name="identity_category">
                             <option value="">未设置</option>
                             <option value="principal">校长</option>
                             <option value="vice_principal">副校长</option>
@@ -312,14 +312,14 @@
                     </label>
                     <label class="signature-field" id="signature-kind-field">
                         <span>签名类型</span>
-                        <select class="form-control" id="signature-kind-input" name="signature_kind">
+                        <select data-lq-component="select" class="lq-select form-control" id="signature-kind-input" name="signature_kind">
                             <option value="">个人签名</option>
                             <option value="stamp">批语章（可见范围内免申请）</option>
                         </select>
                     </label>
                     <label class="signature-field" id="signature-subject-role-field">
                         <span>账号类型</span>
-                        <select class="form-control" id="signature-subject-role-input" name="subject_role">
+                        <select data-lq-component="select" class="lq-select form-control" id="signature-subject-role-input" name="subject_role">
                             <option value="teacher">教师</option>
                             <option value="student">学生</option>
                             <option value="other">其他</option>
@@ -328,7 +328,7 @@
                     </label>
                     <label class="signature-field" id="signature-subject-name-field">
                         <span>签名人</span>
-                        <input type="text" class="form-control" id="signature-subject-name-input" name="subject_name" maxlength="80" placeholder="签名对应的姓名">
+                        <input data-lq-component="input" type="text" class="lq-input form-control" id="signature-subject-name-input" name="subject_name" maxlength="80" placeholder="签名对应的姓名">
                     </label>
                     {% if _sig_lq_enabled %}
                     <div class="signature-field signature-field--lq" id="signature-subject-account-field">
@@ -339,67 +339,67 @@
                     {% else %}
                     <label class="signature-field" id="signature-subject-account-field">
                         <span>签名者教师账号</span>
-                        <input type="search" class="form-control" id="signature-subject-account-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
+                        <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-subject-account-input" list="signature-owner-teacher-options" autocomplete="off" placeholder="用于本人审批与使用权识别">
                     </label>
                     {% endif %}
                     <div class="signature-field--full" id="signature-upload-scope-fields"></div>
                     <label class="signature-field signature-field--full">
                         <span>备注</span>
-                        <textarea class="form-control" id="signature-description-input" name="description" rows="3" maxlength="300" placeholder="可填写来源或用途"></textarea>
+                        <textarea data-lq-component="textarea" class="lq-textarea form-control" id="signature-description-input" name="description" rows="3" maxlength="300" placeholder="可填写来源或用途"></textarea>
                     </label>
                 </div>
                 <div class="signature-upload-status" id="signature-upload-status"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
-                <button type="submit" class="btn btn-primary" id="signature-upload-submit-btn">上传</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-dismiss="modal">取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="signature-upload-submit-btn">上传</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="signature-merge-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
+<div data-lq-component="layer" id="signature-merge-modal" class="lq-domain-region modal-backdrop signature-upload-modal" style="display:none;">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title">归并同名签名</h3>
                     <p class="modal-subtitle" id="signature-merge-subtitle">勾选要并入当前主签名的重复签名；其材料绑定与已批授权将自动迁移，待审申请会被取消。</p>
                 </div>
-                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="signature-request-list" id="signature-merge-list"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" data-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="signature-merge-submit-btn">归并选中项</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-dismiss="modal">取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="signature-merge-submit-btn">归并选中项</button>
             </div>
         </div>
     </div>
 </div>
 
-<div id="signature-claim-modal" class="modal-backdrop signature-upload-modal" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
+<div data-lq-component="layer" id="signature-claim-modal" class="lq-domain-region modal-backdrop signature-upload-modal" style="display:none;">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title">认领签名</h3>
                     <p class="modal-subtitle">按姓名浏览签名库（不展示签名图片）。同名未绑定签名可直接认领；其余提交认领申请，由归属人或管理员审批，批准后归属权转移并自动绑定你的账号。</p>
                 </div>
-                <button type="button" class="modal-close" data-dismiss="modal">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
                 <label class="signature-field">
                     <span>搜索姓名</span>
-                    <input type="search" class="form-control" id="signature-claim-search-input" placeholder="输入姓名模糊搜索" autocomplete="off">
+                    <input data-lq-component="input" type="search" class="lq-input form-control" id="signature-claim-search-input" placeholder="输入姓名模糊搜索" autocomplete="off">
                 </label>
                 <div class="signature-claim-list" id="signature-claim-list" style="display:grid;gap:8px;margin-top:12px;">
                     <div class="signature-empty">正在加载可认领签名...</div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" data-dismiss="modal">关闭</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-dismiss="modal">关闭</button>
             </div>
         </div>
     </div>

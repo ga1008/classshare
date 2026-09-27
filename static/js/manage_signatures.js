@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
 import { openSignaturePad } from './signature_pad.js?v=1';
 import { SignatureScopeFields, signatureScopeOptions } from './signature_scope_fields.js';
@@ -138,6 +139,7 @@ function cacheElements() {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn-outline btn-sm';
+            adoptDomainControl(button, { variant: 'glass' });
             button.id = 'signature-request-btn';
             button.hidden = true;
             button.textContent = '申请使用';
@@ -151,6 +153,7 @@ function cacheElements() {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'btn btn-primary btn-sm';
+            adoptDomainControl(button, { variant: 'prominent' });
             button.id = 'signature-claim-btn';
             button.hidden = true;
             button.textContent = '认领为本人签名';
@@ -427,7 +430,7 @@ async function loadClaimCandidates() {
             ].filter(Boolean).join('');
             const action = item.has_pending_claim
                 ? '<span class="signature-chip">认领申请审批中</span>'
-                : `<button type="button" class="btn ${item.can_direct_claim ? 'btn-primary' : 'btn-outline'} btn-sm" data-signature-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
+                : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn ${item.can_direct_claim ? 'btn-primary lq-btn--prominent' : 'btn-outline lq-btn--glass'} btn-sm" data-signature-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
             return `
                 <article class="signature-request-item" data-signature-claim-id="${item.id}">
                     <div class="signature-request-main">
@@ -514,7 +517,7 @@ function openMergeModal() {
         els['signature-merge-list'].innerHTML = candidates.map((entry) => `
             <article class="signature-request-item">
                 <div class="signature-request-main" style="display:flex;gap:10px;align-items:center;">
-                    <input type="checkbox" data-signature-merge-check="${entry.id}" style="width:16px;height:16px;accent-color:#0f766e;">
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-signature-merge-check="${entry.id}" style="width:16px;height:16px;accent-color:#0f766e;">
                     <img src="${escapeHtml(entry.image_url)}" alt="" loading="lazy" style="max-height:40px;max-width:110px;object-fit:contain;background:#fff;border:1px solid rgba(148,163,184,.3);border-radius:6px;padding:2px;">
                     <div>
                         <p class="signature-request-title">ID ${entry.id} · ${escapeHtml(entry.subject_name || entry.name)}</p>

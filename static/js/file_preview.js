@@ -1,4 +1,5 @@
 import { escapeHtml } from './ui.js';
+import { adoptDomainControl, adoptDomainContentSlot } from './lq/domain-controls.js';
 
 let mermaidLoadPromise = null;
 
@@ -78,6 +79,7 @@ async function copyTextToClipboard(text) {
     }
 
     const helper = document.createElement('textarea');
+    adoptDomainContentSlot(helper);
     helper.value = text;
     helper.setAttribute('readonly', 'true');
     helper.style.position = 'fixed';
@@ -128,7 +130,7 @@ export function buildPreviewToc({ contentEl, tocEl = null, tocCountEl = null }) 
     });
 
     tocEl.innerHTML = items.map((item) => `
-        <button type="button" data-anchor="${item.id}" style="padding-left:${(item.level - 1) * 14 + 10}px;">
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-anchor="${item.id}" style="padding-left:${(item.level - 1) * 14 + 10}px;">
             ${escapeHtml(item.title)}
         </button>
     `).join('');
@@ -162,6 +164,7 @@ export function decoratePreviewCodeBlocks(contentEl) {
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
         copyButton.className = 'materials-code-copy-btn';
+        adoptDomainControl(copyButton, { variant: 'ghost' });
         copyButton.textContent = '复制';
         copyButton.setAttribute('aria-label', '复制代码');
 

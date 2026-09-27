@@ -106,7 +106,8 @@
   function ensureModal() {
     if (modal) return modal;
     modal = document.createElement('div');
-    modal.className = 'career-modal';
+    modal.className = 'lq-domain-region career-modal';
+    modal.dataset.lqComponent = 'layer';
     modal.id = 'career-modal';
     modal.hidden = true;
     modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
@@ -161,7 +162,7 @@
     var box = document.getElementById('career-task-status');
     if (!box) return;
     var h = error ? '<p role="alert">' + esc(error.message) +
-      (error.detail && error.detail.code === 'rollout_limited' ? '' : ' <button type="button" data-state-refresh>重试连接</button>') + '</p>' : '';
+      (error.detail && error.detail.code === 'rollout_limited' ? '' : ' <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-state-refresh>重试连接</button>') + '</p>' : '';
     if (s.ai_availability && !s.ai_availability.allowed) h += '<p role="status">' + esc(s.ai_availability.message) + '</p>';
     Object.keys(s.tasks || {}).forEach(function (target) {
       var task = s.tasks[target];
@@ -169,11 +170,11 @@
       if (!task || (!Client.pending(task) && !task.can_retry && !task.can_cancel && !task.error_code)) return;
       h += '<div class="career-task-row"><div><b>' + (target === 'network' ? '专业方向' : '个人推荐') + ' · ' + esc(Client.taskLabel(task)) +
         '</b><span>' + esc(task.message || '你可以继续测评、浏览方向和编辑简历，结果完成后会更新。') + '</span></div><div>' +
-        (task.can_retry ? '<button type="button" data-task-action="retry" data-target="' + esc(target) + '">' + (task.status === 'not_requested' ? '生成详细建议' : '重试') + '</button>' : '') +
-        (task.can_cancel ? '<button type="button" data-task-action="cancel" data-target="' + esc(target) + '">取消生成</button>' : '') + '</div></div>';
+        (task.can_retry ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-task-action="retry" data-target="' + esc(target) + '">' + (task.status === 'not_requested' ? '生成详细建议' : '重试') + '</button>' : '') +
+        (task.can_cancel ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-task-action="cancel" data-target="' + esc(target) + '">取消生成</button>' : '') + '</div></div>';
     });
     if (s.stale) h += '<p>资料已更新，当前结果供你参考。可重新生成推荐以纳入最新资料。</p>';
-    if (s.needs_refresh) h += '<p>你在简历资料中的修改可以纳入推荐。<button type="button" data-state-initialize>刷新资料与推荐</button></p>';
+    if (s.needs_refresh) h += '<p>你在简历资料中的修改可以纳入推荐。<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-state-initialize>刷新资料与推荐</button></p>';
     if (s.session_status === 'failed' && !h) h = '<p role="status">个人推荐暂未完成，当前显示基础方向。你的测评资料已保留。</p>';
     if (h !== lastTaskMarkup) { box.innerHTML = h; lastTaskMarkup = h; }
     show(box, !!h); root.classList.toggle('has-task-status', !!h);
@@ -240,9 +241,9 @@
       + '<div class="career-quiz__q">先用多长时间认识你的职业偏好？</div>'
       + '<p>两种方式都会生成职业方向；快速测评更适合第一次使用，之后随时可以深入探索。</p>'
       + '<div class="career-quiz-mode__grid">'
-      + '<button type="button" data-quiz-mode="quick"><b>快速测评</b><span>7 题 · 约 1 分钟</span><em>推荐第一次使用</em></button>'
-      + '<button type="button" data-quiz-mode="full"><b>深度探索</b><span>11 题 · 约 3 分钟</span><em>包含工作环境与长期规划</em></button>'
-      + '</div><div class="career-quiz__actions"><button type="button" class="career-btn career-btn--ghost" id="career-browse-base">先浏览基础方向</button><a class="career-btn career-btn--ghost" href="/resume">先整理简历资料</a></div></div>';
+      + '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-quiz-mode="quick"><b>快速测评</b><span>7 题 · 约 1 分钟</span><em>推荐第一次使用</em></button>'
+      + '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-quiz-mode="full"><b>深度探索</b><span>11 题 · 约 3 分钟</span><em>包含工作环境与长期规划</em></button>'
+      + '</div><div class="career-quiz__actions"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn career-btn--ghost" id="career-browse-base">先浏览基础方向</button><a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn career-btn--ghost" href="/resume">先整理简历资料</a></div></div>';
     document.getElementById('career-browse-base').onclick = function () { browseBase = true; route(STATE); };
     var buttons = el.quiz.querySelectorAll('[data-quiz-mode]');
     buttons.forEach(function (button) {
@@ -324,27 +325,27 @@
     if (q.kind === 'single' || q.kind === 'multi') {
       h += '<div class="career-quiz__opts" id="career-opts">';
       (q.options || []).forEach(function (o, i) {
-        h += '<button type="button" class="career-opt" data-value="' + esc(o.value) + '" style="animation-delay:' + (i * 0.07) + 's">'
+        h += '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-opt" data-value="' + esc(o.value) + '" style="animation-delay:' + (i * 0.07) + 's">'
           + (q.kind === 'multi' ? '<span class="career-opt__check"></span>' : '') + esc(o.label) + '</button>';
       });
       h += '</div>';
       if (q.kind === 'multi') {
-        h += '<div class="career-quiz__actions"><button type="button" class="career-btn" id="career-confirm" disabled>确认</button></div>';
+        h += '<div class="career-quiz__actions"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" id="career-confirm" disabled>确认</button></div>';
       }
     } else if (q.kind === 'scale') {
       var sc = q.scale || { min: 1, max: 5 };
       h += '<div class="career-scale" id="career-opts">';
       for (var v = sc.min; v <= sc.max; v++) {
-        h += '<button type="button" data-value="' + v + '" style="animation-delay:' + ((v - sc.min) * 0.07) + 's">' + v + '</button>';
+        h += '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-value="' + v + '" style="animation-delay:' + ((v - sc.min) * 0.07) + 's">' + v + '</button>';
       }
       h += '</div><div class="career-scale-label"><span>' + esc(sc.min_label || '') + '</span><span>' + esc(sc.max_label || '') + '</span></div>';
     } else if (q.kind === 'text') {
-      h += '<textarea class="career-quiz__text" id="career-text" maxlength="' + (q.max_length || 200) + '" placeholder="' + esc(q.placeholder || '') + '"></textarea>';
+      h += '<textarea data-lq-component="textarea" class="lq-textarea career-quiz__text" id="career-text" maxlength="' + (q.max_length || 200) + '" placeholder="' + esc(q.placeholder || '') + '"></textarea>';
       h += '<div class="career-quiz__actions">'
-        + (q.optional ? '<button type="button" class="career-btn career-btn--ghost" id="career-skip">跳过</button>' : '')
-        + '<button type="button" class="career-btn" id="career-confirm">完成</button></div>';
+        + (q.optional ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn career-btn--ghost" id="career-skip">跳过</button>' : '')
+        + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" id="career-confirm">完成</button></div>';
     }
-    h += '<div class="career-quiz__actions"><button type="button" class="career-btn career-btn--ghost" id="career-previous"' + (!qIndex ? ' disabled' : '') + '>上一题</button><span id="career-quiz-save" role="status">作答会自动保存</span></div>';
+    h += '<div class="career-quiz__actions"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn career-btn--ghost" id="career-previous"' + (!qIndex ? ' disabled' : '') + '>上一题</button><span id="career-quiz-save" role="status">作答会自动保存</span></div>';
     el.quiz.innerHTML = h;
     document.getElementById('career-previous').onclick = function () { if (questionLocked || !qIndex) return; qIndex--; renderQuestion(); };
     wireQuestion(q);
@@ -409,8 +410,8 @@
   function renderSubmitReview(error) {
     el.quiz.innerHTML = '<div class="career-quiz__q">' + (error ? esc(error.message) : '测评已完成，准备生成你的推荐') + '</div>' +
       '<p>你的选择可以帮助我们解释推荐方向。你也可以回看修改。</p><div class="career-quiz__actions">' +
-      '<button type="button" class="career-btn career-btn--ghost" id="career-review-back">回看作答</button>' +
-      '<button type="button" class="career-btn" id="career-submit-final">' + (error && error.status === 409 ? '载入另一页面的版本' : '提交并查看方向') + '</button></div>';
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn career-btn--ghost" id="career-review-back">回看作答</button>' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" id="career-submit-final">' + (error && error.status === 409 ? '载入另一页面的版本' : '提交并查看方向') + '</button></div>';
     document.getElementById('career-review-back').onclick = function () { qIndex = Math.max(0, QUESTIONS.length - 1); renderQuestion(); };
     document.getElementById('career-submit-final').onclick = async function () {
       if (error && error.status === 409) {
@@ -491,7 +492,7 @@
         var resumeUrl = resumeLink(path, s);
         h += '<article class="career-top-path"><span>0' + (index + 1) + '</span><div><b>' + esc(path.name) + '</b>' +
           (path.why ? '<small>' + esc(path.why) + '</small>' : '') + '</div><footer>' +
-          '<button type="button" data-career-path-tag="' + esc(path.tag) + '">查看方向</button>' +
+          '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-career-path-tag="' + esc(path.tag) + '">查看方向</button>' +
           '<a href="' + resumeUrl + '">生成简历 →</a></footer></article>';
       });
       h += '</div></div>';
@@ -573,10 +574,10 @@
         '</p>' + (skills.length ? '<div class="career-direction__skills">' + skills.map(function (skill) { return '<span>' + esc(skill) + '</span>'; }).join('') + '</div>' : '') +
         (ranking.evidence ? '<small>关联到 ' + ranking.evidence.length + ' 项自述资料 · ' + (ranking.gaps || []).length + ' 项准备要求待补充证据</small>' : '') +
         (stage[1] ? '<small>起步岗位：' + esc(stage[1]) + '</small>' : '') +
-        '<footer><button type="button" data-direction="' + esc(node.tag) + '">查看路径与准备清单</button>' +
+        '<footer><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-direction="' + esc(node.tag) + '">查看路径与准备清单</button>' +
         '<a href="' + esc(resumeLink(node, s)) + '">围绕此方向写简历 →</a>' +
-        '<button type="button" data-feedback="' + (feedback[node.tag] === 'saved' ? 'restore' : 'favorite') + '" data-tag="' + esc(node.tag) + '">' + (feedback[node.tag] === 'saved' ? '取消收藏' : '收藏') + '</button>' +
-        '<button type="button" data-feedback="' + (feedback[node.tag] === 'dismissed' ? 'restore' : 'hide') + '" data-tag="' + esc(node.tag) + '">' + (feedback[node.tag] === 'dismissed' ? '重新考虑' : '暂不考虑') + '</button></footer></article>';
+        '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-feedback="' + (feedback[node.tag] === 'saved' ? 'restore' : 'favorite') + '" data-tag="' + esc(node.tag) + '">' + (feedback[node.tag] === 'saved' ? '取消收藏' : '收藏') + '</button>' +
+        '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-feedback="' + (feedback[node.tag] === 'dismissed' ? 'restore' : 'hide') + '" data-tag="' + esc(node.tag) + '">' + (feedback[node.tag] === 'dismissed' ? '重新考虑' : '暂不考虑') + '</button></footer></article>';
     }).join('');
     box.querySelectorAll('[data-direction]').forEach(function (button) {
       button.onclick = function () {
@@ -606,10 +607,10 @@
   document.getElementById('career-job-postings').addEventListener('click', openJobPostings);
   function openJobPostings() {
     ensureModal(); clearTimeout(modalTimer); modalReturnFocus = document.activeElement;
-    modal.innerHTML = '<div class="career-modal__panel" role="dialog" aria-modal="true" aria-label="真实在招职位"><header class="career-modal__head"><h3>真实在招职位</h3><button class="career-modal__close" aria-label="关闭">✕</button></header>' +
+    modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true" aria-label="真实在招职位"><header class="career-modal__head"><h3>真实在招职位</h3><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>' +
       '<div class="career-modal__body"><p>仅显示带来源、未过期的职位记录。职业方向建议不代表正在招聘；应聘前请打开来源核对最新状态。</p>' +
-      '<form class="career-posting-filters career-preferences-form"><label>岗位关键词<input name="keyword" maxlength="80" placeholder="例如：实习、运营"></label>' +
-      '<label>城市<input name="city" maxlength="50" placeholder="默认使用职业偏好中的城市"></label><label>条件核对<select name="qualification"><option value="all">所有有效职位</option><option value="no_known_gaps">没有已知条件冲突</option><option value="confirmed">各项条件有资料支持</option></select></label><button class="career-btn" type="submit">筛选职位</button></form>' +
+      '<form class="career-posting-filters career-preferences-form"><label>岗位关键词<input data-lq-component="input" class="lq-input" name="keyword" maxlength="80" placeholder="例如：实习、运营"></label>' +
+      '<label>城市<input data-lq-component="input" class="lq-input" name="city" maxlength="50" placeholder="默认使用职业偏好中的城市"></label><label>条件核对<select data-lq-component="select" class="lq-select" name="qualification"><option value="all">所有有效职位</option><option value="no_known_gaps">没有已知条件冲突</option><option value="confirmed">各项条件有资料支持</option></select></label><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" type="submit">筛选职位</button></form>' +
       '<div id="career-postings-results" aria-live="polite"></div><nav id="career-postings-pages" aria-label="职位分页"></nav>' +
       '<p>有自己找到的岗位描述？<a href="/resume/job-targets">导入个人岗位描述并分析</a></p></div></div>';
     modal.hidden = false; modal.classList.add('show'); modal.querySelector('.career-modal__close').onclick = closeModal;
@@ -633,7 +634,7 @@
             (requirements.length ? '<ul>' + requirements.map(function (condition) { return '<li>' + esc(condition.text) + ' · ' +
               esc(({ met: '材料有支持（自述待核验）', failed: '当前冲突', unknown: '待确认' })[condition.state] || '待确认') + '</li>'; }).join('') + '</ul>' : '<p>条件尚待核对，请阅读职位原文。</p>') +
             '<div class="career-posting-actions">' + (url ? '<a target="_blank" rel="noopener noreferrer" href="' + esc(url) + '">查看来源 ↗</a>' : '') +
-            '<button class="career-btn" data-save-posting="' + Number(item.id) + '">保存为我的目标岗位</button></div></article>';
+            '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" data-save-posting="' + Number(item.id) + '">保存为我的目标岗位</button></div></article>';
         }).join('') : '<div class="career-posting-empty"><h4>' + (result.empty_reason === 'no_verified_source' ? '暂未接入已核验的职位来源' : '当前筛选下暂无有效职位') +
           '</h4><p>你可以继续探索职业方向，或在简历工作台粘贴自己找到的岗位描述。</p></div>';
         resultBox.querySelectorAll('[data-save-posting]').forEach(function (button) { button.onclick = async function () {
@@ -647,7 +648,7 @@
         }; });
         var hasNext = typeof result.has_more === 'boolean' ? result.has_more : page * Number(result.page_size || 20) < Number(result.total || 0);
         if (page > 1 || hasNext) {
-          pager.innerHTML = '<button class="career-btn" data-page="previous"' + (page === 1 ? ' disabled' : '') + '>上一页</button><span>第 ' + page + ' 页</span><button class="career-btn" data-page="next"' + (hasNext ? '' : ' disabled') + '>下一页</button>';
+          pager.innerHTML = '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" data-page="previous"' + (page === 1 ? ' disabled' : '') + '>上一页</button><span>第 ' + page + ' 页</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" data-page="next"' + (hasNext ? '' : ' disabled') + '>下一页</button>';
           pager.querySelectorAll('button').forEach(function (button) { button.onclick = function () { page += button.dataset.page === 'next' ? 1 : -1; refresh(); }; });
         }
       } catch (error) { if (id === requestId) resultBox.textContent = error.message + '，请重新筛选以重试。'; }
@@ -658,14 +659,14 @@
   function openPreferences() {
     ensureModal(); clearTimeout(modalTimer); modalReturnFocus = document.activeElement;
     var preferences = (STATE && STATE.preferences) || {};
-    modal.innerHTML = '<div class="career-modal__panel" role="dialog" aria-modal="true" aria-label="职业偏好"><header class="career-modal__head"><h3>职业偏好</h3><button type="button" class="career-modal__close" aria-label="关闭">✕</button></header>' +
+    modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true" aria-label="职业偏好"><header class="career-modal__head"><h3>职业偏好</h3><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>' +
       '<form id="career-preferences-form" class="career-modal__body career-preferences-form"><p>填写你当前最在意的方向和约束，推荐会结合这些信息。可以随时调整。</p>' +
-      '<label>意向城市<input name="cities" maxlength="120" placeholder="例如：南宁、广州" value="' + esc((preferences.cities || []).join('、')) + '"></label>' +
-      '<label>目标方向<input name="target_positions" maxlength="200" placeholder="例如：运营、教师、工程师" value="' + esc((preferences.target_positions || []).join('、')) + '"></label>' +
-      '<label>当前目标<select name="goal"><option value="explore">探索方向</option><option value="internship">寻找实习</option><option value="employment">准备就业</option><option value="further_study">继续深造</option></select></label>' +
-      '<label>工作方式<select name="work_mode"><option value="flexible">均可考虑</option><option value="onsite">现场办公</option><option value="remote">远程工作</option><option value="hybrid">混合办公</option></select></label>' +
-      '<label>其他偏好<textarea name="notes" maxlength="500" placeholder="例如：优先实习、希望跨专业探索">' + esc(preferences.notes || '') + '</textarea></label>' +
-      '<p role="status" id="career-preferences-status"></p><button class="career-btn" type="submit">保存偏好</button></form></div>';
+      '<label>意向城市<input data-lq-component="input" class="lq-input" name="cities" maxlength="120" placeholder="例如：南宁、广州" value="' + esc((preferences.cities || []).join('、')) + '"></label>' +
+      '<label>目标方向<input data-lq-component="input" class="lq-input" name="target_positions" maxlength="200" placeholder="例如：运营、教师、工程师" value="' + esc((preferences.target_positions || []).join('、')) + '"></label>' +
+      '<label>当前目标<select data-lq-component="select" class="lq-select" name="goal"><option value="explore">探索方向</option><option value="internship">寻找实习</option><option value="employment">准备就业</option><option value="further_study">继续深造</option></select></label>' +
+      '<label>工作方式<select data-lq-component="select" class="lq-select" name="work_mode"><option value="flexible">均可考虑</option><option value="onsite">现场办公</option><option value="remote">远程工作</option><option value="hybrid">混合办公</option></select></label>' +
+      '<label>其他偏好<textarea data-lq-component="textarea" class="lq-textarea" name="notes" maxlength="500" placeholder="例如：优先实习、希望跨专业探索">' + esc(preferences.notes || '') + '</textarea></label>' +
+      '<p role="status" id="career-preferences-status"></p><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" type="submit">保存偏好</button></form></div>';
     modal.hidden = false; modal.classList.add('show'); modal.querySelector('.career-modal__close').onclick = closeModal;
     modal.querySelector('[name=goal]').value = preferences.goal || 'explore';
     modal.querySelector('[name=work_mode]').value = preferences.work_mode || 'flexible';
@@ -722,7 +723,7 @@
     var h = '';
     h += '<div class="career-detail__head">';
     h += '<div class="career-detail__glow" style="background:radial-gradient(600px circle at 80% -20%,' + c1 + ',transparent 60%)"></div>';
-    h += '<button class="career-detail__close" type="button" aria-label="关闭">✕</button>';
+    h += '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-detail__close" type="button" aria-label="关闭">✕</button>';
     h += '<div class="career-detail__cat">' + esc((cat.icon || '') + ' ' + (cat.name || '') + ' · ' + (data.tag || '')) + '</div>';
     h += '<div class="career-detail__title">' + (data.lang ? '⭐ ' : '') + esc(data.name) + '</div>';
     h += '<div class="career-detail__stars">' + stars(data.rec) + '<small>推荐度 ' + (data.rec || 0) + '/5'
@@ -793,7 +794,7 @@
     h += '<div class="career-prep__head"><div>'
       + '<h3>选择「' + esc(data.name) + '」从现在开始的能力准备</h3>'
       + '<p>' + esc(card && card.summary ? card.summary : '按重要程度准备以下能力，越早开始越从容。') + '</p>'
-      + '</div><button type="button" class="career-prep__close" aria-label="收起">✕</button></div>';
+      + '</div><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-prep__close" aria-label="收起">✕</button></div>';
 
     var deadline = '';
     if (tl.graduation_date_label) {
@@ -867,7 +868,7 @@
   function paintKeywords(box, data, kws, s) {
     if (!kws || !kws.length) { box.innerHTML = ''; return; }
     var chips = kws.map(function (k, i) {
-      return '<button type="button" class="career-kw__chip' + (i === 0 ? ' is-top' : '') + '" data-kw="' + esc(k) + '">'
+      return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-kw__chip' + (i === 0 ? ' is-top' : '') + '" data-kw="' + esc(k) + '">'
         + '<span class="career-kw__rank">' + (i + 1) + '</span>' + esc(k)
         + '<span class="career-kw__go">直达 ›</span></button>';
     }).join('');
@@ -920,12 +921,12 @@
       + '<i>沉淀资料 · AI 撰写 · 拖拽搭建 · 一键导出 Word / PDF</i></span>'
       + '<span class="career-modal__resume-go">打开控制台 →</span></a>';
 
-    modal.innerHTML = '<div class="career-modal__panel" role="dialog" aria-modal="true">'
+    modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true">'
       + '<header class="career-modal__head">'
       + '<div class="career-modal__titles"><div class="career-modal__cat">' + esc(data.tag || '') + ' · 求职关键字 → 招聘平台</div>'
       + '<h3>按「' + esc(data.name) + '」方向搜索</h3>'
       + '<p>以下为外部招聘平台搜索入口，不代表已核验的在招职位。</p><p>' + note + '</p></div>'
-      + '<button type="button" class="career-modal__close" aria-label="关闭">✕</button></header>'
+      + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>'
       + '<div class="career-modal__body">' + resumeCta + groups + '</div></div>';
 
     modal.hidden = false;

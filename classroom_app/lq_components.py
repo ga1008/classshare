@@ -300,4 +300,6 @@ def lq_props(component, **props):
         normalize = _NORMALIZERS[component]
     except (KeyError, TypeError) as error:
         raise ValueError("Unknown LQ component") from error
-    return normalize(props)
+    result = normalize(props)
+    result["attrs"]["data-lq-component"] = component
+    return result

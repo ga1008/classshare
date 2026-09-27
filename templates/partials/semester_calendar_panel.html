@@ -27,24 +27,24 @@
         </div>
     </div>
 
-    {% if compact %}<details class="semester-calendar-details"><summary>学期概览</summary>{% endif %}
+    {% if compact %}<details class="semester-calendar-details"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">学期概览</summary>{% endif %}
     <div class="semester-calendar-panel__overview" data-semester-calendar-overview hidden>
-        <article class="semester-calendar-overview-card">
+        <article data-lq-component="surface" class="lq-surface semester-calendar-overview-card">
             <span>日期范围</span>
             <strong data-semester-calendar-period>--</strong>
             <small data-semester-calendar-period-note>--</small>
         </article>
-        <article class="semester-calendar-overview-card">
+        <article data-lq-component="surface" class="lq-surface semester-calendar-overview-card">
             <span>教学周次</span>
             <strong data-semester-calendar-week-range>--</strong>
             <small data-semester-calendar-week-note>开学首周计为第 1 周</small>
         </article>
-        <article class="semester-calendar-overview-card">
+        <article data-lq-component="surface" class="lq-surface semester-calendar-overview-card">
             <span>当前进度</span>
             <strong data-semester-calendar-progress>--</strong>
             <small data-semester-calendar-status>--</small>
         </article>
-        <article class="semester-calendar-overview-card">
+        <article data-lq-component="surface" class="lq-surface semester-calendar-overview-card">
             <span>节假日 / 调休</span>
             <strong data-semester-calendar-holiday-summary>--</strong>
             <small data-semester-calendar-holiday-note>--</small>
@@ -52,10 +52,10 @@
     </div>
     {% if compact %}</details>{% endif %}
 
-    <div class="semester-calendar-panel__toolbar">
+    <div data-lq-component="toolbar" class="lq-domain-toolbar semester-calendar-panel__toolbar">
         <label class="semester-calendar-panel__field"{% if compact %} data-explain data-explain-title="{{ panel_title }}" data-explain-text="{{ panel_subtitle }} {{ panel_hint }} 周末、节假日、当前周和今天会自动高亮。"{% endif %}>
             <span>当前查看学期</span>
-            <select class="form-control" data-semester-calendar-select></select>
+            <select data-lq-component="select" class="lq-select form-control" data-semester-calendar-select></select>
         </label>
     </div>
 

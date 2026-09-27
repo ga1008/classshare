@@ -6,23 +6,23 @@
 <div data-cw-loading>
     <div class="cw-section-head">
         <div class="cw-section-title"><h2>{{ '待处理任务' if teacher else '作业与考试' }}</h2>{{ explain_button('课堂任务', '整个课堂的作业与考试，不随所选课次筛选。已提交、已关闭与历史记录均可回看。', label='课堂任务说明', class_name='cw-explain-button') }}</div>
-        <div class="cw-secondary-actions">{% if teacher %}<button type="button" class="cw-button" data-classroom-grade-publication data-offering-id="{{ classroom.id }}">成绩公布</button>{% endif %}<button type="button" class="cw-button" data-cw-history data-cw-open="tasks">历史作业与考试</button></div>
+        <div class="cw-secondary-actions">{% if teacher %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" data-classroom-grade-publication data-offering-id="{{ classroom.id }}">成绩公布</button>{% endif %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" data-cw-history data-cw-open="tasks">历史作业与考试</button></div>
     </div>
     <p class="cw-task-scope">整个课堂 · 共 {{ preview.total_count }} 项</p>
-    <div class="cw-task-tabs" role="group" aria-label="任务筛选">
-        <button type="button" aria-pressed="true">待处理 <span>{{ preview.actionable_count }}</span></button>
-        <button type="button" aria-pressed="false">{{ '草稿' if teacher else '已提交与结果' }} <span>{{ preview.draft_count if teacher else preview.submitted_count }}</span></button>
-        <button type="button" aria-pressed="false">全部 <span>{{ preview.total_count }}</span></button>
+    <div data-lq-component="toolbar" class="lq-domain-toolbar cw-task-tabs" role="group" aria-label="任务筛选">
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" aria-pressed="true">待处理 <span>{{ preview.actionable_count }}</span></button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" aria-pressed="false">{{ '草稿' if teacher else '已提交与结果' }} <span>{{ preview.draft_count if teacher else preview.submitted_count }}</span></button>
+        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" aria-pressed="false">全部 <span>{{ preview.total_count }}</span></button>
     </div>
     {% if preview.rows %}
     <ul class="cw-task-cards">
         {% for row in preview.rows %}{% set task = row.task %}
-        <li class="cw-task-card" data-assignment-id="{{ task.id }}">
+        <li data-lq-component="surface" class="lq-surface cw-task-card" data-assignment-id="{{ task.id }}">
             <div class="cw-task-card-head"><span class="cw-task-kind">{{ task.assessment_kind_label or '历史任务' }}</span><span class="cw-task-status is-attention">{{ row.status }}</span></div>
             <a class="cw-task-title" data-assignment-link="/assignment/{{ task.id }}" href="/assignment/{{ task.id }}">{{ task.title }}</a>
             <div class="cw-task-card-foot">
                 <div><span class="cw-meta">{% if row.deadline_label %}{{ row.deadline_label }} {{ '重交截止' if task.canResubmit else '截止' }}{% else %}未设置截止时间{% endif %}</span>{% if row.constraint %}<p class="cw-constraint">{{ row.constraint }}</p>{% endif %}</div>
-                <a class="cw-button is-primary" data-assignment-link="/assignment/{{ task.id }}" href="/assignment/{{ task.id }}">{{ row.action }} →</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--prominent cw-button is-primary" data-assignment-link="/assignment/{{ task.id }}" href="/assignment/{{ task.id }}">{{ row.action }} →</a>
             </div>
         </li>
         {% endfor %}
@@ -30,9 +30,9 @@
     {% else %}
     <p class="cw-empty">{% if not preview.total_count %}{{ '尚未布置课堂任务。' if teacher else '老师尚未发布课堂任务。' }}{% else %}目前没有待处理任务，已提交与历史记录仍可查看。{% endif %}</p>
     {% endif %}
-    {% if preview.urgent_overflow %}<button type="button" class="cw-overflow" data-cw-open="tasks">还有 {{ preview.urgent_overflow }} 项将在 24 小时内截止，查看紧急任务</button>{% endif %}
+    {% if preview.urgent_overflow %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-overflow" data-cw-open="tasks">还有 {{ preview.urgent_overflow }} 项将在 24 小时内截止，查看紧急任务</button>{% endif %}
     <div class="cw-secondary-actions">
-        <button type="button" class="cw-button" data-cw-task-collection data-cw-open="tasks">全部任务（{{ preview.actionable_count }}） →</button>
-        {% if teacher %}<button type="button" class="cw-button is-primary" disabled>新建作业</button><button type="button" class="cw-button" disabled>从试卷库添加</button>{% endif %}
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" data-cw-task-collection data-cw-open="tasks">全部任务（{{ preview.actionable_count }}） →</button>
+        {% if teacher %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button is-primary" disabled>新建作业</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" disabled>从试卷库添加</button>{% endif %}
     </div>
 </div>

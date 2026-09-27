@@ -149,5 +149,7 @@ function skeleton(p) {
 const normalizers = { button, chip, badge, avatar, spinner, progress, skeleton };
 export function componentProps(kind, props = {}) {
   if (!Object.hasOwn(normalizers, kind)) throw new TypeError('Unknown LQ component');
-  return normalizers[kind](props);
+  const result = normalizers[kind](props);
+  result.attrs['data-lq-component'] = kind;
+  return result;
 }

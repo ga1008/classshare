@@ -38,7 +38,7 @@ function renderCandidateRow(item, textbooks) {
     return `
     <label class="obs-row" data-obs-row data-obs-key="${escapeHtml(key)}">
         <span class="obs-row__check">
-            <input type="checkbox" checked data-obs-check
+            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" checked data-obs-check
                    data-course-id="${item.course_id}"
                    data-teaching-class-id="${escapeHtml(item.teaching_class_id || '')}"
                    data-teaching-class-name="${escapeHtml(item.teaching_class_name || '')}"
@@ -57,7 +57,7 @@ function renderCandidateRow(item, textbooks) {
             <span><strong>${item.session_count}</strong><small>次排课</small></span>
         </span>
         <span class="obs-row__textbook">
-            <select class="form-control" data-obs-textbook>${textbookOptions(textbooks, item.suggested_textbook)}</select>
+            <select data-lq-component="select" class="lq-select form-control" data-obs-textbook>${textbookOptions(textbooks, item.suggested_textbook)}</select>
         </span>
         <span class="obs-row__status" data-obs-status></span>
     </label>`;
@@ -69,7 +69,7 @@ function renderShell(payload) {
         ? `<p class="obs-blocked">另有 ${blocked.length} 个教学班暂不可开设：${blocked.map((b) => `${escapeHtml(b.course_name)}（${escapeHtml(b.reason)}）`).join('；')}</p>`
         : '';
     return `
-    <section class="obs-panel" data-obs-panel>
+    <section data-lq-component="surface" class="lq-surface obs-panel" data-obs-panel>
         <header class="obs-hero">
             <span class="obs-hero__icon">${SPARK_ICON}</span>
             <span class="obs-hero__copy">
@@ -84,8 +84,8 @@ function renderShell(payload) {
         <footer class="obs-footer">
             <span class="obs-footer__hint">未选教材的课堂暂不能生成 AI 助教配置，其余功能不受影响。</span>
             <span class="obs-footer__actions">
-                <button type="button" class="btn btn-ghost btn-sm" data-obs-toggle-all>全选 / 清空</button>
-                <button type="button" class="btn btn-primary" data-obs-execute>一键开设 <b data-obs-count>${candidates.length}</b> 个课堂</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-obs-toggle-all>全选 / 清空</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-obs-execute>一键开设 <b data-obs-count>${candidates.length}</b> 个课堂</button>
             </span>
         </footer>
     </section>`;
@@ -97,7 +97,7 @@ function renderDone(result, variant) {
     if (result.failed_count) parts.push(`<span class="obs-danger">失败 ${result.failed_count}</span>`);
     const followUp = variant === 'sync-dialog'
         ? '<a class="obs-done__link" href="/manage/teaching/offerings">前往开设课堂页查看 →</a>'
-        : '<button type="button" class="btn btn-ghost btn-sm" data-obs-reload>刷新页面查看</button>';
+        : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-obs-reload>刷新页面查看</button>';
     return `
     <div class="obs-done">
         <span class="obs-done__badge" aria-hidden="true">✓</span>

@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
 import {
     ChatImagePreviewController,
@@ -423,9 +424,9 @@ export class ClassroomPrivateMessages {
             const selected = key === selectedKey;
             const optionId = `classroom-private-contact-option-${index}`;
             return `
-                <button
+                <button data-lq-component="button"
                     type="button"
-                    class="classroom-private-contact-option${active ? ' is-active' : ''}${selected ? ' is-selected' : ''}"
+                    class="lq-btn lq-btn--sm lq-btn--glass classroom-private-contact-option${active ? ' is-active' : ''}${selected ? ' is-selected' : ''}"
                     id="${optionId}"
                     role="option"
                     aria-selected="${selected ? 'true' : 'false'}"
@@ -624,7 +625,7 @@ export class ClassroomPrivateMessages {
                         const thumbnailUrl = escapeHtml(this.getAttachmentThumbnailUrl(normalizedAttachment));
                         const meta = escapeHtml(this.getAttachmentDisplayMeta(normalizedAttachment) || size);
                         return `
-                            <button type="button" class="classroom-private-attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-private-attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
                                 <img src="${thumbnailUrl}" alt="${name}" loading="lazy" decoding="async">
                                 <span>${name}${meta ? ` · ${meta}` : ''}</span>
                             </button>
@@ -732,6 +733,7 @@ export class ClassroomPrivateMessages {
             card.appendChild(meta);
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
+            adoptDomainControl(removeButton, { variant: 'ghost' });
             removeButton.textContent = '×';
             removeButton.title = '移除附件';
             removeButton.setAttribute('aria-label', `移除 ${attachment.file.name || '附件'}`);

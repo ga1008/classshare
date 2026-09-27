@@ -8,7 +8,7 @@
 .lq-clock__compact { min-width: 9ch; white-space: nowrap; text-align: end; }
 .lq-clock__absolute { flex-basis: 100%; color: hsl(var(--ls-ink-2)); overflow-wrap: anywhere; }
 .lq-clock__detail { overflow-wrap: anywhere; }
-.lq-clock[data-lq-clock-urgent="true"] > .lq-clock__dot { animation: lq-clock-enter-urgent 600ms ease-out 1; }
+.lq-clock[data-lq-clock-urgent="true"] > .lq-clock__dot { animation: lq-clock-enter-urgent calc(var(--lq-motion-feedback-duration, 300ms) * 2) var(--lq-motion-ease, ease-out) 1; }
 @keyframes lq-clock-enter-urgent { 50% { box-shadow: 0 0 0 5px hsl(var(--lq-clock-fg) / .2); } }
 .lq-job { max-width: 100%; padding: 16px; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); font: 14px/1.5 var(--ls-font-sans); overflow-wrap: anywhere; }
 .lq-job__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }

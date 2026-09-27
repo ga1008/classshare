@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from '/static/js/api.js';
 import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 import { showToast } from '/static/js/ui.js';
@@ -42,7 +43,7 @@ export function initClassroomMemberWorkspace(config, initializePanel) {
         closeButton.inert = false;
     }
     function showError(panel, message, retry) {
-        panel.innerHTML = `<div class="member-panel-message" role="alert"><p>${escapeHtml(message || '读取失败，请稍后重试。')}</p><button type="button" class="btn btn-outline btn-sm" data-member-retry>重新读取</button></div>`;
+        panel.innerHTML = `<div class="member-panel-message" role="alert"><p>${escapeHtml(message || '读取失败，请稍后重试。')}</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-member-retry>重新读取</button></div>`;
         panel.querySelector('[data-member-retry]').addEventListener('click', retry);
     }
     async function loadRoster({ resetScroll = false } = {}) {
@@ -109,7 +110,7 @@ export function initClassroomMemberWorkspace(config, initializePanel) {
                     panel.innerHTML = html;
                     if (key === 'overview' || key === 'alerts') {
                         const refresh = document.createElement('button');
-                        refresh.type = 'button'; refresh.className = 'btn btn-ghost btn-sm'; refresh.textContent = '刷新';
+                        refresh.type = 'button'; refresh.className = 'btn btn-ghost btn-sm'; adoptDomainControl(refresh, { variant: 'ghost' }); refresh.textContent = '刷新';
                         refresh.addEventListener('click', () => {
                             controllers.get(key)?.destroy?.(); loaded.delete(key); void ensurePanel(key);
                         });

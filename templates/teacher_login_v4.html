@@ -27,7 +27,7 @@
             <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="password">密码</label>
             <input type="password" id="password" name="password" class="{{ 'lq-input lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入密码" required{% if _lq_centered %} autocomplete="current-password"{% endif %}>
         </div>
-        {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button type="submit" class="btn btn-success w-full btn-lg">登录</button>{% endif %}
+        {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success w-full btn-lg">登录</button>{% endif %}
     </form>
 
     <div class="footer-links footer-links-subtle">

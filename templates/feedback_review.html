@@ -6,7 +6,7 @@
 {% block body_class %}page-wrapper feedback-review-page role-student{% endblock %}
 
 {% block navbar_actions %}
-<a href="/dashboard" class="app-topbar-action app-topbar-action--solid">
+<a data-lq-component="button" href="/dashboard" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--solid">
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 3h7v7H3z"></path>
@@ -20,7 +20,7 @@
         <small>返回驾驶舱</small>
     </span>
 </a>
-<a href="/feedback-review" class="app-topbar-action app-topbar-action--primary" aria-current="page">
+<a data-lq-component="button" href="/feedback-review" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary" aria-current="page">
     <span class="app-topbar-action__icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 20h9"></path>
@@ -57,7 +57,7 @@
             <h1>{{ review_context.title }}</h1>
             <p>{{ review_context.subtitle }}</p>
         </div>
-        <div class="review-progress-card" aria-label="复盘进度">
+        <div data-lq-component="surface" class="lq-surface review-progress-card" aria-label="复盘进度">
             <span>掌握进度</span>
             <strong>{{ review_context.progress.percent }}%</strong>
             <div class="review-progress-meter">
@@ -78,12 +78,12 @@
     </section>
     {% endif %}
 
-    <section class="review-toolbar" aria-label="复盘筛选" data-lq-material="content">
-        <div class="review-filter-tabs" role="tablist" aria-label="状态筛选">
+    <section data-lq-component="toolbar" class="lq-domain-toolbar review-toolbar" aria-label="复盘筛选" data-lq-material="content">
+        <div data-lq-component="tab" class="lq-tabs__list review-filter-tabs" role="tablist" aria-label="状态筛选">
             {% for item in review_context.filters %}
-            <a
+            <a data-lq-component="tab"
                 href="/feedback-review?status={{ item.value }}"
-                class="review-filter{% if item.value == review_context.active_status %} is-active{% endif %}"
+                class="lq-tabs__tab review-filter{% if item.value == review_context.active_status %} is-active{% endif %}"
                 data-review-filter="{{ item.value }}"
                 role="tab"
                 aria-selected="{{ 'true' if item.value == review_context.active_status else 'false' }}"
@@ -95,11 +95,11 @@
         </div>
         <label class="review-search">
             <span>搜索</span>
-            <input type="search" value="{{ review_context.keyword }}" placeholder="课程、任务、扣分点、反思">
+            <input data-lq-component="input" class="lq-input" type="search" value="{{ review_context.keyword }}" placeholder="课程、任务、扣分点、反思">
         </label>
         <label class="review-course-filter">
             <span>课程</span>
-            <select>
+            <select data-lq-component="select" class="lq-select">
                 <option value="0">全部课程</option>
                 {% for option in review_context.course_options %}
                 <option value="{{ option.course_id }}" {% if option.course_id == review_context.active_course_id %}selected{% endif %}>
@@ -119,8 +119,8 @@
     {% set review_severity_tone = {'high': 'danger', 'medium': 'warning', 'low': 'neutral'} %}
     <section class="review-card-list" aria-label="复盘卡列表" data-lq-material="content">
         {% for item in review_context['items'] %}
-        <article
-            class="review-card review-card--{{ item.status }} review-card--{{ item.severity }}"
+        <article data-lq-component="surface"
+            class="lq-surface review-card review-card--{{ item.status }} review-card--{{ item.severity }}"
             data-review-card
             data-status="{{ item.status }}"
             data-course-id="{{ item.course_id }}"
@@ -167,7 +167,7 @@
                 </div>
                 {% if item.feedback_excerpt %}
                 <details class="review-feedback-raw">
-                    <summary>查看原始反馈片段</summary>
+                    <summary data-lq-component="disclosure" class="lq-disclosure-trigger">查看原始反馈片段</summary>
                     <p>{{ item.feedback_excerpt }}</p>
                 </details>
                 {% endif %}
@@ -175,18 +175,18 @@
             <div class="review-card__side">
                 <label>
                     <span>我的反思</span>
-                    <textarea rows="4" data-review-reflection placeholder="用自己的话写清楚：我错在哪里？">{{ item.reflection }}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="4" data-review-reflection placeholder="用自己的话写清楚：我错在哪里？">{{ item.reflection }}</textarea>
                 </label>
                 <label>
                     <span>下次检查动作</span>
-                    <textarea rows="3" data-review-next-action placeholder="例如：提交前先核对截图标注、命令输出、单位。">{{ item.next_action }}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="3" data-review-next-action placeholder="例如：提交前先核对截图标注、命令输出、单位。">{{ item.next_action }}</textarea>
                 </label>
                 <div class="review-card__actions">
-                    <button type="button" class="review-action review-action--ghost" data-review-pin="{{ '0' if item.pinned else '1' }}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass review-action review-action--ghost" data-review-pin="{{ '0' if item.pinned else '1' }}">
                         {{ '取消置顶' if item.pinned else '置顶' }}
                     </button>
-                    <button type="button" class="review-action" data-review-save data-next-status="reviewing">保存复盘</button>
-                    <button type="button" class="review-action review-action--primary" data-review-save data-next-status="mastered">已掌握</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass review-action" data-review-save data-next-status="reviewing">保存复盘</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass review-action review-action--primary" data-review-save data-next-status="mastered">已掌握</button>
                 </div>
                 <a href="{{ item.source_url }}" class="review-source-link">{{ item.source_label }}</a>
             </div>

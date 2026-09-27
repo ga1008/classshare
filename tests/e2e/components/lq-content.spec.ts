@@ -274,14 +274,29 @@ test.describe('LQ grouped list and mobile swipe intents', () => {
   test('initial disabled and busy states refresh without stale disabled styling or unsafe props', async ({ page }) => {
     await mount(page);
     const result = await page.evaluate(() => {
-      const api = (window as any).api, root = document.querySelector('#swipe-disabled')!, original = root.outerHTML;
+      const api = (window as any).api, root = document.querySelector('#swipe-disabled')!;
+      const original = root.cloneNode(true);
+      const collectNodes = (node: Node): Node[] => [node, ...[...node.childNodes].flatMap(collectNodes)];
+      const originalNodes = collectNodes(root);
       const handle = api.enhanceRow(root, { onAction() {} }); let rejected = 0;
       for (const state of [null, { disabled: 1 }, { busy: null }, { html: 'x' }]) try { handle.refresh(state); } catch (error) { if (error instanceof TypeError) rejected++; }
       const blocked = handle.reveal() === false; handle.refresh({ disabled: false }); handle.reveal();
       const enabled = !root.querySelector('button')!.disabled && !root.querySelector('button')!.classList.contains('is-disabled'); handle.destroy();
-      return { rejected, blocked, enabled, restored: root.outerHTML.replaceAll(' style=""', '') === original };
+      const restoredTree = root.cloneNode(true) as Element;
+      // CSSOM may retain an empty style attribute, already tolerated by this
+      // contract. Compare every other attribute and child without depending on
+      // attribute insertion order after disabled attributes are reinstated.
+      for (const node of [restoredTree, ...restoredTree.querySelectorAll('[style=""]')]) {
+        if (node.getAttribute('style') === '') node.removeAttribute('style');
+      }
+      const currentNodes = collectNodes(root);
+      return {
+        rejected, blocked, enabled,
+        restored: original.isEqualNode(restoredTree),
+        sameNodes: currentNodes.length === originalNodes.length && currentNodes.every((node, index) => node === originalNodes[index]),
+      };
     });
-    expect(result).toEqual({ rejected: 4, blocked: true, enabled: true, restored: true });
+    expect(result).toEqual({ rejected: 4, blocked: true, enabled: true, restored: true, sameNodes: true });
   });
 
   for (const palette of palettes) for (const appearance of ['light', 'dark']) test(`mobile revealed action axe ${palette}/${appearance}`, async ({ page }) => {

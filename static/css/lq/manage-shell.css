@@ -80,6 +80,12 @@ body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-sidebar[data-lq-compact="true"] .lq-manage-collapse { margin: auto; }
 }
 @media (min-width:1024px) and (max-width:1279px) {
+  /* Compact shell spacing leaves every action inline beside the expanded
+     sidebar. Keep the shared controls and their 44px targets unchanged. */
+  :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar { column-gap: var(--ls-s-2); }
+  :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar .lq-topbar__actions > [data-lq-slot="more"] { gap: var(--ls-s-2); }
+  :is(.lq-manage-pilot,.lq-manage-shell) :is(.lq-manage-context-actions,.lq-manage-utility) { gap: var(--ls-s-1); }
+  :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { padding-inline: var(--ls-s-2); }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action__icon { display: none; }
 }
 @media (max-width:1023px) {

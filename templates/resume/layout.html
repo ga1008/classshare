@@ -60,7 +60,7 @@
         </div>
 
         <main class="rz-main">
-            <header class="rz-topbar" data-lq-material="chrome">
+            <header data-lq-component="toolbar" class="lq-domain-toolbar rz-topbar" data-lq-material="chrome">
                 <div style="display:flex;align-items:center;gap:12px;min-width:0">
                     <button type="button" class="rz-mobile-toggle lq-btn lq-btn--glass" id="rzSidebarToggle" aria-label="打开简历导航" aria-controls="rzSidebar" aria-expanded="false">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"></path></svg>
@@ -73,7 +73,7 @@
             </header>
             <div class="rz-content">
                 {% if ai_availability is defined and not ai_availability.allowed %}
-                <div class="rz-card" role="status" style="margin-bottom:16px"><p>{{ ai_availability.message }}</p></div>
+                <div data-lq-component="surface" class="lq-surface rz-card" role="status" style="margin-bottom:16px"><p>{{ ai_availability.message }}</p></div>
                 {% endif %}
                 {% block content %}{% endblock %}
             </div>

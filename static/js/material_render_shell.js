@@ -5,6 +5,8 @@
  * - 学生端学习进度心跳（active 时长；HTML 包页面内部滚动无法统一度量，按时长判定）
  */
 
+import { adoptDomainControl } from './lq/domain-controls.js';
+
 const shellConfig = window.MATERIAL_RENDER_SHELL || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
 const viewerAssets = window.MATERIAL_VIEWER_ASSETS || {};
@@ -81,6 +83,7 @@ async function initSlideRewriteEntry() {
     if(!topbar||!frame)return;
     const edit=document.createElement('a'),ai=document.createElement('button'),notice=document.createElement('span');
     edit.className=ai.className='btn btn-ghost btn-sm';edit.textContent='编辑学习文档';edit.id='render-shell-edit';ai.textContent='AI 改页';ai.type='button';ai.id='render-shell-slide-rewrite';notice.setAttribute('role','status');
+    adoptDomainControl(edit,{kind:'button',variant:'ghost'});adoptDomainControl(ai,{variant:'ghost'});
     edit.hidden=ai.hidden=true;topbar.insertBefore(edit,collapse);topbar.insertBefore(ai,collapse);topbar.insertBefore(notice,collapse);
     let target=null,sequence=0;
     const editorUrl=(withAi=false)=>{

@@ -1,3 +1,4 @@
+import {adoptDomainControl} from '../lq/domain-controls.js';
 import {EditorStore,mergeCanonical} from './state.js';
 import {clone,equal,uid,locate,rootSelection,removeBlocks,insertionList,freshInstance,walkBlocks,setAt,at} from './model.js';
 import {createApi,jsonRequest,ApiError} from './api.js';
@@ -46,7 +47,7 @@ async function save(manual=true) {
 async function reviewConflict() {
     try{const remote=await api.load();dialog('检测到其他修改',({body,foot,close})=>{
         body.append(el('p','lde-muted','服务器版本已经更新。请比较正文后选择保留哪份内容。保留本地修改会以刚刚读取的服务器版本为基线再次校验。'));
-        const code=el('textarea','lde-code');code.readOnly=true;code.value=JSON.stringify(remote.document,null,2);body.append(code);
+        const code=adoptDomainControl(el('textarea','lde-code'));code.readOnly=true;code.value=JSON.stringify(remote.document,null,2);body.append(code);
         foot.append(button('下载本地草稿',()=>downloadJson(store.model)),button('载入服务器版本',()=>{store.adoptServer(remote);$('error').hidden=true;close();}),button('保留本地修改继续编辑',()=>{store.adoptServer(remote,{keepLocal:true});$('error').hidden=true;warn('已保留本地修改，请检查后保存。');close();},'lde-button lde-primary'));
     },{wide:true});}catch(e){error(e);}
 }
@@ -107,7 +108,7 @@ function source(mode='document') {
     const value=readonly?before:mode==='selection'?selected.block:before.slides[index];
     dialog(readonly?'文档 JSON（只读）':mode==='selection'?'选中元素 JSON':'当前页 JSON',({body,foot,close})=>{
         body.append(el('p','lde-muted',readonly?'下载后可作为本地恢复稿保存。':'应用前会执行与保存相同的结构和安全校验；预检失败不会修改正文。'));
-        const input=el('textarea','lde-code');input.value=JSON.stringify(value,null,2);input.readOnly=readonly;input.spellcheck=false;const message=el('div','lde-dialog-error');body.append(input,message);foot.append(button('下载完整草稿',()=>downloadJson(store.model)),button('关闭',close));
+        const input=adoptDomainControl(el('textarea','lde-code'));input.value=JSON.stringify(value,null,2);input.readOnly=readonly;input.spellcheck=false;const message=el('div','lde-dialog-error');body.append(input,message);foot.append(button('下载完整草稿',()=>downloadJson(store.model)),button('关闭',close));
         if(!readonly)foot.append(button('预检并应用',async()=>{try{
             if(serial!==store.serial)throw new Error('打开面板后正文已变化，请关闭后重新打开。');
             const sourceText=input.value,parsed=JSON.parse(sourceText),candidate=clone(before);setAt(candidate,path,parsed);const result=await api.validate(mergeCanonical(before,store.model,candidate));
@@ -138,7 +139,7 @@ async function history() {
         if(!entries.length)body.append(el('p','lde-muted','保存产生正文变化后，原版本会出现在这里。'));
         for(const entry of entries){const row=el('div','lde-list-row');row.append(el('strong','',entry.created_at),el('small','',entry.source),button('查看',guard(async()=>{
             const snapshot=await api.revision(entry.id);dialog('历史版本 '+entry.created_at,({body:b,foot:f,close:c})=>{
-                const text=el('textarea','lde-code');text.readOnly=true;text.value=JSON.stringify(snapshot.document,null,2);b.append(text);
+                const text=adoptDomainControl(el('textarea','lde-code'));text.readOnly=true;text.value=JSON.stringify(snapshot.document,null,2);b.append(text);
                 for(const d of snapshot.diagnostics||[])b.append(el('p','lde-dialog-error',d.message));
                 f.append(button('关闭',c));if(snapshot.document)f.append(button('恢复并保存',guard(async()=>{
                     if(store.pending)throw new Error('请等待正在进行的保存结束');
@@ -228,7 +229,7 @@ async function boot() {
 function historyReplace(url){window.history.replaceState(null,'',url);}
 function renderHomeTarget(){
     if(store.model.kind!=='home')return;
-    let node=$('home-target');if(!node){node=el('select');node.id='lde-home-target';node.setAttribute('aria-label','首页元素插入位置');$('search').parentElement.after(node);node.addEventListener('change',()=>store.ui.homeTarget=node.value);}
+    let node=$('home-target');if(!node){node=adoptDomainControl(el('select'));node.id='lde-home-target';node.setAttribute('aria-label','首页元素插入位置');$('search').parentElement.after(node);node.addEventListener('change',()=>store.ui.homeTarget=node.value);}
     node.replaceChildren(new Option('插入课程说明','page'));(store.model.tabs||[]).forEach((tab,index)=>node.append(new Option('插入标签：'+tab.label,'tab:'+index)));
     node.value=store.ui.homeTarget||'page';if(!node.value){node.value='page';store.ui.homeTarget='page';}
 }
@@ -238,7 +239,7 @@ async function recoverCorrupt(revision){
         if(!entries.length)body.append(el('p','lde-dialog-error','没有可用历史版本。请回到材料库检查原始文件或从备份恢复。'));
         for(const entry of entries){const row=el('div','lde-list-row');row.append(el('span','',entry.created_at+' · '+entry.source),button('查看恢复稿',guard(async()=>{
             const snapshot=await api.revision(entry.id),operation=uid('restore');dialog('检查恢复稿',({body:b,foot:f,close:c})=>{
-                const code=el('textarea','lde-code');code.readOnly=true;code.value=JSON.stringify(snapshot.document,null,2);b.append(code);
+                const code=adoptDomainControl(el('textarea','lde-code'));code.readOnly=true;code.value=JSON.stringify(snapshot.document,null,2);b.append(code);
                 for(const d of snapshot.diagnostics||[])b.append(el('p','lde-dialog-error',d.message));
                 const status=el('p','lde-dialog-error');b.append(status);const restore=button('恢复此版本',async()=>{restore.disabled=true;try{await api.restore(entry.id,revision,operation);location.reload();}catch(e){status.textContent=e.message;restore.disabled=false;}},'lde-button lde-primary');
                 f.append(button('下载恢复稿',()=>downloadJson(snapshot.document)),button('取消',c),restore);

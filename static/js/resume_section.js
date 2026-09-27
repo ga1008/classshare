@@ -103,7 +103,7 @@
 
   function renderCard(item) {
     if (SECTION === 'self_intro' && item.status === 'generating') {
-      return '<div class="rz-card rz-card--placeholder" role="button" tabindex="0" data-id="' + Number(item.id) + '" data-generating="1">' +
+      return '<div data-lq-component="surface" class="lq-surface rz-card rz-card--placeholder" role="button" tabindex="0" data-id="' + Number(item.id) + '" data-generating="1">' +
         '<div class="rz-card__title"><span class="rz-spin"></span> AI 正在整理…</div>' +
         '<div class="rz-card__meta">可离开此页，点击查看进度或取消任务</div></div>';
     }
@@ -114,7 +114,7 @@
         return '<img src="' + a.url + '" alt="">';
       }).join('') + '</div>';
     }
-    return '<div class="rz-card' + (failed ? ' rz-card--failed' : '') + '" role="button" tabindex="0" data-id="' + Number(item.id) + '">' +
+    return '<div data-lq-component="surface" class="lq-surface rz-card' + (failed ? ' rz-card--failed' : '') + '" role="button" tabindex="0" data-id="' + Number(item.id) + '">' +
       '<div class="rz-card__title">' + RZ.esc(cardTitle(item)) + '</div>' +
       '<div class="rz-card__meta">' + RZ.esc(cardMeta(item)) +
       (failed ? '<br><span style="color:#dc2626">生成失败，点击查看</span>' : '') + '</div>' +
@@ -202,7 +202,7 @@
     var imgs = '';
     if (CFG.attach && item.attachments && item.attachments.length) {
       imgs = '<div class="rz-attach">' + item.attachments.map(function (a) {
-        return '<a href="' + a.url + '" target="_blank" class="rz-attach__item"><img src="' + a.url + '"></a>';
+        return '<a data-lq-component="button" href="' + a.url + '" target="_blank" class="lq-btn lq-btn--sm lq-btn--glass rz-attach__item"><img src="' + a.url + '"></a>';
       }).join('') + '</div>';
     }
     return rows + imgs;
@@ -214,14 +214,14 @@
     var req = f.required ? '<span class="req">*</span>' : '';
     var input;
     if (f.type === 'select') {
-      input = '<select class="rz-select" name="' + f.key + '">' +
+      input = '<select data-lq-component="select" class="lq-select rz-select" name="' + f.key + '">' +
         f.options.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
     } else if (f.type === 'textarea') {
-      input = '<textarea class="rz-textarea" name="' + f.key + '" placeholder="' + RZ.esc(f.placeholder || '') + '">' + RZ.esc(val) + '</textarea>';
+      input = '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" name="' + f.key + '" placeholder="' + RZ.esc(f.placeholder || '') + '">' + RZ.esc(val) + '</textarea>';
     } else if (f.type === 'month') {
       input = RZ.monthPickerHtml(f.key, val, { placeholder: f.required ? '请选择年月' : '可选年月' });
     } else {
-      input = '<input class="rz-input" type="text" name="' + f.key + '" value="' + RZ.esc(val) + '" placeholder="' + RZ.esc(f.placeholder || '') + '">';
+      input = '<input data-lq-component="input" class="lq-input rz-input" type="text" name="' + f.key + '" value="' + RZ.esc(val) + '" placeholder="' + RZ.esc(f.placeholder || '') + '">';
     }
     return '<div class="rz-field' + (f.full ? ' rz-field--full' : '') + '"><label>' + RZ.esc(f.label) + req + '</label>' + input + '</div>';
   }
@@ -294,13 +294,13 @@
     staged = [];
     function refresh() {
       var existing = (item.attachments || []).map(function (a) {
-        return '<div class="rz-attach__item"><img src="' + a.url + '"><button type="button" class="rz-attach__del" data-del="' + a.id + '">&times;</button></div>';
+        return '<div class="rz-attach__item"><img src="' + a.url + '"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-attach__del" data-del="' + a.id + '">&times;</button></div>';
       }).join('');
       var stagedHtml = staged.map(function (s, i) {
-        return '<div class="rz-attach__item"><img src="' + s.url + '"><button type="button" class="rz-attach__del" data-stage="' + i + '">&times;</button></div>';
+        return '<div class="rz-attach__item"><img src="' + s.url + '"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-attach__del" data-stage="' + i + '">&times;</button></div>';
       }).join('');
       var total = (item.attachments || []).length + staged.length;
-      var add = total < 5 ? '<label class="rz-attach__add">+<input type="file" accept="image/*" hidden id="rzAddImg"></label>' : '';
+      var add = total < 5 ? '<label class="rz-attach__add">+<input data-lq-component="file" class="lq-native-file" type="file" accept="image/*" hidden id="rzAddImg"></label>' : '';
       container.innerHTML = existing + stagedHtml + add +
         '<div class="rz-attach__hint">已用 ' + total + '/5 张；支持 PNG/JPG/GIF/WebP，单张 ≤5MB</div>';
       var input = container.querySelector('#rzAddImg');
@@ -347,7 +347,7 @@
   function openSelfIntroForm() {
     var m = RZ.openModal({ title: '新建自我介绍', wide: true });
     m.body.innerHTML =
-      '<textarea class="rz-textarea" id="rzIntroText" style="min-height:220px" placeholder="输入你的自我介绍，可使用空行分段、- 列表、**加粗**…"></textarea>' +
+      '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" id="rzIntroText" style="min-height:220px" placeholder="输入你的自我介绍，可使用空行分段、- 列表、**加粗**…"></textarea>' +
       '<div style="color:var(--rz-muted);font-size:.78rem;margin-top:6px">「AI 优化」润色当前内容；「AI 生成」会综合你填写的全部资料深度撰写（在列表中显示生成进度）。</div>';
     var ta = m.body.querySelector('#rzIntroText');
 
@@ -391,7 +391,7 @@
 
   function openSelfIntroEdit(item) {
     var m = RZ.openModal({ title: '编辑自我介绍', wide: true });
-    m.body.innerHTML = '<textarea class="rz-textarea" id="rzIntroText" style="min-height:220px">' + RZ.esc(item.content_md) + '</textarea>';
+    m.body.innerHTML = '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" id="rzIntroText" style="min-height:220px">' + RZ.esc(item.content_md) + '</textarea>';
     var ta = m.body.querySelector('#rzIntroText');
     var cancel = btn('取消', 'rz-btn'); cancel.onclick = m.close;
     var save = btn('保存', 'rz-btn rz-btn--primary');
@@ -405,7 +405,7 @@
     m.foot.appendChild(cancel); m.foot.appendChild(save);
   }
 
-  function btn(text, cls) { var b = document.createElement('button'); b.className = cls; b.textContent = text; return b; }
+  function btn(text, cls) { var b = document.createElement('button'); b.className = cls; RZ.adoptControl(b, { kind: 'button', variant: cls.includes('rz-btn--danger') ? 'destructive' : cls.includes('rz-btn--primary') ? 'prominent' : 'glass' }); b.textContent = text; return b; }
 
   function openForm(item) {
     if (CFG.selfIntro) { if (item && item.id) openSelfIntroEdit(item); else openSelfIntroForm(); }

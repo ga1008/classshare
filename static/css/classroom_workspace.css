@@ -337,7 +337,7 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-button:hover, .classroom-workspace-v2 .cw-session-nav .cw-text-button:hover { border-color: var(--cw-accent); background: var(--cw-tint); color: var(--cw-accent); }
 .cw-button.is-primary, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn { color: hsl(var(--ls-primary-foreground)); background: var(--cw-primary); border-color: var(--cw-primary); }
 .cw-button.is-primary:hover, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn:hover { background: hsl(var(--ls-primary) / .9); }
-.classroom-workspace-v2 :is(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action, .teaching-timeline-nav-btn, .classroom-activity-tab, .cw-task-title, .cw-task-card, .cw-task-tabs button, .cw-timeline-index-item, .cw-explain-button, .cw-overflow) {
+.classroom-workspace-v2 :is(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action, .teaching-timeline-nav-btn, .classroom-activity-tab, .cw-task-title, .cw-task-card:not(.lq-card), .cw-task-tabs button, .cw-timeline-index-item, .cw-explain-button, .cw-overflow) {
     transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
 }
 .classroom-workspace-v2 :where(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action):active { transform: translateY(1px); }
@@ -378,8 +378,7 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-task-tabs button[aria-pressed=true] { background-color: var(--cw-paper); color: var(--cw-accent); box-shadow: 0 1px 5px hsl(var(--ls-foreground) / .09); }
 .cw-task-tabs button span { font-size: 12px; margin-left: 3px; }
 .cw-task-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; animation: cw-content-in var(--transition-normal); }
-.cw-task-card { padding: 15px; border: 1px solid var(--cw-line); border-radius: var(--radius-lg, 12px); background-color: var(--cw-paper); }
-.cw-task-card:focus-within, .cw-task-card:hover { border-color: hsl(var(--ls-primary) / .5); box-shadow: 0 3px 10px hsl(var(--ls-primary) / .05); }
+.cw-task-card { padding: 15px; }
 .cw-task-card-head, .cw-task-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .cw-task-kind, .cw-task-card .cw-task-status { padding: 3px 8px; border-radius: 6px; background: var(--cw-soft); color: var(--cw-muted); font-size: 12px; max-width: none; }
 .cw-task-card .cw-task-status.is-attention { background: var(--warning-bg, hsl(var(--ls-tone-warning-soft))); color: var(--warning-text, hsl(var(--ls-tone-warning-fg))); }

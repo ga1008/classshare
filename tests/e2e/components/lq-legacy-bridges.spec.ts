@@ -21,6 +21,38 @@ async function installProcessModal(page: Page) {
 test.describe('LQ nested process-material compatibility', () => {
   test.beforeEach(async ({ page }) => { await mount(page); await installProcessModal(page); });
 
+  test('confirmation retains semantic tone, native focus and each cancel or commit result', async ({ page }) => {
+    for (const tone of ['danger', 'primary']) {
+      await page.evaluate(value => {
+        const w = window as any;
+        document.getElementById('outside')!.focus();
+        w.confirmResult = undefined;
+        w.processModal.openProcessMaterialConfirm({ tone: value, title: '确认材料操作', message: '保留材料业务结果' })
+          .then((result: boolean) => { w.confirmResult = result; });
+      }, tone);
+      const confirm = page.locator('[data-pm-confirm-ok]');
+      await expect(confirm).toBeFocused();
+      await expect(confirm).toHaveClass(tone === 'danger' ? /lq-btn--destructive/ : /lq-btn--prominent/);
+      await expect(confirm).not.toHaveClass(/lq-btn--glass/);
+      await expect(confirm).toHaveAttribute('type', 'button');
+      expect(await confirm.evaluate(node => getComputedStyle(node).backdropFilter)).toBe('none');
+      if (tone === 'danger') await page.locator('[data-pm-confirm-cancel]').click();
+      else await confirm.click();
+      await expect.poll(() => page.evaluate(() => (window as any).confirmResult)).toBe(tone !== 'danger');
+      await expect(page.locator('.lp-modal-overlay')).toHaveCount(0);
+      await expect(page.locator('#outside')).toBeFocused();
+    }
+    await page.evaluate(() => {
+      const w = window as any;
+      w.confirmResult = undefined;
+      w.processModal.openProcessMaterialConfirm({ tone: 'danger' })
+        .then((result: boolean) => { w.confirmResult = result; });
+    });
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => (window as any).confirmResult)).toBe(false);
+    await expect(page.locator('.lp-modal-overlay')).toHaveCount(0);
+  });
+
   test('existing modal parent keeps its draft and one lock across twenty child cancellations', async ({ page }) => {
     await page.locator('#opener').click();
     await page.locator('#modal-date').fill('2026-11-09');

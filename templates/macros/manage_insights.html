@@ -8,7 +8,7 @@
 {% set v = (value | int) %}
 {% set t = (total | int) %}
 {% set pct = ((v / t * 100) | round | int) if t > 0 else 0 %}
-<article class="insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
+<article data-lq-component="surface" class="lq-surface insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
     <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
     <div class="insight-ring-wrap">
         <div class="insight-ring" role="img" aria-label="{{ title }} {{ v }} / {{ t }}">
@@ -33,7 +33,7 @@
 {% macro insight_bars(title, items, caption='', tone='indigo', limit=6) %}
 {% set rows = (items | list)[:limit] %}
 {% set maxv = (rows | map(attribute='value') | map('int') | list | max) if rows else 0 %}
-<article class="insight-panel insight-tone-{{ tone }}">
+<article data-lq-component="surface" class="lq-surface insight-panel insight-tone-{{ tone }}">
     <div class="insight-panel__head">
         <span class="insight-panel__title">{{ title }}</span>
         {% if caption %}<p class="insight-panel__caption">{{ caption }}</p>{% endif %}
@@ -59,7 +59,7 @@
 {# Single headline metric with a contextual progress meter. #}
 {% macro insight_meter(title, value, percent, caption='', tone='indigo', unit='', delta='', data_key='') %}
 {% set p = (percent | int) %}
-<article class="insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
+<article data-lq-component="surface" class="lq-surface insight-panel insight-tone-{{ tone }}"{% if data_key %} data-insight-key="{{ data_key }}"{% endif %}>
     <div class="insight-panel__head"><span class="insight-panel__title">{{ title }}</span></div>
     <div class="insight-meter">
         <div class="insight-meter__row">

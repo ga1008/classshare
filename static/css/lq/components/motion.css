@@ -1,0 +1,99 @@
+/* Shared interaction/presence policy. Modes inherit through the DOM; a local
+   mode starts a new scope. These variables are also the customization API.
+   CSS transitions reverse from their current frame, so rapid input needs no
+   listeners, requestAnimationFrame loop or permanent compositor promotion. */
+:root,
+[data-lq-motion="standard"] {
+    --lq-motion-control-duration: 180ms;
+    --lq-motion-press-duration: 80ms;
+    --lq-motion-presence-duration: 220ms;
+    --lq-motion-menu-duration: 160ms;
+    --lq-motion-feedback-duration: 280ms;
+    --lq-motion-ease: cubic-bezier(.22, 1, .36, 1);
+    --lq-motion-spring: cubic-bezier(.2, 1.25, .35, 1);
+    --lq-motion-hover-y: -1px;
+    --lq-motion-press-x: 1.012;
+    --lq-motion-press-y: .965;
+    --lq-motion-overlay-scale: .98;
+    --lq-motion-overlay-distance: 24px;
+    --lq-motion-animation-play-state: running;
+}
+[data-lq-motion="quiet"] {
+    --lq-motion-control-duration: 120ms;
+    --lq-motion-press-duration: 60ms;
+    --lq-motion-presence-duration: 160ms;
+    --lq-motion-menu-duration: 120ms;
+    --lq-motion-feedback-duration: 180ms;
+    --lq-motion-ease: cubic-bezier(.22, 1, .36, 1);
+    --lq-motion-spring: cubic-bezier(.22, 1, .36, 1);
+    --lq-motion-hover-y: 0px;
+    --lq-motion-press-x: .995;
+    --lq-motion-press-y: .99;
+    --lq-motion-overlay-scale: .995;
+    --lq-motion-overlay-distance: 8px;
+    --lq-motion-animation-play-state: running;
+}
+[data-lq-motion="expressive"] {
+    --lq-motion-control-duration: 220ms;
+    --lq-motion-press-duration: 90ms;
+    --lq-motion-presence-duration: 280ms;
+    --lq-motion-menu-duration: 200ms;
+    --lq-motion-feedback-duration: 360ms;
+    --lq-motion-ease: cubic-bezier(.22, 1, .36, 1);
+    --lq-motion-spring: cubic-bezier(.2, 1.4, .35, 1);
+    --lq-motion-hover-y: -2px;
+    --lq-motion-press-x: 1.025;
+    --lq-motion-press-y: .94;
+    --lq-motion-overlay-scale: .97;
+    --lq-motion-overlay-distance: 28px;
+    --lq-motion-animation-play-state: running;
+}
+[data-lq-motion="off"] {
+    --lq-motion-control-duration: 0ms;
+    --lq-motion-press-duration: 0ms;
+    --lq-motion-presence-duration: 0ms;
+    --lq-motion-menu-duration: 0ms;
+    --lq-motion-feedback-duration: 0ms;
+    --lq-motion-hover-y: 0px;
+    --lq-motion-press-x: 1;
+    --lq-motion-press-y: 1;
+    --lq-motion-overlay-scale: 1;
+    --lq-motion-overlay-distance: 0px;
+    --lq-motion-animation-play-state: paused;
+}
+
+/* Loading remains visible and named when motion is off. These are bounded
+   status indicators, not idle decorative loops. Their state is inherited. */
+.lq-spinner,
+.lq-progress:not(.lq-progress--ring):not([value]),
+.lq-progress--ring:not([aria-valuenow]) .lq-progress__svg,
+.lq-skeleton__part {
+    animation-play-state: var(--lq-motion-animation-play-state, running);
+}
+
+/* Accessibility wins over any nested mode, including a mode changed while
+   the pointer is held or an overlay is entering. Fields never use geometry. */
+@media (prefers-reduced-motion: reduce) {
+    /* The legacy global reduced-motion bridge uses .01ms !important. A real
+       zero-transition contract avoids even one residual frame on live changes. */
+    :root :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+        .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range,
+        .lq-range__value, .lq-dialog__surface, .lq-menu, .lq-selection__popup,
+        .lq-toast, .lq-tooltip, .lq-dropdown, .lq-dropdown__chevron, .lq-nav-menu__caret,
+        .lq-collapsible__indicator, .lq-card, .lq-row__front),
+    :root .lq-switch::after,
+    :root .lq-segment > .lq-tabs__list[data-lq-thumb]::before { transition: none !important; }
+    :root, [data-lq-motion] {
+        --lq-motion-control-duration: 0ms !important;
+        --lq-motion-press-duration: 0ms !important;
+        --lq-motion-presence-duration: 0ms !important;
+        --lq-motion-menu-duration: 0ms !important;
+        --lq-motion-feedback-duration: 0ms !important;
+        --lq-motion-hover-y: 0px !important;
+        --lq-motion-press-x: 1 !important;
+        --lq-motion-press-y: 1 !important;
+        --lq-motion-overlay-scale: 1 !important;
+        --lq-motion-overlay-distance: 0px !important;
+        --lq-motion-animation-play-state: paused !important;
+    }
+}

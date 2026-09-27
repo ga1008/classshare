@@ -3,7 +3,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+import re
+from urllib.parse import parse_qs, urlsplit
 
+from classroom_app.frontend_assets import asset_url
 from classroom_app.routers import document_renderer as document_renderer_router
 from classroom_app.services.document_render_service import (
     DocumentRenderService,
@@ -126,11 +129,48 @@ class DocumentRenderServiceTests(unittest.TestCase):
                 download_disabled_reason="请先补齐业务字段后再导出。",
             )
 
-            self.assertIn('class="doc-preview-download is-disabled"', preview_html)
+            self.assertRegex(preview_html, r'<button class="doc-preview-download is-disabled [^"]*lq-btn[^>]+ disabled aria-disabled="true"')
             self.assertIn('aria-disabled="true"', preview_html)
             self.assertIn("doc-preview-download-note", preview_html)
             self.assertIn("请先补齐业务字段后再导出。", preview_html)
             self.assertNotIn("/api/document-renderer/jobs/" + job.key + "/download", preview_html)
+
+    def test_preview_shared_assets_and_content_slots_preserve_signed_urls(self):
+        from classroom_app.services.document_render_service import RenderedDocumentJob
+        with tempfile.TemporaryDirectory(prefix="lanshare-preview-contract-") as temp_dir:
+            service = DocumentRenderService(root=Path(temp_dir))
+            job = RenderedDocumentJob("a" * 64, {"page_count": 3}, Path(temp_dir))
+            owner = {"id": 7, "role": "teacher"}
+            source = service.render_preview_html(job, title='<script>alert("title")</script>', user=owner,
+                                                 signature_request_id=42)
+            self.assertIn(asset_url("tailwind_app"), source)
+            self.assertIn(asset_url("js/lq/theme.js"), source)
+            self.assertIn("window, document", source)  # Shared synchronous resolver.
+            self.assertIn('data-theme="lanshare"', source)
+            self.assertNotIn('<script>alert("title")</script>', source)
+            self.assertEqual(4, source.count('data-lq-content="document-page"'))
+            cards = re.findall(r'<button[^>]+data-page-index="[^"]+"[^>]*>', source)
+            self.assertEqual(3, len(cards))
+            self.assertTrue(all('data-lq-component="content-slot"' in card and 'lq-btn' not in card for card in cards))
+            buttons = re.findall(r'<button\b[^>]*>', source)
+            self.assertTrue(all('data-lq-component="button"' in button or 'data-lq-component="content-slot"' in button for button in buttons))
+            payload = json.loads(re.search(r"const pages = (\[.*?\]);", source).group(1))
+            for page in payload:
+                for size in ("medium", "large"):
+                    query = parse_qs(urlsplit(page[size + "Url"]).query)
+                    self.assertEqual([size], query["size"])
+                    token = query["token"][0]
+                    self.assertTrue(verify_render_token(job.key, token, user=owner))
+                    self.assertFalse(verify_render_token(job.key, token, user={"id": 8, "role": "teacher"}))
+            self.assertNotIn("backdrop-filter: blur", source)
+            self.assertFalse(list(Path(temp_dir).iterdir()))
+
+    def test_preview_error_uses_shared_material_without_trusting_error_html(self):
+        source = DocumentRenderService().render_error_html(title="error", message='<img src=x onerror="alert(1)">')
+        self.assertIn(asset_url("tailwind_app"), source)
+        self.assertIn('data-lq-material="raised"', source)
+        self.assertIn('&lt;img', source)
+        self.assertNotIn('<img src=x', source)
 
     def test_medium_pages_are_lazy_and_rendered_per_page(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:

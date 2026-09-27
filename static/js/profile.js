@@ -678,7 +678,7 @@ function renderEmailConfigs() {
         const stats = config.stats || {};
         const statusClass = String(config.last_status || 'unchecked').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'unchecked';
         return `
-            <button type="button" data-lq-shape="surface" class="profile-email-card ${Number(config.id) === Number(emailState.activeId) ? 'is-active' : ''}" data-profile-email-select="${Number(config.id)}">
+            <button data-lq-component="button" type="button" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass profile-email-card ${Number(config.id) === Number(emailState.activeId) ? 'is-active' : ''}" data-profile-email-select="${Number(config.id)}">
                 <span class="profile-email-card__top">
                     <strong>${escapeHtml(config.label || config.from_email)}</strong>
                     <em>${config.enabled ? '启用' : '停用'}${config.is_default ? ' / 默认' : ''}</em>
@@ -1006,14 +1006,14 @@ function initIdentityEditor() {
                 <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_start" value="${escapeHtml(item.term_start || '')}" title="任期开始（可空）" ${profileLq ? 'aria-label="任期开始（可空）"' : 'style="flex:1;min-width:130px;"'}>
                 <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_end" value="${escapeHtml(item.term_end || '')}" title="任期结束（可空，到期自动降级）" ${profileLq ? 'aria-label="任期结束（可空，到期自动降级）"' : 'style="flex:1;min-width:130px;"'}>
                 ${item.status === 'expired' ? (profileLq ? '<span class="lq-profile-identity-expired">已到期</span>' : '<span style="color:#92400e;font-size:0.78rem;font-weight:700;">已到期</span>') : ''}
-                <button type="button" class="btn btn-ghost btn-sm" data-identity-remove aria-label="移除">移除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-identity-remove aria-label="移除">移除</button>
             </div>
         `).join('');
         container.innerHTML = `
             ${rows || (profileLq ? '<div class="profile-identity-empty">尚未登记任职身份。</div>' : '<div class="profile-identity-empty" style="color:var(--text-muted);margin-bottom:8px;">尚未登记任职身份。</div>')}
             <div ${profileLq ? 'class="lq-profile-identity-actions"' : 'style="display:flex;gap:8px;"'}>
-                <button type="button" class="btn btn-outline btn-sm" data-identity-add ${state.items.length >= 4 ? 'disabled' : ''}>添加身份</button>
-                <button type="button" class="btn btn-primary btn-sm" data-identity-save>保存任职身份</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-identity-add ${state.items.length >= 4 ? 'disabled' : ''}>添加身份</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-identity-save>保存任职身份</button>
             </div>
         `;
         bind();

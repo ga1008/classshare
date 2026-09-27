@@ -39,7 +39,7 @@
         </div>
     {% endcall %}
 
-    <section class="academic-card course-list-card">
+    <section data-lq-component="surface" class="lq-surface academic-card course-list-card">
         <div class="academic-card-header">
             <div>
                 <h3 class="academic-card-title">可用课程</h3>
@@ -47,13 +47,13 @@
             </div>
         </div>
         <div class="academic-card-body course-list-body">
-            <div class="filter-bar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar filter-bar">
                 <label class="filter-bar__search" for="courseSearchInput">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"></circle>
                         <path d="m21 21-4.35-4.35"></path>
                     </svg>
-                    <input id="courseSearchInput" type="search" placeholder="搜索课程名称、简介或课堂设置">
+                    <input data-lq-component="input" class="lq-input" id="courseSearchInput" type="search" placeholder="搜索课程名称、简介或课堂设置">
                 </label>
                 <div class="filter-group">
                     <span class="filter-group__label">状态筛选</span>
@@ -69,13 +69,13 @@
                     </div>
                     {% else %}
                     <div class="filter-chips" data-filter-chips data-filter-target="#courseFilterSelect">
-                        <button type="button" class="filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
-                        <button type="button" class="filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
-                        <button type="button" class="filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
-                        <button type="button" class="filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip is-active" data-value="all">全部<span class="filter-chip__count">{{ course_stats.course_count }}</span></button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="active">已开课<span class="filter-chip__count">{{ course_stats.active_course_count }}</span></button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="complete">结构完整<span class="filter-chip__count">{{ _course_complete }}</span></button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
                     </div>
                     {% endif %}
-                    <select id="courseFilterSelect" class="filter-proxy-select" aria-hidden="true" tabindex="-1">
+                    <select data-lq-component="select" id="courseFilterSelect" class="lq-select filter-proxy-select" aria-hidden="true" tabindex="-1">
                         <option value="all">全部课程</option>
                         <option value="active">已开设课堂</option>
                         <option value="complete">结构完整</option>
@@ -84,8 +84,8 @@
                     </select>
                 </div>
                 <div class="filter-bar__actions">
-                    <button type="button" class="btn btn-outline" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
-                    <button type="button" class="btn btn-primary" id="toolbarCourseCreateBtn">新增课程</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="toolbarCourseAcademicSyncBtn">从教务系统同步</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="toolbarCourseCreateBtn">新增课程</button>
                 </div>
             </div>
 
@@ -95,9 +95,9 @@
                     <strong id="courseGroupModeLabel">默认网格</strong>
                 </div>
                 <div class="course-group-switch" role="group" aria-label="课程分类方式">
-                    <button type="button" class="course-group-mode-btn is-active" data-course-group-mode="none" aria-pressed="true">默认</button>
-                    <button type="button" class="course-group-mode-btn" data-course-group-mode="department" aria-pressed="false">系别</button>
-                    <button type="button" class="course-group-mode-btn" data-course-group-mode="semester" aria-pressed="false">创建学期</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass course-group-mode-btn is-active" data-course-group-mode="none" aria-pressed="true">默认</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass course-group-mode-btn" data-course-group-mode="department" aria-pressed="false">系别</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass course-group-mode-btn" data-course-group-mode="semester" aria-pressed="false">创建学期</button>
                 </div>
             </div>
 
@@ -108,8 +108,8 @@
 
             <div class="academic-card-grid course-card-grid" id="courseCardGrid">
                 {% for course in my_courses %}
-                <article
-                    class="academic-resource-card course-card"
+                <article data-lq-component="surface"
+                    class="lq-surface academic-resource-card course-card"
                     data-course-id="{{ course.id }}"
                     data-filter-state="{{ 'active' if course.is_in_use else 'idle' }}"
                     data-coverage-state="{{ course.coverage_status }}"
@@ -215,19 +215,19 @@
 
                     <div class="academic-card-actions">
                         <div class="academic-action-group">
-                            <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="course" data-resource-id="{{ course.id }}">属性</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-resource-attributes data-resource-type="course" data-resource-id="{{ course.id }}">属性</button>
                             {% if course.can_manage %}
-                            <button type="button" class="btn btn-outline btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">课次</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="edit-course" data-course-id="{{ course.id }}">课次</button>
                             {% else %}
                             <span class="academic-badge is-accent">可直接开课</span>
                             {% endif %}
-                            <button type="button" class="btn btn-outline btn-sm" data-action="lessondoc-pack" data-course-id="{{ course.id }}">学习文档</button>
-                            <a href="/manage/teaching/offerings?course_id={{ course.id }}" class="btn btn-ghost btn-sm">去开课</a>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="lessondoc-pack" data-course-id="{{ course.id }}">学习文档</button>
+                            <a data-lq-component="button" href="/manage/teaching/offerings?course_id={{ course.id }}" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm">去开课</a>
                         </div>
                         {% if course.can_manage %}
-                        <button
+                        <button data-lq-component="button"
                             type="button"
-                            class="btn btn-danger btn-sm"
+                            class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm"
                             data-action="delete-course"
                             data-course-id="{{ course.id }}"
                             data-course-name="{{ course.name }}"
@@ -254,21 +254,21 @@
     </section>
 </div>
 
-<div id="courseModal" class="modal-backdrop" style="display:none;">
-    <div class="modal-dialog modal-dialog-scrollable modal-dialog-wide course-modal-dialog">
-        <div class="modal-content">
+<div id="courseModal" class="lq-domain-region modal-backdrop" style="display:none;" data-lq-component="layer">
+    <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable modal-dialog-wide course-modal-dialog">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content">
             <div class="modal-header">
                 <div>
                     <h3 class="modal-title" id="courseModalTitle">新增课程</h3>
                     <p class="modal-subtitle">维护课程基础信息和课堂模板，后续开设课堂时可直接生成时间轴。</p>
                 </div>
-                <button class="modal-close" data-dismiss="modal">&times;</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body course-modal-body">
                 <input type="hidden" id="courseIdInput">
 
                 <div class="course-modal-stack">
-                    <section class="course-form-card course-form-card--primary">
+                    <section data-lq-component="surface" class="lq-surface course-form-card course-form-card--primary">
                         <div class="course-section-heading">
                             <h4 class="academic-card-title">基础信息</h4>
                             <p class="academic-card-subtitle">课程名称、学时和简介会被课堂开设、AI 拆课和学生端展示复用。</p>
@@ -281,7 +281,7 @@
                             {{ lq_field('courseNameInput', '课程名称', required=true, placeholder='例如：动态 Web 程序设计实验') }}
                             <div class="form-group">
                                 <label class="form-label" for="courseDepartmentInput">所属系别</label>
-                                <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                                <input data-lq-component="input" id="courseDepartmentInput" class="lq-input form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
                                 <datalist id="courseDepartmentOptions">
                                     {% for department in department_options %}
                                     <option value="{{ department }}"></option>
@@ -299,11 +299,11 @@
                         <div class="course-form-grid">
                             <div class="form-group">
                                 <label class="form-label required" for="courseNameInput">课程名称</label>
-                                <input id="courseNameInput" class="form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
+                                <input data-lq-component="input" id="courseNameInput" class="lq-input form-control" type="text" placeholder="例如：动态 Web 程序设计实验">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="courseDepartmentInput">所属系别</label>
-                                <input id="courseDepartmentInput" class="form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
+                                <input data-lq-component="input" id="courseDepartmentInput" class="lq-input form-control" type="text" list="courseDepartmentOptions" placeholder="例如：网络工程系">
                                 <datalist id="courseDepartmentOptions">
                                     {% for department in department_options %}
                                     <option value="{{ department }}"></option>
@@ -312,20 +312,20 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="courseCreditsInput">学分</label>
-                                <input id="courseCreditsInput" class="form-control" type="number" min="0" max="100" step="0.5" value="0">
+                                <input data-lq-component="input" id="courseCreditsInput" class="lq-input form-control" type="number" min="0" max="100" step="0.5" value="0">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="courseTotalHoursInput">学时</label>
-                                <input id="courseTotalHoursInput" class="form-control" type="number" min="0" max="512" step="1" value="0">
+                                <input data-lq-component="input" id="courseTotalHoursInput" class="lq-input form-control" type="number" min="0" max="512" step="1" value="0">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="courseSectNameInput">宗门名称</label>
-                                <input id="courseSectNameInput" class="form-control" type="text" maxlength="18" placeholder="例如：计网宗">
+                                <input data-lq-component="input" id="courseSectNameInput" class="lq-input form-control" type="text" maxlength="18" placeholder="例如：计网宗">
                                 <div class="academic-hint">留空时会按课程名自动生成。</div>
                             </div>
                             <div class="form-group full-span">
                                 <label class="form-label" for="courseDescriptionInput">课程简介</label>
-                                <textarea id="courseDescriptionInput" class="form-control" rows="4" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
+                                <textarea data-lq-component="textarea" id="courseDescriptionInput" class="lq-textarea form-control" rows="4" placeholder="补充课程定位、教学目标、授课环境和必要说明"></textarea>
                             </div>
                         </div>
                         {% endif %}
@@ -339,12 +339,12 @@
                             </div>
                             <div class="course-lessons-actions">
                                 <span class="academic-badge is-muted" id="courseLessonCounter">0 条课堂设置</span>
-                                <button type="button" class="btn btn-outline" id="courseAiOpenBtn">AI 生成课次</button>
-                                <button type="button" class="btn btn-outline" id="courseAddLessonBtn">新增一课</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="courseAiOpenBtn">AI 生成课次</button>
+                                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="courseAddLessonBtn">新增一课</button>
                             </div>
                         </div>
                         <div class="course-lesson-workbench">
-                            <nav class="course-lesson-menu" id="courseLessonMenu" aria-label="课堂设置快捷跳转"></nav>
+                            <nav data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised course-lesson-menu" id="courseLessonMenu" aria-label="课堂设置快捷跳转"></nav>
                             <div class="course-lessons-container" id="courseLessonsContainer"></div>
                         </div>
                     </section>
@@ -353,21 +353,21 @@
             <div class="modal-footer">
                 <p class="course-modal-footer-note">保存时会校验“课程总学时”和“课堂设置合计小节数”是否一致，避免后续排课出现错位。</p>
                 <div class="academic-action-group">
-                    <button class="btn btn-outline" type="button" id="courseModalAcademicSyncBtn">从教务系统同步</button>
-                    <button class="btn btn-outline" data-dismiss="modal">取消</button>
-                    <button class="btn btn-primary" type="button" id="courseSaveBtn">保存课程</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" type="button" id="courseModalAcademicSyncBtn">从教务系统同步</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-dismiss="modal">取消</button>
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" type="button" id="courseSaveBtn">保存课程</button>
                 </div>
             </div>
-            <div class="course-ai-dialog-backdrop" id="courseAiDialog" aria-hidden="true">
-                <section class="course-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="courseAiDialogTitle">
+            <div class="lq-domain-region course-ai-dialog-backdrop" id="courseAiDialog" aria-hidden="true" data-lq-component="layer">
+                <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised course-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="courseAiDialogTitle">
                     <div class="course-ai-dialog-head">
                         <div>
                             <h4 class="academic-card-title" id="courseAiDialogTitle">AI 生成课堂设置</h4>
                             <p>选择教材、课程总学时和每次课小节数后，自动拆出课堂设置，生成后仍可手工微调。</p>
                         </div>
-                        <button type="button" class="course-ai-dialog-close" id="courseAiCloseBtn" aria-label="关闭 AI 生成课堂设置">×</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass course-ai-dialog-close" id="courseAiCloseBtn" aria-label="关闭 AI 生成课堂设置">×</button>
                     </div>
-                    <div class="course-ai-panel">
+                    <div data-lq-component="surface" class="lq-surface course-ai-panel">
                         {% if _courses_lq_enabled %}
                         {% set _ai_tb_ns = namespace(options=[{'value': '', 'label': '请选择教材'}]) %}
                         {% for textbook in textbooks_json %}
@@ -381,7 +381,7 @@
                         <div class="course-ai-grid">
                             <div class="form-group">
                                 <label class="form-label" for="courseAiTextbookSelect">教材</label>
-                                <select id="courseAiTextbookSelect" class="form-control">
+                                <select data-lq-component="select" id="courseAiTextbookSelect" class="lq-select form-control">
                                     <option value="">请选择教材</option>
                                     {% for textbook in textbooks_json %}
                                     <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
@@ -390,7 +390,7 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="courseAiSectionCountInput">每次课小节数</label>
-                                <input id="courseAiSectionCountInput" class="form-control" type="number" min="1" max="12" step="1" value="2">
+                                <input data-lq-component="input" id="courseAiSectionCountInput" class="lq-input form-control" type="number" min="1" max="12" step="1" value="2">
                             </div>
                         </div>
                         {% endif %}
@@ -399,8 +399,8 @@
                             <span id="courseAiMetaHint">请先填写课程总学时，并保证能被每次课小节数整除。</span>
                         </div>
                         <div class="academic-action-group">
-                            <button type="button" class="btn btn-outline" id="courseAiCancelBtn">取消</button>
-                            <button type="button" class="btn btn-primary" id="courseAiGenerateBtn">AI 生成课堂设置</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="courseAiCancelBtn">取消</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="courseAiGenerateBtn">AI 生成课堂设置</button>
                         </div>
                     </div>
                 </section>
@@ -416,20 +416,20 @@
                 <span class="course-lesson-index" data-lesson-index>1</span>
                 <span data-lesson-heading>课堂设置</span>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-lesson">删除</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-action="remove-lesson">删除</button>
         </div>
         <div class="course-lesson-editor-grid">
             <div class="form-group">
                 <label class="form-label">名称</label>
-                <input class="form-control" type="text" data-field="title" placeholder="例如：Servlet 生命周期与请求响应流程">
+                <input data-lq-component="input" class="lq-input form-control" type="text" data-field="title" placeholder="例如：Servlet 生命周期与请求响应流程">
             </div>
             <div class="form-group">
                 <label class="form-label">小节数</label>
-                <input class="form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
+                <input data-lq-component="input" class="lq-input form-control" type="number" min="1" max="12" step="1" value="2" data-field="section_count">
             </div>
             <div class="form-group full-span">
                 <label class="form-label">上课内容</label>
-                <textarea class="form-control" rows="4" data-field="content" placeholder="说明本次课要讲的知识点、实验内容或案例任务"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="4" data-field="content" placeholder="说明本次课要讲的知识点、实验内容或案例任务"></textarea>
             </div>
             <div class="form-group full-span">
                 <label class="form-label">课程材料</label>
@@ -441,9 +441,9 @@
                             <span data-role="material-path">可选择课程材料库中的 Markdown 文档，后续开设课堂会自动继承。</span>
                         </div>
                         <div class="course-lesson-material-actions">
-                            <button type="button" class="btn btn-outline btn-sm" data-action="pick-material">选择材料</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-action="preview-material" disabled>预览文档</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-action="clear-material" disabled>清除</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="pick-material">选择材料</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="preview-material" disabled>预览文档</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="clear-material" disabled>清除</button>
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,6 @@
 import { initPageBackdrop, writeSceneHandoff } from './page_backdrop.js';
 import { sampleImageTone } from './lq/scene_tone.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 
 function clampPercent(value) {
     const number = Number(value || 0);
@@ -169,9 +170,9 @@ function buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl) {
         <footer class="life-tip-footer">
             <span class="life-tip-footer__timer" aria-hidden="true"><i style="animation-duration: ${durationMs}ms"></i></span>
             <div class="life-tip-footer__actions">
-                <button type="button" class="life-tip-feedback" data-life-tip-feedback="1">👍 有用</button>
-                <button type="button" class="life-tip-feedback" data-life-tip-feedback="-1">👎 无感</button>
-                <button type="button" class="life-tip-feedback" data-life-tip-save>💾 保存</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass life-tip-feedback" data-life-tip-feedback="1">👍 有用</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass life-tip-feedback" data-life-tip-feedback="-1">👎 无感</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass life-tip-feedback" data-life-tip-save>💾 保存</button>
                 <span class="life-tip-footer__skip" data-life-tip-skip>点击任意处继续 ›</span>
             </div>
         </footer>
@@ -496,6 +497,7 @@ function ensureTopbarChip(tipText) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'topbar-scene-chip';
+    adoptDomainControl(chip);
     chip.innerHTML = '<span class="topbar-scene-chip__dot" aria-hidden="true"></span><span class="topbar-scene-chip__label">人生一言</span>';
     const text = String(tipText || '').trim();
     if (text) {
@@ -510,7 +512,9 @@ function ensureTopbarChip(tipText) {
             }
             // 挂在 body 上做 fixed 定位，避开顶栏层叠上下文与继承样式。
             const pop = document.createElement('div');
-            pop.className = 'topbar-scene-pop';
+            pop.className = 'topbar-scene-pop lq-glass lq-domain-raised';
+            pop.dataset.lqComponent = 'popover';
+            pop.dataset.lqMaterial = 'raised';
             const title = document.createElement('strong');
             title.className = 'topbar-scene-pop__title';
             title.textContent = '今日一言';
@@ -643,7 +647,7 @@ function buildReveal(profile, durationMs) {
     overlay.setAttribute('aria-live', 'polite');
     overlay.innerHTML = `
         <div class="cultivation-login-reveal__field" aria-hidden="true"></div>
-        <section class="cultivation-login-reveal__card" data-cultivation-theme="${theme}">
+        <section data-lq-component="surface" class="lq-surface cultivation-login-reveal__card" data-cultivation-theme="${theme}">
             <div class="cultivation-login-reveal__sigil" aria-hidden="true">
                 <span></span>
             </div>

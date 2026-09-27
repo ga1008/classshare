@@ -5,10 +5,10 @@
     <div class="rz-home-hero__copy">
         <h2 id="rzHomeTitle" data-explain data-explain-title="开始简历" data-explain-text="已有简历直接导入；平台里已有资料可自动组合。不需要先填完所有栏目，第一版先出来，再逐步补强。">开始简历</h2>
         <div class="rz-home-actions">
-            <button type="button" class="rz-btn rz-btn--primary" id="rzHomeImportBtn">导入已有简历</button>
-            <a class="rz-btn" id="rzHomeBuildBtn" href="/resume/builder?auto=1">用已有资料生成</a>
-            <a class="rz-btn rz-btn--quiet" href="/resume/job-targets">分析岗位描述</a>
-            <input id="rzHomeImportFile" type="file" hidden
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--primary" id="rzHomeImportBtn">导入已有简历</button>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" id="rzHomeBuildBtn" href="/resume/builder?auto=1">用已有资料生成</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--quiet" href="/resume/job-targets">分析岗位描述</a>
+            <input data-lq-component="file" class="lq-native-file" id="rzHomeImportFile" type="file" hidden
                    accept=".doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*">
         </div>
         <div class="rz-home-file-hint">支持 Word、PDF 和图片，单个文件不超过 20MB</div>
@@ -35,7 +35,7 @@
             <div><span>开始方式</span><h3>选择最适合你的入口</h3></div>
         </div>
         <div class="rz-home-start-list">
-            <button type="button" class="rz-home-start" id="rzHomeImportCard">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-home-start" id="rzHomeImportCard">
                 <b>01</b><span><strong>我已经有一份简历</strong><small>上传并解析，核对后选择导入的资料</small></span><i>推荐</i>
             </button>
             <a class="rz-home-start" id="rzHomeAutoCard" href="/resume/builder?auto=1">

@@ -25,7 +25,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from ..config import SECRET_KEY
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from ..config import SECRET_KEY, TEMPLATES_DIR
+from ..frontend_assets import asset_url
 from ..storage_paths import DATA_ROOT
 from .libreoffice_service import LibreOfficeBusy, convert_office_file
 
@@ -39,6 +42,18 @@ SUPPORTED_FORMATS = {"doc", "docx", "xls", "xlsx", "pdf"}
 RENDER_VERSION = "document-renderer-v2"
 RENDER_TOKEN_PREFIX = "dr1."
 DEFAULT_TOKEN_TTL_SECONDS = 2 * 60 * 60
+
+# Render only the app-owned bootstrap. Document content and user text never
+# become a Jinja template, and the existing theme core remains the sole resolver.
+_preview_templates = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR), autoescape=select_autoescape()
+)
+
+
+def _preview_theme_head() -> str:
+    bootstrap = _preview_templates.get_template("partials/lq_theme_bootstrap.html")
+    stylesheet = html.escape(asset_url("tailwind_app"), quote=True)
+    return bootstrap.render(asset_url=asset_url) + f'<link rel="stylesheet" href="{stylesheet}">'
 
 
 class DocumentRenderError(RuntimeError):
@@ -355,25 +370,27 @@ class DocumentRenderService:
         escaped_disabled_reason = html.escape(download_disabled_reason.strip())
         if escaped_disabled_reason:
             download_action = (
-                f'<span class="doc-preview-download is-disabled" role="button" '
-                f'aria-disabled="true" title="{escaped_disabled_reason}">{escaped_download_label}</span>'
+                '<button class="doc-preview-download is-disabled lq-btn lq-btn--prominent lq-btn--sm" '
+                'data-lq-component="button" type="button" disabled aria-disabled="true" '
+                f'title="{escaped_disabled_reason}">{escaped_download_label}</button>'
                 f'<span class="doc-preview-download-note">{escaped_disabled_reason}</span>'
             )
         else:
             download_action = (
-                f'<a class="doc-preview-download" href="{html.escape(download_url)}">'
+                f'<a class="doc-preview-download lq-btn lq-btn--prominent lq-btn--sm" data-lq-component="button" href="{html.escape(download_url)}">'
                 f"{escaped_download_label}</a>"
             )
         pages_json = json.dumps(page_payload, ensure_ascii=False)
         page_cards = "\n".join(
             (
-                f"<button class=\"doc-preview-card is-page-pending\" type=\"button\" "
+                '<button class="doc-preview-card is-page-pending lq-domain-content-slot" '
+                'data-lq-component="content-slot" data-lq-content="document-page" type="button" '
                 f"data-page-index=\"{page['number'] - 1}\" data-page-status=\"idle\" "
                 f"aria-label=\"查看第 {page['number']} 页大图\">"
                 f"<span class=\"doc-preview-card__paper\">"
                 f"<img data-page-image alt=\"第 {page['number']} 页预览图\" decoding=\"async\" hidden>"
-                f"<span class=\"doc-preview-card__placeholder\" data-page-placeholder>"
-                f"<span class=\"doc-preview-page-spinner\"></span>"
+                '<span class="doc-preview-card__placeholder lq-surface" data-lq-component="surface" data-page-placeholder>'
+                '<span class="doc-preview-page-spinner lq-spinner" data-lq-component="spinner" aria-hidden="true"></span>'
                 f"<strong>正在渲染</strong><em>第 {page['number']} / {job.page_count} 页</em>"
                 f"</span></span>"
                 f"<span class=\"doc-preview-card__meta\"><strong>{page['number']}</strong><em>/ {job.page_count}</em></span>"
@@ -382,49 +399,37 @@ class DocumentRenderService:
             for page in page_payload
         )
         return f"""<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="lanshare" data-appearance-preference="auto" data-glass-preference="tinted">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escaped_title} · 预览</title>
+{_preview_theme_head()}
 <style>
   :root {{
-    color-scheme: light;
-    --ink: #172033;
-    --muted: #667085;
-    --line: rgba(117, 129, 149, 0.20);
-    --paper: #ffffff;
-    --surface: #f6f8fb;
-    --teal: #0f766e;
-    --sky: #0ea5e9;
-    --gold: #b7791f;
     --shadow: 0 26px 80px rgba(22, 32, 51, 0.16);
   }}
   * {{ box-sizing: border-box; }}
   html, body {{ min-height: 100%; margin: 0; }}
   body {{
-    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
-    color: var(--ink);
-    background:
-      linear-gradient(120deg, rgba(14, 165, 233, 0.10), rgba(15, 118, 110, 0.04) 42%, rgba(183, 121, 31, 0.08)),
-      var(--surface);
+    font-family: var(--ls-font-sans);
+    color: hsl(var(--ls-ink));
+    background: hsl(var(--ls-surface-0));
   }}
   .doc-preview-shell {{ min-height: 100vh; display: flex; flex-direction: column; }}
   .doc-preview-topbar {{
     position: sticky;
     top: 0;
-    z-index: 5;
+    z-index: var(--ls-z-nav);
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     align-items: center;
     padding: 14px clamp(16px, 4vw, 34px);
-    border-bottom: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(16px);
+    border-radius: 0;
   }}
   .doc-preview-title {{ min-width: 0; display: grid; gap: 4px; }}
-  .doc-preview-title span {{ color: var(--teal); font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; }}
+  .doc-preview-title span {{ color: hsl(var(--lq-material-accent)); font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; }}
   .doc-preview-title strong {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; }}
   .doc-preview-actions {{ display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }}
   .doc-preview-pill, .doc-preview-download {{
@@ -439,10 +444,8 @@ class DocumentRenderService:
     text-decoration: none;
     white-space: nowrap;
   }}
-  .doc-preview-pill {{ border: 1px solid rgba(14, 165, 233, 0.20); color: #075985; background: rgba(240, 249, 255, 0.9); }}
-  .doc-preview-download {{ border: 1px solid transparent; color: #fff; background: linear-gradient(135deg, var(--teal), #115e59); }}
-  .doc-preview-download.is-disabled {{ border-color: rgba(251, 146, 60, 0.35); color: #9a3412; background: #fff7ed; cursor: not-allowed; }}
-  .doc-preview-download-note {{ max-width: 380px; color: #9a3412; font-size: 0.78rem; line-height: 1.35; }}
+  .doc-preview-download.is-disabled {{ cursor: not-allowed; }}
+  .doc-preview-download-note {{ max-width: 380px; color: hsl(var(--ls-tone-warning-fg)); font-size: 0.78rem; line-height: 1.35; }}
   .doc-preview-stage {{
     flex: 1;
     width: min(1180px, calc(100vw - 28px));
@@ -531,6 +534,9 @@ class DocumentRenderService:
   }}
   .doc-preview-card.is-page-ready img {{ opacity: 1; }}
   .doc-preview-card__placeholder {{
+    /* White paper is content, not a themed scene. Status overlays use the
+       shared readable surface pair without a blur host on every page. */
+    --lq-material-fill: var(--ls-surface-1);
     position: absolute;
     inset: 0;
     display: grid;
@@ -538,10 +544,7 @@ class DocumentRenderService:
     place-content: center;
     justify-items: center;
     padding: 24px;
-    color: #475569;
-    background:
-      linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(15, 118, 110, 0.08)),
-      #ffffff;
+    border-radius: inherit;
     text-align: center;
     transition: opacity 180ms ease;
   }}
@@ -552,26 +555,20 @@ class DocumentRenderService:
   .doc-preview-card__placeholder em {{
     font-style: normal;
     font-size: 0.78rem;
-    color: var(--muted);
+    color: hsl(var(--ls-ink-2));
   }}
   .doc-preview-card.is-page-ready .doc-preview-card__placeholder {{
     opacity: 0;
     pointer-events: none;
   }}
   .doc-preview-card.is-page-error .doc-preview-card__placeholder {{
-    color: #92400e;
-    background:
-      linear-gradient(135deg, rgba(251, 191, 36, 0.14), rgba(14, 165, 233, 0.08)),
-      #fff7ed;
+    --lq-surface-background: hsl(var(--ls-tone-warning-soft));
   }}
-  .doc-preview-card.is-page-error .doc-preview-page-spinner {{ display: none; }}
+  .doc-preview-card.is-page-error .doc-preview-card__placeholder strong {{ color: hsl(var(--ls-tone-warning-fg)); }}
+  .doc-preview-card:is(.is-page-ready, .is-page-error) .doc-preview-page-spinner {{ display: none; }}
   .doc-preview-page-spinner {{
     width: 28px;
     height: 28px;
-    border-radius: 999px;
-    border: 3px solid rgba(14, 165, 233, 0.18);
-    border-top-color: var(--sky);
-    animation: docPreviewSpin 0.9s linear infinite;
   }}
   .doc-preview-card__meta {{
     position: absolute;
@@ -591,27 +588,17 @@ class DocumentRenderService:
   .doc-preview-card__meta strong {{ font-size: 0.96rem; }}
   .doc-preview-card__meta em {{ font-style: normal; font-size: 0.76rem; opacity: 0.78; }}
   .doc-preview-deck-btn {{
+    --lq-control-fill: var(--ls-surface-1);
     width: 42px;
     height: 42px;
-    border: 1px solid rgba(117, 129, 149, 0.24);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.88);
-    color: var(--ink);
-    cursor: pointer;
+    min-width: 0;
+    padding: 0;
     font-size: 1.45rem;
     line-height: 1;
-    box-shadow: 0 18px 42px rgba(22, 32, 51, 0.10);
-    transition: transform 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
-  }}
-  .doc-preview-deck-btn:hover,
-  .doc-preview-deck-btn:focus-visible {{
-    color: #075985;
-    border-color: rgba(14, 165, 233, 0.34);
-    box-shadow: 0 22px 54px rgba(22, 32, 51, 0.14);
-    transform: translateY(-1px);
-    outline: none;
   }}
   .doc-preview-deck-status {{
+    --lq-tone-soft: var(--ls-surface-1);
+    --lq-tone-fg: var(--ls-glass-ink);
     position: absolute;
     left: 50%;
     bottom: 12px;
@@ -621,13 +608,9 @@ class DocumentRenderService:
     align-items: center;
     justify-content: center;
     padding: 0 12px;
-    border: 1px solid rgba(117, 129, 149, 0.18);
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.86);
-    color: #334155;
     font-size: 0.82rem;
     font-weight: 800;
-    box-shadow: 0 16px 38px rgba(22, 32, 51, 0.10);
     transform: translateX(-50%);
     pointer-events: none;
   }}
@@ -635,11 +618,10 @@ class DocumentRenderService:
   .doc-preview-lightbox {{
     position: fixed;
     inset: 0;
-    z-index: 20;
+    z-index: var(--ls-z-modal);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    background: rgba(15, 23, 42, 0.76);
-    backdrop-filter: blur(18px);
+    background: hsl(var(--ls-scrim));
   }}
   .doc-preview-lightbox__bar {{
     display: flex;
@@ -647,7 +629,7 @@ class DocumentRenderService:
     justify-content: space-between;
     gap: 12px;
     padding: 12px clamp(14px, 3vw, 28px);
-    color: #fff;
+    border-radius: 0;
   }}
   .doc-preview-lightbox__bar strong {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
   .doc-preview-lightbox__controls {{ display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }}
@@ -656,23 +638,14 @@ class DocumentRenderService:
     align-items: center;
     gap: 4px;
     padding: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.10);
+
   }}
   .doc-preview-icon-btn {{
     width: 38px;
     height: 38px;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    cursor: pointer;
+    min-width: 0;
+    padding: 0;
     font-size: 1.15rem;
-  }}
-  .doc-preview-icon-btn:disabled {{
-    cursor: default;
-    opacity: 0.42;
   }}
   .doc-preview-zoom-reset {{
     min-width: 56px;
@@ -725,34 +698,17 @@ class DocumentRenderService:
     gap: 10px;
     place-items: center;
     padding: 18px 22px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    color: var(--ink);
-    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.20);
+
   }}
   .doc-preview-loading[hidden] {{ display: none; }}
   .doc-preview-loading.is-error .doc-preview-spinner {{ display: none; }}
   .doc-preview-loading__actions {{ display: flex; gap: 8px; align-items: center; }}
   .doc-preview-loading__actions[hidden] {{ display: none; }}
-  .doc-preview-retry {{
-    min-height: 32px;
-    border: 1px solid rgba(14, 165, 233, 0.24);
-    border-radius: 999px;
-    background: #fff;
-    color: #075985;
-    padding: 0 12px;
-    font-weight: 750;
-    cursor: pointer;
-  }}
+  .doc-preview-retry {{ min-height: 32px; padding: 0 12px; }}
   .doc-preview-spinner {{
     width: 26px;
     height: 26px;
-    border-radius: 999px;
-    border: 3px solid rgba(14, 165, 233, 0.18);
-    border-top-color: var(--sky);
-    animation: docPreviewSpin 0.9s linear infinite;
   }}
-  @keyframes docPreviewSpin {{ to {{ transform: rotate(360deg); }} }}
   @media (max-width: 720px) {{
     .doc-preview-topbar {{ grid-template-columns: 1fr; }}
     .doc-preview-actions {{ justify-content: space-between; }}
@@ -770,11 +726,9 @@ class DocumentRenderService:
     .doc-preview-deck-btn {{
       position: absolute;
       top: 50%;
-      z-index: 150;
-      transform: translateY(-50%);
+      z-index: var(--ls-z-nav);
+      translate: 0 -50%;
     }}
-    .doc-preview-deck-btn:hover,
-    .doc-preview-deck-btn:focus-visible {{ transform: translateY(-50%); }}
     .doc-preview-deck-btn[data-deck-prev] {{ left: 4px; }}
     .doc-preview-deck-btn[data-deck-next] {{ right: 4px; }}
     .doc-preview-deck-status {{ bottom: 4px; }}
@@ -794,49 +748,49 @@ class DocumentRenderService:
 </head>
 <body>
 <main class="doc-preview-shell">
-  <header class="doc-preview-topbar">
+  <header class="doc-preview-topbar lq-domain-toolbar lq-glass" data-lq-component="toolbar" data-lq-material="chrome">
     <div class="doc-preview-title">
       <span>{escaped_eyebrow}</span>
       <strong>{escaped_title}</strong>
     </div>
     <div class="doc-preview-actions">
-      <span class="doc-preview-pill">共 {job.page_count} 页</span>
+      <span class="doc-preview-pill lq-badge" data-lq-component="badge" data-tone="info">共 {job.page_count} 页</span>
       {download_action}
     </div>
   </header>
   <section class="doc-preview-stage">
     <div class="doc-preview-deck-shell">
-      <button class="doc-preview-deck-btn" type="button" data-deck-prev aria-label="上一页">‹</button>
+      <button class="doc-preview-deck-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-deck-prev aria-label="上一页">‹</button>
       <div class="doc-preview-pages" data-page-deck tabindex="0" aria-label="文档页面，使用鼠标滚轮或方向键切换页面">{page_cards}</div>
-      <button class="doc-preview-deck-btn" type="button" data-deck-next aria-label="下一页">›</button>
-      <div class="doc-preview-deck-status" data-deck-count aria-live="polite">1 / {job.page_count}</div>
+      <button class="doc-preview-deck-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-deck-next aria-label="下一页">›</button>
+      <div class="doc-preview-deck-status lq-badge" data-lq-component="badge" data-tone="neutral" data-deck-count aria-live="polite">1 / {job.page_count}</div>
     </div>
   </section>
 </main>
-<div class="doc-preview-lightbox" data-lightbox hidden>
-  <div class="doc-preview-lightbox__bar">
+<div class="doc-preview-lightbox lq-domain-region" data-lq-component="layer" data-lightbox hidden>
+  <div class="doc-preview-lightbox__bar lq-domain-toolbar lq-surface lq-domain-raised" data-lq-component="toolbar" data-lq-material="raised">
     <strong data-lightbox-title>{escaped_title}</strong>
     <div class="doc-preview-lightbox__controls">
-      <div class="doc-preview-zoom-group" aria-label="页面缩放">
-        <button class="doc-preview-icon-btn" type="button" data-zoom-out aria-label="缩小">−</button>
-        <button class="doc-preview-icon-btn doc-preview-zoom-reset" type="button" data-zoom-reset aria-label="还原缩放">100%</button>
-        <button class="doc-preview-icon-btn" type="button" data-zoom-in aria-label="放大">+</button>
+      <div class="doc-preview-zoom-group lq-domain-toolbar" data-lq-component="toolbar" aria-label="页面缩放">
+        <button class="doc-preview-icon-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-zoom-out aria-label="缩小">−</button>
+        <button class="doc-preview-icon-btn doc-preview-zoom-reset lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-zoom-reset aria-label="还原缩放">100%</button>
+        <button class="doc-preview-icon-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-zoom-in aria-label="放大">+</button>
       </div>
-      <button class="doc-preview-icon-btn" type="button" data-prev aria-label="上一页">‹</button>
+      <button class="doc-preview-icon-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-prev aria-label="上一页">‹</button>
       <span data-lightbox-count>1 / {job.page_count}</span>
-      <button class="doc-preview-icon-btn" type="button" data-next aria-label="下一页">›</button>
-      <button class="doc-preview-icon-btn" type="button" data-close aria-label="关闭">×</button>
+      <button class="doc-preview-icon-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-next aria-label="下一页">›</button>
+      <button class="doc-preview-icon-btn lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-close aria-label="关闭">×</button>
     </div>
   </div>
   <div class="doc-preview-lightbox__body">
-    <div class="doc-preview-large-frame" data-large-frame>
+    <div class="doc-preview-large-frame lq-domain-content-slot" data-lq-component="content-slot" data-lq-content="document-page" data-large-frame>
       <img class="doc-preview-large-image" data-large-image alt="高清页面预览" draggable="false">
     </div>
-    <div class="doc-preview-loading" data-loading>
-      <span class="doc-preview-spinner"></span>
+    <div class="doc-preview-loading lq-surface lq-domain-raised" data-lq-component="surface" data-lq-material="raised" data-loading>
+      <span class="doc-preview-spinner lq-spinner" data-lq-component="spinner" aria-hidden="true"></span>
       <strong data-loading-text>正在生成高清预览...</strong>
       <div class="doc-preview-loading__actions" data-loading-actions hidden>
-        <button class="doc-preview-retry" type="button" data-retry-large>重试高清图</button>
+        <button class="doc-preview-retry lq-btn lq-btn--glass lq-btn--sm" data-lq-component="button" type="button" data-retry-large>重试高清图</button>
       </div>
     </div>
   </div>
@@ -1204,14 +1158,15 @@ class DocumentRenderService:
 </html>"""
 
     def render_error_html(self, *, title: str, message: str) -> str:
-        return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+        return f"""<!DOCTYPE html><html lang="zh-CN" data-theme="lanshare" data-appearance-preference="auto" data-glass-preference="tinted"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} · 预览失败</title>
+{_preview_theme_head()}
 <style>
-body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fb;color:#172033;font-family:"Microsoft YaHei","Segoe UI",sans-serif;}}
-section{{width:min(560px,calc(100vw - 32px));padding:26px;border:1px solid rgba(117,129,149,.24);border-radius:8px;background:#fff;box-shadow:0 22px 60px rgba(22,32,51,.12);}}
-h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:#667085;line-height:1.7;}}
-</style></head><body><section><h1>预览暂时不可用</h1><p>{html.escape(message)}</p></section></body></html>"""
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:hsl(var(--ls-surface-0));color:hsl(var(--ls-ink));font-family:var(--ls-font-sans);}}
+section{{width:min(560px,calc(100vw - 32px));padding:26px;}}
+h1{{margin:0 0 10px;font-size:1.15rem;}}p{{margin:0;color:hsl(var(--lq-material-muted));line-height:1.7;}}
+</style></head><body><section class="lq-surface lq-domain-raised" data-lq-component="surface" data-lq-material="raised"><h1>预览暂时不可用</h1><p>{html.escape(message)}</p></section></body></html>"""
 
     def cleanup_expired_maybe(self) -> None:
         now = time.time()

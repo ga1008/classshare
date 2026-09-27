@@ -2,15 +2,21 @@
  * Qualify only the migrated nodes so old light-only paint cannot override tokens. */
 .lq-btn:is(.message-center-bell, .feedback-entry-button),
 .lq-avatar-link.profile-entry-button {
-    border-color: hsl(var(--ls-line));
-    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    --lq-control-border: hsl(var(--ls-line));
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2)));
+    border-color: var(--lq-control-border);
+    background: var(--lq-control-background);
+    color: var(--lq-control-color);
 }
 .lq-btn:is(.message-center-bell, .feedback-entry-button):hover,
 .lq-avatar-link.profile-entry-button:hover {
-    border-color: hsl(var(--ls-control-line));
-    background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
-    color: hsl(var(--lq-control-ink, var(--ls-ink)));
+    --lq-control-border: hsl(var(--ls-control-line));
+    --lq-control-background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink)));
+    border-color: var(--lq-control-border);
+    background: var(--lq-control-background);
+    color: var(--lq-control-color);
 }
 .lq-avatar.profile-entry-button__avatar {
     display: inline-flex;
@@ -26,9 +32,12 @@
 @media (forced-colors: active) {
     .lq-btn:is(.message-center-bell, .feedback-entry-button),
     .lq-avatar-link.profile-entry-button {
-        background: ButtonFace;
-        border-color: ButtonText;
-        color: ButtonText;
+        --lq-control-background: ButtonFace;
+        --lq-control-border: ButtonText;
+        --lq-control-color: ButtonText;
+        background: var(--lq-control-background);
+        border-color: var(--lq-control-border);
+        color: var(--lq-control-color);
     }
     .lq-avatar.profile-entry-button__avatar { background: Canvas; color: CanvasText; }
 }

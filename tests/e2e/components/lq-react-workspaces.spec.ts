@@ -138,3 +138,64 @@ test('dashboard unmount cancels late todo return and late request side effects',
   await expect(page.locator('body')).toHaveCSS('overflow','clip');
   expect(errors).toEqual([]);
 });
+
+for (const appearance of ['light', 'dark']) for (const width of [1440, 390]) test(`LQ actual workspace controls use shared components ${appearance} ${width}`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 980 });
+  const errors = await setup(page);
+  await page.evaluate(appearance => {
+    Object.assign(document.documentElement.dataset, { theme: 'lanshare', appearance, lqGlass: 'tinted' });
+    (window as any).workspaceApi.dashboard();
+  }, appearance);
+  expect(await page.locator('#dashboard button:not(.lq-btn):not(.lq-chip)').count()).toBe(0);
+  await page.getByRole('button', { name: '全部事项与历史', exact: true }).click();
+  await expect(dialog(page)).toBeVisible();
+  await expect(dialog(page).getByLabel('搜索事项')).toHaveClass(/lq-input/);
+  await expect(dialog(page)).toHaveAttribute('data-lq-material', 'raised');
+  await expect(dialog(page)).toHaveCSS('position', 'fixed');
+  await expect(dialog(page)).toHaveCSS('backdrop-filter', /blur\(/);
+  await expect(page.locator('[data-ui-dialog-overlay]')).toHaveClass(/lq-scrim/);
+  await expect(page.locator('[data-ui-dialog-overlay]')).toHaveCSS('backdrop-filter', 'none');
+  await expect(dialog(page).getByLabel('课堂', { exact: true })).toHaveClass(/lq-select/);
+  await expect(dialog(page).getByRole('button', { name: '关闭', exact: true })).toHaveClass(/lq-btn/);
+  await expect(dialog(page).getByRole('button', { name: '全部事项', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(await dialog(page).locator('[data-lq-component]').evaluateAll(nodes => nodes.every(node => getComputedStyle(node).backdropFilter === 'none'))).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  fs.mkdirSync('.codex-temp/lq-react-workspaces', { recursive: true });
+  await expect(dialog(page)).toHaveCSS('opacity', '1');
+  const materials = async () => page.locator('[data-ui-dialog-root], [data-ui-dialog-overlay], [data-ui-dialog-content]').evaluateAll(nodes => nodes.map(node => {
+    const css = getComputedStyle(node);
+    return { classes: node.className, opacity: css.opacity, background: css.background, backdrop: css.backdropFilter, filter: css.filter, transform: css.transform, blur: css.getPropertyValue('--lq-material-blur') };
+  }));
+  fs.writeFileSync(`.codex-temp/lq-react-workspaces/dashboard-${appearance}-${width}-material.json`, JSON.stringify(await materials(), null, 2));
+  await page.screenshot({ path: `.codex-temp/lq-react-workspaces/dashboard-${appearance}-${width}.png`, fullPage: true });
+  await dialog(page).getByLabel('搜索事项').fill('待办查询');
+  await expect.poll(() => page.evaluate(() => (window as any).requests.some((request: any) => new URL(request.url, location.href).searchParams.get('q') === '待办查询'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog(page)).toHaveCount(0);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.workspaceApi.unmount('dashboard');
+    w.APP_CONFIG.assignmentWorkspaceItems = [{ id: 22, title: '课堂实验报告', kind: 'homework', status: 'new', submissionStatus: 'unsubmitted', accepting: false, lateOpen: false, deadlinePhase: 'none', countdownAt: '', serverNow: '', canResubmit: false, resubmissionDueAt: '', groupPending: false }];
+    w.workspaceApi.classroom();
+  });
+  await expect(page.locator('#cw-tasks-preview .lq-chip--filter')).toHaveCount(3);
+  await expect(page.locator('#cw-tasks-preview .cw-task-card.lq-card.lq-surface[data-lq-component="surface"]')).toHaveCount(1);
+  await expect(page.locator('#cw-tasks-preview .cw-task-card')).toHaveCSS('backdrop-filter', 'none');
+  expect(await page.locator('#cw-tasks-preview button:not(.lq-btn):not(.lq-chip)').count()).toBe(0);
+  await page.locator('#cw-tasks-preview').screenshot({ path: `.codex-temp/lq-react-workspaces/classroom-cards-${appearance}-${width}.png` });
+  await page.locator('#tasks-trigger').click();
+  await expect(dialog(page).getByLabel('任务分类')).toHaveClass(/lq-select/);
+  await dialog(page).getByLabel('任务状态').selectOption('draft');
+  await expect(dialog(page).getByLabel('任务状态')).toHaveValue('draft');
+  await expect(dialog(page).getByLabel('查找任务')).toHaveClass(/lq-input/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(dialog(page)).toHaveCSS('opacity', '1');
+  fs.writeFileSync(`.codex-temp/lq-react-workspaces/classroom-${appearance}-${width}-material.json`, JSON.stringify(await materials(), null, 2));
+  await page.screenshot({ path: `.codex-temp/lq-react-workspaces/classroom-${appearance}-${width}.png`, fullPage: true });
+  await page.evaluate(() => { document.documentElement.dataset.lqGlass = 'off'; });
+  await expect(dialog(page)).toHaveCSS('backdrop-filter', 'none');
+  await dialog(page).getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  await expect(page.locator('#tasks-trigger')).toBeFocused();
+  expect(errors).toEqual([]);
+});

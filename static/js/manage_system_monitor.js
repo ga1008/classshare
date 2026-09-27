@@ -14,7 +14,7 @@ const COLORS = {
     good: '#34d399',
     warn: '#fbbf24',
     bad: '#fb7185',
-    muted: '#8aa0c5',
+    muted: 'var(--mb-muted)',
     grid: 'rgba(96, 128, 190, 0.16)',
 };
 
@@ -142,7 +142,7 @@ function renderTiles(snapshot) {
     ];
 
     $('monitorTiles').innerHTML = tiles.map((tile) => `
-        <div class="monitor-panel monitor-tile">
+        <div data-lq-component="surface" class="lq-surface monitor-panel monitor-tile">
             <span class="monitor-tile__label">${tile.label}</span>
             <span class="monitor-tile__value">${tile.value}</span>
             <span class="monitor-tile__sub">${escapeHtml(tile.sub)}</span>
@@ -261,7 +261,7 @@ function renderDonut(svgId, listId, segments, centerLabel) {
         });
     }
 
-    svg.appendChild(el('text', { x: cx, y: cy - 2, fill: '#e7edf9', 'font-size': 17, 'font-weight': 800, 'text-anchor': 'middle' }, centerLabel.value));
+    svg.appendChild(el('text', { x: cx, y: cy - 2, fill: 'var(--mb-text)', 'font-size': 17, 'font-weight': 800, 'text-anchor': 'middle' }, centerLabel.value));
     svg.appendChild(el('text', { x: cx, y: cy + 14, fill: COLORS.muted, 'font-size': 8.5, 'text-anchor': 'middle' }, centerLabel.caption));
 
     $(listId).innerHTML = segments.map((segment) => {
@@ -384,7 +384,7 @@ function renderProcRow(node, depth, query, rows) {
         <div class="proc-row" data-pid="${node.pid}">
             <span class="proc-name" style="padding-left:${depth * 16}px" title="${escapeHtml(node.cmdline || node.name)}">
                 ${hasChildren
-                    ? `<button type="button" class="twisty" data-toggle-pid="${node.pid}" aria-label="展开/折叠子进程">${collapsed ? '▸' : '▾'}</button>`
+                    ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass twisty" data-toggle-pid="${node.pid}" aria-label="展开/折叠子进程">${collapsed ? '▸' : '▾'}</button>`
                     : '<span class="twisty" aria-hidden="true"></span>'}
                 <span class="proc-name__label">${escapeHtml(node.name || `pid ${node.pid}`)}</span>
                 ${node.is_self ? '<span class="proc-self-badge">本服务</span>' : ''}
@@ -393,8 +393,8 @@ function renderProcRow(node, depth, query, rows) {
             <span>${node.memory_mb} MB</span>
             <span>${node.cpu_percent}%</span>
             <span>${node.is_self
-                ? '<button type="button" class="proc-kill" disabled title="禁止终止 Web 服务自身">受保护</button>'
-                : `<button type="button" class="proc-kill" data-kill-pid="${node.pid}" data-kill-name="${escapeHtml(node.name || '')}">终止</button>`}
+                ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass proc-kill" disabled title="禁止终止 Web 服务自身">受保护</button>'
+                : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass proc-kill" data-kill-pid="${node.pid}" data-kill-name="${escapeHtml(node.name || '')}">终止</button>`}
             </span>
         </div>
     `);

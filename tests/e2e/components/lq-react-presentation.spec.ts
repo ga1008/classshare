@@ -140,7 +140,7 @@ for (const appearance of ['light', 'dark']) for (const width of [1440, 390]) tes
       const avatar = document.querySelector('#compat .lq-avatar')!;
       const initial = avatar.querySelector('.lq-avatar__fallback')!;
       const a = avatar.getBoundingClientRect(), b = initial.getBoundingClientRect();
-      const probe = document.createElement('span'); probe.style.background = 'hsl(var(--ls-surface-1))'; document.body.append(probe);
+      const probe = document.createElement('span'); probe.style.background = 'hsl(var(--lq-control-fill, var(--ls-glass-fill-control)))'; document.body.append(probe);
       const expected = getComputedStyle(probe).backgroundColor;
       const paired = [...document.querySelectorAll('#compat > .lq-btn, #compat > .lq-avatar-link')].every(el => getComputedStyle(el).backgroundColor === expected);
       probe.remove();

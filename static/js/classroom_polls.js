@@ -82,7 +82,7 @@ function renderCard(poll) {
         ? `${poll.total_voters} 人已投`
         : (poll.has_voted ? '你已投票' : '尚未投票');
     return `
-        <button type="button" data-lq-shape="surface" class="poll-card ${meta.tone}" data-poll-open="${poll.id}">
+        <button data-lq-component="button" type="button" data-lq-shape="surface" class="lq-btn lq-btn--sm lq-btn--glass poll-card ${meta.tone}" data-poll-open="${poll.id}">
             <div class="poll-card__top">
                 <span class="poll-status-badge ${meta.tone}">${meta.label}</span>
                 <span class="poll-type-badge">${typeLabel}</span>
@@ -112,7 +112,7 @@ function renderList(snapshot, state) {
                     ? '在此创建仅本班级的投票；跨班级投票请到管理中心 · 投票。'
                     : '可创建你自己的投票并邀请同学参与（被你拉黑或拉黑你的同学不可邀请）。'}</span>
             </div>
-            <button type="button" class="btn btn-primary btn-sm" data-poll-create-open>新建投票</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-poll-create-open>新建投票</button>
         </div>
     `;
     if (!polls.length) {
@@ -149,9 +149,10 @@ function onOverlayKeydown(event) {
 function openOverlay(html) {
     closeOverlay();
     const overlay = document.createElement('div');
-    overlay.className = 'poll-overlay';
+    overlay.className = 'lq-domain-region poll-overlay';
+    overlay.dataset.lqComponent = 'layer';
     overlay.setAttribute('data-poll-overlay', '');
-    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div class="poll-overlay__shell" role="dialog" aria-modal="true">${html}</div>`;
+    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised poll-overlay__shell" role="dialog" aria-modal="true">${html}</div>`;
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onOverlayKeydown);
     return overlay;
@@ -180,7 +181,7 @@ function renderVoteOption(poll, option) {
     const disabled = poll.can_vote ? '' : ' disabled';
     return `
         <label class="poll-vote-option${option.selected ? ' is-selected' : ''}">
-            <input type="${inputType}" name="poll_option" value="${option.id}"${checked}${disabled}>
+            <input data-lq-component="input" class="lq-input" type="${inputType}" name="poll_option" value="${option.id}"${checked}${disabled}>
             <span>${escapeHtml(option.label)}</span>
         </label>
     `;
@@ -210,11 +211,11 @@ function renderDetailBody(poll) {
             : '<small>提交后不可修改</small>';
         voteControls = `
             <form class="poll-vote-form" data-poll-vote="${poll.id}">
-                ${showResults ? `<button type="button" class="poll-revote-toggle" data-poll-revote-toggle>${poll.has_voted ? '修改投票' : '去投票'}</button>` : ''}
+                ${showResults ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass poll-revote-toggle" data-poll-revote-toggle>${poll.has_voted ? '修改投票' : '去投票'}</button>` : ''}
                 <div class="poll-vote-list" data-poll-vote-list${showResults ? ' hidden' : ''}>
                     ${voteList}
                     <div class="poll-vote-actions">
-                        <button type="submit" class="btn btn-primary btn-sm">${poll.has_voted ? '更新投票' : '提交投票'}</button>
+                        <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">${poll.has_voted ? '更新投票' : '提交投票'}</button>
                         ${changeHint}
                     </div>
                 </div>
@@ -236,14 +237,14 @@ function renderDetailBody(poll) {
         <div class="poll-detail-admin" data-poll-admin="${poll.id}">
             <div class="poll-detail-admin__status">
                 ${['draft', 'active', 'closed'].map((status) => `
-                    <button type="button" class="poll-status-btn${poll.status === status ? ' is-current' : ''}" data-poll-status="${status}" ${poll.status === status ? 'disabled' : ''}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass poll-status-btn${poll.status === status ? ' is-current' : ''}" data-poll-status="${status}" ${poll.status === status ? 'disabled' : ''}>
                         ${statusMeta(status).label}
                     </button>
                 `).join('')}
             </div>
             <div class="poll-detail-admin__ops">
-                <button type="button" class="btn btn-ghost btn-sm" data-poll-edit="${poll.id}">编辑</button>
-                <button type="button" class="btn btn-ghost btn-sm poll-danger" data-poll-delete="${poll.id}">删除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-poll-edit="${poll.id}">编辑</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm poll-danger" data-poll-delete="${poll.id}">删除</button>
             </div>
         </div>
     ` : '';
@@ -261,7 +262,7 @@ function renderDetailBody(poll) {
                     <h3>${escapeHtml(poll.title)}</h3>
                     <span class="poll-detail__owner">${escapeHtml(ownerText(poll))} · ${escapeHtml(deadlineText(poll))}</span>
                 </div>
-                <button type="button" class="poll-overlay__close" data-poll-overlay-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass poll-overlay__close" data-poll-overlay-close aria-label="关闭">×</button>
             </div>
             ${poll.description ? `<p class="poll-detail__desc">${escapeHtml(poll.description)}</p>` : ''}
             ${classScope ? `<p class="poll-detail__scope">参与范围：${classScope}（${poll.participant_total} 人）</p>` : ''}
@@ -280,8 +281,8 @@ function renderDetailBody(poll) {
 function optionRow(value, index) {
     return `
         <div class="poll-option-row">
-            <input type="text" name="poll_option_label" maxlength="160" value="${escapeHtml(value || '')}" placeholder="选项 ${index + 1}">
-            <button type="button" class="poll-icon-btn" data-poll-remove-option aria-label="删除选项">×</button>
+            <input data-lq-component="input" class="lq-input" type="text" name="poll_option_label" maxlength="160" value="${escapeHtml(value || '')}" placeholder="选项 ${index + 1}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass poll-icon-btn" data-poll-remove-option aria-label="删除选项">×</button>
         </div>
     `;
 }
@@ -295,12 +296,12 @@ function participantPicker(candidates, selectedIds) {
         <div class="poll-participant-picker" data-poll-participants>
             <div class="poll-participant-picker__head">
                 <span>选择参与者</span>
-                <button type="button" class="btn btn-ghost btn-sm" data-poll-select-all>全选可邀请</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-poll-select-all>全选可邀请</button>
             </div>
             <div class="poll-participant-list">
                 ${candidates.map((cand) => `
                     <label class="poll-participant${cand.blocked ? ' is-blocked' : ''}">
-                        <input type="checkbox" name="poll_participant" value="${cand.id}" ${cand.blocked ? 'disabled' : ''} ${selected.has(String(cand.id)) ? 'checked' : ''}>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="poll_participant" value="${cand.id}" ${cand.blocked ? 'disabled' : ''} ${selected.has(String(cand.id)) ? 'checked' : ''}>
                         <span>${escapeHtml(cand.name)}${cand.student_id_number ? ` · ${escapeHtml(cand.student_id_number)}` : ''}</span>
                         ${cand.blocked ? '<em>黑名单，不可邀请</em>' : ''}
                     </label>
@@ -334,50 +335,50 @@ function renderForm(state, poll) {
         <div class="poll-form-wrap">
             <div class="poll-detail__head">
                 <h3>${isEdit ? '编辑投票' : '新建投票'}</h3>
-                <button type="button" class="poll-overlay__close" data-poll-overlay-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass poll-overlay__close" data-poll-overlay-close aria-label="关闭">×</button>
             </div>
             <form class="poll-form" data-poll-form data-poll-id="${isEdit ? poll.id : ''}">
                 <div class="poll-form-field poll-form-field--full">
                     <span class="poll-form-label">标题</span>
-                    <input type="text" name="title" maxlength="120" required value="${isEdit ? escapeHtml(poll.title) : ''}" placeholder="例如：期末考核形式投票">
+                    <input data-lq-component="input" class="lq-input" type="text" name="title" maxlength="120" required value="${isEdit ? escapeHtml(poll.title) : ''}" placeholder="例如：期末考核形式投票">
                 </div>
                 <div class="poll-form-field poll-form-field--full">
                     <span class="poll-form-label">说明（可选）</span>
-                    <textarea name="description" rows="2" maxlength="1000" placeholder="补充投票背景或说明">${isEdit ? escapeHtml(poll.description) : ''}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="2" maxlength="1000" placeholder="补充投票背景或说明">${isEdit ? escapeHtml(poll.description) : ''}</textarea>
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">投票形式</span>
-                    <select name="vote_type">
+                    <select data-lq-component="select" class="lq-select" name="vote_type">
                         <option value="single"${voteType === 'single' ? ' selected' : ''}>单选</option>
                         <option value="multiple"${voteType === 'multiple' ? ' selected' : ''}>多选</option>
                     </select>
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">统计可见时机</span>
-                    <select name="result_visibility">
+                    <select data-lq-component="select" class="lq-select" name="result_visibility">
                         ${VISIBILITY_OPTIONS.map((opt) => `<option value="${opt.value}"${visibility === opt.value ? ' selected' : ''}>${opt.label}</option>`).join('')}
                     </select>
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">截止时间（可选）</span>
-                    <input type="datetime-local" name="deadline_at" value="${deadline}">
+                    <input data-lq-component="input" class="lq-input" type="datetime-local" name="deadline_at" value="${deadline}">
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">可修改</span>
-                    <label class="poll-inline-check"><input type="checkbox" name="allow_change" ${allowChange ? 'checked' : ''}> 截止前允许修改</label>
-                    <input type="number" name="max_changes" min="0" max="20" value="${maxChanges || 0}" placeholder="0 = 不限次数" data-poll-max-changes ${allowChange ? '' : 'disabled'}>
+                    <label class="poll-inline-check"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="allow_change" ${allowChange ? 'checked' : ''}> 截止前允许修改</label>
+                    <input data-lq-component="input" class="lq-input" type="number" name="max_changes" min="0" max="20" value="${maxChanges || 0}" placeholder="0 = 不限次数" data-poll-max-changes ${allowChange ? '' : 'disabled'}>
                 </div>
                 <div class="poll-form-field poll-form-field--full">
                     <span class="poll-form-label">选项</span>
                     <div class="poll-option-editor" data-poll-option-list>
                         ${options.map((value, index) => optionRow(value, index)).join('')}
                     </div>
-                    <button type="button" class="btn btn-ghost btn-sm" data-poll-add-option>增加选项</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-poll-add-option>增加选项</button>
                 </div>
                 ${participantSection}
-                <div class="poll-form-actions">
-                    <button type="submit" class="btn btn-outline btn-sm" data-poll-save-status="draft">保存为草稿</button>
-                    <button type="submit" class="btn btn-primary btn-sm" data-poll-save-status="active">${isEdit ? '保存并开始' : '创建并开始'}</button>
+                <div data-lq-component="toolbar" class="lq-domain-toolbar poll-form-actions">
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-poll-save-status="draft">保存为草稿</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-poll-save-status="active">${isEdit ? '保存并开始' : '创建并开始'}</button>
                 </div>
             </form>
         </div>

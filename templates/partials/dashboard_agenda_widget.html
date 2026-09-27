@@ -26,9 +26,9 @@
         </div>
         <div class="agenda-reminder__tools">
             {% if dashboard_can_create_todo %}
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="agenda-reminder__add"
+                class="lq-btn lq-btn--sm lq-btn--glass agenda-reminder__add"
                 data-agenda-add-todo
                 title="新增待办"
                 aria-label="新增待办"
@@ -37,9 +37,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
             </button>
             {% endif %}
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="agenda-reminder__add"
+                class="lq-btn lq-btn--sm lq-btn--glass agenda-reminder__add"
                 data-agenda-calendar-feed
                 title="订阅到手机日历（上课/作业/考试自动同步）"
                 aria-label="订阅到手机日历"
@@ -48,9 +48,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
             </button>
             {% if agenda_widget_can_sync %}
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="agenda-reminder__bell agenda-reminder__bell--sync"
+                class="lq-btn lq-btn--sm lq-btn--glass agenda-reminder__bell agenda-reminder__bell--sync"
                 data-agenda-sync
                 data-sync-endpoint="/api/manage/system/academic-reminders/sync-current"
                 title="同步教务系统的监考与考试提醒"
@@ -80,9 +80,9 @@
         {% if _scrollable %}tabindex="0" aria-label="待办列表，按时间从近到远排列，可上下滚动查看全部 {{ _reminders|length }} 项"{% endif %}>
         {% for ev in _reminders %}
         <div class="agenda-reminder__entry" role="listitem">
-        <button
+        <button data-lq-component="button"
             type="button"
-            class="agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
+            class="lq-btn lq-btn--sm lq-btn--glass agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
             aria-haspopup="dialog"
             data-agenda-item
             data-kind="{{ ev.kind }}"

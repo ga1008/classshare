@@ -52,14 +52,14 @@ function ensureDom() {
     listBackdrop.hidden = true;
     listBackdrop.setAttribute('aria-hidden', 'true');
     listBackdrop.innerHTML = `
-        <div class="ls-mat-popup__dialog" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="lsMatPopupTitle">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-mat-popup__dialog" data-ui-overlay-surface role="dialog" aria-modal="true" aria-labelledby="lsMatPopupTitle">
             <div class="ls-mat-popup__header">
                 <div>
                     <span class="ls-mat-popup__kicker">学习材料</span>
                     <h3 class="ls-mat-popup__title" id="lsMatPopupTitle">学习材料</h3>
                     <p class="ls-mat-popup__subtitle" id="lsMatPopupSubtitle">点击任意卡片进入材料</p>
                 </div>
-                <button type="button" class="ls-mat-popup__close" data-close-mat-popup aria-label="关闭">&times;</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-mat-popup__close" data-close-mat-popup aria-label="关闭">&times;</button>
             </div>
             <div class="ls-mat-popup__list" id="lsMatPopupList"></div>
         </div>
@@ -77,12 +77,12 @@ function ensureDom() {
     confirmBackdrop.hidden = true;
     confirmBackdrop.setAttribute('aria-hidden', 'true');
     confirmBackdrop.innerHTML = `
-        <div class="ls-mat-confirm__dialog" data-ui-overlay-surface role="alertdialog" aria-modal="true" aria-labelledby="lsMatConfirmTitle">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-mat-confirm__dialog" data-ui-overlay-surface role="alertdialog" aria-modal="true" aria-labelledby="lsMatConfirmTitle">
             <h4 class="ls-mat-confirm__title" id="lsMatConfirmTitle">确认解绑材料？</h4>
             <p class="ls-mat-confirm__body" id="lsMatConfirmBody"></p>
             <div class="ls-mat-confirm__actions">
-                <button type="button" class="btn btn-ghost" data-cancel-removal>取消</button>
-                <button type="button" class="btn btn-danger" data-confirm-removal>确认解绑</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-cancel-removal>取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive" data-confirm-removal>确认解绑</button>
             </div>
         </div>
     `;
@@ -108,7 +108,7 @@ function renderList() {
         return;
     }
     if (state.error) {
-        listEl.innerHTML = `<div class="ls-mat-empty" role="alert">${escapeHtml(state.error)} <button type="button" class="btn btn-outline btn-sm" data-retry-materials>重试</button></div>`;
+        listEl.innerHTML = `<div class="ls-mat-empty" role="alert">${escapeHtml(state.error)} <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-retry-materials>重试</button></div>`;
         return;
     }
     if (!state.materials.length) {
@@ -125,12 +125,12 @@ function renderList() {
             ? '<span class="ls-mat-card__badge">可渲染</span>'
             : '';
         const removeBtn = state.canManage
-            ? `<button type="button" class="ls-mat-card__del" data-remove-material="${material.material_id}" title="解绑该材料" aria-label="解绑该材料">
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-mat-card__del" data-remove-material="${material.material_id}" title="解绑该材料" aria-label="解绑该材料">
                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                </button>`
             : '';
         return `
-            <div class="ls-mat-card" data-open-material="${material.material_id}" role="button" tabindex="0">
+            <div data-lq-component="surface" class="lq-surface ls-mat-card" data-open-material="${material.material_id}" role="button" tabindex="0">
                 <div class="ls-mat-card__body">
                     <div class="ls-mat-card__head">
                         <strong class="ls-mat-card__title">${escapeHtml(material.name || '未命名材料')}</strong>

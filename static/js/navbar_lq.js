@@ -12,7 +12,7 @@ export function initNavbarLq(doc = document) {
     const dockRoot = doc.querySelector('[data-navbar-dock]');
     const contentRoot = doc.querySelector('[data-lq-navbar-content]');
     let dock;
-    try { dock = dockRoot && contentRoot ? enhanceDock(dockRoot, { contentRoot }) : null; }
+    try { dock = dockRoot && contentRoot ? enhanceDock(dockRoot, { contentRoot, floatingRoot: doc.documentElement }) : null; }
     catch (error) { shell.destroy(); throw error; }
     let destroyed = false;
     const onPageHide = event => { if (!event.persisted) destroy(); };

@@ -15,15 +15,15 @@
             </div>
         </div>
         <div class="monitor-actions">
-            <button type="button" class="monitor-btn is-on" id="monitorAutoBtn" title="每 5 秒自动刷新">自动刷新：开</button>
-            <button type="button" class="monitor-btn" id="monitorRefreshBtn">立即刷新</button>
-            <button type="button" class="monitor-btn monitor-btn--danger" id="monitorMemBtn">内存一键优化</button>
-            <button type="button" class="monitor-btn monitor-btn--accent" id="monitorAiBtn">AI 解读大屏</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass monitor-btn is-on" id="monitorAutoBtn" title="每 5 秒自动刷新">自动刷新：开</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass monitor-btn" id="monitorRefreshBtn">立即刷新</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass monitor-btn monitor-btn--danger" id="monitorMemBtn">内存一键优化</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass monitor-btn monitor-btn--accent" id="monitorAiBtn">AI 解读大屏</button>
         </div>
     </div>
 
     <div class="monitor-grid">
-        <section class="monitor-panel monitor-insight" id="monitorInsight" aria-live="polite">
+        <section data-lq-component="surface" class="lq-surface monitor-panel monitor-insight" id="monitorInsight" aria-live="polite">
             <h2>AI 运行状况解读 <span class="hint" id="monitorInsightAt"></span></h2>
             <div class="monitor-insight__body">
                 <svg class="monitor-chart" id="insightGauge" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="健康评分"></svg>
@@ -35,7 +35,7 @@
         <div class="monitor-tiles" id="monitorTiles"></div>
 
         <div class="monitor-row">
-            <section class="monitor-panel">
+            <section data-lq-component="surface" class="lq-surface monitor-panel">
                 <h2>CPU / 内存趋势 <span class="hint">最近 15 分钟 · 5s 采样</span></h2>
                 <svg class="monitor-chart" id="trendChart" viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="CPU 与内存趋势图"></svg>
                 <div class="monitor-legend">
@@ -43,7 +43,7 @@
                     <span><i style="background:#a78bfa"></i>内存 %</span>
                 </div>
             </section>
-            <section class="monitor-panel">
+            <section data-lq-component="surface" class="lq-surface monitor-panel">
                 <h2>访问压力 <span class="hint">每 5s 请求数</span></h2>
                 <svg class="monitor-chart" id="pressureChart" viewBox="0 0 360 160" preserveAspectRatio="none" role="img" aria-label="访问压力柱状图"></svg>
                 <div class="monitor-legend">
@@ -54,28 +54,28 @@
         </div>
 
         <div class="monitor-row monitor-row--thirds">
-            <section class="monitor-panel">
+            <section data-lq-component="surface" class="lq-surface monitor-panel">
                 <h2>状态码分布</h2>
                 <div class="monitor-donut-wrap">
                     <svg class="monitor-chart" id="statusDonut" viewBox="0 0 120 120" width="118" height="118" role="img" aria-label="HTTP 状态码分布"></svg>
                     <div class="monitor-donut-list" id="statusDonutList"></div>
                 </div>
             </section>
-            <section class="monitor-panel">
+            <section data-lq-component="surface" class="lq-surface monitor-panel">
                 <h2>内存构成</h2>
                 <div class="monitor-donut-wrap">
                     <svg class="monitor-chart" id="memoryDonut" viewBox="0 0 120 120" width="118" height="118" role="img" aria-label="内存构成"></svg>
                     <div class="monitor-donut-list" id="memoryDonutList"></div>
                 </div>
             </section>
-            <section class="monitor-panel">
+            <section data-lq-component="surface" class="lq-surface monitor-panel">
                 <h2>连接丢失统计 <span class="hint">WebSocket</span></h2>
                 <div class="monitor-loss-stats" id="lossStats"></div>
                 <div class="monitor-errors" id="lossErrors"></div>
             </section>
         </div>
 
-        <section class="monitor-panel">
+        <section data-lq-component="surface" class="lq-surface monitor-panel">
             <h2>热点路由 · 资源占用分析 <span class="hint">按请求量排序</span></h2>
             <div style="overflow-x:auto;">
                 <table class="monitor-table" id="routesTable">
@@ -87,11 +87,11 @@
             </div>
         </section>
 
-        <section class="monitor-panel">
+        <section data-lq-component="surface" class="lq-surface monitor-panel">
             <h2>进程树 <span class="hint" id="procMeta"></span></h2>
-            <div class="monitor-proc-toolbar">
-                <input type="search" id="procSearch" placeholder="搜索进程名 / PID / 命令行…" autocomplete="off">
-                <button type="button" class="monitor-btn" id="procRefreshBtn" style="height:30px;">刷新进程</button>
+            <div data-lq-component="toolbar" class="lq-domain-toolbar monitor-proc-toolbar">
+                <input data-lq-component="input" class="lq-input" type="search" id="procSearch" placeholder="搜索进程名 / PID / 命令行…" autocomplete="off">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass monitor-btn" id="procRefreshBtn" style="height:30px;">刷新进程</button>
             </div>
             <div class="proc-tree" id="procTree"></div>
         </section>

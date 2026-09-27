@@ -21,9 +21,9 @@ data-explain
 {%- endmacro %}
 
 {% macro explain_button(title, text='', links=none, media='', media_alt='', placement='auto', label='功能说明', class_name='') -%}
-<button
+<button data-lq-component="button"
     type="button"
-    class="ui-explain-trigger{% if class_name %} {{ class_name|e }}{% endif %}"
+    class="lq-btn lq-btn--sm lq-btn--glass ui-explain-trigger{% if class_name %} {{ class_name|e }}{% endif %}"
     aria-label="{{ label|e }}"
     aria-haspopup="dialog"
     data-explain-toggle

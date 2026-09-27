@@ -288,6 +288,7 @@ export function initUserUIPreferences(documentRoot = document) {
             grid.replaceChildren();
             visible.forEach((item, index) => {
                 const button = documentRoot.createElement('button'); button.type = 'button'; button.dataset.uiBackdropFile = item.file; button.dataset.lqShape = 'surface';
+                button.dataset.lqComponent = 'choice'; button.classList.add('lq-btn', 'lq-btn--glass', 'lq-btn--sm', 'lq-domain-choice');
                 button.setAttribute('aria-pressed', String(controller.snapshot().desired.backdrop === `image:${item.file}`));
                 const label = `${(item.categories || []).join(' · ') || '风景'} ${index + 1}`;
                 button.setAttribute('aria-label', `选择背景：${label}`);

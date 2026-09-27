@@ -13,13 +13,13 @@
 <body class="lp-editor-body" {{ body_attrs(ui_palette) }}>
     {% include "partials/lq_page_backdrop.html" %}
     <header class="lp-editor__header" data-lq-material="chrome">
-        <a class="lp-btn lp-btn--ghost" href="/manage/archive/teacher-evaluations">← 返回教师评学表库</a>
+        <a data-lq-component="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" href="/manage/archive/teacher-evaluations">← 返回教师评学表库</a>
         <strong class="lp-editor__title" id="te-editor-title">{{ evaluation.title }}</strong>
         <div class="lp-editor__header-actions">
             <span class="lp-editor__save-state is-clean" id="te-save-state" aria-live="polite">已保存</span>
             <span class="ap-score-pill" id="te-score-pill">总分 — · 综合评价 —</span>
-            <a class="lp-btn lp-btn--ghost" id="te-open-preview" href="/teacher-evaluation/{{ evaluation.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
-            <button type="button" class="lp-btn lp-btn--primary" id="te-save">保存</button>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" id="te-open-preview" href="/teacher-evaluation/{{ evaluation.id }}/preview" target="_blank" rel="noopener">新窗口预览</a>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--primary lq-btn--prominent" id="te-save">保存</button>
         </div>
     </header>
 
@@ -28,24 +28,24 @@
             <div class="te-incomplete" id="te-incomplete" hidden></div>
 
             <details class="lp-editor__cover" open>
-                <summary>基础信息</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">基础信息</summary>
                 <div class="ap-field-grid" id="te-field-grid"></div>
             </details>
 
             <details class="lp-editor__cover" open>
-                <summary>评价指标打分（每项满分 10，合计 100）</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">评价指标打分（每项满分 10，合计 100）</summary>
                 <div class="te-items" id="te-items"></div>
                 <div class="te-rating" id="te-rating"></div>
             </details>
 
-            <details class="lp-editor__cover te-analysis-panel" open>
-                <summary>对学生学习情况的分析和今后教学改革建议</summary>
+            <details data-lq-component="surface" class="lq-surface lp-editor__cover te-analysis-panel" open>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">对学生学习情况的分析和今后教学改革建议</summary>
                 <div class="te-analysis-actions">
-                    <button type="button" class="lp-btn lp-btn--ghost te-ai-rewrite-btn" id="te-analysis-rewrite">AI重新编写</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost te-ai-rewrite-btn" id="te-analysis-rewrite">AI重新编写</button>
                     <span>只更新下方分析建议，评价得分保持不变</span>
                 </div>
                 <div class="te-analysis-box" id="te-analysis-box">
-                    <textarea id="te-analysis" class="te-analysis" rows="7"
+                    <textarea data-lq-component="textarea" id="te-analysis" class="lq-textarea te-analysis" rows="7"
                               placeholder="评价这个班级本学期在这门课程上的各项学习表现，纯文本、可分 1、2、3 点，不要使用 Markdown。"></textarea>
                     <div class="te-analysis__loading" id="te-analysis-loading" hidden>
                         <span class="te-spinner" aria-hidden="true"></span>
@@ -56,7 +56,7 @@
             </details>
 
             <details class="lp-editor__cover" id="te-import-details" hidden>
-                <summary>生成 / 导入详情</summary>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">生成 / 导入详情</summary>
                 <div class="ap-import" id="te-import"></div>
             </details>
         </section>
@@ -64,12 +64,12 @@
         <section class="lp-editor__preview" data-lq-material="content">
             <div class="lp-editor__preview-bar">
                 <span>当前保存版预览</span>
-                <button type="button" class="lp-btn lp-btn--ghost" id="te-refresh-preview">保存并刷新预览</button>
-                <button type="button" class="lp-btn lp-btn--ghost" id="te-export-word">导出 Word</button>
-                <button type="button" class="lp-btn lp-btn--ghost" id="te-export-pdf">导出 PDF</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" id="te-refresh-preview">保存并刷新预览</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" id="te-export-word">导出 Word</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" id="te-export-pdf">导出 PDF</button>
             </div>
             <div class="lp-editor__export-gate" id="te-export-gate" hidden></div>
-            <iframe id="te-preview-frame" class="lp-editor__frame" src="/teacher-evaluation/{{ evaluation.id }}/preview" title="教师评学表预览"></iframe>
+            <iframe id="te-preview-frame" class="lp-editor__frame" src="/teacher-evaluation/{{ evaluation.id }}/preview" data-lq-theme-bridge="app" title="教师评学表预览"></iframe>
         </section>
     </main>
 

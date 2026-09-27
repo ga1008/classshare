@@ -97,10 +97,10 @@ function renderFeatureTabs(snapshot, state) {
         };
     });
     return `
-        <div class="interaction-feature-tabs" role="tablist" aria-label="课堂互动功能">
+        <div data-lq-component="tab" class="lq-tabs__list interaction-feature-tabs" role="tablist" aria-label="课堂互动功能">
             ${tabMeta.map((tab) => `
-                <button type="button"
-                        class="interaction-feature-tab${activeTab === tab.key ? ' is-active' : ''}${tab.hot ? ' has-content' : ''}"
+                <button data-lq-component="button" type="button"
+                        class="lq-btn lq-btn--sm lq-btn--glass interaction-feature-tab${activeTab === tab.key ? ' is-active' : ''}${tab.hot ? ' has-content' : ''}"
                         data-interaction-tab="${tab.key}"
                         role="tab"
                         aria-selected="${activeTab === tab.key ? 'true' : 'false'}">
@@ -159,7 +159,7 @@ function renderCreateToggle(snapshot, state) {
                 <strong>发起课堂互动</strong>
                 <span>随堂测、匿名提问会同步到所有在线成员。</span>
             </div>
-            <button type="button" class="btn btn-primary btn-sm" data-interaction-create-open>新建互动</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-interaction-create-open>新建互动</button>
         </div>
     `;
 }
@@ -169,16 +169,16 @@ function renderCreatePanel(state) {
     const isQna = kind === 'qna';
     const optionValues = state.createOptions?.length ? state.createOptions : DEFAULT_OPTIONS;
     return `
-        <section class="interaction-create-panel">
+        <section data-lq-component="surface" class="lq-surface interaction-create-panel">
             <div class="interaction-create-head">
                 <div>
                     <strong>新建课堂互动</strong>
                 </div>
-                <button type="button" class="interaction-icon-btn" data-interaction-create-close aria-label="关闭新建面板">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass interaction-icon-btn" data-interaction-create-close aria-label="关闭新建面板">×</button>
             </div>
-            <div class="interaction-kind-tabs" role="tablist" aria-label="互动类型">
+            <div data-lq-component="tab" class="lq-tabs__list interaction-kind-tabs" role="tablist" aria-label="互动类型">
                 ${ACTIVITY_KINDS.map((item) => `
-                    <button type="button" class="interaction-kind-tab${item.key === kind ? ' is-active' : ''}" data-interaction-kind="${item.key}" aria-selected="${item.key === kind ? 'true' : 'false'}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass interaction-kind-tab${item.key === kind ? ' is-active' : ''}" data-interaction-kind="${item.key}" aria-selected="${item.key === kind ? 'true' : 'false'}">
                         <strong>${item.label}</strong>
                         <span>${item.note}</span>
                     </button>
@@ -187,17 +187,17 @@ function renderCreatePanel(state) {
             <form class="interaction-create-form" data-interaction-create-form data-kind="${kind}">
                 <label class="interaction-field">
                     <span>标题</span>
-                    <input name="title" type="text" maxlength="80" placeholder="${kind === 'quiz' ? '例如：第 2 题小测' : kind === 'qna' ? '例如：本节匿名提问' : '例如：你更想先看哪部分'}">
+                    <input data-lq-component="input" class="lq-input" name="title" type="text" maxlength="80" placeholder="${kind === 'quiz' ? '例如：第 2 题小测' : kind === 'qna' ? '例如：本节匿名提问' : '例如：你更想先看哪部分'}">
                 </label>
                 <label class="interaction-field">
                     <span>${isQna ? '提问主题' : '问题'}</span>
-                    <textarea name="prompt" rows="3" maxlength="500" required placeholder="${isQna ? '例如：本节课哪里还没有讲清楚？' : '输入要让全班即时回应的问题'}"></textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" name="prompt" rows="3" maxlength="500" required placeholder="${isQna ? '例如：本节课哪里还没有讲清楚？' : '输入要让全班即时回应的问题'}"></textarea>
                 </label>
                 ${!isQna ? `
                     <div class="interaction-option-editor" data-interaction-option-editor>
                         <div class="interaction-option-editor__head">
                             <span>选项</span>
-                            <button type="button" class="btn btn-ghost btn-sm" data-interaction-add-option>增加选项</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-interaction-add-option>增加选项</button>
                         </div>
                         <div class="interaction-option-list">
                             ${optionValues.map((value, index) => renderOptionEditorRow(value, index, kind)).join('')}
@@ -205,15 +205,15 @@ function renderCreatePanel(state) {
                     </div>
                 ` : `
                     <label class="interaction-checkbox">
-                        <input type="checkbox" name="allow_anonymous" checked>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="allow_anonymous" checked>
                         <span>允许匿名提交</span>
                     </label>
                 `}
                 <label class="interaction-field">
                     <span>结果可见</span>
-                    <select name="show_results">${visibilityOptions('', kind)}</select>
+                    <select data-lq-component="select" class="lq-select" name="show_results">${visibilityOptions('', kind)}</select>
                 </label>
-                <button type="submit" class="btn btn-primary">发布互动</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">发布互动</button>
             </form>
         </section>
     `;
@@ -221,13 +221,13 @@ function renderCreatePanel(state) {
 
 function renderOptionEditorRow(value, index, kind) {
     const correctInput = kind === 'quiz'
-        ? `<label class="interaction-correct-radio"><input type="radio" name="correct_option" value="${index}"${index === 0 ? ' checked' : ''}><span>正确</span></label>`
+        ? `<label class="interaction-correct-radio"><input data-lq-component="radio" class="lq-radio" type="radio" name="correct_option" value="${index}"${index === 0 ? ' checked' : ''}><span>正确</span></label>`
         : '';
     return `
         <div class="interaction-option-editor-row">
-            <input type="text" name="option_label" maxlength="120" value="${escapeHtml(value || '')}" placeholder="选项 ${index + 1}">
+            <input data-lq-component="input" class="lq-input" type="text" name="option_label" maxlength="120" value="${escapeHtml(value || '')}" placeholder="选项 ${index + 1}">
             ${correctInput}
-            <button type="button" class="interaction-icon-btn" data-interaction-remove-option aria-label="删除选项">×</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass interaction-icon-btn" data-interaction-remove-option aria-label="删除选项">×</button>
         </div>
     `;
 }
@@ -258,7 +258,7 @@ function renderSignalFocusCard(snapshot) {
         ['已完成', signalCounts.done || 0],
     ];
     return `
-        <section class="interaction-detail-card interaction-signal-focus">
+        <section data-lq-component="surface" class="lq-surface interaction-detail-card interaction-signal-focus">
             <strong>${snapshot.role === 'teacher' ? '现场节奏雷达' : '让老师知道你的课堂状态'}</strong>
             <p>${snapshot.role === 'teacher' ? '状态选项卡会优先呈现需要处理的举手、求助和节奏反馈。处理后，学生端会同步清除当前状态。' : '状态只对老师可见。你可以快速举手、求助、提示节奏太快，或告诉老师已经完成。'}</p>
             <div class="interaction-signal-mini-grid">
@@ -295,7 +295,7 @@ function renderActivityList(snapshot, currentActivity, activeTab = 'all') {
                 ${items.map((item) => {
                     const selected = currentActivity && String(currentActivity.id) === String(item.id);
                     return `
-                        <button type="button" class="interaction-activity-pill${selected ? ' is-selected' : ''}" data-interaction-select="${item.id}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass interaction-activity-pill${selected ? ' is-selected' : ''}" data-interaction-select="${item.id}">
                             <span>${escapeHtml(item.kind_label)}</span>
                             <strong>${escapeHtml(item.title)}</strong>
                             <small>${item.kind === 'qna' ? `${item.open_question_count} 个问题` : `${item.response_count} 人回应`}</small>
@@ -314,20 +314,20 @@ function renderActivityList(snapshot, currentActivity, activeTab = 'all') {
 function renderActivityDetail(snapshot, activity) {
     if (!activity) {
         return `
-            <section class="interaction-detail-card">
+            <section data-lq-component="surface" class="lq-surface interaction-detail-card">
                 <strong>等待课堂互动</strong>
                 <p>当前没有可查看的互动。</p>
             </section>
         `;
     }
     return `
-        <section class="interaction-detail-card" data-interaction-activity="${activity.id}">
+        <section data-lq-component="surface" class="lq-surface interaction-detail-card" data-interaction-activity="${activity.id}">
             <div class="interaction-detail-head">
                 <div>
                     <strong>${escapeHtml(activity.title)}</strong>
                     <p>${escapeHtml(activity.prompt)}</p>
                 </div>
-                ${activity.can_close ? `<button type="button" class="btn btn-outline btn-sm" data-interaction-close="${activity.id}">结束</button>` : ''}
+                ${activity.can_close ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-interaction-close="${activity.id}">结束</button>` : ''}
             </div>
             ${activity.kind === 'qna' ? renderQnaActivity(activity) : renderChoiceActivity(activity, snapshot)}
         </section>
@@ -358,13 +358,13 @@ function renderChoiceActivity(activity, snapshot) {
     return `
         ${renderQuizLeaderboard(activity)}
         <form class="interaction-response-form" data-interaction-respond="${activity.id}">
-            <div class="interaction-option-grid" role="radiogroup" aria-label="${escapeHtml(activity.title)}">
+            <div data-lq-component="field" class="lq-form-section interaction-option-grid" role="radiogroup" aria-label="${escapeHtml(activity.title)}">
                 ${optionsHtml}
             </div>
             ${snapshot.role === 'student' ? `
                 <div class="interaction-response-footer">
                     <span>${hasResponded ? `已选择：${escapeHtml(activity.my_response?.option_label || '')}` : '选择后提交，可在开放期间修改。'}</span>
-                    <button type="submit" class="btn btn-primary btn-sm"${canSubmit ? '' : ' disabled'}>${hasResponded ? '更新回应' : '提交回应'}</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm"${canSubmit ? '' : ' disabled'}>${hasResponded ? '更新回应' : '提交回应'}</button>
                 </div>
             ` : `
                 <div class="interaction-response-footer">
@@ -382,7 +382,7 @@ function renderChoiceOption(activity, option, canSubmit) {
     const selectedClass = option.selected ? ' is-selected' : '';
     return `
         <label class="interaction-option-card${selectedClass}${correctClass}">
-            <input type="radio" name="option_id" value="${option.id}"${option.selected ? ' checked' : ''}${canSubmit ? '' : ' disabled'}>
+            <input data-lq-component="radio" class="lq-radio" type="radio" name="option_id" value="${option.id}"${option.selected ? ' checked' : ''}${canSubmit ? '' : ' disabled'}>
             <span class="interaction-option-main">
                 <strong>${escapeHtml(option.label)}</strong>
                 ${showResult ? `<small>${option.response_count || 0} 人 · ${percent}%</small>` : ''}
@@ -397,15 +397,15 @@ function renderQnaActivity(activity) {
     return `
         ${activity.can_ask ? `
             <form class="interaction-question-form" data-interaction-question="${activity.id}">
-                <textarea name="question_text" rows="3" maxlength="500" placeholder="把没听懂、想追问或希望老师再演示的点写下来" required></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="question_text" rows="3" maxlength="500" placeholder="把没听懂、想追问或希望老师再演示的点写下来" required></textarea>
                 <div class="interaction-question-actions">
                     ${activity.allow_anonymous ? `
                         <label class="interaction-checkbox">
-                            <input type="checkbox" name="is_anonymous" checked>
+                            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="is_anonymous" checked>
                             <span>匿名</span>
                         </label>
                     ` : '<span></span>'}
-                    <button type="submit" class="btn btn-primary btn-sm">提交问题</button>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">提交问题</button>
                 </div>
             </form>
         ` : ''}
@@ -424,7 +424,7 @@ function renderQuestion(question) {
             </div>
             <p>${escapeHtml(question.question_text)}</p>
             ${question.can_resolve ? `
-                <button type="button" class="btn btn-ghost btn-sm" data-interaction-resolve-question="${question.id}" data-status="${question.status === 'addressed' ? 'open' : 'addressed'}">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-interaction-resolve-question="${question.id}" data-status="${question.status === 'addressed' ? 'open' : 'addressed'}">
                     ${question.status === 'addressed' ? '重新打开' : '标记已回应'}
                 </button>
             ` : ''}
@@ -437,23 +437,23 @@ function renderSignals(snapshot) {
     const mySignal = snapshot.my_signal;
     if (snapshot.role === 'student') {
         return `
-            <section class="interaction-side-card">
+            <section data-lq-component="surface" class="lq-surface interaction-side-card">
                 <div class="interaction-side-head">
                     <strong>我的课堂状态</strong>
                 </div>
                 <div class="interaction-signal-grid">
                     ${options.map((item) => `
-                        <button type="button" class="interaction-signal-btn ${signalTone(item.key)}${mySignal?.signal_type === item.key ? ' is-active' : ''}" data-interaction-signal="${item.key}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass interaction-signal-btn ${signalTone(item.key)}${mySignal?.signal_type === item.key ? ' is-active' : ''}" data-interaction-signal="${item.key}">
                             <span>${escapeHtml(item.label)}</span>
                         </button>
                     `).join('')}
                 </div>
                 <form class="interaction-signal-note" data-interaction-signal-note>
-                    <input name="message" type="text" maxlength="160" value="${escapeHtml(mySignal?.message || '')}" placeholder="可补充一句给老师">
-                    <button type="submit" class="btn btn-outline btn-sm" ${mySignal ? '' : 'disabled'}>更新</button>
+                    <input data-lq-component="input" class="lq-input" name="message" type="text" maxlength="160" value="${escapeHtml(mySignal?.message || '')}" placeholder="可补充一句给老师">
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" ${mySignal ? '' : 'disabled'}>更新</button>
                 </form>
                 ${mySignal ? `
-                    <button type="button" class="btn btn-ghost btn-sm interaction-clear-signal" data-interaction-clear-signal>清除当前状态</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm interaction-clear-signal" data-interaction-clear-signal>清除当前状态</button>
                 ` : '<p class="interaction-muted">状态只显示给教师，用于课堂节奏调整。</p>'}
             </section>
         `;
@@ -461,7 +461,7 @@ function renderSignals(snapshot) {
 
     const signals = snapshot.signals || [];
     return `
-        <section class="interaction-side-card">
+        <section data-lq-component="surface" class="lq-surface interaction-side-card">
             <div class="interaction-side-head">
                 <strong>现场状态</strong>
             </div>
@@ -473,7 +473,7 @@ function renderSignals(snapshot) {
                             <span>${escapeHtml(signal.signal_label)} · ${formatDate(signal.updated_at)}</span>
                             ${signal.message ? `<p>${escapeHtml(signal.message)}</p>` : ''}
                         </div>
-                        <button type="button" class="btn btn-ghost btn-sm" data-interaction-resolve-signal="${signal.id}">处理</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-interaction-resolve-signal="${signal.id}">处理</button>
                     </article>
                 `).join('') : '<p class="interaction-muted">暂时没有学生举手或求助。</p>'}
             </div>
@@ -506,7 +506,7 @@ function renderSnapshot(snapshot, state) {
             <div class="interaction-main">
                 ${renderCreateToggle(snapshot, state)}
                 ${snapshot.can_create && state.createOpen ? renderCreatePanel(state) : ''}
-                <section class="interaction-list-card">
+                <section data-lq-component="surface" class="lq-surface interaction-list-card">
                     ${renderActivityList(snapshot, currentActivity, activeTab)}
                 </section>
             </div>

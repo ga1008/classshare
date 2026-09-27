@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { escapeHtml, formatDate, showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
 import {
@@ -569,6 +570,7 @@ if (app) {
 
             const removeButton = document.createElement('button');
             removeButton.type = 'button';
+            adoptDomainControl(removeButton, { variant: 'ghost' });
             removeButton.textContent = '×';
             removeButton.title = '移除附件';
             removeButton.setAttribute('aria-label', `移除 ${attachment.file.name || '附件'}`);
@@ -642,7 +644,7 @@ if (app) {
                         const thumbnailUrl = escapeHtml(getAttachmentThumbnailUrl(normalizedAttachment));
                         const meta = escapeHtml(getAttachmentDisplayMeta(normalizedAttachment) || size);
                         return `
-                            <button type="button" class="message-center-message__attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass message-center-message__attachment is-image" data-private-image-preview-key="${escapeHtml(previewKey)}">
                                 <img src="${thumbnailUrl}" alt="${name}" loading="lazy" decoding="async">
                                 <span>${name}${meta ? ` · ${meta}` : ''}</span>
                             </button>
@@ -877,9 +879,9 @@ if (app) {
         const hiddenCount = tabs.filter((tab) => !isPrimaryTab(tab)).length;
         const visibleTabs = state.tabsExpanded ? tabs : tabs.filter(isPrimaryTab);
         const renderTabButton = (tab) => `
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="message-center-tab ${tab.category === state.currentTab ? 'is-active' : ''}"
+                class="lq-btn lq-btn--sm lq-btn--glass message-center-tab ${tab.category === state.currentTab ? 'is-active' : ''}"
                 data-tab="${escapeHtml(tab.category)}"
             >
                 <span>${escapeHtml(tab.label)}</span>
@@ -888,7 +890,7 @@ if (app) {
         `;
         const toggleButton = hiddenCount > 0 || state.tabsExpanded
             ? `
-            <button type="button" class="message-center-tab message-center-tab--toggle" data-tabs-toggle>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass message-center-tab message-center-tab--toggle" data-tabs-toggle>
                 <span>${state.tabsExpanded ? '收起分类' : `更多分类 (${hiddenCount})`}</span>
             </button>
         `
@@ -915,7 +917,7 @@ if (app) {
         }
         container.innerHTML = `
             <div class="message-center-empty">
-                <div class="message-center-empty__card">
+                <div data-lq-component="surface" class="lq-surface message-center-empty__card">
                     <h3>${escapeHtml(title)}</h3>
                     <p>${escapeHtml(text)}</p>
                 </div>
@@ -932,7 +934,7 @@ if (app) {
         }
         container.innerHTML = `
             <div class="message-center-empty">
-                <div class="message-center-empty__card">
+                <div data-lq-component="surface" class="lq-surface message-center-empty__card">
                     <div class="spinner mx-auto"></div>
                     <p>${escapeHtml(text)}</p>
                 </div>
@@ -948,9 +950,9 @@ if (app) {
             container.replaceChildren(error);
             return;
         }
-        container.innerHTML = `<div class="message-center-empty"><div class="message-center-empty__card" data-message-load-error>
+        container.innerHTML = `<div class="message-center-empty"><div data-lq-component="surface" class="lq-surface message-center-empty__card" data-message-load-error>
             <h3>${escapeHtml(title)}</h3><p>${escapeHtml(message)}</p>
-            <button type="button" class="btn btn-outline" data-message-load-retry>重试</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-message-load-retry>重试</button>
         </div></div>`;
         container.querySelector('[data-message-load-retry]').addEventListener('click', retry);
     }
@@ -1011,7 +1013,7 @@ if (app) {
             return;
         }
         feedEl.innerHTML = state.items.map((item) => `
-            <article class="message-center-card ${item.is_unread ? 'is-unread' : ''}">
+            <article data-lq-component="surface" class="lq-surface message-center-card ${item.is_unread ? 'is-unread' : ''}">
                 <div class="message-center-card__top">
                     <div class="message-center-card__category">
                         <span class="message-center-pill">${escapeHtml(item.category_label || item.category)}</span>
@@ -1029,13 +1031,13 @@ if (app) {
                 </div>
                 <div class="message-center-card__body">${escapeHtml(item.body_preview || '暂无更多内容')}</div>
                 <div class="message-center-card__actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-mark-notification="${Number(item.id)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-mark-notification="${Number(item.id)}">
                         标记已读
                     </button>
                     ${notificationHasJumpTarget(item) ? `
-                    <a
+                    <a data-lq-component="button"
                         href="${escapeHtml(item.open_url || item.link_url)}"
-                        class="btn btn-primary btn-sm"
+                        class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm"
                         data-open-notification="${Number(item.id)}"
                     >
                         ${escapeHtml(formatNotificationAction(item))}
@@ -1122,7 +1124,7 @@ if (app) {
 
         if (!activeContact) {
             contactCurrentEl.innerHTML = `
-                <div class="message-center-empty__card">
+                <div data-lq-component="surface" class="lq-surface message-center-empty__card">
                     <h3>暂未选择联系人</h3>
                     <p class="message-center-conversation__hint">
                         ${options.length > 0 ? '请先通过搜索和下拉列表选择要打开的会话。' : '当前筛选条件下没有匹配的联系人。'}
@@ -1159,9 +1161,9 @@ if (app) {
                     <strong>${escapeHtml(block.display_name || '联系人')}</strong>
                     <div class="message-center-conversation__hint">${escapeHtml(block.role || '')}</div>
                 </div>
-                <button
+                <button data-lq-component="button"
                     type="button"
-                    class="btn btn-ghost btn-sm"
+                    class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm"
                     data-unblock="${escapeHtml(block.identity)}"
                 >
                     解除
@@ -1329,9 +1331,9 @@ if (app) {
         }
 
         const blockAction = contact.can_block ? `
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="btn btn-outline btn-sm"
+                class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm"
                 data-toggle-block="${escapeHtml(contact.identity)}"
                 data-toggle-scope="${contact.class_offering_id == null ? '' : Number(contact.class_offering_id)}"
                 data-is-blocked="${contact.is_blocked ? '1' : '0'}"
@@ -1421,9 +1423,9 @@ if (app) {
                                 ${message.status_copy ? `<div class="message-center-message__status">${escapeHtml(message.status_copy)}</div>` : ''}
                                 ${!isVirtual && message.can_block_sender && !message.is_sender_blocked ? `
                                     <div class="message-center-message__actions">
-                                        <button
+                                        <button data-lq-component="button"
                                             type="button"
-                                            class="btn btn-ghost btn-sm"
+                                            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm"
                                             data-block-sender="${escapeHtml(message.sender_identity)}"
                                         >
                                             拉黑发信人
@@ -1439,9 +1441,10 @@ if (app) {
 
         if (state.aiReplyPollError) {
             const notice = document.createElement('div');
-            notice.className = 'message-center-empty__card';
+            notice.className = 'lq-surface message-center-empty__card';
+            notice.dataset.lqComponent = 'surface';
             notice.dataset.aiPollError = '';
-            notice.innerHTML = `<p role="status">${escapeHtml(state.aiReplyPollError)}</p><button type="button" class="btn btn-outline" data-ai-poll-retry>刷新会话</button>`;
+            notice.innerHTML = `<p role="status">${escapeHtml(state.aiReplyPollError)}</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ai-poll-retry>刷新会话</button>`;
             notice.querySelector('button').addEventListener('click', () => { void loadConversation(state.currentContact, state.currentScope, { showLoading: false }); });
             conversationBodyEl.prepend(notice);
         }

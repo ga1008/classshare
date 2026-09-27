@@ -41,7 +41,7 @@
     display: inline-flex;
     align-items: center;
     flex: none;
-    transition: transform var(--ls-dur-fast) var(--ls-ease-out);
+    transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-ease, var(--ls-ease-out));
 }
 .lq-nav-menu__caret .lq-icon {
     width: var(--lq-btn-icon-size);

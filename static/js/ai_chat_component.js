@@ -668,7 +668,9 @@ class AIChatComponent {
 
         const thinkingHeader = document.createElement('button');
         thinkingHeader.type = 'button';
-        thinkingHeader.className = 'thinking-header';
+        thinkingHeader.className = 'lq-btn lq-btn--ghost lq-btn--sm thinking-header';
+        thinkingHeader.dataset.lqComponent = 'choice';
+        thinkingHeader.dataset.lqShape = 'surface';
 
         const toggleBtn = document.createElement('span');
         toggleBtn.className = 'thinking-toggle';
@@ -1454,7 +1456,8 @@ class AIChatComponent {
             }
 
             const removeBtn = document.createElement('button');
-            removeBtn.className = 'remove-preview';
+            removeBtn.className = 'lq-btn lq-btn--ghost lq-btn--sm remove-preview';
+        removeBtn.dataset.lqComponent = 'button';
             removeBtn.type = 'button';
             removeBtn.setAttribute('aria-label', `移除 ${file.name}`);
             removeBtn.innerHTML = '&times;';
@@ -1521,7 +1524,8 @@ class AIChatComponent {
         const pres = bubble.querySelectorAll('pre');
         pres.forEach(pre => {
             const btn = document.createElement('button');
-            btn.className = 'copy-code-btn';
+            btn.className = 'lq-btn lq-btn--glass lq-btn--sm copy-code-btn';
+        btn.dataset.lqComponent = 'button';
             btn.textContent = '复制';
 
             btn.addEventListener('click', (e) => {
@@ -1562,7 +1566,8 @@ class AIChatComponent {
 
         if (rawMarkdown) {
             const copyBtn = document.createElement('button');
-            copyBtn.className = 'copy-btn';
+            copyBtn.className = 'lq-btn lq-btn--glass lq-btn--sm copy-btn';
+        copyBtn.dataset.lqComponent = 'button';
             copyBtn.innerHTML = this.iconCopy + ' 复制 Markdown';
             copyBtn.dataset.rawMarkdown = rawMarkdown; // 存储原始文本
 
@@ -1573,7 +1578,8 @@ class AIChatComponent {
         // Agent is teacher-only; the chat never offers a handoff it cannot honour.
         if (agentHandoff && window.AI_WORKSPACE_WIDGET_CONFIG?.taskCenterEnabled) {
             const handoffBtn = document.createElement('button');
-            handoffBtn.className = 'copy-btn ai-agent-handoff-btn';
+            handoffBtn.className = 'lq-btn lq-btn--soft lq-btn--sm copy-btn ai-agent-handoff-btn';
+        handoffBtn.dataset.lqComponent = 'button';
             handoffBtn.type = 'button';
             handoffBtn.textContent = '转为 Agent 任务';
             handoffBtn.addEventListener('click', () => {

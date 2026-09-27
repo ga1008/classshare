@@ -6,6 +6,7 @@ import { showToast } from '/static/js/ui.js';
 import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope, resolveClassroomSessionLink } from '/static/js/classroom_workspace.js';
 import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -375,7 +376,7 @@ function initCoursePopover() {
                         <span>我的异常记录</span>
                         <strong>${Number(summary.abnormal || 0)} 条</strong>
                     </div>
-                    <button type="button" class="smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
                 </div>
                 <div class="smart-attendance-detail-stats">${statusCards}</div>
                 <div class="smart-attendance-detail-grid">
@@ -443,7 +444,7 @@ function initCoursePopover() {
                     <span>异常记录</span>
                     <strong>${Number(summary.abnormal || 0)} 条</strong>
                 </div>
-                <button type="button" class="smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass smart-attendance-detail-close" data-smart-attendance-abnormal-close aria-label="关闭">×</button>
             </div>
             <div class="smart-attendance-detail-stats">${statusCards}</div>
             <div class="smart-attendance-detail-grid">
@@ -2037,7 +2038,7 @@ function initTeachingTimeline() {
         status.replaceChildren(); status.hidden = decision.kind !== 'empty';
         if (decision.kind === 'empty') {
             status.textContent = isTeacher ? '本课次没有可访问材料，可通过管理课次添加。' : '本课次暂无可访问的学习材料。';
-            const all = document.createElement('button'); all.type = 'button'; all.className = 'cw-text-button'; all.dataset.cwOpen = 'materials'; all.textContent = '全部课堂材料'; status.appendChild(all);
+            const all = document.createElement('button'); all.type = 'button'; all.className = 'cw-text-button'; adoptDomainControl(all, { variant: 'ghost' }); all.dataset.cwOpen = 'materials'; all.textContent = '全部课堂材料'; status.appendChild(all);
         }
     }
     async function prepareSessionMaterials(session, reuse = false) {
@@ -2342,18 +2343,18 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
         const tone = escapeHtml(todo.tone || 'neutral');
         const completedClass = todo.is_completed ? ' is-completed' : '';
         const checkbox = todo.can_complete
-            ? `<button type="button" class="semester-todo-check${todo.is_completed ? ' is-checked' : ''}" data-todo-complete="${manualTodoId(todo)}" aria-label="${todo.is_completed ? '标记为未完成' : '标记为已完成'}"></button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass semester-todo-check${todo.is_completed ? ' is-checked' : ''}" data-todo-complete="${manualTodoId(todo)}" aria-label="${todo.is_completed ? '标记为未完成' : '标记为已完成'}"></button>`
             : `<span class="semester-todo-source-dot" aria-hidden="true"></span>`;
         const link = todo.link_url
             ? `<a class="semester-todo-open" href="${escapeHtml(todo.link_url)}" aria-label="打开${escapeHtml(todo.title)}">打开</a>`
             : '';
         const remove = todo.can_complete
-            ? `<button type="button" class="semester-todo-delete" data-todo-delete="${manualTodoId(todo)}" aria-label="删除待办">删除</button>`
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass semester-todo-delete" data-todo-delete="${manualTodoId(todo)}" aria-label="删除待办">删除</button>`
             : '';
         return `
             <li class="semester-todo-item is-${tone}${completedClass}" data-todo-id="${escapeHtml(todo.id)}">
                 ${checkbox}
-                <button type="button" class="semester-todo-name" data-todo-focus="${escapeHtml(todo.id)}">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass semester-todo-name" data-todo-focus="${escapeHtml(todo.id)}">
                     <span>${escapeHtml(todo.title)}</span>
                     <small>${escapeHtml(todo.duration_label || todo.deadline_label || '')}</small>
                 </button>
@@ -2374,7 +2375,7 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
             ? `<span class="semester-gantt-time">${escapeHtml(todo.due_time_label)}</span>`
             : '';
         return `
-            <button type="button" class="semester-gantt-row is-${tone}${completedClass}" data-todo-focus="${escapeHtml(todo.id)}" title="${escapeHtml([todo.title, todo.duration_label, todo.location || todo?.metadata?.location].filter(Boolean).join(' · '))}">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass semester-gantt-row is-${tone}${completedClass}" data-todo-focus="${escapeHtml(todo.id)}" title="${escapeHtml([todo.title, todo.duration_label, todo.location || todo?.metadata?.location].filter(Boolean).join(' · '))}">
                 <span class="semester-gantt-lane" aria-hidden="true">
                     <span class="semester-gantt-bar" style="left:${left}%;width:${width}%"></span>
                 </span>
@@ -2387,8 +2388,8 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
     const renderWeek = (week) => {
         const currentClass = week.is_current ? ' is-current' : '';
         const days = (week.days || []).map((day) => `
-            <button type="button"
-                class="semester-day-cell${day.is_today ? ' is-today' : ''}${day.is_weekend ? ' is-weekend' : ''}"
+            <button data-lq-component="button" type="button"
+                class="lq-btn lq-btn--sm lq-btn--glass semester-day-cell${day.is_today ? ' is-today' : ''}${day.is_weekend ? ' is-weekend' : ''}"
                 data-calendar-date="${escapeHtml(day.date)}"
                 aria-label="${escapeHtml(day.month_day_label)} ${escapeHtml(day.weekday_label)}">
                 <span>${escapeHtml(day.weekday_label)}</span>
@@ -2539,8 +2540,8 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
                 ? key >= selectedStartDate && key <= selectedDueDate
                 : false;
             cells.push(`
-                <button type="button"
-                    class="semester-picker-day${inMonth ? '' : ' is-outside'}${key === todayKey ? ' is-today' : ''}${key === selectedStartDate ? ' is-start' : ''}${key === selectedDueDate ? ' is-due' : ''}${inRange ? ' is-in-range' : ''}"
+                <button data-lq-component="button" type="button"
+                    class="lq-btn lq-btn--sm lq-btn--glass semester-picker-day${inMonth ? '' : ' is-outside'}${key === todayKey ? ' is-today' : ''}${key === selectedStartDate ? ' is-start' : ''}${key === selectedDueDate ? ' is-due' : ''}${inRange ? ' is-in-range' : ''}"
                     data-picker-date="${key}">
                     <span>${day.getDate()}</span>
                 </button>
@@ -3075,7 +3076,7 @@ function initAcademicCourseExamPanel(config = window.APP_CONFIG || {}) {
             messageEl.textContent = isTeacher
                 ? '本课堂尚未同步到教务考试。点击同步后，会按课程、教学班和班级组成自动匹配。'
                 : '本课堂尚未同步到教务考试。同步后会在这里和时间轴中显示。';
-            listEl.innerHTML = '<div class="academic-course-exam-card"><span>暂无本课程考试安排。</span></div>';
+            listEl.innerHTML = '<div data-lq-component="surface" class="lq-surface academic-course-exam-card"><span>暂无本课程考试安排。</span></div>';
             return;
         }
         messageEl.textContent = `已识别 ${items.length} 条考试安排${lastSyncedAt ? `，最近同步 ${formatSyncedAt(lastSyncedAt)}` : ''}。`;
@@ -3088,7 +3089,7 @@ function initAcademicCourseExamPanel(config = window.APP_CONFIG || {}) {
                 .filter(Boolean)
                 .join(' · ');
             return `
-                <article class="academic-course-exam-card">
+                <article data-lq-component="surface" class="lq-surface academic-course-exam-card">
                     <strong>${escapeHtml(title)}</strong>
                     <span>${escapeHtml(meta || '考试时间地点待教务系统确认')}</span>
                     <small>${escapeHtml(note || '来自教务系统任课教师考试查询')}</small>

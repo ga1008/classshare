@@ -66,7 +66,7 @@
 
   function renderTemplates() {
     document.getElementById('rzTplRow').innerHTML = TEMPLATES.map(function (t) {
-      return '<button type="button" class="rz-tpl' + (t.key === state.template ? ' active' : '') + '" data-tpl="' + RZ.esc(t.key) + '" aria-pressed="' + (t.key === state.template) + '">' +
+      return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-tpl' + (t.key === state.template ? ' active' : '') + '" data-tpl="' + RZ.esc(t.key) + '" aria-pressed="' + (t.key === state.template) + '">' +
         '<strong>' + RZ.esc(t.label) + '</strong><small>' + RZ.esc(t.description) + '</small></button>';
     }).join('');
     document.querySelectorAll('[data-tpl]').forEach(function (el) {
@@ -147,7 +147,7 @@
   function targetOptionHtml(option, active) {
     var value = option.value || option.label || '';
     var meta = option.meta || option.tag || '职业推荐';
-    return '<button type="button" class="rz-target-option' + (active ? ' active' : '') +
+    return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-target-option' + (active ? ' active' : '') +
       '" data-target-position="' + RZ.esc(value) + '">' +
       '<strong>' + RZ.esc(value) + '</strong><span>' + RZ.esc(meta) + '</span></button>';
   }
@@ -183,9 +183,9 @@
 
   function chip(kind, item, inZone) {
     var locked = kind === 'personal_field' && PERSONAL_REQUIRED.indexOf(item.id) >= 0;
-    var x = inZone && !locked ? '<button type="button" class="rz-chip__x" title="移除">✕</button>' : '';
+    var x = inZone && !locked ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-chip__x" title="移除">✕</button>' : '';
     var lock = locked && inZone ? '<span class="rz-chip__lock">必填</span>' : '';
-    return '<div class="rz-chip' + (inZone ? ' in-zone' : '') + '"' + (inZone ? '' : ' role="button" tabindex="0" aria-label="添加 ' + RZ.esc(labelOf(kind, item)) + '"') + ' draggable="true" data-kind="' + kind + '" data-id="' + RZ.esc(item.id) + '">' +
+    return '<div data-lq-component="surface" class="lq-surface rz-chip' + (inZone ? ' in-zone' : '') + '"' + (inZone ? '' : ' role="button" tabindex="0" aria-label="添加 ' + RZ.esc(labelOf(kind, item)) + '"') + ' draggable="true" data-kind="' + kind + '" data-id="' + RZ.esc(item.id) + '">' +
       '<span class="rz-chip__label">' + RZ.esc(labelOf(kind, item)) + '</span>' + lock + x + '</div>';
   }
 
@@ -196,7 +196,7 @@
           ? '当前目标岗位：' + RZ.esc(state.target_position) + '。文件使用当前已确认的能力清单；新的 AI 建议需核对后采用。'
           : '填写目标岗位后，可在“我的简历”按需生成建议并核对采用。';
         return '<div class="rz-zone" data-zone="tech_stack"><div class="rz-zone__head"><strong>岗位能力清单</strong>' +
-          '<label style="font-size:.8rem;font-weight:600"><input type="checkbox" id="rzTechToggle" ' +
+          '<label style="font-size:.8rem;font-weight:600"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="rzTechToggle" ' +
           (state.tech_stack ? 'checked' : '') + '> 包含已确认的能力清单</label></div>' +
           '<div class="rz-zone__hint">' + targetHint + '</div></div>';
       }
@@ -415,7 +415,7 @@
 
     var button = document.createElement('button');
     button.type = 'button';
-    button.className = 'rz-btn rz-btn--primary rz-palette-fab';
+    button.className = 'rz-btn rz-btn--primary rz-palette-fab'; RZ.adoptControl(button, { kind: 'button', variant: 'prominent' });
     button.id = 'rzPaletteOpen';
     button.setAttribute('aria-controls', 'rzPalette');
     button.setAttribute('aria-expanded', 'false');
@@ -472,13 +472,13 @@
     var first = missing[0];
     if (first && first.href && first.href !== '/resume/builder') {
       var go = document.createElement('a');
-      go.className = 'rz-btn rz-btn--primary';
+      go.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(go, { kind: 'button', variant: 'prominent' });
       go.href = first.href;
       go.textContent = '去补充';
       m.foot.appendChild(go);
     }
     var close = document.createElement('button');
-    close.className = 'rz-btn';
+    close.className = 'rz-btn'; RZ.adoptControl(close, { kind: 'button', variant: 'glass' });
     close.textContent = '继续编辑';
     close.onclick = m.close;
     m.foot.appendChild(close);
@@ -579,18 +579,18 @@
     });
     var modal = RZ.openModal({ title: '编辑本份简历文字', wide: true });
     modal.body.innerHTML = '<p>这里的修改只用于这份简历。请保留真实经历、技能和数字。</p>' +
-      '<fieldset class="rz-snapshot-fields"><legend>本份职业摘要与能力清单</legend><label class="rz-field">职业摘要<textarea class="rz-textarea" id="rzSnapshotSummary" maxlength="2000" rows="4">' + RZ.esc(acceptedSummary) + '</textarea></label><p>生成文件优先使用此摘要；留空时使用所选素材中的自我介绍。</p>' +
-      '<label class="rz-field">岗位能力清单<textarea class="rz-textarea" id="rzSnapshotCapabilities" maxlength="6000" rows="4" placeholder="例如：语言沟通：英语写作、课堂沟通">' + RZ.esc(acceptedTech.map(function (group) { return typeof group === 'string' ? group : (group.group || '相关技能') + '：' + (group.items || []).join('、'); }).join('\n')) + '</textarea></label><p>每行一个分组，写成“分组名称：技能一、技能二”。只填写真实掌握且有资料支持的能力。</p></fieldset>' +
+      '<fieldset data-lq-component="field" class="lq-form-section rz-snapshot-fields"><legend>本份职业摘要与能力清单</legend><label class="rz-field">职业摘要<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" id="rzSnapshotSummary" maxlength="2000" rows="4">' + RZ.esc(acceptedSummary) + '</textarea></label><p>生成文件优先使用此摘要；留空时使用所选素材中的自我介绍。</p>' +
+      '<label class="rz-field">岗位能力清单<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" id="rzSnapshotCapabilities" maxlength="6000" rows="4" placeholder="例如：语言沟通：英语写作、课堂沟通">' + RZ.esc(acceptedTech.map(function (group) { return typeof group === 'string' ? group : (group.group || '相关技能') + '：' + (group.items || []).join('、'); }).join('\n')) + '</textarea></label><p>每行一个分组，写成“分组名称：技能一、技能二”。只填写真实掌握且有资料支持的能力。</p></fieldset>' +
       (entries.length ? entries.map(function (entry, index) {
-        return '<fieldset class="rz-snapshot-fields"><legend>' + (entry.section === 'personal' ? '本份个人信息' : RZ.esc(labelOf(entry.section, entry.item))) + '</legend>' +
+        return '<fieldset data-lq-component="field" class="lq-form-section rz-snapshot-fields"><legend>' + (entry.section === 'personal' ? '本份个人信息' : RZ.esc(labelOf(entry.section, entry.item))) + '</legend>' +
           Object.keys(fields[entry.section]).map(function (key) {
             var value = RZ.esc(entry.item[key] || ''), attrs = ' data-entry="' + index + '" data-field="' + key + '"';
-            var input = key === 'degree' ? '<select class="rz-select"' + attrs + '>' + ['', '高中', '中专', '大专', '本科', '硕士', '博士', '其他'].map(function (degree) { return '<option value="' + degree + '"' + (degree === entry.item[key] ? ' selected' : '') + '>' + (degree || '待确认') + '</option>'; }).join('') + '</select>' :
-              entry.section === 'personal' || /_date$/.test(key) ? '<input class="rz-input" maxlength="200" value="' + value + '"' + attrs + '>' :
-              '<textarea class="rz-textarea" rows="3" maxlength="6000"' + attrs + '>' + value + '</textarea>';
+            var input = key === 'degree' ? '<select data-lq-component="select" class="lq-select rz-select"' + attrs + '>' + ['', '高中', '中专', '大专', '本科', '硕士', '博士', '其他'].map(function (degree) { return '<option value="' + degree + '"' + (degree === entry.item[key] ? ' selected' : '') + '>' + (degree || '待确认') + '</option>'; }).join('') + '</select>' :
+              entry.section === 'personal' || /_date$/.test(key) ? '<input data-lq-component="input" class="lq-input rz-input" maxlength="200" value="' + value + '"' + attrs + '>' :
+              '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" rows="3" maxlength="6000"' + attrs + '>' + value + '</textarea>';
             return '<label class="rz-field">' + RZ.esc(fields[entry.section][key]) + input + '</label>'; }).join('') + '</fieldset>';
       }).join('') : '<p>先从素材区加入一段经历或介绍，再编辑这份简历的文字。</p>');
-    var save = document.createElement('button'); save.className = 'rz-btn rz-btn--primary'; save.textContent = '应用到当前草稿';
+    var save = document.createElement('button'); save.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(save, { kind: 'button', variant: 'prominent' }); save.textContent = '应用到当前草稿';
     save.onclick = function () {
       acceptedSummary = modal.body.querySelector('#rzSnapshotSummary').value;
       acceptedTech = modal.body.querySelector('#rzSnapshotCapabilities').value.split('\n').map(function (line) {
@@ -678,7 +678,7 @@
     } catch (e) {
       var status = document.getElementById('rzDraftStatus'); status.textContent = '无法载入：' + e.message + '。';
       var back = document.createElement('a'); back.href = '/resume/list'; back.textContent = ' 返回我的简历'; status.appendChild(back);
-      var retry = document.createElement('button'); retry.type = 'button'; retry.className = 'rz-btn rz-btn--sm'; retry.textContent = '重新加载'; retry.onclick = function () { window.location.reload(); }; status.appendChild(retry);
+      var retry = document.createElement('button'); retry.type = 'button'; retry.className = 'rz-btn rz-btn--sm'; RZ.adoptControl(retry, { kind: 'button', variant: 'glass' }); retry.textContent = '重新加载'; retry.onclick = function () { window.location.reload(); }; status.appendChild(retry);
       RZ.toast(e.message, 'error');
     }
   }

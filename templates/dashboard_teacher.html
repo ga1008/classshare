@@ -36,9 +36,9 @@
     {% call lq_page_head(workspace.greeting|default(user_info.name ~ '，你好'), description=workspace.date_label|default(''),
         actions=([{'label': '日程', 'variant': 'soft', 'attrs': {'data-ls-open': 'calendar', 'aria-haspopup': 'dialog'}}]
             + ([{'label': '新增待办', 'variant': 'soft', 'attrs': {'data-agenda-add-todo': 'true', 'aria-haspopup': 'dialog'}}] if dashboard_can_create_todo else []))) %}
-    <details class="ls-tools-menu"><summary>日程工具</summary><div class="ls-tools-menu-body">
-        <button type="button" class="ls-link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
-        <button type="button" class="ls-link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
+    <details data-lq-component="menu" class="lq-domain-region ls-tools-menu"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">日程工具</summary><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-tools-menu-body">
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
         {{ explain_button('日程来源', '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。', label='日程来源说明') }}
     </div></details>
     {% endcall %}
@@ -47,11 +47,11 @@
     <header class="ls-page-head lq-surface lq-scene-heading">
         <div><h1>{{ workspace.greeting|default(user_info.name ~ '，你好') }}</h1><p>{{ workspace.date_label|default('') }}</p></div>
         <div class="ls-head-actions">
-            <button type="button" class="ls-button" data-ls-open="calendar" aria-haspopup="dialog">日程</button>
-            {% if dashboard_can_create_todo %}<button type="button" class="ls-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
-            <details class="ls-tools-menu"><summary>日程工具</summary><div class="ls-tools-menu-body">
-                <button type="button" class="ls-link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
-                <button type="button" class="ls-link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-ls-open="calendar" aria-haspopup="dialog">日程</button>
+            {% if dashboard_can_create_todo %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
+            <details data-lq-component="menu" class="lq-domain-region ls-tools-menu"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">日程工具</summary><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-tools-menu-body">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
                 {{ explain_button('日程来源', '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。', label='日程来源说明') }}
             </div></details>
         </div>
@@ -66,7 +66,7 @@
                 <h2 id="ls-focus-title">需要处理{% if inbox.total %} <span class="ls-count">{{ inbox.total }}</span>{% endif %}</h2>
                 <div class="ls-inbox-tools">
                     {% for src in inbox.sources|default([]) %}{% if src.count %}<a href="/manage/me/inbox?source={{ src.key }}" class="ls-inbox-chip ls-inbox-chip--{{ src.tone }}" {{ explain_attrs(src.label, src.description) }}>{{ src.label }} <b>{{ src.count }}</b></a>{% endif %}{% endfor %}
-                    <button type="button" class="ls-button" data-agenda-add-todo>＋ 新增待办</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-agenda-add-todo>＋ 新增待办</button>
                 </div>
             </div>
             {% set focus_items = inbox['items']|default([]) %}
@@ -75,20 +75,20 @@
                 {% set source = item.agenda_data|default({}) %}
                 <li class="ls-focus-item{% if loop.first %} is-primary{% endif %}">
                     <span class="ls-item-kind"{% if lq_family_enabled('dashboard') %} data-tone="{{ source.kind|default(item.kind)|default('todo') }}"{% endif %}>{{ item.type_label|default('事项') }}</span><span class="ls-item-copy"><strong>{{ item.title }}</strong>{% if item.subtitle %}<small>{% if item.offering_id %}<a href="/classroom/{{ item.offering_id }}" aria-label="进入课堂：{{ item.subtitle }}">{{ item.subtitle }}</a>{% else %}{{ item.subtitle }}{% endif %}</small>{% endif %}</span><span class="ls-item-time">{% if item.status_label %}<span{% if item.date_bucket == "overdue" %} class="ls-status-warn"{% endif %}>{{ item.status_label }}</span>{% endif %}<span>{{ item.date_label }}{% if item.time_label %} · {{ item.time_label }}{% endif %}</span></span>
-                    {% if source.is_manual|default(false) or source.can_email_reminder|default(false) or not item.href or item.href.startswith('#') or item.href.endswith('#dashboard-semester') %}<button type="button" class="ls-button{% if loop.first %} ls-button-primary{% endif %}" data-agenda-item data-kind="{{ source.kind|default(item.kind) }}" data-status="{{ item.status }}" data-kind-label="{{ item.type_label|default('事项') }}" data-title="{{ item.title }}" data-subtitle="{{ item.subtitle }}" data-when="{{ item.date_label }} {{ item.time_label }}" data-href="{{ item.href }}" data-manual="{{ '1' if source.is_manual|default(false) else '0' }}" data-todo-id="{{ source.todo_id|default('') }}" data-class-offering-id="{{ source.class_offering_id|default(item.offering_id) }}" data-notes="{{ source.notes|default('') }}" data-due-at="{{ source.due_at_raw|default(item.due_at) }}" data-start-at="{{ source.start_at_raw|default(item.starts_at) }}" data-reminder-enabled="{{ '1' if source.reminder_enabled|default(false) else '0' }}" data-email-reminder-enabled="{{ '1' if source.email_reminder_enabled|default(false) else '0' }}" data-reminder-lead="{{ source.reminder_lead_minutes|default(1440) }}" data-priority="{{ source.priority|default('normal') }}" data-event-id="{{ source.event_id|default('') }}" data-can-reminder="{{ '1' if source.can_email_reminder|default(false) else '0' }}" aria-haspopup="dialog">{{ item.action_label|default('查看详情') }}</button>{% else %}<a href="{{ item.href }}" class="{% if loop.first %}ls-button ls-button-primary{% else %}ls-link{% endif %}">{{ item.action_label|default('查看') }}</a>{% endif %}
+                    {% if source.is_manual|default(false) or source.can_email_reminder|default(false) or not item.href or item.href.startswith('#') or item.href.endswith('#dashboard-semester') %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-button{% if loop.first %} ls-button-primary lq-btn--prominent{% endif %}" data-agenda-item data-kind="{{ source.kind|default(item.kind) }}" data-status="{{ item.status }}" data-kind-label="{{ item.type_label|default('事项') }}" data-title="{{ item.title }}" data-subtitle="{{ item.subtitle }}" data-when="{{ item.date_label }} {{ item.time_label }}" data-href="{{ item.href }}" data-manual="{{ '1' if source.is_manual|default(false) else '0' }}" data-todo-id="{{ source.todo_id|default('') }}" data-class-offering-id="{{ source.class_offering_id|default(item.offering_id) }}" data-notes="{{ source.notes|default('') }}" data-due-at="{{ source.due_at_raw|default(item.due_at) }}" data-start-at="{{ source.start_at_raw|default(item.starts_at) }}" data-reminder-enabled="{{ '1' if source.reminder_enabled|default(false) else '0' }}" data-email-reminder-enabled="{{ '1' if source.email_reminder_enabled|default(false) else '0' }}" data-reminder-lead="{{ source.reminder_lead_minutes|default(1440) }}" data-priority="{{ source.priority|default('normal') }}" data-event-id="{{ source.event_id|default('') }}" data-can-reminder="{{ '1' if source.can_email_reminder|default(false) else '0' }}" aria-haspopup="dialog">{{ item.action_label|default('查看详情') }}</button>{% else %}<a data-lq-component="button" href="{{ item.href }}" class="lq-btn lq-btn--sm {% if loop.first %}ls-button ls-button-primary lq-btn--prominent{% else %}ls-link lq-btn--link{% endif %}">{{ item.action_label|default('查看') }}</a>{% endif %}
                 </li>
                 {% endfor %}
             </ul>{% else %}<p class="ls-empty-inline">暂无需要处理的事项。</p>{% endif %}
             <div class="ls-focus-footer">
-                <a href="/manage/me/inbox" class="ls-link">全部待处理{% if inbox.total %}（{{ inbox.total }}）{% endif %} →</a>
-                <button type="button" class="ls-link" data-ls-open="items">全部事项与历史</button>
+                <a data-lq-component="button" href="/manage/me/inbox" class="lq-btn lq-btn--sm ls-link lq-btn--link">全部待处理{% if inbox.total %}（{{ inbox.total }}）{% endif %} →</a>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-ls-open="items">全部事项与历史</button>
             </div>
         </section>
     </div>
 
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}
     <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title" data-lq-material="content">{% set lq_courses_body %}
-        <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a class="ls-link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
+        <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
         {% if lq_family_enabled('dashboard') %}
         {% from "macros/lq/content.html" import lq_filter_bar %}
         {# LQ filter bar (S4 B4): the frozen `filter_bar` content component owns the
@@ -99,63 +99,63 @@
            data-filter-label / data-group-mode(-tabs) untouched inside the filters slot.
            filter_bar renders a permanently expanded control group, so the collapsible
            "筛选与显示" <details> is kept *inside* that slot to preserve the interaction. #}
-        <div class="ls-course-toolbar">
+        <div data-lq-component="toolbar" class="lq-domain-toolbar ls-course-toolbar">
         {% call(lq_slot) lq_filter_bar('dashboard-search', search_placeholder='搜索课程、班级', search_attrs={'data-dashboard-search': ''}, search_label='搜索课堂', search_name='q', search_value=dashboard_initial_search|default('')|string, method='get', action='/dashboard', label='课堂筛选', attrs={'data-dashboard-search-form': ''}) %}
         {%- if lq_slot == 'filters' -%}
             <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
             <details class="ls-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
-                <summary>筛选与显示</summary><div class="ls-course-options-body">
-                    <div class="ls-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a href="{{ filter.href }}" class="ls-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
-                    {% if dashboard_semester_options %}<label class="ls-field">学期<select id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
-                    <div class="ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button type="button" class="ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button type="button" class="ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button type="button" class="ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button type="button" class="ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">筛选与显示</summary><div class="ls-course-options-body">
+                    <div data-lq-component="region" class="lq-domain-region ls-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a data-lq-component="button" href="{{ filter.href }}" class="lq-btn lq-btn--sm lq-btn--glass ls-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
+                    {% if dashboard_semester_options %}<label class="ls-field">学期<select data-lq-component="select" class="lq-select" id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
+                    <div data-lq-component="region" class="lq-domain-region ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
                 </div>
             </details>
         {%- elif lq_slot == 'actions' -%}
-            <button type="submit" class="ls-button">搜索</button>
-            <button type="button" class="ls-button" data-academic-schedule-sync>同步教务课表</button>
+            <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass ls-button">搜索</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>同步教务课表</button>
         {%- endif -%}
         {% endcall %}
         </div>
-        {% else %}<div class="ls-course-toolbar">
+        {% else %}<div data-lq-component="toolbar" class="lq-domain-toolbar ls-course-toolbar">
             <form method="get" action="/dashboard" class="ls-course-search" data-dashboard-search-form>
                 <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
-                <label class="sr-only" for="dashboard-search">搜索课堂</label><input id="dashboard-search" type="search" name="q" class="ls-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button type="submit" class="ls-button">搜索</button>
-                <button type="button" class="ls-button" data-academic-schedule-sync>同步教务课表</button>
+                <label class="sr-only" for="dashboard-search">搜索课堂</label><input data-lq-component="input" id="dashboard-search" type="search" name="q" class="lq-input ls-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass ls-button">搜索</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>同步教务课表</button>
             </form>
             <details class="ls-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
-                <summary>筛选与显示</summary><div class="ls-course-options-body">
-                    <div class="ls-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a href="{{ filter.href }}" class="ls-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
-                    {% if dashboard_semester_options %}<label class="ls-field">学期<select id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
-                    <div class="ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button type="button" class="ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button type="button" class="ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button type="button" class="ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button type="button" class="ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
+                <summary data-lq-component="disclosure" class="lq-disclosure-trigger">筛选与显示</summary><div class="ls-course-options-body">
+                    <div data-lq-component="region" class="lq-domain-region ls-filter-group" role="group" aria-label="课堂状态">{% for filter in dashboard_filters %}<a data-lq-component="button" href="{{ filter.href }}" class="lq-btn lq-btn--sm lq-btn--glass ls-filter{% if filter.value == dashboard_initial_filter %} is-active{% endif %}" data-filter-value="{{ filter.value }}" data-filter-label="{{ filter.label }}" aria-current="{{ 'true' if filter.value == dashboard_initial_filter else 'false' }}">{{ filter.label }}{% if filter.count %}<span>{{ filter.count }}</span>{% endif %}</a>{% endfor %}</div>
+                    {% if dashboard_semester_options %}<label class="ls-field">学期<select data-lq-component="select" class="lq-select" id="dashboard-semester-filter" data-semester-filter><option value="">全部学期</option>{% for option in dashboard_semester_options %}<option value="{{ option.key }}"{% if option.key == dashboard_current_semester_key %} selected{% endif %}>{{ option.label }}（{{ option.count }}）</option>{% endfor %}</select></label>{% endif %}
+                    <div data-lq-component="region" class="lq-domain-region ls-filter-group" {% if lq_family_enabled('dashboard') %}role="tablist"{% else %}role="group"{% endif %} aria-label="课堂显示方式" data-group-mode-tabs><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="flat" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>列表</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="department" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>系别班级</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="course" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="false" tabindex="-1" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="false"{% endif %}>按课程</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-filter" data-group-mode="schedule3d" {% if lq_family_enabled('dashboard') %}role="tab" aria-selected="true" tabindex="0" aria-controls="dashboard-offering-panel"{% else %}aria-pressed="true"{% endif %}>3D课表</button></div>
                 </div>
             </details>
         </div>{% endif %}
-        <div class="ls-results"><span>显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span><span data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span><button type="button" class="ls-link" data-reset-search{% if dashboard_initial_filter == 'all' and not dashboard_initial_search %} hidden{% endif %}>清除筛选</button></div>
+        <div class="ls-results"><span>显示 <strong data-visible-count>{{ dashboard_initial_visible_count }}</strong> 个课堂</span><span data-results-summary aria-live="polite">{{ dashboard_initial_results_summary }}</span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-reset-search{% if dashboard_initial_filter == 'all' and not dashboard_initial_search %} hidden{% endif %}>清除筛选</button></div>
         <div class="ls-course-list{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}" data-offering-list{% if lq_family_enabled('dashboard') %} id="dashboard-offering-panel" role="tabpanel"{% endif %}{% if dashboard_initial_visible_count == 0 %} hidden{% endif %}>
         {% for offering in class_offerings %}{% set offering_summary = workspace.offering_summaries|default({}) %}{% set offering_summary = offering_summary.get(offering.id|string, {}) %}
             <article class="ls-course-row{% if lq_family_enabled('dashboard') %} lq-card--interactive{% endif %}"{% if lq_family_enabled('dashboard') %} style="--lq-course-tone: var(--tone-course-{{ (loop.index0 % 10) + 1 }})"{% endif %} data-offering-card data-offering-id="{{ offering.id }}" data-attention="{{ 'true' if offering.needs_attention else 'false' }}" data-recent="{{ 'true' if offering.has_recent_activity else 'false' }}" data-progress="{{ 'true' if offering.has_progress else 'false' }}" data-search-text="{{ offering.search_text }}" data-department="{{ offering.department_label|default('未分类') }}" data-class-name="{{ offering.class_name }}" data-class-id="{{ offering.class_id }}" data-course-name="{{ offering.course_name }}" data-course-id="{{ offering.course_id }}" data-semester-key="{{ offering.semester_key|default('') }}" data-semester-label="{{ offering.semester_label|default('未设学期') }}" data-teacher-name="{{ offering.teacher_name|default('') }}" data-activity-score="{{ offering.activity_score|default(0) }}" data-recent-user-count="{{ offering.recent_active_student_count|default(0) }}" data-recent-login-count="{{ offering.recent_login_count|default(0) }}" data-last-activity-sort="{{ offering.last_activity_sort|default(0) }}" aria-hidden="{{ 'false' if offering.initially_visible else 'true' }}"{% if not offering.initially_visible %} hidden{% endif %}>
                 <div class="ls-course-copy"><h3><a href="/classroom/{{ offering.id }}">{{ offering.course_name }}</a></h3><p>{{ offering.class_name }}{% if offering.semester_label|default('') %}<span>{{ offering.semester_label }}</span>{% endif %}</p></div>
                 <div class="ls-course-state">
                     {% if offering_summary.pending_review_count|default(0) > 0 %}<a href="/classroom/{{ offering.id }}#assignment-panel" class="ls-status-warn">查看待批改</a>{% elif offering.grading_count|default(0) > 0 %}<span>批改中 {{ offering.grading_count }} 项</span>{% else %}{% set next_sessions = offering.timeline_items|default([])|rejectattr('status', 'equalto', 'completed')|list %}{% if next_sessions %}<span>{{ next_sessions[0].date_label }} {{ next_sessions[0].weekday_label }}{% if next_sessions[0].hour_label and not next_sessions[0].time_hint|default('') %} · {{ next_sessions[0].hour_label }}{% endif %}</span>{% endif %}{% endif %}
-                    <span data-academic-evaluation-summary>{% if offering.academic_evaluation %}<button type="button" class="ls-link" data-academic-evaluation-open="{{ offering.id }}" aria-label="查看 {{ offering.course_name }} 教学评价">教学评价 {{ offering.academic_evaluation.score_display }}</button>{% else %}<button type="button" class="ls-link" data-academic-evaluation-open="{{ offering.id }}">教学评价</button>{% endif %}</span>
+                    <span data-academic-evaluation-summary>{% if offering.academic_evaluation %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-academic-evaluation-open="{{ offering.id }}" aria-label="查看 {{ offering.course_name }} 教学评价">教学评价 {{ offering.academic_evaluation.score_display }}</button>{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-academic-evaluation-open="{{ offering.id }}">教学评价</button>{% endif %}</span>
                 </div>
-                <span class="ls-course-actions"><a href="/manage/teaching/offerings?offering_id={{ offering.id }}" class="ls-link">管理</a><a href="/classroom/{{ offering.id }}" class="ls-course-enter" data-offering-enter aria-label="进入 {{ offering.course_name }} {{ offering.class_name }} 课堂">进入课堂 <span aria-hidden="true">→</span></a></span>
+                <span class="ls-course-actions"><a data-lq-component="button" href="/manage/teaching/offerings?offering_id={{ offering.id }}" class="lq-btn lq-btn--sm ls-link lq-btn--link">管理</a><a href="/classroom/{{ offering.id }}" class="ls-course-enter" data-offering-enter aria-label="进入 {{ offering.course_name }} {{ offering.class_name }} 课堂">进入课堂 <span aria-hidden="true">→</span></a></span>
             </article>
         {% endfor %}
         </div>
         <div class="ls-empty" data-empty-search{% if dashboard_initial_visible_count > 0 %} hidden{% endif %}><h3>没有匹配的课堂</h3><div data-empty-search-chips aria-label="当前筛选"></div><div data-empty-search-suggestions></div></div>
         {% if not class_offerings %}
-        <div class="ls-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a href="{{ dashboard_empty_state.action_href }}" class="ls-button ls-button-primary">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="ls-empty-help"><summary>如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
+        <div class="ls-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a data-lq-component="button" href="{{ dashboard_empty_state.action_href }}" class="lq-btn lq-btn--sm ls-button ls-button-primary lq-btn--prominent">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="ls-empty-help"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
         {% endif %}
         {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}
-        <details class="dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
-            <summary class="dashboard-evaluation-menu__trigger" aria-label="教学评价同步与设置">
+        <details data-lq-component="region" class="lq-domain-region dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
+            <summary data-lq-component="disclosure" class="lq-disclosure-trigger dashboard-evaluation-menu__trigger" aria-label="教学评价同步与设置">
                 <span class="dashboard-evaluation-menu__icon" aria-hidden="true"><i></i><i></i><i></i></span>
                 <span data-academic-evaluation-sync-trigger-label>评价</span>
                 <span class="dashboard-evaluation-menu__state{% if evaluation_sync.has_data %} is-ready{% endif %}" aria-hidden="true"></span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
-            <div class="dashboard-evaluation-menu__popover">
+            <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised dashboard-evaluation-menu__popover">
                 <strong data-academic-evaluation-sync-title>
                     {% if evaluation_sync.is_running %}正在同步教学评价{% elif evaluation_sync.has_data %}评价数据已对齐课堂{% elif evaluation_sync.auto_sync_completed %}已完成首次检查{% elif evaluation_sync.has_credential %}等待首次同步{% else %}尚未连接教务账号{% endif %}
                 </strong>
@@ -164,12 +164,12 @@
                 </small>
                 <div class="dashboard-evaluation-menu__actions">
                     {% if evaluation_sync.has_credential %}
-                    <button type="button" class="dashboard-evaluation-menu__action is-primary" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dashboard-evaluation-menu__action is-primary" data-academic-evaluation-sync-action{% if evaluation_sync.is_running %} disabled{% endif %}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6v6h-6"/><path d="M4 18v-6h6"/><path d="M18.5 9a7 7 0 0 0-12-2L4 9"/><path d="m20 15-2.5 2A7 7 0 0 1 5.5 15"/></svg>
                         <span>手动同步</span>
                     </button>
                     {% endif %}
-                    <a class="dashboard-evaluation-menu__action" href="/manage/academic/integrations">教务连接</a>
+                    <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost dashboard-evaluation-menu__action" href="/manage/academic/integrations">教务连接</a>
                 </div>
                 <p data-explain data-explain-title="教学评价" data-explain-text="每门课程默认只自动同步一次；详情读取本地数据。">同步与详情</p>
             </div>
@@ -197,7 +197,7 @@
                     <span class="ls-domain-card__summary">{{ domain.summary }}</span>
                 </a>
                 <div class="ls-domain-card__links">
-                    {% for action in domain.actions %}<a href="{{ action.href }}" class="ls-link">{{ action.label }}</a>{% endfor %}
+                    {% for action in domain.actions %}<a data-lq-component="button" href="{{ action.href }}" class="lq-btn lq-btn--sm ls-link lq-btn--link">{{ action.label }}</a>{% endfor %}
                 </div>
             </article>
             {% endfor %}
@@ -218,16 +218,16 @@
     </div>
 </section>
 
-<div class="academic-evaluation-modal" data-academic-evaluation-modal hidden>
+<div data-lq-component="layer" class="lq-domain-region academic-evaluation-modal" data-academic-evaluation-modal hidden>
     <div class="academic-evaluation-modal__backdrop" data-academic-evaluation-close></div>
-    <section class="academic-evaluation-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="academic-evaluation-modal-title" tabindex="-1">
+    <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised academic-evaluation-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="academic-evaluation-modal-title" tabindex="-1">
         <header class="academic-evaluation-modal__header">
             <div>
                 <span class="academic-evaluation-modal__eyebrow">课堂评价洞察</span>
                 <h2 id="academic-evaluation-modal-title" data-academic-evaluation-modal-title>教学评价详情</h2>
                 <p data-academic-evaluation-modal-subtitle>读取本地同步结果，不会再次访问教务系统</p>
             </div>
-            <button type="button" class="academic-evaluation-modal__close" data-academic-evaluation-close aria-label="关闭评价详情">
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-evaluation-modal__close" data-academic-evaluation-close aria-label="关闭评价详情">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </header>

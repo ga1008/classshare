@@ -2,7 +2,7 @@
 {% set stage = teaching_stage|default(none) %}
 {% if stage %}
 <details class="stage-bar stage-bar--{{ stage.phase }}" data-teaching-stage{% if stage.expanded %} open{% endif %}>
-    <summary class="stage-bar__summary">
+    <summary data-lq-component="disclosure" class="lq-disclosure-trigger stage-bar__summary">
         <span class="stage-bar__phase">{{ stage.phase_label }}</span>
         {% if stage.semester_name %}<span class="stage-bar__semester">{{ stage.semester_name }}{% if stage.week_label %} · {{ stage.week_label }}{% endif %}</span>{% endif %}
         <span class="stage-bar__headline">{{ stage.headline }}</span>
@@ -19,8 +19,8 @@
             {% endfor %}
         </ol>
         <div class="stage-bar__actions">
-            {% if stage.next_label %}<a class="btn btn-primary btn-sm" href="{{ stage.next_href }}">{{ stage.next_label }}</a>{% endif %}
-            <button type="button" class="btn btn-outline btn-sm" data-teacher-onboarding-open>逐步开设课堂</button>
+            {% if stage.next_label %}<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="{{ stage.next_href }}">{{ stage.next_label }}</a>{% endif %}
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-teacher-onboarding-open>逐步开设课堂</button>
         </div>
     </div>
 </details>

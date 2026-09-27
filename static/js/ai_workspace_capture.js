@@ -105,7 +105,8 @@ export async function capturePageImage({ hideAssistant, restoreAssistant, notify
         request.then(value => { if (closed) stopStream(value); }, () => {});
 
         overlay = document.createElement('dialog');
-        overlay.className = 'ai-workspace-capture';
+        overlay.className = 'ai-workspace-capture lq-domain-content-slot';
+        overlay.dataset.lqComponent = 'content-slot';
         overlay.dataset.phase = 'capture';
         overlay.setAttribute('aria-label', '网页截图与标注');
         // Essential transparent freeze while CSS loads; no UI is painted into the captured frame.
@@ -172,11 +173,12 @@ export async function capturePageImage({ hideAssistant, restoreAssistant, notify
         const screen = makeCanvas(snapshot.width, snapshot.height);
         screen.className = 'ai-capture-canvas'; screen.setAttribute('aria-label', '拖动框选网页内容');
         overlay.append(screen);
-        const toolbar = document.createElement('div'); toolbar.className = 'ai-capture-toolbar'; toolbar.dataset.captureToolbar = '';
-        toolbar.innerHTML = `<div class="ai-capture-tools" data-capture-select><span role="status" data-capture-hint>拖动框选网页内容</span><button type="button" data-capture-all>选择整个可见区域</button></div>
-            <div class="ai-capture-tools" data-capture-edit hidden><div class="ai-capture-tools" role="group" aria-label="标注工具"><button type="button" data-capture-tool="rectangle" aria-pressed="true">矩形</button><button type="button" data-capture-tool="pen" aria-pressed="false">自由笔</button><button type="button" data-capture-tool="arrow" aria-pressed="false">箭头</button></div>
-            <label class="ai-capture-color">颜色<input type="color" aria-label="标注颜色" value="${color}"></label><label class="ai-capture-width">粗细<input type="range" aria-label="标注粗细" min="1" max="10" step="1" value="5"><output>5 px</output></label>
-            <button type="button" data-capture-undo disabled>撤销</button><button type="button" data-capture-insert>插入附件</button></div><button type="button" data-capture-cancel>取消</button>`;
+        const toolbar = document.createElement('div'); toolbar.className = 'ai-capture-toolbar lq-domain-toolbar lq-domain-raised';
+        toolbar.dataset.lqComponent = 'toolbar'; toolbar.dataset.lqMaterial = 'raised'; toolbar.dataset.captureToolbar = '';
+        toolbar.innerHTML = `<div class="ai-capture-tools" data-capture-select><span role="status" data-capture-hint>拖动框选网页内容</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-all>选择整个可见区域</button></div>
+            <div class="ai-capture-tools" data-capture-edit hidden><div class="ai-capture-tools" role="group" aria-label="标注工具"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-tool="rectangle" aria-pressed="true">矩形</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-tool="pen" aria-pressed="false">自由笔</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-tool="arrow" aria-pressed="false">箭头</button></div>
+            <label class="ai-capture-color">颜色<input data-lq-component="color" class="lq-native-color" type="color" aria-label="标注颜色" value="${color}"></label><label class="ai-capture-width">粗细<input data-lq-component="range" class="lq-range" type="range" aria-label="标注粗细" min="1" max="10" step="1" value="5"><output>5 px</output></label>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-undo disabled>撤销</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--prominent" type="button" data-capture-insert>插入附件</button></div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-capture-cancel>取消</button>`;
         overlay.append(toolbar);
         const selectTools = toolbar.querySelector('[data-capture-select]'), editTools = toolbar.querySelector('[data-capture-edit]');
         const hint = toolbar.querySelector('[data-capture-hint]'), undo = toolbar.querySelector('[data-capture-undo]');

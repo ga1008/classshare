@@ -35,9 +35,9 @@
     border-radius: var(--ls-r-xl);
     opacity: 1;
     transform: none;
-    transition: opacity 220ms var(--ls-ease-out), transform 220ms var(--ls-ease-out);
+    transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, var(--ls-ease-out)), transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out));
 }
-.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-dialog__surface { opacity: 0; transform: scale(.98); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-dialog__surface { opacity: 0; transform: scale(var(--lq-motion-overlay-scale, .98)); }
 .lq-dialog__head {
     display: flex;
     flex: none;
@@ -112,10 +112,10 @@
     border-radius: var(--ls-r-xl) 0 0 var(--ls-r-xl);
 }
 .lq-sheet--right { width: min(480px, 100vw); }
-.lq-drawer { width: min(640px, 100vw); transition-duration: 280ms; }
+.lq-drawer { width: min(640px, 100vw); }
 .lq-drawer--wide { width: min(960px, 100vw); }
-.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-sheet--bottom { transform: translateY(24px); }
-.lq-dialog-root[data-ui-overlay-state="closed"] > :is(.lq-sheet--right, .lq-drawer) { transform: translateX(24px); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-sheet--bottom { transform: translateY(var(--lq-motion-overlay-distance, 24px)); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > :is(.lq-sheet--right, .lq-drawer) { transform: translateX(var(--lq-motion-overlay-distance, 24px)); }
 .lq-popover {
     position: fixed;
     width: max-content;
@@ -123,7 +123,7 @@
     max-height: calc(100dvh - 24px);
     border-radius: var(--ls-r-lg);
 }
-.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-popover { transform: scale(.96); }
+.lq-dialog-root[data-ui-overlay-state="closed"] > .lq-popover { transform: scale(var(--lq-motion-overlay-scale, .96)); }
 @media (max-width: 640px) {
     .lq-dialog-root[data-lq-dialog="modal"] { padding: 0; }
     .lq-modal {
@@ -140,7 +140,7 @@
     .lq-dialog__body { padding-inline: 20px; }
     .lq-dialog__foot { flex-direction: column; align-items: stretch; padding-inline: 20px; }
     .lq-dialog__foot > .lq-btn { width: 100%; }
-    .lq-dialog-root[data-ui-overlay-state="closed"] > .lq-modal { transform: translateY(24px); }
+    .lq-dialog-root[data-ui-overlay-state="closed"] > .lq-modal { transform: translateY(var(--lq-motion-overlay-distance, 24px)); }
 }
 @media (prefers-reduced-motion: reduce) {
     .lq-dialog__surface { transition: none; }

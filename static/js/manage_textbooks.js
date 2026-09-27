@@ -159,7 +159,7 @@ function renderCards() {
     if (!elements.cardGrid) return;
     const items = getFilteredTextbooks();
     elements.cardGrid.innerHTML = items.map((item) => `
-        <article class="academic-resource-card" id="textbook-card-${item.id}">
+        <article data-lq-component="surface" class="lq-surface academic-resource-card" id="textbook-card-${item.id}">
             <div class="academic-card-topline">
                 <div class="academic-card-main">
                     <span class="academic-card-kicker">教材</span>
@@ -188,11 +188,11 @@ function renderCards() {
             </div>
             <div class="academic-card-actions">
                 <div class="academic-action-group">
-                    <button type="button" class="btn btn-outline btn-sm" data-resource-attributes data-resource-type="textbook" data-resource-id="${item.id}">属性</button>
-                    <button type="button" class="btn btn-outline btn-sm" data-action="edit" data-textbook-id="${item.id}">内容</button>
-                    ${item.has_attachment ? `<a class="btn btn-ghost btn-sm" href="/api/manage/textbooks/${item.id}/attachment" target="_blank" rel="noopener">下载附件</a>` : ''}
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-resource-attributes data-resource-type="textbook" data-resource-id="${item.id}">属性</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="edit" data-textbook-id="${item.id}">内容</button>
+                    ${item.has_attachment ? `<a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" href="/api/manage/textbooks/${item.id}/attachment" target="_blank" rel="noopener">下载附件</a>` : ''}
                 </div>
-                <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-textbook-id="${item.id}">删除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" data-action="delete" data-textbook-id="${item.id}">删除</button>
             </div>
         </article>
     `).join('');
@@ -211,7 +211,7 @@ function renderChipList(container, values, type) {
     container.innerHTML = values.map((value, index) => `
         <span class="academic-chip">
             ${escapeHtml(value)}
-            <button type="button" data-chip-type="${type}" data-chip-index="${index}" aria-label="删除">&times;</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-chip-type="${type}" data-chip-index="${index}" aria-label="删除">&times;</button>
         </span>
     `).join('');
 }

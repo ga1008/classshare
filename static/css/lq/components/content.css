@@ -1,6 +1,6 @@
 /* Presentation only: no request controller, inherited glass or self-built blur. */
 .lq-card, .lq-list, .lq-empty, .lq-page-head, .lq-filter-bar, .lq-prose, .lq-bubble { box-sizing: border-box; min-width: 0; max-width: 100%; color: hsl(var(--ls-ink)); font-family: var(--ls-font-sans); }
-.lq-card { padding: var(--ls-s-4); border-radius: var(--ls-r-lg); box-shadow: var(--ls-shadow-1); transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out); }
+.lq-card { padding: var(--ls-s-4); border-radius: var(--ls-r-lg); box-shadow: var(--ls-shadow-1); transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)), box-shadow var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)); }
 .lq-card__head, .lq-page-head__title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ls-s-3); }
 .lq-card__copy, .lq-card__body, .lq-card__foot, .lq-empty__copy { min-width: 0; }
 .lq-card__copy { flex: 1; }
@@ -39,7 +39,7 @@
 .lq-row--swipe:has(.lq-row__lead:not(:empty)) { --lq-row-main-offset: calc(var(--ls-s-4) + var(--ls-s-8) + var(--ls-s-1) + var(--ls-s-3)); }
 @media (max-width: 767px) and (pointer: coarse) {
     .lq-row--swipe[data-lq-row-enhanced] { overflow: clip; isolation: isolate; }
-    .lq-row--swipe[data-lq-row-enhanced] .lq-row__front { flex-basis: 100%; position: relative; z-index: var(--ls-z-raised); touch-action: pan-y; transform: translateX(var(--lq-row-shift, 0px)); transition: transform var(--ls-dur-fast) var(--ls-ease-out); }
+    .lq-row--swipe[data-lq-row-enhanced] .lq-row__front { flex-basis: 100%; position: relative; z-index: var(--ls-z-raised); touch-action: pan-y; transform: translateX(var(--lq-row-shift, 0px)); transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-ease, var(--ls-ease-out)); }
     .lq-row--swipe[data-lq-row-enhanced] .lq-row__swipe-actions { position: absolute; inset-block: 0; inset-inline-end: 0; max-width: 50%; min-width: calc(var(--ls-s-10) * 2); background: hsl(var(--ls-tone-danger-soft)); }
     .lq-row--swipe[data-lq-row-enhanced] [data-lq-row-reveal] { display: inline-flex; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); transform: translateX(calc(-1 * var(--lq-row-shift, 0px))); }
     .lq-row--swipe[data-lq-row-dragging] .lq-row__front { transition: none; }
@@ -100,7 +100,7 @@
     .lq-bubble { max-width: 85%; }
 }
 @media (hover: hover) and (pointer: fine) {
-    .lq-card--interactive:not(.lq-card--flat):hover { transform: translateY(calc(var(--ls-s-1) / -2)); box-shadow: var(--ls-shadow-2); }
+    .lq-card--interactive:not(.lq-card--flat):hover { transform: translateY(var(--lq-motion-hover-y, -2px)); box-shadow: var(--ls-shadow-2); }
 }
 @media (prefers-reduced-motion: reduce) {
     .lq-row--swipe[data-lq-row-enhanced] .lq-row__front { transition: none; }

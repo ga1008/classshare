@@ -114,7 +114,7 @@ export class SignaturePointControl {
             this.emitState();
         } catch (error) {
             if (sequence !== this.loadSequence) return;
-            this.root.innerHTML = `<div class="spw-error"><strong>${esc(this.pointLabel)}</strong><span>${esc(error.message || '签名点加载失败')}</span><button type="button" data-spw-retry>重试</button></div>`;
+            this.root.innerHTML = `<div class="spw-error"><strong>${esc(this.pointLabel)}</strong><span>${esc(error.message || '签名点加载失败')}</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-retry>重试</button></div>`;
             this.root.querySelector('[data-spw-retry]')?.addEventListener('click', () => this.load());
         } finally {
             if (sequence === this.loadSequence) this.loading = false;
@@ -198,12 +198,12 @@ export class SignaturePointControl {
     render() {
         this.picker?.destroy();
         this.root.innerHTML = `
-            <div class="spw-head"><div><strong>${esc(this.pointLabel)}</strong></div><button type="button" class="spw-apply" data-spw-apply ${this.updating ? 'disabled' : ''}>${this.state?.active_flow ? '查看申请' : '申请签名'}</button></div>
+            <div class="spw-head"><div><strong>${esc(this.pointLabel)}</strong></div><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass spw-apply" data-spw-apply ${this.updating ? 'disabled' : ''}>${this.state?.active_flow ? '查看申请' : '申请签名'}</button></div>
             <p class="spw-scope">仅用于当前材料及该签名位置。内容变更后需重新确认授权。</p>
-            <div class="spw-selected" data-spw-area>
+            <div data-lq-component="surface" class="lq-surface spw-selected" data-spw-area>
                 <div class="spw-selected-head"><span class="spw-selected-title">签名与排版顺序</span><span data-spw-status></span></div>
                 <div data-spw-picker></div>
-                <div class="spw-selected-actions"><button type="button" data-spw-clear>全部取消</button><button type="button" data-spw-revert>还原</button><span class="spw-selected-actions__spacer"></span><button type="button" class="spw-confirm" data-spw-confirm></button></div>
+                <div class="spw-selected-actions"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-clear>全部取消</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-revert>还原</button><span class="spw-selected-actions__spacer"></span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass spw-confirm" data-spw-confirm></button></div>
             </div>`;
         this.picker = new SignatureMultiSelect({
             root: this.root.querySelector('[data-spw-picker]'), items: this.state?.signatures || [],
@@ -220,7 +220,8 @@ export class SignaturePointControl {
     updateSelectionStatus() {
         const area = this.root.querySelector('[data-spw-area]');
         if (!area) return;
-        area.className = `spw-selected is-${this.areaState()}`;
+        for (const name of [...area.classList]) if (name.startsWith('is-')) area.classList.remove(name);
+        area.classList.add(`is-${this.areaState()}`);
         this.root.querySelector('[data-spw-status]').innerHTML = this.areaBadgeHtml();
         this.root.querySelector('[data-spw-clear]').disabled = this.updating || !this.selectedIds.length;
         this.root.querySelector('[data-spw-revert]').hidden = !this.isDirty();
@@ -244,8 +245,9 @@ export class SignaturePointControl {
     ensureDialog() {
         if (this.dialog) return this.dialog;
         const dialog = document.createElement('dialog');
-        dialog.className = 'spw-dialog';
-        dialog.innerHTML = '<div class="spw-dialog-panel" data-spw-dialog-panel></div>';
+        dialog.className = 'lq-domain-region spw-dialog';
+        dialog.dataset.lqComponent = 'layer';
+        dialog.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised spw-dialog-panel" data-spw-dialog-panel></div>';
         document.body.appendChild(dialog);
         dialog.addEventListener('click', (event) => {
             if (event.target === dialog) dialog.close();
@@ -271,27 +273,27 @@ export class SignaturePointControl {
                 return `<li><div><strong>${esc(item.signature_name)}</strong><em class="is-${esc(item.status)}">${esc(statusText[item.status] || item.status)}</em></div><p>${reviewers || (item.request_id ? '等待审批人信息' : '直接使用，无需审批')}</p></li>`;
             }).join('');
             panel.innerHTML = `
-                <header><div><span>签名申请流程</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>
+                <header><div><span>签名申请流程</span><h3>${esc(this.pointLabel)}</h3></div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-close aria-label="关闭">×</button></header>
                 <div class="spw-dialog-body">
                     <div class="spw-flow-summary"><strong>${esc(statusText[flow.status] || flow.status)}</strong><span>${esc(flow.material_label || '')}</span></div>
                     <ol class="spw-flow-items">${items}</ol>
                     <p class="spw-flow-note">审批规则：签名归属人或签名者本人任一同意即可授权；未绑定账号的签名由平台管理员代为审批。多人签名分别审批，已通过的授权不会因结束其余申请而撤销。</p>
                 </div>
-                <footer><button type="button" data-spw-refresh>刷新状态</button><span></span><button type="button" class="is-danger" data-spw-end>结束申请</button></footer>`;
+                <footer><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-refresh>刷新状态</button><span></span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive is-danger" data-spw-end>结束申请</button></footer>`;
             panel.querySelector('[data-spw-end]')?.addEventListener('click', () => this.endFlow(flow.id));
             panel.querySelector('[data-spw-refresh]')?.addEventListener('click', () => this.refreshDialog());
         } else {
             this.dialogPicker?.destroy();
             if (!Array.isArray(this.dialogRequestOrder)) this.dialogRequestOrder = [...this.selectedIds];
             panel.innerHTML = `
-                <header><div><span>申请使用签名</span><h3>${esc(this.pointLabel)}</h3></div><button type="button" data-spw-close aria-label="关闭">×</button></header>
+                <header><div><span>申请使用签名</span><h3>${esc(this.pointLabel)}</h3></div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-close aria-label="关闭">×</button></header>
                 <div class="spw-dialog-body">
                     <p class="spw-flow-note">${esc(this.state?.material?.label || '')} · 按最终排版顺序选择签名；本人签名、已授权签名与特殊签名无需重复申请。</p>
                     <div data-spw-request-picker></div>
-                    <label class="spw-note"><span>申请说明（可选）</span><textarea maxlength="300" data-spw-note placeholder="材料用途或审批背景">${esc(this.dialogRequestNote)}</textarea></label>
-                    <label class="spw-auto-apply"><input type="checkbox" data-spw-auto-apply ${this.dialogAutoApply ? 'checked' : ''}><span>本位置全部获批后，按当前顺序自动应用到文档</span></label>
+                    <label class="spw-note"><span>申请说明（可选）</span><textarea data-lq-component="textarea" class="lq-textarea" maxlength="300" data-spw-note placeholder="材料用途或审批背景">${esc(this.dialogRequestNote)}</textarea></label>
+                    <label class="spw-auto-apply"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-spw-auto-apply ${this.dialogAutoApply ? 'checked' : ''}><span>本位置全部获批后，按当前顺序自动应用到文档</span></label>
                 </div>
-                <footer><button type="button" data-spw-refresh>刷新签名库</button><span></span><button type="button" class="is-primary" data-spw-create>提交签名配置</button></footer>`;
+                <footer><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-spw-refresh>刷新签名库</button><span></span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass is-primary" data-spw-create>提交签名配置</button></footer>`;
             this.dialogPicker = new SignatureMultiSelect({
                 root: panel.querySelector('[data-spw-request-picker]'), items: this.state?.signatures || [],
                 selectedIds: this.dialogRequestOrder, identityLabels: this.requiredIdentityLabels(),

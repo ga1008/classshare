@@ -610,7 +610,7 @@ export async function loadExamPapers() {
                 <div class="empty-state assignment-empty-state">
                     <h3>试卷库为空</h3>
                     <p class="text-muted">请先前往管理中心创建试卷，然后再发布到当前课堂。</p>
-                    <a href="/manage/library/exams" class="btn btn-outline btn-sm">前往试卷库</a>
+                    <a data-lq-component="button" href="/manage/library/exams" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">前往试卷库</a>
                 </div>
             `;
             publishExamAssignSnapshot();
@@ -626,7 +626,7 @@ export async function loadExamPapers() {
 
             return `
                 <label class="exam-paper-option">
-                    <input type="radio" name="exam-paper" value="${escapeHtml(paper.id)}" class="exam-paper-radio shrink-0">
+                    <input data-lq-component="radio" type="radio" name="exam-paper" value="${escapeHtml(paper.id)}" class="lq-radio exam-paper-radio shrink-0">
                     <div class="exam-paper-option-main">
                         <div class="exam-paper-option-title">${escapeHtml(paper.title)}</div>
                         <p class="exam-paper-option-desc">${desc}</p>

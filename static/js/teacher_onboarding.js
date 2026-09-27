@@ -249,9 +249,9 @@ if (modal) {
             `<span class="onboarding-badge ${escapeHtml(badge.className || '')}">${escapeHtml(badge.label || badge)}</span>`
         )).join('');
         return `
-            <button
+            <button data-lq-component="button"
                 type="button"
-                class="onboarding-option-card${selected ? ' is-selected' : ''}${muted ? ' is-muted' : ''}${extraClass ? ` ${escapeHtml(extraClass)}` : ''}"
+                class="lq-btn lq-btn--sm lq-btn--glass onboarding-option-card${selected ? ' is-selected' : ''}${muted ? ' is-muted' : ''}${extraClass ? ` ${escapeHtml(extraClass)}` : ''}"
                 data-select-id="${escapeHtml(id)}"
             >
                 <strong>${escapeHtml(title)}</strong>
@@ -296,9 +296,9 @@ if (modal) {
 
         container.innerHTML = renderStepShell(`
             ${renderTitle(steps[0].prompt, '学期会影响教学日历、周次和课堂时间轴。')}
-            <div class="onboarding-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar onboarding-toolbar">
                 <span class="onboarding-hint">单击卡片选中学期。</span>
-                <button type="button" class="btn btn-outline" data-action="create-semester">新建学期</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-action="create-semester">新建学期</button>
             </div>
             <div class="onboarding-grid">${body}</div>
         `);
@@ -381,15 +381,15 @@ if (modal) {
             <div class="onboarding-field-grid">
                 <div class="onboarding-field">
                     <label for="onboardingCourseNameInput">课程名称</label>
-                    <input id="onboardingCourseNameInput" type="text" value="${escapeHtml(state.selected.courseName)}" placeholder="例如：动态 Web 程序设计">
+                    <input data-lq-component="input" class="lq-input" id="onboardingCourseNameInput" type="text" value="${escapeHtml(state.selected.courseName)}" placeholder="例如：动态 Web 程序设计">
                 </div>
                 <div class="onboarding-field">
                     <label for="onboardingCourseDepartmentInput">所属系别</label>
-                    <input id="onboardingCourseDepartmentInput" type="text" list="onboardingDepartmentOptions" value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
+                    <input data-lq-component="input" class="lq-input" id="onboardingCourseDepartmentInput" type="text" list="onboardingDepartmentOptions" value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
                     <datalist id="onboardingDepartmentOptions">${departmentOptions}</datalist>
                 </div>
             </div>
-            <div class="onboarding-recommend-panel">
+            <div data-lq-component="surface" class="lq-surface onboarding-recommend-panel">
                 <strong>是“${escapeHtml(keyword || '这门')}”课程吗？</strong>
                 <div class="onboarding-grid is-compact">${similarHtml}</div>
             </div>
@@ -465,9 +465,9 @@ if (modal) {
 
         container.innerHTML = renderStepShell(`
             ${renderTitle(steps[2].prompt, '请选择已有教材，或者重新录入一个。与当前课程关联度高的教材会排在前面。')}
-            <div class="onboarding-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar onboarding-toolbar">
                 <span class="onboarding-hint">教材会用于课程简介、拆课和 AI 助教上下文。</span>
-                <button type="button" class="btn btn-outline" data-action="create-textbook">新建教材</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-action="create-textbook">新建教材</button>
             </div>
             <div class="onboarding-grid">${body}</div>
         `);
@@ -566,7 +566,7 @@ if (modal) {
         return `
             <article class="onboarding-material-node${isSelected ? ' is-selected' : ''}" style="--tree-depth:${depth}">
                 <div class="onboarding-material-row">
-                    <button type="button" class="onboarding-material-select" data-material-select="${escapeHtml(materialId)}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass onboarding-material-select" data-material-select="${escapeHtml(materialId)}">
                         <span class="onboarding-material-icon" aria-hidden="true">${isFolder ? '□' : '·'}</span>
                         <span class="onboarding-material-copy">
                             <strong>${escapeHtml(material.name || '未命名材料')}</strong>
@@ -574,9 +574,9 @@ if (modal) {
                         </span>
                         ${badgeHtml ? `<span class="onboarding-badge-row">${badgeHtml}</span>` : ''}
                     </button>
-                    <button
+                    <button data-lq-component="button"
                         type="button"
-                        class="onboarding-material-toggle"
+                        class="lq-btn lq-btn--sm lq-btn--glass onboarding-material-toggle"
                         data-material-toggle="${escapeHtml(materialId)}"
                         ${hasChildren ? '' : 'disabled'}
                         aria-label="${isExpanded ? '收起目录' : '展开目录'}"
@@ -595,9 +595,9 @@ if (modal) {
 
         container.innerHTML = renderStepShell(`
             ${renderTitle(steps[3].prompt, '课程材料通常按文件夹整理。可以选择整个目录，也可以展开后选择具体文件；后续还能使用深度思考 AI 协助生成或优化材料。')}
-            <div class="onboarding-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar onboarding-toolbar">
                 <span class="onboarding-hint">默认只显示根目录；点击名称区域选择，点击右侧“展开”查看子目录。</span>
-                <button type="button" class="btn btn-outline" data-action="create-material">导入材料</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-action="create-material">导入材料</button>
             </div>
             <div class="onboarding-material-tree">${body}</div>
         `);
@@ -698,9 +698,9 @@ if (modal) {
 
         container.innerHTML = renderStepShell(`
             ${renderTitle(steps[4].prompt, '课程和班级都按系别归属管理，同系别班级会优先推荐。')}
-            <div class="onboarding-toolbar">
+            <div data-lq-component="toolbar" class="lq-domain-toolbar onboarding-toolbar">
                 <span class="onboarding-hint">当前课程系别：${escapeHtml(state.selected.department || '未设置')}</span>
-                <button type="button" class="btn btn-outline" data-action="create-class">录入新班级</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-action="create-class">录入新班级</button>
             </div>
             <div class="onboarding-grid">${body}</div>
         `);
@@ -781,7 +781,9 @@ if (modal) {
             const lesson = state.selected.lessons[index] || {};
             const stateKey = lessonCompletionState(lesson);
             const isActive = index === activeIndex;
-            button.className = `onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}`;
+            button.classList.remove('is-complete', 'is-partial', 'is-empty');
+            button.classList.add(`is-${stateKey}`);
+            button.classList.toggle('is-active', isActive);
             button.setAttribute('aria-current', isActive ? 'true' : 'false');
             const label = button.querySelector('[data-lesson-label]');
             const meta = button.querySelector('[data-lesson-meta]');
@@ -871,8 +873,8 @@ if (modal) {
             const stateKey = lessonCompletionState(lesson);
             const isActive = index === activeLessonIndex;
             return `
-                <button type="button"
-                        class="onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                <button data-lq-component="button" type="button"
+                        class="lq-btn lq-btn--sm lq-btn--glass onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}"
                         data-action="select-lesson"
                         data-lesson-index="${index}"
                         aria-current="${isActive ? 'true' : 'false'}">
@@ -889,20 +891,20 @@ if (modal) {
             <article class="onboarding-lesson-row${index === activeLessonIndex ? ' is-active' : ''}" data-lesson-index="${index}" ${index === activeLessonIndex ? '' : 'hidden'} aria-hidden="${index === activeLessonIndex ? 'false' : 'true'}">
                 <div class="onboarding-field">
                     <label>第 ${index + 1} 次课标题</label>
-                    <input type="text" value="${escapeHtml(lesson.title || '')}" data-field="title">
+                    <input data-lq-component="input" class="lq-input" type="text" value="${escapeHtml(lesson.title || '')}" data-field="title">
                 </div>
                 <div class="onboarding-field">
                     <label>学时</label>
-                    <input type="number" min="1" max="12" step="1" value="${escapeHtml(lesson.section_count || 2)}" data-field="section_count">
+                    <input data-lq-component="input" class="lq-input" type="number" min="1" max="12" step="1" value="${escapeHtml(lesson.section_count || 2)}" data-field="section_count">
                 </div>
                 <div class="onboarding-field">
                     <label>绑定材料</label>
-                    <select data-field="learning_material_id">${materialOptions}</select>
+                    <select data-lq-component="select" class="lq-select" data-field="learning_material_id">${materialOptions}</select>
                 </div>
-                <button type="button" class="btn btn-ghost btn-sm text-danger" data-action="remove-lesson">删除</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-action="remove-lesson">删除</button>
                 <div class="onboarding-field full-span">
                     <label>上课内容</label>
-                    <textarea rows="2" data-field="content">${escapeHtml(lesson.content || '')}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" rows="2" data-field="content">${escapeHtml(lesson.content || '')}</textarea>
                 </div>
             </article>
         `).join('');
@@ -910,7 +912,7 @@ if (modal) {
             <div class="onboarding-ai-suggestion">
                 <strong>快速 AI 推荐简介</strong>
                 <p>${escapeHtml(state.selected.courseDescriptionDraft)}</p>
-                <button type="button" class="btn btn-outline btn-sm" data-action="apply-description">一键填入</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="apply-description">一键填入</button>
             </div>
         ` : '';
 
@@ -919,23 +921,23 @@ if (modal) {
             <div class="onboarding-field-grid">
                 <div class="onboarding-field">
                     <label for="onboardingCreditsInput">学分</label>
-                    <input id="onboardingCreditsInput" type="number" min="0.5" max="20" step="0.5" value="${escapeHtml(state.selected.credits)}">
+                    <input data-lq-component="input" class="lq-input" id="onboardingCreditsInput" type="number" min="0.5" max="20" step="0.5" value="${escapeHtml(state.selected.credits)}">
                 </div>
                 <div class="onboarding-field">
                     <label for="onboardingTotalHoursInput">学时</label>
-                    <input id="onboardingTotalHoursInput" type="number" min="1" max="512" step="1" value="${escapeHtml(state.selected.totalHours)}">
+                    <input data-lq-component="input" class="lq-input" id="onboardingTotalHoursInput" type="number" min="1" max="512" step="1" value="${escapeHtml(state.selected.totalHours)}">
                 </div>
                 <div class="onboarding-field">
                     <label for="onboardingFirstDateInput">第一次上课日期</label>
-                    <input id="onboardingFirstDateInput" type="date" value="${escapeHtml(state.selected.firstClassDate || todayIso())}">
+                    <input data-lq-component="input" class="lq-input" id="onboardingFirstDateInput" type="date" value="${escapeHtml(state.selected.firstClassDate || todayIso())}">
                 </div>
                 <div class="onboarding-field">
                     <label for="onboardingWeeklySectionInput">每周本日小节数</label>
-                    <input id="onboardingWeeklySectionInput" type="number" min="1" max="12" step="1" value="${escapeHtml(state.selected.weeklySchedule[0]?.section_count || 2)}">
+                    <input data-lq-component="input" class="lq-input" id="onboardingWeeklySectionInput" type="number" min="1" max="12" step="1" value="${escapeHtml(state.selected.weeklySchedule[0]?.section_count || 2)}">
                 </div>
                 <div class="onboarding-field full-span">
                     <label for="onboardingDescriptionInput">课程简介</label>
-                    <textarea id="onboardingDescriptionInput" rows="4" placeholder="课程定位、学习目标、实践方式和适用专业">${escapeHtml(state.selected.description)}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" id="onboardingDescriptionInput" rows="4" placeholder="课程定位、学习目标、实践方式和适用专业">${escapeHtml(state.selected.description)}</textarea>
                 </div>
             </div>
             ${aiSuggestion}
@@ -950,14 +952,14 @@ if (modal) {
                         </div>
                     </div>
                     <div class="onboarding-dynamic-actions">
-                        <button type="button" class="btn btn-outline btn-sm" data-action="generate-description">快速 AI 生成简介</button>
-                        <button type="button" class="btn btn-outline btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
-                        <button type="button" class="btn btn-ghost btn-sm" data-action="add-lesson">新增一次课</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="generate-description">快速 AI 生成简介</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="add-lesson">新增一次课</button>
                     </div>
                 </div>
                 <div class="onboarding-dynamic-workbench">
-                    <nav class="onboarding-lesson-menu" aria-label="课堂设置快捷跳转">${lessonsMenuHtml}</nav>
+                    <nav data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised onboarding-lesson-menu" aria-label="课堂设置快捷跳转">${lessonsMenuHtml}</nav>
                     <div class="onboarding-lesson-list">${lessonsHtml}</div>
                 </div>
             </div>
@@ -1082,11 +1084,11 @@ if (modal) {
             <div class="onboarding-field-grid">
                 <div class="onboarding-field full-span">
                     <label for="onboardingAiPromptInput">系统提示词</label>
-                    <textarea id="onboardingAiPromptInput" data-prompt-pool-key="teacher_onboarding.system_prompt" rows="8">${escapeHtml(state.selected.aiSystemPrompt)}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" id="onboardingAiPromptInput" data-prompt-pool-key="teacher_onboarding.system_prompt" rows="8">${escapeHtml(state.selected.aiSystemPrompt)}</textarea>
                 </div>
                 <div class="onboarding-field full-span">
                     <label for="onboardingAiSyllabusInput">课堂知识依据</label>
-                    <textarea id="onboardingAiSyllabusInput" rows="7">${escapeHtml(state.selected.aiSyllabus)}</textarea>
+                    <textarea data-lq-component="textarea" class="lq-textarea" id="onboardingAiSyllabusInput" rows="7">${escapeHtml(state.selected.aiSyllabus)}</textarea>
                 </div>
             </div>
         `);
@@ -1104,7 +1106,7 @@ if (modal) {
         const teacherName = normalizeText(wizard().teacher?.name) || '';
         container.innerHTML = renderStepShell(`
             ${renderTitle('完成课堂开设', `恭喜开课成功，预祝${teacherName ? `${teacherName}老师` : '老师'}课程顺利。`)}
-            <div class="onboarding-recommend-panel">
+            <div data-lq-component="surface" class="lq-surface onboarding-recommend-panel">
                 <strong>${escapeHtml(state.selected.courseName)} / ${escapeHtml(selectedClass()?.name || '')}</strong>
                 <p>课堂时间轴、课程模板、教材、材料和 AI 助教配置已经保存。</p>
                 <div class="onboarding-badge-row">
@@ -1208,19 +1210,19 @@ if (modal) {
         openSubmodal('新建学期', `
             <div class="onboarding-field">
                 <label>学期名称</label>
-                <input name="name" type="text" placeholder="例如：2026 春季学期">
+                <input data-lq-component="input" class="lq-input" name="name" type="text" placeholder="例如：2026 春季学期">
             </div>
             <div class="onboarding-field">
                 <label>开始日期</label>
-                <input name="start_date" type="date" required value="${todayIso()}" data-dp-pair="[name='end_date']" data-dp-role="start">
+                <input data-lq-component="input" class="lq-input" name="start_date" type="date" required value="${todayIso()}" data-dp-pair="[name='end_date']" data-dp-role="start">
             </div>
             <div class="onboarding-field">
                 <label>结束日期</label>
-                <input name="end_date" type="date" required data-dp-pair="[name='start_date']" data-dp-role="end">
+                <input data-lq-component="input" class="lq-input" name="end_date" type="date" required data-dp-pair="[name='start_date']" data-dp-role="end">
             </div>
             <div class="teacher-onboarding-submodal-actions">
-                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
-                <button type="submit" class="btn btn-primary">保存学期</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-submodal-close-local>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存学期</button>
             </div>
         `, async (formData) => {
             const name = normalizeText(formData.get('name'));
@@ -1238,27 +1240,27 @@ if (modal) {
         openSubmodal('录入教材', `
             <div class="onboarding-field">
                 <label>教材名称</label>
-                <input name="title" type="text" required placeholder="例如：Web 程序设计基础">
+                <input data-lq-component="input" class="lq-input" name="title" type="text" required placeholder="例如：Web 程序设计基础">
             </div>
             <div class="onboarding-field">
                 <label>作者</label>
-                <input name="authors_text" type="text" placeholder="多位作者用逗号分隔">
+                <input data-lq-component="input" class="lq-input" name="authors_text" type="text" placeholder="多位作者用逗号分隔">
             </div>
             <div class="onboarding-field">
                 <label>出版社</label>
-                <input name="publisher" type="text">
+                <input data-lq-component="input" class="lq-input" name="publisher" type="text">
             </div>
             <div class="onboarding-field">
                 <label>教材简介</label>
-                <textarea name="introduction" rows="3"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="introduction" rows="3"></textarea>
             </div>
             <div class="onboarding-field">
                 <label>目录或章节线索</label>
-                <textarea name="catalog_text" rows="4"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="catalog_text" rows="4"></textarea>
             </div>
             <div class="teacher-onboarding-submodal-actions">
-                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
-                <button type="submit" class="btn btn-primary">保存教材</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-submodal-close-local>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存教材</button>
             </div>
         `, async (formData) => {
             const authors = normalizeText(formData.get('authors_text'))
@@ -1278,22 +1280,22 @@ if (modal) {
         let uploadFiles = [];
         const form = openSubmodal('导入教学材料', `
             <div class="onboarding-upload-choice-grid">
-                <button type="button" class="onboarding-upload-choice" data-action="pick-material-files">
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass onboarding-upload-choice" data-action="pick-material-files">
                     <strong>上传单个或多个文件</strong>
                     <span>适合补充零散课件、文档、PPT 或思维导图。</span>
                 </button>
-                <button type="button" class="onboarding-upload-choice" data-action="pick-material-folder">
+                <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass onboarding-upload-choice" data-action="pick-material-folder">
                     <strong>上传整个文件夹</strong>
                     <span>会保留原有目录结构，适合直接导入一整套课程资料。</span>
                 </button>
             </div>
-            <input type="file" data-material-file-input multiple hidden>
-            <input type="file" data-material-folder-input webkitdirectory directory multiple hidden>
+            <input data-lq-component="file" class="lq-native-file" type="file" data-material-file-input multiple hidden>
+            <input data-lq-component="file" class="lq-native-file" type="file" data-material-folder-input webkitdirectory directory multiple hidden>
             <div class="onboarding-upload-summary" data-upload-summary>还没有选择文件。</div>
             <p class="onboarding-hint">后面也可以使用深度思考 AI 协助生成课程材料、整理目录或把资料优化成课堂学习文档。</p>
             <div class="teacher-onboarding-submodal-actions">
-                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
-                <button type="submit" class="btn btn-primary">导入材料</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-submodal-close-local>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">导入材料</button>
             </div>
         `, async (_formData, form) => {
             const files = uploadFiles.length ? uploadFiles : Array.from(form.querySelector('[data-material-file-input]')?.files || []);
@@ -1335,19 +1337,19 @@ if (modal) {
         openSubmodal('录入新班级', `
             <div class="onboarding-field">
                 <label>班级名称</label>
-                <input name="name" type="text" required placeholder="例如：网络工程 2401 班">
+                <input data-lq-component="input" class="lq-input" name="name" type="text" required placeholder="例如：网络工程 2401 班">
             </div>
             <div class="onboarding-field">
                 <label>所属系别</label>
-                <input name="department" type="text" required value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
+                <input data-lq-component="input" class="lq-input" name="department" type="text" required value="${escapeHtml(state.selected.department)}" placeholder="例如：网络工程系">
             </div>
             <div class="onboarding-field">
                 <label>备注</label>
-                <textarea name="description" rows="3" placeholder="可选，稍后仍可导入学生名单"></textarea>
+                <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="3" placeholder="可选，稍后仍可导入学生名单"></textarea>
             </div>
             <div class="teacher-onboarding-submodal-actions">
-                <button type="button" class="btn btn-outline" data-submodal-close-local>取消</button>
-                <button type="submit" class="btn btn-primary">保存班级</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-submodal-close-local>取消</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存班级</button>
             </div>
         `, async (formData) => {
             const result = await apiFetch('/api/manage/teacher-onboarding/classes/create', {

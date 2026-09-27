@@ -106,25 +106,25 @@
 
     {% if wrong_book['items'] or wrong_book.knowledge_mastery %}
     <div class="wrongbook-grid">
-        <section class="wrongbook-panel" data-lq-material="content">
+        <section data-lq-component="surface" class="lq-surface wrongbook-panel" data-lq-material="content">
             <h2>错题清单</h2>
             <p class="wrongbook-panel__subtitle">
                 共 {{ wrong_book['items']|length }} 道{% if wrong_book.items_truncated %}（仅展示最近 {{ wrong_book['items']|length }} 道）{% endif %}，点“回顾原卷”可回到试卷与批改反馈。
             </p>
             <div class="wrongbook-filters">
-                <select data-filter-course aria-label="按课程筛选">
+                <select data-lq-component="select" class="lq-select" data-filter-course aria-label="按课程筛选">
                     <option value="">全部课程</option>
                     {% for course in wrong_book.courses %}
                     <option value="{{ course.course_id }}">{{ course.course_name }}（{{ course.wrong_count }}）</option>
                     {% endfor %}
                 </select>
-                <select data-filter-point aria-label="按知识点筛选">
+                <select data-lq-component="select" class="lq-select" data-filter-point aria-label="按知识点筛选">
                     <option value="">全部知识点</option>
                     {% for point in wrong_book.knowledge_mastery %}
                     <option value="{{ point.name }}">{{ point.name }}（错 {{ point.wrong }}）</option>
                     {% endfor %}
                 </select>
-                <input type="search" data-filter-search placeholder="搜索题干关键词…" aria-label="搜索题干">
+                <input data-lq-component="input" class="lq-input" type="search" data-filter-search placeholder="搜索题干关键词…" aria-label="搜索题干">
             </div>
             <div data-wrongbook-list>
                 {% for item in wrong_book['items'] %}
@@ -157,7 +157,7 @@
                             得分 {{ item.score|round(1) }} / {{ item.max_score|round(1) }}
                             {% endif %}
                         </span>
-                        <a class="btn btn-secondary btn-sm" href="{{ item.link_url }}">回顾原卷</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" href="{{ item.link_url }}">回顾原卷</a>
                     </div>
                 </article>
                 {% endfor %}
@@ -168,7 +168,7 @@
             </div>
         </section>
 
-        <aside class="wrongbook-panel" data-lq-material="content">
+        <aside data-lq-component="surface" class="lq-surface wrongbook-panel" data-lq-material="content">
             <h2>知识点掌握度</h2>
             <p class="wrongbook-panel__subtitle">按你的历次作答统计，越靠上越需要优先补强。</p>
             {% if wrong_book.knowledge_mastery %}
@@ -198,15 +198,15 @@
     {% elif growth_on %}
     {% call(slot) lq_empty(title='暂无错题', description='批改后做错的题自动收进这里。', reason='empty', variant='card') %}
         {% if slot == 'actions' %}
-        <a class="btn btn-primary" href="/dashboard">回到首页</a>
+        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/dashboard">回到首页</a>
         {% endif %}
     {% endcall %}
     {% else %}
-    <section class="wrongbook-panel" data-lq-material="content">
+    <section data-lq-component="surface" class="lq-surface wrongbook-panel" data-lq-material="content">
         <div class="wrongbook-empty">
             <strong>暂无错题</strong>
             <p>批改后做错的题自动收进这里。</p>
-            <a class="btn btn-primary" href="/dashboard">回到首页</a>
+            <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/dashboard">回到首页</a>
         </div>
     </section>
     {% endif %}

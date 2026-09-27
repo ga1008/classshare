@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { SignatureMultiSelect } from './signature_multi_select.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -12,8 +13,8 @@ export class MaterialSelectionPanel{
         this.grid=grid;this.onChanged=onChanged;this.documents=[];this.visible=[];this.selected=new Set();this.sequence=0;this.pickers=[];this.context=null;
         const wrap=document.createElement('div');wrap.className='msw-material-layout';grid.before(wrap);wrap.append(grid);
         this.sidebar=document.createElement('aside');this.sidebar.className='msw-sidebar';this.sidebar.setAttribute('aria-label','文档属性与操作');wrap.append(this.sidebar);
-        this.sidebar.innerHTML=`<div class="msw-eyebrow">文档属性与操作</div><h3 data-selection-title>选择文档</h3><p class="msw-note" data-selection-help>点击卡片空白处选择；可以同时处理多份文档。</p><dl data-common></dl><div class="msw-sidebar__actions"><button class="msw-button msw-primary" data-request-signatures hidden>申请签名</button><button class="msw-button" data-download-selected disabled>打包下载所选</button><button class="msw-button" data-select-visible>选择本页全部</button><button class="msw-button" data-clear-selection hidden>取消选择</button><button class="msw-button" data-download-all>全部打包下载</button></div><a class="msw-note" href="/manage/me/signature-workflows?view=outgoing">查看我的签名申请 →</a><div class="msw-status" role="status" data-progress></div>`;
-        this.dialog=document.createElement('dialog');this.dialog.className='msw-dialog';document.body.append(this.dialog);
+        this.sidebar.innerHTML=`<div class="msw-eyebrow">文档属性与操作</div><h3 data-selection-title>选择文档</h3><p class="msw-note" data-selection-help>点击卡片空白处选择；可以同时处理多份文档。</p><dl data-common></dl><div class="msw-sidebar__actions"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button msw-primary" data-request-signatures hidden>申请签名</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-download-selected disabled>打包下载所选</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-select-visible>选择本页全部</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-clear-selection hidden>取消选择</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-download-all>全部打包下载</button></div><a class="msw-note" href="/manage/me/signature-workflows?view=outgoing">查看我的签名申请 →</a><div class="msw-status" role="status" data-progress></div>`;
+        this.dialog=document.createElement('dialog');this.dialog.className='msw-dialog lq-glass lq-domain-raised';this.dialog.dataset.lqComponent='dialog';this.dialog.dataset.lqMaterial='raised';document.body.append(this.dialog);
         grid.addEventListener('click',event=>{
             if(event.target.closest('a,button,input,select,textarea,label,[contenteditable],dialog'))return;
             if(window.getSelection()?.toString())return;
@@ -64,7 +65,7 @@ export class MaterialSelectionPanel{
         const dialogSequence=this.dialogSequence=(this.dialogSequence||0)+1;
         this.pickers.forEach(picker=>picker.destroy());this.pickers=[];
         const context=this.context;const docs=context.documents.map(ref);const first=docs[0];const config=[];const key=crypto.randomUUID();
-        this.dialog.innerHTML=`<header class="msw-dialog__head"><div><span class="msw-eyebrow">${docs.length} 份同类文档</span><h3>申请并配置签名</h3></div><button class="msw-button" data-close aria-label="关闭">×</button></header><div class="msw-dialog__body"><p class="msw-note">选择签名后，可在下拉框的“已选”中调整顺序。</p><div data-points></div><label class="msw-field">申请附言<textarea data-note rows="2" maxlength="300" placeholder="说明材料用途，帮助审批人了解背景"></textarea></label><label class="msw-inline"><input type="checkbox" data-auto checked>每个位置全部获批后，自动按选定顺序更新文档</label></div><footer class="msw-dialog__foot"><span class="msw-status" data-result role="status">正在读取签名位置…</span><button class="msw-button msw-primary" data-submit disabled>提交 ${docs.length} 份申请</button></footer>`;
+        this.dialog.innerHTML=`<header class="msw-dialog__head"><div><span class="msw-eyebrow">${docs.length} 份同类文档</span><h3>申请并配置签名</h3></div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-close aria-label="关闭">×</button></header><div class="msw-dialog__body"><p class="msw-note">选择签名后，可在下拉框的“已选”中调整顺序。</p><div data-points></div><label class="msw-field">申请附言<textarea data-lq-component="textarea" class="lq-textarea" data-note rows="2" maxlength="300" placeholder="说明材料用途，帮助审批人了解背景"></textarea></label><label class="msw-inline"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-auto checked>每个位置全部获批后，自动按选定顺序更新文档</label></div><footer class="msw-dialog__foot"><span class="msw-status" data-result role="status">正在读取签名位置…</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button msw-primary" data-submit disabled>提交 ${docs.length} 份申请</button></footer>`;
         this.dialog.querySelector('[data-close]').onclick=()=>this.dialog.close();this.dialog.showModal();
         try{
             const states=await Promise.all(context.points.map(point=>call(`/points/${encodeURIComponent(point.key)}/state?${new URLSearchParams(first)}`)));
@@ -73,7 +74,7 @@ export class MaterialSelectionPanel{
             context.points.forEach((point,index)=>{
                 const current={key:point.key,signature_ids:[],mode:'append',opinion_mode:'keep'};config.push(current);
                 const card=document.createElement('section');card.className='msw-point';
-                card.innerHTML=`<header><strong>${esc(point.label)}</strong></header><div data-picker></div><div class="msw-inline"><label>已有签名 <select data-mode><option value="append">保留并追加</option><option value="replace">替换为本次选择</option></select></label>${point.opinion_key?'<label>批语 <select data-opinion><option value="keep">保留当前批语</option><option value="stamp">使用所选特殊签名</option><option value="clear">留空</option></select></label>':''}</div>`;
+                card.innerHTML=`<header><strong>${esc(point.label)}</strong></header><div data-picker></div><div class="msw-inline"><label>已有签名 <select data-lq-component="select" class="lq-select" data-mode><option value="append">保留并追加</option><option value="replace">替换为本次选择</option></select></label>${point.opinion_key?'<label>批语 <select data-lq-component="select" class="lq-select" data-opinion><option value="keep">保留当前批语</option><option value="stamp">使用所选特殊签名</option><option value="clear">留空</option></select></label>':''}</div>`;
                 container.append(card);card.querySelector('[data-mode]').onchange=event=>current.mode=event.target.value;
                 if(point.opinion_key)card.querySelector('[data-opinion]').onchange=event=>current.opinion_mode=event.target.value;
                 const picker=new SignatureMultiSelect({root:card.querySelector('[data-picker]'),items:states[index].signatures,identityLabels:states[index].point.required_identity_labels,
@@ -115,8 +116,8 @@ export class MaterialSelectionPanel{
         }catch(error){this.progress(error.message);}
     }
     confirmIncomplete(titles){
-        const dialog=document.createElement('dialog');dialog.className='msw-dialog';
-        dialog.innerHTML=`<header class="msw-dialog__head"><h3>以下文档内容待补充</h3></header><div class="msw-dialog__body"><p class="msw-note">继续后，这些文档会按当前内容一同打包。</p><ul>${titles.map(title=>`<li>${esc(title)}</li>`).join('')}</ul></div><footer class="msw-dialog__foot"><button class="msw-button" data-cancel>取消</button><button class="msw-button msw-primary" data-continue>继续打包全部文档</button></footer>`;
+        const dialog=document.createElement('dialog');dialog.className='msw-dialog lq-glass lq-domain-raised';dialog.dataset.lqComponent='dialog';dialog.dataset.lqMaterial='raised';
+        dialog.innerHTML=`<header class="msw-dialog__head"><h3>以下文档内容待补充</h3></header><div class="msw-dialog__body"><p class="msw-note">继续后，这些文档会按当前内容一同打包。</p><ul>${titles.map(title=>`<li>${esc(title)}</li>`).join('')}</ul></div><footer class="msw-dialog__foot"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-cancel>取消</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button msw-primary" data-continue>继续打包全部文档</button></footer>`;
         document.body.append(dialog);dialog.showModal();
         return new Promise(resolve=>{let proceed=false;dialog.querySelector('[data-continue]').onclick=()=>{proceed=true;dialog.close();};dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{dialog.remove();resolve(proceed);},{once:true});});
     }
@@ -125,7 +126,7 @@ export class MaterialSelectionPanel{
             const result=await call(`/materials/bundles/${id}`);
             if(result.status==='ready'){
                 this.progress(result.error_message||`已打包 ${result.results.length} 份文档。`);
-                const link=document.createElement('a');link.className='msw-button msw-primary';link.href=result.download_url;link.textContent='下载压缩包';
+                const link=document.createElement('a');link.className='msw-button msw-primary';adoptDomainControl(link,{kind:'button',variant:'prominent'});link.href=result.download_url;link.textContent='下载压缩包';
                 this.sidebar.querySelector('[data-progress]').append(document.createElement('br'),link);link.click();return;
             }
             if(result.status==='failed'){this.progress(result.results.map(item=>item.title+'：'+item.error).join('\n')||result.error_message||'打包失败。');return;}

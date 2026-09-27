@@ -1,3 +1,4 @@
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 
@@ -30,6 +31,7 @@ function initBatch(root) {
             const checkCell = document.createElement('td');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
+            adoptDomainControl(checkbox, { kind: 'checkbox' });
             checkbox.setAttribute('aria-label', `确认 ${item.title} 的分类`);
             checkCell.append(checkbox);
             const taskCell = document.createElement('td');
@@ -41,6 +43,7 @@ function initBatch(root) {
             taskCell.append(link, current);
             const selectCell = document.createElement('td');
             const select = document.createElement('select');
+            adoptDomainControl(select, { kind: 'select' });
             select.setAttribute('aria-label', `${item.title} 的任务分类`);
             const blank = document.createElement('option');
             blank.value = '';

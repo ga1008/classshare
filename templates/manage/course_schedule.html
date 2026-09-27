@@ -18,8 +18,8 @@
 {% set _nav_item = manage_nav.active_item or {} %}
 {{ page_head(_nav_item.label | default(''), explain=_nav_item.help_text | default(''), explain_label=(_nav_item.label | default('')) ~ '说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
 <section class="cs-shell" data-cs-root>
-    <div class="cs-panel">
-        <div class="cs-toolbar">
+    <div data-lq-component="surface" class="lq-surface cs-panel">
+        <div data-lq-component="toolbar" class="lq-domain-toolbar cs-toolbar">
             {% if _cs_lq_enabled %}
             {# 只迁三个筛选 select 的字段外壳。manage_course_schedule.js 不属于任何 S5 包、
                不得修改：它只用 [data-cs-term] / [data-cs-course] / [data-cs-class] 找控件，
@@ -34,18 +34,18 @@
             {% else %}
             <div class="cs-toolbar__field">
                 <label>学年学期</label>
-                <select data-cs-term></select>
+                <select data-lq-component="select" class="lq-select" data-cs-term></select>
             </div>
             <div class="cs-toolbar__field">
                 <label>课程</label>
-                <select data-cs-course><option value="">全部课程</option></select>
+                <select data-lq-component="select" class="lq-select" data-cs-course><option value="">全部课程</option></select>
             </div>
             <div class="cs-toolbar__field">
                 <label>班级</label>
-                <select data-cs-class><option value="">全部班级</option></select>
+                <select data-lq-component="select" class="lq-select" data-cs-class><option value="">全部班级</option></select>
             </div>
             {% endif %}
-            <button type="button" class="cs-reset-btn" data-cs-reset>重置筛选</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-reset-btn" data-cs-reset>重置筛选</button>
             <div class="cs-toolbar__spacer"></div>
             <div class="cs-toolbar__meta">
                 <strong data-cs-sync-time>尚未同步</strong>
@@ -59,7 +59,7 @@
         </div>
     </div>
 
-    <div class="cs-panel cs-deck-panel" data-cs-deck></div>
+    <div data-lq-component="surface" class="lq-surface cs-panel cs-deck-panel" data-cs-deck></div>
 </section>
 
 <div class="cs-toast" data-cs-toast></div>

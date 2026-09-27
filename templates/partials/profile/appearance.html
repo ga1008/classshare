@@ -14,7 +14,7 @@
         <div class="lq-segment lq-profile-appearance__segment">
             <div class="lq-tabs__list">
                 {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
-                <input class="lq-profile-appearance__radio" type="radio" name="profile-appearance" id="profile-appearance-{{ key }}" value="{{ key }}" data-ui-preference-input="appearance"{% if key == ui_palette.appearance|default('auto') %} checked{% endif %} aria-describedby="profile-appearance-help profile-appearance-status">
+                <input data-lq-component="radio" class="lq-radio lq-profile-appearance__radio" type="radio" name="profile-appearance" id="profile-appearance-{{ key }}" value="{{ key }}" data-ui-preference-input="appearance"{% if key == ui_palette.appearance|default('auto') %} checked{% endif %} aria-describedby="profile-appearance-help profile-appearance-status">
                 <label class="lq-tabs__tab" for="profile-appearance-{{ key }}">{{ label }}</label>
                 {% endfor %}
             </div>

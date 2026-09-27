@@ -68,7 +68,7 @@
       ['review', '待确认', counts.review]
     ];
     filterBar.innerHTML = filters.map(function (f) {
-      return '<button type="button" class="' + (currentFilter === f[0] ? 'active' : '') + '" data-filter="' + f[0] + '">' +
+      return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ' + (currentFilter === f[0] ? 'active' : '') + '" data-filter="' + f[0] + '">' +
         RZ.esc(f[1]) + ' ' + f[2] + '</button>';
     }).join('');
     filterBar.querySelectorAll('[data-filter]').forEach(function (btn) {
@@ -100,11 +100,11 @@
       var loadingMeta = r.status === 'parsing'
         ? (r.source_filename || r.title || '简历文件')
         : (r.target_position ? '目标岗位：' + r.target_position : r.title);
-      return '<div class="rz-card rz-card--placeholder" data-rendering="1" data-id="' + Number(r.id) + '">' +
+      return '<div data-lq-component="surface" class="lq-surface rz-card rz-card--placeholder" data-rendering="1" data-id="' + Number(r.id) + '">' +
         '<div class="rz-card__title"><span class="rz-spin"></span> ' + loadingTitle + '</div>' +
         '<div class="rz-card__meta">' + RZ.esc(loadingMeta) + '</div><p>可以离开此页，处理会继续。已保存的内容仍可查看和编辑。</p>' +
-        '<div class="rz-card__actions"><button type="button" class="rz-btn rz-btn--sm" data-act="job">查看任务 / 取消</button>' +
-        '<button type="button" class="rz-btn rz-btn--sm" data-act="edit">继续编辑</button></div></div>';
+        '<div class="rz-card__actions"><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="job">查看任务 / 取消</button>' +
+        '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="edit">继续编辑</button></div></div>';
     }
     var failed = r.status === 'failed';
     var tag = '<span class="rz-card__tag">' + RZ.esc(TPL_LABEL[r.template_key] || '简历') + '</span>';
@@ -117,22 +117,22 @@
     var conflictCount = unresolvedConflicts(r).length;
     var importHtml = importMsg ? '<div class="rz-card__note rz-card__note--import">' + RZ.esc(importMsg) + '</div>' : '';
     var importBtnHtml = importSummary.source === 'import'
-      ? '<button class="rz-btn rz-btn--sm" data-act="import-summary">导入结果</button>'
+      ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="import-summary">导入结果</button>'
       : '';
     if (importSummary.source === 'import' && conflictCount) {
-      importBtnHtml = '<button class="rz-btn rz-btn--sm" data-act="import-summary">待确认 ' + conflictCount + '</button>';
+      importBtnHtml = '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="import-summary">待确认 ' + conflictCount + '</button>';
     }
     var actionList = '<div class="rz-card__actions">' +
-      (Number(r.render_revision) > 0 ? '<button class="rz-btn rz-btn--sm" data-act="preview">预览文件</button>' : '') +
-      '<button class="rz-btn rz-btn--sm rz-btn--primary" data-act="optimize">AI 优化</button>' +
-      (r.status === 'review_ready' ? '<button class="rz-btn rz-btn--sm rz-btn--primary" data-act="candidates">核对待确认内容</button>' : '') +
-      '<button class="rz-btn rz-btn--sm" data-act="versions">历史版本</button>' +
-      (failed || r.active_job_id ? '<button class="rz-btn rz-btn--sm" data-act="job">处理状态</button>' : '') +
+      (Number(r.render_revision) > 0 ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="preview">预览文件</button>' : '') +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm rz-btn--primary" data-act="optimize">AI 优化</button>' +
+      (r.status === 'review_ready' ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm rz-btn--primary" data-act="candidates">核对待确认内容</button>' : '') +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="versions">历史版本</button>' +
+      (failed || r.active_job_id ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="job">处理状态</button>' : '') +
       importBtnHtml +
-      '<button class="rz-btn rz-btn--sm" data-act="edit">编辑</button>' +
-      (Number(r.render_revision) > 0 ? '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=pdf&revision=' + Number(r.render_revision) + '" target="_blank" rel="noopener">PDF</a>' +
-      '<a class="rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=docx&revision=' + Number(r.render_revision) + '" target="_blank" rel="noopener">Word</a>' : '') +
-      '<button class="rz-btn rz-btn--sm rz-btn--danger" data-act="del">删除</button></div>';
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-act="edit">编辑</button>' +
+      (Number(r.render_revision) > 0 ? '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=pdf&revision=' + Number(r.render_revision) + '" target="_blank" rel="noopener">PDF</a>' +
+      '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" href="/api/resume/resumes/' + r.id + '/export?fmt=docx&revision=' + Number(r.render_revision) + '" target="_blank" rel="noopener">Word</a>' : '') +
+      '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm rz-btn--danger" data-act="del">删除</button></div>';
     return '<div class="rz-card' + (failed ? ' rz-card--failed' : '') + '" data-id="' + r.id + '" style="cursor:default">' +
       '<div class="rz-card__title">' + RZ.esc(r.title) + '</div>' +
       '<div class="rz-card__meta">' + tag + target + optimized + fmtTime(r.updated_at) +
@@ -167,8 +167,8 @@
     var m = RZ.openModal({ title: r.title + ' · 预览', wide: true });
     m.body.classList.add('rz-modal__body--preview');
     m.body.innerHTML = '<div class="rz-preview-tools" aria-label="预览尺寸">' +
-      '<button type="button" class="rz-btn rz-btn--sm" data-preview-mode="fit">适应宽度</button>' +
-      '<button type="button" class="rz-btn rz-btn--sm" data-preview-mode="original">原始尺寸</button></div>' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-preview-mode="fit">适应宽度</button>' +
+      '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-preview-mode="original">原始尺寸</button></div>' +
       '<p class="rz-version-note">正在预览已生成的版本 ' + Number(r.render_revision || r.revision) + '</p><div class="rz-preview-shell"><iframe title="简历预览" class="rz-preview-frame" src="/api/resume/resumes/' + r.id + '/preview?revision=' + Number(r.render_revision || r.revision) + '"></iframe></div>';
     var shell = m.body.querySelector('.rz-preview-shell');
     var frame = m.body.querySelector('.rz-preview-frame');
@@ -193,13 +193,13 @@
     });
     frame.addEventListener('load', function () { setTimeout(function () { applyPreviewMode(mode); }, 60); });
     setTimeout(function () { applyPreviewMode(mode); }, 60);
-    var pdf = document.createElement('a'); pdf.className = 'rz-btn'; pdf.textContent = '下载 PDF';
+    var pdf = document.createElement('a'); pdf.className = 'rz-btn'; RZ.adoptControl(pdf, { kind: 'button', variant: 'glass' }); pdf.textContent = '下载 PDF';
     pdf.href = '/api/resume/resumes/' + r.id + '/export?fmt=pdf&revision=' + Number(r.render_revision || r.revision); pdf.target = '_blank'; pdf.rel = 'noopener';
-    var word = document.createElement('a'); word.className = 'rz-btn'; word.textContent = '下载 Word';
+    var word = document.createElement('a'); word.className = 'rz-btn'; RZ.adoptControl(word, { kind: 'button', variant: 'glass' }); word.textContent = '下载 Word';
     word.href = '/api/resume/resumes/' + r.id + '/export?fmt=docx&revision=' + Number(r.render_revision || r.revision); word.target = '_blank'; word.rel = 'noopener';
-    var optimizeBtn = document.createElement('button'); optimizeBtn.className = 'rz-btn rz-btn--primary'; optimizeBtn.textContent = 'AI 优化这份';
+    var optimizeBtn = document.createElement('button'); optimizeBtn.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(optimizeBtn, { kind: 'button', variant: 'prominent' }); optimizeBtn.textContent = 'AI 优化这份';
     optimizeBtn.onclick = function () { optimizeResume(r, optimizeBtn, m.close); };
-    var close = document.createElement('button'); close.className = 'rz-btn rz-btn--primary'; close.textContent = '关闭'; close.onclick = m.close;
+    var close = document.createElement('button'); close.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(close, { kind: 'button', variant: 'prominent' }); close.textContent = '关闭'; close.onclick = m.close;
     m.foot.appendChild(optimizeBtn); m.foot.appendChild(pdf); m.foot.appendChild(word); m.foot.appendChild(close);
   }
 
@@ -273,7 +273,7 @@
         '<div class="rz-import-summary__conflict-actions">' +
         (accepted
           ? '<span class="rz-card__target rz-card__target--ok">已采用</span>'
-          : '<button type="button" class="rz-btn rz-btn--sm rz-btn--primary" data-accept-conflict="' + index + '">采用导入值</button>') +
+          : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm rz-btn--primary" data-accept-conflict="' + index + '">采用导入值</button>') +
         '</div></div>';
     }).join('') : '<div class="rz-card__meta">没有发现需要确认的相似冲突。</div>';
     var warningHtml = warnings.length
@@ -306,11 +306,11 @@
       });
     });
     var edit = document.createElement('a');
-    edit.className = 'rz-btn';
+    edit.className = 'rz-btn'; RZ.adoptControl(edit, { kind: 'button', variant: 'glass' });
     edit.href = '/resume/builder?edit=' + r.id;
     edit.textContent = '编辑简历';
     var close = document.createElement('button');
-    close.className = 'rz-btn rz-btn--primary';
+    close.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(close, { kind: 'button', variant: 'prominent' });
     close.textContent = '知道了';
     close.onclick = m.close;
     m.foot.appendChild(edit);
@@ -369,8 +369,8 @@
       renderResumeGrid(items);
       var pager = document.getElementById('rzResumePagination');
       if (pager) {
-        pager.innerHTML = (pageOffset || results[0].has_more) ? '<button class="rz-btn" data-page="previous"' + (pageOffset ? '' : ' disabled') +
-          '>上一页</button><span>第 ' + (Math.floor(pageOffset / pageSize) + 1) + ' 页 · 筛选当前页的 ' + items.length + ' 份简历</span><button class="rz-btn" data-page="next"' +
+        pager.innerHTML = (pageOffset || results[0].has_more) ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" data-page="previous"' + (pageOffset ? '' : ' disabled') +
+          '>上一页</button><span>第 ' + (Math.floor(pageOffset / pageSize) + 1) + ' 页 · 筛选当前页的 ' + items.length + ' 份简历</span><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn" data-page="next"' +
           (results[0].has_more ? '' : ' disabled') + '>下一页</button>' : '';
         pager.querySelectorAll('[data-page]').forEach(function (button) { button.onclick = function () {
           pageOffset = Math.max(0, pageOffset + (button.dataset.page === 'next' ? pageSize : -pageSize));
@@ -401,8 +401,8 @@
         (items.length ? items.map(function (version) {
           return '<div class="rz-version-row"><div><b>版本 ' + Number(version.revision) + '</b><small>' + RZ.esc(fmtTime(version.created_at)) +
             ' · ' + RZ.esc(version.status === 'ready' ? '文件已生成' : '内容已保存') + '</small></div><div>' +
-            (version.status === 'ready' ? '<a class="rz-btn rz-btn--sm" target="_blank" rel="noopener" href="/api/resume/resumes/' + r.id + '/preview?revision=' + Number(version.revision) + '">查看</a>' : '') +
-            (Number(version.revision) !== Number(r.revision) ? '<button class="rz-btn rz-btn--sm" data-restore="' + Number(version.revision) + '">恢复为新版本</button>' : '<span>当前版本</span>') + '</div></div>';
+            (version.status === 'ready' ? '<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" target="_blank" rel="noopener" href="/api/resume/resumes/' + r.id + '/preview?revision=' + Number(version.revision) + '">查看</a>' : '') +
+            (Number(version.revision) !== Number(r.revision) ? '<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass rz-btn rz-btn--sm" data-restore="' + Number(version.revision) + '">恢复为新版本</button>' : '<span>当前版本</span>') + '</div></div>';
         }).join('') : '<p>尚无历史版本。</p>');
       modal.body.querySelectorAll('[data-restore]').forEach(function (button) {
         button.onclick = async function () {
@@ -421,11 +421,11 @@
       start_date: '开始时间', end_date: '结束时间', acquired_date: '获得时间', expected_position: '目标岗位' };
     return Object.keys(parsed).filter(function (key) { return ['personal', 'education', 'experience', 'skill', 'certificate', 'self_intro'].indexOf(key) >= 0; }).map(function (section) {
       var rows = Array.isArray(parsed[section]) ? parsed[section] : [parsed[section]];
-      return '<section class="rz-import-review-section"><h4><label><input type="checkbox" checked data-import-section="' + section + '"> ' + RZ.esc(sectionLabel(section)) + '</label></h4>' + rows.map(function (item, index) {
+      return '<section class="rz-import-review-section"><h4><label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" checked data-import-section="' + section + '"> ' + RZ.esc(sectionLabel(section)) + '</label></h4>' + rows.map(function (item, index) {
         if (!item || typeof item !== 'object') return '<p>' + RZ.esc(item) + '</p>';
-        return (section === 'personal' ? '' : '<label><input type="checkbox" checked data-import-item="' + index + '" data-import-owner="' + section + '"> 导入第 ' + (index + 1) + ' 项</label>') +
+        return (section === 'personal' ? '' : '<label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" checked data-import-item="' + index + '" data-import-owner="' + section + '"> 导入第 ' + (index + 1) + ' 项</label>') +
           '<dl>' + Object.keys(item).filter(function (key) { return labels[key] && item[key]; }).map(function (key) {
-          return '<dt>' + (section === 'personal' ? '<label><input type="checkbox" checked data-import-personal="' + key + '"> ' + RZ.esc(labels[key]) + '</label>' : RZ.esc(labels[key])) + '</dt><dd>' + RZ.esc(item[key]) + '</dd>';
+          return '<dt>' + (section === 'personal' ? '<label><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" checked data-import-personal="' + key + '"> ' + RZ.esc(labels[key]) + '</label>' : RZ.esc(labels[key])) + '</dt><dd>' + RZ.esc(item[key]) + '</dd>';
         }).join('') + '</dl>';
       }).join('') + '</section>';
     }).join('') || '<p>没有可导入的资料，请核对源文件或重新导入。</p>';
@@ -445,14 +445,14 @@
           '</div></section><section><h4>建议摘要</h4><div class="rz-md">' + RZ.md(payload.summary_md || '') + '</div><h4>建议能力清单</h4><div class="rz-md">' +
           RZ.md((payload.tech_stack || []).map(function (item) { return '- ' + (typeof item === 'string' ? item : (item.group || item.name || item.category || '相关技能') + (Array.isArray(item.items) ? '：' + item.items.join('、') : '')); }).join('\n')) + '</div></section></div>' +
           (Array.isArray(payload.notes) ? '<ul>' + payload.notes.map(function (note) { return '<li>' + RZ.esc(note) + '</li>'; }).join('') + '</ul>' : ''));
-      var keep = document.createElement('button'); keep.className = 'rz-btn'; keep.textContent = '不采用此建议';
+      var keep = document.createElement('button'); keep.className = 'rz-btn'; RZ.adoptControl(keep, { kind: 'button', variant: 'glass' }); keep.textContent = '不采用此建议';
       keep.onclick = async function () {
         keep.disabled = true;
         try { await RZ.api('/api/resume/resumes/' + r.id + '/candidates/' + candidate.id + '/reject', { method: 'POST', body: { revision: r.revision } });
           modal.close(); RZ.toast('已保留原内容', 'success'); load();
         } catch (error) { RZ.conflict(error, payload, function () { modal.close(); load(); }); keep.disabled = false; }
       };
-      var apply = document.createElement('button'); apply.className = 'rz-btn rz-btn--primary'; apply.textContent = importing ? '确认导入选中资料' : '核对无误，采用建议';
+      var apply = document.createElement('button'); apply.className = 'rz-btn rz-btn--primary'; RZ.adoptControl(apply, { kind: 'button', variant: 'prominent' }); apply.textContent = importing ? '确认导入选中资料' : '核对无误，采用建议';
       apply.onclick = async function () {
         apply.disabled = true;
         var body = { revision: r.revision };

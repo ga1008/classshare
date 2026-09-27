@@ -59,12 +59,13 @@ export function openProcessMaterialModal(
     const parentLayer = layer.top();
     let layerHandle = null;
     const overlay = document.createElement('div');
-    overlay.className = 'lp-modal-overlay';
+    overlay.className = 'lq-domain-region lp-modal-overlay';
+    overlay.dataset.lqComponent = 'layer';
     overlay.innerHTML = `
-        <div class="lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
             <header class="lp-modal__head">
                 <h3>${escapeHtml(title)}</h3>
-                <button type="button" class="lp-modal__close" ${closeAttr} aria-label="关闭">×</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lp-modal__close" ${closeAttr} aria-label="关闭">×</button>
             </header>
             <div class="lp-modal__body">${bodyHtml}</div>
             <footer class="lp-modal__foot">${footerHtml}</footer>
@@ -147,15 +148,17 @@ export function openProcessMaterialConfirm({
 } = {}) {
     return new Promise((resolve) => {
         let settled = false;
-        const confirmClass = tone === 'danger' ? 'lp-btn--danger' : 'lp-btn--primary';
+        const confirmClass = tone === 'danger'
+            ? 'lp-btn--danger lq-btn--destructive'
+            : 'lp-btn--primary lq-btn--prominent';
         const body = `
             <div class="lp-confirm">
                 <p class="lp-confirm__message">${escapeHtml(message)}</p>
                 ${detail ? `<p class="lp-confirm__detail">${escapeHtml(detail)}</p>` : ''}
             </div>`;
         const footer = `
-            <button type="button" class="lp-btn lp-btn--ghost" data-pm-confirm-cancel>${escapeHtml(cancelText)}</button>
-            <button type="button" class="lp-btn ${confirmClass}" data-pm-confirm-ok autofocus>${escapeHtml(confirmText)}</button>`;
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-pm-confirm-cancel>${escapeHtml(cancelText)}</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn ${confirmClass}" data-pm-confirm-ok autofocus>${escapeHtml(confirmText)}</button>`;
 
         const settle = (value, close) => {
             if (settled) return;

@@ -24,10 +24,10 @@
                             <p>{{ alert.body }}</p>
                         </div>
                         <div class="learning-alert-item__actions">
-                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="private_message">私信学生</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="support_note">记备注</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-cultivation-alert-action="snoozed">本周静音</button>
-                            <button type="button" class="btn btn-primary btn-sm" data-cultivation-alert-action="handled">已处理</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-cultivation-alert-action="private_message">私信学生</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-cultivation-alert-action="support_note">记备注</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-cultivation-alert-action="snoozed">本周静音</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-cultivation-alert-action="handled">已处理</button>
                         </div>
                     </article>
                     {% endfor %}

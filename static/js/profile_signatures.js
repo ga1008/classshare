@@ -74,7 +74,7 @@ function renderClaimPanel() {
         ].filter(Boolean).join('');
         const action = item.has_pending_claim
             ? '<span class="psig-badge">审批中</span>'
-            : `<button type="button" class="psig-link is-claim" data-psig-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
+            : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass psig-link is-claim" data-psig-claim-apply="${item.id}">${item.can_direct_claim ? '直接认领' : '申请认领'}</button>`;
         return `<article class="psig-item psig-item--claim">
             <div class="psig-item__meta">
                 <strong>${escapeHtml(item.subject_name || '未命名签名')}</strong>
@@ -84,8 +84,8 @@ function renderClaimPanel() {
             ${action}
         </article>`;
     }).join('');
-    return `<div class="psig-claim-panel" style="display:grid;gap:8px;margin-top:12px;">
-        <input type="search" class="form-control" data-psig-claim-search placeholder="输入姓名模糊搜索可认领签名" value="${escapeHtml(state.claimSearch)}">
+    return `<div data-lq-component="surface" class="lq-surface psig-claim-panel" style="display:grid;gap:8px;margin-top:12px;">
+        <input data-lq-component="input" type="search" class="lq-input form-control" data-psig-claim-search placeholder="输入姓名模糊搜索可认领签名" value="${escapeHtml(state.claimSearch)}">
         ${rows || '<div class="psig-empty">没有可认领的签名。</div>'}
     </div>`;
 }
@@ -97,10 +97,10 @@ function renderSignatureCard(item) {
     if (item.is_owner) badges.push('<span class="psig-badge">归属于我</span>');
     if (item.can_claim) badges.push('<span class="psig-badge is-claim">待认领</span>');
     const action = item.can_claim
-        ? `<button type="button" class="psig-link is-claim" data-psig-claim="${item.id}">认领</button>`
+        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass psig-link is-claim" data-psig-claim="${item.id}">认领</button>`
         : (item.can_unbind
-            ? `<button type="button" class="psig-link is-danger" data-psig-unbind="${item.id}">解绑</button>`
-            : (item.can_delete ? `<button type="button" class="psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : ''));
+            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive psig-link is-danger" data-psig-unbind="${item.id}">解绑</button>`
+            : (item.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive psig-link is-danger" data-psig-delete="${item.id}">删除</button>` : ''));
     return `<article class="psig-item">
         <img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.subject_name || item.name)}" loading="lazy">
         <div class="psig-item__meta">
@@ -108,8 +108,8 @@ function renderSignatureCard(item) {
             <span>${badges.join('')}</span>
             <small>${item.can_claim ? '识别为你的签名，认领后与账号绑定' : (item.usage_count ? `已被使用 ${item.usage_count} 次` : '尚未被使用')}</small>
         </div>
-        <div class="psig-item__actions">${item.can_edit ? `<button type="button" class="psig-link" data-psig-scope="${item.id}">可见范围</button>` : ''}${action}</div>
-        ${state.editingScopeId === item.id ? `<form class="psig-scope-editor" data-psig-scope-form><div data-psig-edit-scope></div><div class="psig-actions"><button type="submit" class="btn btn-primary btn-sm">保存范围</button><button type="button" class="psig-link" data-psig-scope-cancel>取消</button></div><p class="psig-hint" data-psig-scope-status aria-live="polite"></p></form>` : ''}
+        <div class="psig-item__actions">${item.can_edit ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass psig-link" data-psig-scope="${item.id}">可见范围</button>` : ''}${action}</div>
+        ${state.editingScopeId === item.id ? `<form class="psig-scope-editor" data-psig-scope-form><div data-psig-edit-scope></div><div class="psig-actions"><button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">保存范围</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass psig-link" data-psig-scope-cancel>取消</button></div><p class="psig-hint" data-psig-scope-status aria-live="polite"></p></form>` : ''}
     </article>`;
 }
 
@@ -132,8 +132,8 @@ function renderIncoming(item) {
         <div class="psig-request__foot">
             <span>${reviewers}</span>
             ${actionable ? `<span class="psig-actions">
-                <button type="button" class="btn btn-primary btn-sm" data-psig-review="approve">同意</button>
-                <button type="button" class="btn btn-outline btn-sm" data-psig-review="reject">拒绝</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-psig-review="approve">同意</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-psig-review="reject">拒绝</button>
             </span>` : ''}
         </div>
     </article>`;
@@ -146,7 +146,7 @@ function renderOutgoing(item) {
             <em class="psig-chip is-${escapeHtml(item.status)}">${escapeHtml(requestStatusText[item.status] || item.status)}</em>
         </div>
         <p>用于「${escapeHtml(requestSummary(item))}」。</p>
-        ${item.status === 'pending' ? `<div class="psig-request__foot"><span></span><button type="button" class="psig-link is-danger" data-psig-cancel="${item.id}">撤销申请</button></div>` : ''}
+        ${item.status === 'pending' ? `<div class="psig-request__foot"><span></span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive psig-link is-danger" data-psig-cancel="${item.id}">撤销申请</button></div>` : ''}
     </article>`;
 }
 
@@ -164,42 +164,42 @@ function render() {
     const pendingIncoming = state.incoming.filter((item) => item.status === 'pending');
     const settledIncoming = state.incoming.filter((item) => item.status !== 'pending').slice(0, 5);
     root.innerHTML = `
-        <section class="profile-band profile-reveal psig-card">
+        <section data-lq-component="surface" class="lq-surface profile-band profile-reveal psig-card">
             <div class="profile-band__head">
                 <div><h3>我的签名</h3></div>
                 <div class="psig-upload">
-                    <input type="file" accept="image/png,image/jpeg" data-psig-file hidden>
-                    <button type="button" class="btn btn-outline btn-sm" data-psig-claim-toggle>${state.claimPanelOpen ? '收起认领' : '认领签名'}</button>
-                    <button type="button" class="btn btn-outline btn-sm" data-psig-pad>手写签名</button>
-                    <button type="button" class="btn btn-primary btn-sm" data-psig-upload>上传签名</button>
+                    <input data-lq-component="file" class="lq-native-file" type="file" accept="image/png,image/jpeg" data-psig-file hidden>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-psig-claim-toggle>${state.claimPanelOpen ? '收起认领' : '认领签名'}</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-psig-pad>手写签名</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-psig-upload>上传签名</button>
                 </div>
             </div>
             <p class="psig-hint">上传白底或透明底的手写签名图片（PNG/JPG）。签名者固定为你本人，归属权在你手上；他人使用前必须经过你的批准。若系统里已有你名字的签名，请使用“认领签名”而不是重复上传。</p>
-            <details class="psig-upload-scope" open><summary>新签名的可见范围</summary><div data-psig-upload-scope></div></details>
+            <details class="psig-upload-scope" open><summary data-lq-component="disclosure" class="lq-disclosure-trigger">新签名的可见范围</summary><div data-psig-upload-scope></div></details>
             <div class="psig-grid">
                 ${state.signatures.map(renderSignatureCard).join('') || '<div class="psig-empty">还没有签名，点击右上角上传或认领。</div>'}
             </div>
             ${renderClaimPanel()}
         </section>
 
-        <section class="profile-band profile-reveal psig-card" ${pendingIncoming.length || settledIncoming.length ? '' : 'hidden'}>
+        <section data-lq-component="surface" class="lq-surface profile-band profile-reveal psig-card" ${pendingIncoming.length || settledIncoming.length ? '' : 'hidden'}>
             <div class="profile-band__head">
                 <div><h3>待我审批${pendingIncoming.length ? ` <i class="psig-count">${pendingIncoming.length}</i>` : ''}</h3></div>
             </div>
             <div class="psig-list">
                 ${pendingIncoming.map(renderIncoming).join('') || '<div class="psig-empty">暂无待审批申请。</div>'}
             </div>
-            ${settledIncoming.length ? `<details class="psig-history"><summary>最近已处理</summary><div class="psig-list">${settledIncoming.map(renderIncoming).join('')}</div></details>` : ''}
+            ${settledIncoming.length ? `<details class="psig-history"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">最近已处理</summary><div class="psig-list">${settledIncoming.map(renderIncoming).join('')}</div></details>` : ''}
         </section>
 
-        <section class="profile-band profile-reveal psig-card" ${state.outgoing.length ? '' : 'hidden'}>
+        <section data-lq-component="surface" class="lq-surface profile-band profile-reveal psig-card" ${state.outgoing.length ? '' : 'hidden'}>
             <div class="profile-band__head">
                 <div><h3>我的申请</h3></div>
             </div>
             <div class="psig-list">${state.outgoing.map(renderOutgoing).join('')}</div>
         </section>
 
-        <section class="profile-band profile-reveal psig-card">
+        <section data-lq-component="surface" class="lq-surface profile-band profile-reveal psig-card">
             <div class="profile-band__head">
                 <div><h3>使用记录</h3></div>
             </div>

@@ -1,8 +1,8 @@
-<div class="modal-backdrop" id="student-security-modal">
-    <div class="modal modal-sm">
+<div class="lq-domain-region modal-backdrop" id="student-security-modal" data-lq-component="layer">
+    <div data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region modal modal-sm" data-lq-material="raised">
         <div class="modal-header">
             <h3 class="modal-title">修改密码</h3>
-            <button type="button" class="btn-close" data-dismiss="modal" aria-label="关闭"></button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass btn-close" data-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
             {% if student_security_summary %}
@@ -27,18 +27,18 @@
             <form id="student-password-change-form">
                 <div class="form-group">
                     <label class="form-label" for="current-password">当前密码</label>
-                    <input class="form-control" type="password" id="current-password" name="current_password" required autocomplete="current-password">
+                    <input data-lq-component="input" class="lq-input form-control" type="password" id="current-password" name="current_password" required autocomplete="current-password">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="new-password">新密码</label>
-                    <input class="form-control" type="password" id="new-password" name="new_password" required autocomplete="new-password">
+                    <input data-lq-component="input" class="lq-input form-control" type="password" id="new-password" name="new_password" required autocomplete="new-password">
                     <span class="form-text">密码至少 8 位，且必须同时包含字母和数字。</span>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="confirm-new-password">确认新密码</label>
-                    <input class="form-control" type="password" id="confirm-new-password" name="confirm_password" required autocomplete="new-password">
+                    <input data-lq-component="input" class="lq-input form-control" type="password" id="confirm-new-password" name="confirm_password" required autocomplete="new-password">
                 </div>
-                <button type="submit" class="btn btn-primary w-full">保存新密码</button>
+                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent w-full">保存新密码</button>
             </form>
         </div>
     </div>

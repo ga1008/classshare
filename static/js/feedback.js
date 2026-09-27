@@ -4,6 +4,7 @@
  * and a "my feedback" panel for viewing / withdrawing past feedback.
  */
 import { API, apiFetch } from './api.js';
+import { adoptDomainControl } from './lq/domain-controls.js';
 import { showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
 import { FeedbackConversation, FEEDBACK_TYPES, feedbackStatus, feedbackTime, node, button } from './feedback_conversation.js';
@@ -370,6 +371,7 @@ class FeedbackModal {
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'feedback-attachment-remove';
+            adoptDomainControl(removeBtn, { variant: 'ghost' });
             removeBtn.innerHTML = '&#x2715;';
             removeBtn.title = '移除';
             removeBtn.addEventListener('click', () => {
