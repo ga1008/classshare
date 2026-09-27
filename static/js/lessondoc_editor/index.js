@@ -31,6 +31,7 @@ function guard(fn) {return async(...args)=>{try{return await fn(...args);}catch(
 function renderStatus() {
     if(!store)return;
     const state=store.pending?'saving':store.blocked||store.retry?'error':store.dirty?'dirty':'saved';
+    $('save-state').dataset.lqToneLevel={saving:'info',error:'danger',dirty:'warning',saved:'success'}[state];
     $('save-state').dataset.state=state;$('save-state').textContent={saving:'正在保存…',error:store.blocked?.kind==='conflict'?'版本冲突':store.retry?'网络中断，待重试':'内容待检查',dirty:'有未保存修改',saved:'已保存'}[state];
     $('save').disabled=!!store.pending;$('undo').disabled=!store.undoStack.length||store.ui.trial;$('redo').disabled=!store.redoStack.length||store.ui.trial;
     $('title').textContent=store.model.kind==='home'?store.model.course.name:store.model.title||'学习文档';

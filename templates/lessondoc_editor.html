@@ -8,11 +8,11 @@
         <a href="{{ editor_config.returnUrl }}" data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost lde-back" aria-label="返回材料库">←</a>
         <div class="lde-heading"><span class="lde-eyebrow">学习文档</span><h1 id="lde-title">正在加载…</h1></div>
         <select data-lq-component="select" class="lq-select" id="lde-document" aria-label="切换首页或课次"><option value="0">课程首页</option>{% for item in editor_config.lessons %}<option value="{{ item.n }}">第 {{ item.n }} 课 · {{ item.title }}</option>{% endfor %}</select>
-        <span id="lde-save-state" class="lde-save-state" role="status" aria-live="polite">连接中</span>
+        <span id="lde-save-state" data-lq-component="status" data-lq-status="status" data-lq-tone-level="neutral" class="lq-status lde-save-state" role="status" aria-live="polite">连接中</span>
         <div class="lde-top-actions"><button data-lq-component="button" type="button" id="lde-undo" class="lq-btn lq-btn--sm lq-btn--glass lde-icon-button" aria-label="撤销" title="撤销 Ctrl+Z">↶</button><button data-lq-component="button" type="button" id="lde-redo" class="lq-btn lq-btn--sm lq-btn--glass lde-icon-button" aria-label="重做" title="重做 Ctrl+Shift+Z">↷</button><button data-lq-component="button" type="button" id="lde-history" class="lq-btn lq-btn--sm lq-btn--glass lde-button">历史</button><button data-lq-component="button" type="button" id="lde-preview" class="lq-btn lq-btn--sm lq-btn--glass lde-button">预览当前修改</button><button data-lq-component="button" type="button" id="lde-save" class="lq-btn lq-btn--sm lq-btn--prominent lde-button lde-primary">保存</button></div>
     </header>
-    <div id="lde-error" class="lde-notice lde-error" role="alert" hidden></div>
-    <div id="lde-warning" class="lde-notice" role="status" hidden></div>
+    <div id="lde-error" data-lq-component="alert" data-lq-status="alert" data-lq-tone-level="danger" class="lq-alert lde-notice lde-error" role="alert" hidden></div>
+    <div id="lde-warning" data-lq-component="alert" data-lq-status="alert" data-lq-tone-level="warning" class="lq-alert lde-notice" role="status" hidden></div>
     <div data-lq-component="toolbar" class="lq-domain-toolbar lq-surface lde-mobile-bar"><button data-lq-component="button" id="lde-toggle-elements" class="lq-btn lq-btn--sm lq-btn--glass lde-button" type="button">元素</button><span>小屏可预览，横屏编辑更舒适</span><button data-lq-component="button" id="lde-toggle-props" class="lq-btn lq-btn--sm lq-btn--glass lde-button" type="button">属性</button></div>
     <div class="lde-workspace">
         <aside data-lq-component="surface" class="lq-surface lde-elements" id="lde-elements" aria-label="元素与图层">

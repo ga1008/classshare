@@ -48,6 +48,15 @@ async function mount(page: Page, { dock = true, reading = false, deferred = fals
   await page.goto('https://ai-fab.test/'); await page.waitForFunction(() => (window as any).ready); return errors;
 }
 
+async function assertSquareIcon(page: Page) {
+  const icon = (await page.locator('#ai-chat-fab .ai-workspace-fab__icon').boundingBox())!;
+  const svg = (await page.locator('#ai-chat-fab .ai-workspace-fab__icon svg').boundingBox())!;
+  expect(icon.width).toBeCloseTo(icon.height, 1);
+  expect(icon.width).toBeGreaterThanOrEqual(32);
+  expect(svg.width).toBeCloseTo(svg.height, 1);
+  expect(svg.width).toBeGreaterThanOrEqual(18);
+}
+
 for (const appearance of ['light', 'dark']) test(`AI FAB leaves all student dock actions clickable: ${appearance}`, async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true, isMobile: true });
   try {
@@ -60,6 +69,7 @@ for (const appearance of ['light', 'dark']) test(`AI FAB leaves all student dock
       expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--lq-dock-h'))).toBe(await page.locator('main').evaluate(el => (el as HTMLElement).style.getPropertyValue('--lq-dock-h')));
     };
     await assertAboveDock();
+    await assertSquareIcon(page);
     fs.mkdirSync('.codex-temp/lq-ai-fab-dock', { recursive: true }); await page.screenshot({ path: `.codex-temp/lq-ai-fab-dock/${appearance}-390.png` });
     for (const label of ['首页', '消息', '学习路', '我的']) await dock.getByRole('link', { name: label, exact: true }).tap();
     await fab.tap(); expect(await page.evaluate(() => (window as any).clicked)).toEqual(['/dashboard', '/message-center', '/learning-path', '/profile', 'ai']);
@@ -70,6 +80,7 @@ for (const appearance of ['light', 'dark']) test(`AI FAB leaves all student dock
     await assertAboveDock();
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect.poll(() => fab.evaluate(el => getComputedStyle(el).bottom)).toBe('22px');
+    await assertSquareIcon(page);
     await page.evaluate(() => (window as any).handle.destroy());
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--lq-dock-h'))).toBe('');
     expect(errors).toEqual([]);
@@ -81,7 +92,9 @@ for (const reading of [false, true]) test(`AI FAB retains no-dock placement and 
   const fab = page.locator('#ai-chat-fab'); await expect(fab).toBeDisabled(); await expect(fab).toHaveAttribute('aria-busy', 'true'); await expect(fab).toHaveAttribute('data-ai-deferred', '');
   await expect(fab).toHaveAttribute('aria-controls', 'ai-chat-modal'); await expect(fab.locator('svg')).toHaveCount(1);
   expect(await fab.evaluate(el => getComputedStyle(el).bottom)).toBe(reading ? '94px' : '12px');
+  await assertSquareIcon(page);
   await page.setViewportSize({ width: 1440, height: 900 }); expect(await fab.evaluate(el => getComputedStyle(el).bottom)).toBe(reading ? '70px' : '22px');
+  await assertSquareIcon(page);
   expect(await page.evaluate(() => (window as any).clicked)).toEqual([]); expect(errors).toEqual([]);
 });
 

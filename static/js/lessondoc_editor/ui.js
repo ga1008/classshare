@@ -65,6 +65,7 @@ export function downloadJson(document,name='学习文档草稿.json') {
     const url=URL.createObjectURL(new Blob([JSON.stringify(document,null,2)],{type:'application/json;charset=utf-8'})),a=el('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 export function reportError(error,container) {
+    container.classList.add('lq-alert');container.dataset.lqComponent='alert';container.dataset.lqStatus='alert';container.dataset.lqToneLevel='danger';
     container.hidden=false;container.replaceChildren(el('strong','',error.message||String(error)));
     const diagnostics=error.details?.diagnostics||[];
     if(diagnostics.length){const list=el('ul');for(const d of diagnostics.slice(0,12))list.append(el('li','',(d.path?d.path+'：':'')+(d.message||d.code||'内容需要检查')));container.append(list);}
