@@ -121,18 +121,28 @@ class AvailabilitySyncAdapterTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(target.stop)
         self.addCleanup(self.conn.close)
 
-    def fake_client(self, *, class_ok_path="/kbcx/bjkbcx_cxBjKb.html", room_ok=False):
+    def fake_client(self, *, class_rows=True, room_ok=False):
+        """Mimics the live 2026-09-27 contract: class rows via bjkbdy_cxBjkbdyTjkbList, timetable via
+        bjkbdy_cxBjKb only when the whole row (xqh_id/njdm_id/zyh_id/tjkbzdm…) is posted, rooms via cdkbdy_cxCdKb."""
         calls = self.calls
+        row = {"bh_id": "BJ-2606", "bj": "计算机科学2606班", "xqh_id": "2", "njdm_id": "2026", "zyh_id": "0422", "tjkbzdm": "T1",
+               "tjkbzxsdm": "X1", "xnm": "2026", "xqm": "3", "xnmc": "2026-2027", "xqmmc": "1", "zymc": "计算机科学", "jgmc": "信息学院",
+               "njmc": "2026", "xkrs": "40", "jsxm": "", "lxdh": "", "bh": "2026050106"}
 
         def handler(request: httpx.Request) -> httpx.Response:
             calls.append(request.url.path)
             body = request.content.decode()
-            if request.url.path == class_ok_path and "bj_id=BJ-2606" in body:
-                return httpx.Response(200, json={"kbList": [
+            if request.url.path == "/kbdy/bjkbdy_cxBjkbdyTjkbList.html":
+                items = [row] if class_rows and ("bh_id=BJ-2606" in body or "bh_id=&" in body or body.endswith("bh_id=")) else []
+                return httpx.Response(200, json={"items": items, "totalResult": len(items)}, headers={"content-type": "application/json"})
+            if request.url.path == "/kbdy/bjkbdy_cxBjKb.html":
+                complete = all(f"{key}={value}" in body for key, value in (("bh_id", "BJ-2606"), ("xqh_id", "2"), ("njdm_id", "2026"), ("tjkbzdm", "T1")))
+                items = [
                     {"kcmc": "高等数学", "jxbmc": "高等数学-0001", "xqj": "1", "jcs": "2-3", "zcd": "1-8周", "cdmc": "A101", "xm": "王老师", "kch": "M1"},
                     {"kcmc": "计算机网络原理", "jxbmc": "计算机网络原理-0003", "xqj": "4", "jcs": "4-5", "zcd": "1-3周,6-16周", "cdmc": "B310", "kch": "E040016B1"},
-                ]}, headers={"content-type": "application/json"})
-            if request.url.path.startswith("/kbcx/cdkbcx") and room_ok:
+                ] if complete else []
+                return httpx.Response(200, json={"kbList": items, "xsbjList": []}, headers={"content-type": "application/json"})
+            if request.url.path == "/kbdy/cdkbdy_cxCdKb.html" and room_ok and "cd_id=136B310" in body:
                 return httpx.Response(200, json={"kbList": [{"kcmc": "线性代数", "jxbmc": "线代-0002", "xqj": "3", "jcs": "6-7", "zcd": "1-16周", "cdmc": "B310", "kch": "M2"}]}, headers={"content-type": "application/json"})
             if request.url.path.endswith("Index.html"):
                 return httpx.Response(200, text="<html></html>")
@@ -145,12 +155,14 @@ class AvailabilitySyncAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         return patch.object(sync, "open_authenticated_academic_client", opener)
 
-    async def test_probe_picks_first_answering_candidate_and_stores_slots(self):
+    async def test_class_rows_then_whole_row_query_and_room_query_store_slots(self):
         base = overview({5: [lesson("ev-a", week=5, weekday=4, sections=(4, 5))]})
-        with self.fake_client(class_ok_path="/kbcx/bjkbcx_cxBjKb.html", room_ok=True):
+        with self.fake_client(room_ok=True):
             result = await sync.sync_availability_for_term(1, year="2026-2027", term="1", overview=base)
         self.assertEqual(result["status"], "success", result)
         self.assertEqual((result["class_scope_count"], result["class_slot_count"], result["room_count"], result["room_slot_count"]), (1, 2, 1, 1))
+        self.assertEqual(self.calls.count("/kbdy/bjkbdy_cxBjkbdyTjkbList.html"), 1)  # located by bh_id, no full-list fallback
+        self.assertIn("/kbdy/cdkbdy_cxCdKb.html", self.calls)
         rows = self.conn.execute("SELECT weekday, sections_json, weeks_json, course_name FROM academic_class_timetable_slots ORDER BY weekday").fetchall()
         self.assertEqual([tuple(r) for r in rows][0], (1, "[2, 3]", "[1, 2, 3, 4, 5, 6, 7, 8]", "高等数学"))
         data = avail.build_lesson_availability(self.conn, 1, base, "ev-a")
@@ -160,13 +172,15 @@ class AvailabilitySyncAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(avail.check_slot(data, week=5, weekday=5, sections=[6, 7])["level"], "ok")
         self.assertEqual(avail.load_sync_state(self.conn, 1, "2026-2027", "1")["status"], "success")
 
-    async def test_unanswered_endpoints_leave_a_clear_pending_status(self):
+    async def test_missing_class_row_leaves_a_clear_status_and_tries_name_fallback(self):
         base = overview({5: [lesson("ev-a", week=5, weekday=4, sections=(4, 5))]})
-        with self.fake_client(class_ok_path="/nowhere"):
+        with self.fake_client(class_rows=False):
             result = await sync.sync_availability_for_term(1, year="2026-2027", term="1", overview=base)
-        self.assertEqual(result["status"], "endpoint_unverified")
-        self.assertIn("待联调", result["message"])
-        self.assertTrue(all(src["status"] in ("rejected", "failed", "unrecognised") for src in result["sources"] if src.get("label", "").startswith("班级课表")))
+        self.assertEqual(result["status"], "class_unavailable")
+        self.assertIn("班级课表打印列表中未找到", result["message"])
+        self.assertEqual(self.calls.count("/kbdy/bjkbdy_cxBjkbdyTjkbList.html"), 2)  # by bh_id, then full list by name
+        self.assertNotIn("/kbdy/bjkbdy_cxBjKb.html", self.calls)
+        self.assertTrue(all(src["status"] == "rejected" for src in result["sources"] if src.get("label", "").startswith("班级课表")))
 
     async def test_free_room_search_records_room_verdict(self):
         async def fake_query(_teacher_id, filters):

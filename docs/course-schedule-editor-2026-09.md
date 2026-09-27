@@ -42,7 +42,12 @@
 - 教务适配（`services/academic_availability_sync_service.py`）：**候选路径按序探测**、首个返回 `kbList` JSON 的生效并记入 `sources`；可用环境变量 `LANSHARE_ZF_CLASS_TIMETABLE_PATHS` / `LANSHARE_ZF_ROOM_TIMETABLE_PATHS` 覆盖。班级课表沿用教师课表的 `xszd[...]`+`kzlx=ck` 表单并附 `bj_id`；教室课表附 `cd_id`。全部候选未响应 → 状态 `endpoint_unverified`（界面提示“接口待联调”），不影响其他功能。二次搜索 `search_free_rooms` 复用现有空闲教室查询（`cdjy_cxKxcdlb`），并把原教室在该时段的结论写入缓存。
 - API：`GET editor/availability?event_key`、`POST editor/availability/sync`、`GET editor/free-rooms?week&weekday&sections&room_id`。`教室查询` 页的实时查空接口异常改为 502 可读提示（原为 500）。
 - 界面：选中/拖动课次即叠加热力层（红斜纹=学生/本人有课禁放，琥珀=教室已占用需换教室，绿=可放，灰=教室未查）+ 图例与覆盖说明；左侧周列表显示每周“N 可放”（学生与本人都有空的时段数）；放到琥珀格自动保存并弹出该时段空闲教室二次搜索，选中即换教室；抽屉内实时显示当前周/星期/节次的结论与「查询空闲教室」；变更清单显示教室状态与教务冲突明细；顶栏「同步可调时段」显示同步状态与时间。
-- 联调清单（教务恢复后）：① 班级课表查询真实路径与 `bj_id` 参数名；② 教室课表查询是否存在；③ `ttksq_cxConflictCtzt` 返回的 `ctxxList`/`conflictXs` 字段名（前端按 kcmc/jxbmc/jsxm/xm/cdmc 友好展示，其余原样列出）。
+- **联调结论（2026-09-27，教务恢复后实测，教师账号）**：
+  ① 教师角色菜单里没有「班级课表查询」，但「班级课表打印」模块（N214505）的数据接口对任意班级可用：先 `POST /kbdy/bjkbdy_cxBjkbdyTjkbList.html?gnmkdm=N214505`（`paramMap()` 字段 + `bh_id`）拿到班级行，再把**整行**（`xqh_id`/`njdm_id`/`zyh_id`/`bh_id`/`tjkbzdm`/`tjkbzxsdm`/`bj`… + `kzlx=ck` + `xszd[...]`）POST 到 `/kbdy/bjkbdy_cxBjKb.html?gnmkdm=N214505` 才返回 `kbList`；只传 `bh_id` 返回空列表。班级键是 `bh_id`（名单 raw 的 `BH_ID`，如 `2024050102`），不是 `bj_id`；老名单里的 GUID 编码找不到行时按班级名 `bj` 在全表回退匹配。`kbList` 项为 `xqj/jcs/zcd/kcmc/jxbmc/cdmc/xm`，沿用教师课表解析器。实测 8/8 行政班 244 段。
+  ② 「场地课表打印」模块（N214515）存在：`POST /kbdy/cdkbdy_cxCdKb.html?gnmkdm=N214515`，表单 = 教师课表表单 + `cd_id`（教学场地 id，如 `131416X`），直接返回整学期 `kbList`（实测 B310 40 段、B416-1 43 段）。原候选路径 `/kbcx/cdkbcx_*`、`/kbcx/bjkbcx_*` 均为 404。环境变量 `LANSHARE_ZF_CLASS_TIMETABLE_PATHS` / `LANSHARE_ZF_ROOM_TIMETABLE_PATHS` 仍可覆盖。
+  ③ `ttksq_cxConflictCtzt` 返回 `{conflictNum, ctxxList, conflictXs}`（无冲突时另带 `ttkxx_id`/`bcName`）；`ctxxList` 每项**大写键**：`CTLX` 冲突类型（上课教师冲突 / 课表场地冲突 / 课表冲突=班级 / 上课冲突=学生）、`MC` 对象（教师名/教室/班级串/学生名）、`JXBMC`、`KCMC`、`XQJ`、`JC`、`ZCD`，学生行另有 `XH`、`BJ`、`XB`、`KCH`、`XDZT`；`conflictXs` 是学生子集。一次冲突可返回上百行（每个学生一行），后端最多存 80 行并记 `detail_count/student_count`，前端按类型分组汇总。`conflictNum` 位含义与原映射一致（实测 23=16+4+2+1、33=32+1）。该接口**只读**，不会新增明细，但会用提交的 `tkyy` 更新该教学班草稿表头的调课原因。
+  ④ 附带发现：打开调停课表单（平台「保存到教务」也会）就会为该教学班生成一条 **审核状态 0、无流水号** 的草稿表头；原适配器对无流水号一律拒绝，导致整个教务课表同步失败（`调停课申请缺少教学班或流水号`）。已改为：`shzt=0` 且无流水号 → `status=draft`、`serial=""`、明细尽力解析（失败只记 warning）；已提交却无流水号仍然拒绝。
+  ⑤ 边界：行政班课表看不到学生个人选修（如体育选项课），所以本地判定为"可放"的时段仍可能被教务冲突检测判为学生冲突——保存到教务时的冲突检测仍是最终防线。
 
 ## 逆向依据
 

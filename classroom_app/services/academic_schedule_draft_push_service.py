@@ -51,6 +51,7 @@ CONFLICT_BITS = {
     16: "课表冲突", 32: "学生冲突", 64: "该停课信息已补课", 128: "实践课冲突",
 }
 HARD_CONFLICT_BITS = (8, 64)     # 教务 itself refuses these outright
+MAX_CONFLICT_DETAILS = 80        # ctxxList can enumerate every clashing student; keep a bounded copy
 
 
 class DraftPushError(ValueError):
@@ -273,9 +274,14 @@ async def _save_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict
         message = describe_conflict(conflict_num)
         hard = any(conflict_num & bit for bit in HARD_CONFLICT_BITS)
         if hard or not force:
+            # Verified 2026-09-27: ctxxList items are UPPERCASE-keyed (CTLX 冲突类型 / MC 对象 / JXBMC / KCMC /
+            # XQJ / JC / ZCD, student rows add XH / BJ / XB); conflictXs is the student subset. One clash can list
+            # every affected student, so keep a bounded copy plus the counts.
+            details = payload.get("ctxxList") if isinstance(payload, dict) and isinstance(payload.get("ctxxList"), list) else []
+            students = payload.get("conflictXs") if isinstance(payload, dict) and isinstance(payload.get("conflictXs"), list) else []
             return {"status": "conflict", "ttk_id": page["ttk_id"], "message": message,
-                    "conflict": {"conflict_num": conflict_num, "hard": hard,
-                                 "details": payload.get("ctxxList") if isinstance(payload, dict) else None}}
+                    "conflict": {"conflict_num": conflict_num, "hard": hard, "details": details[:MAX_CONFLICT_DETAILS],
+                                 "detail_count": len(details), "student_count": len(students)}}
         fields = fields + [("sfctttk", "1"), ("ctskapqk", force_note or "已与相关方沟通，按新安排上课"), ("ttkctlx", message)]
     saved = await _request(client, "POST", SAVE_DETAIL_PATH, label="保存教务草稿", files=_multipart(fields), headers=_headers())
     result = _json_or_none(saved)

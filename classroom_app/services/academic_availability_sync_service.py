@@ -1,21 +1,28 @@
 """Pull the data the timetable editor needs to judge "可调时段" from 教务 (正方).
 
-Designed from 正方 v9 conventions while GXUFL's 教务 is offline, so every
-endpoint is a *candidate list* that is probed in order; the first one that
-answers with the expected JSON contract wins and the choice is recorded in the
-sync summary. Nothing here writes to 教务.
+Endpoints were verified against the live GXUFL 教务 on 2026-09-27 (teacher
+role). Nothing here writes to 教务.
 
 Sources
 -------
-1. 行政班课表 (students' timetables). The lesson's teaching class is mapped
-   to admin classes through the synced roster memberships (``bj_id`` =
-   ``admin_class_code``). The class timetable query follows the same
-   ``kbList`` contract as the teacher timetable (``xqj``/``jcs``/``zcd``/
-   ``cdmc``/``kcmc``), so the existing parser is reused.
-2. 教室课表 (room timetable) for each room the teacher's lessons use.
-   Optional: when no candidate answers, the editor falls back to targeted
-   空闲教室 checks (``search_free_rooms``) which reuse the existing free-room
-   query and cache one verdict per (week, weekday, sections).
+1. 行政班课表 (students' timetables) via the 班级课表打印 module (N214505).
+   The teacher role has no 班级课表查询 module, but the print module's data
+   calls answer for any class: first ``bjkbdy_cxBjkbdyTjkbList`` lists the
+   class rows (``bh_id`` = 正方 班级 id, the roster's ``BH_ID``/
+   ``admin_class_code``), then ``bjkbdy_cxBjKb`` returns ``kbList`` **only
+   when posted with the whole class row** (``xqh_id``/``njdm_id``/``zyh_id``/
+   ``tjkbzdm``…) — a bare ``bh_id`` yields an empty list. Items follow the
+   teacher-timetable contract (``xqj``/``jcs``/``zcd``/``cdmc``/``kcmc``), so
+   the existing parser is reused.
+2. 教室课表 (room timetable) via the 场地课表打印 module (N214515):
+   ``cdkbdy_cxCdKb`` with ``cd_id`` (the ``teacher_academic_teaching_places``
+   place id, e.g. ``131416X``) returns the room's whole-term ``kbList``.
+   Targeted 空闲教室 checks (``search_free_rooms``) remain the fallback and
+   cache one verdict per (week, weekday, sections).
+3. 冲突检测 (``ttksq_cxConflictCtzt``, in the draft-push service) returns
+   ``conflictNum`` + ``ctxxList`` items keyed in UPPERCASE (``CTLX`` 冲突类型,
+   ``MC`` 对象, ``JXBMC``, ``KCMC``, ``XQJ``, ``JC``, ``ZCD``; student rows add
+   ``XH``/``BJ``/``XB``) and ``conflictXs`` = the student subset.
 """
 
 from __future__ import annotations
@@ -48,18 +55,19 @@ def _env_paths(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()] or default
 
 
-# 班级课表查询 (bj_id) — probed in order; override with LANSHARE_ZF_CLASS_TIMETABLE_PATHS.
-ZF_CLASS_TIMETABLE_QUERY_PATHS = _env_paths("LANSHARE_ZF_CLASS_TIMETABLE_PATHS", [
-    "/kbcx/bjkbcx_cxBjKb.html?gnmkdm=N2153",
-    "/kbcx/bjkbcx_cxBjKb.html?gnmkdm=N2150",
-    "/kbdy/bjkbdy_cxBjKb.html?gnmkdm=N214505",
-])
-ZF_CLASS_TIMETABLE_INDEX_PATH = os.getenv("LANSHARE_ZF_CLASS_TIMETABLE_INDEX", "/kbcx/bjkbcx_cxBjkbcxIndex.html?gnmkdm=N2153&layout=default")
-# 教室课表查询 (cd_id) — optional; override with LANSHARE_ZF_ROOM_TIMETABLE_PATHS.
-ZF_ROOM_TIMETABLE_QUERY_PATHS = _env_paths("LANSHARE_ZF_ROOM_TIMETABLE_PATHS", [
-    "/kbcx/cdkbcx_cxCdKb.html?gnmkdm=N2154",
-    "/kbcx/jscdkbcx_cxJscdKb.html?gnmkdm=N2151",
-])
+# 班级课表打印 (N214505) — verified 2026-09-27; override with LANSHARE_ZF_CLASS_TIMETABLE_PATHS (first entry wins).
+ZF_CLASS_PRINT_GNMKDM = "N214505"
+ZF_CLASS_TIMETABLE_INDEX_PATH = os.getenv("LANSHARE_ZF_CLASS_TIMETABLE_INDEX", f"/kbdy/bjkbdy_cxBjkbdyIndex.html?gnmkdm={ZF_CLASS_PRINT_GNMKDM}&layout=default")
+ZF_CLASS_ROWS_PATH = os.getenv("LANSHARE_ZF_CLASS_ROWS_PATH", f"/kbdy/bjkbdy_cxBjkbdyTjkbList.html?gnmkdm={ZF_CLASS_PRINT_GNMKDM}")
+ZF_CLASS_TIMETABLE_QUERY_PATHS = _env_paths("LANSHARE_ZF_CLASS_TIMETABLE_PATHS", [f"/kbdy/bjkbdy_cxBjKb.html?gnmkdm={ZF_CLASS_PRINT_GNMKDM}"])
+# 场地课表打印 (N214515) — verified 2026-09-27; override with LANSHARE_ZF_ROOM_TIMETABLE_PATHS.
+ZF_ROOM_PRINT_GNMKDM = "N214515"
+ZF_ROOM_TIMETABLE_INDEX_PATH = os.getenv("LANSHARE_ZF_ROOM_TIMETABLE_INDEX", f"/kbdy/cdkbdy_cxCdkbdyIndex.html?gnmkdm={ZF_ROOM_PRINT_GNMKDM}&layout=default")
+ZF_ROOM_TIMETABLE_QUERY_PATHS = _env_paths("LANSHARE_ZF_ROOM_TIMETABLE_PATHS", [f"/kbdy/cdkbdy_cxCdKb.html?gnmkdm={ZF_ROOM_PRINT_GNMKDM}"])
+# The class-row fields the 班级课表打印 page forwards to the timetable query (ylKbdy() in bjkbdy.js).
+CLASS_ROW_FORWARDED_FIELDS = ("xnm", "xqm", "xnmc", "xqmmc", "xqh_id", "njdm_id", "zyh_id", "bh_id", "tjkbzdm", "tjkbzxsdm",
+                              "zymc", "jgmc", "njmc", "bj", "xkrs", "jsxm", "lxdh", "bh")
+CLASS_ROWS_PAGE_SIZE = 500
 HTTP_TIMEOUT_SECONDS = 25.0
 MAX_ROOMS_PER_SYNC = 6
 MAX_CLASSES_PER_SYNC = 24
@@ -119,6 +127,65 @@ async def probe_timetable(client: httpx.AsyncClient, paths: list[str], form: dic
     return [], ""
 
 
+def _class_rows_form(term_params: dict[str, str], *, bh_id: str = "") -> dict[str, str]:
+    """``paramMap()`` of bjkbdy.js plus the grid paging fields."""
+    return {
+        **term_params, "xqh_id": "", "njdm_id": "", "xb_id": "", "jg_id": "", "zyh_id": "", "zyfx_id": "", "bh_id": bh_id,
+        "xsdm": "", "pyccdm": "", "kclxdm": "", "kclbdm": "", "sfzhsjk": "", "kbsjlyqz": "", "zs": "", "yf": "", "sfcxxqh": "0",
+        "_search": "false", "nd": "0", "queryModel.showCount": str(CLASS_ROWS_PAGE_SIZE), "queryModel.currentPage": "1",
+        "queryModel.sortName": "", "queryModel.sortOrder": "asc", "time": "0",
+    }
+
+
+async def fetch_class_rows(client: httpx.AsyncClient, term_params: dict[str, str], *, bh_id: str = "") -> list[dict[str, Any]]:
+    """Class rows of the 班级课表打印 grid (``items``); ``bh_id`` narrows to one class."""
+    response = await client.post(ZF_CLASS_ROWS_PATH, data=_class_rows_form(term_params, bh_id=bh_id),
+                                 headers=_ajax_headers(client, ZF_CLASS_TIMETABLE_INDEX_PATH), timeout=HTTP_TIMEOUT_SECONDS)
+    if response.status_code >= 400:
+        return []
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    items = payload.get("items") if isinstance(payload, dict) else None
+    return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+
+def class_timetable_form(row: dict[str, Any], term_params: dict[str, str], field_keys: list[str]) -> dict[str, Any]:
+    """The map ``ylKbdy()`` posts: the whole class row + display switches + ``xszd[...]`` flags."""
+    form: dict[str, Any] = {key: str(row.get(key) or "") for key in CLASS_ROW_FORWARDED_FIELDS}
+    form.update({**term_params, "zs": "", "zxszjjs": "false", "akcxqjchb": "false", "xsdm": "", "kclxdm": "", "kclbdm": "",
+                 "kbsjlyqz": "", "yf": "", "kzlx": "ck", "sfcxxqh": "0"})
+    for key in (field_keys or ZF_TIMETABLE_FIELD_KEYS):
+        if key:
+            form[f"xszd[{key}]"] = "true"
+    return form
+
+
+async def fetch_class_timetable(client: httpx.AsyncClient, term_params: dict[str, str], field_keys: list[str], *,
+                                code: str, name: str, sources: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
+    """Slots of one admin class: locate its row (by ``bh_id``, else by name), then query with the whole row."""
+    label = f"班级课表 {name}"
+    rows = await fetch_class_rows(client, term_params, bh_id=code) if code else []
+    row = next((r for r in rows if str(r.get("bh_id") or "") == code), rows[0] if rows else None)
+    if row is None and name:
+        # Older rosters carry a different class key; fall back to matching the class name in the full list.
+        row = next((r for r in await fetch_class_rows(client, term_params) if str(r.get("bj") or "").strip() == name.strip()), None)
+    if row is None:
+        sources.append({"path": ZF_CLASS_ROWS_PATH, "label": label, "status": "rejected", "message": "班级课表打印列表中没有该班级"})
+        return [], ""
+    return await probe_timetable(client, ZF_CLASS_TIMETABLE_QUERY_PATHS, class_timetable_form(row, term_params, field_keys),
+                                 referer=ZF_CLASS_TIMETABLE_INDEX_PATH, sources=sources, label=label)
+
+
+async def fetch_room_timetable(client: httpx.AsyncClient, term_params: dict[str, str], field_keys: list[str], *,
+                               room_id: str, room_name: str, sources: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str]:
+    """Whole-term slots of one room via 场地课表打印 (``cd_id`` = teaching-place id)."""
+    form = {**_build_timetable_form(term_params, field_keys), "cd_id": room_id, "cdmc": room_name}
+    return await probe_timetable(client, ZF_ROOM_TIMETABLE_QUERY_PATHS, form, referer=ZF_ROOM_TIMETABLE_INDEX_PATH,
+                                 sources=sources, label=f"教室课表 {room_name}")
+
+
 def teaching_scopes(overview: dict[str, Any]) -> list[dict[str, str]]:
     seen: dict[str, dict[str, str]] = {}
     for week in overview.get("weeks") or []:
@@ -161,15 +228,15 @@ async def sync_availability_for_term(teacher_id: int, *, year: str, term: str, o
         async with open_authenticated_academic_client(credential) as (client, profile, _login):
             if profile.school_code != "gxufl":
                 raise AvailabilitySyncError("当前学校尚未启用可调时段同步。")
-            try:
-                await client.get(ZF_CLASS_TIMETABLE_INDEX_PATH, headers={"Accept": "text/html,*/*;q=0.8"}, timeout=HTTP_TIMEOUT_SECONDS)
-            except httpx.HTTPError:
-                pass
+            # Open the print modules once so 教务 registers the module context for the data calls.
+            for index_path in (ZF_CLASS_TIMETABLE_INDEX_PATH, ZF_ROOM_TIMETABLE_INDEX_PATH):
+                try:
+                    await client.get(index_path, headers={"Accept": "text/html,*/*;q=0.8"}, timeout=HTTP_TIMEOUT_SECONDS)
+                except httpx.HTTPError:
+                    pass
             field_keys = await _fetch_timetable_field_keys(client, sources) or ZF_TIMETABLE_FIELD_KEYS
             for code, name in list(admin_classes.items())[:MAX_CLASSES_PER_SYNC]:
-                form = {**_build_timetable_form(term_params, field_keys), "bj_id": code, "bjmc": name}
-                slots, path = await probe_timetable(client, ZF_CLASS_TIMETABLE_QUERY_PATHS, form,
-                                                    referer=ZF_CLASS_TIMETABLE_INDEX_PATH, sources=sources, label=f"班级课表 {name}")
+                slots, path = await fetch_class_timetable(client, term_params, field_keys, code=code, name=name, sources=sources)
                 if path:
                     class_ok += 1
                     with get_db_connection() as conn:
@@ -177,9 +244,7 @@ async def sync_availability_for_term(teacher_id: int, *, year: str, term: str, o
                                                                 scope_name=name, slots=slots, source_path=path)
                         conn.commit()
             for rid, rname in list(room_ids.items())[:MAX_ROOMS_PER_SYNC]:
-                form = {**_build_timetable_form(term_params, field_keys), "cd_id": rid, "cdmc": rname}
-                slots, path = await probe_timetable(client, ZF_ROOM_TIMETABLE_QUERY_PATHS, form,
-                                                    referer=ZF_CLASS_TIMETABLE_INDEX_PATH, sources=sources, label=f"教室课表 {rname}")
+                slots, path = await fetch_room_timetable(client, term_params, field_keys, room_id=rid, room_name=rname, sources=sources)
                 if path:
                     room_ok += 1
                     with get_db_connection() as conn:
@@ -202,13 +267,13 @@ async def sync_availability_for_term(teacher_id: int, *, year: str, term: str, o
     if not admin_classes:
         status, message = "no_scope", "本学期教学班尚未同步学生名单，无法推导行政班课表；请先同步「班级与学生名单」。"
     elif class_ok == 0:
-        status, message = "endpoint_unverified", "教务未返回班级课表（接口待联调）；学生课表暂不可用，教室占用可按时段实时查询。"
+        status, message = "class_unavailable", "教务班级课表打印列表中未找到这些行政班（或课表为空）；学生课表暂不可用，教室占用可按时段实时查询。"
     else:
         status = "success"
         message = f"已同步 {class_ok}/{len(admin_classes)} 个行政班课表（{class_slot_count} 段）"
         message += f"，{room_ok}/{len(room_ids)} 间教室课表（{room_slot_count} 段）。" if room_ids else "。"
         if room_ids and room_ok == 0:
-            message += " 教室课表接口未响应，教室占用改为按时段实时查询。"
+            message += " 教室课表未返回，教室占用改为按时段实时查询。"
     with get_db_connection() as conn:
         save_sync_state(conn, teacher_id, year=year, term=term, status=status, message=message,
                         class_scope_count=class_ok, class_slot_count=class_slot_count, room_count=room_ok,

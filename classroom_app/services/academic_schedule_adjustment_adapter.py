@@ -361,13 +361,28 @@ async def fetch_adjustment_snapshot(client: httpx.AsyncClient, semester: dict[st
     )
     requests = []
     for row in request_rows:
-        if not row["jxb_id"] or not row["ttk_lsh"]:
-            raise ValueError("调停课申请缺少教学班或流水号。")
-        status = STATUS_MAP.get(row["shzt"], "unknown")
+        if not row["jxb_id"]:
+            raise ValueError("调停课申请缺少教学班。")
+        # Verified 2026-09-27: the teacher's own *unsubmitted* draft header (审核状态 0) has no 流水号 yet —
+        # opening the 调停课申请 form (which the platform's 保存到教务 does) creates one. It is a legitimate
+        # row, not a corrupt one; anything else without a serial is still rejected.
+        is_draft = row["shzt"] == "0" and not row["ttk_lsh"]
+        if not row["ttk_lsh"] and not is_draft:
+            raise ValueError("调停课申请缺少流水号。")
+        status = "draft" if is_draft else STATUS_MAP.get(row["shzt"], "unknown")
         kind = KIND_MAP.get(row["tklxdm"], "unknown")
         detail_params = {**params, "ymly": "sqym", "ttk_id": row["ttk_id"], "jxb_id": row["jxb_id"], "gnmkdm": "N2122"}
         response = await _read(client, "POST", DETAIL_PATH, label="调停课申请详情", params=detail_params, headers=_headers(html=True))
-        rows = _detail_rows(response.text, row, params)
+        draft_detail_warning = ""
+        if is_draft:
+            # A draft may have no saved details yet; it never changes the official timetable, so an empty or
+            # unparsable draft page is recorded as a warning instead of failing the whole snapshot.
+            try:
+                rows = _detail_rows(response.text, row, params)
+            except ValueError as exc:
+                rows, draft_detail_warning = [], f"草稿明细未解析：{exc}"
+        else:
+            rows = _detail_rows(response.text, row, params)
         details = []
         for raw in rows:
             original = _point(raw, semester, proposed=False, label="原安排")
@@ -389,6 +404,8 @@ async def fetch_adjustment_snapshot(client: httpx.AsyncClient, semester: dict[st
             "xnm": params["xnm"], "xqm": params["xqm"], "detail_count": len(details), "status": "success",
         }
         warnings = []
+        if draft_detail_warning:
+            warnings.append(draft_detail_warning)
         if status == "unknown":
             warnings.append("审批状态代码未识别，不参与待审预测。")
         if kind == "unknown":

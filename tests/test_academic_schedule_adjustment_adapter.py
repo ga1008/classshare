@@ -128,6 +128,26 @@ class AdjustmentSnapshotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(form["xnm"], ["2026"])
                 self.assertEqual(form["xqm"], ["3"])
 
+    async def test_unsubmitted_draft_without_serial_is_accepted_and_empty_draft_details_only_warn(self):
+        # Live 教务 2026-09-27: opening the 调停课 form creates a header with 审核状态 0 and no 流水号.
+        with_details = request_row(1, shzt="0", ttk_lsh="")
+        empty_draft = request_row(2, shzt="0", ttk_lsh="")
+        submitted_without_serial = request_row(3, shzt="1", ttk_lsh="")
+        school = MockSchool(requests=[with_details, empty_draft],
+                            detail_pages={empty_draft["ttk_id"]: detail_html(empty_draft, expression="[]")})
+        async with school.client() as client:
+            result = await adapter.fetch_adjustment_snapshot(client, SEMESTER)
+        first, second = result["requests"]
+        self.assertEqual((first["status"], first["serial"], len(first["details"])), ("draft", "", 1))
+        self.assertEqual((second["status"], second["serial"], second["details"]), ("draft", "", []))
+        warned = next(row for row in result["source_summary"] if row.get("request_id") == empty_draft["ttk_id"])
+        self.assertEqual(warned["status"], "warning")
+        self.assertTrue(any("草稿明细未解析" in text for text in warned["warnings"]))
+        # A submitted request without a serial is still corrupt data and fails closed.
+        async with MockSchool(requests=[submitted_without_serial]).client() as client:
+            with self.assertRaisesRegex(ValueError, "流水号"):
+                await adapter.fetch_adjustment_snapshot(client, SEMESTER)
+
     async def test_cancellation_has_no_target_and_unknown_type_is_not_inferred(self):
         records = [request_row(1, tklxdm="03"), request_row(2, tklxdm="88")]
         school = MockSchool(requests=records)

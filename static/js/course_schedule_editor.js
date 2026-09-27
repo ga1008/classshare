@@ -838,17 +838,35 @@ function init(boot) {
         }
     }
 
-    /** 教务冲突明细（ctxxList / conflictXs 结构未知，按常见字段友好展示，其余原样列出）。 */
+    /**
+     * 教务冲突明细。联调（2026-09-27）确认 ctxxList 每项为大写键：CTLX 冲突类型（上课教师冲突 / 课表场地冲突 /
+     * 课表冲突 / 上课冲突=学生）、MC 对象（教师名 / 教室 / 班级串 / 学生名）、JXBMC、KCMC、XQJ、JC、ZCD；学生行另有 XH、BJ。
+     * 学生冲突可能上百行，按冲突类型分组汇总，同一类型只列前几个对象。
+     */
     function conflictDetailsHtml(conflict) {
-        const rows = Array.isArray(conflict?.details) ? conflict.details : [];
+        const rows = Array.isArray(conflict?.details) ? conflict.details.filter(r => r && typeof r === 'object') : [];
         if (!rows.length) return '';
-        const known = [['kcmc', '课程'], ['jxbmc', '教学班'], ['jsxm', '教师'], ['xm', '学生'], ['xh', '学号'], ['cdmc', '教室'], ['sksj', '时间'], ['zcd', '周次'], ['xqj', '星期'], ['jc', '节次'], ['ctlx', '冲突类型']];
-        const lines = rows.slice(0, 8).map(row => {
-            if (!row || typeof row !== 'object') return escapeHtml(String(row));
-            const parts = known.filter(([k]) => row[k]).map(([k, label]) => `${label} ${escapeHtml(String(row[k]))}`);
-            return parts.length ? parts.join(' · ') : escapeHtml(Object.entries(row).filter(([, v]) => v !== '' && v !== null).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(' · '));
+        const get = (row, key) => { const hit = Object.keys(row).find(k => k.toLowerCase() === key); return hit ? String(row[hit] ?? '').trim() : ''; };
+        const groups = new Map();
+        for (const row of rows) {
+            const type = get(row, 'ctlx') || '冲突';
+            const where = [get(row, 'zcd'), get(row, 'xqj') ? `周${DAY_NAMES[Number(get(row, 'xqj')) - 1] || get(row, 'xqj')}` : '', get(row, 'jc')].filter(Boolean).join(' ');
+            const course = [get(row, 'kcmc'), get(row, 'jxbmc') && get(row, 'jxbmc') !== get(row, 'kcmc') ? get(row, 'jxbmc') : ''].filter(Boolean).join(' ');
+            const isStudent = type.includes('上课冲突') || Boolean(get(row, 'xh'));
+            const who = isStudent ? [get(row, 'mc') || get(row, 'xm'), get(row, 'bj')].filter(Boolean).join('·') : (get(row, 'mc') || get(row, 'xm') || get(row, 'cdmc'));
+            const group = groups.get(type) || { type, isStudent, who: [], context: new Set() };
+            if (who && !group.who.includes(who)) group.who.push(who);
+            if (course || where) group.context.add([course, where].filter(Boolean).join(' · '));
+            groups.set(type, group);
+        }
+        const lines = [...groups.values()].map(group => {
+            const shown = group.who.slice(0, group.isStudent ? 6 : 4).map(escapeHtml).join('、');
+            const more = group.who.length > (group.isStudent ? 6 : 4) ? ` 等 ${group.who.length} ${group.isStudent ? '人' : '项'}` : '';
+            const context = [...group.context].slice(0, 2).map(escapeHtml).join('；');
+            return `<li><b>${escapeHtml(group.type)}</b>${group.isStudent ? `（${group.who.length} 名学生）` : ''}：${shown}${more}${context ? `<small>${context}</small>` : ''}</li>`;
         });
-        return `<div class="cse-draft__msg"><strong>教务冲突明细：</strong><ul class="cse-conflict-list">${lines.map(l => `<li>${l}</li>`).join('')}</ul>${rows.length > 8 ? `<span>… 共 ${rows.length} 条</span>` : ''}</div>`;
+        const total = Number(conflict.detail_count || rows.length);
+        return `<div class="cse-draft__msg"><strong>教务冲突明细：</strong><ul class="cse-conflict-list">${lines.join('')}</ul>${total > rows.length ? `<span>教务共返回 ${total} 条，已按类型汇总</span>` : ''}</div>`;
     }
 
     function renderDrafts() {
