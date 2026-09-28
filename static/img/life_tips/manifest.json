@@ -2172,6 +2172,27 @@
       "tone": "dark"
     },
     {
+      "file": "xueye-prototype-pavilion-20260928-66ac0225.webp",
+      "categories": [
+        "学业规则",
+        "论文写作",
+        "教学相长",
+        "实习"
+      ],
+      "tags": [
+        "学习",
+        "实践",
+        "项目",
+        "设计",
+        "协作",
+        "作品",
+        "课程",
+        "验证"
+      ],
+      "luma": 168,
+      "tone": "light"
+    },
+    {
       "file": "xueye-rain-amphitheater04-8fe83259.webp",
       "categories": [
         "学业规则"
@@ -2419,6 +2440,28 @@
         "职称科研"
       ],
       "luma": 76,
+      "tone": "dark"
+    },
+    {
+      "file": "zhichang-evening-listening-court-20260928-802561ac.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "职称科研",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "演示",
+        "面试",
+        "合作",
+        "反馈",
+        "交流",
+        "思考",
+        "规划"
+      ],
+      "luma": 70,
       "tone": "dark"
     },
     {
