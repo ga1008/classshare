@@ -1,12 +1,15 @@
 """课表编辑模式：本地草稿校验/装饰 + 教务草稿保存适配器（只保存、不提交）。"""
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 import unittest
 from contextlib import asynccontextmanager, contextmanager
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 import httpx
 
@@ -169,6 +172,14 @@ FORM_PAGE = """
 """
 
 
+def form_page(*, jxb_id="JXB-0003", ttk_id="TTK-DRAFT", details=None):
+    page = FORM_PAGE.replace('value="JXB-0003"', f'value="{jxb_id}"')
+    page = page.replace('value="TTK-DRAFT"', f'value="{ttk_id}"')
+    if details is not None:
+        page = re.sub(r"tkxxList = eval\(\[.*?\]\);", "tkxxList = eval(" + json.dumps(details) + ");", page)
+    return page
+
+
 class DraftPushAdapterTests(unittest.TestCase):
     def test_module_never_references_the_submit_endpoint(self):
         source = Path(push.__file__).read_text(encoding="utf-8")
@@ -241,29 +252,33 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(target.stop)
         self.addCleanup(self.conn.close)
 
-    def fake_client(self, *, conflict_num=0, save_response=None):
+    def fake_client(self, *, conflict_num=0, save_response=None, form_response=None,
+                    delete_response=None, exit_error=None):
         calls = self.calls
 
         def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
             form = {}
             body = request.content.decode("utf-8", "ignore")
-            for name in ("yzcd", "xzcd", "xjc", "ttk_id", "xcd_id", "sfctttk", "tkyy"):
+            for name in ("yzcd", "yxqj", "yjc", "xzcd", "xxqj", "xjc", "ttk_id", "jxb_id", "xcd_id", "sfctttk", "tkyy"):
                 marker = f'name="{name}"'
                 if marker in body:
                     tail = body.split(marker, 1)[1].split("\r\n\r\n", 1)[1]
                     form[name] = tail.split("\r\n", 1)[0]
+            if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
+                form.update({key: values[0] for key, values in parse_qs(body).items()})
             calls.append((request.method, path, form))
             if path.endswith("ttksq_cxTtksqIndex.html"):
                 return httpx.Response(200, text="<div id='searchForm'></div>")
             if path.endswith("ttksq_cxTtksqView.html"):
-                return httpx.Response(200, text=FORM_PAGE)
+                return httpx.Response(200, text=form_response(request) if form_response else FORM_PAGE)
             if path.endswith("ttksq_cxConflictCtzt.html"):
                 return httpx.Response(200, json={"conflictNum": conflict_num, "ctxxList": [{"x": 1}] if conflict_num else []})
             if path.endswith("ttksq_cxSaveTtksj.html"):
-                return httpx.Response(200, json=save_response or {"bcName": "星期四第4-5节{5周}→星期二第6-7节{6周}", "ttkxx_id": "DETAIL-NEW"})
+                response = save_response(form) if callable(save_response) else save_response
+                return httpx.Response(200, json=response or {"bcName": "星期四第4-5节{5周}→星期二第6-7节{6周}", "ttkxx_id": "DETAIL-NEW"})
             if path.endswith("ttksq_scTtksqsj.html"):
-                return httpx.Response(200, text="1")
+                return httpx.Response(200, text=delete_response(form) if delete_response else "1")
             raise AssertionError(f"unexpected 教务 call {path}")
 
         @asynccontextmanager
@@ -271,8 +286,26 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
             transport = httpx.MockTransport(handler)
             async with httpx.AsyncClient(base_url="https://jwxt.gxufl.com", transport=transport) as client:
                 yield client, type("Profile", (), {"school_code": "gxufl"})(), {"status": "verified"}
+            if exit_error:
+                raise exit_error
 
         return patch.object(push, "open_authenticated_academic_client", opener)
+
+    def add_second_draft(self, *, jxb_id="JXB-0003"):
+        base = overview({7: [lesson("ev-b", week=7, weekday=4, sections=(4, 5), jxb=jxb_id)]})
+        draft = editor.save_draft(self.conn, 1, base,
+                                  {"event_key": "ev-b", "week": 8, "weekday": 3, "start_section": 6, "reason": "教学安排"})
+        self.conn.commit()
+        return draft
+
+    def mark_pushed(self, draft=None, *, detail_id="DETAIL-ONE", ttk_id="TTK-DRAFT"):
+        draft = draft or self.draft
+        editor.update_draft_remote_state(self.conn, draft["id"], status="pushed", remote_ttk_id=ttk_id,
+                                         remote_detail_id=detail_id, pushed=True)
+        self.conn.commit()
+        original = draft["original"]
+        return {"ttkxx_id": detail_id, "jxb_id": draft["teaching_class_id"], "xqj": original["weekday"],
+                "zcarr": str(original["week"]), "jcarr": ",".join(map(str, original["sections"]))}
 
     async def test_push_saves_draft_detail_and_records_remote_ids(self):
         with self.fake_client():
@@ -311,14 +344,20 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/tkgl/ttksq_cxSaveTtksj.html", [p for _m, p, _f in self.calls])
         self.assertTrue(editor.get_draft(self.conn, 1, self.draft["id"])["remote_conflict"]["hard"])
 
-    async def test_existing_remote_detail_is_linked_instead_of_duplicated(self):
+    async def test_original_only_remote_detail_is_neither_linked_nor_duplicated(self):
         base = overview({5: [lesson("ev-b", week=5, weekday=5, sections=(2, 3))]})
         editor.save_draft(self.conn, 1, base, {"event_key": "ev-b", "week": 9, "weekday": 1, "start_section": 4})
         self.conn.commit()
         with self.fake_client():
-            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
-        linked = next(r for r in result["results"] if r["original_label"].startswith("第5周 周五"))
-        self.assertEqual((linked["status"], linked["detail_id"]), ("pushed", "DETAIL-OLD"))
+            checked = await push.check_drafts_conflicts(1, year="2026-2027", term="1")
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1", force=True)
+        existing_check = next(r for r in checked["results"] if r["original_label"].startswith("第5周 周五"))
+        unlinked = next(r for r in result["results"] if r["original_label"].startswith("第5周 周五"))
+        self.assertEqual((existing_check["status"], unlinked["status"]), ("failed", "failed"))
+        self.assertNotIn("detail_id", unlinked)
+        self.assertIn("无法核对完整拟安排", unlinked["message"])
+        stored = editor.get_draft(self.conn, 1, unlinked["draft_id"])
+        self.assertEqual((stored["status"], stored["remote_detail_id"], stored["proposed"]["week"]), ("failed", "", 9))
         self.assertEqual(sum(1 for _m, p, _f in self.calls if p.endswith("ttksq_cxSaveTtksj.html")), 1)
 
     async def test_precheck_runs_conflict_check_only_and_records_verdict_on_draft(self):
@@ -344,13 +383,152 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((clean["ok"], clean["results"][0]["status"]), (1, "ok"))
 
     async def test_withdraw_deletes_remote_detail_and_unlocks_local_draft(self):
-        editor.update_draft_remote_state(self.conn, self.draft["id"], status="pushed", remote_ttk_id="TTK-DRAFT", remote_detail_id="DETAIL-GONE", pushed=True)
-        self.conn.commit()
-        with self.fake_client():
+        details = [self.mark_pushed()]
+
+        def delete(form):
+            self.assertEqual(form, {"ttkxx_id": "DETAIL-ONE"})
+            details.clear()
+            return "1"
+
+        with self.fake_client(form_response=lambda _request: form_page(details=details), delete_response=delete):
             result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
         self.assertEqual(result["status"], "success", result)
         self.assertIn("/tkgl/ttksq_scTtksqsj.html", [p for _m, p, _f in self.calls])
         self.assertEqual(editor.get_draft(self.conn, 1, self.draft["id"])["status"], "draft")
+
+    async def test_same_class_changes_share_one_application_and_keep_distinct_details(self):
+        second = self.add_second_draft()
+        saved = []
+
+        def save(form):
+            saved.append(form)
+            return {"ttkxx_id": f"DETAIL-{len(saved)}"}
+
+        with self.fake_client(save_response=save):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        self.assertEqual((result["status"], result["pushed"]), ("success", 2))
+        self.assertEqual([form["ttk_id"] for form in saved], ["TTK-DRAFT", "TTK-DRAFT"])
+        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 1)
+        self.assertEqual({row["teaching_class_id"] for row in result["results"]}, {"JXB-0003"})
+        drafts = [editor.get_draft(self.conn, 1, item["id"]) for item in (self.draft, second)]
+        self.assertEqual([draft["remote_detail_id"] for draft in drafts], ["DETAIL-1", "DETAIL-2"])
+        self.assertEqual({draft["remote_ttk_id"] for draft in drafts}, {"TTK-DRAFT"})
+
+    async def test_same_course_name_different_classes_never_share_an_application(self):
+        self.add_second_draft(jxb_id="JXB-OTHER")
+        saved = []
+
+        def view(request):
+            jxb_id = request.url.params["jxb_id"]
+            return form_page(jxb_id=jxb_id, ttk_id="TTK-" + jxb_id, details=[])
+
+        def save(form):
+            saved.append(form)
+            return {"ttkxx_id": "DETAIL-" + form["jxb_id"]}
+
+        with self.fake_client(form_response=view, save_response=save):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        self.assertEqual(result["pushed"], 2)
+        self.assertEqual({row["course_name"] for row in result["results"]}, {"计算机网络原理"})
+        self.assertEqual({(form["jxb_id"], form["ttk_id"]) for form in saved},
+                         {("JXB-0003", "TTK-JXB-0003"), ("JXB-OTHER", "TTK-JXB-OTHER")})
+        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 2)
+
+    async def test_withdraw_only_one_detail_of_shared_application(self):
+        second = self.add_second_draft()
+        details = [self.mark_pushed(detail_id="DETAIL-ONE"), self.mark_pushed(second, detail_id="DETAIL-TWO")]
+
+        def delete(form):
+            self.assertEqual(form["ttkxx_id"], "DETAIL-ONE")
+            details[:] = [row for row in details if row["ttkxx_id"] != form["ttkxx_id"]]
+            return "1"
+
+        with self.fake_client(form_response=lambda _request: form_page(details=details), delete_response=delete):
+            result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual([row["ttkxx_id"] for row in details], ["DETAIL-TWO"])
+        first_stored = editor.get_draft(self.conn, 1, self.draft["id"])
+        second_stored = editor.get_draft(self.conn, 1, second["id"])
+        self.assertEqual((first_stored["status"], first_stored["remote_ttk_id"], first_stored["remote_detail_id"]), ("draft", "", ""))
+        self.assertEqual((second_stored["status"], second_stored["remote_ttk_id"], second_stored["remote_detail_id"]),
+                         ("pushed", "TTK-DRAFT", "DETAIL-TWO"))
+
+    async def test_withdraw_refuses_changed_application_or_detail_identity_before_deleting(self):
+        original = self.mark_pushed()
+        cases = [form_page(ttk_id="NEW-APPLICATION", details=[]), form_page(details=[]),
+                 form_page(details=[{**original, "xqj": 1}]),
+                 form_page(details=[{**original, "zcarr": "6,7"}]),
+                 form_page(details=[{**original, "jxb_id": "OTHER-CLASS"}]),
+                 form_page(details=[original, original])]
+        for page in cases:
+            with self.subTest(page=cases.index(page)), self.fake_client(form_response=lambda _request: page):
+                result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(editor.get_draft(self.conn, 1, self.draft["id"])["status"], "pushed")
+        self.assertFalse(any(path.endswith("ttksq_scTtksqsj.html") for _m, path, _f in self.calls))
+
+    async def test_withdraw_keeps_local_lock_when_post_delete_application_changes_or_detail_remains(self):
+        original = self.mark_pushed()
+        for after in (form_page(ttk_id="NEW-APPLICATION", details=[]), form_page(details=[original])):
+            pages = iter([form_page(details=[original]), after])
+            with self.fake_client(form_response=lambda _request: next(pages)):
+                result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
+            self.assertEqual(result["status"], "failed")
+            stored = editor.get_draft(self.conn, 1, self.draft["id"])
+            self.assertEqual((stored["status"], stored["remote_ttk_id"], stored["remote_detail_id"]),
+                             ("pushed", "TTK-DRAFT", "DETAIL-ONE"))
+
+    async def test_withdraw_requires_both_saved_ids_and_teacher_ownership(self):
+        for ttk_id, detail_id in (("", "DETAIL-ONE"), ("TTK-DRAFT", "")):
+            self.mark_pushed(ttk_id=ttk_id, detail_id=detail_id)
+            with self.fake_client():
+                result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(editor.get_draft(self.conn, 1, self.draft["id"])["status"], "pushed")
+        self.mark_pushed()
+        with self.fake_client():
+            result = await push.withdraw_draft_from_academic_system(2, self.draft["id"])
+        self.assertEqual(result["status"], "not_found")
+        self.assertEqual(self.calls, [])
+
+    async def test_withdraw_refuses_a_changed_known_original_room(self):
+        original = self.mark_pushed()
+        local = {**self.draft["original"], "room_id": "EXPECTED-ROOM"}
+        self.conn.execute("UPDATE teacher_schedule_edit_drafts SET original_json=? WHERE id=?",
+                          (json.dumps(local), self.draft["id"]))
+        self.conn.commit()
+        with self.fake_client(form_response=lambda _request: form_page(details=[{**original, "cd_id": "OTHER-ROOM"}])):
+            result = await push.withdraw_draft_from_academic_system(1, self.draft["id"])
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(any(path.endswith("ttksq_scTtksqsj.html") for _m, path, _f in self.calls))
+
+    async def test_successful_detail_survives_later_batch_exception(self):
+        second = self.add_second_draft()
+        saves = []
+
+        def save(form):
+            saves.append(form)
+            if len(saves) == 2:
+                raise RuntimeError("synthetic transport interruption")
+            return {"ttkxx_id": "DETAIL-CONFIRMED"}
+
+        with self.fake_client(save_response=save), self.assertLogs(push.logger, level="ERROR"):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        self.assertEqual((result["status"], result["pushed"], result["failed"]), ("partial", 1, 1))
+        self.assertEqual(len(result["results"]), 2)
+        self.assertNotIn("未保存任何", result["message"])
+        self.assertTrue(result["batch_error"])
+        first_stored = editor.get_draft(self.conn, 1, self.draft["id"])
+        self.assertEqual((first_stored["status"], first_stored["remote_detail_id"]), ("pushed", "DETAIL-CONFIRMED"))
+        self.assertEqual(editor.get_draft(self.conn, 1, second["id"])["status"], "failed")
+
+    async def test_successful_save_is_persisted_when_client_exit_fails(self):
+        with self.fake_client(exit_error=ValueError("synthetic session close failure")):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        self.assertEqual((result["status"], result["pushed"], result["failed"]), ("partial", 1, 0))
+        stored = editor.get_draft(self.conn, 1, self.draft["id"])
+        self.assertEqual((stored["status"], stored["remote_detail_id"]), ("pushed", "DETAIL-NEW"))
+        self.assertIn("session close", result["batch_error"])
 
 
 if __name__ == "__main__":

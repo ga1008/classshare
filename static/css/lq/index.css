@@ -45,5 +45,6 @@
 @import "./components/declarative.css";
 @import "./components/domain-controls.css";
 @import "./components/motion.css";
+@import "./components/overflow-label.css";
 /* User transparency/contrast preferences have the final material authority. */
 @import "./components/material-boundaries.css";

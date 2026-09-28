@@ -110,6 +110,8 @@ quiet 更短更轻，expressive 幅度稍大，off 时长归零、形变归一�
 
 连续按压/反向操作从当前帧自然衔接，不能堆积动画队列。浮层使用 `ui_overlay_motion` 的可取消过程及有限超时；退场完成才清理，新的打开能够取消旧关闭。静止时不得有装饰性 rAF 循环、逐控件移动监听或持续布局读取。loading 的有限范围状态指示可旋转；off/reduced 下保留静态状态和文字。
 
+固定宽度按钮的长标签可显式使用 `bindOverflowLabels(owner)` 与 `data-lq-overflow-label/viewport/text` 槽位。仅精细指针 hover 或键盘 focus-visible 时测量一次，确有溢出才执行一次内部文字 transform；不得移动按钮、复制可访问文本、循环滚字或新增全局观察器。quiet/off/reduced 保持静态，触摸直接使用原点击入口查看完整内容。消费者在重绘前调用 refresh、卸载时调用 destroy，保留原生按钮和共享 Popover 的唯一事件/焦点所有权。
+
 动效接口为后续统一偏好提供扩展点。未接入账户偏好持久化的参数不能在文案中宣称已经跨设备保存。原生平台设计参考 [Apple Materials](https://developer.apple.com/design/human-interface-guidelines/materials) 与 [Motion](https://developer.apple.com/design/human-interface-guidelines/motion)，不承诺网页与原生光学渲染完全一致。
 
 ## 5. 状态和完整业务流程

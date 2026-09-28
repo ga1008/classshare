@@ -95,6 +95,8 @@
 
 ## 边界
 
+2026-09-29 调课变更清单的追加清点、共享 Table/Chip/Button/Popover 组合和运行时验收见 [专项记录](lq-schedule-changes-2026-09-29.md) 与 [最新源码摘要](lq-schedule-changes-source-summary-2026-09-29.json)。该追加记录不把其他页面的 pending/unknown 自动改为通过。
+
 - Static lexical inventory, not a JavaScript interpreter or a full JSX/Jinja execution engine. Unresolved dynamic tags/factories remain unknown.
 - Class names, inherited CSS, and data-lq attributes are provenance hints only; none imply component or business acceptance.
 - JS strings with UI markup remain candidates unless proven to be plain-text sinks; dynamically assembled markup and runtime-only API content still require DOM inventory.

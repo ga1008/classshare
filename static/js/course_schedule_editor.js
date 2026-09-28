@@ -16,6 +16,8 @@ import { compactClassroomName } from './course_schedule_presentation.js?v=schedu
 import { syncAcademicSchedule } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { getLQ } from './lq/index.js';
 import { bindDropdown } from './lq/dropdown.js';
+import { bindOverflowLabels } from './lq/overflow-label.js';
+import { createChangeComparison, createDetailButton, groupChanges, changeStatus } from './course_schedule_changes.js';
 
 const LQ = getLQ();
 const API = '/api/manage/academic/course-schedule/editor';
@@ -987,33 +989,96 @@ function init(boot) {
         return pre && pre.status ? pre : null;
     }
     const PRECHECK_LABELS = { ok: '教务预检：无冲突', already: '教务预检：已有记录', conflict: '教务预检：有冲突（可强制保存）', hard: '教务预检：不能保存', failed: '教务预检失败' };
-    const PRECHECK_TONE = { ok: 'ok', already: 'ok', conflict: 'room', hard: 'conflict', failed: 'muted' };
-    function precheckTag(draft) {
-        const pre = precheckOf(draft);
-        if (!pre || draft.status === 'pushed') return '';
-        return `<span class="cse-tag cse-tag--${PRECHECK_TONE[pre.status] || 'muted'}" data-cse-precheck-tag="${escapeHtml(pre.status)}" title="${escapeHtml(pre.message || '')}">${escapeHtml(PRECHECK_LABELS[pre.status] || '教务预检')}</span>`;
+
+    let detailLayer = null, detailRevision = 0;
+    const overflowLabels = refs.drafts ? bindOverflowLabels(refs.drafts) : null;
+    function closeDraftDetail() {
+        detailRevision++;
+        detailLayer?.destroy(); detailLayer = null;
+        overflowLabels?.refresh();
     }
+    async function showDraftDetail(trigger) {
+        const draft = draftById(trigger.dataset.cseDraftId);
+        if (!draft) return;
+        closeDraftDetail();
+        const revision = detailRevision;
+        const kind = trigger.dataset.cseDetail;
+        const body = document.createElement('div'); body.className = 'cse-detail-body';
+        const paragraph = text => { const p = document.createElement('p'); p.textContent = text; body.append(p); };
+        const title = { reason: '调整原因', proofs: '证明材料', remote: '教务状态与详情' }[kind];
+        if (!title) return;
+        if (kind === 'reason') {
+            paragraph(draft.reason || '尚未填写调整原因。请定位到课次，在属性中补充。');
+            if (draft.note) paragraph(`备注：${draft.note}`);
+        } else if (kind === 'proofs') {
+            paragraph('材料保存在本平台；提交教务申请时，请在教务系统附上所需材料。');
+            if (!draft.proofs?.length) paragraph('暂无证明材料。请定位到课次上传。');
+            for (const proof of draft.proofs || []) {
+                const a = LQ.button({ label: `${proof.filename || proof.name || '证明材料'} · ${formatBytes(proof.size)}`, variant: 'link', size: 'sm',
+                    href: `${API}/drafts/${draft.id}/proofs/${encodeURIComponent(proof.id)}`, attrs: { target: '_blank', rel: 'noopener' } });
+                body.append(a);
+            }
+        } else {
+            paragraph(changeStatus(draft)[0]);
+            if (draft.remote_ttk_id) paragraph(`教务申请：${draft.remote_ttk_id}；本条明细：${draft.remote_detail_id || '待核对'}`);
+            if (draft.status === 'pushed') paragraph('此状态表示平台曾成功保存；当前提交或审批进度请在教务系统核对。平台不会代您提交申请。');
+            if (draft.remote_label) paragraph(draft.remote_label);
+            if (draft.remote_message) paragraph(draft.remote_message);
+            const pre = precheckOf(draft);
+            if (pre?.message && pre.message !== draft.remote_message) paragraph(pre.message);
+            const conflict = document.createElement('div');
+            conflict.innerHTML = conflictDetailsHtml(draft.remote_conflict?.details?.length ? draft.remote_conflict : pre);
+            body.append(conflict);
+            if (!draft.remote_message && !pre && draft.status !== 'pushed') paragraph('尚未完成教务预检，可使用“预检冲突”检查。');
+        }
+        try {
+            const dialogs = await LQ.load('dialogs');
+            if (revision !== detailRevision || !trigger.isConnected) return;
+            trigger.setAttribute('aria-expanded', 'true');
+            const reset = () => { trigger.setAttribute('aria-expanded', 'false'); if (revision === detailRevision) detailLayer = null; };
+            detailLayer = dialogs.openDialog({ type: 'popover', title, body }, { anchor: trigger, trigger, owner: refs.drafts, onClose: reset, onDestroy: reset });
+        } catch (error) { trigger.setAttribute('aria-expanded', 'false'); toast(error.message || '详情暂时无法打开。', 'danger'); }
+    }
+    window.addEventListener('pagehide', event => { closeDraftDetail(); if (!event.persisted) overflowLabels?.destroy(); });
 
     function renderDrafts() {
         if (!refs.drafts) return;
+        closeDraftDetail();
         const list = drafts();
         const pushed = list.filter(d => d.status === 'pushed').length;
-        const rows = list.map(draft => `<div class="cse-draft" data-cse-draft="${draft.id}">
-            <div class="cse-draft__title"><span>${escapeHtml(draft.course_name)}</span><span class="cse-tag cse-tag--${escapeHtml(draft.status)}">${escapeHtml(draft.status_label)}</span>${draft.change_kind === 'room' ? '<span class="cse-tag cse-tag--muted">仅换教室</span>' : ''}${draft.room_status === 'busy' ? '<span class="cse-tag cse-tag--room">教室已占用 · 需换教室</span>' : draft.room_status === 'free' ? '<span class="cse-tag cse-tag--ok">教室空闲</span>' : ''}${precheckTag(draft)}</div>
-            <div class="cse-draft__route">${escapeHtml(draft.original_label)} → <b>${escapeHtml(draft.proposed_label)}</b>${draft.reason ? ` · 原因：${escapeHtml(draft.reason)}` : ' · <em class="cse-draft__warn">未填写原因</em>'}${(draft.proofs || []).length ? ` · 证明材料 ${draft.proofs.length} 份` : ' · <em class="cse-draft__warn">无证明材料</em>'}</div>
-            ${draft.remote_message || draft.remote_label ? `<div class="cse-draft__msg">${escapeHtml(draft.remote_label ? `教务：${draft.remote_label}` : '')}${draft.remote_label && draft.remote_message ? ' · ' : ''}${escapeHtml(draft.remote_message || '')}</div>` : ''}
-            ${precheckOf(draft) && draft.status !== 'pushed' && !draft.remote_message ? `<div class="cse-draft__msg">${escapeHtml(precheckOf(draft).message || '')}</div>` : ''}
-            ${conflictDetailsHtml(draft.remote_conflict?.details?.length ? draft.remote_conflict : precheckOf(draft))}
+        const groups = groupChanges(list);
+        const statusChip = (label, tone = 'neutral') => LQ.html.chip({ label, tone, size: 'sm' });
+        const row = draft => `<article class="cse-draft lq-surface" data-lq-component="surface" data-cse-draft="${draft.id}" data-cse-draft-id="${draft.id}">
+            <div class="cse-draft__title"><strong>${escapeHtml(draft.course_name)}</strong><span class="cse-draft__details" data-cse-details="${draft.id}"></span></div>
+            <div class="cse-draft__status">${statusChip(...changeStatus(draft))}${draft.change_kind === 'room' ? statusChip('仅换教室') : ''}${draft.room_status === 'busy' ? statusChip('教室占用', 'warning') : draft.room_status === 'free' ? statusChip('教室空闲', 'success') : ''}${precheckOf(draft) && draft.status !== 'pushed' ? statusChip(({ ok: '无冲突', already: '已有记录', conflict: '有冲突', hard: '不能保存', failed: '预检失败' })[precheckOf(draft).status] || '待核对', ({ ok: 'success', already: 'warning', conflict: 'warning', hard: 'danger', failed: 'danger' })[precheckOf(draft).status] || 'neutral') : ''}</div>
+            <div class="cse-draft__compare" data-cse-compare-slot="${draft.id}"></div>
             <div class="cse-draft__actions">
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-locate="${draft.id}">定位</button>
                 ${draft.status === 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--danger lq-btn--destructive" data-cse-withdraw="${draft.id}">从教务撤回</button>` : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--danger lq-btn--destructive" data-cse-discard="${draft.id}">撤销</button>`}
                 ${draft.status !== 'pushed' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-precheck="${draft.id}">${precheckOf(draft) ? '重新预检' : '预检冲突'}</button>` : ''}
-                ${draft.status === 'conflict' && !draft.remote_conflict?.hard ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-force="${draft.id}">冲突仍保存</button>` : ''}
+                ${draft.status === 'conflict' && !draft.remote_conflict?.hard && precheckOf(draft)?.status !== 'hard' ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-force="${draft.id}">冲突仍保存</button>` : ''}
             </div>
-        </div>`).join('');
-        const next = pushed ? `<div class="cse-drafts__next"><span>已有 ${pushed} 项保存到教务草稿。下一步：</span><a href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」 ↗</a></div>` : '';
-        refs.drafts.innerHTML = `<div class="cse-drafts__head"><h3>变更清单</h3><p>拖拽或在右侧属性中保存后，变更先记录在平台，并自动请教务预检冲突；「检测冲突并保存」把没有冲突的写入教务草稿（待提交），不会提交申请。</p></div>
+        </article>`;
+        let applicationIndex = 0;
+        const rows = groups.map((group, index) => {
+            const label = group.remoteId ? `教务申请 ${++applicationIndex} · ${group.drafts.length} 项`
+                : group.kind === 'unverified' ? '已保存 · 申请待核对' : `待保存 · ${group.drafts.length} 项`;
+            return `<section class="cse-change-group" data-cse-change-group="${escapeHtml(group.key)}" aria-label="${escapeHtml(group.drafts[0].course_name)}变更组 ${index + 1}">
+                <div class="cse-change-group__head">${statusChip(label)}<span>${escapeHtml(group.drafts[0].class_label || group.drafts[0].teaching_class_name || '')}</span>${group.drafts.length > 1 ? `<span>${group.remoteId ? '共用一份申请，各项可单独定位和撤回' : '同一教学班，保存时合并申请'}</span>` : ''}</div>${group.drafts.map(row).join('')}</section>`;
+        }).join('');
+        const applications = new Set(list.filter(d => d.status === 'pushed' && d.remote_ttk_id && d.remote_detail_id).map(d => d.remote_ttk_id)).size;
+        const next = pushed ? `<div class="cse-drafts__next"><span>${pushed} 项已保存${applications ? ` · ${applications} 份教务申请` : ''}</span><a class="lq-btn lq-btn--link lq-btn--sm" data-lq-component="button" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">前往教务核对 / 提交 ↗</a></div>` : '';
+        refs.drafts.classList.add('lq-surface'); refs.drafts.dataset.lqComponent = 'surface';
+        refs.drafts.innerHTML = `<div class="cse-drafts__head"><h3>变更清单</h3><p>上原下新，红色为变更项。保存到教务后仍需自行提交申请。</p></div>
             ${list.length ? `<div class="cse-drafts__list">${rows}</div>` : '<div class="cse-materials__empty">还没有任何调整。按住课次拖到新的节次，或单击课次在右侧设置。</div>'}${next}`;
+        for (const draft of list) {
+            refs.drafts.querySelector(`[data-cse-compare-slot="${draft.id}"]`).append(createChangeComparison(draft));
+            const details = refs.drafts.querySelector(`[data-cse-details="${draft.id}"]`);
+            details.append(createDetailButton(draft, 'reason', `原因：${draft.reason || '待填写'}`),
+                createDetailButton(draft, 'proofs', draft.proofs?.length ? `材料 ${draft.proofs.length} 份：${draft.proofs.map(p => p.filename || p.name || '证明材料').join('、')}` : '材料：待上传'),
+                createDetailButton(draft, 'remote', '教务详情'));
+        }
+        overflowLabels?.refresh();
     }
 
     /* ------------------------------------------------------------------ 课次重排预览 */
@@ -1096,10 +1161,11 @@ function init(boot) {
     }
 
     async function discardDraft(id) {
+        if (state.busy) return;
         const draft = draftById(id);
-        if (!draft) return;
+        if (!draft || draft.status === 'pushed') return;
         const ok = await LQ.confirm({ title: '撤销变更', message: `撤销「${draft.course_name}」调至 ${draft.proposed_label} 的本地变更？`, confirmLabel: '撤销', danger: true });
-        if (!ok) return;
+        if (!ok || state.busy) return;
         setBusy(true);
         try {
             const data = await api(`${API}/drafts/${id}?year=${encodeURIComponent(term().year)}&term=${encodeURIComponent(term().term)}`, { method: 'DELETE' });
@@ -1117,6 +1183,7 @@ function init(boot) {
     }
 
     async function pushDrafts({ draftIds = null, force = false } = {}) {
+        if (state.busy) return;
         const targets = draftIds ? draftIds.map(draftById).filter(Boolean) : pendingDrafts();
         if (!targets.length) { toast('没有待检测/保存的变更。'); return; }
         if (!force) { await openPushDialog(targets); return; }
@@ -1297,10 +1364,11 @@ function init(boot) {
     }
 
     async function withdrawDraft(id) {
+        if (state.busy) return;
         const draft = draftById(id);
-        if (!draft) return;
-        const ok = await LQ.confirm({ title: '从教务撤回', message: `从教务草稿中删除「${draft.course_name}」的这条调整？删除后可继续修改并再次保存。`, confirmLabel: '撤回', danger: true });
-        if (!ok) return;
+        if (!draft || draft.status !== 'pushed') return;
+        const ok = await LQ.confirm({ title: '从教务撤回', message: `从教务草稿中删除「${draft.course_name}」的这一条调整？同一申请中的其他调整会保留。撤回成功后可继续修改并再次保存；已提交的申请须先在教务系统处理。`, confirmLabel: '撤回', danger: true });
+        if (!ok || state.busy) return;
         setBusy(true);
         try {
             const data = await api(`${API}/drafts/${id}/withdraw`, { method: 'POST', body: '{}' });
@@ -1540,7 +1608,7 @@ function init(boot) {
     document.addEventListener('pointercancel', () => { press = null; endDrag(); });
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && state.drag) { endDrag(); return; }
-        if (event.key === 'Escape' && state.selectedKey && !event.defaultPrevented && !document.querySelector('.lq-dialog[open], dialog[open]')) { state.selectedKey = ''; state.form = null; renderStage(); renderDrawer(); }
+        if (event.key === 'Escape' && state.selectedKey && !event.defaultPrevented && !detailLayer && !document.querySelector('.lq-dialog[open], dialog[open], .lq-dialog-root:not([hidden])')) { state.selectedKey = ''; state.form = null; renderStage(); renderDrawer(); }
     });
     refs.drawer?.addEventListener('click', async event => {
         const close = event.target.closest('[data-cse-close]');
@@ -1593,6 +1661,9 @@ function init(boot) {
         if (draft) await uploadProofs(draft.id, [...input.files]);
     });
     refs.drafts?.addEventListener('click', async event => {
+        const detail = event.target.closest('[data-cse-detail]');
+        if (detail) { await showDraftDetail(detail); return; }
+        if (state.busy) return;
         const locate = event.target.closest('[data-cse-locate]');
         if (locate) { locateDraft(locate.dataset.cseLocate); return; }
         const discard = event.target.closest('[data-cse-discard]');
@@ -1602,7 +1673,11 @@ function init(boot) {
         const force = event.target.closest('[data-cse-force]');
         if (force) { await pushDrafts({ draftIds: [Number(force.dataset.cseForce)], force: true }); return; }
         const precheck = event.target.closest('[data-cse-precheck]');
-        if (precheck) { precheck.disabled = true; precheck.textContent = '检测中…'; await precheckDrafts([Number(precheck.dataset.csePrecheck)]); }
+        if (precheck) {
+            setBusy(true); precheck.disabled = true; precheck.textContent = '检测中…';
+            try { await precheckDrafts([Number(precheck.dataset.csePrecheck)]); }
+            finally { setBusy(false); renderDrafts(); }
+        }
     });
 
     applyPayload(boot, { keepWeek: false, keepSelection: false });

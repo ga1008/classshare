@@ -176,6 +176,36 @@ def find_existing_detail(details: list[dict[str, Any]], original: dict[str, Any]
     return None
 
 
+def _reject_unverified_existing_detail(page: dict[str, Any], draft: dict[str, Any]) -> None:
+    # The save form's tkxxList contains the original slot, not the complete
+    # proposed slot. Matching it cannot prove that our intended move was saved.
+    # The separate published snapshot can be stale, so it cannot establish that
+    # fact either. Preserve the local draft and require a remote review instead
+    # of linking an unrelated change or creating a duplicate detail.
+    if find_existing_detail(page["existing_details"], draft["original"]) is not None:
+        raise DraftPushError(
+            "教务已有该原课次的调整记录，但当前表单无法核对完整拟安排；"
+            "未自动关联或重复保存。请先在教务核对并处理已有调整，再重试。"
+        )
+
+
+def _verify_withdrawable_detail(page: dict[str, Any], draft: dict[str, Any]) -> None:
+    if page["ttk_id"] != draft["remote_ttk_id"]:
+        raise DraftPushError("教务当前草稿申请已变化，原申请可能已经提交；未撤回，请到教务核对。")
+    details = [row for row in page["existing_details"]
+               if str(row.get("ttkxx_id") or "") == draft["remote_detail_id"]]
+    if len(details) != 1:
+        raise DraftPushError("教务当前申请中未找到唯一的原草稿明细；未撤回，请到教务核对。")
+    detail, original = details[0], draft["original"]
+    # One locally saved occurrence must not delete a remote detail that was
+    # subsequently changed to cover several weeks or a different lesson.
+    if (find_existing_detail(details, original) is None
+            or _int_csv(detail.get("zcarr")) != [int(original["week"])]
+            or (detail.get("jxb_id") and str(detail["jxb_id"]) != draft["teaching_class_id"])
+            or (original.get("room_id") and str(detail.get("cd_id") or "") != original["room_id"])):
+        raise DraftPushError("教务草稿明细的原安排与本地记录不一致；未撤回，请到教务核对。")
+
+
 def build_detail_form(page: dict[str, Any], slot: dict[str, Any], draft: dict[str, Any]) -> list[tuple[str, str]]:
     """The exact field set the browser posts for 保存草稿 (``getDatas()`` map +
     the ``#ajaxForm`` inputs), as an ordered multipart list."""
@@ -258,10 +288,7 @@ async def _save_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict
     slot = find_original_slot(page["slots"], draft["original"])
     if slot is None:
         raise DraftPushError("教务正式课表中未找到该原课次（可能已被调整或本地课表过期），请先同步教务课表。")
-    existing = find_existing_detail(page["existing_details"], draft["original"])
-    if existing and existing.get("ttkxx_id"):
-        return {"status": "pushed", "ttk_id": page["ttk_id"], "detail_id": str(existing["ttkxx_id"]),
-                "label": str(existing.get("select_name") or ""), "message": "教务草稿中已存在该原课次的调整记录，已直接关联。"}
+    _reject_unverified_existing_detail(page, draft)
     fields = build_detail_form(page, slot, draft)
     check = await _request(client, "POST", CONFLICT_CHECK_PATH, label="教务冲突检测", files=_multipart(fields), headers=_headers())
     conflict = conflict_outcome(_json_or_none(check))
@@ -307,9 +334,7 @@ async def _check_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dic
     slot = find_original_slot(page["slots"], draft["original"])
     if slot is None:
         return {"status": "failed", "message": "教务正式课表中未找到该原课次（可能已被调整或本地课表过期），请先同步教务课表。"}
-    existing = find_existing_detail(page["existing_details"], draft["original"])
-    if existing and existing.get("ttkxx_id"):
-        return {"status": "already", "detail_id": str(existing["ttkxx_id"]), "message": "教务草稿中已有该原课次的调整记录；保存时将直接关联，不会重复。"}
+    _reject_unverified_existing_detail(page, draft)
     check = await _request(client, "POST", CONFLICT_CHECK_PATH, label="教务冲突检测", files=_multipart(build_detail_form(page, slot, draft)), headers=_headers())
     conflict = conflict_outcome(_json_or_none(check))
     if not conflict["conflict_num"]:
@@ -352,7 +377,7 @@ async def check_drafts_conflicts(teacher_id: int, *, year: str, term: str, draft
                     outcome = await _check_one(client, pages[jxb_id], draft)
                 except DraftPushError as exc:
                     outcome = {"status": "failed", "message": str(exc)}
-                results.append({"draft_id": draft["id"], "course_name": draft["course_name"],
+                results.append({"draft_id": draft["id"], "teaching_class_id": jxb_id, "course_name": draft["course_name"],
                                 "original_label": describe_slot(draft["original"]), "proposed_label": describe_slot(draft["proposed"]), **outcome})
     except (ValueError, httpx.HTTPError) as exc:
         message = str(exc) if isinstance(exc, ValueError) else "教务系统访问失败，暂时无法提前检测冲突。"
@@ -399,6 +424,7 @@ async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: st
     if not targets:
         return {"status": "nothing", "message": "没有待保存到教务的变更。", "results": []}
     results: list[dict[str, Any]] = []
+    batch_error = ""
     try:
         async with open_authenticated_academic_client(credential) as (client, profile, _login):
             if profile.school_code != "gxufl":
@@ -422,15 +448,24 @@ async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: st
                         })
                 except DraftPushError as exc:
                     outcome = {"status": "failed", "message": str(exc)}
-                results.append({"draft_id": draft["id"], "course_name": draft["course_name"],
+                results.append({"draft_id": draft["id"], "teaching_class_id": jxb_id, "course_name": draft["course_name"],
                                 "original_label": describe_slot(draft["original"]), "proposed_label": describe_slot(draft["proposed"]), **outcome})
     except (ValueError, httpx.HTTPError) as exc:
-        message = str(exc) if isinstance(exc, ValueError) else "教务系统访问失败，未保存任何草稿。"
-        return {"status": "failed", "message": message, "results": results}
+        batch_error = str(exc) if isinstance(exc, ValueError) else "教务系统访问中断，请核对尚未确认的保存结果。"
     except Exception:
         logger.exception("Schedule draft push failed for teacher %s", teacher_id)
-        return {"status": "failed", "message": "保存教务草稿时发生未知错误，请稍后重试。", "results": results}
+        batch_error = "保存教务草稿时发生异常，请核对尚未确认的保存结果。"
 
+    # A transport/context-manager failure can occur after earlier details were
+    # saved. Persist their confirmed IDs before reporting the batch interruption;
+    # never tell the user that nothing was saved or silently drop remaining rows.
+    completed_ids = {item["draft_id"] for item in results}
+    for draft in targets:
+        if draft["id"] not in completed_ids:
+            results.append({"draft_id": draft["id"], "teaching_class_id": draft["teaching_class_id"],
+                            "course_name": draft["course_name"], "original_label": describe_slot(draft["original"]),
+                            "proposed_label": describe_slot(draft["proposed"]), "status": "failed",
+                            "message": batch_error + " 此项尚未确认，未标记为已保存。"})
     with get_db_connection() as conn:
         for item in results:
             status = item["status"]
@@ -449,9 +484,11 @@ async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: st
         parts.append(f"{conflicts} 项存在教务冲突")
     if failed:
         parts.append(f"{failed} 项失败")
-    return {"status": "success" if pushed and not failed and not conflicts else ("partial" if pushed else "failed"),
+    if batch_error:
+        parts.append(batch_error)
+    return {"status": "success" if pushed and not failed and not conflicts and not batch_error else ("partial" if pushed else "failed"),
             "message": "，".join(parts) + "。请登录教务系统核对后点击「提交申请」。", "results": results,
-            "pushed": pushed, "conflicts": conflicts, "failed": failed}
+            "pushed": pushed, "conflicts": conflicts, "failed": failed, "batch_error": batch_error}
 
 
 async def withdraw_draft_from_academic_system(teacher_id: int, draft_id: int) -> dict[str, Any]:
@@ -462,18 +499,28 @@ async def withdraw_draft_from_academic_system(teacher_id: int, draft_id: int) ->
         draft = get_draft(conn, teacher_id, int(draft_id))
     if draft is None:
         return {"status": "not_found", "message": "草稿不存在。"}
-    if draft["status"] != "pushed" or not draft["remote_detail_id"]:
+    if draft["status"] != "pushed":
         return {"status": "nothing", "message": "该变更尚未保存到教务，无需撤回。"}
+    if not draft["remote_ttk_id"] or not draft["remote_detail_id"]:
+        return {"status": "failed", "message": "缺少原教务申请或明细标识，无法安全撤回，请到教务核对。"}
     if not credential:
         return {"status": "missing_credential", "message": "请先在教务系统对接设置中验证并保存账号。"}
     identity = identity_from_year_term(draft["year"], draft["term"])
-    xnm, xqm = identity.as_xnm_xqm() if identity else ("", "")
+    if identity is None:
+        return {"status": "failed", "message": "草稿学年学期无效，无法撤回。"}
+    xnm, xqm = identity.as_xnm_xqm()
     try:
-        async with open_authenticated_academic_client(credential) as (client, _profile, _login):
+        async with open_authenticated_academic_client(credential) as (client, profile, _login):
+            if profile.school_code != "gxufl":
+                raise DraftPushError("当前学校尚未启用调停课草稿撤回。")
             await _request(client, "GET", ENTRY_PATH, label="打开教务调停课页面", headers=_headers(html=True))
+            page = await open_form_page(client, jxb_id=draft["teaching_class_id"], xnm=xnm, xqm=xqm)
+            _verify_withdrawable_detail(page, draft)
             await _request(client, "POST", DELETE_DETAIL_PATH, label="撤回教务草稿",
                            data={"ttkxx_id": draft["remote_detail_id"]}, headers=_headers())
             page = await open_form_page(client, jxb_id=draft["teaching_class_id"], xnm=xnm, xqm=xqm)
+            if page["ttk_id"] != draft["remote_ttk_id"]:
+                raise DraftPushError("撤回后教务申请标识发生变化，未确认删除结果；本地继续保留已保存状态，请到教务核对。")
             if any(str(d.get("ttkxx_id")) == draft["remote_detail_id"] for d in page["existing_details"]):
                 raise DraftPushError("教务未删除该草稿明细，可能该申请已提交，请登录教务系统处理。")
     except (ValueError, httpx.HTTPError) as exc:

@@ -1,0 +1,41 @@
+/* Opt-in label slot: no material, duplicated text, focus or click ownership.
+   A transition runs once and holds the end until the interaction leaves.
+   CSS owns live motion preference changes, so no polling/observer is needed. */
+:root,
+[data-lq-motion="standard"],
+[data-lq-motion="expressive"] { --lq-overflow-enabled: 1; }
+[data-lq-motion="quiet"],
+[data-lq-motion="off"] { --lq-overflow-enabled: 0; }
+
+[data-lq-overflow-label] [data-lq-overflow-viewport] {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+[data-lq-overflow-label] [data-lq-overflow-text] {
+    display: inline-block;
+    width: max-content;
+    max-width: none;
+    vertical-align: top;
+    white-space: nowrap;
+    transform: none;
+    transition: none;
+}
+[data-lq-overflow-label][data-lq-overflow-active] [data-lq-overflow-text] {
+    transform: translateX(calc(var(--lq-overflow-shift, 0px) * var(--lq-overflow-enabled, 1)));
+    transition-property: transform;
+    transition-duration: calc(var(--lq-motion-control-duration, 180ms) * var(--lq-overflow-steps, 5) * var(--lq-overflow-enabled, 1));
+    transition-delay: calc(var(--lq-motion-menu-duration, 160ms) * 2 * var(--lq-overflow-enabled, 1));
+    transition-timing-function: linear;
+}
+[data-lq-overflow-label]:is(:disabled, [aria-disabled="true"], [aria-busy="true"], [data-lq-disabled="true"]) [data-lq-overflow-text] {
+    transform: none !important;
+    transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    :root, [data-lq-motion] { --lq-overflow-enabled: 0 !important; }
+    [data-lq-overflow-label] [data-lq-overflow-text] { transform: none !important; transition: none !important; }
+}

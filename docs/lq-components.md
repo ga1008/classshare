@@ -399,3 +399,28 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 
 新回归入口：`tests/e2e/components/course-schedule-stack.spec.ts`；实际方案比较、性能口径与发布结果见 [修复验收记录](lq-schedule-stack-2026-09-29.md)。
 
+### 显式溢出标签（2026-09-29）
+
+`static/js/lq/overflow-label.js` 导出 `bindOverflowLabels(root: Element)`，仅增强指定 owner 内显式声明的标签，不扫描全页。相同 owner 重复绑定返回原控制器。标签完整文本、按钮名称及 click/Popover 行为仍归消费者；不能把查看详情伪装成带 `aria-pressed` 的筛选 Chip。
+
+```html
+<button type="button" class="lq-btn lq-btn--glass lq-btn--sm"
+        data-lq-component="button" data-lq-overflow-label aria-haspopup="dialog">
+  <span class="lq-btn__label" data-lq-overflow-viewport>
+    <span data-lq-overflow-text>完整的原因或证明材料名称</span>
+  </span>
+</button>
+```
+
+```js
+import { bindOverflowLabels } from './lq/overflow-label.js';
+const labels = bindOverflowLabels(listRoot);
+labels.refresh(); // 必须在替换列表/标签内容前调用，取消旧标签并还原自定义属性
+// ……原业务控制器重绘，新增显式标签自动由同一个委托监听处理……
+labels.destroy(); // 卸载 owner；幂等，不销毁按钮、不替换内容、不改变焦点
+```
+
+领域 CSS 只给按钮设置所需固定宽度及 flex/grid 几何。共享 `overflow-label.css` 提供裁切槽；只有精细指针 hover 或键盘 focus-visible 且文本实际溢出时，内部文本进行一次有限 transform 过渡并停留在末端。RTL 向相反方向展开。退出交互、resize、窗口失焦、refresh/destroy 立即归位；disabled/loading 不滚动。触摸点击原样保留，不把滚字当作阅读完整内容的唯一入口。
+
+时长复用 `--lq-motion-control-duration`，标准速度约 50px/s、最短 900ms；开始延迟为两倍 `--lq-motion-menu-duration`。`quiet/off` 静态显示，系统 reduce 始终优先；交互中改变模式立即终止 CSS 过渡，无需监听 DOM 属性。无无限动画、常驻 will-change、rAF、timer、MutationObserver 或 ResizeObserver，也不为每个标签绑定事件。回归入口为 `tests/e2e/components/lq-overflow-label.spec.ts`。
+
