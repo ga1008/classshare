@@ -36,4 +36,13 @@
 
 ## 发布记录
 
-待完成发布后记录实际 release、资源图、运行镜像校验及 Git 推送结果。
+- 产品源码提交：`85c13209d2910d7e24d309e7604dfdbeff236cec`。发布副本 3,304 个已跟踪文件与已验收工作区逐字节一致；未提交的用户文档没有进入发布包。
+- 原生 PostgreSQL 门禁复核 71 个迁移来源文件及匹配备份通过；DryRun 通过后执行标准停写、备份、迁移、启动流程，没有跳过备份或门禁。
+- 线上 release：`20260929-075224-584b792992aa`；资源图：`af4a9f5593622061e4b0bef90bfdb7bbf6149ee59b4b4bcc7f978d8468f29b75`。
+- 必需表 177/177，索引失败与跳过步骤均为 0。主服务、AI 健康检查通过，8 个容器运行；部署日志包含 `DEPLOY_DONE`、`NO_RECENT_ERROR_LOGS`。
+- 7 个公开资源 SHA-256、运行镜像中 7 个关键源码文件逐字节匹配；两个登录入口使用同一 release 与资源图。浏览器只清 HTTP cache，保留 cookies、storage、登录态和作业草稿。线上验证不写业务库或发起真实教务申请。
+- 备份：`/tmp/lanshare-deploy-backups/db-cutover-20260929-075235.sql.gz`。`/lanshare/data` 保持受保护，沿用脚本当前默认保留策略。
+- 既有后台任务总健康项仍为 false：发布前后失败计数均 736、排队 29、运行 0、过期 0、活跃 worker 4。此告警与本次变更分开记录，没有当作新增故障，也没有把它描述为整体全绿。
+- 产品源码及本发布记录推送到 `origin/dev`；最终远端 SHA 在交付回复中报告。
+
+部署证据：`.codex-temp/schedule-changes-deploy-dryrun.log`、`schedule-changes-deploy.log`、`schedule-changes-release-parity.json`、`schedule-changes-public-postflight.json`、`schedule-changes-source-postflight.json`。
