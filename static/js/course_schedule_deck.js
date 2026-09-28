@@ -147,6 +147,8 @@ export function createScheduleDeck(container, options = {}) {
     let expandMotionGeneration = 0;
     let expandedTrigger = null;
     let renderedExpandedWeek = null;
+    let deckCards = [];
+    let renderedDeckCard = null;
     let highlightTimer = null;
     let lineFrame = null;
     let destroyed = false;
@@ -408,7 +410,10 @@ export function createScheduleDeck(container, options = {}) {
 
     function renderDeck() {
         if (!refs.stage) return;
+        if (renderedDeckCard?.contains(document.activeElement)) refs.stage.focus({ preventScroll: true });
         refs.stage.querySelectorAll('.cs-card, .cs-empty').forEach((node) => node.remove());
+        deckCards = [];
+        renderedDeckCard = null;
         const weeks = state.overview?.weeks || [];
 
         if (!weeks.length) {
@@ -431,20 +436,39 @@ export function createScheduleDeck(container, options = {}) {
         state.activeWeekIndex = Math.min(Math.max(state.activeWeekIndex, 0), weeks.length - 1);
         weeks.forEach((week, index) => {
             const card = document.createElement('div');
-            // A week is content, never a backdrop-filter carrier per card/cell.
+            // Stable glass shells retain their 3D geometry. Only the active
+            // shell owns a grid and the shared raised material boundary.
             card.className = 'cs-card lq-surface';
             card.dataset.lqComponent = 'surface';
             card.dataset.weekIndex = String(index);
-            card.innerHTML = `
-                <div class="cs-card__bar">
-                    <strong>${escapeHtml(week.label)}</strong>
-                    <span>${week.date_range_label ? `${escapeHtml(week.date_range_label)} · ` : ''}${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
-                    <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
-                </div>
-                <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}${options.compactSummary ? renderCompactWeek(week) : ''}</div>`;
+            deckCards.push(card);
             refs.stage.appendChild(card);
         });
         layoutDeck();
+    }
+
+    function renderActiveDeckCard() {
+        const card = deckCards[state.activeWeekIndex];
+        if (renderedDeckCard === card) return;
+        // Do not leave the departing week's text behind the incoming glass.
+        // Focus remains usable if navigation came from a miniature course.
+        if (renderedDeckCard) {
+            if (renderedDeckCard.contains(document.activeElement)) refs.stage.focus({ preventScroll: true });
+            renderedDeckCard.replaceChildren();
+        }
+        renderedDeckCard = card || null;
+        if (!card) return;
+        const week = state.overview.weeks[state.activeWeekIndex];
+        // Synchronous by design: focusLesson and every navigation input can
+        // address the incoming course immediately, without a fetch/timer race.
+        card.innerHTML = `<div class="cs-card__content">
+            <div class="cs-card__bar">
+                <strong>${escapeHtml(week.label)}</strong>
+                <span>${week.date_range_label ? `${escapeHtml(week.date_range_label)} · ` : ''}${week.lesson_count} 节安排 · ${week.total_hours} 课时</span>
+                <span class="cs-card__badge ${week.is_current ? 'is-current' : ''}">${week.is_current ? '本周' : escapeHtml(week.label)}</span>
+            </div>
+            <div class="cs-card__body">${renderWeekGrid(week)}${weekEmptyMarkHtml(week)}${options.compactSummary ? renderCompactWeek(week) : ''}</div>
+        </div>`;
     }
 
     function renderCompactWeek(week) {
@@ -453,11 +477,14 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function layoutDeck() {
-        const cards = refs.stage ? refs.stage.querySelectorAll('.cs-card') : [];
-        cards.forEach((card) => {
+        renderActiveDeckCard();
+        deckCards.forEach((card) => {
             const index = Number(card.dataset.weekIndex);
             const offset = index - state.activeWeekIndex;
             card.classList.toggle('is-active', offset === 0);
+            card.setAttribute('aria-hidden', String(offset !== 0));
+            if (offset === 0) card.dataset.lqMaterial = 'raised';
+            else delete card.dataset.lqMaterial;
             if (offset < -1 || offset > 5) {
                 card.hidden = true;
                 return;
@@ -511,6 +538,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function goToWeek(index) {
+        if (destroyed) return;
         const weeks = state.overview?.weeks || [];
         if (!weeks.length) return;
         const next = Math.min(Math.max(index, 0), weeks.length - 1);
@@ -967,6 +995,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function onStageKeydown(event) {
+        if (event.defaultPrevented || event.target.closest('a, button, input, select, textarea, [contenteditable="true"]')) return;
         if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
             event.preventDefault();
             goToWeek(state.activeWeekIndex + 1);
@@ -974,6 +1003,9 @@ export function createScheduleDeck(container, options = {}) {
             event.preventDefault();
             goToWeek(state.activeWeekIndex - 1);
         } else if (event.key === 'Enter') {
+            // Prevent the key's default click from activating the close
+            // button that receives focus when the expanded view opens.
+            event.preventDefault();
             openExpanded();
         }
     }
@@ -1190,6 +1222,7 @@ export function createScheduleDeck(container, options = {}) {
         showAdjustment(eventKey) { if (!state.expanded) openExpanded(); return activateChange(eventKey); },
         openExpanded,
         setOverview(overview, { keepWeek = false } = {}) {
+            if (destroyed) return;
             const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
             state.overview = overview || null;
             if (state.overview) {
@@ -1246,6 +1279,8 @@ export function createScheduleDeck(container, options = {}) {
             expand.remove();
             container.classList.remove('cs-deck');
             container.innerHTML = '';
+            deckCards = [];
+            renderedDeckCard = null;
         },
     };
 }

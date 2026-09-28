@@ -391,3 +391,11 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 2. **宿主数不得随数据增长。** `.lq-surface` 的模糊改为按需开启（`.lq-surface--boundary` 或页面层声明），因为每个 `lq_card` 都带 `.lq-surface`：一面四十张卡片的墙就是四十个合成层。承载面板做边界，卡片只保留半透明与高光边。
 3. **底色与文字色必须成对翻转。** `--gray-*` 此前是写死十六进制、无暗色分支，而压在其上的文字色会翻转，于是出现深字压深底（实测 1.02）。已补暗色映射到既有语义令牌。
 
+### 3D 周课表的按需内容（2026-09-29）
+
+`createScheduleDeck` 继续使用原有 `setOverview/goToWeek/focusLesson/openExpanded/destroy` 接口，无新增请求或消费者参数。各周 `.cs-card` Surface 外壳保持原节点和几何，只有 `.is-active` 拥有 `.cs-card__content`（表头、网格、课程及可选 compactSummary）。切周同步销毁旧缩略内容并构造当前周内容；不会缓存所有周的离屏 DOM。展开视图仍由原控制器独立管理。
+
+当前周声明共享 `raised`，使用 regular 模糊令牌；其余外壳无采样。真实嵌套 Surface 按共享规则禁用内层模糊，空壳方案仍应可读。堆栈位移、淡出、内容渐显分别消费 `--lq-motion-presence-duration/control-duration/menu-duration`，标准为 220/180/160ms，支持局部模式及系统减少动态效果。旧浏览器不支持 `@starting-style` 时立即显示内容。此变更不代表既有展开与课程悬停动画已全部改用这些参数。
+
+新回归入口：`tests/e2e/components/course-schedule-stack.spec.ts`；实际方案比较、性能口径与发布结果见 [修复验收记录](lq-schedule-stack-2026-09-29.md)。
+

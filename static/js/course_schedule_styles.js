@@ -81,14 +81,22 @@ export const DECK_CSS = `
     background-image: var(--ls-glass-sheen);
     border: 1px solid hsl(var(--ls-glass-line));
     box-shadow: var(--ls-glass-shadow);
-    transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.4s ease;
+    transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, cubic-bezier(.22, 1, .36, 1)), opacity var(--lq-motion-control-duration, 180ms) ease;
     transform-style: preserve-3d;
     overflow: hidden;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    will-change: transform, opacity;
 }
 .cs-card[hidden] { display: none; }
+.cs-card__content {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    opacity: 1;
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, ease-out);
+}
+/* Older browsers show new content immediately; no extra frame or timer is
+   required. Supporting browsers reveal it during the same shared motion. */
+@starting-style { .cs-card__content { opacity: 0; } }
 .cs-card__bar {
     display: flex;
     align-items: center;
@@ -113,6 +121,9 @@ export const DECK_CSS = `
 .cs-card__body { padding: 10px 12px 12px; min-height: 0; position: relative; }
 .cs-card.is-active {
     cursor: zoom-in;
+    --lq-material-blur: var(--ls-blur-regular);
+    /* Standalone/token-only hosts use the same regular sampling token. The
+       application material API owns its raised boundary and opt-outs. */
     backdrop-filter: var(--cs-live-blur); -webkit-backdrop-filter: var(--cs-live-blur);
 }
 .cs-card.is-active:hover { box-shadow: var(--ls-glass-shadow-strong); }
@@ -414,7 +425,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-change-line-origin { fill: hsl(var(--ls-surface-1)); stroke-width: 1.7; }
 .cs-change-line-fallback { position: absolute; top: 3px; left: 100px; right: 48px; font-size: 11px; color: hsl(var(--ls-ink-2)); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
-    .cs-card, .cs-expand, .cs-expand__card { transition: none; will-change: auto; }
+    .cs-card, .cs-card__content, .cs-expand, .cs-expand__card { transition: none; will-change: auto; }
     .cs-expand__card { transform: none; isolation: isolate; }
 }
 
