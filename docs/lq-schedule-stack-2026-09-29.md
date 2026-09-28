@@ -48,4 +48,12 @@ Chrome、本地合成 32 周 × 每周 25 节课、CPU 4 倍降速。每个场�
 
 ## 发布记录
 
-本次是已授权上线的液态玻璃改动的回归修复。继续使用原生 PostgreSQL 演练、备份摘要、停写备份、构建与资源一致性门禁；保护运行数据及用户未跟踪文档。实际 release、线上资源核验及 Git 远端确认在执行后补录，不能从本地测试推断已上线。
+本次是已授权上线的液态玻璃改动的回归修复，发布产品源码为 `96d1a5c8ff3cf940e66add24fccb6cd3444ed166`，后续验收文档提交不作为已部署源码。复用干净 managed release worktree，3,297 个 Git 跟踪文件与测试目录逐文件字节相同；未复制用户未跟踪文档。原有小程序和每日文案更新已在本轮基线 `0fef34af` 中，保留其最新代码。
+
+2026-09-29 00:44 dry-run 通过，3,319 个发布文件、35.54MB；原生 PostgreSQL 演练来源和匹配 dump 摘要门禁通过。00:48 执行停写备份及部署，release **`20260929-004805-73a353ad7c3d`**；迁移必需表 **177/177**，失败索引 0、跳过 0，主服务和 AI 服务健康，`NO_RECENT_ERROR_LOGS`、`DEPLOY_DONE`。数据目录保持受保护。
+
+公网 manifest 与最终 `e83171d7...` 图一致；6 项正式公网资产与 6 项运行 app 镜像源码抽查全部字节匹配（包括 deck/styles 和三个消费者）。两个匿名登录入口版本头正确，失效范围仅 `Clear-Site-Data: "cache"`，未清 cookie/用户存储。后台 `background_tasks.ok=false` 发布前已存在，前后均为累计失败 736、排队 29、运行 0、陈旧 0、活跃 worker 4，未因 UI 修复将历史任务重置或记为已修复。没有在生产账号中执行业务提交。
+
+证据均在 `.codex-temp/`：`lq-deck-stack-release-parity.json`、`lq-deck-stack-deploy-dryrun.log`、`lq-deck-stack-deploy.log`、`lq-deck-stack-health-before.json`、`lq-deck-stack-postflight.json`、`lq-deck-stack-source-postflight.json`。远端回滚镜像组为 `20260929-004815`，app 镜像 `lanshare-app:rollback-20260929-004815-app`，代码备份 `/tmp/lanshare-deploy-backups/code-20260929-004815.tgz`，停写备份 `/tmp/lanshare-deploy-backups/db-cutover-20260929-004815.sql.gz`。沿用现有保留 2 组策略，回滚须按既有流程保护运行数据。
+
+Git 推送目标 `origin/dev`，产品提交和本验收补录分别保留；最终 SHA 与远端 `ls-remote` 一致性回执见 `.codex-temp/lq-deck-stack-git-final.json`。
