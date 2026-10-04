@@ -2371,6 +2371,27 @@
       "tone": "dark"
     },
     {
+      "file": "xueye-wetland-observation-20261005-130f2df8.webp",
+      "categories": [
+        "学业规则",
+        "论文写作",
+        "教学相长",
+        "实习"
+      ],
+      "tags": [
+        "学习",
+        "实践",
+        "项目",
+        "设计",
+        "协作",
+        "作品",
+        "课程",
+        "验证"
+      ],
+      "luma": 149,
+      "tone": "light"
+    },
+    {
       "file": "zhichang-airport-sunset05-a2a69345.webp",
       "categories": [
         "职业路径",
@@ -2462,6 +2483,28 @@
         "规划"
       ],
       "luma": 70,
+      "tone": "dark"
+    },
+    {
+      "file": "zhichang-evening-material-gallery-20261005-e58f4d30.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "职称科研",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "演示",
+        "面试",
+        "合作",
+        "反馈",
+        "交流",
+        "思考",
+        "规划"
+      ],
+      "luma": 76,
       "tone": "dark"
     },
     {
