@@ -301,7 +301,7 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 - 键盘、焦点、层级协调**全部复用** `menus.js` 的 `bindMenu`，组件自身零 `keydown` 监听。
 - 悬停开合只在 `(hover: hover) and (pointer: fine)` 生效；从触发器移动到面板的途中不关闭。
 - **悬停打开不抢焦点**：用 `layer.js` 的 `onInitialFocus` / `onReturnFocus` 两个可取消钩子，在悬停路径上阻止「聚焦首项」与「关闭时还焦点」，否则鼠标划过顶栏会夺走用户正在编辑的输入框焦点。点击与键盘路径行为不变。
-- 面板**不加** `backdrop-filter`：宿主壳已是模糊宿主。
+- 面板由 `LQ.layer` 移到 portal 后，是独立的 raised 采样边界；模糊由共享材质模块决定。不能沿用“顶栏已模糊，所以菜单禁用模糊”的假设；菜单不再是顶栏材质的子层。具体合同见下文 2026-10-08 增补。
 
 已知项：裸组件夹具页打开菜单时，axe 的 `region`（moderate，最佳实践）会命中 `#lq-layers`。根因是 `layer.js` 把传送宿主挂在 `<body>` 直下，页面地标是它的兄弟而非祖先，**真实页面同样存在**。用例把它钉死为「恰好一条」，不是过滤。
 
@@ -423,4 +423,26 @@ labels.destroy(); // 卸载 owner；幂等，不销毁按钮、不替换内容�
 领域 CSS 只给按钮设置所需固定宽度及 flex/grid 几何。共享 `overflow-label.css` 提供裁切槽；只有精细指针 hover 或键盘 focus-visible 且文本实际溢出时，内部文本进行一次有限 transform 过渡并停留在末端。RTL 向相反方向展开。退出交互、resize、窗口失焦、refresh/destroy 立即归位；disabled/loading 不滚动。触摸点击原样保留，不把滚字当作阅读完整内容的唯一入口。
 
 时长复用 `--lq-motion-control-duration`，标准速度约 50px/s、最短 900ms；开始延迟为两倍 `--lq-motion-menu-duration`。`quiet/off` 静态显示，系统 reduce 始终优先；交互中改变模式立即终止 CSS 过渡，无需监听 DOM 属性。无无限动画、常驻 will-change、rAF、timer、MutationObserver 或 ResizeObserver，也不为每个标签绑定事件。回归入口为 `tests/e2e/components/lq-overflow-label.spec.ts`。
+
+### Surface 几何、Dialog 边界与 NavMenu 作者槽位（2026-10-08）
+
+本轮来源、消费者、未决项与浏览器证据统一登记在 [界面组件修复记录](lq-interface-modules-2026-10-08.md)。
+
+Surface 的材质与内容内边距分开声明。`.lq-surface` 或 `.lq-card` 可用 `data-lq-padding="none|sm|md|lg"` 选择共享几何：none 为 0，sm 为 `--ls-s-3`（12px），md 为 `--ls-s-4`（16px），lg 为 `clamp(--ls-s-4,3vw,--ls-s-6)`（16–24px）。未声明则保持原有作者槽位布局，不能在所有 Surface 上强行增加 padding；带表格、画布、边到边列表的容器可显式使用 none。几何配方唯一位于 `static/css/lq/components/content.css`，不拥有业务事件、颜色或模糊。
+
+```html
+<section data-lq-component="surface" data-lq-padding="md" class="lq-surface">
+  <!-- 保留已有业务内容、id、表单与事件 -->
+</section>
+```
+
+浮窗采用 `lq-dialog-root`、`lq-scrim`、`lq-dialog__surface`、`lq-dialog__head/body/foot`，外壳显式 raised，内部 Surface 只提供填充。共享 raised 边界负责实时采样；scrim 负责暗化及背景点击，不能再同时模糊整个视口。`getLayerSystem(document)` 独占 inert、锁滚动、Tab/Escape、焦点归还、快速反向及可取消进出场。课堂课程资料已移出页面 Surface/顶栏祖先，在共享 portal 注册；`popover-open` 仅保留为兼容状态，原 280ms 计时器、私有焦点陷阱与 body 锁已移除。
+
+Jinja `lq_nav_menu` 与 `lq_menu` 支持 `{% call(item) ... %}` 作者槽位。条目参数仍由原 props 校验，外层真实链接/按钮、disabled、danger、`data-lq-menu-item` 和领域 data 钩子仍由共享宏生成；作者只提供图标、主文案和次级说明。复合条目复用 `.lq-menu__lead`、`.lq-menu__copy` 与 `.lq-menu__heading`，不把整个菜单条目再包成 Button 胶囊。
+
+主/次级文案均继承当前组件状态的成对前景。菜单作者槽中的 small 在 focus 主色下继承 on-primary；复合课次按钮把课序和标题声明为 `lq-btn__label`，由共享声明式配方消费 `--lq-control-color`，领域不再以固定深色覆盖按钮选中态。
+
+已有业务监听器的菜单可显式选择 `data-lq-menu-native-actions`。共享 Menu 捕获动作意图，等待关闭成功后只 replay 一次原条目的 click；关闭否决时不执行，不能再同时调用同一业务的 `onAction`。真实链接及修饰键导航保留。NavMenu 继续只在精细指针悬停打开，移入面板不抢焦点；触摸点击、键盘方向键/Escape/Tab 共用同一个 Menu/LQ.layer owner。
+
+`resolveMenuActionTrigger(node)` 为已关闭菜单中的后续 Popover 提供稳定锚点：若 node 属于被 `bindMenu` 管理且已关闭的菜单，返回该菜单触发按钮；否则原样返回。说明内容仍从原 menuitem 读取，几何/焦点使用稳定锚点，避免对隐藏条目测量。NavMenu 的 `align` 参数真实传入 bottom-start/end 定位；同层菜单互斥，关闭过程不能从已获焦点的另一个控件夺走焦点。
 

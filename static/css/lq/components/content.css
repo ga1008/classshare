@@ -1,4 +1,16 @@
 /* Presentation only: no request controller, inherited glass or self-built blur. */
+/* Opt-in Surface geometry. A material declaration alone deliberately cannot
+   guess whether its consumer is a padded section or an edge-to-edge table.
+   All renderers/adapters use the same density names and spacing tokens. */
+:is(.lq-surface, .lq-card)[data-lq-padding="none"] { --lq-content-inset: 0px; }
+:is(.lq-surface, .lq-card)[data-lq-padding="sm"] { --lq-content-inset: var(--ls-s-3); }
+:is(.lq-surface, .lq-card)[data-lq-padding="md"] { --lq-content-inset: var(--ls-s-4); }
+:is(.lq-surface, .lq-card)[data-lq-padding="lg"] { --lq-content-inset: clamp(var(--ls-s-4), 3vw, var(--ls-s-6)); }
+:root :is(.lq-surface, .lq-card):is([data-lq-padding="none"], [data-lq-padding="sm"], [data-lq-padding="md"], [data-lq-padding="lg"]) {
+    box-sizing: border-box;
+    min-width: 0;
+    padding: var(--lq-content-inset);
+}
 .lq-card, .lq-list, .lq-empty, .lq-page-head, .lq-filter-bar, .lq-prose, .lq-bubble { box-sizing: border-box; min-width: 0; max-width: 100%; color: hsl(var(--ls-ink)); font-family: var(--ls-font-sans); }
 .lq-card { padding: var(--ls-s-4); border-radius: var(--ls-r-lg); box-shadow: var(--ls-shadow-1); transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)), box-shadow var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)); }
 .lq-card__head, .lq-page-head__title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ls-s-3); }

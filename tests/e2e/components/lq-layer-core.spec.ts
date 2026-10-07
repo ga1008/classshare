@@ -262,9 +262,9 @@ test(`native exit preserves explicit return-focus ownership for ${mode}`, async 
     document.removeEventListener('focusin', observed);
     return { hooks, changes, focus: document.activeElement?.id || 'body', lock: document.body.style.overflow,
       inert: (document.querySelector('#background') as HTMLElement).inert };
-  }, mode)).toEqual({ hooks: ['outside', 'false', 'destroy'].includes(mode) ? [] : ['native-return-first'],
-    changes: mode === 'normal' ? ['before'] : mode === 'custom' ? ['after'] : [],
-    focus: mode === 'normal' ? 'before' : mode === 'custom' ? 'after' : 'native-return-first', lock: '', inert: false });
+  }, mode)).toEqual({ hooks: ['false', 'destroy'].includes(mode) ? [] : ['native-return-first'],
+    changes: ['normal', 'outside'].includes(mode) ? ['before'] : mode === 'custom' ? ['after'] : [],
+    focus: ['normal', 'outside'].includes(mode) ? 'before' : mode === 'custom' ? 'after' : 'native-return-first', lock: '', inert: false });
 });
 }
 
@@ -401,6 +401,16 @@ test('outside click requires both start and end outside; preserves clicked focus
   await page.locator('#after').click();
   await expect(page.locator('#a')).toBeHidden();
   await expect(page.locator('#after')).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+});
+
+test('modal scrim dismissal returns focus after releasing the inert page', async ({ page }) => {
+  await page.locator('#before').focus();
+  await page.evaluate(() => (window as any).openLayer('a', { trigger: document.querySelector('#before') }));
+  await expect(page.locator('#a-first')).toBeFocused();
+  await page.locator('#a').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('#a')).toBeHidden();
+  await expect(page.locator('#before')).toBeFocused();
   expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
 });
 

@@ -9,6 +9,9 @@
 <button class="{{ t.classes|forceescape }}"{% for key, value in t.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
 {%- if t.icon %}<span class="lq-btn__icon" aria-hidden="true">{{ lq_icon(t.icon) }}</span>{% endif -%}
 <span class="lq-btn__label">{{ t.label|forceescape }}</span><span class="lq-nav-menu__caret" aria-hidden="true">{{ lq_icon(p.caret) }}</span></button>
-{{- lq_menu(p.id, p.label, items) -}}
+{%- if caller is defined -%}
+{%- set item_slot = caller -%}
+{% call(item) lq_menu(p.id, p.label, items) %}{{ item_slot(item) }}{% endcall %}
+{%- else -%}{{- lq_menu(p.id, p.label, items) -}}{%- endif -%}
 </div>
 {%- endmacro %}

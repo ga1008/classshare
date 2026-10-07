@@ -1,6 +1,8 @@
 import { apiFetch } from './api.js';
+import { createMessageBellTargets } from './message_center_bell_dom.js';
 
 const bellShells = Array.from(document.querySelectorAll('[data-message-center-bell-shell]'));
+const getBellNodes = createMessageBellTargets();
 const lqToastShells = bellShells.filter((shell) => shell.dataset.lqToast === 'true');
 // Lazily loaded only when at least one bell shell opted into LQ.toast via
 // data-lq-toast="true" (set by templates/partials/message_center_bell.html
@@ -43,9 +45,7 @@ function updateBell(summary) {
     const captionText = unreadTotal > 0 ? `\u672a\u8bfb ${countText} \u6761` : '\u901a\u77e5\u4e0e\u79c1\u4fe1';
 
     activeBellShells.forEach((shell) => {
-        const bellNode = shell.querySelector('[data-message-center-bell]');
-        const countNode = shell.querySelector('[data-message-center-bell-count]');
-        const captionNode = shell.querySelector('[data-message-center-bell-caption]');
+        const { bell: bellNode, count: countNode, caption: captionNode } = getBellNodes(shell);
 
         bellNode?.classList.toggle('is-unread', unreadTotal > 0);
         if (bellNode) {
@@ -252,7 +252,7 @@ async function refreshBlogTopbar() {
 
 if (bellShells.length > 0) {
     bellShells.forEach((shell) => {
-        shell.querySelector('[data-message-center-bell]')?.addEventListener('click', () => hideBellToast(true));
+        getBellNodes(shell).bell?.addEventListener('click', () => hideBellToast(true));
     });
 
     refreshBell({ allowPopup: false });

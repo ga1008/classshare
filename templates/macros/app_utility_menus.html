@@ -1,0 +1,37 @@
+{% from 'macros/lq/nav-menu.html' import lq_nav_menu %}
+
+{% macro app_learning_menu() %}
+{% set items = [
+    {'id': 'path', 'label': '学习路径', 'href': '/learning-path', 'icon': 'book-open'},
+    {'id': 'wrong', 'label': '错题本', 'href': '/wrong-book', 'icon': 'pencil'},
+    {'id': 'review', 'label': '反馈复盘', 'href': '/feedback-review', 'icon': 'file-text'}
+] %}
+{% set descriptions = {'path': '个性推进建议', 'wrong': '考试失分与薄弱点', 'review': '批改反馈与再练'} %}
+<div class="app-topbar-menu" data-lq-utility-menu data-lq-menu-native-actions>
+{% call(item) lq_nav_menu('app-learning-menu', '学习', items, icon='book-open', size='sm', align='end') %}
+<span class="lq-menu__copy"><strong>{{ item.label }}</strong><small>{{ descriptions[item.id] }}</small></span>
+{% endcall %}
+</div>
+{% endmacro %}
+
+{% macro app_personal_menu(user_info) %}
+{% set items = [
+    {'id': 'feedback', 'label': '问题反馈', 'icon': 'info', 'attrs': {'data-open-feedback': ''}},
+    {'id': 'profile', 'label': '个人中心', 'href': '/profile'}
+] %}
+{% if user_info.role == 'student' %}
+{% set items = items + [
+    {'id': 'career', 'label': '职业路径', 'href': '/career-path', 'icon': 'book-open'},
+    {'id': 'resume', 'label': '个人简历', 'href': '/resume', 'icon': 'file-text'},
+    {'id': 'security', 'label': '账号安全', 'icon': 'settings', 'attrs': {'data-open-student-security': ''}}
+] %}
+{% endif %}
+{% set items = items + [{'id': 'logout', 'label': '退出登录', 'href': '/logout', 'icon': 'arrow-right', 'danger': true}] %}
+{% set descriptions = {'feedback': '提交建议或故障', 'profile': '资料、通知与设置', 'career': '推荐方向与准备清单', 'resume': '资料优化与简历生成', 'security': '修改登录密码', 'logout': '安全离开'} %}
+<div class="app-topbar-menu" data-lq-utility-menu data-lq-menu-native-actions>
+{% call(item) lq_nav_menu('app-personal-menu', '我的', items, icon='user', size='sm', align='end') %}
+{% if item.id == 'profile' %}<span class="lq-menu__lead app-topbar-profile__avatar" aria-hidden="true"><img src="/api/profile/avatar" alt="" loading="lazy"></span>{% endif %}
+<span class="lq-menu__copy"><strong>{{ item.label }}</strong><small>{{ descriptions[item.id] }}</small></span>
+{% endcall %}
+</div>
+{% endmacro %}

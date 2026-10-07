@@ -1,0 +1,9 @@
+{% from 'macros/lq/nav-menu.html' import lq_nav_menu %}
+{% set schedule_items = [{'id': 'subscribe', 'label': '订阅手机日历', 'icon': 'calendar', 'attrs': {'data-agenda-calendar-feed': ''}}] %}
+{% if user_info.role == 'teacher' %}
+{% set schedule_items = schedule_items + [{'id': 'sync', 'label': '同步教务提醒', 'icon': 'refresh-cw', 'attrs': {'data-agenda-sync': '', 'data-sync-endpoint': '/api/manage/system/academic-reminders/sync-current'}}] %}
+{% endif %}
+{% set schedule_items = schedule_items + [{'id': 'explain', 'label': '日程来源说明', 'icon': 'info', 'attrs': {'data-explain': '', 'data-explain-toggle': '', 'data-explain-title': '日程来源', 'data-explain-text': '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。'}}] %}
+<div data-lq-menu-native-actions>
+{{ lq_nav_menu('dashboard-schedule-tools', '日程工具', schedule_items, icon='calendar', size='sm', align='end') }}
+</div>

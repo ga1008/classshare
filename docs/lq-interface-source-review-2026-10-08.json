@@ -1,0 +1,128 @@
+{
+  "reviewedAt": "2026-10-08",
+  "scope": "Complete shared template and current diff review. Presentation ownership changed intentionally; no migration acceptance status changed.",
+  "sources": [
+    {
+      "path": "templates/base_navbar.html",
+      "sha256": "01402a291efc01df62b0eb7d711fa23d2492b2a00319eb8138f07fe4d8e3b8b0",
+      "previousReviewedSha256": [
+        "bad2ae411067d98a90b945e7486175ee9dd07292fa57c5aafc3be3926d15017c"
+      ],
+      "review": "Reviewed the complete three shell branches (navbar family, report-card pilot, fallback), role navigation, student security/feedback/onboarding mounts, main landmarks, dock and script ownership. The removed inline details controller duplicated the shared NavMenu owner now rendered by app utility macros. No auth, URL, form or business data branch changed.",
+      "onlyClassAndLqAttributesChanged": false,
+      "businessBranchesRetained": true
+    },
+    {
+      "path": "templates/dashboard.html",
+      "sha256": "271d1d17bbefec8b254267e323924493341919e4d256516bdc18b9822f82ff8d",
+      "previousReviewedSha256": [
+        "cb75621532d79343803d366481c44036a2fb39e6ca5b63e2cce4f3e2c2000010",
+        "11a375c2f422b4bd52e582984c86b0ccd88eb57c1f35d68b4c858605d7dd41f5"
+      ],
+      "review": "Reviewed both dashboard family branches, student schedule, focus items/manual todo metadata, teacher filters/form fields, course links, quick actions, evaluation panel and calendar storage. Only the two schedule-tools blocks are replaced by the same shared partial. The role-gated sync endpoint and all action data hooks are preserved; the student schedule retains its second calendar opener. Final screenshot review exposed fallback outer course/domain/tool material without inset. These roots now explicitly consume Surface, with md only where there is no responsive Collapsible inside; existing family-enabled desktop/mobile inset remains unchanged.",
+      "onlyClassAndLqAttributesChanged": false,
+      "businessBranchesRetained": true
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "sha256": "9f24e0b6b1bb1dcc002e262efcce40c744c2b01eeb84f09e0275ab2f7af95b5b",
+      "previousReviewedSha256": [
+        "2806cf50148ef9cf1556cf6b7319fb561850c8f9b72c517a82252ff8236372fd",
+        "84e1631274e1c950e55d3b4c8dd0fd1c89e7458c33445173717cb070a6ce3d52",
+        "c07c835e0ddf94fe764815400447e69eab0687714e62f8931225d9fb797ef961"
+      ],
+      "review": "Reviewed manage shell/header, todo permission flag, focus/inbox metadata, search/filter native form, class/offering links, evaluation synchronization, domain navigation, calendar storage and evaluation modal. Only the two schedule-tools blocks move into the shared partial; teacher-only sync, calendar subscription and explanation hooks remain. Final live audit also identified domain articles without a shared Surface. They now explicitly consume the shared content material and md inset in both family states; article links, explanation hooks and actions remain unchanged. Final screenshot review exposed fallback outer course/domain/tool material without inset. These roots now explicitly consume Surface, with md only where there is no responsive Collapsible inside; existing family-enabled desktop/mobile inset remains unchanged.",
+      "onlyClassAndLqAttributesChanged": false,
+      "businessBranchesRetained": true
+    },
+    {
+      "path": "templates/report_card.html",
+      "sha256": "683cf566a7cfd3e0703cfd14183725830bf5e16f7260cb0c14ac22e6dde60d03",
+      "previousReviewedSha256": [
+        "07da51e2dd1b563a669dae9207cc0e926e359c609a814d70def1eca6964f21d4"
+      ],
+      "review": "Reviewed full template, fallback and pilot branches, published grade visibility, zero/pending/returned/group/regrading states, assessment-kind and class-offering URL preservation, record links, empty state, personal trials, escaped chart JSON and exclusive chart owners. Four filter links and the empty-state home CTA now use the existing shared Button recipe in both feature states. No projection, grading, permission, filter, URL, JSON or chart lifecycle change.",
+      "onlyClassAndLqAttributesChanged": true,
+      "businessBranchesRetained": true
+    }
+  ],
+  "dependentSources": [
+    "templates/partials/dashboard_schedule_tools.html",
+    "templates/macros/app_utility_menus.html",
+    "templates/partials/app_topbar_utility_actions.html",
+    "static/js/dashboard.js",
+    "static/js/lq/nav-menu.js",
+    "static/js/lq/menus.js",
+    "templates/partials/semester_calendar_panel.html",
+    "templates/partials/profile/settings.html",
+    "templates/partials/profile/security.html",
+    "templates/partials/profile/email.html",
+    "templates/partials/profile/messages.html",
+    "static/css/lq/pages/calendar.css",
+    "static/css/lq/pages/profile.css",
+    "static/css/lq/pages/dashboard.css",
+    "frontend/src/islands/message-center-sync.tsx",
+    "static/js/message_center_bell_dom.js"
+  ],
+  "contractChecks": [
+    "Both dashboard family states render exactly one schedule-tools menu.",
+    "Student and teacher SSR preserve separate role-gated sync visibility.",
+    "Subscribe remains button/menuitem with data-agenda-calendar-feed; teacher sync endpoint is unchanged.",
+    "Exactly one calendar opener in the page header; students retain another inside their course schedule.",
+    "Student/teacher global utility menus preserve feedback/profile/security URLs and no private details controller is emitted.",
+    "Main landmarks, islands, original form id/name/type/action, links, escaping, disabled states and report-card projection remain covered by existing SSR gates.",
+    "33 profile field opening tags were compared with the prior source: all attributes except class/data-lq-component are identical, including native validation, readonly, id, name and autocomplete.",
+    "Calendar keeps its feature flag, native value owner, hidden add-todo and compact branches; both family states share Surface and Button material.",
+    "Report filter links retain assessment_kind/class_offering_id and exactly one aria-current; pilot-only chart and route permission contracts are unchanged."
+  ],
+  "checks": [
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_navbar_shell.py",
+      "passed": 12
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_report_card_pilot.py",
+      "passed": 5
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_manage_lq_pilot_templates.py",
+      "passed": 11
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_partial_scope.py",
+      "passed": 12
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_guard_sources.py",
+      "passed": 4
+    },
+    {
+      "command": "npm run lint:lq",
+      "blocking": 0,
+      "legacyWarnings": 3269,
+      "migrationAcceptancePromoted": false
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_lq_profile_presentation.py",
+      "passed": 7
+    },
+    {
+      "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_profile_template_contract.py",
+      "passed": 9
+    }
+  ],
+  "browserEvidence": {
+    "suite": "tests/e2e/specs/lq-ui-repair.spec.ts",
+    "status": "passed-in-scoped-cases",
+    "observed": "Final c36eca graph: 8/8 cases passed, including teacher/student desktop/touch homepage geometry at 320/390/700, Surface inset and native profile fields, plus schedule menu/subscription/API/calendar paths. afterEach requires the exact final build graph. Earlier 28 unique project cases each have passing stage evidence. 774bc affected-route rescan: 8 matrices/64 GETs, zero errors/overflow/leaf blur/invalid declarations/source drift; remaining raw-unowned records are noninteractive menu wrappers.",
+    "evidenceDirectory": ".codex-temp/lq-ui-20261008-dashboard-final",
+    "buildGraph": "c36eca4fb8a4c7d3c22bd2ecaface4d1e909372ce9086531ab508e31ad0d0676",
+    "passed": 8,
+    "affectedRouteEvidenceDirectory": ".codex-temp/lq-ui-20261008-platform-final"
+  },
+  "limitations": [
+    "Source review and SSR are not complete production/browser acceptance.",
+    "Old S3/S4 statuses and historical audit results are unchanged.",
+    "Shared-source hashes are exact bytes, while lexical audit source hashes normalize source newlines."
+  ]
+}

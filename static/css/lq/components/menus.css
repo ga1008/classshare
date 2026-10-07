@@ -28,6 +28,25 @@
     overflow-wrap: anywhere;
 }
 .lq-menu__item .lq-icon { width: 18px; height: 18px; }
+/* Rich authored entries use the same menu item, with optional icon/copy slots.
+   These slots survive portalling: no navbar/dashboard ancestor is required. */
+.lq-menu__heading {
+    margin: 0;
+    padding: var(--ls-s-2) var(--ls-s-3);
+    font-size: var(--ls-t-footnote);
+    line-height: var(--ls-leading-footnote);
+    font-weight: var(--ls-weight-title3);
+    color: hsl(var(--ls-ink-2));
+}
+.lq-menu__lead { display: inline-flex; flex: none; align-items: center; justify-content: center; }
+.lq-menu__copy { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: var(--ls-s-1); }
+.lq-menu__copy > strong { font: inherit; color: inherit; }
+.lq-menu__copy > small {
+    font-size: var(--ls-t-footnote);
+    line-height: var(--ls-leading-footnote);
+    font-weight: var(--ls-weight-body);
+    color: inherit;
+}
 .lq-menu > .lq-menu__item[data-danger="true"] { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-menu > .lq-menu__item[aria-disabled="true"] { color: hsl(var(--ls-ink-3)); cursor: not-allowed; opacity: 1; }
 /* A menu item is a .lq-btn, so its hover, press, timing and focus ring come

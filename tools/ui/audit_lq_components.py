@@ -225,6 +225,8 @@ def entry(file: str, source: str, offset: int, kind: str, syntax: str, tag: str,
             "tagOrFactory": tag, "class": cls, "id": value(attrs or {}, "id"),
             "provenance": provenance, "status": "unknown" if kind == "unknown" else "pending",
             "declaredComponent": declared or None, "canonicalContract": canonical_contract(declared, cls, value(attrs or {}, "data-lq-material")),
+            "declaredMaterial": value(attrs or {}, "data-lq-material") or None,
+            "declaredPadding": value(attrs or {}, "data-lq-padding") or None,
             "suggestedOwner": owner_hint(file, kind), "ownerStatus": "suggested-not-accepted",
             "source": re.sub(r"\s+", " ", snippet).strip()[:240]}
 

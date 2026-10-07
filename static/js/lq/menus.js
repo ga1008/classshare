@@ -5,6 +5,14 @@ import { getLayerSystem } from './layer.js';
 const BINDINGS = Symbol.for('lanshare.lq.menu-bindings.v1');
 const ROOTS = Symbol.for('lanshare.lq.menu-roots.v1');
 const IDS = Symbol.for('lanshare.lq.menu-identities');
+
+/** A closed menu's item still owns its data and business handler, but floating
+ * help and return focus need the visible navigation trigger that launched it. */
+export function resolveMenuActionTrigger(node) {
+    const root = node?.closest?.('[role="menu"]');
+    const binding = root && node.ownerDocument[ROOTS]?.get(root);
+    return binding && root.hidden ? binding.trigger : node;
+}
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new TypeError(`LQ menu ${name} must be text`); return value.trim(); };
 const flag = value => { if (value === undefined) return false; if (typeof value !== 'boolean') throw new TypeError('Invalid LQ menu flag'); return value; };
 // Pages need their own hooks on a menu item. Caller keys are spread first so
@@ -71,10 +79,10 @@ export function bindMenu(trigger, root, options = {}) {
     if (roots.has(root)) throw new TypeError('Menu already belongs to a different trigger');
     const system = getLayerSystem(doc), parent = root.parentNode, next = root.nextSibling;
     const original = new Map(['aria-haspopup', 'aria-controls', 'aria-expanded'].map(name => [name, trigger.getAttribute(name)]));
-    let handle = null, generation = 0, disposed = false, busy = false, buffer = '', searchTimer = null, tabbing = false;
+    let handle = null, generation = 0, disposed = false, busy = false, buffer = '', searchTimer = null, tabbing = false, replayingAction = false;
     const listeners = [];
     const items = () => [...root.querySelectorAll('[role="menuitem"]')];
-    const listen = (node, name, listener) => { node.addEventListener(name, listener); listeners.push(() => node.removeEventListener(name, listener)); };
+    const listen = (node, name, listener, capture = false) => { node.addEventListener(name, listener, capture); listeners.push(() => node.removeEventListener(name, listener, capture)); };
     const restoreRoot = () => { root.hidden = true; if (parent) parent.insertBefore(root, next?.parentNode === parent ? next : null); else root.remove(); };
     const clearSearch = () => { clearTimeout(searchTimer); searchTimer = null; buffer = ''; };
     const report = error => { try { options.onError?.(error); } catch { /* Consumer errors cannot retain the menu. */ } };
@@ -106,19 +114,29 @@ export function bindMenu(trigger, root, options = {}) {
         if (busy || !handle || !['opening', 'open'].includes(handle.state)) return;
         busy = true; const current = generation;
         if (await system.close(handle, 'action') && !disposed && generation === current) {
-            try { await options.onAction?.(item.dataset.lqMenuItem, item); } catch (error) { report(error); }
+            try {
+                // Authored domain buttons already own their business handlers.
+                // Close first, then activate the same node exactly once: opening
+                // a dialog before its parent menu closes would dismiss it too.
+                if (options.nativeActions) {
+                    replayingAction = true;
+                    try { item.click(); } finally { replayingAction = false; }
+                } else await options.onAction?.(item.dataset.lqMenuItem, item);
+            } catch (error) { report(error); }
         }
         if (generation === current) busy = false;
     }
     function activate(event) {
+        if (replayingAction) return;
         const item = event.target.closest?.('[role="menuitem"]');
         if (!item || !root.contains(item)) return;
-        if (item.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
+        if (item.matches(':disabled,[aria-disabled="true"]')) { event.preventDefault(); if (options.nativeActions) event.stopImmediatePropagation(); return; }
         if (item.matches('a[href]')) { void system.close(handle, 'navigation'); return; }
         if (event.type === 'auxclick') return;
+        if (options.nativeActions) event.stopImmediatePropagation();
         event.preventDefault(); void command(item);
     }
-    listen(root, 'click', activate); listen(root, 'auxclick', activate);
+    listen(root, 'click', activate, Boolean(options.nativeActions)); listen(root, 'auxclick', activate, Boolean(options.nativeActions));
     listen(root, 'pointermove', event => { if (event.pointerType === 'touch' || !handle || !['open', 'opening'].includes(handle.state)) return; const item = event.target.closest?.('[role="menuitem"]'); if (item && root.contains(item)) move(item); });
     listen(root, 'keydown', event => {
         if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
@@ -146,5 +164,5 @@ export function bindMenu(trigger, root, options = {}) {
     listen(trigger, 'keydown', event => { if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return; if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); open({ focus: event.key === 'ArrowUp' ? 'last' : 'first' }); } });
     const observer = new doc.defaultView.MutationObserver(() => { if (!trigger.isConnected) destroy(); }); observer.observe(doc.documentElement, { childList: true, subtree: true });
     trigger.setAttribute('aria-haspopup', 'menu'); trigger.setAttribute('aria-controls', root.id); trigger.setAttribute('aria-expanded', 'false');
-    const binding = { root, open, close, destroy, get handle() { return handle; } }; bindings.set(trigger, binding); roots.set(root, binding); return binding;
+    const binding = { root, trigger, open, close, destroy, get handle() { return handle; } }; bindings.set(trigger, binding); roots.set(root, binding); return binding;
 }

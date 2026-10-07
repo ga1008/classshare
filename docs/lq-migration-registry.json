@@ -1395,20 +1395,25 @@
         "sharedSources": [
           {
             "path": "templates/base_navbar.html",
-            "sha256": "bad2ae411067d98a90b945e7486175ee9dd07292fa57c5aafc3be3926d15017c",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。",
+            "sha256": "01402a291efc01df62b0eb7d711fa23d2492b2a00319eb8138f07fe4d8e3b8b0",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted.",
             "tests": [
               "tests/test_lq_navbar_shell.py",
               "tests/test_lq_report_card_pilot.py",
               "tests/e2e/specs/lq-s4-shell.spec.ts",
               "tests/e2e/specs/lq-s4-shell-visual.spec.ts",
-              "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+              "tests/e2e/components/lq-declarative-contracts.spec.ts",
+              "tests/test_manage_lq_pilot_templates.py",
+              "tests/test_lq_guard_sources.py",
+              "tests/test_lq_partial_scope.py",
+              "tests/e2e/specs/lq-ui-repair.spec.ts"
+            ],
+            "reviewedAt": "2026-10-08"
           },
           {
             "path": "templates/dashboard.html",
-            "sha256": "cb75621532d79343803d366481c44036a2fb39e6ca5b63e2cce4f3e2c2000010",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted.",
+            "sha256": "271d1d17bbefec8b254267e323924493341919e4d256516bdc18b9822f82ff8d",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted. 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted. Reviewed final outer content Surface fallback md inset; existing responsive Collapsible family and content slots unchanged.",
             "tests": [
               "tests/test_lq_navbar_shell.py",
               "tests/test_lq_report_card_pilot.py",
@@ -1419,9 +1424,11 @@
               "tests/e2e/components/dashboard-course-layout.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts",
               "tests/test_lq_guard_sources.py",
-              "tests/test_lq_partial_scope.py"
+              "tests/test_lq_partial_scope.py",
+              "tests/test_manage_lq_pilot_templates.py",
+              "tests/e2e/specs/lq-ui-repair.spec.ts"
             ],
-            "reviewedAt": "2026-09-27"
+            "reviewedAt": "2026-10-08"
           }
         ]
       },
@@ -8130,8 +8137,8 @@
           },
           {
             "path": "templates/dashboard_teacher.html",
-            "sha256": "2806cf50148ef9cf1556cf6b7319fb561850c8f9b72c517a82252ff8236372fd",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted.",
+            "sha256": "9f24e0b6b1bb1dcc002e262efcce40c744c2b01eeb84f09e0275ab2f7af95b5b",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted. 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted. 2026-10-08: reviewed shared Surface/Button adoption in both existing feature states; native links, filters, role branches and business owners retained. Reviewed final outer content Surface fallback md inset; existing responsive Collapsible family and content slots unchanged.",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/test_lq_navbar_shell.py",
@@ -8142,9 +8149,11 @@
               "tests/e2e/components/dashboard-course-layout.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts",
               "tests/test_lq_guard_sources.py",
-              "tests/test_lq_partial_scope.py"
+              "tests/test_lq_partial_scope.py",
+              "tests/test_lq_report_card_pilot.py",
+              "tests/e2e/specs/lq-ui-repair.spec.ts"
             ],
-            "reviewedAt": "2026-09-27"
+            "reviewedAt": "2026-10-08"
           }
         ]
       },
@@ -18605,24 +18614,30 @@
         "sharedSources": [
           {
             "path": "templates/report_card.html",
-            "sha256": "07da51e2dd1b563a669dae9207cc0e926e359c609a814d70def1eca6964f21d4",
-            "scope": "仅 pilot PageHead/Surface/filter 及 ECharts 独立 controller 入口；保留旧分支、原成绩/发布/0 分/空记录投影。真实 SSR 比对 on/off 数据 JSON/过滤 URL/owner。",
+            "sha256": "683cf566a7cfd3e0703cfd14183725830bf5e16f7260cb0c14ac22e6dde60d03",
+            "scope": "仅 pilot PageHead/Surface/filter 及 ECharts 独立 controller 入口；保留旧分支、原成绩/发布/0 分/空记录投影。真实 SSR 比对 on/off 数据 JSON/过滤 URL/owner。 2026-10-08: reviewed shared Surface/Button adoption in both existing feature states; native links, filters, role branches and business owners retained.",
             "tests": [
               "tests/test_lq_report_card_pilot.py",
               "tests/e2e/specs/report-card-pilot.spec.ts"
-            ]
+            ],
+            "reviewedAt": "2026-10-08"
           },
           {
             "path": "templates/base_navbar.html",
-            "sha256": "bad2ae411067d98a90b945e7486175ee9dd07292fa57c5aafc3be3926d15017c",
-            "scope": "仅 student + exact /report-card + pilot 的 Topbar 单 owner 分支与预绘制入口；其他路径旧壳保留，SSR 额外验证错误路径不启用。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。",
+            "sha256": "01402a291efc01df62b0eb7d711fa23d2492b2a00319eb8138f07fe4d8e3b8b0",
+            "scope": "仅 student + exact /report-card + pilot 的 Topbar 单 owner 分支与预绘制入口；其他路径旧壳保留，SSR 额外验证错误路径不启用。 S4增加独立默认关闭页族壳；旧S3路径合同独立保留，相关SSR及真实浏览器已复核。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted.",
             "tests": [
               "tests/test_lq_report_card_pilot.py",
               "tests/e2e/specs/report-card-pilot.spec.ts",
               "tests/e2e/specs/lq-s4-shell.spec.ts",
               "tests/test_lq_navbar_shell.py",
-              "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+              "tests/e2e/components/lq-declarative-contracts.spec.ts",
+              "tests/test_manage_lq_pilot_templates.py",
+              "tests/test_lq_guard_sources.py",
+              "tests/test_lq_partial_scope.py",
+              "tests/e2e/specs/lq-ui-repair.spec.ts"
+            ],
+            "reviewedAt": "2026-10-08"
           },
           {
             "path": "static/js/cultivation_identity.js",

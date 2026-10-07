@@ -26,7 +26,7 @@
                 ></div>
                 {% if _messages_lq %}</section>{% endif %}
 
-                <section class="message-center-toolbar profile-message-toolbar{% if _messages_lq %} lq-surface{% else %} profile-reveal{% endif %}"{% if _messages_lq %} data-lq-material="content" aria-label="消息筛选与操作"{% endif %}>
+                <section data-lq-component="surface" data-lq-padding="md" data-lq-material="content" class="lq-surface message-center-toolbar profile-message-toolbar{% if not _messages_lq %} profile-reveal{% endif %}" aria-label="消息筛选与操作">
                     <div data-lq-component="toolbar" class="lq-domain-toolbar message-center-tabs" id="message-center-tabs"{% if _messages_lq %} role="group" aria-label="通知分类筛选"{% endif %}></div>
                     <div class="message-center-controls">
                         {% if _messages_lq %}

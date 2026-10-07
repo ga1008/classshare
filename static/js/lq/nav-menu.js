@@ -18,6 +18,7 @@ const ALIGNMENTS = ['start', 'end'];
 const CARET = 'chevron-down';
 const KEYS = ['id', 'label', 'items', 'icon', 'variant', 'tone', 'size', 'shape', 'align'];
 const HOSTS = Symbol.for('lanshare.lq.nav-menu-hosts.v1');
+const ACTIVE = Symbol.for('lanshare.lq.nav-menu-active.v1');
 
 const option = (props, key, fallback) => (props[key] === undefined ? fallback : props[key]);
 const choice = (value, values, name) => {
@@ -81,14 +82,28 @@ function control(host, doc, view, hoverOpenDelay, hoverCloseDelay, options) {
     if (!trigger || !panel) throw new TypeError('LQ nav menu needs a trigger and its menu panel');
     const pointer = view.matchMedia('(hover: hover) and (pointer: fine)');
     const motion = view.matchMedia('(prefers-reduced-motion: reduce)');
-    let openTimer = null, closeTimer = null, inTrigger = false, inPanel = false, hovering = false;
+    let openTimer = null, closeTimer = null, inTrigger = false, inPanel = false, hovering = false, usingKeyboard = false;
+    const peers = doc[ACTIVE] ||= new Set();
     const binding = bindMenu(trigger, panel, {
         ...options,
+        nativeActions: host.closest('[data-lq-menu-native-actions]') ? true : options.nativeActions,
+        placement: options.placement || `bottom-${host.dataset.lqNavAlign || 'start'}`,
         // Pointer intent must not move focus: hovering a nav menu would otherwise
         // pull focus out of whatever the reader was using and hand it back to the
         // trigger on leave. Keyboard and click opens keep bindMenu's own focus.
-        onInitialFocus: (event, layer) => { if (hovering) event.preventDefault(); options.onInitialFocus?.(event, layer); },
-        onReturnFocus: (event, layer) => { if (layer?.closeReason === 'pointer') event.preventDefault(); options.onReturnFocus?.(event, layer); },
+        onInitialFocus: (event, layer) => {
+            for (const peer of peers) if (peer !== binding && peer.handle?.parentLayer === layer.parentLayer && ['opening', 'open'].includes(peer.handle.state)) void peer.close('superseded');
+            peers.add(binding);
+            if (hovering) event.preventDefault();
+            options.onInitialFocus?.(event, layer);
+        },
+        onReturnFocus: (event, layer) => { if (['pointer', 'superseded'].includes(layer?.closeReason)) event.preventDefault(); options.onReturnFocus?.(event, layer); },
+        onClose: (reason, layer) => { peers.delete(binding); usingKeyboard = false; options.onClose?.(reason, layer); },
+        onDestroy: (reason, layer) => {
+            peers.delete(binding);
+            view.clearTimeout(openTimer); view.clearTimeout(closeTimer); openTimer = closeTimer = null;
+            options.onDestroy?.(reason, layer);
+        },
     });
     const opened = () => Boolean(binding.handle) && ['opening', 'open'].includes(binding.handle.state);
     const wait = value => (motion.matches ? 0 : value);
@@ -111,7 +126,9 @@ function control(host, doc, view, hoverOpenDelay, hoverCloseDelay, options) {
         // delay is exactly what keeps the menu open across that gap.
         closeTimer = view.setTimeout(() => {
             closeTimer = null;
-            if (!inTrigger && !inPanel && opened()) void binding.close('pointer');
+            // A keyboard user can move the mouse away while still navigating
+            // the menu. Pointer exit must not tear focus out of that menu.
+            if (!inTrigger && !inPanel && opened() && !(usingKeyboard && panel.contains(doc.activeElement))) void binding.close('pointer');
         }, wait(hoverCloseDelay));
     }
     const listeners = [];
@@ -122,10 +139,16 @@ function control(host, doc, view, hoverOpenDelay, hoverCloseDelay, options) {
     };
     track(trigger, value => { inTrigger = value; });
     track(panel, value => { inPanel = value; });
+    for (const node of [trigger, panel]) {
+        listen(node, 'keydown', () => { usingKeyboard = true; });
+        listen(node, 'pointerdown', () => { usingKeyboard = false; });
+        listen(node, 'pointermove', () => { usingKeyboard = false; });
+    }
     return {
         host, count: 0, trigger, binding,
         destroy() {
             view.clearTimeout(openTimer); view.clearTimeout(closeTimer); openTimer = closeTimer = null;
+            peers.delete(binding);
             for (const remove of listeners) remove();
             binding.destroy();
         },

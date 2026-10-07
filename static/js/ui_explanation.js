@@ -1,5 +1,6 @@
 import { cancelOverlayMotion, setOverlayOpen } from './ui_overlay_motion.js';
 import { getLayerSystem } from './lq/layer.js';
+import { resolveMenuActionTrigger } from './lq/menus.js';
 
 const TRIGGER_SELECTOR = '[data-explain], [data-lp-tip]';
 const DEFAULT_DELAY_MS = 2000;
@@ -304,9 +305,10 @@ function scheduleOpen(trigger, delay) {
 }
 
 export function openExplanation(target, override = null) {
-    const trigger = asElement(target);
+    const source = asElement(target);
+    const trigger = resolveMenuActionTrigger(source);
     if (!trigger?.isConnected || trigger.closest('[hidden],[inert]') || !trigger.getClientRects().length) return false;
-    const config = resolveConfig(trigger, override);
+    const config = resolveConfig(source, override);
     if (!hasContent(config)) return false;
 
     cancelOpen();

@@ -17,16 +17,16 @@
                         <div class="profile-form-grid">
                             <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
                                 <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-current-password">当前密码</label>
-                                <input id="profile-current-password" name="current_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="current-password" required>
+                                <input data-lq-component="input" id="profile-current-password" name="current_password" type="password" class="lq-input lq-control--md form-control" autocomplete="current-password" required>
                             </div>
                             <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                 <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-new-password">新密码</label>
-                                <input id="profile-new-password" name="new_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="new-password" required>
+                                <input data-lq-component="input" id="profile-new-password" name="new_password" type="password" class="lq-input lq-control--md form-control" autocomplete="new-password" required>
                                 <span class="form-text">{% if profile.role == 'student' %}至少 8 位，且同时包含字母和数字。{% else %}至少 6 位。{% endif %}</span>
                             </div>
                             <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                 <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-confirm-password">确认新密码</label>
-                                <input id="profile-confirm-password" name="confirm_password" type="password" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" autocomplete="new-password" required>
+                                <input data-lq-component="input" id="profile-confirm-password" name="confirm_password" type="password" class="lq-input lq-control--md form-control" autocomplete="new-password" required>
                             </div>
                         </div>
                         <div class="{% if _profile_lq %}lq-form-actions {% endif %}profile-form-actions">

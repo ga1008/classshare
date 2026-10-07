@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/app_topbar.html" import app_topbar_icon %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/classroom_menus.html" import classroom_more_menu, classroom_personal_menu %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
 
 {% block title %}{{ classroom.course_name }} - {{ classroom.class_name }} | 课堂平台{% endblock %}
@@ -84,97 +86,11 @@
                 <span class="app-topbar-action__count classroom-topbar-activity-count" data-classroom-activity-total>0</span>
             </a>
 
-            <details data-lq-component="menu" class="lq-domain-region classroom-topbar-menu cw-topbar-menu">
-                <summary data-lq-component="disclosure" class="lq-disclosure-trigger cw-nav-link" title="更多课堂入口" aria-label="打开更多课堂入口">
-                    <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
-                    <span class="cw-nav-copy">
-                        <strong>更多</strong>
-                    </span>
-                </summary>
-                <div data-lq-component="menu" data-lq-material="raised" class="lq-domain-region classroom-topbar-menu__panel" role="menu" aria-label="更多课堂入口">
-                    <div class="classroom-topbar-menu__label">课堂入口</div>
-            {% if has_learning_entry and user_info.role == 'teacher' %}
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item classroom-topbar-learning" data-learning-modal-open title="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-label="{% if user_info.role == 'teacher' %}查看班级成员{% else %}查看修为{% endif %}" aria-haspopup="dialog" aria-controls="learning-progress-modal">
-                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('users' if user_info.role == 'teacher' else 'shield') }}</span>
-                <span class="cw-nav-copy">
-                    <strong>{% if user_info.role == 'teacher' %}成员{% else %}修为{% endif %}</strong>
-                </span>
-            </button>
-            {% endif %}
-            {% if user_info.role == 'teacher' %}
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-classroom-closeout-open title="结课：收尾课堂内未结束的作业、测验、投票与分组" aria-label="打开结课浮窗" aria-haspopup="dialog" aria-controls="classroom-closeout-modal">
-                <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('shield') }}</span>
-                <span class="cw-nav-copy">
-                    <strong>结课</strong>
-                </span>
-            </button>
-            {% endif %}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-classroom-activity-open="resources" role="menuitem">
-                        {{ app_topbar_icon('folder-up') }}
-                        <span><strong>资源区</strong><small>共享文件与附件</small></span>
-                    </button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-classroom-activity-open="collaboration" role="menuitem">
-                        {{ app_topbar_icon('users') }}
-                        <span><strong>协作区</strong><small>小组、文件、提交与互评</small></span>
-                    </button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-course-popover-target="stats" data-popover-title="统计信息" data-popover-kicker="课堂概览" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false" role="menuitem">
-                        {{ app_topbar_icon('gauge') }}
-                        <span><strong>课堂概览</strong><small>人数、任务与进度</small></span>
-                    </button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false" role="menuitem">
-                        {{ app_topbar_icon('course') }}
-                        <span><strong>课程详情</strong><small>学期、班级与说明</small></span>
-                    </button>
-                </div>
-            </details>
+            {{ classroom_more_menu(user_info, has_learning_entry) }}
 
         </div>
         <div class="cw-topbar-tools" aria-label="课堂工具入口">
-            <details data-lq-component="menu" class="lq-domain-region classroom-topbar-menu cw-topbar-menu" data-message-center-bell-shell>
-                <summary data-lq-component="disclosure" class="lq-disclosure-trigger cw-nav-link" title="个人入口" aria-label="打开个人入口">
-                    <span class="cw-nav-icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
-                    <span class="cw-nav-copy">
-                        <strong>个人</strong>
-                    </span>
-                </summary>
-                <div data-lq-component="menu" data-lq-material="raised" class="lq-domain-region classroom-topbar-menu__panel" role="menu" aria-label="个人入口">
-                    <div class="classroom-topbar-menu__label">常用入口</div>
-                    <a data-lq-component="button" href="/profile?section=notifications#profile-message-center" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item message-center-bell" data-message-center-bell title="通知中心" aria-label="打开通知中心" role="menuitem">
-                        {{ app_topbar_icon('message') }}
-                        <span><strong>消息中心</strong><small data-message-center-bell-caption>通知与私信</small></span>
-                        <span class="message-center-bell__count app-topbar-action__count app-topbar-action__count--danger" data-message-center-bell-count hidden>0</span>
-                    </a>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-open-feedback title="课堂反馈" aria-label="打开课堂反馈" role="menuitem">
-                        {{ app_topbar_icon('gauge') }}
-                        <span><strong>课堂反馈</strong><small>问题与建议</small></span>
-                    </button>
-                    <a data-lq-component="button" href="/profile" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item app-topbar-profile" title="个人中心" aria-label="打开个人中心" role="menuitem">
-                        <span class="app-topbar-profile__avatar" aria-hidden="true">
-                            <img src="/api/profile/avatar" alt="" loading="lazy">
-                        </span>
-                        <span><strong>个人中心</strong><small>资料与设置</small></span>
-                    </a>
-                    {% if user_info.role == 'student' %}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass classroom-topbar-menu__item" data-open-student-security title="账号安全" aria-label="修改密码" role="menuitem">
-                        {{ app_topbar_icon('shield') }}
-                        <span><strong>账号安全</strong><small>修改密码</small></span>
-                    </button>
-                    {% endif %}
-                    <a data-lq-component="button" href="/logout" class="lq-btn lq-btn--sm lq-btn--destructive classroom-topbar-menu__item is-danger" title="退出登录" aria-label="退出登录" role="menuitem">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <path d="m16 17 5-5-5-5"></path>
-                            <path d="M21 12H9"></path>
-                        </svg>
-                        <span><strong>退出登录</strong><small>安全离开</small></span>
-                    </a>
-                </div>
-                <div class="message-center-bell-toast" data-message-center-bell-toast hidden>
-                    <strong class="message-center-bell-toast__title">新消息提醒</strong>
-                    <div class="message-center-bell-toast__body" data-message-center-bell-toast-body>你有一条新消息。</div>
-                    <div class="message-center-bell-toast__meta" data-message-center-bell-toast-meta>点击消息入口进入通知中心</div>
-                </div>
-            </details>
+            {{ classroom_personal_menu(user_info) }}
         </div>
     </nav>
 </header>
@@ -208,12 +124,8 @@
                     <div class="embedded-teaching-plan-heading">
                         <h2>课次导航</h2>
                     </div>
-                    <div class="cw-session-nav">                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-timeline-nav-btn is-prev" id="teachingTimelinePrevBtn" aria-label="向左浏览课次">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                            </button>
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-timeline-nav-btn is-next" id="teachingTimelineNextBtn" aria-label="向右浏览课次">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                            </button>
+                    <div class="cw-session-nav">                            {{ lq_btn(icon='chevron-left', variant='glass', size='sm', id='teachingTimelinePrevBtn', attrs={'aria-label': '向左浏览课次', 'title': '向左浏览课次', 'data-lq-component': 'button'}) }}
+                            {{ lq_btn(icon='chevron-right', variant='glass', size='sm', id='teachingTimelineNextBtn', attrs={'aria-label': '向右浏览课次', 'title': '向右浏览课次', 'data-lq-component': 'button'}) }}
 
 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" data-cw-open="timeline">全部课次</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" id="cw-current-session">定位课次</button></div>
                 </div>
@@ -243,8 +155,8 @@
                                         tabindex="{{ '0' if session.order_index == selected_session.order_index else '-1' }}"
                                         {% if session.is_anchor %}data-anchor="true"{% endif %}
                                     >
-                                        <span class="teaching-timeline-segment-order">{{ session.session_number_label }}</span>
-                                        <strong class="teaching-timeline-segment-title">{{ session.segment_title }}</strong>
+                                        <span class="lq-btn__label teaching-timeline-segment-order">{{ session.session_number_label }}</span>
+                                        <strong class="lq-btn__label teaching-timeline-segment-title">{{ session.segment_title }}</strong>
                                         <span class="teaching-timeline-segment-tags">
                                             <span class="cw-session-selection">已选</span>
                                             {% if not session.is_home_entry %}<span class="cw-session-time-state">{{ '往期课次' if session.progress_state == 'completed' else session.session_status_label }}</span>{% endif %}
@@ -609,7 +521,7 @@
 
         <div class="cw-primary-flow" aria-label="课堂任务主线">
         <section data-lq-material="content" class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div></section>
-        <section data-lq-component="surface" class="lq-surface workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
+        <section data-lq-component="surface" data-lq-padding="md" class="lq-surface workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
             <div class="section-header">
                 <div class="section-heading">
                     {% if sections.assignment.eyebrow %}<span class="section-eyebrow">{{ sections.assignment.eyebrow }}</span>{% endif %}
@@ -1218,7 +1130,7 @@
             </div>
         </div>
     </aside>
-        <section data-lq-component="surface" class="lq-surface workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
+        <section data-lq-component="surface" data-lq-padding="md" class="lq-surface workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
             <div class="section-header">
                 <div class="section-heading">
                     {% if sections.materials.eyebrow %}<span class="section-eyebrow">{{ sections.materials.eyebrow }}</span>{% endif %}
@@ -1821,18 +1733,18 @@
 </div>
 {% endif %}
 
-<div data-lq-component="layer" id="course-info-popover" class="lq-domain-region course-popover" role="dialog" aria-modal="true" aria-labelledby="course-popover-title" aria-hidden="true" hidden>
-    <div data-lq-component="content-slot" data-lq-slot="scrim" class="lq-domain-content-slot course-popover-overlay" id="course-popover-overlay"></div>
-    <div data-lq-component="surface" class="lq-surface course-popover-card" tabindex="-1">
-        <div class="course-popover-header">
+<div data-lq-component="layer" data-lq-dialog="modal" id="course-info-popover" class="lq-domain-region lq-dialog-root course-popover" aria-hidden="true" hidden>
+    <div data-lq-component="content-slot" data-lq-slot="scrim" class="lq-domain-content-slot lq-scrim course-popover-overlay" id="course-popover-overlay"></div>
+    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised lq-dialog__surface lq-modal course-popover-card" role="dialog" aria-modal="true" aria-labelledby="course-popover-title" tabindex="-1">
+        <div class="lq-dialog__head course-popover-header">
             <div>
                 <p class="course-popover-kicker" id="course-popover-kicker">课堂概览</p>
                 <h3 class="course-popover-title" id="course-popover-title">统计信息</h3>
             </div>
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass course-popover-close" id="course-popover-close" type="button" title="关闭" aria-label="关闭弹窗">&times;</button>
         </div>
-        <div class="course-popover-body">
-            <section data-lq-component="surface" class="lq-surface course-popover-panel" data-course-popover-panel="stats">
+        <div class="lq-dialog__body course-popover-body">
+            <section data-lq-component="surface" data-lq-padding="md" class="lq-surface course-popover-panel" data-course-popover-panel="stats">
                 <div class="course-popover-stat-grid">
                     {% if teaching_plan and teaching_plan.session_count %}
                     <article data-lq-component="surface" class="lq-surface course-popover-stat-card" data-tone="primary">
@@ -1854,7 +1766,7 @@
                     <h4>任务学习情况</h4>
                     <div class="course-popover-info-grid course-popover-metric-grid">
                         {% for metric in classroom_page.assignment_metrics %}
-                        <div class="course-popover-info-item" data-tone="{{ metric.tone }}">
+                        <div data-lq-component="surface" data-lq-padding="sm" class="lq-surface course-popover-info-item" data-tone="{{ metric.tone }}">
                             <span class="info-label">{{ metric.label }}</span>
                             <strong class="info-value">{{ metric.value }}</strong>
                             <span class="info-note">{{ metric.note }}</span>
@@ -1899,7 +1811,7 @@
                     </div>
                     <p class="smart-attendance-message" id="smartAttendanceMessage">正在准备出勤统计。</p>
                     <div class="smart-attendance-metrics" id="smartAttendanceMetrics"></div>
-                    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised smart-attendance-detail-popover" id="smartAttendanceAbnormalPopover" hidden aria-live="polite"></div>
+                    <div data-lq-component="surface" data-lq-material="raised" data-lq-padding="md" class="lq-surface lq-domain-raised smart-attendance-detail-popover" id="smartAttendanceAbnormalPopover" aria-label="异常出勤记录" hidden aria-live="polite"></div>
                     <div class="smart-attendance-visual-grid">
                         <div data-lq-component="surface" class="lq-surface smart-attendance-chart-card">
                             <div class="smart-attendance-chart-head">
@@ -1942,7 +1854,7 @@
                 </div>
             </section>
 
-            <section data-lq-component="surface" class="lq-surface course-popover-panel" data-course-popover-panel="details" hidden>
+            <section data-lq-component="surface" data-lq-padding="md" class="lq-surface course-popover-panel" data-course-popover-panel="details" hidden>
                 {% if classroom.course_description %}
                 <div class="course-popover-section">
                     <h4>课程简介</h4>
@@ -1954,7 +1866,7 @@
                     <h4>课程资料</h4>
                     <div class="course-popover-info-grid">
                         {% for item in hero.secondary_meta %}
-                        <div class="course-popover-info-item">
+                        <div data-lq-component="surface" data-lq-padding="sm" class="lq-surface course-popover-info-item">
                             <span class="info-label">{{ item.label }}</span>
                             <span class="info-value">{{ item.value }}</span>
                         </div>

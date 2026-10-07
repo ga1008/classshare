@@ -7,8 +7,8 @@ import { collectComponentDom } from '../fixtures/lq-component-audit';
 
 type Role = 'anonymous' | 'student' | 'teacher' | 'superTeacher';
 type Route = { method: string; path: string; templates: string[]; roles: Role[]; scope: string; execution: string };
-const manifest = JSON.parse(fs.readFileSync('docs/lq-platform-browser-routes-2026-09-27.json', 'utf8'));
-const sourceAudit = JSON.parse(fs.readFileSync('docs/lq-platform-component-audit-2026-09-27-remaining.json', 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(process.env.LQ_PLATFORM_AUDIT_ROUTES || 'docs/lq-platform-browser-routes-2026-09-27.json', 'utf8'));
+const sourceAudit = JSON.parse(fs.readFileSync(process.env.LQ_PLATFORM_AUDIT_SOURCES || 'docs/lq-platform-component-audit-2026-09-27-remaining.json', 'utf8'));
 const supplemental = JSON.parse(fs.readFileSync('docs/lq-platform-supplemental-contracts-2026-09-27.json', 'utf8'));
 function authContract() {
   const contract = supplemental.suites.find((suite: any) => suite.name === 'authentication');

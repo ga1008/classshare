@@ -7,6 +7,8 @@ import { openMaterialListPopup } from '/static/js/classroom_material_list.js';
 import { bindClassroomLessonRail, materialEntryDecision, sessionMaterialScope, resolveClassroomSessionLink } from '/static/js/classroom_workspace.js';
 import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { enhanceNavMenus } from './lq/nav-menu.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -32,7 +34,6 @@ function initCoursePopover() {
     const popover = document.getElementById('course-info-popover');
     if (!popover) return;
 
-    const overlay = document.getElementById('course-popover-overlay');
     const closeBtn = document.getElementById('course-popover-close');
     const titleEl = document.getElementById('course-popover-title');
     const kickerEl = document.getElementById('course-popover-kicker');
@@ -50,9 +51,9 @@ function initCoursePopover() {
     const smartAttendanceSyncBtn = document.getElementById('smartAttendanceSyncBtn');
     const smartAttendanceAbnormalPopover = document.getElementById('smartAttendanceAbnormalPopover');
     const smartAttendanceExportButtons = Array.from(document.querySelectorAll('[data-smart-attendance-export]'));
-    const transitionMs = 280;
-    let activeTrigger = null;
-    let closeTimer = 0;
+    const layers = getLayerSystem(popover.ownerDocument);
+    let popoverLayer = null;
+    let attendanceDetailLayer = null;
     let attendanceLoaded = false;
     let attendanceLoading = false;
     let attendanceExportReady = false;
@@ -60,10 +61,6 @@ function initCoursePopover() {
     let latestAttendancePayload = null;
     const attendanceAdvicePollCounts = new Map();
     let attendanceAdviceRefreshTimer = 0;
-
-    const getFocusableElements = () => Array.from(
-        popover.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    ).filter((element) => element.offsetParent !== null || element === document.activeElement);
 
     const selectPanel = (targetName) => {
         const resolvedTarget = panels.some((panel) => panel.dataset.coursePopoverPanel === targetName)
@@ -186,8 +183,27 @@ function initCoursePopover() {
 
     const closeAttendanceAbnormalPopover = () => {
         if (!smartAttendanceAbnormalPopover) return;
-        smartAttendanceAbnormalPopover.hidden = true;
-        smartAttendanceAbnormalPopover.innerHTML = '';
+        if (attendanceDetailLayer) void layers.close(attendanceDetailLayer, 'button');
+        else {
+            smartAttendanceAbnormalPopover.hidden = true;
+            smartAttendanceAbnormalPopover.innerHTML = '';
+        }
+    };
+
+    const openAttendanceAbnormalPopover = (trigger) => {
+        if (!smartAttendanceAbnormalPopover || !popoverLayer) return;
+        const cleanup = (_reason, current) => {
+            if (attendanceDetailLayer !== current) return;
+            attendanceDetailLayer = null;
+            smartAttendanceAbnormalPopover.innerHTML = '';
+        };
+        // This is an inline sticky detail surface, not a second viewport modal.
+        // Register it as the parent's child so one Escape closes only the detail.
+        attendanceDetailLayer = layers.open(smartAttendanceAbnormalPopover, {
+            type: 'popover', modality: 'non-modal', parentLayer: popoverLayer,
+            trigger, initialFocus: smartAttendanceAbnormalPopover.querySelector('button'),
+            onClose: cleanup, onDestroy: cleanup,
+        });
     };
 
     const renderMetricCard = (label, value, note, tone = 'neutral', options = {}) => {
@@ -326,7 +342,7 @@ function initCoursePopover() {
         `;
     };
 
-    const renderAttendanceAbnormalPopover = (payload = {}) => {
+    const renderAttendanceAbnormalPopover = (payload = {}, trigger) => {
         if (!smartAttendanceAbnormalPopover) return;
         const summary = payload.summary || {};
         const isTeacher = isTeacherAttendanceView();
@@ -390,7 +406,7 @@ function initCoursePopover() {
                     </section>
                 </div>
             `;
-            smartAttendanceAbnormalPopover.hidden = false;
+            openAttendanceAbnormalPopover(trigger);
             return;
         }
         const studentRows = isTeacher
@@ -458,7 +474,7 @@ function initCoursePopover() {
                 </section>
             </div>
         `;
-        smartAttendanceAbnormalPopover.hidden = false;
+        openAttendanceAbnormalPopover(trigger);
     };
 
     const renderAttendanceAnalytics = (payload = {}) => {
@@ -591,11 +607,20 @@ function initCoursePopover() {
         }
     };
 
+    const resetPopover = (_reason, current) => {
+        if (popoverLayer !== current) return;
+        popover.classList.remove('popover-open');
+        popover.setAttribute('aria-hidden', 'true');
+        triggerButtons.forEach((button) => button.setAttribute('aria-expanded', 'false'));
+        closeAttendanceAbnormalPopover();
+        popoverLayer = null;
+    };
+
     const openPopover = (targetName = 'stats', triggerButton = null) => {
-        window.clearTimeout(closeTimer);
         const activePanel = selectPanel(targetName);
-        activeTrigger = triggerButton || document.activeElement;
-        popover.hidden = false;
+        // The original business nodes remain intact. Portal explicitly so the
+        // raised boundary samples the page outside the navbar/content glass.
+        layers.getPortalHost().append(popover);
         popover.setAttribute('aria-hidden', 'false');
         triggerButtons.forEach((button) => {
             const isActiveTrigger = button.dataset.coursePopoverTarget === activePanel && button === triggerButton;
@@ -609,10 +634,15 @@ function initCoursePopover() {
                 kickerEl.textContent = triggerButton.dataset.popoverKicker || kickerEl.textContent;
             }
         }
-        document.body.classList.add('has-course-popover');
-        window.requestAnimationFrame(() => {
-            popover.classList.add('popover-open');
-            (closeBtn || popoverCard)?.focus({ preventScroll: true });
+        popover.classList.add('popover-open');
+        popoverLayer = layers.open(popover, {
+            type: 'modal', surface: popoverCard, trigger: triggerButton,
+            parentLayer: null, initialFocus: closeBtn || popoverCard,
+            returnFocus: () => triggerButton?.closest('[hidden]')
+                ? document.getElementById('classroom-more-menu--lq-trigger')
+                : triggerButton,
+            onCloseRequested: () => popover.classList.remove('popover-open'),
+            onClose: resetPopover, onDestroy: resetPopover,
         });
         if (activePanel === 'stats') {
             loadAttendanceAnalytics();
@@ -620,17 +650,7 @@ function initCoursePopover() {
     };
 
     const closePopover = () => {
-        popover.classList.remove('popover-open');
-        document.body.classList.remove('has-course-popover');
-        triggerButtons.forEach((button) => button.setAttribute('aria-expanded', 'false'));
-        closeTimer = window.setTimeout(() => {
-            if (!popover.classList.contains('popover-open')) {
-                popover.hidden = true;
-                popover.setAttribute('aria-hidden', 'true');
-                activeTrigger?.focus?.({ preventScroll: true });
-                activeTrigger = null;
-            }
-        }, transitionMs);
+        if (popoverLayer) void layers.close(popoverLayer, 'button');
     };
 
     triggerButtons.forEach((button) => {
@@ -640,7 +660,6 @@ function initCoursePopover() {
         });
     });
 
-    overlay?.addEventListener('click', closePopover);
     closeBtn?.addEventListener('click', closePopover);
     smartAttendanceSyncBtn?.addEventListener('click', () => loadAttendanceAnalytics({ force: true, sync: true }));
     smartAttendanceMetrics?.addEventListener('click', (event) => {
@@ -650,14 +669,14 @@ function initCoursePopover() {
             closeAttendanceAbnormalPopover();
             return;
         }
-        renderAttendanceAbnormalPopover(latestAttendancePayload);
+        renderAttendanceAbnormalPopover(latestAttendancePayload, trigger);
     });
     smartAttendanceMetrics?.addEventListener('keydown', (event) => {
         if (!['Enter', ' '].includes(event.key)) return;
         const trigger = event.target.closest('[data-smart-attendance-abnormal-trigger]');
         if (!trigger || !latestAttendancePayload) return;
         event.preventDefault();
-        renderAttendanceAbnormalPopover(latestAttendancePayload);
+        renderAttendanceAbnormalPopover(latestAttendancePayload, trigger);
     });
     smartAttendanceAbnormalPopover?.addEventListener('click', (event) => {
         if (event.target.closest('[data-smart-attendance-abnormal-close]')) {
@@ -666,41 +685,6 @@ function initCoursePopover() {
     });
     smartAttendanceExportButtons.forEach((button) => {
         button.addEventListener('click', () => downloadAttendanceExport(button.dataset.smartAttendanceExport || 'xlsx'));
-    });
-    document.addEventListener('click', (event) => {
-        if (!smartAttendanceAbnormalPopover || smartAttendanceAbnormalPopover.hidden) return;
-        if (event.target.closest('[data-smart-attendance-abnormal-trigger]')) return;
-        if (smartAttendanceAbnormalPopover.contains(event.target)) return;
-        closeAttendanceAbnormalPopover();
-    });
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeAttendanceAbnormalPopover();
-        if (!popover.classList.contains('popover-open')) return;
-
-        if (event.key === 'Escape') {
-            closePopover();
-            return;
-        }
-
-        if (event.key !== 'Tab') return;
-
-        const focusableElements = getFocusableElements();
-        if (!focusableElements.length) {
-            event.preventDefault();
-            popoverCard?.focus({ preventScroll: true });
-            return;
-        }
-
-        const firstFocusable = focusableElements[0];
-        const lastFocusable = focusableElements[focusableElements.length - 1];
-        if (event.shiftKey && document.activeElement === firstFocusable) {
-            event.preventDefault();
-            lastFocusable.focus({ preventScroll: true });
-        } else if (!event.shiftKey && document.activeElement === lastFocusable) {
-            event.preventDefault();
-            firstFocusable.focus({ preventScroll: true });
-        }
     });
 }
 
@@ -2732,38 +2716,8 @@ function personalizeClassroomCopy(overrides = {}) {
 }
 
 function initClassroomTopbarMenus() {
-    const menus = Array.from(document.querySelectorAll('.classroom-topbar-menu'));
-    if (!menus.length) return;
-
-    const closeMenus = (exceptMenu = null) => {
-        menus.forEach((menu) => {
-            if (menu !== exceptMenu) {
-                menu.removeAttribute('open');
-            }
-        });
-    };
-
-    menus.forEach((menu) => {
-        menu.addEventListener('toggle', () => {
-            if (menu.open) closeMenus(menu);
-        });
-
-        menu.addEventListener('click', (event) => {
-            const actionableItem = event.target.closest('.classroom-topbar-menu__item');
-            if (!actionableItem) return;
-            menu.removeAttribute('open');
-        }, true);
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!event.target.closest('.classroom-topbar-menu')) {
-            closeMenus();
-        }
-    });
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeMenus();
-    });
+    const topbar = document.querySelector('.cw-topbar');
+    if (topbar) enhanceNavMenus(topbar);
 }
 
 // 课堂活动区滚动隔离：鼠标在活动区内滚动时，优先滚动活动区内部的可滚动容器，

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createMessageBellTargets, type MessageBellTargetResolver } from '../../../static/js/message_center_bell_dom.js';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 import {
@@ -39,15 +40,13 @@ async function fetchMessageCenterSummary(): Promise<MessageCenterResponse> {
   return normalizeMessageCenterResponse(await response.json());
 }
 
-function updateShells(shells: HTMLElement[], summary: MessageSummary) {
+function updateShells(shells: HTMLElement[], summary: MessageSummary, getTargets: MessageBellTargetResolver) {
   const unreadTotal = summary.unreadTotal;
   const countText = unreadCountText(unreadTotal);
   const captionText = messageBellCaption(unreadTotal);
 
   for (const shell of shells) {
-    const bellNode = shell.querySelector<HTMLElement>('[data-message-center-bell]');
-    const countNode = shell.querySelector<HTMLElement>('[data-message-center-bell-count]');
-    const captionNode = shell.querySelector<HTMLElement>('[data-message-center-bell-caption]');
+    const { bell: bellNode, count: countNode, caption: captionNode } = getTargets(shell);
 
     bellNode?.classList.toggle('is-unread', unreadTotal > 0);
     bellNode?.setAttribute('aria-label', messageBellAriaLabel(unreadTotal));
@@ -167,6 +166,9 @@ function useMessageCenterBellSync() {
     if (shells.length === 0) {
       return undefined;
     }
+    const getTargets = createMessageBellTargets();
+    const bellElements = shells.map(shell => getTargets(shell).bell).filter((node): node is HTMLElement => node !== null);
+    let disposed = false;
 
     for (const shell of shells) {
       shell.dataset.messageCenterBellManaged = 'react';
@@ -175,7 +177,8 @@ function useMessageCenterBellSync() {
     const refreshBell = async (options: RefreshOptions = {}) => {
       try {
         const response = await fetchMessageCenterSummary();
-        updateShells(shells, response.summary);
+        if (disposed) return;
+        updateShells(shells, response.summary, getTargets);
         syncBellState(shells, stateRef.current, response.summary, response.latestUnread, options);
       } catch {
         // Keep the topbar calm during transient polling or auth-refresh failures.
@@ -191,7 +194,7 @@ function useMessageCenterBellSync() {
     const handleSummaryUpdated = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail : {};
       const summary = normalizeMessageSummary(detail);
-      updateShells(shells, summary);
+      updateShells(shells, summary, getTargets);
       stateRef.current.initialized = true;
       stateRef.current.lastUnreadTotal = summary.unreadTotal;
       if (summary.unreadTotal <= 0) {
@@ -200,10 +203,9 @@ function useMessageCenterBellSync() {
       }
     };
 
-    for (const shell of shells) {
-      shell.querySelector('[data-message-center-bell]')?.addEventListener('click', handleBellClick);
-    }
+    for (const bell of bellElements) bell.addEventListener('click', handleBellClick);
 
+    const previousRefresh = window.refreshMessageCenterBell;
     window.refreshMessageCenterBell = refreshBell;
     void refreshBell({ allowPopup: false });
     const intervalId = window.setInterval(() => {
@@ -215,11 +217,13 @@ function useMessageCenterBellSync() {
     window.addEventListener('message-center:summary-updated', handleSummaryUpdated);
 
     return () => {
+      disposed = true;
       window.clearInterval(intervalId);
       for (const shell of shells) {
         delete shell.dataset.messageCenterBellManaged;
-        shell.querySelector('[data-message-center-bell]')?.removeEventListener('click', handleBellClick);
       }
+      for (const bell of bellElements) bell.removeEventListener('click', handleBellClick);
+      if (window.refreshMessageCenterBell === refreshBell) window.refreshMessageCenterBell = previousRefresh;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('message-center:summary-updated', handleSummaryUpdated);
       if (stateRef.current.hideTimer !== null) {

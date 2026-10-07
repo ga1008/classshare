@@ -57,6 +57,20 @@ def fixture():
     assert not any(name == "classroom_app" or name.startswith("classroom_app.") for name in sys.modules)
     assert not any(name in sys.modules for name in ("sqlite3", "psycopg", "dotenv"))
     payload["isolated"] = True
+    # Real page consumers use the same pure macros, including authored content.
+    # Keep them isolated from route startup and every business database.
+    classroom = env.get_template('macros/classroom_menus.html').module
+    utility = env.get_template('macros/app_utility_menus.html').module
+    payload['consumers'] = {}
+    for role in ['teacher', 'student']:
+        user = {'role': role}
+        payload['consumers'][role] = ''.join([
+            str(classroom.classroom_more_menu(user, True)),
+            str(classroom.classroom_personal_menu(user)),
+            str(utility.app_learning_menu()),
+            str(utility.app_personal_menu(user)),
+            env.get_template('partials/dashboard_schedule_tools.html').render(user_info=user),
+        ])
     return payload
 
 

@@ -5,9 +5,11 @@ import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 import { bindSelection } from './lq/selection.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { enhanceNavMenus } from './lq/nav-menu.js';
 
 const root = document.querySelector('[data-dashboard-root]');
 initStudentDashboardSchedule(root);
+if (root) enhanceNavMenus(root);
 
 function normalizeText(value) {
     return String(value || '')

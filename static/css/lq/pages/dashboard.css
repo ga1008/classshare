@@ -167,15 +167,6 @@
 
 /* -- 去哪里 / 学习与成长: interactive cards ----------------------------- */
 [data-lq-dashboard] .ls-domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--ls-s-4); }
-[data-lq-dashboard] .ls-domain-card {
-    border-radius: var(--ls-r-lg);
-    border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--lq-page-content));
-    transition: transform var(--ls-dur-fast) var(--ls-ease-out), box-shadow var(--ls-dur-fast) var(--ls-ease-out);
-}
-@media (hover: hover) {
-    [data-lq-dashboard] .ls-domain-card:hover { transform: translateY(calc(var(--ls-s-1) / -2)); box-shadow: var(--ls-shadow-2); }
-}
 [data-lq-dashboard] .ls-tool-links { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); }
 [data-lq-dashboard] .ls-tool-link {
     border-radius: var(--ls-r-md);

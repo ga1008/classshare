@@ -7,6 +7,6 @@
 {%- set b = item.button -%}
 <{{ b.tag }} class="{{ b.classes|forceescape }}"{% for key, value in b.attrs.items() %} {{ key|forceescape }}="{{ value|forceescape }}"{% endfor %}>
 {%- if b.icon %}<span class="lq-btn__icon" aria-hidden="true">{{ lq_icon(b.icon) }}</span>{% endif -%}
-<span class="lq-btn__label">{{ b.label|forceescape }}</span></{{ b.tag }}>
+{%- if caller is defined %}{{ caller(item) }}{% else %}<span class="lq-btn__label">{{ b.label|forceescape }}</span>{% endif -%}</{{ b.tag }}>
 {%- endfor -%}</div>
 {%- endmacro %}

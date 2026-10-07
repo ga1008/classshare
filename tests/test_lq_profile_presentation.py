@@ -63,6 +63,12 @@ class LqProfilePresentationTests(unittest.TestCase):
                     _, new, _ = self.render(role, section)
                     _, old, _ = self.render(role, section, False)
                     self.assertEqual(fields(new), fields(old))
+                    if section in ('settings', 'security', 'email'):
+                        for doc in (new, old):
+                            for tag, attributes in doc.profile_tags:
+                                if tag in ('input', 'textarea', 'select') and 'form-control' in attributes.get('class', '').split():
+                                    self.assertEqual(tag, attributes.get('data-lq-component'), attributes.get('id'))
+                                    self.assertIn('lq-' + tag, attributes['class'].split())
                     self.assertEqual({k: v for k, v in new.contents.items() if k != 'profile-context-json'},
                                      {k: v for k, v in old.contents.items() if k != 'profile-context-json'})
 

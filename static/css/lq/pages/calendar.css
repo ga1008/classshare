@@ -7,17 +7,7 @@
    (sticky first column depends on overflow:auto set by semester_calendar.js /
    the legacy stylesheet) and `.semester-sticky-cell` must stay untouched. */
 
-/* 面板根同时带 .lq-surface（见 partials/semester_calendar_panel.html），但遗留的
-   .semester-calendar-panel 规则在 ui-system.src.css 里、排在 lq 之后且同特指度，
-   删掉这里的填充会让旧的不透明底重新胜出，所以按内容级材质显式写一遍。
-   描边保持 --ls-line：--ls-glass-line 是为彩色背景上的玻璃准备的白线，
-   在这块浅色面板上看不见。 */
-[data-lq-calendar] {
-    border-radius: var(--ls-r-lg);
-    border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--lq-page-content));
-    padding: var(--ls-s-5);
-}
+/* The root Surface owns material and inset in both calendar family states. */
 
 [data-lq-calendar] .semester-calendar-panel__header {
     display: flex;
@@ -31,17 +21,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--ls-s-2);
-}
-[data-lq-calendar] .semester-calendar-panel__actions .btn {
-    border-radius: var(--ls-r-capsule);
-    padding: var(--ls-s-1) var(--ls-s-3);
-    border: 1px solid hsl(var(--ls-line));
-    background: hsl(var(--lq-page-control));
-}
-[data-lq-calendar] .semester-calendar-panel__actions .btn-primary {
-    background: hsl(var(--ls-primary));
-    color: hsl(var(--ls-on-primary));
-    border-color: transparent;
 }
 
 /* today column / week-attribution tint — additive only, does not replace
@@ -67,36 +46,10 @@
     color: hsl(var(--ls-ink-2));
 }
 
-/* ── 材质边界（S9 U2）────────────────────────────────────────────────────
-   面板根同时带 .lq-surface，模糊与填充由组件材质提供，这里不再另造宿主。
-   只有两件事需要在页面层补：
-
-   1) 嵌在别的面板里时不当宿主。学生/教师首页把这块日历搬进 `.ls-calendar-host`
-      （即 `.ls-schedule` 面板内部），ui-system.src.css:61022 已经把它的底去掉，
-      让外层面板提供表面；但它带着 .lq-surface 的 backdrop-filter 一起进去，就成了
-      面板里的第二个宿主。嵌套材质不得再模糊，这里按契约压平。
-   2) 面板内部的材质同样压平：日历里的折叠区、概览卡都可能带材质类。 */
-.ls-calendar-host [data-lq-calendar],
+/* Shared content surfaces never add a live blur host inside the calendar. */
 [data-lq-calendar] :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
-}
-
-/* 独立形态（管理端「学期」页）保留内容级填充与高光边，和其余顶层面板同一标度。
-   遗留的 .semester-calendar-panel 规则排在 lq 之后且同特指度，所以这里必须比
-   单个类更具体才压得住；`[data-lq-calendar]` 只在开关打开时出现，不会误伤旧形态。 */
-[data-lq-calendar][data-semester-calendar-root].lq-surface.semester-calendar-panel {
-    background: hsl(var(--lq-page-content));
-    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                var(--ls-glass-shadow);
-}
-
-/* The host owns the panel, including its opaque accessibility fallback.
-   An embedded calendar is layout, so the material cascade must not repaint it. */
-.ls-calendar-host [data-lq-calendar][data-semester-calendar-root].lq-surface.semester-calendar-panel {
-    background: transparent !important;
-    box-shadow: none;
 }
 
 /* 日期格与学期小标签继承的是遗留的浅色版灰阶，暗色下不跟主题翻转：真实 axe 扫描

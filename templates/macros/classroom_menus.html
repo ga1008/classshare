@@ -1,0 +1,48 @@
+{% from 'macros/lq/nav-menu.html' import lq_nav_menu %}
+
+{% macro classroom_more_menu(user_info, has_learning_entry) %}
+{% set items = [] %}
+{% if has_learning_entry and user_info.role == 'teacher' %}
+{% set items = items + [{'id': 'members', 'label': '成员', 'icon': 'users', 'attrs': {'data-learning-modal-open': ''}}] %}
+{% endif %}
+{% if user_info.role == 'teacher' %}
+{% set items = items + [{'id': 'closeout', 'label': '结课', 'icon': 'circle-check', 'attrs': {'data-classroom-closeout-open': ''}}] %}
+{% endif %}
+{% set items = items + [
+    {'id': 'resources', 'label': '资源区', 'icon': 'folder', 'attrs': {'data-classroom-activity-open': 'resources'}},
+    {'id': 'collaboration', 'label': '协作区', 'icon': 'users', 'attrs': {'data-classroom-activity-open': 'collaboration'}},
+    {'id': 'stats', 'label': '课堂概览', 'icon': 'layout-dashboard', 'attrs': {'data-course-popover-target': 'stats', 'data-popover-title': '统计信息', 'data-popover-kicker': '课堂概览'}},
+    {'id': 'details', 'label': '课程详情', 'icon': 'book-open', 'attrs': {'data-course-popover-target': 'details', 'data-popover-title': '课程详情', 'data-popover-kicker': '课程资料'}}
+] %}
+{% set descriptions = {'members': '学生与学习情况', 'closeout': '检查并收尾课堂任务', 'resources': '共享文件与附件', 'collaboration': '小组、文件、提交与互评', 'stats': '人数、任务与进度', 'details': '学期、班级与说明'} %}
+<div data-lq-menu-native-actions>
+{% call(item) lq_nav_menu('classroom-more-menu', '更多', items, icon='plus', size='sm', align='end') %}
+<span class="lq-menu__copy"><strong>{{ item.label }}</strong><small>{{ descriptions[item.id] }}</small></span>
+{% endcall %}
+</div>
+{% endmacro %}
+
+{% macro classroom_personal_menu(user_info) %}
+{% set items = [
+    {'id': 'messages', 'label': '消息中心', 'icon': 'bell', 'href': '/profile?section=notifications#profile-message-center', 'attrs': {'data-message-center-bell': ''}},
+    {'id': 'feedback', 'label': '课堂反馈', 'icon': 'info', 'attrs': {'data-open-feedback': ''}},
+    {'id': 'profile', 'label': '个人中心', 'href': '/profile'}
+] %}
+{% if user_info.role == 'student' %}
+{% set items = items + [{'id': 'security', 'label': '账号安全', 'icon': 'settings', 'attrs': {'data-open-student-security': ''}}] %}
+{% endif %}
+{% set items = items + [{'id': 'logout', 'label': '退出登录', 'icon': 'arrow-right', 'href': '/logout', 'danger': true}] %}
+{% set descriptions = {'messages': '通知与私信', 'feedback': '问题与建议', 'profile': '资料与设置', 'security': '修改登录密码', 'logout': '安全离开'} %}
+<div class="cw-topbar-menu" data-message-center-bell-shell data-lq-menu-native-actions>
+{% call(item) lq_nav_menu('classroom-personal-menu', '个人', items, icon='user', size='sm', align='end') %}
+{% if item.id == 'profile' %}<span class="lq-menu__lead app-topbar-profile__avatar" aria-hidden="true"><img src="/api/profile/avatar" alt="" loading="lazy"></span>{% endif %}
+<span class="lq-menu__copy"><strong>{{ item.label }}</strong><small{% if item.id == 'messages' %} data-message-center-bell-caption{% endif %}>{{ descriptions[item.id] }}</small></span>
+{% if item.id == 'messages' %}<span class="message-center-bell__count app-topbar-action__count app-topbar-action__count--danger" data-message-center-bell-count hidden>0</span>{% endif %}
+{% endcall %}
+<div class="message-center-bell-toast" data-message-center-bell-toast hidden>
+    <strong class="message-center-bell-toast__title">新消息提醒</strong>
+    <div class="message-center-bell-toast__body" data-message-center-bell-toast-body>你有一条新消息。</div>
+    <div class="message-center-bell-toast__meta" data-message-center-bell-toast-meta>点击消息入口进入通知中心</div>
+</div>
+</div>
+{% endmacro %}

@@ -135,7 +135,7 @@ class NavbarShellRenderingTests(unittest.TestCase):
         self.assertEqual(['backdrop_color'], [node.attrs['data-ui-preference-input'] for node in doc.attr('data-ui-preference-input')])
         self.assertEqual(1, len(doc.scripts('js/user_ui_preferences.js')))
 
-    def test_navbar_default_off_unknown_flags_and_missing_helper_retain_legacy(self):
+    def test_navbar_default_off_unknown_flags_and_missing_helper_retain_compatible_shell(self):
         for role in ('student', 'teacher'):
             for families in (None, '', '0', '*', 'navbar', 'manage-shell', 'profile,messages'):
                 with self.subTest(role=role, families=families):
@@ -144,7 +144,11 @@ class NavbarShellRenderingTests(unittest.TestCase):
                     self.assertFalse(doc.attr('data-lq-navbar-topbar'))
                     self.assertFalse(doc.scripts('js/navbar_lq.js'))
                     self.assertEqual(1, len([node for node in doc.nodes if 'navbar' in node.attrs.get('class', '').split()]))
-                    self.assertIn('const topbarMenus =', html)
+                    self.assertNotIn('const topbarMenus =', html)
+                    self.assertEqual(2 if role == 'student' else 1, len(doc.attr('data-lq-utility-menu')))
+                    self.assertEqual('menu', doc.identity('app-personal-menu').attrs['role'])
+                    self.assertEqual('app-personal-menu', doc.identity('app-personal-menu--lq-trigger').attrs['aria-controls'])
+                    self.assertEqual(1, len(doc.attr('data-open-feedback')))
                     self.assertEqual(int(role == 'student'), len(doc.attr('data-app-bottomnav')))
         del self.env.globals['lq_family_enabled']
         self.assertFalse(self.render(families='navbar-shell')[1].attr('data-lq-navbar-topbar'))
@@ -310,19 +314,63 @@ class NavbarShellRenderingTests(unittest.TestCase):
 
     def test_both_real_homepages_have_one_preference_control_for_each_switch_mode(self):
         for role, template in (('student', 'dashboard.html'), ('teacher', 'dashboard_teacher.html')):
-            for families in ('', 'navbar-shell', 'manage-shell', 'navbar-shell,manage-shell'):
+            for families in ('', 'navbar-shell', 'manage-shell', 'navbar-shell,manage-shell', 'dashboard', 'navbar-shell,dashboard'):
                 with self.subTest(role=role, families=families):
                     _, doc = self.render(template, role=role, families=families, path='/dashboard',
                         dashboard_initial_filter='all', dashboard_initial_search='', dashboard_theme=role,
                         dashboard_initial_visible_count=0, dashboard_initial_results_summary='',
                         dashboard_can_create_todo=True, dashboard_workspace={}, dashboard_empty_state={},
                         dashboard_filters=[], dashboard_semester_options=[], dashboard_quick_actions=[],
-                        dashboard_domain_cards=[], class_offerings=[], dashboard_summary={},
+                        dashboard_domain_cards=[dict(domain='teaching', title='教学', label='教学', description='保留领域入口', summary='合成领域', href='/manage/teaching/classes', actions=[dict(href='/manage/teaching/offerings', label='开课')])], class_offerings=[], dashboard_summary={},
                         dashboard_semester_calendar={}, cultivation_profile={},
                         dashboard_work_inbox={'items': [], 'sources': [], 'total': 0})
                     self.assert_unique_document(doc)
                     self.assert_single_preferences(doc)
                     self.assertEqual(1, len(doc.attr('data-dashboard-root')))
+                    panel_class = 'ls-courses' if role == 'teacher' else 'ls-tools'
+                    panels = [node for node in doc.nodes if panel_class in node.attrs.get('class', '').split()]
+                    self.assertEqual(1, len(panels))
+                    self.assertEqual('surface', panels[0].attrs.get('data-lq-component'))
+                    self.assertEqual(None if 'dashboard' in families.split(',') else 'md', panels[0].attrs.get('data-lq-padding'))
+                    if role == 'teacher':
+                        domain = doc.attr('data-domain', 'teaching')[0]
+                        self.assertEqual(('surface', 'md'), (domain.attrs.get('data-lq-component'), domain.attrs.get('data-lq-padding')))
+                        self.assertTrue(any(node.tag == 'a' and node.attrs.get('href') == '/manage/teaching/classes' and domain in list(node.ancestors()) for node in doc.nodes))
+                    menu = doc.identity('dashboard-schedule-tools')
+                    self.assertEqual('menu', menu.attrs['role'])
+                    trigger = doc.identity('dashboard-schedule-tools--lq-trigger')
+                    self.assertEqual('dashboard-schedule-tools', trigger.attrs['aria-controls'])
+                    subscription = doc.attr('data-agenda-calendar-feed')
+                    self.assertEqual(1, len(subscription))
+                    self.assertEqual(('button', 'menuitem'), (subscription[0].tag, subscription[0].attrs['role']))
+                    self.assertIn(menu, list(subscription[0].ancestors()))
+                    sync = doc.attr('data-agenda-sync')
+                    self.assertEqual(int(role == 'teacher'), len(sync))
+                    if sync:
+                        self.assertEqual('/api/manage/system/academic-reminders/sync-current', sync[0].attrs['data-sync-endpoint'])
+                    # Students retain the separate calendar opener inside their
+                    # course schedule; the page header still has exactly one.
+                    calendar_openers = doc.attr('data-ls-open', 'calendar')
+                    self.assertEqual(2 if role == 'student' else 1, len(calendar_openers))
+                    self.assertEqual(1, sum(any('ls-page-head' in ancestor.attrs.get('class', '').split() for ancestor in node.ancestors()) for node in calendar_openers))
+
+
+    def test_calendar_surface_and_native_actions_are_shared_without_enabling_family(self):
+        for family in ('', 'calendar'):
+            for compact in (False, True):
+                with self.subTest(family=family, compact=compact):
+                    _, doc = self.render('partials/semester_calendar_panel.html', families=family,
+                        semester_calendar_compact=compact, semester_calendar_show_todos=True)
+                    root = doc.attr('data-semester-calendar-root')[0]
+                    self.assertEqual('surface', root.attrs.get('data-lq-component'))
+                    self.assertEqual(bool(family), 'data-lq-calendar' in root.attrs)
+                    for hook in ('data-semester-calendar-scroll-start', 'data-semester-calendar-scroll-today'):
+                        node = doc.attr(hook)[0]
+                        self.assertEqual(('button', 'button', 'button'), (node.tag, node.attrs['type'], node.attrs.get('data-lq-component')))
+                    self.assertEqual(int(not compact), len(doc.attr('data-semester-todo-add')))
+                    if not compact:
+                        self.assertIn('hidden', doc.attr('data-semester-todo-add')[0].attrs)
+                    self.assertEqual('select', doc.attr('data-semester-calendar-select')[0].tag)
 
 
 if __name__ == '__main__':

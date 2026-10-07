@@ -14,14 +14,11 @@
     pointer-events: none;
 }
 .lq-dialog-root[hidden] { display: none; }
-/* The scrim is the boundary between the layer world and the page, so it is the
-   one place a dialog blurs what is behind it: the panel above it then only has
-   to carry its own tint. Darkness comes from --ls-scrim (light .28 / dark .50),
-   which is shared with every other scrim in the product. */
+/* A modal has one sampling boundary: its raised surface (layers.css). The
+   scrim dims the rest of the page and receives outside clicks; filtering this
+   full viewport as well would duplicate the surface's work. */
 .lq-dialog-root > .lq-scrim {
     pointer-events: auto;
-    -webkit-backdrop-filter: blur(var(--ls-blur-scrim));
-    backdrop-filter: blur(var(--ls-blur-scrim));
 }
 .lq-dialog__surface {
     display: flex;

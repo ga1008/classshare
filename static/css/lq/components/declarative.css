@@ -9,6 +9,9 @@
 :root [data-lq-component][hidden]:not([hidden="until-found" i]) {
     display: none !important;
 }
+/* Authored text slots follow the button's complete resting/selected/pressed
+   colour pair. A domain title must not retain dark ink on a selected fill. */
+:root .lq-btn > .lq-btn__label { color: var(--lq-control-color); }
 :root [data-lq-component].lq-btn:not([data-lq-visual="color"], [data-lq-visual="category"]),
 :root [data-lq-component].lq-chip--filter,
 :root [data-lq-component]:is(.lq-input, .lq-textarea, .lq-select) {

@@ -60,3 +60,33 @@ test('LQ reduced motion and contrast preserve usable opaque controls', async ({ 
   await page.emulateMedia({ forcedColors: 'active' });
   expect((await style(page, '#content')).blur).toBe('none');
 });
+
+test('LQ raised modal owns one blur boundary while content spacing stays explicit', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', `<div class="lq-dialog-root" data-lq-layer-state="open">
+      <div id="scrim" class="lq-scrim"></div>
+      <section id="modal" class="lq-dialog__surface lq-glass lq-glass--thick lq-modal">
+        <div class="lq-dialog__head"><h2>共享内容与浮层</h2></div>
+        <div class="lq-dialog__body"><section id="padded" class="lq-surface" data-lq-component="surface" data-lq-padding="lg">
+          <h3>课程资料</h3><p>长文本与内容板块保留统一的内边距。</p>
+          <section id="compact" class="lq-surface" data-lq-component="surface" data-lq-padding="sm">内层资料</section>
+          <section id="edge" class="lq-surface" data-lq-component="surface" data-lq-padding="none">通栏表格</section>
+        </section></div>
+      </section></div>`);
+  });
+  expect((await style(page, '#scrim')).blur).toBe('none');
+  expect((await style(page, '#modal')).blur).toContain('blur(24px)');
+  for (const id of ['#padded', '#compact', '#edge']) expect((await style(page, id)).blur).toBe('none');
+  const inset = (id: string) => page.locator(id).evaluate(el => parseFloat(getComputedStyle(el).paddingLeft));
+  expect(await inset('#padded')).toBe(24);
+  expect(await inset('#compact')).toBe(12);
+  expect(await inset('#edge')).toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await inset('#padded')).toBe(16);
+  await page.locator('html').evaluate(el => el.setAttribute('data-lq-glass', 'off'));
+  for (const id of ['#modal', '#padded', '#compact']) {
+    expect((await style(page, id)).blur).toBe('none');
+    expect((await style(page, id)).fill).toBe('rgb(255, 255, 255)');
+  }
+});

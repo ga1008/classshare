@@ -178,6 +178,8 @@ test.describe('LQ Menu and Tooltip', () => {
     for (const palette of ['indigo', 'sky', 'mint', 'violet', 'rose', 'teal']) for (const appearance of ['light', 'dark']) test(`${palette}/${appearance} mobile long menu and tooltip use real CSS, remain in viewport and pass axe`, async ({ page }) => {
         await page.setViewportSize({ width: 390, height: 844 }); await page.evaluate(({ palette, appearance }) => { document.documentElement.dataset.uiPalette = palette; document.documentElement.dataset.appearance = appearance; }, { palette, appearance });
         await menu(page); await tooltip(page); await page.evaluate(() => { const label = document.querySelector('[data-lq-menu-item=edit] .lq-btn__label'); if (label) label.textContent = '编辑当前课堂的完整文档与保留草稿内容'.repeat(3); else (window as any).root.querySelector('.lq-btn__label').textContent = '编辑当前课堂的完整文档与保留草稿内容'.repeat(3); }); await page.locator('#opener').click();
+        await expect(page.getByRole('menu')).toHaveAttribute('data-lq-layer-state', 'open');
+        await expect(page.getByRole('menu')).toHaveCSS('transform', 'none');
         const box = await page.getByRole('menu').boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(12); expect(box!.x + box!.width).toBeLessThanOrEqual(378);
         expect((await new AxeBuilder({ page }).analyze()).violations.filter(v => ['serious', 'critical'].includes(v.impact || ''))).toEqual([]);
         await page.keyboard.press('Escape'); await page.locator('#icon').focus(); await expect(page.getByRole('tooltip')).toBeVisible();

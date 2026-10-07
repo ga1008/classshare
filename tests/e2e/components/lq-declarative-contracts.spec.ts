@@ -109,3 +109,26 @@ test('LQ selected surfaces retain a visible shared state in light dark and trans
     }
   }
 });
+
+test('LQ authored button and rich menu text slots follow selected and focus colour pairs', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', `
+    <button id="course-choice" data-lq-component="button" class="lq-btn lq-btn--glass" aria-pressed="true">
+      <strong class="lq-btn__label">选中的长课程标题</strong></button>
+    <div class="lq-menu lq-glass"><button id="rich-item" class="lq-menu__item lq-btn lq-btn--ghost">
+      <span class="lq-menu__copy"><strong>课堂概览</strong><small>人数、任务与进度</small></span>
+    </button></div>`));
+  for (const appearance of ['light', 'dark']) {
+    await page.locator('html').evaluate((el, value) => el.setAttribute('data-appearance', value), appearance);
+    for (const selected of ['true', 'false']) {
+      await page.locator('#course-choice').evaluate((el, value) => el.setAttribute('aria-pressed', value), selected);
+      const ink = await page.locator('#course-choice').evaluate(el => getComputedStyle(el).color);
+      await expect(page.locator('#course-choice .lq-btn__label')).toHaveCSS('color', ink);
+    }
+    await page.keyboard.press('Tab');
+    await page.locator('#rich-item').focus();
+    const ink = await page.locator('#rich-item').evaluate(el => getComputedStyle(el).color);
+    await expect(page.locator('#rich-item strong')).toHaveCSS('color', ink);
+    await expect(page.locator('#rich-item small')).toHaveCSS('color', ink);
+  }
+});

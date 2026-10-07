@@ -67,12 +67,18 @@ class ReportCardPilotTemplateTests(unittest.TestCase):
             self.assertEqual(len(tags.with_attr('data-message-center-bell')), 1)
             self.assertEqual(len(tags.with_attr('data-app-bottomnav')), 1)
             self.assertEqual(len(tags.with_attr('data-report-chart-data')), 1)
+            filters = [a for t, a in tags.tags if t == 'a' and a.get('href', '').startswith('/report-card?')]
+            self.assertEqual(4, len(filters))
+            self.assertEqual(1, sum(a.get('aria-current') == 'page' for a in filters))
+            self.assertTrue(all(a.get('data-lq-component') == 'button' and 'lq-btn' in a.get('class', '').split() for a in filters))
         pattern = r'<script type="application/json" data-report-chart-data>(.*?)</script>'
         self.assertEqual(json.loads(re.search(pattern, old, re.S)[1]), json.loads(re.search(pattern, new, re.S)[1]))
         links = lambda html: [a['href'] for t, a in Tags(html).tags if t == 'a' and a.get('href', '').startswith('/report-card?')]
         self.assertEqual(links(old), links(new))
         self.assertTrue(all('class_offering_id=40' in link for link in links(new)))
-        self.assertIn("const topbarMenus =", old); self.assertNotIn("const topbarMenus =", new)
+        self.assertNotIn("const topbarMenus =", old); self.assertNotIn("const topbarMenus =", new)
+        self.assertEqual(2, len(Tags(old).with_attr('data-lq-utility-menu')))
+        self.assertIn('id="app-personal-menu"', old)
         self.assertNotIn('src="/static/js/report_card.js"', old); self.assertIn('src="/static/js/report_card.js"', new)
         self.assertIn('const chart = echarts.init(el)', old); self.assertNotIn('const chart = echarts.init(el)', new)
         self.assertEqual(len(Tags(new).with_attr('data-lq-report-card-topbar')), 1)
@@ -87,7 +93,9 @@ class ReportCardPilotTemplateTests(unittest.TestCase):
         # Guard shared base_navbar independently of the report-card-only body.
         wrong_path = self.render(True, path='/resume')
         self.assertNotIn('data-lq-report-card-topbar', wrong_path)
-        self.assertIn('const topbarMenus =', wrong_path)
+        self.assertNotIn('const topbarMenus =', wrong_path)
+        self.assertEqual(2, len(Tags(wrong_path).with_attr('data-lq-utility-menu')))
+        self.assertIn('id="app-personal-menu"', wrong_path)
 
     def test_empty_and_single_scores_do_not_create_false_zero_or_empty_chart(self):
         card = sample_card(); card['summary'].update(overall_avg=None, record_total=0, pending_total=0); card['courses'] = []; card['charts'] = []

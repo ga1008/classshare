@@ -400,7 +400,9 @@ function createLayerSystem(doc) {
     }
     function returnFocus(handle, sequence) {
         const record = records.get(handle);
-        if (record.options.returnFocus === false || handle.closeReason === 'outside' || sequence !== openingSequence) return;
+        // Outside a non-modal panel the user may have focused another control.
+        // A modal scrim cannot focus the inert page: restore its entry normally.
+        if (record.options.returnFocus === false || (handle.closeReason === 'outside' && handle.modality !== 'modal') || sequence !== openingSequence) return;
         if (top() && top() !== handle.parentLayer && record.externalParent !== topExternal()) return;
         const event = new view.Event('lq:return-focus', { cancelable: true });
         call(handle, 'onReturnFocus', event);

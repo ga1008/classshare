@@ -36,11 +36,7 @@
     {% call lq_page_head(workspace.greeting|default(user_info.name ~ '，你好'), description=workspace.date_label|default(''),
         actions=([{'label': '日程', 'variant': 'soft', 'attrs': {'data-ls-open': 'calendar', 'aria-haspopup': 'dialog'}}]
             + ([{'label': '新增待办', 'variant': 'soft', 'attrs': {'data-agenda-add-todo': 'true', 'aria-haspopup': 'dialog'}}] if dashboard_can_create_todo else []))) %}
-    <details data-lq-component="menu" class="lq-domain-region ls-tools-menu"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">日程工具</summary><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-tools-menu-body">
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
-        {{ explain_button('日程来源', '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。', label='日程来源说明') }}
-    </div></details>
+    {% include "partials/dashboard_schedule_tools.html" %}
     {% endcall %}
     </div>
     {% else %}
@@ -49,11 +45,7 @@
         <div class="ls-head-actions">
             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-ls-open="calendar" aria-haspopup="dialog">日程</button>
             {% if dashboard_can_create_todo %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-agenda-add-todo aria-haspopup="dialog">新增待办</button>{% endif %}
-            <details data-lq-component="menu" class="lq-domain-region ls-tools-menu"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">日程工具</summary><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised ls-tools-menu-body">
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-calendar-feed aria-haspopup="dialog">订阅手机日历</button>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-agenda-sync data-sync-endpoint="/api/manage/system/academic-reminders/sync-current">同步教务提醒</button>
-                {{ explain_button('日程来源', '查看上课安排、作业考试和个人待办。完成状态按业务记录判断；过去的上课安排不代表已经完成学习。', label='日程来源说明') }}
-            </div></details>
+            {% include "partials/dashboard_schedule_tools.html" %}
         </div>
     </header>
     {% endif %}
@@ -87,7 +79,7 @@
     </div>
 
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}
-    <section class="ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title" data-lq-material="content">{% set lq_courses_body %}
+    <section data-lq-component="surface" class="lq-surface ls-courses" id="dashboard-class-list" aria-labelledby="ls-courses-title" data-lq-material="content"{% if not lq_family_enabled('dashboard') %} data-lq-padding="md"{% endif %}>{% set lq_courses_body %}
         <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-courses-title">我的课堂</h2>{% endif %}{% if class_offerings %}<span class="ls-muted">{{ class_offerings|length }} 个课堂 · <a data-lq-component="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" href="/manage/teaching/classroom-hub">课堂管理</a></span>{% endif %}</div>
         {% if lq_family_enabled('dashboard') %}
         {% from "macros/lq/content.html" import lq_filter_bar %}
@@ -186,11 +178,11 @@
     </section>
 
     {# ── 去哪里：六域卡 ───────────────────────────────────────────── #}
-    <section class="ls-domains" aria-labelledby="ls-domains-title" data-lq-material="content">{% set lq_domains_body %}
+    <section data-lq-component="surface" class="lq-surface ls-domains" aria-labelledby="ls-domains-title" data-lq-material="content"{% if not lq_family_enabled('dashboard') %} data-lq-padding="md"{% endif %}>{% set lq_domains_body %}
         <div class="ls-section-head">{% if not lq_family_enabled('dashboard') %}<h2 id="ls-domains-title">去哪里</h2>{% endif %}</div>
         <div class="ls-domain-grid{% if lq_family_enabled('dashboard') %} lq-grid--cards{% endif %}">
             {% for domain in dashboard_domain_cards %}
-            <article class="ls-domain-card ls-domain-card--{{ domain.domain }}{% if lq_family_enabled('dashboard') %} lq-card--interactive{% endif %}" data-domain="{{ domain.domain }}">
+            <article data-lq-component="surface" data-lq-material="content" data-lq-padding="md" class="lq-surface ls-domain-card ls-domain-card--{{ domain.domain }}{% if lq_family_enabled('dashboard') %} lq-card--interactive{% endif %}" data-domain="{{ domain.domain }}">
                 <a href="{{ domain.href }}" class="ls-domain-card__head" {{ explain_attrs(domain.title, domain.description) }}>
                     <span class="ls-domain-card__dot" aria-hidden="true"></span>
                     <strong>{{ domain.label }}</strong>

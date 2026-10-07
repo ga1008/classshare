@@ -126,6 +126,12 @@ host.innerHTML = '<button>Static</button>';
         rows = scan_source('templates/sample.html', '<div class="school-modal"><h2 class="school-modal-title">Title</h2><div class="school-modal-body">Body</div><button class="school-modal-close">Close</button></div>')
         self.assertEqual([r['kind'] for r in rows], ['dialog', 'button'])
 
+    def test_surface_material_and_inset_are_separate_unaccepted_declarations(self):
+        rows = scan_source('templates/example.html', '<section data-lq-component="surface" data-lq-material="raised" data-lq-padding="md" class="lq-surface lq-domain-raised"></section><section data-lq-component="surface" class="lq-surface"></section>')
+        self.assertEqual((rows[0]['declaredMaterial'], rows[0]['declaredPadding']), ('raised', 'md'))
+        self.assertEqual((rows[1]['declaredMaterial'], rows[1]['declaredPadding']), (None, None))
+        self.assertTrue(all(row['status'] == 'pending' for row in rows))
+
     def test_verified_adapter_is_candidate_and_escaped_markup_is_not_lost(self):
         source = "import { adoptDomainControl as adopt } from './lq/domain-controls.js';\nconst button = document.createElement('button'); button.className='legacy'; adopt(button, { kind: 'choice' });"
         rows = scan_source('static/js/example.js', source)

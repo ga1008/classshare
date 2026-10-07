@@ -1,35 +1,55 @@
-# 全平台组件源码审计基线（2026-09-27）
-
-当前源码入口清单见 [2026-10-08 全平台审计](lq-platform-component-audit-2026-10-08.md)。本文件保留历史基线；本轮没有提升历史 pending/unknown 或业务验收状态。
+# 全平台组件源码审计（2026-10-08）
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 510 个作者源码文件，覆盖 198 个 HTML 模板，发现 4517 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 518 个作者源码文件，覆盖 201 个 HTML 模板，发现 5298 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2186 |
-| field | 729 |
-| select | 301 |
-| surface | 490 |
-| menu | 90 |
-| dialog | 173 |
-| tab | 93 |
-| choice | 141 |
-| toolbar | 127 |
-| unknown | 187 |
+| button | 2206 |
+| field | 737 |
+| select | 299 |
+| surface | 659 |
+| menu | 33 |
+| dialog | 21 |
+| tab | 31 |
+| choice | 163 |
+| toolbar | 133 |
+| layer | 139 |
+| content-slot | 45 |
+| handle | 1 |
+| chip | 8 |
+| domain | 18 |
+| status | 44 |
+| unknown | 761 |
 
 | 来源 | 数量 |
 |---|---:|
+| component-declared | 3694 |
+| external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
-| legacy-or-native | 3715 |
-| lq-marked-native | 242 |
-| shared-component-call | 490 |
-| shared-definition | 50 |
+| legacy-or-native | 91 |
+| lq-marked-native | 112 |
+| runtime-output-unknown | 632 |
+| shared-adapter-call-candidate | 81 |
+| shared-component-call | 582 |
+| shared-definition | 52 |
+
+## 本轮审查与动态入口解释
+
+详见 [需求、模块与人工分类](lq-interface-modules-2026-10-08.md)、[共享模板完整审查](lq-interface-source-review-2026-10-08.json) 及 [源码与合同摘要](lq-platform-component-summary-2026-10-08.json)。源码声明仍为 pending，不能替代浏览器验收。
+
+| unknown 语法 | 数量 |
+| --- | ---: |
+| `create-element` | 30 |
+| `dynamic-html-sink` | 632 |
+| `jinja-component-call` | 43 |
+| `jinja-html` | 14 |
+| `react-jsx` | 42 |
 
 ## 页面台账缺口
 
-原台账 190 模板/208 条，内存重建为 198 模板/220 条；原文件及手工验收状态未更改。
+原台账 190 模板/208 条，内存重建为 201 模板/223 条；原文件及手工验收状态未更改。
 常规页面模板根 78 个；生成器发现 95 个页面方法路径，另显式注册的个人中心页面 7 个需补充。异常响应文档另计。
 
 - 新增台账身份：`GET /manage/academic/course-schedule/editor::manage/course_schedule_editor.html`
@@ -38,9 +58,12 @@
 - 新增台账身份：`POST /student/login/identity::student_auth_flow_v4.html`
 - 新增台账身份：`POST /student/password/forgot::student_auth_flow_v4.html`
 - 新增台账身份：`POST /student/password/setup::student_auth_flow_v4.html`
+- 新增台账身份：`template::macros/app_utility_menus.html`
+- 新增台账身份：`template::macros/classroom_menus.html`
 - 新增台账身份：`template::macros/lq/nav-menu.html`
 - 新增台账身份：`template::partials/ai_workspace_assets.html`
 - 新增台账身份：`template::partials/ai_workspace_mount.html`
+- 新增台账身份：`template::partials/dashboard_schedule_tools.html`
 - 新增台账身份：`template::partials/lq_page_backdrop.html`
 - 新增台账身份：`template::partials/profile/appearance.html`
 - 新增台账身份：`template::partials/profile/hero_lq.html`
@@ -59,31 +82,31 @@
 
 | 文件 | 候选入口 |
 |---|---:|
-| `templates/classroom_main_v4.html` | 234 |
-| `templates/assignment_detail_teacher.html` | 151 |
-| `static/js/collaboration.js` | 96 |
-| `templates/exam_editor.html` | 93 |
-| `static/js/materials_manage.js` | 81 |
+| `templates/classroom_main_v4.html` | 222 |
+| `templates/assignment_detail_teacher.html` | 172 |
+| `static/js/materials_manage.js` | 117 |
+| `templates/exam_editor.html` | 109 |
+| `static/js/collaboration.js` | 102 |
+| `static/js/blog.js` | 97 |
 | `templates/blog.html` | 73 |
-| `templates/manage/signatures.html` | 63 |
-| `static/js/blog.js` | 59 |
-| `templates/manage/courses.html` | 58 |
-| `static/js/teacher_onboarding.js` | 57 |
-| `templates/manage/classes.html` | 53 |
-| `templates/partials/materials/modals_generate.html` | 53 |
-| `templates/dashboard.html` | 51 |
-| `templates/dashboard_teacher.html` | 50 |
-| `templates/manage/system/users.html` | 47 |
-| `templates/dev/lq_interactions.html` | 46 |
+| `templates/manage/signatures.html` | 67 |
+| `static/js/teacher_onboarding.js` | 67 |
+| `templates/manage/courses.html` | 61 |
+| `templates/manage/system/blog_crawler.html` | 61 |
+| `templates/partials/materials/modals_generate.html` | 61 |
+| `static/js/attendance_reports.js` | 61 |
+| `templates/dashboard_teacher.html` | 56 |
+| `templates/manage/classes.html` | 56 |
+| `static/js/career_path_app.js` | 55 |
+| `static/js/course_schedule_editor.js` | 55 |
+| `templates/dashboard.html` | 54 |
+| `templates/manage/system/users.html` | 53 |
+| `static/js/manage_lesson_plans.js` | 49 |
+| `static/js/message_center.js` | 49 |
+| `templates/dev/lq_interactions.html` | 47 |
 | `templates/manage/attendance_reports.html` | 46 |
-| `templates/manage/system/blog_crawler.html` | 45 |
-| `static/js/manage_lesson_plans.js` | 45 |
-| `templates/manage/academic_final_materials.html` | 43 |
-| `templates/manage/textbooks.html` | 43 |
-| `static/js/career_path_app.js` | 43 |
-| `templates/manage/classrooms.html` | 42 |
-| `templates/submission_detail.html` | 41 |
-| `frontend/src/islands/dashboard-workspace.tsx` | 40 |
+| `templates/submission_detail.html` | 46 |
+| `templates/manage/textbooks.html` | 45 |
 
 ## 穷尽覆盖门禁
 
@@ -96,8 +119,6 @@
 7. 相同场景比较渲染宿主、事件耗时、长任务、布局偏移与请求数量；CSS继承或静态类命中不能代替真浏览器证据。
 
 ## 边界
-
-2026-09-29 调课变更清单的追加清点、共享 Table/Chip/Button/Popover 组合和运行时验收见 [专项记录](lq-schedule-changes-2026-09-29.md) 与 [最新源码摘要](lq-schedule-changes-source-summary-2026-09-29.json)。该追加记录不把其他页面的 pending/unknown 自动改为通过。
 
 - Static lexical inventory, not a JavaScript interpreter or a full JSX/Jinja execution engine. Unresolved dynamic tags/factories remain unknown.
 - Class names, inherited CSS, and data-lq attributes are provenance hints only; none imply component or business acceptance.

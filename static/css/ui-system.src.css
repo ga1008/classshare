@@ -328,6 +328,7 @@
 
     .app-topbar-nav {
         flex: 1 1 auto;
+        flex-wrap: wrap;
         justify-content: flex-end;
         gap: 0.62rem;
         min-width: 0;
@@ -12834,67 +12835,10 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     transform: translateY(1px);
 }
 
-/* ── Course Info Popover ── */
-.course-popover {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-}
-
-.course-popover.popover-open {
-    pointer-events: auto;
-}
-
-.course-popover-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.35);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 0.28s ease;
-}
-.popover-open .course-popover-overlay {
-    opacity: 1;
-}
-
-.course-popover-card {
-    position: relative;
-    width: 92%;
-    max-width: 540px;
-    max-height: 80vh;
-    border-radius: calc(var(--radius-xl) + 0.3rem);
-    background: hsl(var(--lq-page-raised));
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    box-shadow:
-        0 24px 64px -16px rgba(15, 23, 42, 0.22),
-        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    opacity: 0;
-    transform: translateY(12px) scale(0.97);
-    transition: opacity 0.28s ease, transform 0.28s ease;
-}
-.popover-open .course-popover-card {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-}
-
+/* Course content composes LQ Dialog/Surface slots; only domain layout lives here. */
 .course-popover-header {
-    display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--spacing-md);
-    padding: 1.4rem 1.6rem 1rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-    background:
-        radial-gradient(circle at top right, hsl(var(--ls-info) / 0.1), transparent 40%),
-        linear-gradient(135deg, hsl(var(--ls-primary) / 0.06), rgba(255, 255, 255, 0.98));
 }
 
 .course-popover-kicker {
@@ -12912,32 +12856,11 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     color: var(--text-primary);
 }
 
-.course-popover-close {
-    flex-shrink: 0;
-    width: 2rem;
-    height: 2rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    border-radius: var(--radius-full);
-    background: rgba(148, 163, 184, 0.1);
-    color: var(--text-muted);
-    font-size: 1.2rem;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-.course-popover-close:hover {
-    background: hsl(var(--ls-destructive) / 0.1);
-    color: #ef4444;
-}
-
 .course-popover-body {
-    padding: 1.2rem 1.6rem 1.6rem;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
+    white-space: normal;
 }
 
 .course-popover-section h4 {
@@ -12967,10 +12890,6 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    padding: 0.55rem 0.75rem;
-    border-radius: var(--radius-lg);
-    background: hsl(var(--lq-page-raised));
-    border: 1px solid rgba(148, 163, 184, 0.12);
 }
 .course-popover-info-item .info-label {
     font-size: var(--text-xs);
@@ -15517,17 +15436,6 @@ body.has-chat-image-preview-open {
         grid-template-columns: repeat(6, minmax(0, 1fr));
     }
 
-    .course-popover-card {
-        width: 96%;
-        max-height: 88vh;
-        border-radius: var(--radius-xl);
-    }
-    .course-popover-header {
-        padding: 1.1rem 1.2rem 0.9rem;
-    }
-    .course-popover-body {
-        padding: 1rem 1.2rem 1.3rem;
-    }
     .course-popover-info-grid {
         grid-template-columns: 1fr;
     }
@@ -15555,10 +15463,6 @@ body.has-chat-image-preview-open {
     --classroom-accent-soft: hsl(var(--ls-primary) / 0.16);
     --classroom-accent-strong: hsl(var(--ls-primary) / 0.24);
     --classroom-glow: hsl(var(--ls-primary) / .16);
-}
-
-.classroom-page.has-course-popover {
-    overflow: hidden;
 }
 
 .classroom-page .classroom-navbar {
@@ -17307,24 +17211,6 @@ body.has-chat-image-preview-open {
     box-shadow: 0 16px 28px -24px rgba(15, 23, 42, 0.22);
 }
 
-.course-popover-overlay {
-    background: rgba(15, 23, 42, 0.18);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-}
-
-.course-popover {
-    padding: 1.5rem;
-}
-
-.course-popover-card {
-    width: min(760px, 100%);
-    max-width: 760px;
-    background: hsl(var(--lq-page-raised));
-    border: 1px solid var(--classroom-panel-border);
-    box-shadow: 0 18px 30px -24px rgba(15, 23, 42, 0.24);
-}
-
 .course-popover-info-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
@@ -17507,9 +17393,6 @@ body.has-chat-image-preview-open {
         max-height: calc(100vh - 180px);
     }
 
-    .course-popover {
-        padding: 1rem;
-    }
 }
 
 @media (max-width: 560px) {
@@ -17552,11 +17435,6 @@ body.has-chat-image-preview-open {
 
     .section-chip {
         padding: 0.48rem 0.72rem;
-    }
-
-    .course-popover-card {
-        width: 100%;
-        max-height: calc(100vh - 2rem);
     }
 
     .classroom-page .modal-backdrop {
@@ -26616,13 +26494,6 @@ body.has-chat-image-preview-open {
     display: flex;
     flex-direction: column;
     gap: 18px;
-    padding: 24px;
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.94)),
-        linear-gradient(135deg, hsl(166 76% 97% / 0.46), rgba(255, 251, 235, 0.26));
-    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
 }
 
 .semester-calendar-panel__header,
@@ -28117,11 +27988,6 @@ body.has-chat-image-preview-open {
 }
 
 @media (max-width: 768px) {
-    .semester-calendar-panel {
-        padding: 20px 18px;
-        border-radius: var(--radius-sm);
-    }
-
     .semester-calendar-panel__header,
     .semester-calendar-panel__toolbar {
         flex-direction: column;
@@ -28140,7 +28006,7 @@ body.has-chat-image-preview-open {
         width: 100%;
     }
 
-    .semester-calendar-panel__actions .btn {
+    .semester-calendar-panel__actions .lq-btn {
         flex: 1 1 auto;
         min-height: 42px;
     }
@@ -38133,26 +37999,9 @@ body.has-academic-sync-dialog {
     grid-column: 1 / -1;
 }
 
-.profile-form .form-control {
-    min-height: 44px;
-    border-color: rgba(148, 163, 184, 0.24);
-    border-radius: var(--radius-lg);
-    background: hsl(var(--lq-page-control));
-}
-
 .profile-form textarea.form-control {
     min-height: 132px;
     resize: vertical;
-}
-
-.profile-form .form-control:focus {
-    border-color: var(--profile-accent);
-    box-shadow: 0 0 0 3px var(--profile-accent-soft);
-}
-
-.profile-form .form-control[readonly] {
-    background: rgba(226, 232, 240, 0.45);
-    color: var(--text-secondary);
 }
 
 .profile-form-actions {
@@ -38211,12 +38060,6 @@ body.has-academic-sync-dialog {
 .profile-email-advanced summary:focus-visible {
     border-radius: var(--radius-sm);
     box-shadow: 0 0 0 3px var(--profile-accent-soft);
-}
-
-.profile-form.is-provider-managed .form-control[readonly],
-.profile-form .form-control.is-managed {
-    background: rgba(226, 232, 240, 0.45);
-    color: var(--text-secondary);
 }
 
 .profile-email-list,
@@ -38382,14 +38225,6 @@ body.has-academic-sync-dialog {
 
 .profile-message-stats .message-center-stat.is-muted {
     opacity: 0.55;
-}
-
-.profile-message-toolbar {
-    padding: 0.95rem;
-    border: 1px solid var(--profile-card-border);
-    border-radius: var(--radius-xl);
-    background: hsl(var(--ls-surface-1) / 0.76);
-    box-shadow: var(--profile-shadow);
 }
 
 .profile-message-body {
@@ -43065,11 +42900,6 @@ body.has-teaching-session-modal {
     z-index: 5;
     display: grid;
     gap: 12px;
-    padding: 14px;
-    border: 1px solid hsl(var(--ls-info) / 0.24);
-    border-radius: var(--radius-sm);
-    background: hsl(var(--lq-page-raised));
-    box-shadow: 0 22px 60px -34px rgba(15, 23, 42, 0.62);
 }
 
 .smart-attendance-detail-popover[hidden] {
@@ -51673,12 +51503,9 @@ body.manage-embedded-page { background: transparent; }
 
 .ls-domain-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .ls-domain-card {
-    display: grid; gap: 10px; min-width: 0; padding: 16px 18px;
-    border: 1px solid hsl(var(--ls-border)); border-radius: var(--radius-lg); background: hsl(var(--lq-page-content));
+    display: grid; gap: 10px; min-width: 0;
     --ls-card-domain-accent: var(--ls-primary);
-    transition: border-color 160ms, box-shadow 160ms;
 }
-.ls-domain-card:hover { border-color: hsl(var(--ls-card-domain-accent) / 0.45); box-shadow: 0 6px 18px hsl(var(--ls-foreground) / 0.06); }
 .ls-domain-card--library {
     --ls-card-domain-accent: var(--ls-primary);
 }
@@ -60740,7 +60567,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 .ls-agenda-row .ls-link { text-align: right; }
 .ls-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; border: 1px solid hsl(var(--ls-destructive) / .3); color: hsl(var(--ls-destructive-strong, 0 72% 42%)); border-radius: 6px; font-size: 14px; }
 .ls-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid hsl(var(--ls-border)); padding-top: 12px; font-size: 13px; flex: 0 0 auto; }
-.ls-calendar-host .semester-calendar-panel { margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.ls-calendar-host .semester-calendar-panel { margin: 0; }
 .ls-calendar-host .semester-calendar-panel__header { flex-wrap: wrap; }
 .ls-calendar-host .semester-calendar-panel__actions { flex-wrap: wrap; }
 .ls-calendar-host .semester-calendar-scroll { max-width: 100%; }
@@ -60786,15 +60613,16 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .ls-focus-item > :last-child, .ls-agenda-row > :last-child { grid-column: 3; grid-row: 1 / 3; }
 }
 @media (max-width: 639px) {
-    .ls-page .app-topbar { flex-direction: row; align-items: center; gap: 4px 8px; padding: 8px 12px; }
+    .ls-page .app-topbar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 12px; }
     .ls-page .app-topbar-brand { width: auto; flex: 1 1 auto; }
     .ls-page .app-topbar-brand__mark { width: 32px; height: 32px; }
     .ls-page .topbar-scene-chip { flex: 0 0 auto; margin: 0; min-width: 44px; min-height: 44px; }
-    .ls-page .app-topbar-nav { width: 100%; flex-wrap: nowrap; gap: 8px; }
+    .ls-page .app-topbar-nav { width: 100%; flex-wrap: wrap; gap: 8px; }
     .ls-page .app-topbar-actions--primary { display: flex; width: auto; flex: 0 0 auto; }
     .ls-page .app-topbar-actions--primary:empty { display: none; }
-    .ls-page .app-topbar-actions--utility { display: flex; flex: 1 1 auto; width: auto; padding: 0; gap: 4px; border: 0; background: transparent; }
-    .ls-page .app-topbar-actions--utility > * { flex: 1 1 0; }
+    .ls-page .app-topbar-actions--utility { display: flex; flex: 1 1 100%; flex-wrap: wrap; width: auto; padding: 0; gap: 4px; border: 0; background: transparent; }
+    .ls-page .app-topbar-actions--utility > * { flex: 1 0 auto; width: auto; }
+    .ls-page .app-topbar-actions--utility > [data-lq-utility-menu] { display: flex; justify-content: center; }
     .ls-page .app-topbar-action, .ls-page .message-center-bell.app-topbar-action { min-height: 44px; flex-direction: row; min-width: 0; padding: 6px; gap: 0; }
     .ls-page .app-topbar-action__icon, .ls-page .app-topbar-actions .app-topbar-profile__avatar { display: none; }
     .ls-page .app-topbar-action__text strong { font-size: 13px; }
@@ -60838,7 +60666,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .ls-calendar-host .ls-semester-calendar { grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .ls-calendar-host .semester-calendar-panel__header { grid-column: 1; grid-row: 2; }
     .ls-calendar-host .semester-calendar-panel__actions { width: 100%; gap: 6px; }
-    .ls-calendar-host .semester-calendar-panel__actions .btn { min-width: 0; flex: 1 1 auto; }
+    .ls-calendar-host .semester-calendar-panel__actions .lq-btn { min-width: 0; flex: 1 1 auto; }
     .ls-calendar-host .semester-calendar-chip.is-todo { padding: 4px 8px; font-size: 12px; }
     .ls-calendar-host .semester-calendar-panel__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ls-calendar-host .semester-calendar-week-todo-stage { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -60900,8 +60728,8 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     .ls-page.role-student .app-topbar-nav { gap: 4px; }
     .ls-page.role-student .app-topbar .ui-palette-control { flex-basis: 96px; width: 96px; max-width: 96px; }
     .ls-page.role-student .app-topbar [data-ui-palette-select] { width: 96px; max-width: 96px; padding-left: 6px; padding-right: 22px; }
-    .ls-page.role-student .app-topbar-actions--utility { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 4px; }
-    .ls-page.role-student .app-topbar-actions--utility .app-topbar-action { box-sizing: border-box; width: 100%; padding-left: 4px; padding-right: 4px; }
+    .ls-page.role-student .app-topbar-actions--utility { gap: 4px; }
+    .ls-page.role-student .app-topbar-actions--utility .app-topbar-action { box-sizing: border-box; padding-left: 4px; padding-right: 4px; }
     .ls-page.role-student .app-topbar-actions--utility .app-topbar-action__text strong { overflow: visible; text-overflow: clip; white-space: nowrap; }
     .ls-page.role-student .ls-week-nav { display: grid; grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     .ls-page.role-student .ls-week-nav > span { grid-column: 1 / -1; grid-row: 1; line-height: 1.5; word-break: keep-all; overflow-wrap: normal; text-wrap: balance; }

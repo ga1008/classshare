@@ -33,7 +33,7 @@
                             </div>
                             <div class="profile-mood-custom">
                                 {% if _profile_lq %}<label for="profile-mood-input" class="lq-field__label">自定义今日心情</label>{% endif %}
-                                <input id="profile-mood-input" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.today_mood }}" maxlength="40" placeholder="自定义今日心情">
+                                <input data-lq-component="input" id="profile-mood-input" class="lq-input lq-control--md form-control" value="{{ profile.today_mood }}" maxlength="40" placeholder="自定义今日心情">
                                 {% if _profile_lq %}{{ lq_btn('保存心情', variant='prominent', type='button', id='profile-mood-save') }}{% else %}<button data-lq-component="button" type="button" id="profile-mood-save" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">保存心情</button>{% endif %}
                             </div>
                         </div>
@@ -49,17 +49,17 @@
                             <div class="profile-form-grid">
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-name">姓名</label>
-                                    <input id="profile-name" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.name }}" readonly>
+                                    <input data-lq-component="input" id="profile-name" class="lq-input lq-control--md form-control" value="{{ profile.name }}" readonly>
                                 </div>
                                 {% if profile.role == 'student' %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-student-id">学号</label>
-                                    <input id="profile-student-id" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.student_id_number }}" readonly>
+                                    <input data-lq-component="input" id="profile-student-id" class="lq-input lq-control--md form-control" value="{{ profile.student_id_number }}" readonly>
                                 </div>
                                 {% endif %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-nickname">身份昵称</label>
-                                    <input id="profile-nickname" name="nickname" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.nickname }}" maxlength="40">
+                                    <input data-lq-component="input" id="profile-nickname" name="nickname" class="lq-input lq-control--md form-control" value="{{ profile.nickname }}" maxlength="40">
                                 </div>
                                 {% if profile.role == 'teacher' %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
@@ -72,7 +72,7 @@
                                 {% endif %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-email">邮箱</label>
-                                    <input id="profile-email" name="email" type="email" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.email }}" maxlength="120">
+                                    <input data-lq-component="input" id="profile-email" name="email" type="email" class="lq-input lq-control--md form-control" value="{{ profile.email }}" maxlength="120">
                                 </div>
                             </div>
                         </div>
@@ -84,24 +84,24 @@
                             <div class="profile-form-grid">
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-phone">电话</label>
-                                    <input id="profile-phone" name="phone" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.phone }}" maxlength="32">
+                                    <input data-lq-component="input" id="profile-phone" name="phone" class="lq-input lq-control--md form-control" value="{{ profile.phone }}" maxlength="32">
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-wechat">微信</label>
-                                    <input id="profile-wechat" name="wechat" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.wechat }}" maxlength="64">
+                                    <input data-lq-component="input" id="profile-wechat" name="wechat" class="lq-input lq-control--md form-control" value="{{ profile.wechat }}" maxlength="64">
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-qq">QQ</label>
-                                    <input id="profile-qq" name="qq" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.qq }}" maxlength="32">
+                                    <input data-lq-component="input" id="profile-qq" name="qq" class="lq-input lq-control--md form-control" value="{{ profile.qq }}" maxlength="32">
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-homepage">个人主页</label>
-                                    <input id="profile-homepage" name="homepage_url" class="{% if _profile_lq %}lq-input lq-control--md {% endif %}form-control" value="{{ profile.homepage_url }}" maxlength="240" placeholder="https://">
+                                    <input data-lq-component="input" id="profile-homepage" name="homepage_url" class="lq-input lq-control--md form-control" value="{{ profile.homepage_url }}" maxlength="240" placeholder="https://">
                                 </div>
                                 {% if profile.role != 'student' %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-description">个人简介</label>
-                                    <textarea id="profile-description" name="description" class="{% if _profile_lq %}lq-textarea lq-control--md {% endif %}form-control" maxlength="600">{{ profile.description }}</textarea>
+                                    <textarea data-lq-component="textarea" id="profile-description" name="description" class="lq-textarea lq-control--md form-control" maxlength="600">{{ profile.description }}</textarea>
                                 </div>
                                 {% endif %}
                             </div>

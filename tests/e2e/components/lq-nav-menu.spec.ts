@@ -8,7 +8,7 @@ import { settleEntranceAnimations } from '../fixtures/lq-s3';
 
 type Case = { props: Record<string, any>; normalized?: any; html?: string; error?: string };
 const python = process.env.LQ_TEST_PYTHON || (process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python');
-const fixture: { cases: Case[]; invalid: Case[]; isolated: boolean } =
+const fixture: { cases: Case[]; invalid: Case[]; isolated: boolean; consumers: Record<string, string> } =
   JSON.parse(execFileSync(python, ['tests/e2e/scripts/render_lq_nav_menu.py'], { encoding: 'utf8' }));
 const tokens = JSON.parse(fs.readFileSync('docs/lq-tokens.json', 'utf8'));
 const palettes = ['indigo', 'sky', 'mint', 'violet', 'rose', 'teal'];
@@ -51,6 +51,167 @@ async function hover(page: Page, locator: Locator) {
 }
 
 test.describe('LQ nav menu', () => {
+  test('authored teacher/student menus keep permissions, readable labels and business hooks', async ({ page }) => {
+    for (const role of ['teacher', 'student']) {
+      await mount(page, 'jinja', false, []);
+      await page.locator('#bar').evaluate((bar, html) => { bar.innerHTML = html; }, fixture.consumers[role]);
+      await page.evaluate(() => { (window as any).lease = (window as any).navMenu.enhanceNavMenus(document); });
+      expect(await page.locator('#classroom-more-menu [data-classroom-closeout-open]').count()).toBe(role === 'teacher' ? 1 : 0);
+      expect(await page.locator('#classroom-personal-menu [data-open-student-security]').count()).toBe(role === 'student' ? 1 : 0);
+      await expect(page.locator('[data-message-center-bell-shell]')).toHaveClass('cw-topbar-menu');
+      expect(await page.locator('#dashboard-schedule-tools [data-agenda-sync]').count()).toBe(role === 'teacher' ? 1 : 0);
+      await trigger(page, 'classroom-more-menu').focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(panel(page, 'classroom-more-menu')).toBeVisible();
+      expect(await panel(page, 'classroom-more-menu').locator('.lq-menu__copy strong').allTextContents()).toContain('课程详情');
+      await page.keyboard.press('Escape');
+      await expect(trigger(page, 'classroom-more-menu')).toBeFocused();
+      await page.evaluate(() => (window as any).lease.dispose());
+    }
+  });
+
+  test('native authored actions close first, run once and preserve a newly opened dialog', async ({ page }) => {
+    await mount(page, 'jinja', false, []);
+    await page.locator('#bar').evaluate((bar, html) => { bar.innerHTML = html; }, fixture.consumers.teacher);
+    await page.evaluate(() => {
+      const w = window as any;
+      w.calls = 0;
+      w.lease = w.navMenu.enhanceNavMenus(document, { onAction: () => { throw new Error('Native action must not invoke callback action'); } });
+      document.querySelector('[data-classroom-closeout-open]')!.addEventListener('click', event => {
+        w.calls++;
+        const dialog = document.createElement('dialog'); dialog.id = 'action-dialog'; dialog.innerHTML = '<h2>结课检查</h2><button>关闭检查</button>';
+        document.body.append(dialog);
+        w.actionDialog = w.layer.open(dialog, { type: 'modal', trigger: event.currentTarget });
+      });
+    });
+    await trigger(page, 'classroom-more-menu').focus();
+    await page.keyboard.press('ArrowDown');
+    await panel(page, 'classroom-more-menu').locator('[data-classroom-closeout-open]').click();
+    await expect(page.locator('#action-dialog')).toBeVisible();
+    await expect(panel(page, 'classroom-more-menu')).toBeHidden();
+    expect(await page.evaluate(() => (window as any).calls)).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#action-dialog')).toBeHidden();
+    await expect(trigger(page, 'classroom-more-menu')).toBeFocused();
+  });
+
+  test('native authored actions respect a close veto and keep links native', async ({ page }) => {
+    await mount(page, 'jinja', false, []);
+    await page.locator('#bar').evaluate((bar, html) => { bar.innerHTML = html; }, fixture.consumers.teacher);
+    await page.evaluate(() => {
+      const w = window as any; w.calls = 0; w.allowClose = false;
+      w.lease = w.navMenu.enhanceNavMenus(document, { beforeClose: () => w.allowClose });
+      document.querySelector('[data-classroom-closeout-open]')!.addEventListener('click', () => w.calls++);
+      document.querySelector('#classroom-personal-menu [data-lq-menu-item="profile"]')!.addEventListener('click', event => {
+        w.linkClick = { defaultPrevented: event.defaultPrevented, ctrlKey: (event as MouseEvent).ctrlKey };
+        event.preventDefault();
+      });
+    });
+    await trigger(page, 'classroom-more-menu').focus(); await page.keyboard.press('ArrowDown');
+    await panel(page, 'classroom-more-menu').locator('[data-classroom-closeout-open]').click();
+    await expect(panel(page, 'classroom-more-menu')).toBeVisible();
+    expect(await page.evaluate(() => (window as any).calls)).toBe(0);
+    await page.evaluate(() => { (window as any).allowClose = true; });
+    await page.keyboard.press('Escape');
+    await trigger(page, 'classroom-personal-menu').focus(); await page.keyboard.press('ArrowDown');
+    await panel(page, 'classroom-personal-menu').locator('[data-lq-menu-item="profile"]').click({ modifiers: ['Control'] });
+    expect(await page.evaluate(() => (window as any).linkClick)).toEqual({ defaultPrevented: false, ctrlKey: true });
+  });
+
+  test('opening a sibling during action exit does not cancel the selected business action', async ({ page }) => {
+    await mount(page, 'jinja', false, []);
+    await page.locator('#bar').evaluate((bar, html) => { bar.innerHTML = html; }, fixture.consumers.teacher);
+    await page.evaluate(() => {
+      const w = window as any; w.calls = 0;
+      w.lease = w.navMenu.enhanceNavMenus(document);
+      document.querySelector('[data-classroom-closeout-open]')!.addEventListener('click', () => w.calls++);
+      w.lease.menus.find((menu: any) => menu.root.id === 'classroom-more-menu').open();
+    });
+    await expect(panel(page, 'classroom-more-menu')).toBeVisible();
+    await page.evaluate(() => {
+      (document.querySelector('[data-classroom-closeout-open]') as HTMLButtonElement).click();
+      (window as any).lease.menus.find((menu: any) => menu.root.id === 'classroom-personal-menu').open();
+    });
+    await expect.poll(() => page.evaluate(() => (window as any).calls)).toBe(1);
+    await expect(panel(page, 'classroom-personal-menu')).toBeVisible();
+  });
+
+  test('authored explanation keeps its source content and anchors to the visible menu trigger', async ({ page }) => {
+    await mount(page, 'jinja', false, []);
+    await page.locator('#bar').evaluate((bar, html) => { bar.innerHTML = html; }, fixture.consumers.teacher);
+    await page.evaluate(async () => {
+      (window as any).lease = (window as any).navMenu.enhanceNavMenus(document);
+      await import('/static/js/ui_explanation.js');
+    });
+    await trigger(page, 'dashboard-schedule-tools').focus(); await page.keyboard.press('ArrowDown');
+    await panel(page, 'dashboard-schedule-tools').locator('[data-explain-toggle]').click();
+    await expect(panel(page, 'dashboard-schedule-tools')).toBeHidden();
+    const help = page.locator('.ui-explain-popover');
+    await expect(help).toBeVisible();
+    await expect(help).toContainText('查看上课安排、作业考试和个人待办');
+    const anchor = await trigger(page, 'dashboard-schedule-tools').boundingBox();
+    const box = await help.boundingBox();
+    expect(anchor!.width).toBeGreaterThan(0);
+    expect(box!.y).toBeGreaterThan(anchor!.y);
+    await page.keyboard.press('Escape');
+    await expect(help).toBeHidden();
+    await expect(trigger(page, 'dashboard-schedule-tools')).toBeFocused();
+  });
+
+  test('hover switches sibling menus without moving the editing focus', async ({ page }) => {
+    await mount(page);
+    await page.locator('#note').focus();
+    await hover(page, trigger(page, 'nav-study'));
+    await expect(panel(page, 'nav-study')).toBeVisible();
+    await hover(page, trigger(page, 'nav-default'));
+    await expect(panel(page, 'nav-default')).toBeVisible();
+    await expect(panel(page, 'nav-study')).toBeHidden();
+    await expect(page.locator('#note')).toBeFocused();
+  });
+
+  test('message counters retain original nodes while a menu is portalled, including late binding and multiple shells', async ({ page }) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await mount(page, 'jinja', false, []);
+    await page.route('**/api/message-center/summary', route => route.fulfill({ json: { summary: { unread_total: 1 } } }));
+    await page.locator('#bar').evaluate((bar, html) => {
+      bar.innerHTML = html;
+      bar.insertAdjacentHTML('afterend', '<div id="second-bell" data-message-center-bell-shell><button data-message-center-bell><span data-message-center-bell-count hidden>0</span><span data-message-center-bell-caption></span></button></div><div data-message-center-bell-shell></div><div id="react-bell" data-message-center-bell-shell data-message-center-bell-managed="react"><span data-message-center-bell-count>9</span></div>');
+    }, fixture.consumers.teacher);
+    await page.evaluate(() => { (window as any).lease = (window as any).navMenu.enhanceNavMenus(document); });
+    await trigger(page, 'classroom-personal-menu').focus(); await page.keyboard.press('ArrowDown');
+    await expect(panel(page, 'classroom-personal-menu')).toBeVisible();
+    await page.evaluate(async () => { await import('/static/js/message_center_bell.js'); });
+    const firstCount = panel(page, 'classroom-personal-menu').locator('[data-message-center-bell-count]');
+    await expect(firstCount).toHaveText('1');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('message-center:summary-updated', { detail: { unread_total: 7 } })));
+    await expect(firstCount).toHaveText('7');
+    await expect(page.locator('#second-bell [data-message-center-bell-count]')).toHaveText('7');
+    await expect(panel(page, 'classroom-personal-menu').locator('[data-message-center-bell-caption]')).toHaveText('未读 7 条');
+    await expect(page.locator('#react-bell [data-message-center-bell-count]')).toHaveText('9');
+    await page.keyboard.press('Escape');
+    await expect(panel(page, 'classroom-personal-menu')).toBeHidden();
+    await page.evaluate(() => {
+      document.querySelector('#second-bell')!.innerHTML = '<button data-message-center-bell><span data-message-center-bell-count hidden>0</span><span data-message-center-bell-caption></span></button>';
+      window.dispatchEvent(new CustomEvent('message-center:summary-updated', { detail: { unread_total: 3 } }));
+    });
+    await expect(firstCount).toHaveText('3');
+    await expect(page.locator('#second-bell [data-message-center-bell-count]')).toHaveText('3');
+    expect(errors).toEqual([]);
+  });
+
+  test('pointer departure preserves an actively keyboard-navigated menu', async ({ page }) => {
+    await mount(page);
+    await hover(page, trigger(page, 'nav-study'));
+    await expect(panel(page, 'nav-study')).toBeVisible();
+    await hover(page, panel(page, 'nav-study').locator('[role="menuitem"]').first());
+    await page.keyboard.press('ArrowDown');
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(280); // Beyond the component's pointer close intent delay.
+    await expect(panel(page, 'nav-study')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(trigger(page, 'nav-study')).toBeFocused();
+  });
+
   test('real Jinja props, HTML and DOM factories produce exactly the same component', async ({ page }) => {
     expect(fixture.isolated).toBe(true);
     expect(fixture.cases.filter(item => item.error)).toEqual([]);

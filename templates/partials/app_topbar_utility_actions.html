@@ -1,4 +1,5 @@
 {% from "macros/app_topbar.html" import app_topbar_icon %}
+{% from "macros/app_utility_menus.html" import app_learning_menu, app_personal_menu %}
 {% if user_info.role == 'teacher' and not topbar_in_shell|default(false) %}
 <a data-lq-component="button" href="/manage" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate" title="管理中心" aria-label="打开管理中心">
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
@@ -8,30 +9,7 @@
     </span>
 </a>
 {% elif user_info.role != 'teacher' %}
-<details data-lq-component="menu" class="lq-domain-region app-topbar-menu app-topbar-menu--learning">
-    <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-slate" title="学习工具" aria-label="打开学习工具">
-        <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('map') }}</span>
-        <span class="app-topbar-action__text">
-            <strong>学习</strong>
-            <small>路径与复盘</small>
-        </span>
-    </summary>
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised app-topbar-menu__panel" role="menu" aria-label="学习工具">
-        <div class="app-topbar-menu__label">学习入口</div>
-        <a data-lq-component="button" href="/learning-path" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" role="menuitem">
-            {{ app_topbar_icon('map') }}
-            <span><strong>学习路径</strong><small>个性推进建议</small></span>
-        </a>
-        <a data-lq-component="button" href="/wrong-book" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" role="menuitem">
-            {{ app_topbar_icon('pen') }}
-            <span><strong>错题本</strong><small>考试失分与薄弱点</small></span>
-        </a>
-        <a data-lq-component="button" href="/feedback-review" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" role="menuitem">
-            {{ app_topbar_icon('pen') }}
-            <span><strong>反馈复盘</strong><small>批改反馈与再练</small></span>
-        </a>
-    </div>
-</details>
+{{ app_learning_menu() }}
 {% endif %}
 <a data-lq-component="button" href="/blog" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate" title="博客" aria-label="打开博客" data-blog-topbar-entry>
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('blog') }}</span>
@@ -62,45 +40,9 @@
         <div class="message-center-bell-toast__meta" data-message-center-bell-toast-meta>点击消息入口进入通知中心</div>
     </div>
 </div>
-<details data-lq-component="menu" class="lq-domain-region app-topbar-menu app-topbar-menu--personal">
-    <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-teal" title="个人入口" aria-label="打开个人入口">
-        <span class="app-topbar-profile__avatar" aria-hidden="true">
-            <img src="/api/profile/avatar" alt="" loading="lazy">
-        </span>
-        <span class="app-topbar-action__text">
-            <strong>我的</strong>
-            <small>资料与设置</small>
-        </span>
-    </summary>
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised app-topbar-menu__panel" role="menu" aria-label="个人入口">
-        <div class="app-topbar-menu__label">个人入口</div>
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" data-open-feedback title="问题反馈" aria-label="打开问题反馈" role="menuitem">
-            {{ app_topbar_icon('alert') }}
-            <span><strong>问题反馈</strong><small>提交建议或故障</small></span>
-        </button>
-        <a data-lq-component="button" href="/profile" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item app-topbar-profile" title="个人中心" aria-label="打开个人中心" role="menuitem">
-            <span class="app-topbar-profile__avatar" aria-hidden="true">
-                <img src="/api/profile/avatar" alt="" loading="lazy">
-            </span>
-            <span><strong>个人中心</strong><small>资料、通知与设置</small></span>
-        </a>
-        {% if user_info.role == 'student' %}
-        <a data-lq-component="button" href="/career-path" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" title="职业路径" aria-label="打开职业路径" role="menuitem">
-            {{ app_topbar_icon('map') }}
-            <span><strong>职业路径</strong><small>推荐方向与准备清单</small></span>
-        </a>
-        <a data-lq-component="button" href="/resume" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" title="个人简历" aria-label="打开个人简历" role="menuitem">
-            {{ app_topbar_icon('file-plus') }}
-            <span><strong>个人简历</strong><small>资料优化与简历生成</small></span>
-        </a>
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-menu__item" data-open-student-security title="账号安全" aria-label="修改密码" role="menuitem">
-            {{ app_topbar_icon('shield') }}
-            <span><strong>账号安全</strong><small>修改登录密码</small></span>
-        </button>
-        {% endif %}
-        <a data-lq-component="button" href="/logout" class="lq-btn lq-btn--sm lq-btn--destructive app-topbar-menu__item is-danger" title="退出登录" aria-label="退出登录" role="menuitem">
-            {{ app_topbar_icon('logout') }}
-            <span><strong>退出登录</strong><small>安全离开</small></span>
-        </a>
-    </div>
-</details>
+{{ app_personal_menu(user_info) }}
+
+<script type="module">
+    import { enhanceNavMenus } from "{{ asset_url('js/lq/nav-menu.js') }}";
+    document.querySelectorAll('[data-lq-utility-menu]').forEach(root => enhanceNavMenus(root));
+</script>
