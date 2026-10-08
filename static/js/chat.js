@@ -99,6 +99,7 @@ export class ClassroomChat {
         this.emojiPreviewRow = document.getElementById(options.emojiPreviewRowId);
         this.emojiSetNote = document.getElementById(options.emojiSetNoteId);
         this.composerExpandButton = document.getElementById(options.composerExpandButtonId);
+        this.sendStateNode = document.getElementById('chat-send-state');
         this.attachmentTriggerButton = document.getElementById(options.attachmentTriggerButtonId);
         this.attachmentFileInput = document.getElementById(options.attachmentFileInputId);
         this.attachmentPreviewRow = document.getElementById(options.attachmentPreviewRowId);
@@ -238,7 +239,9 @@ export class ClassroomChat {
         });
 
         this.chatInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            // Enter sends; Shift+Enter breaks a line. An IME that is still composing
+            // (candidate confirmation also arrives as Enter / keyCode 229) must not send.
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
                 event.preventDefault();
                 this.sendMessage();
             }
@@ -1098,6 +1101,13 @@ export class ClassroomChat {
             ? '\u53d1\u4fe1\u592a\u9891\u7e41\u7a0d\u540e\u518d\u53d1'
             : (uploadingAttachments ? '图片上传中' : '\u53d1\u9001');
         this.sendButton.setAttribute('aria-label', this.sendButton.title);
+        // The prominent send button keeps one colour; the reason it is disabled is a shared Status chip.
+        if (this.sendStateNode) {
+            const label = this.sendStateNode.querySelector('.lq-status__label') || this.sendStateNode;
+            label.textContent = limited ? '发信太频繁，稍后再发' : (uploadingAttachments ? '图片上传中…' : '');
+            this.sendStateNode.setAttribute('data-lq-tone-level', limited ? 'warning' : 'info');
+            this.sendStateNode.hidden = !(limited || uploadingAttachments);
+        }
 
         if (!limited && !uploadingAttachments) {
             if (this.sendButton.innerHTML !== this.defaultSendButtonMarkup) {
@@ -2202,6 +2212,7 @@ export class ClassroomChat {
 
         const wrapper = document.createElement('div');
         wrapper.className = `chat-message${isCurrentUser ? ' chat-self' : ''}${role === 'assistant' ? ' chat-assistant' : ''}`;
+        wrapper.dataset.lqSide = isCurrentUser ? 'outgoing' : 'incoming';
         if (messageId) {
             wrapper.dataset.messageId = String(messageId);
         }
@@ -2219,19 +2230,22 @@ export class ClassroomChat {
         avatar.textContent = initials;
         row.appendChild(avatar);
 
+        // The message body is a shared LQ Bubble (own messages outgoing, others incoming,
+        // the AI tutor tinted); quote, attachments and actions live in its content slots.
         const main = document.createElement('div');
-        main.className = 'chat-message-main';
+        main.className = `chat-message-main lq-bubble lq-bubble--${isCurrentUser ? 'outgoing' : 'incoming'}${role === 'assistant' ? ' lq-bubble--assistant' : ''}`;
+        main.dataset.lqComponent = 'bubble';
 
         const header = document.createElement('div');
         header.className = 'chat-message-header';
 
         const senderNode = document.createElement('span');
-        senderNode.className = `sender${roleClass}`;
+        senderNode.className = `sender lq-bubble__author${roleClass}`;
         senderNode.textContent = sender;
         header.appendChild(senderNode);
 
         const timeNode = document.createElement('span');
-        timeNode.className = 'time';
+        timeNode.className = 'time lq-bubble__time';
         timeNode.textContent = String(normalizedMessage.timestamp || '');
         header.appendChild(timeNode);
 
@@ -2245,7 +2259,7 @@ export class ClassroomChat {
 
         if (text || options.forceContent) {
             const content = document.createElement('div');
-            content.className = 'message-content';
+            content.className = 'message-content lq-bubble__content';
             this.renderMessageTextContent(content, text, role);
             if (options.streamStatus) {
                 this.appendDiscussionAiStreamStatus(content, options.streamStatus);
@@ -2724,7 +2738,7 @@ export class ClassroomChat {
 
         const quoteButton = document.createElement('button');
         quoteButton.type = 'button';
-        quoteButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
+        quoteButton.className = 'chat-message-action-btn lq-btn lq-btn--ghost lq-btn--sm';
         quoteButton.dataset.messageAction = 'quote';
         quoteButton.dataset.messageId = String(normalizedId);
         quoteButton.textContent = DISCUSSION_UI_TEXT.quoteActionLabel;
@@ -2735,7 +2749,7 @@ export class ClassroomChat {
         if (this.canMarkMessageUseful(message)) {
             const usefulButton = document.createElement('button');
             usefulButton.type = 'button';
-            usefulButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
+            usefulButton.className = 'chat-message-action-btn lq-btn lq-btn--ghost lq-btn--sm';
             usefulButton.dataset.messageAction = 'mark-useful';
             usefulButton.dataset.messageId = String(normalizedId);
             usefulButton.textContent = DISCUSSION_UI_TEXT.usefulActionLabel;
@@ -2745,7 +2759,7 @@ export class ClassroomChat {
 
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
-        copyButton.className = 'chat-message-action-btn lq-btn lq-btn--glass lq-btn--sm';
+        copyButton.className = 'chat-message-action-btn lq-btn lq-btn--ghost lq-btn--sm';
         copyButton.dataset.messageAction = 'copy';
         copyButton.dataset.messageId = String(normalizedId);
         copyButton.textContent = DISCUSSION_UI_TEXT.copyActionLabel;

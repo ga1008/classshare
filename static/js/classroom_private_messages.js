@@ -224,7 +224,7 @@ export class ClassroomPrivateMessages {
             this.openAttachmentPreview(attachment, siblings);
         });
         this.input.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
                 event.preventDefault();
                 this.sendMessage();
             }
@@ -572,14 +572,15 @@ export class ClassroomPrivateMessages {
     renderMessage(message) {
         const content = String(message.content || '');
         const attachments = this.renderMessageAttachments(message.attachments);
-        const articleClass = `classroom-private-message${message.is_outgoing ? ' is-outgoing' : ''}`;
+        const side = message.is_outgoing ? 'outgoing' : 'incoming';
+        const articleClass = `classroom-private-message lq-bubble lq-bubble--${side}${message.is_outgoing ? ' is-outgoing' : ''}`;
         return `
-            <article class="${articleClass}">
+            <article class="${articleClass}" data-lq-component="bubble">
                 <div class="classroom-private-message__meta">
-                    <strong>${escapeHtml(message.sender_display_name || '')}</strong>
-                    <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
+                    <strong class="lq-bubble__author">${escapeHtml(message.sender_display_name || '')}</strong>
+                    <span class="lq-bubble__time">${escapeHtml(formatDate(message.created_at || ''))}</span>
                 </div>
-                ${content ? `<div class="classroom-private-message__content">${escapeHtml(content)}</div>` : ''}
+                ${content ? `<div class="classroom-private-message__content lq-bubble__content">${escapeHtml(content)}</div>` : ''}
                 ${attachments}
             </article>
         `;

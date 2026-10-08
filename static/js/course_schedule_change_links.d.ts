@@ -22,7 +22,9 @@ export type ApprovedScheduleChange = {
   proposed: { date: string; sections: number[]; room: string };
 };
 export type PlannedScheduleChange = {
-  request_id: string; detail_id: string; phase: 'planned'; approval_status: 'approved'; kind: 'move' | 'room' | 'cancel';
+  request_id: string; detail_id: string;
+  /** planned = approved but not yet official; draft = unsubmitted teacher request; approved = room-only change already official. */
+  phase: 'planned' | 'draft' | 'approved'; approval_status: 'approved' | 'draft'; kind: 'move' | 'room' | 'cancel';
   source_event_key: string; session_id: number | null; class_offering_id: number | null;
   original_week_index: number; proposed_week_index: number | null;
   original: { date: string; sections: number[]; room: string };

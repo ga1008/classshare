@@ -195,7 +195,9 @@ for (const appearance of ['light', 'dark']) test(`mini and expanded schedules sh
     expect(result.mini.blur).toContain('blur(');
     expect(result.expanded.blur).not.toBe('none');
     expect(result.expandedOwner.alpha).toBe(0);
-    expect(result.overlay.alpha).toBe(0);
+    // The overlay is the shared Dialog scrim: it dims the page but never blurs it.
+    expect(result.overlay.alpha).toBeGreaterThan(0);
+    expect(result.overlay.alpha).toBeLessThan(.6);
     for (const name of ['expandedOwner', 'overlay', 'outside', 'body'] as const) {
       expect(result[name].blur).toBe('none'); expect(result[name].filter).toBe('none');
     }

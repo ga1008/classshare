@@ -76,6 +76,10 @@
 .lq-page-head__title { margin: 0; min-width: 0; font-size: var(--ls-t-title1); line-height: var(--ls-leading-title1); font-weight: var(--ls-weight-title1); overflow-wrap: anywhere; }
 .lq-page-head .page-head__desc { margin: var(--ls-s-2) 0 0; max-width: 65ch; color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-callout); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
 .lq-page-head .page-head__aside { display: flex; flex-wrap: wrap; gap: var(--ls-s-3); min-width: 0; max-width: 100%; }
+/* Wide aside slots (manage insights, explicit data-page-head-wide) take a full row under the title
+   on every shell, not only the pilot body class; otherwise the column stretches the head. */
+.lq-page-head:has(> .page-head__aside > :is(.manage-pagehead__insights, [data-page-head-wide])) > .page-head__aside { flex: 1 1 100%; order: 3; display: block; }
+.lq-page-head .page-head__aside > .manage-pagehead__insights { max-width: 100%; }
 .lq-filter-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ls-s-3); margin: 0; padding-block: var(--ls-s-3); }
 .lq-filter-bar__search { flex: 1 1 14rem; min-width: 0; }
 .lq-filter-bar__controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ls-s-3); min-width: 0; max-width: 100%; }
@@ -96,11 +100,31 @@
 .lq-prose :where(th, td) { padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); color: hsl(var(--ls-ink)); text-align: start; }
 .lq-prose :where(th) { background: hsl(var(--ls-surface-2)); font-weight: var(--ls-weight-title3); }
 .lq-prose :where(a, button):focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
-.lq-bubble { width: fit-content; max-width: 72%; padding: var(--ls-s-3) var(--ls-s-4); border-radius: calc(var(--ls-r-lg) - var(--ls-s-1) / 2); background: hsl(var(--ls-surface-2)); }
-.lq-bubble--outgoing { margin-inline-start: auto; background: hsl(var(--ls-primary-soft)); }
+/* Bubble: glass content material, never a blur host of its own. Incoming and
+   outgoing pair fill with ink; the assistant variant uses the success pair.
+   Each side keeps one tail corner so authorship reads without colour. */
+.lq-bubble {
+    --lq-bubble-tail: var(--ls-r-xs);
+    --lq-bubble-fill: hsl(var(--lq-page-content, var(--ls-surface-1)));
+    --lq-bubble-tint: transparent;
+    --lq-bubble-line: hsl(var(--ls-glass-line));
+    position: relative; width: fit-content; max-width: 72%; padding: var(--ls-s-3) var(--ls-s-4);
+    border: 1px solid var(--lq-bubble-line); border-radius: calc(var(--ls-r-lg) - var(--ls-s-1) / 2);
+    background: var(--ls-glass-sheen), linear-gradient(var(--lq-bubble-tint), var(--lq-bubble-tint)), var(--lq-bubble-fill);
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), var(--ls-shadow-1);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    transition: opacity var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out), translate var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out);
+}
+@starting-style { .lq-bubble { opacity: 0; translate: 0 var(--lq-motion-hover-y, -1px); } }
+.lq-bubble--incoming { border-end-start-radius: var(--lq-bubble-tail); }
+.lq-bubble--outgoing { margin-inline-start: auto; border-end-end-radius: var(--lq-bubble-tail); --lq-bubble-tint: hsl(var(--ls-primary-soft)); --lq-bubble-line: hsl(var(--ls-primary) / .34); }
+.lq-bubble--assistant { --lq-bubble-tint: hsl(var(--ls-tone-success-soft)); --lq-bubble-line: hsl(var(--ls-tone-success-fg) / .28); }
+.lq-bubble.is-connected { border-radius: calc(var(--ls-r-lg) - var(--ls-s-1) / 2); }
 .lq-bubble.is-connected.lq-bubble--incoming { border-start-start-radius: var(--ls-r-xs); }
 .lq-bubble.is-connected.lq-bubble--outgoing { border-start-end-radius: var(--ls-r-xs); }
 .lq-bubble__author { margin: 0 0 var(--ls-s-1); color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-footnote); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
+.lq-bubble--outgoing .lq-bubble__author { color: hsl(var(--ls-on-primary-soft)); }
+.lq-bubble--assistant .lq-bubble__author { color: hsl(var(--ls-tone-success-fg)); }
 .lq-bubble__content { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--ls-t-body); line-height: var(--ls-leading-body); }
 .lq-bubble__time { display: block; margin-top: var(--ls-s-1); color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-caption); line-height: var(--ls-leading-caption); opacity: 1; visibility: visible; }
 .lq-bubble--outgoing .lq-bubble__time { color: hsl(var(--ls-ink-2)); }
@@ -121,7 +145,7 @@
 }
 @media (forced-colors: active) {
     .lq-list__heading, .lq-row__front, .lq-row--swipe[data-lq-row-enhanced] .lq-row__swipe-actions { background: Canvas; color: CanvasText; border-color: CanvasText; }
-    .lq-card, .lq-list, .lq-empty, .lq-bubble { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+    .lq-card, .lq-list, .lq-empty, .lq-bubble { border: 1px solid CanvasText; background: Canvas; color: CanvasText; box-shadow: none; }
     .lq-card__meta, .lq-row__meta, .lq-empty__description, .lq-empty[data-reason] .lq-empty__title, .lq-page-head .page-head__desc, .lq-bubble__author, .lq-bubble__time { color: CanvasText; }
     .lq-prose :where(pre, th, td, code, blockquote) { background: Canvas; color: CanvasText; border-color: CanvasText; }
     .lq-prose :where(a) { color: LinkText; }

@@ -66,7 +66,12 @@ export function projectScheduleChanges(overview) {
         const source = byKey.get(text(relation.source_event_key));
         const original = slot(relation.original), proposed = slot(relation.proposed);
         const destination = weeks.find(week => Number(week.week_index) === Number(relation.proposed_week_index));
-        if (relation.phase !== 'planned' || relation.approval_status !== 'approved' || !['move', 'room', 'cancel'].includes(relation.kind)
+        // planned: approved, not yet official. draft: the teacher's unsubmitted request.
+        // approved+room: a room-only change already reflected by the official card.
+        const phaseValid = relation.phase === 'planned' ? relation.approval_status === 'approved'
+            : relation.phase === 'draft' ? relation.approval_status === 'draft'
+            : relation.phase === 'approved' ? relation.kind === 'room' && relation.approval_status === 'approved' : false;
+        if (!phaseValid || !['move', 'room', 'cancel'].includes(relation.kind)
             || !text(relation.request_id) || !text(relation.detail_id) || !source || !original
             || source.lesson.counts_towards_total === false
             || Number(source.week.week_index) !== Number(relation.original_week_index)
@@ -77,14 +82,15 @@ export function projectScheduleChanges(overview) {
             || relation.kind === 'move' && sameTime(original, proposed)
             || relation.kind === 'room' && !sameTime(original, proposed)) continue;
         // This adapter is repeatable; never duplicate an already projected plan.
-        if (scheduleChanges(source.lesson).some(change => change.phase === 'planned'
+        if (scheduleChanges(source.lesson).some(change => change.phase === relation.phase
             && change.request_id === relation.request_id && change.detail_id === relation.detail_id)) continue;
-        const proposedKey = relation.kind === 'move'
+        // Only an approved plan draws its target; a draft is unsubmitted and stays on its card.
+        const proposedKey = relation.kind === 'move' && relation.phase === 'planned'
             ? `${source.lesson.event_key}:planned:${relation.request_id}:${relation.detail_id}` : null;
         if (proposedKey && byKey.has(proposedKey)) continue;
-        const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: 'planned',
-            approval_status: 'approved', kind: relation.kind, original, proposed };
-        const sourceChange = { ...shared, endpoint: 'original', counterpart_event_key: proposedKey,
+        const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: relation.phase,
+            approval_status: relation.approval_status, kind: relation.kind, original, proposed };
+        const sourceChange = { ...shared, endpoint: relation.phase === 'approved' ? 'effective' : 'original', counterpart_event_key: proposedKey,
             counterpart_week_index: proposedKey ? destination.week_index : null };
         source.lesson.schedule_changes = [...scheduleChanges(source.lesson), sourceChange];
         if (!proposedKey) continue;

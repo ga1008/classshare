@@ -92,7 +92,29 @@ class PlannedScheduleChangeTests(unittest.TestCase):
         self.publish(base_snapshot([request(status='approved')]))
         for state in ['rejected', 'returned', 'draft', 'unknown', None]:
             self.publish(base_snapshot([request(status=state)] if state else []))
-            self.assertEqual([], self.teacher()['planned_changes'])
+            # A draft only produces its own display-only phase; nothing stays an approved plan.
+            self.assertEqual([], [row for row in self.teacher()['planned_changes'] if row['phase'] != 'draft'])
+
+    def test_unsubmitted_draft_marks_its_card_only_for_the_teacher(self):
+        self.publish(base_snapshot([request(status='draft')]))
+        result = self.teacher()
+        draft, = result['planned_changes']
+        self.assertEqual(('draft', 'draft', 'move', 'academic:1:1:session:101'),
+                         (draft['phase'], draft['approval_status'], draft['kind'], draft['source_event_key']))
+        self.assertEqual((3, 6, 0), tuple(result['summary'][key] for key in ('slot_count', 'total_hours', 'prediction_count')))
+        self.assertFalse(any(item.get('adjustment') for week in result['weeks'] for item in week['lessons']))
+        self.assertEqual([], load_authorized_prediction_lessons(self.conn, [10], semester_id=2)['planned_changes'])
+
+    def test_effective_room_only_approval_keeps_a_room_changed_marker(self):
+        snapshot = base_snapshot([request(status='approved', proposed=slot('2026-09-20', room='B210'))])
+        snapshot['official'][0] = official('2026-09-20', room='B210')
+        self.publish(snapshot)
+        result = self.teacher()
+        marker, = result['planned_changes']
+        self.assertEqual(('approved', 'approved', 'room', 'B416', 'B210'),
+                         (marker['phase'], marker['approval_status'], marker['kind'], marker['original']['room'], marker['proposed']['room']))
+        self.assertEqual([], result['approved_changes'])
+        self.assertEqual((3, 6, 0), tuple(result['summary'][key] for key in ('slot_count', 'total_hours', 'prediction_count')))
 
     def test_teacher_filter_and_student_live_membership_limit_relations(self):
         self.publish(base_snapshot([request(status='approved')]))

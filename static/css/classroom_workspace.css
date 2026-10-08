@@ -240,12 +240,9 @@ body.classroom-workspace-v2 [data-ui-dialog-overlay][data-state] { z-index: 1004
 .classroom-workspace-v2 #discussion-broadcast-body,
 .classroom-workspace-v2 #classroom-private-body { flex: 0 0 auto; height: clamp(280px, 42vh, 440px); min-height: 0; max-height: none; overflow: hidden; }
 .classroom-workspace-v2 #chat-messages { height: 100%; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior-y: contain; }
-.classroom-workspace-v2 .discussion-room-composer { position: relative; flex: 0 0 auto; padding: 12px 0 0; }
-.classroom-workspace-v2 .discussion-room-composer .chat-composer-shell { display: flex; flex-direction: column; width: 100%; min-height: 140px; height: auto; padding: 12px; gap: 8px; border: 1px solid var(--cw-line); border-radius: 10px; background-color: var(--cw-paper); box-shadow: none; }
-.classroom-workspace-v2 .discussion-room-composer .chat-composer-input { flex: 1; min-height: 72px; width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; resize: vertical; }
-.classroom-workspace-v2 .discussion-room-composer .chat-composer-actions { position: static; display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; flex: 0 0 auto; width: 100%; max-width: none; padding: 0; gap: 6px; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; backdrop-filter: none; }
-.classroom-workspace-v2 .discussion-room-composer .chat-composer-actions > button { position: static; flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; min-height: 36px; border-radius: 7px; transform: none; }
-.classroom-workspace-v2 .discussion-room-composer .chat-composer-actions > button:first-child { margin-right: auto; }
+.classroom-workspace-v2 .discussion-room-composer { position: relative; flex: 0 0 auto; padding: 12px 0 0; border-top: 0; }
+/* Composer shell/input/actions: shared LQ Composer recipe (composer.css); only the minimum input height is a workspace decision. */
+.classroom-workspace-v2 .discussion-room-composer .lq-composer__input { min-height: 64px; }
 .classroom-workspace-v2 #discussion-room.is-composer-expanded .discussion-room-composer { min-height: 240px; }
 @media (max-width: 1000px) {
     .classroom-workspace-v2 .cw-primary-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
@@ -406,8 +403,6 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .classroom-workspace-v2 .classroom-activity-tab.is-active { background: var(--cw-tint); color: var(--cw-accent); }
 .classroom-workspace-v2 .classroom-activity-tab__icon { display: none; }
 .classroom-workspace-v2 #discussion-room .discussion-room-header { flex-wrap: wrap; }
-.classroom-workspace-v2 #discussion-room .discussion-room-composer .chat-composer-actions { flex-wrap: wrap; }
-.classroom-workspace-v2 #discussion-room .discussion-room-composer .chat-composer-actions > button { flex: 0 0 38px; width: 38px; height: 38px; }
 .classroom-workspace-v2 #discussion-room .discussion-room-body.discussion-panel.is-active { display: flex !important; flex-direction: column; }
 .classroom-workspace-v2 #classroom-private-conversation { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; }
 .classroom-workspace-v2 .classroom-private-shell { display: flex; flex-direction: column; min-height: 0; height: 100%; }
@@ -466,7 +461,6 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
     .classroom-workspace-v2 .cw-button, .classroom-workspace-v2 .teaching-session-action,
     .classroom-workspace-v2 .cw-topbar .cw-nav-link, .classroom-workspace-v2 .cw-task-tabs button,
     .classroom-workspace-v2 .cw-session-nav .teaching-timeline-nav-btn,
-    .classroom-workspace-v2 #discussion-room .discussion-room-composer .chat-composer-actions > button { min-height: 44px; min-width: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
     .classroom-workspace-v2 *, .classroom-workspace-v2 *::before, .classroom-workspace-v2 *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
@@ -509,8 +503,7 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 /* Touch and keyboard remain equivalent in both the page and portalled workspace. */
 @media (pointer: coarse) {
     .classroom-workspace-v2 .cw-topbar .cw-nav-link,
-    .classroom-workspace-v2 :is(.cw-button, .teaching-session-action),
-    .classroom-workspace-v2 #discussion-room .discussion-room-composer .chat-composer-actions > button {
+    .classroom-workspace-v2 :is(.cw-button, .teaching-session-action) {
         min-width: 44px;
         min-height: 44px;
     }

@@ -2,7 +2,6 @@
 .lq-manage-pilot .lq-page-head { gap: var(--ls-s-4); }
 .lq-manage-pilot .lq-page-head .page-head__aside { min-width: 0; }
 .lq-manage-pilot .lq-page-head .manage-pagehead__insights { max-width: 100%; }
-.lq-manage-pilot .lq-page-head:has(> .page-head__aside > :is(.manage-pagehead__insights,[data-page-head-wide])) > .page-head__aside { flex: 1 1 100%; order: 3; display: block; }
 .lq-manage-pilot #courseSaveBtn { inline-size: calc(var(--ls-s-16) + var(--ls-s-10)); max-inline-size: 100%; white-space: nowrap; transform: none; }
 html[data-appearance="dark"] .lq-manage-pilot :is(.class-manage-card,.semester-calendar-panel,.materials-card,.materials-row,.um-hero-main,.um-create-card,.um-panel) { background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border-color: hsl(var(--ls-line)); }
 html[data-appearance="dark"] .lq-manage-pilot :is(.course-card-metric,.course-card-alignment,.course-card-sync-summary,.course-result-summary,.course-organization-bar,.course-group-switch,.class-form-note,.academic-context-block,.semester-calendar-overview-card,.semester-calendar-panel__hint,.semester-calendar-panel__empty,.textbook-catalog-preview,.materials-list-body,.materials-list-header,.materials-row-time,.materials-search-box,.materials-meta-item,.um-summary-item) { background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); border-color: hsl(var(--ls-line)); }

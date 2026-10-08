@@ -477,7 +477,17 @@ def _planned_change_relations(lessons: list[dict], requests: list[dict]) -> tupl
                 continue
             kind = "cancel" if request["kind"] == "cancel" else "room" if _slot_key(original) == _slot_key(proposed) else "move"
             if kind == "room" and _room(source.get("classroom")) == _room(proposed.get("room")):
-                continue  # Room-only approval already reflected in this card.
+                # Room-only approval already reflected in this card: the official
+                # room is the new one. Keep a display-only marker so the card can
+                # say the room was changed by an approved request.
+                if _room(original.get("room")) and _room(original.get("room")) != _room(proposed.get("room")) and source.get("event_key"):
+                    relations.append({"request_id": request["request_id"], "detail_id": detail["detail_id"],
+                                      "kind": "room", "phase": "approved", "approval_status": "approved",
+                                      "source_event_key": source["event_key"], "session_id": source.get("session_id"),
+                                      "class_offering_id": source.get("class_offering_id"),
+                                      "original": _public_slot(original), "proposed": _public_slot(proposed),
+                                      "original_week_index": original["week"], "proposed_week_index": proposed["week"]})
+                continue
             if kind == "move" and any(_same_identity(item, request)
                     and (item.get("actual_date"), tuple(item.get("sections") or [])) == _slot_key(proposed)
                     for item in official):
@@ -493,7 +503,38 @@ def _planned_change_relations(lessons: list[dict], requests: list[dict]) -> tupl
                               "original": _public_slot(original), "proposed": _public_slot(proposed),
                               "original_week_index": original["week"],
                               "proposed_week_index": proposed["week"] if proposed else None})
+    relations.extend(_draft_change_relations(official, requests))
     return relations, warnings
+
+
+def _draft_change_relations(official: list[dict], requests: list[dict]) -> list[dict]:
+    """Teacher-side unsubmitted 教务 drafts, display-only on their unique original card.
+
+    A draft never changes the official timetable, creates no predicted target
+    and raises no warning; ambiguous or unmatched drafts are simply not shown.
+    """
+    relations = []
+    for request in requests:
+        if request.get("status") != "draft" or request.get("kind") not in {"move", "cancel"}:
+            continue
+        for detail in request.get("details", []):
+            original, proposed = detail.get("original"), detail.get("proposed")
+            if not original or (request["kind"] == "move" and not proposed):
+                continue
+            sources = [item for item in official if _same_identity(item, request)
+                       and (item.get("actual_date"), tuple(item.get("sections") or [])) == _slot_key(original)]
+            if len(sources) != 1 or not sources[0].get("event_key"):
+                continue
+            source = sources[0]
+            kind = "cancel" if request["kind"] == "cancel" else "room" if _slot_key(original) == _slot_key(proposed) else "move"
+            relations.append({"request_id": request["request_id"], "detail_id": detail.get("detail_id") or "",
+                              "kind": kind, "phase": "draft", "approval_status": "draft",
+                              "source_event_key": source["event_key"], "session_id": source.get("session_id"),
+                              "class_offering_id": source.get("class_offering_id"),
+                              "original": _public_slot(original), "proposed": _public_slot(proposed),
+                              "original_week_index": original["week"],
+                              "proposed_week_index": proposed["week"] if proposed else None})
+    return relations
 
 
 def reconcile_and_publish_snapshot(conn, teacher_id: int, semester: dict | int, snapshot: dict, lease_token: str, *, now=None) -> dict:
@@ -834,7 +875,9 @@ def load_authorized_prediction_lessons(conn, authorized_offering_ids, *, semeste
         allowed = allowed_by_snapshot[key]
         empty["lessons"].extend(row for row in snapshot["lessons"] if row.get("class_offering_id") in allowed)
         empty["approved_changes"].extend(row for row in snapshot["approved_changes"] if row.get("class_offering_id") in allowed)
-        empty["planned_changes"].extend(row for row in snapshot["planned_changes"] if row.get("class_offering_id") in allowed)
+        # Unsubmitted teacher drafts are the teacher's private working state.
+        empty["planned_changes"].extend(row for row in snapshot["planned_changes"]
+                                        if row.get("class_offering_id") in allowed and row.get("phase") != "draft")
         empty["covered_offering_ids"].extend(value for value in snapshot["covered_offering_ids"] if value in allowed)
         empty["sync_states"].append(snapshot["sync_state"])
         # Request reasons and other classes' diagnostics are not student payloads.

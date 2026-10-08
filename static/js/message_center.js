@@ -1408,18 +1408,19 @@ if (app) {
                             ? 'message-center-message__content md-content'
                             : 'message-center-message__content';
                         const articleClass = [
-                            'message-center-message',
-                            message.is_outgoing ? 'is-outgoing' : '',
+                            'message-center-message lq-bubble',
+                            message.is_outgoing ? 'is-outgoing lq-bubble--outgoing' : 'lq-bubble--incoming',
+                            isAiReply ? 'lq-bubble--assistant' : '',
                             isVirtual ? 'is-status-note' : '',
                             message.virtual_status === 'failed' ? 'is-failed' : '',
                         ].filter(Boolean).join(' ');
                         return `
-                            <article class="${articleClass}">
+                            <article class="${articleClass}" data-lq-component="bubble">
                                 <div class="message-center-message__meta">
-                                    <strong>${escapeHtml(message.sender_display_name || '')}</strong>
-                                    <span>${escapeHtml(formatDate(message.created_at || ''))}</span>
+                                    <strong class="lq-bubble__author">${escapeHtml(message.sender_display_name || '')}</strong>
+                                    <span class="lq-bubble__time">${escapeHtml(formatDate(message.created_at || ''))}</span>
                                 </div>
-                                ${rawContent ? `<div class="${contentClass}">${contentHtml}</div>` : ''}
+                                ${rawContent ? `<div class="${contentClass} lq-bubble__content">${contentHtml}</div>` : ''}
                                 ${renderMessageAttachments(message.attachments)}
                                 ${message.status_copy ? `<div class="message-center-message__status">${escapeHtml(message.status_copy)}</div>` : ''}
                                 ${!isVirtual && message.can_block_sender && !message.is_sender_blocked ? `

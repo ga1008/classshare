@@ -23,7 +23,7 @@
 import { scheduleChangeConnections, scheduleChangeColors, projectScheduleChanges } from './course_schedule_change_links.js?v=change-lines-glass-20260920';
 import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-simple-20260920';
 
-import { compactClassroomName, adjustmentActionText, scheduleChanges, scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { compactClassroomName, adjustmentActionText, scheduleChanges, scheduleChangeLabel, scheduleChangeBadge } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 
 import { DECK_CSS } from './course_schedule_styles.js';
 
@@ -275,11 +275,15 @@ export function createScheduleDeck(container, options = {}) {
         const comparisons = [];
         const buttons = changes.map((change, changeIndex) => {
             const counterpart = change.kind === 'move' && change.counterpart_event_key;
-            const jump = counterpart ? ` ${change.endpoint !== 'original' ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
+            const jump = counterpart ? ` ${change.endpoint !== 'original' ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' || change.phase === 'draft' ? ' · 查看对照' : ' · 查看说明');
             const actionLabel = scheduleChangeLabel(lesson, change) + jump;
             const shortLabel = adjustmentActionText(lesson, change);
             const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
-            comparisons.push(change.phase === 'approved'
+            comparisons.push(change.phase === 'approved' && change.kind === 'room'
+                ? `原教室：${change.original?.room || '未记录'}。现教室：${change.proposed?.room || '未记录'}。更换教室申请已批准并在正式课表生效。`
+                : change.phase === 'draft'
+                ? `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '草稿拟申请停课。' : `草稿拟调至：${positionText(change.proposed)}。`}该申请尚未提交教务审核，不影响正式课表与课时。`
+                : change.phase === 'approved'
                 ? `原安排：${positionText(change.original)}。现安排：${positionText(change.proposed)}。调课已审批通过并在正式课表生效；原位置仅供核对。`
                 : change.phase === 'planned'
                     ? `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课已批准，但正式课表仍保留该课次。' : `计划安排：${positionText(change.proposed)}。申请已批准，正式课表尚未落实。`}计划状态不改变正式课次、课时与教学材料；此关系来自调课申请，并非节假日调休。`
@@ -290,8 +294,11 @@ export function createScheduleDeck(container, options = {}) {
         const comparison = comparisons.length ? `<div class="cs-adjustment-details" hidden>${comparisons.map(escapeHtml).join('<br>')}</div>` : '';
         const mainTag = changes.length && href ? 'a' : 'div';
         const mainAttrs = changes.length ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
-        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${lesson.is_change_history ? '原安排 · ' : ''}${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
-        const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${proposed ? ' cs-lesson--proposed' : ''}${lesson.is_change_history ? ' cs-lesson--history' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
+        const badge = scheduleChangeBadge(lesson);
+        const badgeHtml = badge ? `<span data-lq-component="chip" class="lq-chip lq-chip--status lq-chip--sm cs-lesson__phase" data-tone="${badge.tone}" title="${escapeHtml(badge.title)}"><span class="lq-chip__dot" aria-hidden="true"></span><span class="lq-chip__label">${escapeHtml(badge.label)}</span></span>` : '';
+        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface">${badgeHtml}<${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${lesson.is_change_history ? '原安排 · ' : ''}${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
+        const draft = changes.some(item => item.phase === 'draft');
+        const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${draft ? ' cs-lesson--draft' : ''}${badge?.roomChanged ? ' cs-lesson--room-changed' : ''}${proposed ? ' cs-lesson--proposed' : ''}${lesson.is_change_history ? ' cs-lesson--history' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
         const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
         if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(`${lesson.course_name} · ${fullRoom}`)}">${content}</div>`;
         const tag = !changes.length && href ? 'a' : 'div';

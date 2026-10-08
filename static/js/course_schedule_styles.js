@@ -6,6 +6,9 @@ export const DECK_CSS = `
     --cs-inset-fill: hsl(var(--ls-glass-fill-inset));
     --cs-control-fill: hsl(var(--ls-glass-fill-control));
     --cs-live-blur: blur(var(--ls-blur-regular)) saturate(var(--ls-glass-saturate));
+    /* Repeated lesson cards are not blur hosts: a denser fill keeps the photo
+       from reading through stacked cells (cheaper than a filter per card). */
+    --cs-lesson-fill: color-mix(in srgb, color-mix(in srgb, var(--cs-accent, hsl(var(--ls-primary))) 14%, hsl(var(--ls-surface-1))) 88%, transparent);
     color: hsl(var(--ls-ink));
 }
 .cs-deck { display: grid; gap: 12px; }
@@ -198,10 +201,29 @@ export const DECK_CSS = `
     width: 100%; height: 100%; min-width: 0; min-height: 0; box-sizing: border-box;
     border-radius: inherit; padding: 7px 8px; gap: 4px; overflow: hidden;
     background-color: var(--cs-fill);
-    background-color: color-mix(in srgb, var(--cs-accent, hsl(var(--ls-primary))) 18%, var(--cs-fill));
+    background-color: var(--cs-lesson-fill);
     background-image: var(--ls-glass-sheen);
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 0 0 1px hsl(var(--ls-glass-line)), var(--ls-shadow-1);
 }
+/* Stage badge: draft → 审核中 → 已批准 / 已换教室. The chip reuses the shared
+   status-chip recipe; the deck only positions and scales it. */
+.cs-lesson__phase {
+    position: absolute; top: 3px; right: 3px; z-index: 2;
+    min-height: 16px; padding: 0 5px; gap: 3px;
+    font-size: .58rem; line-height: 1.2; font-weight: 800; white-space: nowrap;
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim));
+}
+.cs-lesson__phase .lq-chip__dot { flex-basis: 5px; width: 5px; height: 5px; }
+.cs-lesson__surface:has(> .cs-lesson__phase) > .cs-lesson__main { padding-top: 15px; }
+.cs-lesson--draft .cs-lesson__surface { background-image: repeating-linear-gradient(135deg, transparent 0 9px, hsl(var(--ls-ink-3) / .07) 9px 11px), var(--ls-glass-sheen); }
+.cs-lesson.cs-lesson--draft { border: 2px dotted color-mix(in srgb, var(--cs-accent, hsl(var(--ls-primary))) 70%, transparent); padding: 4px; }
+.cs-lesson--draft .cs-lesson__surface { border-radius: max(6px, calc(var(--cs-radius) - 6px)); }
+.cs-lesson--room-changed .cs-lesson__room { font-weight: 800; color: hsl(var(--ls-tone-info-fg)); }
+/* Stacked mini cards are too short for a floating chip: the badge becomes a
+   thin top strip and the title starts below it. */
+.cs-lesson--mini .cs-lesson__phase { top: 0; right: 0; left: 0; justify-content: flex-end; min-height: 13px; padding: 0 4px; font-size: .52rem; border-radius: calc(var(--cs-radius) - 1px) calc(var(--cs-radius) - 1px) 0 0; border-width: 0 0 1px; }
+.cs-lesson--mini .cs-lesson__surface:has(> .cs-lesson__phase) > .cs-lesson__main { padding-top: 13px; align-self: start; }
+.cs-lesson--mini.cs-lesson--pending .cs-lesson__phase, .cs-lesson--mini.cs-lesson--draft .cs-lesson__phase { border-radius: max(5px, calc(var(--cs-radius) - 7px)) max(5px, calc(var(--cs-radius) - 7px)) 0 0; }
 .cs-lesson__main, .cs-lesson__main:link, .cs-lesson__main:visited {
     display: block; align-self: center; min-width: 0; min-height: 0;
     color: inherit; text-decoration: none; overflow: hidden;
@@ -315,7 +337,13 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__surface {
     display: flex; flex-direction: column; width: auto; height: auto; min-height: 0;
     padding: 13px 14px; gap: 10px; overflow: visible;
+    /* The enlarged card is the only live blur host in the grid: raised fill
+       with its rim, so it reads as the shared raised glass, not flat paint. */
+    background-color: color-mix(in srgb, var(--cs-accent, hsl(var(--ls-primary))) 10%, var(--cs-raised-fill));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)), inset 0 0 0 1px hsl(var(--ls-glass-line));
 }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__phase { position: static; order: -1; align-self: flex-start; min-height: 20px; padding: 1px 8px; font-size: .7rem; }
+.cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__surface:has(> .cs-lesson__phase) > .cs-lesson__main { padding-top: 0; }
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__main { align-self: stretch; overflow: visible; }
 .cs-lesson--cell:is(.is-preview,.is-preview-closing) .cs-lesson__title {
     display: block; font-size: 1.02rem; line-height: 1.3; overflow: visible; -webkit-line-clamp: unset;
@@ -345,7 +373,8 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     position: fixed;
     inset: 0;
     z-index: var(--ls-z-modal);
-    background: transparent;
+    /* Same scrim as the shared Dialog: dim the page, never blur the viewport. */
+    background: hsl(var(--ls-scrim));
     backdrop-filter: none; -webkit-backdrop-filter: none;
     display: grid;
     place-items: center;
@@ -363,7 +392,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     border: 1px solid hsl(var(--ls-glass-line));
     background: transparent;
     color: hsl(var(--ls-ink));
-    box-shadow: var(--ls-glass-shadow-strong);
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)), var(--ls-glass-shadow-strong);
     display: grid;
     grid-template-rows: auto 1fr;
     overflow: hidden;
@@ -376,7 +405,7 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
     content: ''; position: absolute; inset: 0; z-index: -1;
     border-radius: inherit; pointer-events: none;
     background: var(--cs-raised-fill); background-image: var(--ls-glass-sheen);
-    backdrop-filter: var(--cs-live-blur); -webkit-backdrop-filter: var(--cs-live-blur);
+    backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate)); -webkit-backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate));
 }
 .cs-expand.is-open .cs-expand__card { transform: scale(1) rotateX(0deg); }
 .cs-expand__bar {

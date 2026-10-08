@@ -7,8 +7,37 @@ export function scheduleChanges(lesson) {
     const changes = Array.isArray(lesson?.schedule_changes) ? lesson.schedule_changes : [lesson?.adjustment];
     return changes.filter(change => change && (
         ['pending', 'planned'].includes(change.phase) && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
+        || change.phase === 'draft' && ['move', 'cancel', 'room'].includes(change.kind) && change.endpoint === 'original'
         || change.phase === 'approved' && change.kind === 'move' && ['original', 'effective'].includes(change.endpoint)
+        || change.phase === 'approved' && change.kind === 'room' && change.endpoint === 'effective'
     ));
+}
+
+const PHASE_BADGES = {
+    draft: { label: '草稿', tone: 'neutral', title: '调课申请草稿，尚未提交教务审核' },
+    pending: { label: '审核中', tone: 'warning', title: '调课申请已提交教务，等待审核' },
+    planned: { label: '已批准', tone: 'success', title: '申请已批准，正式课表待落实' },
+};
+
+/**
+ * One compact stage badge per card: draft → 审核中 → 已批准/已生效. A fully
+ * effective time change needs no badge (the card already sits at its new
+ * position); any approved room change is always marked.
+ */
+export function scheduleChangeBadge(lesson) {
+    const changes = scheduleChanges(lesson);
+    if (!changes.length) return null;
+    const roomChanged = changes.some(change => change.kind === 'room'
+        || classroomChangeState(change.original?.room, change.proposed?.room) === true);
+    const effectiveRoom = changes.find(change => change.phase === 'approved' && change.endpoint === 'effective' && roomChanged);
+    if (effectiveRoom) return { phase: 'approved', label: '已换教室', tone: 'info', roomChanged: true, title: '更换教室申请已批准并生效' };
+    if (lesson?.is_change_history) return { phase: 'approved', label: '原安排', tone: 'neutral', roomChanged: false, title: '已调课的原安排，不计入课时' };
+    const stage = ['pending', 'planned', 'draft'].map(phase => changes.find(change => change.phase === phase)).find(Boolean);
+    if (!stage) return null;
+    const badge = PHASE_BADGES[stage.phase];
+    if (stage.phase === 'planned' && stage.endpoint === 'proposed') return { phase: 'planned', label: '计划位置', tone: 'info', roomChanged, title: '已批准调课的计划位置，正式课表待落实' };
+    if (stage.phase === 'pending' && stage.endpoint === 'proposed') return { phase: 'pending', label: '拟位置', tone: 'warning', roomChanged, title: '待审申请的拟安排位置' };
+    return { phase: stage.phase, label: roomChanged && stage.kind !== 'cancel' ? `${badge.label}·换教室` : badge.label, tone: badge.tone, roomChanged, title: badge.title };
 }
 
 function classroomCode(value) {
@@ -82,7 +111,8 @@ export function classroomChangeState(from, to) {
 export function adjustmentActionText(lesson, suppliedChange = null) {
     const change = suppliedChange || scheduleChanges(lesson)[0];
     if (!change) return '';
-    if (change.phase === 'approved') return change.endpoint === 'original' ? '已调至新位' : '查看原安排';
+    if (change.phase === 'approved') return change.kind === 'room' ? '已换教室' : change.endpoint === 'original' ? '已调至新位' : '查看原安排';
+    if (change.phase === 'draft') return change.kind === 'cancel' ? '停课草稿' : '调课草稿';
     if (change.phase === 'planned') return change.kind === 'cancel' ? '已批准待停课' : change.endpoint === 'original' ? '已批准待落实' : '计划新位置';
     if (change.kind === 'cancel') return '停课';
     const fromTime = normalizedTime(change.original), toTime = normalizedTime(change.proposed);
@@ -101,7 +131,8 @@ export function adjustmentActionText(lesson, suppliedChange = null) {
 export function scheduleChangeLabel(lesson, suppliedChange = null) {
     const change = suppliedChange || scheduleChanges(lesson)[0];
     if (!change) return '';
-    if (change.phase === 'approved') return change.endpoint === 'original' ? '原安排（已调课）' : '调课已生效';
+    if (change.phase === 'approved') return change.kind === 'room' ? '教室已更换 · 申请已批准' : change.endpoint === 'original' ? '原安排（已调课）' : '调课已生效';
+    if (change.phase === 'draft') return change.kind === 'cancel' ? '停课申请草稿 · 未提交' : '调课申请草稿 · 未提交';
     if (change.phase === 'planned') return change.kind === 'cancel' ? '停课已批准·待落实'
         : change.endpoint === 'original' ? '原安排 · 已批准·待落实' : '计划安排 · 已批准·待落实';
     if (change.endpoint === 'proposed') return '正在申请变更';

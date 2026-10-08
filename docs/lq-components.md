@@ -495,3 +495,8 @@ owner.destroy(); // 同步释放 LQ 资源并归还原 DOM 位置
 
 Popup 复用 LQ.layer 的 portal、父子关系、焦点、关闭及反向打开，样式复用共享控件和 raised 配方。长选项在列表内换行，触发器省略但保留完整标题；原生空字符串选项仍显示其实际标签。`query(text)` 产生 query/generation 票据，`setResults({query,generation,options,status,message})` 只接当前票据，先验证全部候选再修改原生 options；关闭、reset、销毁使旧票据失效。destroy 恢复原节点标签、描述符与属性，释放监听、观察器、层和代理。页面及组件最终验收必须使用同一正式资产图，组件源码别名测试不能替代实际页面验收。
 
+### 页头宽侧栏、Bubble/Composer 消费者与 3D 课表阶段标识（2026-10-09）
+
+`.lq-page-head` 的 aside 槽含 `.manage-pagehead__insights` 或 `[data-page-head-wide]` 时在所有壳下整行换行（规则位于 `content.css`，不再依赖 `.lq-manage-pilot`）。Bubble 统一为玻璃内容材质：`--incoming/--outgoing` 各保留一个尾角并与 ink 配对，新增 `.lq-bubble--assistant`；课堂研讨室、课堂一对一、消息中心私信三处消费者改用同一 DOM（作者 `lq-bubble__author`、时间 `lq-bubble__time`、正文 `lq-bubble__content`，领域内容槽并存）。Composer 外壳承担 `:focus-within` 环，`__content` 槽只在有可见子项时占位，`__actions` 右侧可放一个 `lq-status` 说明禁用原因；课堂两个表单采用该 DOM 合同，行为仍由领域控制器独占（含 IME 守卫），粗指针保持 44px。
+
+3D 课表：`scheduleChangeBadge(lesson)` 产出一枚共享 status Chip（草稿 / 审核中 / 已批准 / 计划位置 / 已换教室），deck 只负责定位与缩放；`planned_changes` 载体新增 `phase='draft'`（教师未提交草稿，仅标原卡，学生不可见）与 `phase='approved' kind='room'`（已生效换教室）两类读层关系，`projectScheduleChanges` 按 phase 分别校验。放大浮窗使用共享 scrim，网格卡片用稠密填充代替实时模糊，课次放大卡使用 raised 填充。来源、测试与限制见 [讨论气泡与课表阶段标识记录](lq-chat-schedule-refresh-2026-10-09.md)。

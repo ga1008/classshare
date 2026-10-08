@@ -1,9 +1,13 @@
 .lq-composer {
     box-sizing: border-box; min-width: 0; width: 100%; padding: 10px;
     border-radius: 28px; color: hsl(var(--lq-material-ink, var(--ls-ink)));
+    transition: border-color var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out), box-shadow var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out);
 }
-.lq-composer__content { overflow-wrap: anywhere; }
-.lq-composer__content:empty { display: none; }
+/* Focus belongs to the whole glass field: a ring on the shell, no box outline on the borderless textarea. */
+.lq-composer:focus-within { border-color: hsl(var(--ls-primary) / .6); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), 0 0 0 3px hsl(var(--ls-ring, var(--ls-primary)) / .18), var(--ls-glass-shadow); }
+.lq-composer__content { display: grid; gap: 6px; overflow-wrap: anywhere; }
+.lq-composer__content:empty, .lq-composer__content:not(:has(> :not([hidden]))) { display: none; }
+.lq-composer__content:not(:empty):has(> :not([hidden])) { padding: 2px 6px 4px; }
 .lq-composer__input {
     box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 40px;
     max-height: 160px; margin: 0; padding: 8px 12px; resize: none;
@@ -11,12 +15,17 @@
     font: inherit; font-size: 16px; line-height: 24px; overflow-y: auto;
 }
 .lq-composer__input::placeholder { color: hsl(var(--lq-material-muted, var(--ls-ink-2))); opacity: 1; }
-.lq-composer__input:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
+.lq-composer__input:focus-visible { outline: none; }
+.lq-composer:not(:focus-within) .lq-composer__input:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
 .lq-composer__input:disabled { opacity: 1; color: hsl(var(--ls-ink-3)); background: hsl(var(--ls-surface-2)); cursor: not-allowed; }
 .lq-composer__actions, .lq-composer__tools { display: flex; align-items: center; gap: 4px; }
 .lq-composer__actions { justify-content: space-between; margin-top: 4px; }
 .lq-composer__tools { flex-wrap: wrap; min-width: 0; }
 .lq-composer__actions > .lq-btn { flex-shrink: 0; }
+.lq-composer__tools > .lq-btn--icon { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+.lq-composer__actions > .lq-status { margin-inline-start: auto; min-height: 24px; padding-block: 1px; font-size: 12px; line-height: 18px; }
+.lq-composer__actions > .lq-status[hidden] { display: none; }
+.lq-composer__actions > .lq-btn--prominent.lq-btn--icon { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border-radius: var(--ls-r-capsule); }
 .lq-composer[data-lq-composer-fixed] {
     position: absolute; inset-inline: 12px; width: auto;
     bottom: calc(max(var(--lq-dock-h, 0px), var(--lq-composer-keyboard, 0px)) + 12px + env(safe-area-inset-bottom));
@@ -28,6 +37,7 @@
 }
 @media (pointer: coarse) {
     .lq-composer__actions .lq-btn { min-width: 44px; min-height: 44px; }
+    .lq-composer__tools > .lq-btn--icon, .lq-composer__actions > .lq-btn--prominent.lq-btn--icon { width: 44px; height: 44px; }
 }
 @media (forced-colors: active) {
     .lq-composer { background: Canvas; color: CanvasText; border-color: CanvasText; }
