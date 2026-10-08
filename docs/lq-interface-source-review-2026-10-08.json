@@ -453,5 +453,62 @@
       "Chromium desktop and touch emulation only; no claim of Safari/Firefox/physical low-end device FPS.",
       "Capture cancellation stops streams and clears sensitive canvas immediately. Native close/returnValue semantics stay immediate while visual disposal awaits presence completion."
     ]
+  },
+  "selectionAndPlanReview": {
+    "reviewedAt": "2026-10-08",
+    "buildGraph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+    "sourceInventory": "docs/lq-select-source-inventory-2026-10-08.json",
+    "acceptanceRecord": "docs/lq-select-migration-2026-10-08.md",
+    "evidence": "docs/lq-select-acceptance-evidence-2026-10-08.json",
+    "authorSourceFiles": 521,
+    "htmlTemplates": 201,
+    "sourceCandidates": 5305,
+    "sourceStatusUnchanged": true,
+    "dynamicFirstActivation": {
+      "uniqueControls": 9,
+      "viewports": [
+        390,
+        1440
+      ],
+      "sharedOwner": "installDropdowns declared-node first-activation delegate",
+      "profile": "Unsaved Add identity draft generates the named field, then actual open/close."
+    },
+    "ownershipExceptions": [
+      "Existing Selection controls retain explicit owner reservations.",
+      "Shared Selection factory declarations are definitions, not consumers.",
+      "User courseware/export/iframe contents and separate bidisync maintenance console are outside product consumer transformation."
+    ],
+    "readonlySourceChanges": [
+      {
+        "path": "templates/manage/course_schedule.html",
+        "before": "f341a87e1bcc22f773efae45997a65c02261b1a36026b1782bcd555f76b80635",
+        "after": "840ed39b2108b67aa2fa22b4ccce342ba71a46fc577f90cb887e76f8240e120d"
+      },
+      {
+        "path": "static/js/lq/forms.js",
+        "before": "db0d5e622587139d98d61fb7efe88f456f84e430bddc0f87b1e1ff69eb489340",
+        "after": "2c0956bb1860f7db4c528122d07a8ccf2a4b69be839587147642dab144ecb915"
+      },
+      {
+        "path": "static/assets/manifest.json",
+        "before": "de4eb63dc69e484a75f5289aa405523b6a663b2e2dfb2c2ab6fce51909a2ce51",
+        "after": "4466eb7949db8f41aff704e6bd55469fda188bda835808d428ddd63986405f86"
+      },
+      {
+        "path": "static/css/tailwind-app.css",
+        "before": "ef89061831ad5f7a3977407f5b3adc3d306f94376815d89870545e7352d00ee4",
+        "after": "39ec3c052051245e66904943080c3dbb1da0a232cec1674612b2004dd3649de4"
+      },
+      {
+        "path": "static\\css\\lq\\components\\forms.css",
+        "before": "78f9a9e83497f2c5e485b5f03e46eb31a2464f950d596641c95de10e757d1396",
+        "after": "faf0510e4d94325af19a0560a987550eafcd2a91096df5d14a8da24d13b43b84"
+      },
+      {
+        "path": "static\\css\\lq\\components\\selection.css",
+        "before": "ca864a11b55a44733e132763967aa03c8f6a9c758af2c77a5783bb78d2336a97",
+        "after": "c1c5496b01e6ada460f1b2ae44e017473851f7142ca433128664f814db098eb7"
+      }
+    ]
   }
 }

@@ -1,0 +1,5129 @@
+{
+  "scope": "Source declarations and construction candidates, not runtime controls or completed migration. Template branches/shared factories are counted separately. React/native/generated content requires owner review.",
+  "summary": {
+    "files": 103,
+    "entries": 346,
+    "byKind": {
+      "native-markup": 287,
+      "field-macro": 51,
+      "dom-create": 2,
+      "react-native-select": 6
+    },
+    "byArea": {
+      "templates": 272,
+      "static": 68,
+      "frontend": 6
+    },
+    "flags": {
+      "explicit-dropdown": 271,
+      "label-association-needs-review": 84,
+      "explicit-selection": 22,
+      "dynamic-attributes": 23,
+      "multiple": 1,
+      "listbox-size": 1,
+      "react-owned-dom": 6
+    }
+  },
+  "files": [
+    {
+      "path": "templates/assignment_detail_teacher.html",
+      "sha256": "1c1eecdf4ded854a7a2b3f3169a16ab34b90540b86826500cd06a32fcb80f5e0",
+      "declarations": 4,
+      "bindingCalls": [],
+      "nativeValueAssignments": 10,
+      "optionsReplacements": 19
+    },
+    {
+      "path": "templates/blog.html",
+      "sha256": "ff87493333ddf4af75adcd9567ff8dc157e8f18fbd3f0e8d8569cca0c59ea47f",
+      "declarations": 8,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/career_path.html",
+      "sha256": "28d39d4b08c5651bd5e8ea1cdc23644539a2aaaf6e79459eaffb459cb0284ac4",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "sha256": "7dbc4de2c15c57478c245420c99e5735a7f7c80cbf72a06d924819da33ef126b",
+      "declarations": 17,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dashboard.html",
+      "sha256": "eef595e3ca4a8747c94010397820dfe925558d58211587d927bca0d39761a31e",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "sha256": "de2e9b9d7ee87a043d74cbc368e09ced608890ede2720d895e0a328b66f75276",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dev/lq.html",
+      "sha256": "c6263ddcb540546db2a24b5a252336822ef6e9d3be09a35c9e4f3cdbae11cd77",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dev/lq_centered.html",
+      "sha256": "13a033c5e440661a78a0ff9001f1a7026bb6da87281335db90fb8623c2e98858",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dev/lq_content.html",
+      "sha256": "c589901a5da062d138d261fa996bd6c252d5e73a41ea405bd0a1bec5647d104e",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/dev/lq_shell.html",
+      "sha256": "b202f2963fa34b88818effec0e095d1d169eb3260f8533a150c8a214fbae952f",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "sha256": "9f519d43eafcede398929fae6fc6d75677645fbe7103340761f4050da71808f3",
+      "declarations": 6,
+      "bindingCalls": [],
+      "nativeValueAssignments": 11,
+      "optionsReplacements": 18
+    },
+    {
+      "path": "templates/feedback_review.html",
+      "sha256": "4c85fbc0f2441dae11f4d7a778dd9d7cc351920da9b03dab692895bc7729ce40",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 2,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/learning_path.html",
+      "sha256": "d8e3557c81684c13c0521bcad8aac4d40b7c3062ccaf81a37ee9cd7ea370aeb6",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 2,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/lessondoc_editor.html",
+      "sha256": "02a44be895632b6988822d11159351105484d1f788a51dd20fac42420882b4f3",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/macros/lq/selection.html",
+      "sha256": "354c458eccbdd5e1db5f39686b6d660f27ed269f47ea24aa6895faf96ed4ed18",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "sha256": "11f824cf2977f947232307d8b99859c48acdd036d44203c42dcf0f3c31f83094",
+      "declarations": 5,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "sha256": "016f37c6426c1432320bdc4ba52c20e52c22fc970d64e79f8109fec6b75e14a8",
+      "declarations": 9,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/ai.html",
+      "sha256": "f0e4f9e34741008fb26fd3e31b10420e0594f2e5acac491275575f7dbec62c6e",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "sha256": "d03045369c347bc964d7c6349c602263c7eeab6cb02068ce7a53e6f2a12c149f",
+      "declarations": 12,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "sha256": "5a4418e450b1e2d09c22b6ecbce99b02b47381694054e78bd85f0bf9a43e232d",
+      "declarations": 17,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "sha256": "584f2ffb13d7205881082f3a590fc31237ad994b321a30d8f60a56ad2077efa4",
+      "declarations": 5,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "sha256": "67acfdb1e54e9b072c02316caa93b26bb1e1a60f929ee54154479240fa1c893e",
+      "declarations": 16,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "sha256": "840ed39b2108b67aa2fa22b4ccce342ba71a46fc577f90cb887e76f8240e120d",
+      "declarations": 6,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/course_schedule_editor.html",
+      "sha256": "5e3277b23f6c31a9419be84a2c9019243fb05ed4f8b835a87db14d95ee9ca141",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/courses.html",
+      "sha256": "f5dae1dfb587994eb9ead792fb597e57a05f7123861d73e907a0833f45e5de3b",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "sha256": "09049e1290b9497bb896192788f6b734b442e25f74e476af4fd27e3b508c1491",
+      "declarations": 7,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "sha256": "144d1acbbaef3b05a8571689bde6a38ccfe0fc23627d31de09ee620382c1a060",
+      "declarations": 12,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "sha256": "423d95fb012a319cc638a0017c95cd9ee74344925c2701b8cb2cedfa2fee034c",
+      "declarations": 8,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/material_hub.html",
+      "sha256": "b00a1f6590fe26964ab372c0f6ffc2af1e99d0cd1fc28c92bc091fb69807248f",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/offering_hub.html",
+      "sha256": "056c53caba378bbfefbc8d5a6c2f95466f8abef3c376ed475cc1cfec5e61fd02",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "sha256": "60676dd4644b7376cdcfe23243b7c562dc7414ddcf5c3717b9fda47cabaa3664",
+      "declarations": 7,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "sha256": "e6076522fefe26d57b79b07cbb8d741feb3d3211519935643e6034cbb23c766c",
+      "declarations": 10,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "sha256": "0e8032369183de8f64a1617311655dc15279546301b8f1a8d8ba9faa71dcbfaf",
+      "declarations": 11,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/academic_integrations.html",
+      "sha256": "bac0e604e67084c442a3d3002b3025eb47b7a39136c56e4478463e7e36f7f13c",
+      "declarations": 4,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "sha256": "ed8e73c5062e44bfa11cf8f74f8fb6f7347d2967eb372df1c96dc43aa2e60b08",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/organizations.html",
+      "sha256": "d21e8c7d86f1e4a6f615599625489bd6eb505680555396a2c8c89cc0e5c5a747",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "sha256": "fa8f6ec4b5bc3f8c519bb21562d0437c114521906e6cbbb8129acdd531a93153",
+      "declarations": 4,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/super_admin.html",
+      "sha256": "ea6c23a23bd14b4507deb0df1887cdc60c9979157fef930798ae23641232dbfe",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/system/users.html",
+      "sha256": "d982c3bd9d80349cf4e0493635d53cdc7799f9b8a203e0b191cb32d5fba54148",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 18,
+      "optionsReplacements": 4
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "sha256": "618b8f18e3516c07fd0c66ca9d2e8735ac6432a6a848c24eae54bbe4ae598258",
+      "declarations": 12,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "sha256": "d64417b9f3ba2711319647bddfa263b3b19e6ce2e94ce0471c46210636eaefa1",
+      "declarations": 6,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/message_center.html",
+      "sha256": "cde0f31ed2e43d61b418f0825b1e53658980b7ceae70abf322e7ef1864c20aac",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "sha256": "187e5f62dbfe14eb910eb8684fb0bbdc68aaf1aaebeb75c0924f323669eb6eb8",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/assessment_kind_control.html",
+      "sha256": "4738f2b3e5e5876b34b636af3bc21a99664f082537487333ae4550361cdf113d",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "sha256": "2318fd376b2d04f24e185df34f7cfcc592e723b590d22d10000a2a3bcd041b5a",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "sha256": "67ea48352dbe3709d0c34017b004d9e317bc4421ee98659ea3087dfdae0cfee6",
+      "declarations": 9,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/exams/modals.html",
+      "sha256": "e058b24dce1b10f1004e53520db41314732d1af03b9310900d1e881c76bdd33e",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "sha256": "b085b6b5f6ead2f14d128c14c0ce25e7cbf226a8a541a5b65197ec50ba7426ea",
+      "declarations": 8,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "sha256": "15cdfdda1de375ac4a39e6f467e85bc4a90655bda1590fccd4533e788972c84d",
+      "declarations": 9,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/materials/modals_library.html",
+      "sha256": "2379a5b5a2cb689f38ef038b7e0cba73e670742f2b5df140ff94a588816c169e",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/materials/modals_repository.html",
+      "sha256": "4a87e682cf2330860a553978de33ffbb9591cc3d4042a07c2397ae3cbea6812d",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/profile/email.html",
+      "sha256": "5e9b277d908158f555bbbb31363f4bc5e3f615eba97ff89757bea58452d93e73",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/profile/messages.html",
+      "sha256": "47676b3b8d5c23bddf9b5403e77e2152df71063e4882a64448fd69e0985072f4",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/profile/portfolio.html",
+      "sha256": "447c155b54bc6ad2f9434ba1a315f988972cd6b33ef2c718df7f2c390636d89e",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "sha256": "c51fc5f5dd82b1539bc079af22d97117f722bc5fb9765f2d17504f455cf32f49",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "sha256": "261d61f0c2d315163a1ac6a71c0b212c1f083acb13a101c30d4d4046e0509c8c",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "templates/wrong_book.html",
+      "sha256": "f59618459756e824478373741849f21757af66f75d27d785ff26c2a6f851d72b",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "static/js/academic_schedule_sync.js",
+      "sha256": "abf688d90bb587f84ce7a9e330104d84813da9cac1fe1afdac463c67cf10e02b",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 5,
+      "optionsReplacements": 1
+    },
+    {
+      "path": "static/js/academic_sync_dialog.js",
+      "sha256": "943aed4077fadcfbd80878e87d1f5b6297c0749d73f5b0e9c94de92a964c5654",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 14
+    },
+    {
+      "path": "static/js/agent_workbench.js",
+      "sha256": "d07b652d21187191bd9fcb9219a32cbaef73db1483a330bcea8ed471ffc00e08",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 12,
+      "optionsReplacements": 15
+    },
+    {
+      "path": "static/js/assessment_classification_batch.js",
+      "sha256": "01eeeeea8de4ff00e41448369c3dd3d690e30fe2348f036eeb41934303432dd3",
+      "declarations": 1,
+      "bindingCalls": [
+        {
+          "line": 88,
+          "call": "bindDropdown("
+        }
+      ],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 1
+    },
+    {
+      "path": "static/js/assessment_plan_editor.js",
+      "sha256": "fcbe0c5156ab8ed158dfa6df2d5bda4d18c39f28801ef6eab3bb3e1b57880906",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 5
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "sha256": "39cd740197e4dc416b8bb4c707b0536500a41cbdf7e0fbe048dc433679f05a61",
+      "declarations": 5,
+      "bindingCalls": [],
+      "nativeValueAssignments": 18,
+      "optionsReplacements": 29
+    },
+    {
+      "path": "static/js/base_resource_modes.js",
+      "sha256": "19100071740046f0824b89e8aa3a96ed55bcfe2b74869725531e3c2e099cd29a",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 3
+    },
+    {
+      "path": "static/js/blog.js",
+      "sha256": "d4e10e1b3c314ca58a64624089cf7caf43acb3d34ab2ff1912da4c4f493ad138",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 26,
+      "optionsReplacements": 47
+    },
+    {
+      "path": "static/js/career_path_app.js",
+      "sha256": "f0fee6202cc2953f9c96a5bbb95f1cedaa573d20c585f5e0c102311390e8c85b",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 23
+    },
+    {
+      "path": "static/js/classroom_interactions.js",
+      "sha256": "0725a72706b2ac62b10bcd61103f5cea079a3f2a1bfd235f81a101688e6034ac",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 2
+    },
+    {
+      "path": "static/js/classroom_polls.js",
+      "sha256": "a67241e57b4cb261080c31db3a09a99750ba7958a412e1adea9ccd3d70102f57",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 6
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "sha256": "03eb11e1e39316c41c2311fa5a87a34760914a3bb5fcafa8042941d4b68224b5",
+      "declarations": 9,
+      "bindingCalls": [],
+      "nativeValueAssignments": 2,
+      "optionsReplacements": 7
+    },
+    {
+      "path": "static/js/course_schedule_deck.js",
+      "sha256": "64e52ff18f87ed69375ac00320ade45c82d6dcd6344794434d419c06f8a9b775",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 12
+    },
+    {
+      "path": "static/js/course_schedule_editor.js",
+      "sha256": "5a8d1ae2e714a9bcd10aa0357c847c4da805fbcd7649a249c2463612619ca8cb",
+      "declarations": 4,
+      "bindingCalls": [
+        {
+          "line": 811,
+          "call": "bindDropdown("
+        },
+        {
+          "line": 812,
+          "call": "bindDropdown("
+        },
+        {
+          "line": 1770,
+          "call": "bindDropdown("
+        }
+      ],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 27
+    },
+    {
+      "path": "static/js/dashboard.js",
+      "sha256": "7d939fdd124e03ecc11553c1429c523fa1fe78e888b00dcbdaaad0db0f78f07a",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 155,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 8,
+      "optionsReplacements": 9
+    },
+    {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "sha256": "6441425a348ffa391435e5e8b8bb0a15bb029ebf87d66bbfb9d892dd07bf39fb",
+      "declarations": 4,
+      "bindingCalls": [],
+      "nativeValueAssignments": 14,
+      "optionsReplacements": 7
+    },
+    {
+      "path": "static/js/grade_publication_controls.js",
+      "sha256": "f27386554ff435d8d543807e7006f0da7fca7b693b92d5a3387b0a1bcfb8c0c1",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 2
+    },
+    {
+      "path": "static/js/lessondoc_wizard.js",
+      "sha256": "cb2ac79d2794cd646a05bbc4bd16a10d599720683fe95ddb48d7bd2733407af3",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 10
+    },
+    {
+      "path": "static/js/lq/domain-modal.js",
+      "sha256": "200b67d792c701f47b38f91eeedf166f80cd32c2590a85727a7e65a7293dc8ff",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 42,
+          "call": "enhanceDropdowns("
+        }
+      ],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "static/js/lq/dropdown.js",
+      "sha256": "838235db7f6c7476a97eb80bcf4bc7583b54e691ec20b420139fb24f6254764a",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 39,
+          "call": "bindDropdown("
+        },
+        {
+          "line": 247,
+          "call": "enhanceDropdowns("
+        },
+        {
+          "line": 250,
+          "call": "bindDropdown("
+        },
+        {
+          "line": 263,
+          "call": "bindDropdown("
+        }
+      ],
+      "nativeValueAssignments": 9,
+      "optionsReplacements": 1
+    },
+    {
+      "path": "static/js/lq/preview.js",
+      "sha256": "06ea70e5b377b4c0ba567bdbd9fa198129c82c137f42a78d1092d134c1f72345",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 96,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 2,
+      "optionsReplacements": 2
+    },
+    {
+      "path": "static/js/lq/selection.js",
+      "sha256": "d23e79c6fd3fd6e5d3abd55ce8b223ebdef6eff22c0975acb2d7faf9288fe965",
+      "declarations": 2,
+      "bindingCalls": [
+        {
+          "line": 52,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 14,
+      "optionsReplacements": 1
+    },
+    {
+      "path": "static/js/manage_assessment_plans.js",
+      "sha256": "623bf65e7a3dc2c8f2ecdae792db87cfa1a43fdae0b21c2a9e8fb724240552fd",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 3
+    },
+    {
+      "path": "static/js/manage_course_schedule.js",
+      "sha256": "8d9ce0e170d2b33d0f8f11fcd43aa2f662e9a2e7f3b25ea143ca0e29ba9083f9",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 41,
+          "call": "bindDropdown("
+        }
+      ],
+      "nativeValueAssignments": 6,
+      "optionsReplacements": 7
+    },
+    {
+      "path": "static/js/manage_lesson_plans.js",
+      "sha256": "7d0d18caa0d35daae5ca2f54a5efee9f52f0fe863fa5e6663a81f32ad32e3c4f",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 5,
+      "optionsReplacements": 5
+    },
+    {
+      "path": "static/js/manage_polls.js",
+      "sha256": "50f9456c4d23a6d87eb7cb8b210f496b3a265f5dab751455e2dbeba69ceb0259",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 6
+    },
+    {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "sha256": "3c70fc58c9cb6147dbe2a181c954dcf9d94be3acdd49b959bd704648971bee53",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 4,
+      "optionsReplacements": 3
+    },
+    {
+      "path": "static/js/material_selection_panel.js",
+      "sha256": "f58a3662f2c017f99582e334a9f72edb9df1e0e3d3e70029346114bafa92b483",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 3,
+      "optionsReplacements": 6
+    },
+    {
+      "path": "static/js/materials_manage.js",
+      "sha256": "dd02fa9c68c63d087ac450227abdcffb61ac5bec775ae1f9c59e4442f1fc5dee",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 61,
+      "optionsReplacements": 51
+    },
+    {
+      "path": "static/js/message_center.js",
+      "sha256": "438d52b16c025f5da8d7d0f8ea8aaac9a420abaf850be7c83ede6e1c259aa042",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 62,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 11,
+      "optionsReplacements": 30
+    },
+    {
+      "path": "static/js/offering_bootstrap.js",
+      "sha256": "adaf2817be2cc0cb2981a55cf0d322f50a06feed201aa0befa8c369662a74398",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 7
+    },
+    {
+      "path": "static/js/profile.js",
+      "sha256": "76d286c9bb4ef6bacc0d0cf05ad04b1692d84b12dcb938edaee5e0c0f33ebf8d",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 5,
+      "optionsReplacements": 4
+    },
+    {
+      "path": "static/js/resume_applications.js",
+      "sha256": "692bea01e3ebb7c68d017870de30ec30c7ef9bf3381a5514e9a2e6a7351fd9d4",
+      "declarations": 3,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 3
+    },
+    {
+      "path": "static/js/resume_builder.js",
+      "sha256": "6b79c1f3864db7d04ba56a0d2b17534723d7fe7c1a3699e762ca73c17d0041d4",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 5,
+      "optionsReplacements": 8
+    },
+    {
+      "path": "static/js/resume_personal.js",
+      "sha256": "87ccc8ea2bee8096580dcb452740182209e39ceaf40782f2a23c24bdb910b961",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 5,
+      "optionsReplacements": 3
+    },
+    {
+      "path": "static/js/resume_section.js",
+      "sha256": "5af8dd7a3686624ea0c8afb9cb522e8ddca2d30f2c237c9ecc878e338303b466",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 8
+    },
+    {
+      "path": "static/js/semester_calendar.js",
+      "sha256": "f640cebfe4bc629ec371054e102d03a5ef5dc59f6f90a9ccb100e226537de60b",
+      "declarations": 1,
+      "bindingCalls": [
+        {
+          "line": 618,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 13,
+      "optionsReplacements": 12
+    },
+    {
+      "path": "static/js/signature_scope_fields.js",
+      "sha256": "6047081a42b0cf189f40e578d143861335224db0311176c61f07494495abac39",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 6,
+      "optionsReplacements": 5
+    },
+    {
+      "path": "static/js/student_dashboard_schedule.js",
+      "sha256": "5085131ab7b6ad02094b75d69bcac71ca1e7851d908431258130a1c76cb245a0",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 188,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 3,
+      "optionsReplacements": 4
+    },
+    {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "sha256": "980d0d3a286b5af1957f78d089cc0eb77ff4bd3e03b1c84faaca6f9740c1c0ad",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 3,
+      "optionsReplacements": 7
+    },
+    {
+      "path": "static/js/teacher_onboarding.js",
+      "sha256": "702c6fc10efe54cd8f017935cef5b7bbbb7301d6cdb88070ea135561557c74e2",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 2,
+      "optionsReplacements": 11
+    },
+    {
+      "path": "static/js/tree_select_form_modal.js",
+      "sha256": "c5cbc57b1f6994a76f2cd3f87db92b0d83d01290d9198fd82ee61e7cee567c99",
+      "declarations": 1,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 5
+    },
+    {
+      "path": "static/js/ui_preferences_panel.js",
+      "sha256": "3f551d6b39e22a53164e9a729db0f87280a9289613125e8eb02188543274a346",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 8,
+          "call": "bindSelection("
+        }
+      ],
+      "nativeValueAssignments": 1,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "frontend/src/components/lq-presentation.tsx",
+      "sha256": "040fe070a089873fdbe27ca95e14b5236f179f683138e8475d4b9b302509943d",
+      "declarations": 0,
+      "bindingCalls": [
+        {
+          "line": 125,
+          "call": "bindDropdown("
+        }
+      ],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "sha256": "b124bfd8f7bad66a635a1731fb580a1b43c3e639a2dc5ddafd3aa43e8a28d75e",
+      "declarations": 2,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    },
+    {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "sha256": "7de342f0389e73912afc52c2e9d57c50370d576ec569d55abce3aefb2b5436cb",
+      "declarations": 4,
+      "bindingCalls": [],
+      "nativeValueAssignments": 0,
+      "optionsReplacements": 0
+    }
+  ],
+  "entries": [
+    {
+      "path": "templates/assignment_detail_teacher.html",
+      "line": 556,
+      "kind": "native-markup",
+      "id": "edit-grading-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"批改模式\" data-lq-dropdown data-lq-component=\"select\" id=\"edit-grading-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/assignment_detail_teacher.html",
+      "line": 563,
+      "kind": "native-markup",
+      "id": "edit-learning-stage-key",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"试炼阶段\" data-lq-dropdown data-lq-component=\"select\" id=\"edit-learning-stage-key\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/assignment_detail_teacher.html",
+      "line": 584,
+      "kind": "native-markup",
+      "id": "edit-availability-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"edit-availability-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/assignment_detail_teacher.html",
+      "line": 649,
+      "kind": "native-markup",
+      "id": "edit-late-penalty-strategy",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"edit-late-penalty-strategy\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 102,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-career-region>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 111,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-career-type>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 124,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-career-deadline>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 133,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-career-state>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 298,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"发布到板块\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select blog-visibility-select blog-section-select\" data-blog-compose-section>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 306,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"可见范围\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select blog-visibility-select\" data-blog-compose-visibility>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 314,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"选择班级\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-compose-class>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/blog.html",
+      "line": 369,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-blog-report-reason required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/career_path.html",
+      "line": 30,
+      "kind": "native-markup",
+      "id": "career-direction-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"career-direction-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1022,
+      "kind": "native-markup",
+      "id": "classroom-private-contact-select",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"classroom-contact-picker\" data-lq-component=\"select\" id=\"classroom-private-contact-select\" class=\"lq-select classroom-private-contact-select\" hidden aria-hidden=\"true\" tabindex=\"-1\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1235,
+      "kind": "native-markup",
+      "id": "classroom-final-material-type",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"classroom-final-material-type\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1246,
+      "kind": "native-markup",
+      "id": "classroom-final-material-assessment-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"classroom-final-material-assessment-mode\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1328,
+      "kind": "native-markup",
+      "id": "classroom-ordinary-homework-1",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"ordinary-grade-picker\" data-lq-component=\"select\" id=\"classroom-ordinary-homework-1\" class=\"lq-select sr-only\" tabindex=\"-1\" aria-hidden=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1329,
+      "kind": "native-markup",
+      "id": "classroom-ordinary-homework-2",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"ordinary-grade-picker\" data-lq-component=\"select\" id=\"classroom-ordinary-homework-2\" class=\"lq-select sr-only\" tabindex=\"-1\" aria-hidden=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1330,
+      "kind": "native-markup",
+      "id": "classroom-ordinary-homework-3",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"ordinary-grade-picker\" data-lq-component=\"select\" id=\"classroom-ordinary-homework-3\" class=\"lq-select sr-only\" tabindex=\"-1\" aria-hidden=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1331,
+      "kind": "native-markup",
+      "id": "classroom-ordinary-assessment",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"ordinary-grade-picker\" data-lq-component=\"select\" id=\"classroom-ordinary-assessment\" class=\"lq-select sr-only\" tabindex=\"-1\" aria-hidden=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1364,
+      "kind": "native-markup",
+      "id": "classroom-exam-grade-record-assignment",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"classroom-exam-grade-record-assignment\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1475,
+      "kind": "native-markup",
+      "id": "assignment-assessment-kind",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assignment-assessment-kind\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1500,
+      "kind": "native-markup",
+      "id": "assignment-grading-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assignment-grading-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1509,
+      "kind": "native-markup",
+      "id": "assignment-learning-stage-key",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assignment-learning-stage-key\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1536,
+      "kind": "native-markup",
+      "id": "assignment-availability-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assignment-availability-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1574,
+      "kind": "native-markup",
+      "id": "assignment-late-penalty-strategy",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assignment-late-penalty-strategy\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1637,
+      "kind": "native-markup",
+      "id": "exam-assessment-kind",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"exam-assessment-kind\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1652,
+      "kind": "native-markup",
+      "id": "exam-learning-stage-key",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"exam-learning-stage-key\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1662,
+      "kind": "native-markup",
+      "id": "exam-availability-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"exam-availability-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/classroom_main_v4.html",
+      "line": 1700,
+      "kind": "native-markup",
+      "id": "exam-late-penalty-strategy",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"exam-late-penalty-strategy\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dashboard.html",
+      "line": 86,
+      "kind": "native-markup",
+      "id": "dashboard-semester-filter",
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select\" id=\"dashboard-semester-filter\" data-semester-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dashboard.html",
+      "line": 105,
+      "kind": "native-markup",
+      "id": "dashboard-semester-filter",
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select\" id=\"dashboard-semester-filter\" data-semester-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "line": 101,
+      "kind": "native-markup",
+      "id": "dashboard-semester-filter",
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select\" id=\"dashboard-semester-filter\" data-semester-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "line": 120,
+      "kind": "native-markup",
+      "id": "dashboard-semester-filter",
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select\" id=\"dashboard-semester-filter\" data-semester-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq.html",
+      "line": 16,
+      "kind": "native-markup",
+      "id": null,
+      "name": "palette_key",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"palette_key\" data-lq-preview-option>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq.html",
+      "line": 23,
+      "kind": "native-markup",
+      "id": null,
+      "name": "appearance",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"appearance\" data-lq-preview-option>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq.html",
+      "line": 30,
+      "kind": "native-markup",
+      "id": null,
+      "name": "glass",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"glass\" data-lq-preview-option>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq_centered.html",
+      "line": 12,
+      "kind": "native-markup",
+      "id": null,
+      "name": "palette_key",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"palette_key\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq_centered.html",
+      "line": 13,
+      "kind": "native-markup",
+      "id": null,
+      "name": "appearance",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"appearance\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq_content.html",
+      "line": 42,
+      "kind": "native-markup",
+      "id": "preview-composer-state",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-dropdown id=\"preview-composer-state\" class=\"lq-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq_shell.html",
+      "line": 18,
+      "kind": "native-markup",
+      "id": null,
+      "name": "palette_key",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"palette_key\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/dev/lq_shell.html",
+      "line": 18,
+      "kind": "native-markup",
+      "id": null,
+      "name": "appearance",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"appearance\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 68,
+      "kind": "native-markup",
+      "id": "exam-scope-level",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"开放范围\" data-lq-dropdown data-lq-component=\"select\" id=\"exam-scope-level\" class=\"lq-select form-control form-control-sm\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 152,
+      "kind": "native-markup",
+      "id": "scoring-style",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"评分风格\" data-lq-dropdown data-lq-component=\"select\" id=\"scoring-style\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 217,
+      "kind": "native-markup",
+      "id": "ai-exam-assessment-kind",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"ai-exam-assessment-kind\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 237,
+      "kind": "native-markup",
+      "id": "ai-exam-offering",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"关联课堂（可选）\" data-lq-dropdown data-lq-component=\"select\" id=\"ai-exam-offering\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 285,
+      "kind": "native-markup",
+      "id": "ai-exam-difficulty",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"难度\" data-lq-dropdown data-lq-component=\"select\" id=\"ai-exam-difficulty\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/exam_editor.html",
+      "line": 1145,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select aria-label=\"题目类型\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select q-type-select\" onchange=\"window.changeQType(${idx}, this.value)\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/feedback_review.html",
+      "line": 102,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/learning_path.html",
+      "line": 201,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/lessondoc_editor.html",
+      "line": 10,
+      "kind": "native-markup",
+      "id": "lde-document",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"lde-document\" aria-label=\"切换首页或课次\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/lq/selection.html",
+      "line": 3,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "dynamic-attributes"
+      ],
+      "source": "<select{% for key, value in p.attrs.items() %} {{ key|forceescape }}=\"{{ value|forceescape }}\"{% endfor %}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "line": 14,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-selection-owner=\"preferences\" class=\"ui-palette-select lq-select\" data-ui-palette-select aria-label=\"界面配色\" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "line": 21,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-selection-owner=\"preferences\" class=\"ui-palette-select lq-select\" data-ui-preference-select=\"appearance\" aria-label=\"界面外观\" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "line": 28,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-selection-owner=\"preferences\" class=\"ui-palette-select lq-select\" data-ui-preference-select=\"glass\" aria-label=\"玻璃效果\" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "line": 46,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-selection-owner=\"preferences\" class=\"ui-palette-select lq-select\" data-ui-preference-select=\"backdrop\" aria-label=\"页面背景\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/macros/user_ui_preferences.html",
+      "line": 63,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-selection-owner=\"preferences\" class=\"ui-palette-select lq-select\" data-ui-backdrop-category aria-label=\"筛选背景图库\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 69,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-semester-filter aria-label=\"按学期筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 72,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-course-filter aria-label=\"按课程筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 75,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-class-filter aria-label=\"按班级筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 116,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-sync-semester aria-label=\"按学期筛选课堂\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 165,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-field=\"proposition_form\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 170,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-field=\"exam_form\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 175,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-field=\"separate_teaching_exam\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 180,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-field=\"course_nature\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/academic_final_materials.html",
+      "line": 185,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-afm-field=\"marking_form\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/ai.html",
+      "line": 52,
+      "kind": "native-markup",
+      "id": "aiOfferingSelect",
+      "name": "class_offering_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"aiOfferingSelect\" name=\"class_offering_id\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/ai.html",
+      "line": 62,
+      "kind": "native-markup",
+      "id": "aiTextbookSelect",
+      "name": "textbook_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"aiTextbookSelect\" name=\"textbook_id\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 56,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-filter-scope>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 68,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-filter-school>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 74,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-filter-college>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 80,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-filter-course>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 86,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-filter-class>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 92,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ap-sort>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 31,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 33,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 35,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 37,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 39,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/assessment_plans.html",
+      "line": 41,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('apSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'score_desc', 'label': '分数高到低'}, {'value': 'score_asc', 'label': '分数低到高'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}], value='updated_desc',",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 34,
+      "kind": "native-markup",
+      "id": null,
+      "name": "year",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"year\" aria-label=\"学年\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 35,
+      "kind": "native-markup",
+      "id": null,
+      "name": "term",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"term\" aria-label=\"学期\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 36,
+      "kind": "native-markup",
+      "id": null,
+      "name": "course",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"course\" aria-label=\"课程\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 37,
+      "kind": "native-markup",
+      "id": null,
+      "name": "teaching_class",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"teaching_class\" aria-label=\"教学班\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 38,
+      "kind": "native-markup",
+      "id": null,
+      "name": "status",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"status\" aria-label=\"档案状态\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 40,
+      "kind": "native-markup",
+      "id": null,
+      "name": "deleted",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"deleted\" aria-label=\"显示范围\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 51,
+      "kind": "native-markup",
+      "id": null,
+      "name": "sort",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"sort\" data-att-sort aria-label=\"排序\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 68,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-att-matrix-quality>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 83,
+      "kind": "native-markup",
+      "id": null,
+      "name": "normalized_status",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"normalized_status\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 84,
+      "kind": "native-markup",
+      "id": null,
+      "name": "quality_state",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"quality_state\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 20,
+      "kind": "field-macro",
+      "id": null,
+      "name": "year",
+      "flags": [],
+      "source": "lq_field('attFilterYear', '学年', control='select', name='year', options=[{'value': '', 'label': '全部学年'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 21,
+      "kind": "field-macro",
+      "id": null,
+      "name": "term",
+      "flags": [],
+      "source": "lq_field('attFilterTerm', '学期', control='select', name='term', options=[{'value': '', 'label': '全部学期'}, {'value': '1', 'label': '第一学期'}, {'value': '2', 'label': '第二学期'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 22,
+      "kind": "field-macro",
+      "id": null,
+      "name": "course",
+      "flags": [],
+      "source": "lq_field('attFilterCourse', '课程', control='select', name='course', options=[{'value': '', 'label': '全部课程'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 23,
+      "kind": "field-macro",
+      "id": null,
+      "name": "teaching_class",
+      "flags": [],
+      "source": "lq_field('attFilterClass', '教学班', control='select', name='teaching_class', options=[{'value': '', 'label': '全部教学班'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 24,
+      "kind": "field-macro",
+      "id": null,
+      "name": "status",
+      "flags": [],
+      "source": "lq_field('attFilterStatus', '状态', control='select', name='status', options=[{'value': '', 'label': '全部状态'}, {'value': 'cached', 'label': '原件已缓存'}, {'value': 'processing', 'label': '处理中'}, {'value': 'needs_review', 'label': '待核对'}, {'value': 'validated', 'label': '待确认'}, {'value': 'confirmed', 'label': '已确认'}, {'value': 'failed', 'label': '失败'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 29,
+      "kind": "field-macro",
+      "id": null,
+      "name": "deleted",
+      "flags": [],
+      "source": "lq_field('attFilterDeleted', '显示范围', control='select', name='deleted', options=[{'value': '0', 'label': '当前档案'}, {'value': '1', 'label': '已删除档案'}], value='0') }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/attendance_reports.html",
+      "line": 47,
+      "kind": "field-macro",
+      "id": null,
+      "name": "sort",
+      "flags": [],
+      "source": "lq_field('attSortSelect', '排序', control='select', name='sort', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'course_asc', 'label': '课程名称'}], value='updated_desc', attrs={'data-att-sort': ''}) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "line": 63,
+      "kind": "native-markup",
+      "id": "classDepartmentFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classDepartmentFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "line": 73,
+      "kind": "native-markup",
+      "id": "classHealthFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classHealthFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "line": 86,
+      "kind": "native-markup",
+      "id": "classSortSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classSortSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "line": 378,
+      "kind": "native-markup",
+      "id": "classStudentAddGender",
+      "name": "gender",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classStudentAddGender\" name=\"gender\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "line": 436,
+      "kind": "native-markup",
+      "id": "classCustomScopeInput",
+      "name": "scope_level",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classCustomScopeInput\" name=\"scope_level\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 93,
+      "kind": "native-markup",
+      "id": "classroomCampusFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classroomCampusFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 102,
+      "kind": "native-markup",
+      "id": "classroomBuildingFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classroomBuildingFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 110,
+      "kind": "native-markup",
+      "id": "classroomTypeFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classroomTypeFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 118,
+      "kind": "native-markup",
+      "id": "classroomAvailabilityFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classroomAvailabilityFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 156,
+      "kind": "native-markup",
+      "id": "classroomPageSizeSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"classroomPageSizeSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 198,
+      "kind": "native-markup",
+      "id": "freeRoomSemesterSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"freeRoomSemesterSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 223,
+      "kind": "native-markup",
+      "id": "freeRoomCampusSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"freeRoomCampusSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 231,
+      "kind": "native-markup",
+      "id": "freeRoomBuildingSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"freeRoomBuildingSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 239,
+      "kind": "native-markup",
+      "id": "freeRoomTypeSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"freeRoomTypeSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 72,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('classroomCampusFilter', '校区', control='select', options=_cr_campus_options, value='') }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 73,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('classroomBuildingFilter', '楼号', control='select', options=_cr_building_options,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 75,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('classroomTypeFilter', '类别', control='select', options=_cr_type_options,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 77,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('classroomAvailabilityFilter', '状态', control='select', value='', options=[",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 213,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('freeRoomCampusSelect', '校区', control='select', options=_fr_campus_options,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 215,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('freeRoomBuildingSelect', '楼号', control='select', options=_cr_building_options,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/classrooms.html",
+      "line": 217,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('freeRoomTypeSelect', '类别', control='select', options=_cr_type_options,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 31,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"学年学期\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-cs-term>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 35,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"课程\" data-lq-dropdown data-lq-searchable data-lq-component=\"select\" class=\"lq-select\" data-cs-course>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 39,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"班级\" data-lq-dropdown data-lq-searchable data-lq-component=\"select\" class=\"lq-select\" data-cs-class>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 25,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('csTermSelect', '学年学期', control='select', options=[], attrs={'data-cs-term': ''}) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 26,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('csCourseSelect', '课程', control='select', searchable=True, options=[{'value': '', 'label': '全部课程'}], attrs={'data-cs-course': ''}) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule.html",
+      "line": 27,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('csClassSelect', '班级', control='select', searchable=True, options=[{'value': '', 'label': '全部班级'}], attrs={'data-cs-class': ''}) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/course_schedule_editor.html",
+      "line": 17,
+      "kind": "native-markup",
+      "id": "cseTermSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select\" id=\"cseTermSelect\" data-cse-term data-lq-dropdown aria-label=\"学年学期\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/courses.html",
+      "line": 78,
+      "kind": "native-markup",
+      "id": "courseFilterSelect",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"filter-chips\" data-lq-component=\"select\" id=\"courseFilterSelect\" class=\"lq-select filter-proxy-select\" aria-hidden=\"true\" tabindex=\"-1\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/courses.html",
+      "line": 384,
+      "kind": "native-markup",
+      "id": "courseAiTextbookSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"courseAiTextbookSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/courses.html",
+      "line": 377,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('courseAiTextbookSelect', '教材', control='select', options=_ai_tb_ns.options) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 43,
+      "kind": "native-markup",
+      "id": "gw-doc-category",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control gwlist-select\" id=\"gw-doc-category\" aria-label=\"按分类筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 49,
+      "kind": "native-markup",
+      "id": "gw-doc-author",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control gwlist-select\" id=\"gw-doc-author\" aria-label=\"按发文单位筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 55,
+      "kind": "native-markup",
+      "id": "gw-doc-sender",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control gwlist-select\" id=\"gw-doc-sender\" aria-label=\"按发送人筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 61,
+      "kind": "native-markup",
+      "id": "gw-doc-parse",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control gwlist-select\" id=\"gw-doc-parse\" aria-label=\"按解析状态筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 105,
+      "kind": "native-markup",
+      "id": "gw-doc-pagesize",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control gwlist-pagesize\" id=\"gw-doc-pagesize\" aria-label=\"每页条数\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 185,
+      "kind": "native-markup",
+      "id": "gw-scope-level",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"gw-scope-level\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/gongwen.html",
+      "line": 201,
+      "kind": "native-markup",
+      "id": "gw-scope-openness",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"gw-scope-openness\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 53,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-filter-scope>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 65,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-filter-school>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 71,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-filter-college>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 77,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-filter-course>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 83,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-filter-class>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 89,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-lp-sort>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 28,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的教案'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 30,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 32,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 34,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 36,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "line": 38,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('lpSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}, {'value': 'sessions_desc', 'label': '课次多到少'}, {'value': 'sessions_asc', 'label': '课次少到多'}], value='updated_desc',",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 19,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"投放范围\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 25,
+      "kind": "native-markup",
+      "id": null,
+      "name": "status",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"投放状态\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"status\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 31,
+      "kind": "native-markup",
+      "id": null,
+      "name": "source_kind",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"内容来源\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"source_kind\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 37,
+      "kind": "native-markup",
+      "id": null,
+      "name": "audience",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"受众\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"audience\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 42,
+      "kind": "native-markup",
+      "id": null,
+      "name": "category",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"内容类别\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"category\" data-life-tip-category-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 65,
+      "kind": "native-markup",
+      "id": null,
+      "name": "category",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"category\" data-life-tip-category-input>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 69,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"投放范围\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope\" data-life-tip-scope-input>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/life_tips.html",
+      "line": 81,
+      "kind": "native-markup",
+      "id": null,
+      "name": "audience",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"受众\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"audience\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/material_hub.html",
+      "line": 45,
+      "kind": "native-markup",
+      "id": "mh-scope",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control mh-scope-select filter-proxy-select\" id=\"mh-scope\" aria-label=\"归属层级筛选\" tabindex=\"-1\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/material_hub.html",
+      "line": 64,
+      "kind": "native-markup",
+      "id": "mh-scope",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control mh-scope-select\" id=\"mh-scope\" aria-label=\"归属层级筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offering_hub.html",
+      "line": 61,
+      "kind": "native-markup",
+      "id": "offeringHubSemesterFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringHubSemesterFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offering_hub.html",
+      "line": 70,
+      "kind": "native-markup",
+      "id": "offeringHubStatusFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringHubStatusFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offering_hub.html",
+      "line": 83,
+      "kind": "native-markup",
+      "id": "offeringHubSortSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringHubSortSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 59,
+      "kind": "native-markup",
+      "id": "offeringSemesterSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringSemesterSelect\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 72,
+      "kind": "native-markup",
+      "id": "offeringClassSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringClassSelect\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 105,
+      "kind": "native-markup",
+      "id": "offeringCourseSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringCourseSelect\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 118,
+      "kind": "native-markup",
+      "id": "offeringTextbookSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringTextbookSelect\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 130,
+      "kind": "native-markup",
+      "id": "offeringScheduleSourceSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringScheduleSourceSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 152,
+      "kind": "native-markup",
+      "id": "offeringAcademicClassSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"offeringAcademicClassSelect\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/offerings.html",
+      "line": 260,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"周几上课\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" data-field=\"weekday\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 64,
+      "kind": "native-markup",
+      "id": null,
+      "name": "status",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"status\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 65,
+      "kind": "native-markup",
+      "id": null,
+      "name": "document_type",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"document_type\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 66,
+      "kind": "native-markup",
+      "id": null,
+      "name": "request_kind",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"request_kind\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 67,
+      "kind": "native-markup",
+      "id": null,
+      "name": "requester_role",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"requester_role\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 68,
+      "kind": "native-markup",
+      "id": null,
+      "name": "identity",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"identity\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 21,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signatureWorkflowStatus', '状态', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 30,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signatureWorkflowDocumentType', '文档类型', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 36,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signatureWorkflowRequestKind', '申请类别', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 41,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signatureWorkflowRequesterRole', '申请人类别', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signature_workflows.html",
+      "line": 46,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signatureWorkflowIdentity', '任职身份', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 55,
+      "kind": "native-markup",
+      "id": "signature-edit-subject-role-input",
+      "name": "subject_role",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-edit-subject-role-input\" name=\"subject_role\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 64,
+      "kind": "native-markup",
+      "id": "signature-edit-identity-input",
+      "name": "identity_category",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-edit-identity-input\" name=\"identity_category\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 207,
+      "kind": "native-markup",
+      "id": "signature-scope-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-scope-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 220,
+      "kind": "native-markup",
+      "id": "signature-identity-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-identity-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 233,
+      "kind": "native-markup",
+      "id": "signature-owner-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-owner-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 299,
+      "kind": "native-markup",
+      "id": "signature-identity-input",
+      "name": "identity_category",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-identity-input\" name=\"identity_category\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 315,
+      "kind": "native-markup",
+      "id": "signature-kind-input",
+      "name": "signature_kind",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-kind-input\" name=\"signature_kind\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 322,
+      "kind": "native-markup",
+      "id": "signature-subject-role-input",
+      "name": "subject_role",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"signature-subject-role-input\" name=\"subject_role\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 172,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signature-scope-filter', '范围', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 182,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signature-identity-filter', '职务身份', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/signatures.html",
+      "line": 192,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('signature-owner-filter', '归属人', control='select', control_props={",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/academic_integrations.html",
+      "line": 122,
+      "kind": "native-markup",
+      "id": "academic-school-code",
+      "name": "school_code",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"academic-school-code\" name=\"school_code\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/academic_integrations.html",
+      "line": 182,
+      "kind": "native-markup",
+      "id": "academic-probe-method",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"academic-probe-method\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/academic_integrations.html",
+      "line": 202,
+      "kind": "native-markup",
+      "id": "academic-probe-body-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"academic-probe-body-mode\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/academic_integrations.html",
+      "line": 107,
+      "kind": "field-macro",
+      "id": null,
+      "name": "school_code",
+      "flags": [],
+      "source": "lq_field('academic-school-code', '学校', control='select', name='school_code', required=true,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "line": 121,
+      "kind": "native-markup",
+      "id": "gw-system-code",
+      "name": "system_code",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"gw-system-code\" name=\"system_code\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "line": 106,
+      "kind": "field-macro",
+      "id": null,
+      "name": "system_code",
+      "flags": [],
+      "source": "lq_field('gw-system-code', '系统', control='select', name='system_code', required=true,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/organizations.html",
+      "line": 126,
+      "kind": "native-markup",
+      "id": null,
+      "name": "is_active",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" name=\"is_active\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/organizations.html",
+      "line": 88,
+      "kind": "field-macro",
+      "id": null,
+      "name": "is_active",
+      "flags": [],
+      "source": "lq_field('org-current-school-active-input', '状态', control='select', name='is_active', value='1', options=[{'value': '1', 'label': '启用'}, {'value': '0', 'label': '停用'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "line": 123,
+      "kind": "native-markup",
+      "id": "smart-platform-code",
+      "name": "platform_code",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"smart-platform-code\" name=\"platform_code\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "line": 184,
+      "kind": "native-markup",
+      "id": "smart-probe-method",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"smart-probe-method\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "line": 204,
+      "kind": "native-markup",
+      "id": "smart-probe-body-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"smart-probe-body-mode\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "line": 107,
+      "kind": "field-macro",
+      "id": null,
+      "name": "platform_code",
+      "flags": [],
+      "source": "lq_field('smart-platform-code', '平台', control='select', name='platform_code', required=true,",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/super_admin.html",
+      "line": 32,
+      "kind": "native-markup",
+      "id": "super-admin-teacher-id",
+      "name": "teacher_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" id=\"super-admin-teacher-id\" name=\"teacher_id\" {% if not can_manage_super_admin %}disabled{% endif %}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/system/users.html",
+      "line": 77,
+      "kind": "native-markup",
+      "id": "teacher-status-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"教师状态\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control um-filter\" id=\"teacher-status-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 52,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-filter-scope>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 64,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-filter-school>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 70,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-filter-college>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 76,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-filter-course>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 82,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-filter-class>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 88,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-te-sort>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 27,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teFilterScope', '范围', control='select', options=[{'value': '', 'label': '全部范围'}, {'value': 'mine', 'label': '我的'}, {'value': 'shared', 'label': '他人公开'}, {'value': 'private', 'label': '私有'}, {'value': 'department', 'label': '本系部公开'}, {'value': 'college', 'label': '本院级公开'}, {'value': 'school', 'label': '全校公开'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 29,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teFilterSchool', '学校', control='select', options=[{'value': '', 'label': '全部学校'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 31,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teFilterCollege', '学院', control='select', options=[{'value': '', 'label': '全部学院'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 33,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teFilterCourse', '课程', control='select', options=[{'value': '', 'label': '全部课程'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 35,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teFilterClass', '班级', control='select', options=[{'value': '', 'label': '全部班级'}],",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/teacher_evaluations.html",
+      "line": 37,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('teSort', '排序', control='select', options=[{'value': 'updated_desc', 'label': '最近更新'}, {'value': 'updated_asc', 'label': '最早更新'}, {'value': 'score_desc', 'label': '分数高到低'}, {'value': 'score_asc', 'label': '分数低到高'}, {'value': 'title_asc', 'label': '名称 A→Z'}, {'value': 'title_desc', 'label': '名称 Z→A'}], value='updated_desc',",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 96,
+      "kind": "native-markup",
+      "id": "textbookPublisherFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"textbookPublisherFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 102,
+      "kind": "native-markup",
+      "id": "textbookTagFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"textbookTagFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 108,
+      "kind": "native-markup",
+      "id": "textbookAttachmentFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"textbookAttachmentFilter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 58,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('textbookPublisherFilter', '出版社', control='select', options=[{'value': '', 'label': '全部出版社'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 59,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('textbookTagFilter', '标签', control='select', options=[{'value': '', 'label': '全部标签'}]) }}",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "line": 60,
+      "kind": "field-macro",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "lq_field('textbookAttachmentFilter', '附件状态', control='select', options=[",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/message_center.html",
+      "line": 47,
+      "kind": "native-markup",
+      "id": "message-center-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"阅读状态\" data-lq-dropdown data-lq-component=\"select\" id=\"message-center-filter\" class=\"lq-select message-center-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/message_center.html",
+      "line": 72,
+      "kind": "native-markup",
+      "id": "message-center-contact-select",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"选择联系人\" data-lq-dropdown data-lq-component=\"select\" id=\"message-center-contact-select\" class=\"lq-select message-center-contact-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "line": 23,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" data-academic-sync-semester>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/assessment_kind_control.html",
+      "line": 6,
+      "kind": "native-markup",
+      "id": "{{ control_id }}",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select ordinary-grade-kind-control__select\" id=\"{{ control_id }}\" data-assessment-kind-select data-assignment-id=\"{{ assessment.assignment_id or assessment.id }}\" data-version=\"{{ assessment.assessment_kind_version or 0 }}\" aria-label=\"设置任务分类\" aria-describedby=\"{{ control_id }}-note\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "line": 19,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-member-class-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "line": 20,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-member-state-filter>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 22,
+      "kind": "native-markup",
+      "id": "statusFilter",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"exam-filter-chips\" data-lq-component=\"select\" id=\"statusFilter\" class=\"lq-select exam-filter-select\" hidden aria-hidden=\"true\" tabindex=\"-1\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 39,
+      "kind": "native-markup",
+      "id": "assignmentFilter",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"exam-filter-chips\" data-lq-component=\"select\" id=\"assignmentFilter\" class=\"lq-select exam-filter-select\" hidden aria-hidden=\"true\" tabindex=\"-1\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 50,
+      "kind": "native-markup",
+      "id": "sourceFilter",
+      "name": null,
+      "flags": [
+        "explicit-selection"
+      ],
+      "source": "<select data-lq-selection-owner=\"exam-filter-chips\" data-lq-component=\"select\" id=\"sourceFilter\" class=\"lq-select exam-filter-select\" hidden aria-hidden=\"true\" tabindex=\"-1\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 66,
+      "kind": "native-markup",
+      "id": "structureFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"structureFilter\" class=\"lq-select exam-filter-select\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 76,
+      "kind": "native-markup",
+      "id": "scopeFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"scopeFilter\" class=\"lq-select exam-filter-select\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 87,
+      "kind": "native-markup",
+      "id": "schoolFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"schoolFilter\" class=\"lq-select exam-filter-select\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 93,
+      "kind": "native-markup",
+      "id": "departmentFilter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"departmentFilter\" class=\"lq-select exam-filter-select\" onchange=\"onFilterControlChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 99,
+      "kind": "native-markup",
+      "id": "sortSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"sortSelect\" class=\"lq-select exam-filter-select\" onchange=\"onSortChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/control_panel.html",
+      "line": 110,
+      "kind": "native-markup",
+      "id": "groupModeSelect",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"groupModeSelect\" class=\"lq-select exam-filter-select\" onchange=\"onGroupModeChange()\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/modals.html",
+      "line": 54,
+      "kind": "native-markup",
+      "id": "assign-assessment-kind",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assign-assessment-kind\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/modals.html",
+      "line": 64,
+      "kind": "native-markup",
+      "id": "assign-learning-stage-key",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assign-learning-stage-key\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/exams/modals.html",
+      "line": 75,
+      "kind": "native-markup",
+      "id": "assign-availability-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"assign-availability-mode\" class=\"lq-select form-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 54,
+      "kind": "native-markup",
+      "id": "materials-scope-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-scope-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 67,
+      "kind": "native-markup",
+      "id": "materials-school-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-school-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 73,
+      "kind": "native-markup",
+      "id": "materials-department-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-department-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 79,
+      "kind": "native-markup",
+      "id": "materials-college-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-college-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 85,
+      "kind": "native-markup",
+      "id": "materials-course-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-course-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 91,
+      "kind": "native-markup",
+      "id": "materials-class-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-class-filter\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 97,
+      "kind": "native-markup",
+      "id": "materials-sort-by",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-sort-by\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/library_card.html",
+      "line": 105,
+      "kind": "native-markup",
+      "id": "materials-sort-order",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-sort-order\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 18,
+      "kind": "native-markup",
+      "id": "materials-classroom-semester-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"materials-classroom-semester-filter\" aria-label=\"按学期筛选课堂\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 234,
+      "kind": "native-markup",
+      "id": "materials-ai-generate-group",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-generate-group\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 241,
+      "kind": "native-markup",
+      "id": "materials-ai-generate-type",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-generate-type\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 316,
+      "kind": "native-markup",
+      "id": "materials-ai-rewrite-strictness",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-rewrite-strictness\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 324,
+      "kind": "native-markup",
+      "id": "materials-ai-rewrite-offering",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-rewrite-offering\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 356,
+      "kind": "native-markup",
+      "id": "materials-ai-import-group",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-import-group\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 360,
+      "kind": "native-markup",
+      "id": "materials-ai-import-type",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-ai-import-type\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 373,
+      "kind": "native-markup",
+      "id": "materials-final-grade-import-offering",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-final-grade-import-offering\" class=\"lq-select form-control\" required aria-required=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_generate.html",
+      "line": 387,
+      "kind": "native-markup",
+      "id": "materials-final-grade-import-semester",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-final-grade-import-semester\" class=\"lq-select form-control\" required aria-required=\"true\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_library.html",
+      "line": 35,
+      "kind": "native-markup",
+      "id": "materials-create-node-location",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-create-node-location\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_library.html",
+      "line": 70,
+      "kind": "native-markup",
+      "id": "materials-move-target",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-move-target\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_library.html",
+      "line": 123,
+      "kind": "native-markup",
+      "id": "materials-bind-offering",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-bind-offering\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/materials/modals_repository.html",
+      "line": 173,
+      "kind": "native-markup",
+      "id": "materials-repository-credential-auth-mode",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"materials-repository-credential-auth-mode\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/email.html",
+      "line": 33,
+      "kind": "native-markup",
+      "id": "profile-email-provider",
+      "name": "provider",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"profile-email-provider\" name=\"provider\" class=\"lq-select lq-control--md form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/email.html",
+      "line": 84,
+      "kind": "native-markup",
+      "id": "profile-email-smtp-security",
+      "name": "smtp_security",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"profile-email-smtp-security\" name=\"smtp_security\" class=\"lq-select lq-control--md form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/email.html",
+      "line": 104,
+      "kind": "native-markup",
+      "id": "profile-email-imap-security",
+      "name": "imap_security",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"profile-email-imap-security\" name=\"imap_security\" class=\"lq-select lq-control--md form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/messages.html",
+      "line": 39,
+      "kind": "native-markup",
+      "id": "message-center-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-dropdown id=\"message-center-filter\" class=\"message-center-filter lq-select\" aria-label=\"阅读状态\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/messages.html",
+      "line": 43,
+      "kind": "native-markup",
+      "id": "message-center-filter",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"message-center-filter\" class=\"lq-select message-center-filter\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/messages.html",
+      "line": 61,
+      "kind": "native-markup",
+      "id": "message-center-contact-select",
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"message-center-contact-select\" class=\"lq-select message-center-contact-select\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/profile/portfolio.html",
+      "line": 96,
+      "kind": "native-markup",
+      "id": "portfolio-visibility-{{ item.id }}",
+      "name": "visibility",
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" id=\"portfolio-visibility-{{ item.id }}\" name=\"visibility\" class=\"lq-select form-control\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "line": 58,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('calendar') %}data-lq-selection-owner=\"calendar\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select form-control\" data-semester-calendar-select>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "line": 5,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select\" data-student-schedule-term aria-label=\"课表学期\" disabled>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "line": 13,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select ls-input\" data-student-course-term aria-label=\"课程集合学期\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "line": 13,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-selection",
+        "explicit-dropdown"
+      ],
+      "source": "<select {% if lq_family_enabled('dashboard') %}data-lq-selection-owner=\"dashboard\"{% else %}data-lq-dropdown{% endif %} data-lq-component=\"select\" class=\"lq-select ls-input\" data-student-course-state aria-label=\"课程安排状态\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/wrong_book.html",
+      "line": 115,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-filter-course aria-label=\"按课程筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "templates/wrong_book.html",
+      "line": 121,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-filter-point aria-label=\"按知识点筛选\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/academic_schedule_sync.js",
+      "line": 52,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/academic_schedule_sync.js",
+      "line": 52,
+      "kind": "native-markup",
+      "id": null,
+      "name": "term",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"term\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/academic_sync_dialog.js",
+      "line": 254,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-academic-sync-action>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/agent_workbench.js",
+      "line": 642,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-awb-sub-hour=\"${escapeHtml(item.key)}\" aria-label=\"执行时间\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/assessment_classification_batch.js",
+      "line": 47,
+      "kind": "dom-create",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "document.createElement('select')",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/assessment_plan_editor.js",
+      "line": 87,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select aria-label=\"${escapeHtml(def.label)}\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-field=\"${def.key}\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "line": 59,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-att-page-size=\"${scope}\" aria-label=\"每页数量\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "line": 77,
+      "kind": "native-markup",
+      "id": null,
+      "name": "term",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"term\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "line": 275,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-att-version>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "line": 275,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-att-run>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/attendance_reports.js",
+      "line": 456,
+      "kind": "native-markup",
+      "id": null,
+      "name": "${localField}",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"${localField}\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/base_resource_modes.js",
+      "line": 289,
+      "kind": "native-markup",
+      "id": null,
+      "name": "${field.key}",
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select aria-label=\"${escapeHtml(field.label)}\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"${field.key}\"${disabled}${required}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/blog.js",
+      "line": 1236,
+      "kind": "native-markup",
+      "id": "blog-opportunity-state-${opportunity.id}",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" id=\"blog-opportunity-state-${opportunity.id}\" data-blog-opportunity-state=\"${opportunity.id}\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/career_path_app.js",
+      "line": 610,
+      "kind": "native-markup",
+      "id": null,
+      "name": "qualification",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"qualification\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/career_path_app.js",
+      "line": 663,
+      "kind": "native-markup",
+      "id": null,
+      "name": "goal",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"goal\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/career_path_app.js",
+      "line": 664,
+      "kind": "native-markup",
+      "id": null,
+      "name": "work_mode",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"work_mode\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/classroom_interactions.js",
+      "line": 214,
+      "kind": "native-markup",
+      "id": null,
+      "name": "show_results",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"show_results\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/classroom_polls.js",
+      "line": 357,
+      "kind": "native-markup",
+      "id": null,
+      "name": "vote_type",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"投票形式\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"vote_type\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/classroom_polls.js",
+      "line": 364,
+      "kind": "native-markup",
+      "id": null,
+      "name": "result_visibility",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"统计可见时机\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"result_visibility\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 44,
+      "kind": "native-markup",
+      "id": null,
+      "name": "${name}",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"${name}\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 177,
+      "kind": "native-markup",
+      "id": null,
+      "name": "student_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"添加组员\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"student_id\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 251,
+      "kind": "native-markup",
+      "id": null,
+      "name": "assignment_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"关联作业\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"assignment_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 254,
+      "kind": "native-markup",
+      "id": null,
+      "name": "final_file_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"成果文件\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"final_file_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 324,
+      "kind": "native-markup",
+      "id": null,
+      "name": "reviewee_student_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"reviewee_student_id\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 360,
+      "kind": "native-markup",
+      "id": null,
+      "name": "assignment_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"关联作业\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"assignment_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 370,
+      "kind": "native-markup",
+      "id": null,
+      "name": "join_policy",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"join_policy\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 381,
+      "kind": "native-markup",
+      "id": null,
+      "name": "member_student_ids",
+      "flags": [
+        "multiple",
+        "listbox-size",
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"member_student_ids\" multiple size=\"6\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/collaboration.js",
+      "line": 385,
+      "kind": "native-markup",
+      "id": null,
+      "name": "leader_student_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"leader_student_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/course_schedule_deck.js",
+      "line": 169,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select cs-deck-term\" data-lq-dropdown data-csd-term aria-label=\"学年学期\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/course_schedule_editor.js",
+      "line": 761,
+      "kind": "native-markup",
+      "id": "cseWeek",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select\" id=\"cseWeek\" data-cse-field=\"week\" data-lq-dropdown aria-label=\"周次\"${locked ? ' disabled' : ''}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/course_schedule_editor.js",
+      "line": 762,
+      "kind": "native-markup",
+      "id": "cseStart",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select\" id=\"cseStart\" data-cse-field=\"start\" data-lq-dropdown aria-label=\"节次\"${locked ? ' disabled' : ''}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/course_schedule_editor.js",
+      "line": 763,
+      "kind": "native-markup",
+      "id": "cseWeekday",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select\" id=\"cseWeekday\" data-cse-field=\"weekday\" data-lq-dropdown aria-label=\"星期\"${locked ? ' disabled' : ''}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/course_schedule_editor.js",
+      "line": 768,
+      "kind": "native-markup",
+      "id": "cseRoom",
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" class=\"lq-select\" id=\"cseRoom\" data-cse-field=\"room\" data-lq-dropdown data-lq-searchable data-lq-placeholder=\"沿用原教室\" aria-label=\"教室\"${locked ? ' disabled' : ''}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "line": 64,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-remind-unit aria-label=\"提前时间单位\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "line": 663,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"class_offering_id\" data-todo-course aria-label=\"关联课堂（可选）\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "line": 671,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"class_offering_id\" data-todo-course required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "line": 728,
+      "kind": "native-markup",
+      "id": null,
+      "name": "reminder_lead_unit",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select class=\"lq-select\" data-lq-component=\"select\" data-lq-dropdown name=\"reminder_lead_unit\" aria-label=\"提前单位\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/grade_publication_controls.js",
+      "line": 28,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" data-gp-offering>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/lessondoc_wizard.js",
+      "line": 184,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"立即生成范围\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ld-scope style=\"margin-left:8px;\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/lessondoc_wizard.js",
+      "line": 271,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-ld-theme>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/lq/selection.js",
+      "line": 38,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "dynamic-attributes"
+      ],
+      "source": "<select${attributesMarkup(p.attrs)}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/lq/selection.js",
+      "line": 44,
+      "kind": "dom-create",
+      "id": null,
+      "name": null,
+      "flags": [],
+      "source": "doc.createElement('select')",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_assessment_plans.js",
+      "line": 381,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"class_offering_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_assessment_plans.js",
+      "line": 611,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope_level",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope_level\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_lesson_plans.js",
+      "line": 345,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"class_offering_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_lesson_plans.js",
+      "line": 517,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-gen-insert-index>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_lesson_plans.js",
+      "line": 919,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope_level",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope_level\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_polls.js",
+      "line": 243,
+      "kind": "native-markup",
+      "id": null,
+      "name": "vote_type",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"投票形式\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"vote_type\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_polls.js",
+      "line": 250,
+      "kind": "native-markup",
+      "id": null,
+      "name": "result_visibility",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"统计可见时机\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"result_visibility\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "line": 370,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"class_offering_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "line": 593,
+      "kind": "native-markup",
+      "id": null,
+      "name": "scope_level",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" name=\"scope_level\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/material_selection_panel.js",
+      "line": 78,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-mode>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/material_selection_panel.js",
+      "line": 78,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-opinion>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/materials_manage.js",
+      "line": 2761,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" data-property-scope>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/offering_bootstrap.js",
+      "line": 60,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"教材\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select form-control\" data-obs-textbook>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/profile.js",
+      "line": 1005,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-component=\"select\" data-lq-dropdown class=\"form-control lq-select\" data-identity-field=\"identity_category\" aria-label=\"任职身份\" ${profileLq ? '' : 'style=\"flex:1;min-width:120px;\"'}>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_applications.js",
+      "line": 85,
+      "kind": "native-markup",
+      "id": null,
+      "name": "status",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\" name=\"status\" aria-label=\"当前状态\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_applications.js",
+      "line": 90,
+      "kind": "native-markup",
+      "id": null,
+      "name": "job_target_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\" name=\"job_target_id\" aria-label=\"关联岗位分析\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_applications.js",
+      "line": 91,
+      "kind": "native-markup",
+      "id": null,
+      "name": "resume_id",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\" name=\"resume_id\" aria-label=\"本次使用简历\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_builder.js",
+      "line": 588,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"学历\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\"' + attrs + '>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_personal.js",
+      "line": 28,
+      "kind": "native-markup",
+      "id": null,
+      "name": "' + def.key + '",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"' + RZ.esc(def.label) + '\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\" name=\"' + def.key + '\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/resume_section.js",
+      "line": 214,
+      "kind": "native-markup",
+      "id": null,
+      "name": "' + f.key + '",
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"' + RZ.esc(f.label) + '\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select rz-select\" name=\"' + f.key + '\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/semester_calendar.js",
+      "line": 1425,
+      "kind": "native-markup",
+      "id": null,
+      "name": "class_offering_id",
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" name=\"class_offering_id\" class=\"lq-select form-control\" required>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/signature_scope_fields.js",
+      "line": 58,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "label-association-needs-review",
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-scope-level aria-describedby=\"${this.id}-help\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/signature_scope_fields.js",
+      "line": 61,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-scope-membership aria-label=\"共享到的组织\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "line": 83,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select aria-label=\"${escapeHtml(def.label)}\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-field=\"${def.key}\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/teacher_onboarding.js",
+      "line": 902,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown"
+      ],
+      "source": "<select aria-label=\"绑定材料\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-field=\"learning_material_id\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "static/js/tree_select_form_modal.js",
+      "line": 228,
+      "kind": "native-markup",
+      "id": null,
+      "name": null,
+      "flags": [
+        "explicit-dropdown",
+        "dynamic-attributes"
+      ],
+      "source": "<select aria-label=\"${htmlAttr(field.label || key)}\" data-lq-dropdown data-lq-component=\"select\" class=\"lq-select\" data-tsf-field=\"${htmlAttr(key)}\">",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "line": 351,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"任务状态\" value={filter} onChange={event =>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "line": 351,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"任务分类\" value={category} onChange={event =>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "line": 294,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"课堂\" value={filters.offering} onChange={(event) =>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "line": 295,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"类型\" value={filters.kind} onChange={(event) =>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "line": 296,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"日期\" value={filters.date} onChange={(event) =>",
+      "acceptance": "pending-runtime"
+    },
+    {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "line": 297,
+      "kind": "react-native-select",
+      "id": null,
+      "name": null,
+      "flags": [
+        "react-owned-dom"
+      ],
+      "source": "<LqNativeSelect label=\"状态\" value={filters.state} onChange={(event) =>",
+      "acceptance": "pending-runtime"
+    }
+  ],
+  "contractSources": {
+    "classroom_app/lq_forms.py": "be86ef5e0a3076f089f8a5915b3696b1f242b8e236e0c66343ef939d0a88d907",
+    "classroom_app/lq_selection.py": "799437d21cff66a4ca78c40d916e357fc715bff8fde0ceb64dd78e48be9d5e09",
+    "static/js/lq/forms.js": "2c0956bb1860f7db4c528122d07a8ccf2a4b69be839587147642dab144ecb915",
+    "static/js/lq/selection.js": "d23e79c6fd3fd6e5d3abd55ce8b223ebdef6eff22c0975acb2d7faf9288fe965",
+    "static/js/lq/dropdown.js": "838235db7f6c7476a97eb80bcf4bc7583b54e691ec20b420139fb24f6254764a",
+    "static/js/lq/native-select-observer.js": "2d5b8fc378ffe9807d901c2aab6f916e341f572854e10d909f63621fe204d979",
+    "frontend/src/components/lq-presentation.tsx": "040fe070a089873fdbe27ca95e14b5236f179f683138e8475d4b9b302509943d"
+  },
+  "excludedNonProductSources": [
+    {
+      "path": "bidisync.py",
+      "reason": "Separate local SSH file-sync maintenance console (--web, port 8765), not a classroom_app product route."
+    },
+    {
+      "path": "classroom_app/services/academic_course_sync_service.py",
+      "reason": "Parses upstream academic HTML; does not render a product select."
+    }
+  ],
+  "buildGraph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+  "reviewedAt": "2026-10-08",
+  "runtimeEvidence": "docs/lq-select-acceptance-evidence-2026-10-08.json",
+  "reviewNotes": [
+    "Business native markup has a Dropdown declaration or an existing Selection owner; two undeclared tags are shared Selection factory definitions.",
+    "The 84 label-association lexical markers require surrounding-label review and are not 84 accessibility failures.",
+    "Dynamic declared nodes may initialize on first activation through installDropdowns; native DOM remains the sole form value owner.",
+    "All source candidates remain pending-runtime; counts are not a completed migration percentage."
+  ]
+}

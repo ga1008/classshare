@@ -1,17 +1,17 @@
 {
   "acceptance": "pending",
   "summary": {
-    "files": 520,
+    "files": 521,
     "htmlTemplates": 201,
-    "entries": 5302,
+    "entries": 5305,
     "byKind": {
       "toolbar": 133,
-      "surface": 659,
+      "surface": 660,
       "choice": 163,
       "button": 2207,
       "field": 737,
       "unknown": 762,
-      "menu": 34,
+      "menu": 36,
       "layer": 139,
       "select": 299,
       "content-slot": 45,
@@ -26,31 +26,31 @@
       "jinja-component-call": 438,
       "jinja-html": 2499,
       "dynamic-html-sink": 633,
-      "js-html-candidate": 1298,
-      "create-element": 160,
-      "component-factory-call": 77,
+      "js-html-candidate": 1300,
+      "create-element": 162,
+      "component-factory-call": 76,
       "react-jsx": 173,
       "python-generated-jinja-html": 24
     },
     "byCanonicalContract": {
-      "not-declared": 1525,
-      "canonical-declared-pending": 3693,
+      "not-declared": 1510,
+      "canonical-declared-pending": 3711,
       "canonical-resolution-pending": 3,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
-      "shared-component-call": 582,
-      "lq-marked-native": 112,
-      "component-declared": 3696,
+      "shared-component-call": 581,
+      "lq-marked-native": 104,
+      "component-declared": 3713,
       "runtime-output-unknown": 633,
-      "legacy-or-native": 92,
-      "shared-definition": 52,
+      "legacy-or-native": 85,
+      "shared-definition": 54,
       "shared-adapter-call-candidate": 81,
       "factory-ownership-unknown": 20,
       "external-icon-content-slot": 34
     },
     "byStatus": {
-      "pending": 4540,
+      "pending": 4543,
       "unknown": 762
     },
     "largestFiles": [
@@ -107,15 +107,15 @@
         "entries": 61
       },
       {
+        "file": "static/js/course_schedule_editor.js",
+        "entries": 58
+      },
+      {
         "file": "templates/dashboard_teacher.html",
         "entries": 56
       },
       {
         "file": "templates/manage/classes.html",
-        "entries": 56
-      },
-      {
-        "file": "static/js/course_schedule_editor.js",
         "entries": 56
       },
       {
@@ -395,144 +395,27 @@
   },
   "manualInterpretation": "docs/lq-interface-modules-2026-10-08.md#源码审计的人工解释",
   "sourceReview": "docs/lq-interface-source-review-2026-10-08.json",
-  "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
-  "buildGraphStatus": "motion-process-scoped-validation; full-platform dynamic/business acceptance remains pending",
+  "buildGraph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+  "buildGraphStatus": "selection-and-planned-adjustment-scoped-validation; full-platform dynamic/business acceptance remains pending",
   "changedContractHashes": {
-    "static/css/lq/base.css": "597a4f398b75ecfdd9eb1dea85f66fd71e11283dc12fbd54e68d62682270a760",
-    "static/css/lq/index.css": "a0b5d7e0571131eab5da2063fd95e142cc0221458ecbb063f2549a7fde50cfd3",
-    "static/css/lq/manage-pilot.css": "62ccc0318c55ecd774f7c888d3e2767b6c269ed0c270252c8ed0abee46d80b8a",
-    "static/css/lq/manage-shell.css": "2a8b43b8c528333073e4eb3c2938f285a16299320e24205e57b1ad1ef34d7703",
-    "static/css/lq/materials.css": "e35d609d243700ac7dedf89da9e593aad497524f5751ea652131e65d5e24df22",
-    "static/css/lq/navbar-shell.css": "e49b7af3d0579d9d282aadf7564bf6e35ca3c7a32bee48e0e2649210d7e799b7",
-    "static/css/lq/preview.css": "140b43713abc8244b7b6f24cd33e02b5fd51d8abc493c00817f13d7f90aaf3fd",
-    "static/css/lq/report-card-pilot.css": "5d5cabf91403cd0614cbe960c39fc81215a9c466fd4b84cb5398b1b244de596f",
-    "static/css/lq/tokens.css": "c72c45f238a4191e8986511fe1cc52fc0d551fc96954b3d245294f5b1f8d72b7",
-    "static/css/lq/components/business.css": "aaa7ab240f1f4128ccd790ff5f09a38af1037034a51e6e94df3570c8b40b5fc9",
-    "static/css/lq/components/button.css": "a619821612b321015a5b386283426a964df62f7b2359b52eb126257c6c097320",
-    "static/css/lq/components/chip-row.css": "9bdee2f6858f0970c806a6516ee19f49ceceab09a1e5a356148d4d7cfb97af03",
-    "static/css/lq/components/chip.css": "9c742670d121f03a61638593ebbd6c27f0adf7ef679a90c086bcd9aa853798f6",
-    "static/css/lq/components/collapsible.css": "b16b314eb6ab9ed722acf49cd58523d9a49e56726a6f355112211a636d771617",
-    "static/css/lq/components/composer.css": "319ae9d747ba9f13288cefc13eca05df58923e1403abb0ae7c41ffe8a9372ab8",
-    "static/css/lq/components/content.css": "9e739052c4dcc4b20985905aba8c215b0355b496403ed90187d9873fae1c374d",
-    "static/css/lq/components/control-geometry.css": "ad33218ffe4d110374ee098b6c7e8cc4fe01e993f063ba4a38351503af8704d7",
-    "static/css/lq/components/control-states.css": "24bb579f319bf517bc391655a3ef6b884a576cb46bc4487987c0224cdc483eb7",
-    "static/css/lq/components/declarative.css": "3e3744a12541e505f5518124f82aa948759c89b6379a69b9e2034cba2d22c64b",
-    "static/css/lq/components/dialogs.css": "662dc549458a63405f457fd0631dcff1fd333b45c68952582d1deaed02ca0cc0",
-    "static/css/lq/components/domain-controls.css": "5e27136f637b1c7d227e4b625f3c048720171b6d1d627a96420e5a20e9770363",
-    "static/css/lq/components/forms.css": "78f9a9e83497f2c5e485b5f03e46eb31a2464f950d596641c95de10e757d1396",
-    "static/css/lq/components/indicators.css": "762a1b55db90e5a87c97074ca73f97bdd388fafba7e6588f7dff429788eeec01",
-    "static/css/lq/components/insights.css": "b029c6aeac40a29481312b2f99e66fa86b434dd7d5a1e75e2019c5df64e8e4b5",
-    "static/css/lq/components/layers.css": "9f9147ccbf6ecf5d9073f5d1bcf5a7e5f22b9ace559d3f61c5c267161785f855",
-    "static/css/lq/components/lightbox.css": "5ef6131809ceb982e059393d192361f70b118e1e2381f3068480b3223c4daee7",
-    "static/css/lq/components/material-boundaries.css": "03330c834cacb2172361c3bf1ee64c25bcd44fb0739a16e951de5543848a40b5",
-    "static/css/lq/components/menus.css": "4a8cc89f927fddfe17131b140f4a33650881ed93b7fbd3f1c9080d972f3eb5b6",
-    "static/css/lq/components/motion.css": "a0270941b16feae091ed7356644d1754634786c0ba2412219ce08abaab4f6862",
-    "static/css/lq/components/nav-menu.css": "d797726a9deaabd7e30c013e99afbc8c02180ff5f772abb0f3bf24cde7ede7ef",
-    "static/css/lq/components/navigation.css": "25ae577b1ec1781858442449a8f6ffb0911cfbf49a533e686c8ec4bc0de0ee3b",
-    "static/css/lq/components/overflow-label.css": "1b52aa182b2803c5372606c7cd0148d42d11da8d7c26f13cdbf9540175ed6b3c",
-    "static/css/lq/components/page-backdrop.css": "ddc0080f660c8081fa7f17382b88cabc8c903825a3e88509987653cb68661fe7",
-    "static/css/lq/components/prose-copy.css": "ffbe7782ce5ba471375dad3290bdd9379116e2c4b187b3afcbf94c06b2a41f3f",
-    "static/css/lq/components/react-bridges.css": "c78f420dbea693aedcf01f38befeb72f70241dc6d4d50df48491d6b5f1b40a0f",
-    "static/css/lq/components/selection.css": "74a49ee6c44cdd87635d71d7ba823ab448eba7bf5059b46f0500fdc39277392b",
-    "static/css/lq/components/shells.css": "b4fd543e4841b3b5c8062c362f0d2ecd63b10a634088aa50a9c81ab9b998b505",
-    "static/css/lq/components/skeleton.css": "855ea476cce3b660504410a994c5a2698b8926cb97ae1e4d5b67b5a81c2f327b",
-    "static/css/lq/components/status.css": "9012d482c91589c45abf1f2688f64c2eb980b48e68084f50b7a7a2b97c3f8a1c",
-    "static/css/lq/components/tables.css": "8bb99dffd77a33db60908f50df8b8d6a600b8f910721e999a28d62db4e380fed",
-    "static/css/lq/components/toast.css": "3ea973d831a528343255ad59fb7c68a4182bc4695caeb405af5323d12c6f6a11",
-    "static/css/lq/components/tooltips.css": "fe3b75645ee05ff1d10397d372bdab8a25c8f5a0ab3c322596ec4158d4204c51",
-    "static/css/lq/components/upload.css": "6c4559a05e8995969208f804dfcffd90f96ebf9a32dd2fecb963a7214a0096b9",
-    "static/css/lq/components/workspace.css": "f2bed1d0049263b51d322870de51972e514bb4890450dc5ea7f8e985e601a57d",
-    "static/css/lq/pages/calendar.css": "1db313d4cee6c38b83abc2e231e7714e12dbe70b1647bfd99d193ebde44df6e4",
-    "static/css/lq/pages/centered.css": "b694c9caa97dab20bb1f0e806bfd203af281e10643b4fdecf37bb3724b5e9bba",
-    "static/css/lq/pages/dashboard.css": "2036cfc1e83d716ef289da6ba0c2832e83fd1699ba3f056b019df5a2ade9ac27",
-    "static/css/lq/pages/growth.css": "d1484b8ffe772ca8936c8fa1f2b4e65417baaea634da9fa16797c1f389bb9514",
-    "static/css/lq/pages/life-tip.css": "d95de2610fb402531a7da46ee710107c5fa623e0d0beaa1854b4451b92b94398",
-    "static/css/lq/pages/login.css": "3c2b5f18fb4beec63e97d86786dd1bb2ed4de61c5f68603bae50ab3eff8c47f1",
-    "static/css/lq/pages/manage-archive.css": "dd2c31425d441edbf74709dedd8af1613b7e1723c249f2f6099fe0b19731e527",
-    "static/css/lq/pages/message-center.css": "c061f50cb64ffdfc75013e9c6de1177be282e907879f919c27984b3687d60208",
-    "static/css/lq/pages/navbar.css": "b386e0d314daf1402045e3bce6698563c7a2b2761497198d5234aa4eeadc6305",
-    "static/css/lq/pages/page-material.css": "c09c8a4a69ca17db5834e153ef688faf00958e4bf82e47eda6331e5dd679de62",
-    "static/css/lq/pages/profile.css": "855328545473e98ffcbb45da594168194e2dbecf0e46aa3d588c6f197d9e43dd",
-    "static/css/lq/pages/status.css": "83e78f1e7e3b8ecea8709fb46e70b1ccd3a40fe0ee8010ee7d18bd63c8036835",
-    "static/js/ui.js": "96ed246e3bd0f9d2f5399c05a670d25faaa90a3065176bcfe38cebba59c19130",
-    "static/js/ui_overlay_motion.js": "ae8a1aad8be73bb061b04a6c4cba83ce4027466102cd6289abd736de142da5bd",
-    "static/js/ui_popover.js": "a30f612b447e90ffc7147bc3f0b089c075e20e6d2bbcb9e6ae7849ca77128c84",
-    "static/js/lq/domain-modal.js": "0168a9bea36d9237e80327598d75c2847dd83e6c4ac8f4b4337dea26c1417fa6",
-    "static/js/lq/native-presence.js": "3827b256c7da8d3daede91ff2b4bb42338672b54ecd99d9e34006ba3fbfae11f",
-    "static/js/ai_workspace_window.js": "91aa812a2b3fa83b4e97b2bf1f12a2656759c41e640e8a4024d25ff9540ac48a"
+    "classroom_app/lq_forms.py": "be86ef5e0a3076f089f8a5915b3696b1f242b8e236e0c66343ef939d0a88d907",
+    "static/js/lq/forms.js": "2c0956bb1860f7db4c528122d07a8ccf2a4b69be839587147642dab144ecb915",
+    "static/js/lq/dropdown.js": "838235db7f6c7476a97eb80bcf4bc7583b54e691ec20b420139fb24f6254764a",
+    "static/js/lq/native-select-observer.js": "2d5b8fc378ffe9807d901c2aab6f916e341f572854e10d909f63621fe204d979",
+    "static/css/lq/components/forms.css": "faf0510e4d94325af19a0560a987550eafcd2a91096df5d14a8da24d13b43b84",
+    "static/css/lq/components/selection.css": "c1c5496b01e6ada460f1b2ae44e017473851f7142ca433128664f814db098eb7",
+    "static/css/tailwind-app.css": "39ec3c052051245e66904943080c3dbb1da0a232cec1674612b2004dd3649de4",
+    "frontend/src/components/lq-presentation.tsx": "040fe070a089873fdbe27ca95e14b5236f179f683138e8475d4b9b302509943d"
   },
   "validationEvidence": {
-    "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#motionProcessReview",
-    "acceptanceRecord": "docs/lq-motion-process-acceptance-2026-10-08.md",
-    "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
-    "componentUniquePassed": 22,
-    "applicationUniquePassed": 26,
-    "runs": [
-      {
-        "path": ".codex-temp/lq-motion-process-20261008-final/results.json",
-        "stats": {
-          "startTime": "2026-10-08T09:58:36.970Z",
-          "duration": 54926.312999999995,
-          "expected": 21,
-          "skipped": 0,
-          "unexpected": 1,
-          "flaky": 0
-        }
-      },
-      {
-        "path": ".codex-temp/lq-motion-process-20261008-resample/results.json",
-        "stats": {
-          "startTime": "2026-10-08T09:59:38.349Z",
-          "duration": 2532.116,
-          "expected": 1,
-          "skipped": 0,
-          "unexpected": 0,
-          "flaky": 0
-        }
-      },
-      {
-        "path": ".codex-temp/lq-motion-app-20261008-final/results.json",
-        "stats": {
-          "startTime": "2026-10-08T10:00:01.653Z",
-          "duration": 353957.35599999997,
-          "expected": 24,
-          "skipped": 0,
-          "unexpected": 2,
-          "flaky": 0
-        }
-      },
-      {
-        "path": ".codex-temp/lq-motion-app-20261008-onboarding-final/results.json",
-        "stats": {
-          "startTime": "2026-10-08T10:06:09.605Z",
-          "duration": 39370.829000000005,
-          "expected": 1,
-          "skipped": 0,
-          "unexpected": 1,
-          "flaky": 0
-        }
-      },
-      {
-        "path": ".codex-temp/lq-motion-app-20261008-onboarding-complete/results.json",
-        "stats": {
-          "startTime": "2026-10-08T10:07:25.756Z",
-          "duration": 31399.035,
-          "expected": 2,
-          "skipped": 0,
-          "unexpected": 0,
-          "flaky": 0
-        }
-      }
-    ],
-    "limitations": [
-      "First component run includes one 231.6ms host frame-sampling gap; unchanged single-case rerun passed.",
-      "Initial onboarding sampler targeted layout parent; corrected to actual shared shell. Mobile retry closes visible error toast through its button before retrying dismiss.",
-      "Chromium desktop and touch emulation only; source inventory remains pending/unknown.",
-      "Existing profile page has 3 mobile / 4 desktop viewport blur hosts and an existing CSS decorative loop; its production rAF remains idle. This is recorded rather than raising the shared layer budget or claiming full-platform performance acceptance."
-    ],
-    "frameEvidence": "docs/lq-motion-process-evidence-2026-10-08.json",
-    "readonlyPlatformEvidence": ".codex-temp/lq-motion-platform-20261008/summary.json",
-    "scope": "Natural intermediate-frame and scoped business evidence; source candidates remain pending/unknown."
+    "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#selectionAndPlanReview",
+    "acceptanceRecord": "docs/lq-select-migration-2026-10-08.md",
+    "evidence": "docs/lq-select-acceptance-evidence-2026-10-08.json",
+    "applicationUniquePassed": 22,
+    "immutableDropdownPassed": 17,
+    "readonlyGetCount": 112,
+    "readonlyGraph": "475a46c48fb66dc5731cd5812fa5eb0a9f4e0703af3f57b29663e3763922b89e",
+    "scope": "Source and readonly DOM evidence remain distinct from scoped interaction/business acceptance."
   },
   "incrementalBuilds": [
     {
@@ -735,6 +618,147 @@
         "finalImmutableComponentPassed": 1,
         "scope": "Free-query state and pagination contracts; complete platform acceptance remains pending.",
         "finalImmutableEvidenceDirectory": ".codex-temp/classroom-free-editor-group-final-20261008"
+      }
+    },
+    {
+      "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+      "buildGraphStatus": "motion-process-scoped-validation; full-platform dynamic/business acceptance remains pending",
+      "changedContractHashes": {
+        "static/css/lq/base.css": "597a4f398b75ecfdd9eb1dea85f66fd71e11283dc12fbd54e68d62682270a760",
+        "static/css/lq/index.css": "a0b5d7e0571131eab5da2063fd95e142cc0221458ecbb063f2549a7fde50cfd3",
+        "static/css/lq/manage-pilot.css": "62ccc0318c55ecd774f7c888d3e2767b6c269ed0c270252c8ed0abee46d80b8a",
+        "static/css/lq/manage-shell.css": "2a8b43b8c528333073e4eb3c2938f285a16299320e24205e57b1ad1ef34d7703",
+        "static/css/lq/materials.css": "e35d609d243700ac7dedf89da9e593aad497524f5751ea652131e65d5e24df22",
+        "static/css/lq/navbar-shell.css": "e49b7af3d0579d9d282aadf7564bf6e35ca3c7a32bee48e0e2649210d7e799b7",
+        "static/css/lq/preview.css": "140b43713abc8244b7b6f24cd33e02b5fd51d8abc493c00817f13d7f90aaf3fd",
+        "static/css/lq/report-card-pilot.css": "5d5cabf91403cd0614cbe960c39fc81215a9c466fd4b84cb5398b1b244de596f",
+        "static/css/lq/tokens.css": "c72c45f238a4191e8986511fe1cc52fc0d551fc96954b3d245294f5b1f8d72b7",
+        "static/css/lq/components/business.css": "aaa7ab240f1f4128ccd790ff5f09a38af1037034a51e6e94df3570c8b40b5fc9",
+        "static/css/lq/components/button.css": "a619821612b321015a5b386283426a964df62f7b2359b52eb126257c6c097320",
+        "static/css/lq/components/chip-row.css": "9bdee2f6858f0970c806a6516ee19f49ceceab09a1e5a356148d4d7cfb97af03",
+        "static/css/lq/components/chip.css": "9c742670d121f03a61638593ebbd6c27f0adf7ef679a90c086bcd9aa853798f6",
+        "static/css/lq/components/collapsible.css": "b16b314eb6ab9ed722acf49cd58523d9a49e56726a6f355112211a636d771617",
+        "static/css/lq/components/composer.css": "319ae9d747ba9f13288cefc13eca05df58923e1403abb0ae7c41ffe8a9372ab8",
+        "static/css/lq/components/content.css": "9e739052c4dcc4b20985905aba8c215b0355b496403ed90187d9873fae1c374d",
+        "static/css/lq/components/control-geometry.css": "ad33218ffe4d110374ee098b6c7e8cc4fe01e993f063ba4a38351503af8704d7",
+        "static/css/lq/components/control-states.css": "24bb579f319bf517bc391655a3ef6b884a576cb46bc4487987c0224cdc483eb7",
+        "static/css/lq/components/declarative.css": "3e3744a12541e505f5518124f82aa948759c89b6379a69b9e2034cba2d22c64b",
+        "static/css/lq/components/dialogs.css": "662dc549458a63405f457fd0631dcff1fd333b45c68952582d1deaed02ca0cc0",
+        "static/css/lq/components/domain-controls.css": "5e27136f637b1c7d227e4b625f3c048720171b6d1d627a96420e5a20e9770363",
+        "static/css/lq/components/forms.css": "78f9a9e83497f2c5e485b5f03e46eb31a2464f950d596641c95de10e757d1396",
+        "static/css/lq/components/indicators.css": "762a1b55db90e5a87c97074ca73f97bdd388fafba7e6588f7dff429788eeec01",
+        "static/css/lq/components/insights.css": "b029c6aeac40a29481312b2f99e66fa86b434dd7d5a1e75e2019c5df64e8e4b5",
+        "static/css/lq/components/layers.css": "9f9147ccbf6ecf5d9073f5d1bcf5a7e5f22b9ace559d3f61c5c267161785f855",
+        "static/css/lq/components/lightbox.css": "5ef6131809ceb982e059393d192361f70b118e1e2381f3068480b3223c4daee7",
+        "static/css/lq/components/material-boundaries.css": "03330c834cacb2172361c3bf1ee64c25bcd44fb0739a16e951de5543848a40b5",
+        "static/css/lq/components/menus.css": "4a8cc89f927fddfe17131b140f4a33650881ed93b7fbd3f1c9080d972f3eb5b6",
+        "static/css/lq/components/motion.css": "a0270941b16feae091ed7356644d1754634786c0ba2412219ce08abaab4f6862",
+        "static/css/lq/components/nav-menu.css": "d797726a9deaabd7e30c013e99afbc8c02180ff5f772abb0f3bf24cde7ede7ef",
+        "static/css/lq/components/navigation.css": "25ae577b1ec1781858442449a8f6ffb0911cfbf49a533e686c8ec4bc0de0ee3b",
+        "static/css/lq/components/overflow-label.css": "1b52aa182b2803c5372606c7cd0148d42d11da8d7c26f13cdbf9540175ed6b3c",
+        "static/css/lq/components/page-backdrop.css": "ddc0080f660c8081fa7f17382b88cabc8c903825a3e88509987653cb68661fe7",
+        "static/css/lq/components/prose-copy.css": "ffbe7782ce5ba471375dad3290bdd9379116e2c4b187b3afcbf94c06b2a41f3f",
+        "static/css/lq/components/react-bridges.css": "c78f420dbea693aedcf01f38befeb72f70241dc6d4d50df48491d6b5f1b40a0f",
+        "static/css/lq/components/selection.css": "74a49ee6c44cdd87635d71d7ba823ab448eba7bf5059b46f0500fdc39277392b",
+        "static/css/lq/components/shells.css": "b4fd543e4841b3b5c8062c362f0d2ecd63b10a634088aa50a9c81ab9b998b505",
+        "static/css/lq/components/skeleton.css": "855ea476cce3b660504410a994c5a2698b8926cb97ae1e4d5b67b5a81c2f327b",
+        "static/css/lq/components/status.css": "9012d482c91589c45abf1f2688f64c2eb980b48e68084f50b7a7a2b97c3f8a1c",
+        "static/css/lq/components/tables.css": "8bb99dffd77a33db60908f50df8b8d6a600b8f910721e999a28d62db4e380fed",
+        "static/css/lq/components/toast.css": "3ea973d831a528343255ad59fb7c68a4182bc4695caeb405af5323d12c6f6a11",
+        "static/css/lq/components/tooltips.css": "fe3b75645ee05ff1d10397d372bdab8a25c8f5a0ab3c322596ec4158d4204c51",
+        "static/css/lq/components/upload.css": "6c4559a05e8995969208f804dfcffd90f96ebf9a32dd2fecb963a7214a0096b9",
+        "static/css/lq/components/workspace.css": "f2bed1d0049263b51d322870de51972e514bb4890450dc5ea7f8e985e601a57d",
+        "static/css/lq/pages/calendar.css": "1db313d4cee6c38b83abc2e231e7714e12dbe70b1647bfd99d193ebde44df6e4",
+        "static/css/lq/pages/centered.css": "b694c9caa97dab20bb1f0e806bfd203af281e10643b4fdecf37bb3724b5e9bba",
+        "static/css/lq/pages/dashboard.css": "2036cfc1e83d716ef289da6ba0c2832e83fd1699ba3f056b019df5a2ade9ac27",
+        "static/css/lq/pages/growth.css": "d1484b8ffe772ca8936c8fa1f2b4e65417baaea634da9fa16797c1f389bb9514",
+        "static/css/lq/pages/life-tip.css": "d95de2610fb402531a7da46ee710107c5fa623e0d0beaa1854b4451b92b94398",
+        "static/css/lq/pages/login.css": "3c2b5f18fb4beec63e97d86786dd1bb2ed4de61c5f68603bae50ab3eff8c47f1",
+        "static/css/lq/pages/manage-archive.css": "dd2c31425d441edbf74709dedd8af1613b7e1723c249f2f6099fe0b19731e527",
+        "static/css/lq/pages/message-center.css": "c061f50cb64ffdfc75013e9c6de1177be282e907879f919c27984b3687d60208",
+        "static/css/lq/pages/navbar.css": "b386e0d314daf1402045e3bce6698563c7a2b2761497198d5234aa4eeadc6305",
+        "static/css/lq/pages/page-material.css": "c09c8a4a69ca17db5834e153ef688faf00958e4bf82e47eda6331e5dd679de62",
+        "static/css/lq/pages/profile.css": "855328545473e98ffcbb45da594168194e2dbecf0e46aa3d588c6f197d9e43dd",
+        "static/css/lq/pages/status.css": "83e78f1e7e3b8ecea8709fb46e70b1ccd3a40fe0ee8010ee7d18bd63c8036835",
+        "static/js/ui.js": "96ed246e3bd0f9d2f5399c05a670d25faaa90a3065176bcfe38cebba59c19130",
+        "static/js/ui_overlay_motion.js": "ae8a1aad8be73bb061b04a6c4cba83ce4027466102cd6289abd736de142da5bd",
+        "static/js/ui_popover.js": "a30f612b447e90ffc7147bc3f0b089c075e20e6d2bbcb9e6ae7849ca77128c84",
+        "static/js/lq/domain-modal.js": "0168a9bea36d9237e80327598d75c2847dd83e6c4ac8f4b4337dea26c1417fa6",
+        "static/js/lq/native-presence.js": "3827b256c7da8d3daede91ff2b4bb42338672b54ecd99d9e34006ba3fbfae11f",
+        "static/js/ai_workspace_window.js": "91aa812a2b3fa83b4e97b2bf1f12a2656759c41e640e8a4024d25ff9540ac48a"
+      },
+      "validationEvidence": {
+        "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#motionProcessReview",
+        "acceptanceRecord": "docs/lq-motion-process-acceptance-2026-10-08.md",
+        "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+        "componentUniquePassed": 22,
+        "applicationUniquePassed": 26,
+        "runs": [
+          {
+            "path": ".codex-temp/lq-motion-process-20261008-final/results.json",
+            "stats": {
+              "startTime": "2026-10-08T09:58:36.970Z",
+              "duration": 54926.312999999995,
+              "expected": 21,
+              "skipped": 0,
+              "unexpected": 1,
+              "flaky": 0
+            }
+          },
+          {
+            "path": ".codex-temp/lq-motion-process-20261008-resample/results.json",
+            "stats": {
+              "startTime": "2026-10-08T09:59:38.349Z",
+              "duration": 2532.116,
+              "expected": 1,
+              "skipped": 0,
+              "unexpected": 0,
+              "flaky": 0
+            }
+          },
+          {
+            "path": ".codex-temp/lq-motion-app-20261008-final/results.json",
+            "stats": {
+              "startTime": "2026-10-08T10:00:01.653Z",
+              "duration": 353957.35599999997,
+              "expected": 24,
+              "skipped": 0,
+              "unexpected": 2,
+              "flaky": 0
+            }
+          },
+          {
+            "path": ".codex-temp/lq-motion-app-20261008-onboarding-final/results.json",
+            "stats": {
+              "startTime": "2026-10-08T10:06:09.605Z",
+              "duration": 39370.829000000005,
+              "expected": 1,
+              "skipped": 0,
+              "unexpected": 1,
+              "flaky": 0
+            }
+          },
+          {
+            "path": ".codex-temp/lq-motion-app-20261008-onboarding-complete/results.json",
+            "stats": {
+              "startTime": "2026-10-08T10:07:25.756Z",
+              "duration": 31399.035,
+              "expected": 2,
+              "skipped": 0,
+              "unexpected": 0,
+              "flaky": 0
+            }
+          }
+        ],
+        "limitations": [
+          "First component run includes one 231.6ms host frame-sampling gap; unchanged single-case rerun passed.",
+          "Initial onboarding sampler targeted layout parent; corrected to actual shared shell. Mobile retry closes visible error toast through its button before retrying dismiss.",
+          "Chromium desktop and touch emulation only; source inventory remains pending/unknown.",
+          "Existing profile page has 3 mobile / 4 desktop viewport blur hosts and an existing CSS decorative loop; its production rAF remains idle. This is recorded rather than raising the shared layer budget or claiming full-platform performance acceptance."
+        ],
+        "frameEvidence": "docs/lq-motion-process-evidence-2026-10-08.json",
+        "readonlyPlatformEvidence": ".codex-temp/lq-motion-platform-20261008/summary.json",
+        "scope": "Natural intermediate-frame and scoped business evidence; source candidates remain pending/unknown."
       }
     }
   ]

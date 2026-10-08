@@ -1,0 +1,2086 @@
+{
+  "reviewedAt": "2026-10-08",
+  "buildGraph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+  "scope": "Native Dropdown/Selection ownership, actual page form and filter business paths, approved-unreflected plans and readonly source/DOM audit. Not exhaustive platform business acceptance.",
+  "applicationUniquePassed": 22,
+  "applicationRun": {
+    "path": ".codex-temp/lq-selection-app-20261008-final384/results.json",
+    "sha256": "d7131c563f4eca45e545312e9c18eefdb0566d4665938f2be729355f1d341b59",
+    "stats": {
+      "startTime": "2026-10-08T13:02:02.475Z",
+      "duration": 292395.091,
+      "expected": 22,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "real course statistics long class picker filters once and programmatic reset stays synchronized",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 13409,
+        "attachments": [
+          {
+            "name": "filter-requests",
+            "data": [
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2602%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2603%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E7%BD%91%E7%BB%9C%E5%B7%A5%E7%A8%8B2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label=",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E5%8E%9F%E7%90%86&class_label=",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label="
+            ]
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real native sync dialog keeps labels keyboard disabled validation form reset and parent ownership",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 14750,
+        "attachments": [
+          {
+            "name": "native-values",
+            "data": {
+              "scope": "selected",
+              "term": "1",
+              "submitted": [
+                {
+                  "year": "2026-2027",
+                  "term": "1"
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real React task and dashboard filters preserve state across unmount without duplicate selection owners",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 14487,
+        "attachments": [
+          {
+            "name": "react-native-events",
+            "data": {
+              "taskChoiceChange": 1,
+              "dateChoiceChange": 1,
+              "programmaticResetExtraChanges": 0
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "student filters retain the declared single owner when global dropdown enhancement runs",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 9205,
+        "attachments": [
+          {
+            "name": "retained-Selection-owner",
+            "data": [
+              {
+                "selector": "[data-student-schedule-term]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              },
+              {
+                "selector": "[data-student-course-term]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              },
+              {
+                "selector": "[data-student-course-state]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              }
+            ]
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real teacher 3D planned approved and pending cards navigate without inflating canonical hours",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 13475,
+        "attachments": [
+          {
+            "name": "canonical-schedule-contract",
+            "data": {
+              "summary": {
+                "course_count": 1,
+                "class_count": 1,
+                "classroom_count": 2,
+                "slot_count": 32,
+                "total_hours": 64,
+                "current_week_hours": 4,
+                "prediction_count": 1,
+                "cur_week": 2,
+                "max_week": 20,
+                "term_status": "current",
+                "week1_monday": "2026-09-28",
+                "weekly_average_hours": 4
+              },
+              "planned": [
+                {
+                  "request_id": "QA-SELECT-PLANNED",
+                  "detail_id": "QA-SELECT-planned-1",
+                  "kind": "move",
+                  "phase": "planned",
+                  "approval_status": "approved",
+                  "source_event_key": "academic:1:2:session:19",
+                  "session_id": 19,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-08",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-09",
+                    "sections": [
+                      2,
+                      3
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 2,
+                  "proposed_week_index": 7
+                }
+              ],
+              "approved": [
+                {
+                  "request_id": "QA-SELECT-APPROVED",
+                  "detail_id": "QA-SELECT-approved-1",
+                  "kind": "move",
+                  "phase": "approved",
+                  "target_event_key": "academic:1:2:session:23",
+                  "session_id": 23,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-22",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-23",
+                    "sections": [
+                      8,
+                      9
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 4,
+                  "effective_week_index": 9
+                }
+              ],
+              "canonicalCount": 33
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real student 3D planned approved and pending cards navigate without inflating canonical hours",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 11870,
+        "attachments": [
+          {
+            "name": "canonical-schedule-contract",
+            "data": {
+              "summary": {
+                "course_count": 1,
+                "slot_count": 32,
+                "total_hours": 64,
+                "cur_week": 2,
+                "prediction_count": 1,
+                "max_week": 20,
+                "term_status": "current",
+                "unpositioned_count": 0
+              },
+              "planned": [
+                {
+                  "request_id": "QA-SELECT-PLANNED",
+                  "detail_id": "QA-SELECT-planned-1",
+                  "kind": "move",
+                  "phase": "planned",
+                  "approval_status": "approved",
+                  "source_event_key": "academic:1:2:session:19",
+                  "session_id": 19,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-08",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-09",
+                    "sections": [
+                      2,
+                      3
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 2,
+                  "proposed_week_index": 7
+                }
+              ],
+              "approved": [
+                {
+                  "request_id": "QA-SELECT-APPROVED",
+                  "detail_id": "QA-SELECT-approved-1",
+                  "kind": "move",
+                  "phase": "approved",
+                  "target_event_key": "academic:1:2:session:23",
+                  "session_id": 23,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-22",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-23",
+                    "sections": [
+                      8,
+                      9
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 4,
+                  "effective_week_index": 9
+                }
+              ],
+              "canonicalCount": 33
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real editor keeps holiday makeup separate and planned endpoints cannot start edit requests",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 10880,
+        "attachments": [
+          {
+            "name": "plan-readonly-requests",
+            "data": []
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown off keeps choices usable with bounded blur and no idle animation loop",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 11990,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "off",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": [
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-shell-pane__surface lq-sidebar__surface lq-surface lq-glass",
+                  "filter": "blur(8px) saturate(1.7)",
+                  "leaf": false
+                },
+                {
+                  "tag": "HEADER",
+                  "id": "manage-pilot-topbar",
+                  "classes": "lq-topbar lq-topbar--standard lq-glass lq-scroll-edge",
+                  "filter": "blur(16px) saturate(1.7)",
+                  "leaf": false
+                },
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-selection__popup lq-dropdown__popup lq-glass",
+                  "filter": "blur(24px) saturate(1.7)",
+                  "leaf": false
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown reduced keeps choices usable with bounded blur and no idle animation loop",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 12159,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "reduced",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": [
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-shell-pane__surface lq-sidebar__surface lq-surface lq-glass",
+                  "filter": "blur(8px) saturate(1.7)",
+                  "leaf": false
+                },
+                {
+                  "tag": "HEADER",
+                  "id": "manage-pilot-topbar",
+                  "classes": "lq-topbar lq-topbar--standard lq-glass lq-scroll-edge",
+                  "filter": "blur(16px) saturate(1.7)",
+                  "leaf": false
+                },
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-selection__popup lq-dropdown__popup lq-glass",
+                  "filter": "blur(24px) saturate(1.7)",
+                  "leaf": false
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown opaque keeps choices usable with bounded blur and no idle animation loop",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 12441,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "opaque",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": []
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "deferred declared controls activate once on first real pointer and profile identity remains named",
+        "project": "desktop",
+        "status": "passed",
+        "durationMs": 23880,
+        "attachments": [
+          {
+            "name": "deferred-first-activation",
+            "data": {
+              "graph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+              "evidence": [
+                {
+                  "url": "/exam/lq-s3-authoring/edit",
+                  "index": 1,
+                  "before": {
+                    "value": "textarea",
+                    "options": 4,
+                    "label": "问答题"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-26",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports",
+                  "index": 11,
+                  "before": {
+                    "value": "25",
+                    "options": 4,
+                    "label": "25条"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-51",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/1",
+                  "index": 11,
+                  "before": {
+                    "value": "1",
+                    "options": 1,
+                    "label": "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-45",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/1",
+                  "index": 12,
+                  "before": {
+                    "value": "1",
+                    "options": 1,
+                    "label": "解析1 · 待核对"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-47",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/2",
+                  "index": 11,
+                  "before": {
+                    "value": "2",
+                    "options": 1,
+                    "label": "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-45",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/2",
+                  "index": 12,
+                  "before": {
+                    "value": "",
+                    "options": 1,
+                    "label": "尚无解析"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-47",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/3",
+                  "index": 11,
+                  "before": {
+                    "value": "3",
+                    "options": 1,
+                    "label": "第1版 · — · 失败"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-45",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/3",
+                  "index": 12,
+                  "before": {
+                    "value": "",
+                    "options": 1,
+                    "label": "尚无解析"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-47",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/teaching/offerings",
+                  "index": 10,
+                  "before": {
+                    "value": "0",
+                    "options": 7,
+                    "label": "周一"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-26",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "click",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                }
+              ],
+              "profileIdentity": {
+                "accessibleName": "任职身份",
+                "singlePopup": true
+              }
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real course statistics long class picker filters once and programmatic reset stays synchronized",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 12503,
+        "attachments": [
+          {
+            "name": "filter-requests",
+            "data": [
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2602%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD2603%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E8%BD%AF%E4%BB%B6%E5%B7%A5%E7%A8%8B2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89+%C2%B7+%E7%BD%91%E7%BB%9C%E5%B7%A5%E7%A8%8B2601%E7%8F%AD%EF%BC%88%E4%B8%93%E5%8D%87%E6%9C%AC%EF%BC%89",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label=",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E5%8E%9F%E7%90%86&class_label=",
+              "http://127.0.0.1:8362/api/manage/academic/course-schedule/overview?year=2026-2027&term=1&course=&class_label="
+            ]
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real native sync dialog keeps labels keyboard disabled validation form reset and parent ownership",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 12923,
+        "attachments": [
+          {
+            "name": "native-values",
+            "data": {
+              "scope": "selected",
+              "term": "1",
+              "submitted": [
+                {
+                  "year": "2026-2027",
+                  "term": "1"
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real React task and dashboard filters preserve state across unmount without duplicate selection owners",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 14222,
+        "attachments": [
+          {
+            "name": "react-native-events",
+            "data": {
+              "taskChoiceChange": 1,
+              "dateChoiceChange": 1,
+              "programmaticResetExtraChanges": 0
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "student filters retain the declared single owner when global dropdown enhancement runs",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 8787,
+        "attachments": [
+          {
+            "name": "retained-Selection-owner",
+            "data": [
+              {
+                "selector": "[data-student-schedule-term]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              },
+              {
+                "selector": "[data-student-course-term]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              },
+              {
+                "selector": "[data-student-course-state]",
+                "dropdown": false,
+                "selection": true,
+                "declaredSelection": true
+              }
+            ]
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real teacher 3D planned approved and pending cards navigate without inflating canonical hours",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 13352,
+        "attachments": [
+          {
+            "name": "canonical-schedule-contract",
+            "data": {
+              "summary": {
+                "course_count": 1,
+                "class_count": 1,
+                "classroom_count": 2,
+                "slot_count": 32,
+                "total_hours": 64,
+                "current_week_hours": 4,
+                "prediction_count": 1,
+                "cur_week": 2,
+                "max_week": 20,
+                "term_status": "current",
+                "week1_monday": "2026-09-28",
+                "weekly_average_hours": 4
+              },
+              "planned": [
+                {
+                  "request_id": "QA-SELECT-PLANNED",
+                  "detail_id": "QA-SELECT-planned-1",
+                  "kind": "move",
+                  "phase": "planned",
+                  "approval_status": "approved",
+                  "source_event_key": "academic:1:2:session:19",
+                  "session_id": 19,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-08",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-09",
+                    "sections": [
+                      2,
+                      3
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 2,
+                  "proposed_week_index": 7
+                }
+              ],
+              "approved": [
+                {
+                  "request_id": "QA-SELECT-APPROVED",
+                  "detail_id": "QA-SELECT-approved-1",
+                  "kind": "move",
+                  "phase": "approved",
+                  "target_event_key": "academic:1:2:session:23",
+                  "session_id": 23,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-22",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-23",
+                    "sections": [
+                      8,
+                      9
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 4,
+                  "effective_week_index": 9
+                }
+              ],
+              "canonicalCount": 33
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real student 3D planned approved and pending cards navigate without inflating canonical hours",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 11304,
+        "attachments": [
+          {
+            "name": "canonical-schedule-contract",
+            "data": {
+              "summary": {
+                "course_count": 1,
+                "slot_count": 32,
+                "total_hours": 64,
+                "cur_week": 2,
+                "prediction_count": 1,
+                "max_week": 20,
+                "term_status": "current",
+                "unpositioned_count": 0
+              },
+              "planned": [
+                {
+                  "request_id": "QA-SELECT-PLANNED",
+                  "detail_id": "QA-SELECT-planned-1",
+                  "kind": "move",
+                  "phase": "planned",
+                  "approval_status": "approved",
+                  "source_event_key": "academic:1:2:session:19",
+                  "session_id": 19,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-08",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-09",
+                    "sections": [
+                      2,
+                      3
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 2,
+                  "proposed_week_index": 7
+                }
+              ],
+              "approved": [
+                {
+                  "request_id": "QA-SELECT-APPROVED",
+                  "detail_id": "QA-SELECT-approved-1",
+                  "kind": "move",
+                  "phase": "approved",
+                  "target_event_key": "academic:1:2:session:23",
+                  "session_id": 23,
+                  "class_offering_id": 1,
+                  "original": {
+                    "date": "2026-10-22",
+                    "sections": [
+                      4,
+                      5
+                    ],
+                    "room": "知新楼B310 金融科技综合实验室"
+                  },
+                  "proposed": {
+                    "date": "2026-11-23",
+                    "sections": [
+                      8,
+                      9
+                    ],
+                    "room": "合成五合校区 B310"
+                  },
+                  "original_week_index": 4,
+                  "effective_week_index": 9
+                }
+              ],
+              "canonicalCount": 33
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real editor keeps holiday makeup separate and planned endpoints cannot start edit requests",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 10445,
+        "attachments": [
+          {
+            "name": "plan-readonly-requests",
+            "data": []
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown off keeps choices usable with bounded blur and no idle animation loop",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 12062,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "off",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": [
+                {
+                  "tag": "HEADER",
+                  "id": "manage-pilot-topbar",
+                  "classes": "lq-topbar lq-topbar--standard lq-glass lq-scroll-edge",
+                  "filter": "blur(16px) saturate(1.4)",
+                  "leaf": false
+                },
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-selection__popup lq-dropdown__popup lq-glass",
+                  "filter": "blur(24px) saturate(1.4)",
+                  "leaf": false
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown reduced keeps choices usable with bounded blur and no idle animation loop",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 11818,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "reduced",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": [
+                {
+                  "tag": "HEADER",
+                  "id": "manage-pilot-topbar",
+                  "classes": "lq-topbar lq-topbar--standard lq-glass lq-scroll-edge",
+                  "filter": "blur(16px) saturate(1.4)",
+                  "leaf": false
+                },
+                {
+                  "tag": "DIV",
+                  "id": "",
+                  "classes": "lq-selection__popup lq-dropdown__popup lq-glass",
+                  "filter": "blur(24px) saturate(1.4)",
+                  "leaf": false
+                }
+              ]
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "real dropdown opaque keeps choices usable with bounded blur and no idle animation loop",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 11532,
+        "attachments": [
+          {
+            "name": "selection-mode-idle",
+            "data": {
+              "mode": "opaque",
+              "before": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "after": {
+                "scheduled": 2,
+                "fired": 2
+              },
+              "blur": []
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      },
+      {
+        "title": "deferred declared controls activate once on first real pointer and profile identity remains named",
+        "project": "touch",
+        "status": "passed",
+        "durationMs": 21845,
+        "attachments": [
+          {
+            "name": "deferred-first-activation",
+            "data": {
+              "graph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+              "evidence": [
+                {
+                  "url": "/exam/lq-s3-authoring/edit",
+                  "index": 1,
+                  "before": {
+                    "value": "textarea",
+                    "options": 4,
+                    "label": "问答题"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-26",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports",
+                  "index": 11,
+                  "before": {
+                    "value": "25",
+                    "options": 4,
+                    "label": "25条"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-55",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/1",
+                  "index": 11,
+                  "before": {
+                    "value": "1",
+                    "options": 1,
+                    "label": "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-45",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/1",
+                  "index": 12,
+                  "before": {
+                    "value": "1",
+                    "options": 1,
+                    "label": "解析1 · 待核对"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-47",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/2",
+                  "index": 11,
+                  "before": {
+                    "value": "2",
+                    "options": 1,
+                    "label": "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-45",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/2",
+                  "index": 12,
+                  "before": {
+                    "value": "",
+                    "options": 1,
+                    "label": "尚无解析"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-47",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/3",
+                  "index": 11,
+                  "before": {
+                    "value": "3",
+                    "options": 1,
+                    "label": "第1版 · — · 失败"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-41",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/archive/attendance-reports/3",
+                  "index": 12,
+                  "before": {
+                    "value": "",
+                    "options": 1,
+                    "label": "尚无解析"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-43",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                },
+                {
+                  "url": "/manage/teaching/offerings",
+                  "index": 10,
+                  "before": {
+                    "value": "0",
+                    "options": 7,
+                    "label": "周一"
+                  },
+                  "after": {
+                    "triggerId": "lq-dropdown-26",
+                    "popupId": "",
+                    "selectionOwner": false
+                  },
+                  "firstActivation": "tap",
+                  "events": {
+                    "input": 0,
+                    "change": 0
+                  }
+                }
+              ],
+              "profileIdentity": {
+                "accessibleName": "任职身份",
+                "singlePopup": true
+              }
+            }
+          },
+          {
+            "name": "resource-and-runtime",
+            "data": {
+              "graphs": [
+                "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39"
+              ],
+              "errors": [],
+              "databasePath": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\lq-selection-20261008-runtime\\db\\classroom.db"
+            }
+          }
+        ],
+        "errors": []
+      }
+    ]
+  },
+  "componentEvidence": {
+    "finalDropdownPassed": 17,
+    "buildGraph": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+    "path": ".codex-temp/lq-dropdown-20261008-final-384fb205.log",
+    "sha256": "f5728f541d76c2cd44d4a7a999a392677baa544776c2b7a28c3a2f01d4012181",
+    "priorSelectionFormsPassed": 57,
+    "reactDevelopmentFixturePassed": 32,
+    "reactDevelopmentFixturePath": ".codex-temp/lq-selection-react-20261008.log",
+    "reactDevelopmentFixtureLimitation": "Actual TSX development fixture, not immutable graph evidence; final application cases separately exercise production React bundles."
+  },
+  "readonlyPlatformEvidence": {
+    "buildGraph": "475a46c48fb66dc5731cd5812fa5eb0a9f4e0703af3f57b29663e3763922b89e",
+    "directory": ".codex-temp/lq-selection-platform-20261008",
+    "summary": {
+      "matrices": [
+        {
+          "role": "student",
+          "width": 1440,
+          "appearance": "light",
+          "rows": 16
+        },
+        {
+          "role": "student",
+          "width": 390,
+          "appearance": "light",
+          "rows": 16
+        },
+        {
+          "role": "superTeacher",
+          "width": 1440,
+          "appearance": "light",
+          "rows": 2
+        },
+        {
+          "role": "superTeacher",
+          "width": 390,
+          "appearance": "light",
+          "rows": 2
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "rows": 38
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "rows": 38
+        }
+      ],
+      "getCount": 112,
+      "routeIssues": [],
+      "browserErrors": [],
+      "sourceChanges": [],
+      "selectionCounts": {
+        "selection": 402,
+        "dropdown": 536,
+        "none": 56
+      },
+      "visibleUnowned": [
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/exam/lq-s3-authoring/edit",
+          "id": "",
+          "name": "",
+          "value": "textarea",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "问答题"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports",
+          "id": "",
+          "name": "",
+          "value": "25",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "25条"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/1",
+          "id": "",
+          "name": "",
+          "value": "1",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/1",
+          "id": "",
+          "name": "",
+          "value": "1",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "解析1 · 待核对"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/2",
+          "id": "",
+          "name": "",
+          "value": "2",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/2",
+          "id": "",
+          "name": "",
+          "value": "",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "尚无解析"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/3",
+          "id": "",
+          "name": "",
+          "value": "3",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · — · 失败"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/3",
+          "id": "",
+          "name": "",
+          "value": "",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "尚无解析"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 1440,
+          "appearance": "light",
+          "url": "/materials/lessondoc-editor/1",
+          "id": "lde-home-target",
+          "name": "",
+          "value": "page",
+          "declaredDropdown": false,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "插入课程说明"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/exam/lq-s3-authoring/edit",
+          "id": "",
+          "name": "",
+          "value": "textarea",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "问答题"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports",
+          "id": "",
+          "name": "",
+          "value": "25",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "25条"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/1",
+          "id": "",
+          "name": "",
+          "value": "1",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/1",
+          "id": "",
+          "name": "",
+          "value": "1",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "解析1 · 待核对"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/2",
+          "id": "",
+          "name": "",
+          "value": "2",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · 2026-03-20 08:30:00 · 原件已缓存"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/2",
+          "id": "",
+          "name": "",
+          "value": "",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "尚无解析"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/3",
+          "id": "",
+          "name": "",
+          "value": "3",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "第1版 · — · 失败"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/archive/attendance-reports/3",
+          "id": "",
+          "name": "",
+          "value": "",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "尚无解析"
+          ]
+        },
+        {
+          "role": "teacher",
+          "width": 390,
+          "appearance": "light",
+          "url": "/manage/teaching/offerings",
+          "id": "",
+          "name": "",
+          "value": "0",
+          "declaredDropdown": true,
+          "declaredSelection": null,
+          "manual": null,
+          "owner": "none",
+          "visibleNative": true,
+          "visibleProxy": false,
+          "proxyName": "",
+          "selectedLabels": [
+            "周一"
+          ]
+        }
+      ],
+      "duplicates": [],
+      "unnamedProxies": [],
+      "overflow": [],
+      "leafBlur": [],
+      "invalidDeclarations": []
+    },
+    "deferredNativeExplanation": "18 observations are the same nine declared dynamic controls at two widths. Final actual click/tap tests verify one LQ owner/popup, blur, names, options and zero input/change on open/close.",
+    "sourceChangesSinceReadonly": [
+      {
+        "path": "templates/manage/course_schedule.html",
+        "before": "f341a87e1bcc22f773efae45997a65c02261b1a36026b1782bcd555f76b80635",
+        "after": "840ed39b2108b67aa2fa22b4ccce342ba71a46fc577f90cb887e76f8240e120d"
+      },
+      {
+        "path": "static/js/lq/forms.js",
+        "before": "db0d5e622587139d98d61fb7efe88f456f84e430bddc0f87b1e1ff69eb489340",
+        "after": "2c0956bb1860f7db4c528122d07a8ccf2a4b69be839587147642dab144ecb915"
+      },
+      {
+        "path": "static/assets/manifest.json",
+        "before": "de4eb63dc69e484a75f5289aa405523b6a663b2e2dfb2c2ab6fce51909a2ce51",
+        "after": "4466eb7949db8f41aff704e6bd55469fda188bda835808d428ddd63986405f86"
+      },
+      {
+        "path": "static/css/tailwind-app.css",
+        "before": "ef89061831ad5f7a3977407f5b3adc3d306f94376815d89870545e7352d00ee4",
+        "after": "39ec3c052051245e66904943080c3dbb1da0a232cec1674612b2004dd3649de4"
+      },
+      {
+        "path": "static\\css\\lq\\components\\forms.css",
+        "before": "78f9a9e83497f2c5e485b5f03e46eb31a2464f950d596641c95de10e757d1396",
+        "after": "faf0510e4d94325af19a0560a987550eafcd2a91096df5d14a8da24d13b43b84"
+      },
+      {
+        "path": "static\\css\\lq\\components\\selection.css",
+        "before": "ca864a11b55a44733e132763967aa03c8f6a9c758af2c77a5783bb78d2336a97",
+        "after": "c1c5496b01e6ada460f1b2ae44e017473851f7142ca433128664f814db098eb7"
+      }
+    ],
+    "sharedFinalHashes": {
+      "classroom_app/lq_forms.py": "be86ef5e0a3076f089f8a5915b3696b1f242b8e236e0c66343ef939d0a88d907",
+      "static/js/lq/forms.js": "2c0956bb1860f7db4c528122d07a8ccf2a4b69be839587147642dab144ecb915",
+      "static/js/lq/dropdown.js": "838235db7f6c7476a97eb80bcf4bc7583b54e691ec20b420139fb24f6254764a",
+      "static/js/lq/native-select-observer.js": "2d5b8fc378ffe9807d901c2aab6f916e341f572854e10d909f63621fe204d979",
+      "static/css/lq/components/forms.css": "faf0510e4d94325af19a0560a987550eafcd2a91096df5d14a8da24d13b43b84",
+      "static/css/lq/components/selection.css": "c1c5496b01e6ada460f1b2ae44e017473851f7142ca433128664f814db098eb7",
+      "static/css/tailwind-app.css": "39ec3c052051245e66904943080c3dbb1da0a232cec1674612b2004dd3649de4",
+      "frontend/src/components/lq-presentation.tsx": "040fe070a089873fdbe27ca95e14b5236f179f683138e8475d4b9b302509943d"
+    },
+    "reuseLimit": "112 GET observations were collected on 475a46c. The final shared Field width/size and typed searchable repair is covered by 17 immutable component and 22 actual page scenarios; the complete 112 GET matrix was not repeated."
+  },
+  "historicalRuns": [
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-final/results.json",
+      "sha256": "62f1b20a2b640600d1e2daf2345c6525b49349eac9a549dddd43249eef1477e8",
+      "stats": {
+        "startTime": "2026-10-08T12:33:37.602Z",
+        "duration": 264041.456,
+        "expected": 16,
+        "skipped": 0,
+        "unexpected": 4,
+        "flaky": 0
+      },
+      "interpretation": "Intermediate 5727 graph: 16 passed; four test assumptions failed (old task trigger and family-off Selection expectation), fixed in the QA spec."
+    },
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-475a46c/results.json",
+      "sha256": "0d365617a2d6fd97a64d409bc90bba53968a266cdea4dec567b54ded066a9613",
+      "stats": {
+        "startTime": "2026-10-08T12:40:53.779Z",
+        "duration": 212623.961,
+        "expected": 15,
+        "skipped": 0,
+        "unexpected": 5,
+        "flaky": 0
+      },
+      "interpretation": "Previous 475 graph: 15 passed; three startup ECONNREFUSED cases had not reached the app, two touch fixture selectors needed More-menu/React filterbar scoping."
+    },
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-475a46c-desktop-retry/results.json",
+      "sha256": "e80320ae7116f577b49f691c55a0f69af272ee6fa20c12c9cfc30c0e271050ae",
+      "stats": {
+        "startTime": "2026-10-08T12:45:36.933Z",
+        "duration": 43454.48100000001,
+        "expected": 3,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "interpretation": "Three desktop scenarios passed after bounded health readiness and fixture fixes."
+    },
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-475a46c-touch-retry/results.json",
+      "sha256": "7d86d446871b8b8660c05903362ab316491341c17b1b2df91be337ec99d8c8e7",
+      "stats": {
+        "startTime": "2026-10-08T12:46:42.064Z",
+        "duration": 31433.29,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "interpretation": "Two touch scenarios passed after public More-menu and scoped React selectors."
+    },
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-deferred-475a46c/results.json",
+      "sha256": "a513c0518ba6d028d22d92a36add53ed8ba0e2ef2192a85e599cf216c98b738b",
+      "stats": {
+        "startTime": "2026-10-08T12:57:11.233Z",
+        "duration": 34875.772,
+        "expected": 0,
+        "skipped": 0,
+        "unexpected": 2,
+        "flaky": 0
+      },
+      "interpretation": "Two QA failures used a nonexistent popup id; actual LQ popup was open."
+    },
+    {
+      "path": ".codex-temp/lq-selection-app-20261008-deferred-475a46c-retry/results.json",
+      "sha256": "5fece5089a68679d2048040e2bb4a813b72f7f01eb4aa269a1397e7d0ec2c881",
+      "stats": {
+        "startTime": "2026-10-08T12:58:00.998Z",
+        "duration": 63757.62,
+        "expected": 0,
+        "skipped": 0,
+        "unexpected": 2,
+        "flaky": 0
+      },
+      "interpretation": "All nine first-activation controls passed on both widths; each test then failed because the synthetic profile had no identity row. Final test clicks Add identity to create an unsaved draft."
+    }
+  ],
+  "limitations": [
+    "Chromium desktop and touch emulation only, not Safari/Firefox/physical low-end device FPS.",
+    "Only synthetic SQLite data and identities; server guards dotenv, PostgreSQL and external sockets. No production data connection used for tests.",
+    "Readonly GET visibility and declarations do not prove all domain states; pending/unknown remain unchanged.",
+    "Native sync POST conflict is fulfilled with a synthetic HTTP 409; no external academic synchronization runs.",
+    "No schema migration was introduced by this UI/planned-projection task. Release and native gate are owned by the parent task."
+  ],
+  "release": {
+    "status": "deployed-and-verified",
+    "releaseId": "20261008-210800-be43d5e5933c",
+    "productionCodeCommit": "edf5318ea31abb913331bf47ac63c4864ab955e8",
+    "liveVerification": {
+      "status": "ok",
+      "release_id": "20261008-210800-be43d5e5933c",
+      "asset_revision": "384fb20570aebb392dd0f34781fa8bd4340a13653f7fe5f678b18e049fe06a39",
+      "public_assets_exactly_match_tested_build": [
+        {
+          "path": "css/tailwind-app.css",
+          "sha256": "39ec3c052051245e66904943080c3dbb1da0a232cec1674612b2004dd3649de4",
+          "bytes": 1623300
+        },
+        {
+          "path": "js/lq/dropdown.js",
+          "sha256": "a1837c23c4a21437a56384f3d4923899db697986bdd254e2b0f9f6f7d01c2730",
+          "bytes": 16789
+        },
+        {
+          "path": "js/lq/native-select-observer.js",
+          "sha256": "032898fc066d2f19d198881dcc56af71b9b745649e87cad8aa7c3af28333233a",
+          "bytes": 2220
+        },
+        {
+          "path": "js/lq/domain-modal.js",
+          "sha256": "f702c8d4501280052abf4b55f047acf31fd7d802b8a90310bb4e9fc0dc83f8ea",
+          "bytes": 1267
+        },
+        {
+          "path": "js/lq/index.js",
+          "sha256": "6fb5e7b85430f30b6a3e8ec640305f488a71ec5353732cd34dfdfe22f7da6563",
+          "bytes": 3479
+        },
+        {
+          "path": "js/lq/selection.js",
+          "sha256": "ac3b3077f32af22134dbbca7c031f4d2c329e98f013b32eb86e88651df117ca9",
+          "bytes": 15083
+        },
+        {
+          "path": "js/course_schedule_deck.js",
+          "sha256": "325fbf73d6f4cef82ef52ffcf6d9687b296bc41aba5272e1f3b99dd93d2654cc",
+          "bytes": 75081
+        },
+        {
+          "path": "js/course_schedule_editor.js",
+          "sha256": "5faaab1f444f553163818cb3f3efccdded1ed96f6188eb61fef404f963bff8fc",
+          "bytes": 133960
+        },
+        {
+          "path": "js/course_schedule_change_links.js",
+          "sha256": "5afe278758d33b1e410bfcecb35923587baa45ce6972baae2746ad5f16715a51",
+          "bytes": 16747
+        },
+        {
+          "path": "js/course_schedule_presentation.js",
+          "sha256": "dc363167b083c369c0953985da753f4d4b285f4b9e3ae284c310e4863b2f5d3b",
+          "bytes": 6598
+        },
+        {
+          "path": "js/manage_course_schedule.js",
+          "sha256": "d1c9f67b428d5a7c1198d706702e8f835d7d608795c0ff89e62670a1877551e2",
+          "bytes": 17763
+        }
+      ],
+      "login_pages_current": true,
+      "database_engine": "postgres",
+      "behavior_write_worker_alive": true,
+      "email_worker_ok": true,
+      "background_tasks_ok": false,
+      "background_task_history": {
+        "task_type_count": 11,
+        "total_queue_depth": 28,
+        "total_running_count": 0,
+        "total_failed_count": 742,
+        "total_stale_count": 0,
+        "active_worker_count": 4,
+        "problem_task_types": [
+          "ai_grading",
+          "material_ai_import",
+          "email_outbox",
+          "blog_news_crawler",
+          "agent_task",
+          "scheduled_task"
+        ]
+      },
+      "production_write_operations": false,
+      "vite_manifest_equal": true,
+      "react_assets_exactly_match_tested_build": [
+        {
+          "path": "assets/lq-presentation-CD-E9CvH.js",
+          "bytes": 66414,
+          "sha256": "1ce925e254610e57d5ae5819c535cd75a8f7227c0feb562ff0ab3f95a51e2508"
+        },
+        {
+          "path": "assets/classroom-page-DUcYClNe.js",
+          "bytes": 28536,
+          "sha256": "93377f846d79118130b8874e2697d48fc4c2fef6cf0ba8f16d59837e01c9781e"
+        },
+        {
+          "path": "assets/dashboard-workspace-CGh7Eeku.js",
+          "bytes": 19399,
+          "sha256": "dfa528989f0a577c3fb450f22f189e79460dcdbae8e66f62418f99672525e604"
+        }
+      ]
+    },
+    "postflight": {
+      "status": "ok",
+      "steps": [
+        {
+          "name": "health",
+          "status": "ok"
+        },
+        {
+          "name": "health-database-backend",
+          "status": "ok"
+        },
+        {
+          "name": "background-tasks",
+          "status": "ok"
+        },
+        {
+          "name": "teacher-login-page",
+          "status": "ok"
+        },
+        {
+          "name": "student-login-page",
+          "status": "ok"
+        },
+        {
+          "name": "vite-manifest",
+          "status": "ok"
+        },
+        {
+          "name": "remote-docker-smoke",
+          "status": "ok"
+        },
+        {
+          "name": "remote-database-backend",
+          "status": "ok"
+        }
+      ]
+    },
+    "historicalBackgroundSummaryUnchanged": true,
+    "backgroundTaskBoundary": "Aggregate remains false for existing historical failures and queue; before and after summaries are equal. This release does not claim to repair unrelated background tasks.",
+    "protectedRuntimeDataExcluded": true,
+    "untrackedUserFilesExcluded": true,
+    "codeBackup": "/tmp/lanshare-deploy-backups/code-20261008-210812.tgz",
+    "quiescedPostgresBackup": "/tmp/lanshare-deploy-backups/db-cutover-20261008-210812.sql.gz",
+    "deploymentLog": "E:/CodexTemp/lanshare-select-plan-release-20261008/deploy.log",
+    "gitBranch": "dev",
+    "gitPushVerification": "Confirmed separately after committing these evidence files."
+  }
+}

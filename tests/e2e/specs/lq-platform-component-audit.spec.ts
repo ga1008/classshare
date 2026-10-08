@@ -65,7 +65,9 @@ for (const role of roles) for (const width of widths) for (const appearance of a
     const cases = (manifest.routes as Route[]).filter(route => route.scope !== 'development' && route.roles.includes(role) && (!routeFilter || routeFilter.test(route.path)));
     const results: any[] = [], browserErrors: string[] = [];
     const onError = (error: Error) => browserErrors.push(error.message);
+    const onConsole = (message: { type(): string; text(): string }) => { if (message.type() === 'warning' && /LQ dropdown (declaration could not initialize|enhancement unavailable)/.test(message.text())) browserErrors.push(message.text()); };
     page.on('pageerror', onError);
+    page.on('console', onConsole);
     fs.mkdirSync(output, { recursive: true });
     const artifact = path.join(output, `${role}-${width}-${appearance}.json`);
     const persist = () => fs.writeFileSync(artifact, JSON.stringify({ acceptance: 'pending', role, width, appearance,
@@ -96,6 +98,12 @@ for (const role of roles) for (const width of widths) for (const appearance of a
               await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             }, appearance);
             const frames = await collectComponentDom(page, sourceAudit.entries);
+            const nativeSelections = process.env.LQ_PLATFORM_AUDIT_SELECTS === '1' ? await page.evaluate(() => [...document.querySelectorAll('select')].map(select => {
+              const doc = document as any, dropdown = doc[Symbol.for('lanshare.lq.dropdown-bindings.v1')]?.get(select), selection = doc[Symbol.for('lanshare.lq.selection-bindings.v1')]?.get(select);
+              const shown = (node: Element | undefined) => { if (!node) return false; const r = node.getBoundingClientRect(), css = getComputedStyle(node); return r.width > 1 && r.height > 1 && css.display !== 'none' && css.visibility !== 'hidden' && !node.closest('[hidden]'); };
+              const proxy = dropdown?.trigger || selection?.input || selection?.listbox;
+              return { id: select.id, name: select.name, value: select.value, declaredDropdown: select.hasAttribute('data-lq-dropdown'), declaredSelection: select.getAttribute('data-lq-selection') || select.getAttribute('data-lq-selection-owner'), manual: select.getAttribute('data-lq-dropdown-manual'), owner: dropdown && selection ? 'duplicate' : dropdown ? 'dropdown' : selection ? 'selection' : 'none', visibleNative: shown(select) && !select.classList.contains('lq-selection-native'), visibleProxy: shown(proxy), proxyName: proxy?.getAttribute('aria-label') || proxy?.getAttribute('aria-labelledby') || '', selectedLabels: [...select.selectedOptions].map(option => option.label) };
+            })) : undefined;
             const finalUrl = new URL(page.url());
             const requested = new URL(url, page.url());
             const redirected = finalUrl.pathname !== requested.pathname;
@@ -108,7 +116,7 @@ for (const role of roles) for (const width of widths) for (const appearance of a
             }
             results.push({ route, requested: url, finalUrl: page.url(), httpStatus: status,
               status: (status === 200 || route.path === '/teacher/register' && status === 403 && authContract()) && (!redirected || declaredAlias) ? 'dom-measured-pending' : 'route-not-covered',
-              redirected, expectedStatusEvidence: route.path === '/teacher/register' ? { status: 403, source: 'classroom_app/routers/ui_parts/auth.py:182', reason: 'Registration is intentionally closed; auth contract asserts the status template and no account creation' } : null, aliasEvidence: declaredAlias ? { canonicalPath: declaredAlias.path, sharedTemplates: declaredAlias.templates.filter(template => route.templates.includes(template)), status: 'source-route-template-alias' } : null, frames, screenshot, browserErrors: browserErrors.slice(errorsBefore) });
+              redirected, expectedStatusEvidence: route.path === '/teacher/register' ? { status: 403, source: 'classroom_app/routers/ui_parts/auth.py:182', reason: 'Registration is intentionally closed; auth contract asserts the status template and no account creation' } : null, aliasEvidence: declaredAlias ? { canonicalPath: declaredAlias.path, sharedTemplates: declaredAlias.templates.filter(template => route.templates.includes(template)), status: 'source-route-template-alias' } : null, frames, nativeSelections, screenshot, browserErrors: browserErrors.slice(errorsBefore) });
           } catch (error) { results.push({ route, requested: url, status: 'unmeasured', error: String(error) }); }
           persist();
         }
@@ -124,6 +132,6 @@ for (const role of roles) for (const width of widths) for (const appearance of a
         expect(Object.entries(sourceHashes()).filter(([file, hash]) => sourceAtStart[file] !== hash), 'Source must remain stable during evidence capture').toEqual([]);
         expect(browserErrors).toEqual([]);
       }
-    } finally { page.off('pageerror', onError); persist(); }
+    } finally { page.off('pageerror', onError); page.off('console', onConsole); persist(); }
   });
 }
