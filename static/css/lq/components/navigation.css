@@ -44,6 +44,18 @@
 .lq-tabs__tab:disabled, .lq-tabs__tab[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 .lq-tabs__panels { min-width: 0; }
 .lq-tabs__panel { min-width: 0; overflow-wrap: anywhere; padding-block: var(--ls-s-4); }
+/* The owner commits selection/hidden immediately. Only the newly displayed
+   panel enters; the inactive panel never remains focusable or occupies space.
+   Individual translate leaves authored layout transforms intact. */
+:is(.lq-tabs__panel, [data-lq-panel-presence]) {
+    opacity: 1;
+    translate: 0 0;
+    transition: opacity var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out),
+        translate var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out);
+}
+@starting-style {
+    :is(.lq-tabs__panel, [data-lq-panel-presence]):not([hidden]) { opacity: 0; translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / 4); }
+}
 .lq-tabs__panel[hidden] { display: none; }
 .lq-tabs__panel:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: -2px; }
 .lq-tabs--sm .lq-tabs__tab { min-height: calc(var(--ls-s-6) + var(--ls-s-1) * 1.5); }

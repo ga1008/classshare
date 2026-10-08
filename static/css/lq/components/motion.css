@@ -71,18 +71,124 @@
     animation-play-state: var(--lq-motion-animation-play-state, running);
 }
 
+/* Domain layers opt into the same presence boundary explicitly. Keep the root
+   fully opaque: fading an ancestor would make the raised surface sample an
+   empty backdrop. The scrim has its own inexpensive opacity-only plane. */
+:root [data-lq-presence="domain"][data-ui-overlay-state] {
+    isolation: isolate;
+    opacity: 1 !important;
+    transition: none !important;
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root [data-lq-presence="domain"][data-ui-overlay-state][data-lq-layer-state]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: hsl(var(--ls-scrim));
+    opacity: 1;
+    transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out);
+}
+:root [data-lq-presence="domain"][data-ui-overlay-state] > [data-ui-overlay-surface] {
+    opacity: 1 !important;
+    scale: 1 !important;
+    translate: 0 0;
+    animation: none !important;
+    transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out),
+        scale var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, ease-out),
+        translate var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, ease-out) !important;
+}
+:root [data-lq-presence="domain"][data-ui-overlay-state="closed"][data-lq-layer-state]::before { opacity: 0; }
+:root [data-lq-presence="domain"][data-ui-overlay-state="closed"] > [data-ui-overlay-surface] { opacity: 0 !important; scale: var(--lq-motion-overlay-scale, .98) !important; }
+:root [data-lq-presence="domain"][data-lq-presence-variant="drawer"][data-ui-overlay-state] > [data-ui-overlay-surface] { scale: 1 !important; }
+:root [data-lq-presence="domain"][data-lq-presence-variant="drawer"][data-ui-overlay-state="closed"] > [data-ui-overlay-surface] { translate: var(--lq-motion-overlay-distance, 24px) 0; }
+
+/* The existing popover owner commits shared state on each panel and scrim.
+   Positioning remains in transform for centered dialogs; presence uses the
+   individual scale/translate properties and cannot replace that position. */
+:root .lq-domain-popover[data-ui-overlay-state] {
+    opacity: 1;
+    transform: none;
+    scale: 1;
+    translate: 0 0;
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, ease-out),
+        scale var(--lq-motion-menu-duration, 160ms) var(--lq-motion-spring, ease-out),
+        translate var(--lq-motion-menu-duration, 160ms) var(--lq-motion-spring, ease-out);
+}
+:root .lq-domain-popover[data-ui-overlay-state="closed"] {
+    opacity: 0;
+    scale: var(--lq-motion-overlay-scale, .98);
+    translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / -4);
+}
+:root .lq-domain-popover[data-ui-overlay-state]:is(.ls-popover--modal, .twb-popover--modal) {
+    transform: translate(-50%, -50%);
+    translate: 0 0;
+}
+:root .lq-domain-popover[data-ui-overlay-state="closed"]:is(.ls-popover--flipped, .twb-popover--flipped) {
+    translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / 4);
+}
+:root .lq-domain-popover[data-ui-overlay-state="closed"]:is(.ls-popover--sheet, .twb-popover--sheet) {
+    scale: 1;
+    translate: 0 var(--lq-motion-overlay-distance, 24px);
+}
+:root :is(.ls-backdrop, .twb-backdrop)[data-ui-overlay-state] {
+    opacity: 1;
+    background: hsl(var(--ls-scrim));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, ease-out);
+}
+:root :is(.ls-backdrop, .twb-backdrop)[data-ui-overlay-state="closed"] { opacity: 0; }
+
+/* Modeless domain panels already have a business/focus owner. Opting into
+   presence gives them the shared state timeline without creating a layer. */
+:root [data-lq-presence="panel"][data-ui-overlay-state] {
+    opacity: 1;
+    translate: 0 0;
+    transition: opacity var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, ease-out),
+        translate var(--lq-motion-menu-duration, 160ms) var(--lq-motion-ease, ease-out);
+}
+:root [data-lq-presence="panel"][data-ui-overlay-state="closed"] {
+    opacity: 0;
+    translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / 4);
+}
+/* Full-viewport handoffs fade without displacing the page or its scene. */
+:root [data-lq-presence="fade"][data-ui-overlay-state] {
+    opacity: 1;
+    transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out);
+}
+:root [data-lq-presence="fade"][data-ui-overlay-state="closed"] { opacity: 0; }
+
+/* Progressive same-origin document navigation. The browser keeps native link,
+   form and history behavior; unsupported engines navigate as before. Root
+   snapshots cross-fade only, with no geometry/filter animation or JS delay. */
+@view-transition { navigation: auto; }
+@keyframes lq-document-leave { to { opacity: 0; } }
+@keyframes lq-document-enter { from { opacity: 0; } }
+::view-transition-group(root) { animation: none; }
+::view-transition-old(root) { animation: lq-document-leave var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out) both; }
+::view-transition-new(root) { animation: lq-document-enter var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out) both; }
+
 /* Accessibility wins over any nested mode, including a mode changed while
    the pointer is held or an overlay is entering. Fields never use geometry. */
 @media (prefers-reduced-motion: reduce) {
+    @view-transition { navigation: none; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
     /* The legacy global reduced-motion bridge uses .01ms !important. A real
        zero-transition contract avoids even one residual frame on live changes. */
-    :root :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+    :root :is(.lq-btn, .lq-tabs__tab, .lq-tabs__panel, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
         .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range,
         .lq-range__value, .lq-dialog__surface, .lq-menu, .lq-selection__popup,
         .lq-toast, .lq-tooltip, .lq-dropdown, .lq-dropdown__chevron, .lq-nav-menu__caret,
-        .lq-collapsible__indicator, .lq-card, .lq-row__front),
+        .lq-collapsible__indicator, .lq-card, .lq-row__front, [data-lq-panel-presence]),
     :root .lq-switch::after,
     :root .lq-segment > .lq-tabs__list[data-lq-thumb]::before { transition: none !important; }
+    :root [data-lq-presence="domain"][data-ui-overlay-state]::before,
+    :root [data-lq-presence="domain"][data-ui-overlay-state] > [data-ui-overlay-surface],
+    :root :is(.lq-domain-popover, .ls-backdrop, .twb-backdrop, [data-lq-presence="panel"], [data-lq-presence="fade"])[data-ui-overlay-state] { transition: none !important; }
     :root, [data-lq-motion] {
         --lq-motion-control-duration: 0ms !important;
         --lq-motion-press-duration: 0ms !important;

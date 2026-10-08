@@ -57,7 +57,7 @@ export function colorControl({label,value,onChange,onPreview,popovers,allowReset
         for(const [input,key,factor]of[[hue,'h',1],[alpha,'a',100]]){input.addEventListener('input',()=>{hsv[key]=Number(input.value)/factor;queuePreview();});input.addEventListener('change',commit);}
         hex.addEventListener('change',()=>{const value=normalizeColor(hex.value);message.textContent=value?'':'请输入有效的 HEX 色值或主题色名称';if(value)pick(value);});
         hex.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();hex.dispatchEvent(new Event('change'));}});
-        popup=popovers.createPopover({panel,anchor:trigger,parent:'anchor',label:label+'色盘',onClose:()=>{if(frame)cancelAnimationFrame(frame);paint(current);onPreview?.(current);setTimeout(()=>panel.remove(),140);}});
+        popup=popovers.createPopover({panel,anchor:trigger,parent:'anchor',label:label+'色盘',onClose:()=>{if(frame)cancelAnimationFrame(frame);paint(current);onPreview?.(current);},onAfterClose:()=>panel.remove()});
         draw();drawCommon();popup.open();
     }
     return trigger;

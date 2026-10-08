@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { getLayerSystem } from './lq/layer.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 
 const STATUS_META = {
@@ -137,24 +138,34 @@ function renderList(snapshot, state) {
 // --------------------------------------------------------------------------- #
 // overlay helpers
 // --------------------------------------------------------------------------- #
-function closeOverlay() {
-    document.querySelectorAll('[data-poll-overlay]').forEach((node) => node.remove());
-    document.removeEventListener('keydown', onOverlayKeydown);
-}
+let pollOverlay = null;
+let pollLayer = null;
 
-function onOverlayKeydown(event) {
-    if (event.key === 'Escape') closeOverlay();
+function closeOverlay() {
+    return pollLayer ? getLayerSystem(document).close(pollLayer, 'programmatic') : Promise.resolve(false);
 }
 
 function openOverlay(html) {
-    closeOverlay();
-    const overlay = document.createElement('div');
-    overlay.className = 'lq-domain-region poll-overlay';
-    overlay.dataset.lqComponent = 'layer';
-    overlay.setAttribute('data-poll-overlay', '');
-    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised poll-overlay__shell" role="dialog" aria-modal="true">${html}</div>`;
-    document.body.appendChild(overlay);
-    document.addEventListener('keydown', onOverlayKeydown);
+    const layers = getLayerSystem(document);
+    const trigger = pollLayer?.trigger || document.activeElement;
+    const overlay = pollOverlay || document.createElement('div');
+    if (!pollOverlay) {
+        overlay.className = 'lq-domain-region poll-overlay';
+        overlay.dataset.lqComponent = 'layer';
+        overlay.dataset.lqPresence = 'domain';
+        overlay.hidden = true;
+        overlay.setAttribute('data-poll-overlay', '');
+        overlay.innerHTML = '<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised poll-overlay__shell" role="dialog" aria-modal="true"></div>';
+        layers.getPortalHost({ trigger }).appendChild(overlay);
+        pollOverlay = overlay;
+    }
+    const surface = overlay.querySelector('.poll-overlay__shell');
+    surface.innerHTML = html;
+    const finish = () => {
+        overlay.remove();
+        if (pollOverlay === overlay) { pollOverlay = null; pollLayer = null; }
+    };
+    pollLayer = layers.open(overlay, { type: 'modal', surface, trigger, onClose: finish, onDestroy: finish });
     return overlay;
 }
 

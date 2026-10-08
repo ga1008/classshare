@@ -306,7 +306,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script type="module">
+import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
 (() => {
     const searchInput = document.getElementById('teacher-search');
     const statusFilter = document.getElementById('teacher-status-filter');
@@ -338,15 +339,16 @@
     statusFilter?.addEventListener('change', applyFilters);
     applyFilters();
 
-    const openModal = (id) => {
+    const modalOwners = new Map();
+    const modalOwner = (id) => {
+        if (modalOwners.has(id)) return modalOwners.get(id);
         const modal = document.getElementById(id);
-        if (modal) modal.hidden = false;
+        const owner = createDomainModal(modal, { surface: modal?.querySelector('.um-modal') });
+        modalOwners.set(id, owner);
+        return owner;
     };
-
-    const closeModal = (id) => {
-        const modal = document.getElementById(id);
-        if (modal) modal.hidden = true;
-    };
+    const openModal = (id) => modalOwner(id).open();
+    const closeModal = (id) => modalOwner(id).close();
 
     document.querySelectorAll('[data-close-modal]').forEach((button) => {
         button.addEventListener('click', () => closeModal(button.dataset.closeModal));

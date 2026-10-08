@@ -169,6 +169,32 @@ test('shared emoji choice preserves image fallback, selection replacement and ca
   expect(errors).toEqual([]);
 });
 
+test('emoji presence keeps a reopened picker alive and honors motion off during exit', async ({ page }) => {
+  const errors = await mount(page);
+  await page.evaluate(() => {
+    const w = window as any, input = document.createElement('textarea');
+    document.body.append(input); w.picker = w.fixture.createEmojiPicker({ targetInput: input });
+    document.body.append(w.picker.element); w.picker.open();
+  });
+  await expect.poll(() => page.locator('.emoji-picker').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
+  expect(await page.evaluate(async () => {
+    const picker = (window as any).picker;
+    const leaving = picker.close();
+    await new Promise(requestAnimationFrame);
+    picker.open();
+    return leaving;
+  })).toBe(false);
+  await expect(page.locator('.emoji-picker')).toBeVisible();
+  await expect.poll(() => page.locator('.emoji-picker').evaluate(el => getComputedStyle(el).opacity)).toBe('1');
+  expect(await page.evaluate(async () => {
+    const leaving = (window as any).picker.close();
+    document.documentElement.dataset.lqMotion = 'off';
+    return leaving;
+  })).toBe(true);
+  await expect(page.locator('.emoji-picker')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 test('code copy fallback keeps the offscreen native selection and removes its content slot',async({page})=>{
   const errors=await mount(page);
   await page.evaluate(()=>{

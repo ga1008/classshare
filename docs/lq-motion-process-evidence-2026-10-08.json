@@ -1,0 +1,4057 @@
+{
+  "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+  "componentUniquePassed": 22,
+  "applicationUniquePassed": 26,
+  "runs": [
+    {
+      "path": ".codex-temp/lq-motion-process-20261008-final/results.json",
+      "stats": {
+        "startTime": "2026-10-08T09:58:36.970Z",
+        "duration": 54926.312999999995,
+        "expected": 21,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "path": ".codex-temp/lq-motion-process-20261008-resample/results.json",
+      "stats": {
+        "startTime": "2026-10-08T09:59:38.349Z",
+        "duration": 2532.116,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "path": ".codex-temp/lq-motion-app-20261008-final/results.json",
+      "stats": {
+        "startTime": "2026-10-08T10:00:01.653Z",
+        "duration": 353957.35599999997,
+        "expected": 24,
+        "skipped": 0,
+        "unexpected": 2,
+        "flaky": 0
+      }
+    },
+    {
+      "path": ".codex-temp/lq-motion-app-20261008-onboarding-final/results.json",
+      "stats": {
+        "startTime": "2026-10-08T10:06:09.605Z",
+        "duration": 39370.829000000005,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "path": ".codex-temp/lq-motion-app-20261008-onboarding-complete/results.json",
+      "stats": {
+        "startTime": "2026-10-08T10:07:25.756Z",
+        "duration": 31399.035,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    }
+  ],
+  "frameEvidence": [
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable domain adapter keeps veto reversal and destroy restoration under one owner",
+      "attachment": "domain-adapter-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 56,
+          "visibleSamples": 55,
+          "partialOpacitySamples": 3,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 170.39999997615814
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 40,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.25622e-08,
+            1
+          ],
+          "largestFrameGapMs": 8.100000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable process force bypasses veto but keeps exit content and one final cleanup",
+      "attachment": "forced-process-presence",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 100,
+          "visibleSamples": 100,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 32.700000047683716
+        },
+        {
+          "path": ".leaving",
+          "samples": 39,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.80318e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.799999952316284
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable legacy UI bridge primes the first frame and reverses without resetting content",
+      "attachment": "legacy-ui-bridge-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 110,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.700000047683716
+        },
+        {
+          "path": ".leaving",
+          "samples": 110,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.81666e-08,
+            1
+          ],
+          "largestFrameGapMs": 7.600000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable button and field states traverse real intermediate frames",
+      "attachment": "control-process",
+      "frames": [
+        {
+          "path": ".press",
+          "samples": 98,
+          "visibleSamples": 98,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 30.799999952316284
+        },
+        {
+          "path": ".field",
+          "samples": 109,
+          "visibleSamples": 109,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 6.600000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable modal sheet drawer popover and native dialog animate the first open and exit",
+      "attachment": "layer-process",
+      "frames": [
+        {
+          "path": ".modal.entering",
+          "samples": 95,
+          "visibleSamples": 93,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 56.699999928474426
+        },
+        {
+          "path": ".modal.leaving",
+          "samples": 39,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.97414e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.399999976158142
+        },
+        {
+          "path": ".sheet.entering",
+          "samples": 100,
+          "visibleSamples": 98,
+          "partialOpacitySamples": 9,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 56.299999952316284
+        },
+        {
+          "path": ".sheet.leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.13694e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.400000095367432
+        },
+        {
+          "path": ".drawer.entering",
+          "samples": 105,
+          "visibleSamples": 104,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 28.799999952316284
+        },
+        {
+          "path": ".drawer.leaving",
+          "samples": 39,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.18081e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.899999976158142
+        },
+        {
+          "path": ".popover.entering",
+          "samples": 109,
+          "visibleSamples": 108,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        },
+        {
+          "path": ".popover.leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.15613e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        },
+        {
+          "path": ".native.entering",
+          "samples": 96,
+          "visibleSamples": 95,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 88.60000002384186
+        },
+        {
+          "path": ".native.leaving",
+          "samples": 93,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.3738e-08,
+            1
+          ],
+          "largestFrameGapMs": 105.39999997615814
+        },
+        {
+          "path": ".native-surface.entering",
+          "samples": 109,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.899999976158142
+        },
+        {
+          "path": ".native-surface.leaving",
+          "samples": 109,
+          "visibleSamples": 40,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.27086e-08,
+            1
+          ],
+          "largestFrameGapMs": 12.0
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable menu and toast retain both presence directions and loading stays named",
+      "attachment": "menu-feedback-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 107,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.799999952316284
+        },
+        {
+          "path": ".leaving",
+          "samples": 29,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            5.77751e-07,
+            1
+          ],
+          "largestFrameGapMs": 6.400000095367432
+        },
+        {
+          "path": ".toastIn",
+          "samples": 107,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.600000023841858
+        },
+        {
+          "path": ".toastOut",
+          "samples": 28,
+          "visibleSamples": 28,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            5.03637e-07,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable details and tab panels animate content without replacing drafts",
+      "attachment": "content-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 106,
+          "visibleSamples": 103,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0.1479,
+            1
+          ],
+          "largestFrameGapMs": 29.100000023841858
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 32,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            1.88747e-06,
+            1
+          ],
+          "largestFrameGapMs": 6.799999952316284
+        },
+        {
+          "path": ".tab",
+          "samples": 110,
+          "visibleSamples": 110,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 10.299999952316284
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable domain modal cancels stale exits and separates immediate cancellation from cleanup",
+      "attachment": "domain-modal-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 54,
+          "visibleSamples": 54,
+          "partialOpacitySamples": 1,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 100.79999995231628
+        },
+        {
+          "path": ".leaving",
+          "samples": 108,
+          "visibleSamples": 28,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            5.08661e-07,
+            1
+          ],
+          "largestFrameGapMs": 9.699999928474426
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable domain adapter keeps veto reversal and destroy restoration under one owner",
+      "attachment": "domain-adapter-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 102,
+          "visibleSamples": 100,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 31.5
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.43066e-08,
+            1
+          ],
+          "largestFrameGapMs": 8.400000095367432
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable process force bypasses veto but keeps exit content and one final cleanup",
+      "attachment": "forced-process-presence",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 95,
+          "visibleSamples": 95,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 26.5
+        },
+        {
+          "path": ".leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.9005e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.399999976158142
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable legacy UI bridge primes the first frame and reverses without resetting content",
+      "attachment": "legacy-ui-bridge-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 109,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 10.0
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.93796e-08,
+            1
+          ],
+          "largestFrameGapMs": 7.699999928474426
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable button and field states traverse real intermediate frames",
+      "attachment": "control-process",
+      "frames": [
+        {
+          "path": ".press",
+          "samples": 106,
+          "visibleSamples": 106,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 24.199999928474426
+        },
+        {
+          "path": ".field",
+          "samples": 109,
+          "visibleSamples": 109,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 6.300000071525574
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable modal sheet drawer popover and native dialog animate the first open and exit",
+      "attachment": "layer-process",
+      "frames": [
+        {
+          "path": ".modal.entering",
+          "samples": 90,
+          "visibleSamples": 88,
+          "partialOpacitySamples": 2,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 64.29999995231628
+        },
+        {
+          "path": ".modal.leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.38482e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.699999928474426
+        },
+        {
+          "path": ".sheet.entering",
+          "samples": 110,
+          "visibleSamples": 108,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.600000023841858
+        },
+        {
+          "path": ".sheet.leaving",
+          "samples": 39,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.61196e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.799999952316284
+        },
+        {
+          "path": ".drawer.entering",
+          "samples": 101,
+          "visibleSamples": 99,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 45.199999928474426
+        },
+        {
+          "path": ".drawer.leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.11063e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.600000023841858
+        },
+        {
+          "path": ".popover.entering",
+          "samples": 109,
+          "visibleSamples": 108,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.599999904632568
+        },
+        {
+          "path": ".popover.leaving",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.4331e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.600000023841858
+        },
+        {
+          "path": ".native.entering",
+          "samples": 96,
+          "visibleSamples": 94,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 85.90000009536743
+        },
+        {
+          "path": ".native.leaving",
+          "samples": 94,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.17451e-08,
+            1
+          ],
+          "largestFrameGapMs": 101.70000004768372
+        },
+        {
+          "path": ".native-surface.entering",
+          "samples": 109,
+          "visibleSamples": 108,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.400000095367432
+        },
+        {
+          "path": ".native-surface.leaving",
+          "samples": 109,
+          "visibleSamples": 40,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.3551e-08,
+            1
+          ],
+          "largestFrameGapMs": 8.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable menu and toast retain both presence directions and loading stays named",
+      "attachment": "menu-feedback-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 107,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.700000047683716
+        },
+        {
+          "path": ".leaving",
+          "samples": 31,
+          "visibleSamples": 31,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            4.93071e-07,
+            1
+          ],
+          "largestFrameGapMs": 6.399999976158142
+        },
+        {
+          "path": ".toastIn",
+          "samples": 108,
+          "visibleSamples": 108,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        },
+        {
+          "path": ".toastOut",
+          "samples": 30,
+          "visibleSamples": 30,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            4.98025e-07,
+            1
+          ],
+          "largestFrameGapMs": 6.299999952316284
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable details and tab panels animate content without replacing drafts",
+      "attachment": "content-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 110,
+          "visibleSamples": 106,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0.14769,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 33,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            1.94206e-06,
+            1
+          ],
+          "largestFrameGapMs": 6.399999976158142
+        },
+        {
+          "path": ".tab",
+          "samples": 110,
+          "visibleSamples": 110,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-process-20261008-resample",
+      "project": "desktop-light",
+      "test": "LQ immutable domain modal cancels stale exits and separates immediate cancellation from cleanup",
+      "attachment": "domain-modal-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 59,
+          "visibleSamples": 59,
+          "partialOpacitySamples": 1,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 85.80000007152557
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            5.37549e-07,
+            1
+          ],
+          "largestFrameGapMs": 6.699999928474426
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".menuIn",
+          "samples": 84,
+          "visibleSamples": 83,
+          "partialOpacitySamples": 2,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 81.60000002384186
+        },
+        {
+          "path": ".menuOut",
+          "samples": 109,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            5.0489e-07,
+            1
+          ],
+          "largestFrameGapMs": 8.399999976158142
+        },
+        {
+          "path": ".dialogIn",
+          "samples": 96,
+          "visibleSamples": 96,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 36.799999952316284
+        },
+        {
+          "path": ".dialogOut",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.68307e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.899999976158142
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".menuIn",
+          "samples": 106,
+          "visibleSamples": 85,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 18.600000023841858
+        },
+        {
+          "path": ".menuOut",
+          "samples": 110,
+          "visibleSamples": 28,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            4.51714e-07,
+            1
+          ],
+          "largestFrameGapMs": 11.899999976158142
+        },
+        {
+          "path": ".detailsIn",
+          "samples": 93,
+          "visibleSamples": 92,
+          "partialOpacitySamples": 10,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 37.89999997615814
+        },
+        {
+          "path": ".detailsOut",
+          "samples": 104,
+          "visibleSamples": 37,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            9.15415e-08,
+            1
+          ],
+          "largestFrameGapMs": 32.60000002384186
+        },
+        {
+          "path": ".materialsIn",
+          "samples": 95,
+          "visibleSamples": 95,
+          "partialOpacitySamples": 22,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 30.59999990463257
+        },
+        {
+          "path": ".materialsOut",
+          "samples": 47,
+          "visibleSamples": 46,
+          "partialOpacitySamples": 24,
+          "visibleOpacityRange": [
+            1.83347e-06,
+            1
+          ],
+          "largestFrameGapMs": 37.10000002384186
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".historyIn",
+          "samples": 88,
+          "visibleSamples": 88,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 13.0
+        },
+        {
+          "path": ".historyOut",
+          "samples": 32,
+          "visibleSamples": 31,
+          "partialOpacitySamples": 17,
+          "visibleOpacityRange": [
+            1.86497e-06,
+            1
+          ],
+          "largestFrameGapMs": 20.899999976158142
+        },
+        {
+          "path": ".todoIn",
+          "samples": 89,
+          "visibleSamples": 89,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 15.300000071525574
+        },
+        {
+          "path": ".todoOut",
+          "samples": 100,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 22,
+          "visibleOpacityRange": [
+            1.86181e-06,
+            1
+          ],
+          "largestFrameGapMs": 11.799999952316284
+        },
+        {
+          "path": ".tabOut",
+          "samples": 97,
+          "visibleSamples": 40,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            2.1334e-06,
+            1
+          ],
+          "largestFrameGapMs": 42.699999928474426
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 85,
+          "visibleSamples": 84,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 48.89999997615814
+        },
+        {
+          "path": ".leaving",
+          "samples": 105,
+          "visibleSamples": 50,
+          "partialOpacitySamples": 27,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 10.100000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".evaluationIn",
+          "samples": 83,
+          "visibleSamples": 82,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 72.79999995231628
+        },
+        {
+          "path": ".evaluationOut",
+          "samples": 96,
+          "visibleSamples": 26,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            8.83825e-08,
+            1
+          ],
+          "largestFrameGapMs": 26.5
+        },
+        {
+          "path": ".searchIn",
+          "samples": 107,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 8.399999976158142
+        },
+        {
+          "path": ".searchOut",
+          "samples": 109,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.84054e-08,
+            1
+          ],
+          "largestFrameGapMs": 19.899999976158142
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".processIn",
+          "samples": 95,
+          "visibleSamples": 95,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 15.5
+        },
+        {
+          "path": ".processOut",
+          "samples": 34,
+          "visibleSamples": 34,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            8.64107e-08,
+            1
+          ],
+          "largestFrameGapMs": 10.800000071525574
+        },
+        {
+          "path": ".treeIn",
+          "samples": 75,
+          "visibleSamples": 75,
+          "partialOpacitySamples": 3,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 65.79999995231628
+        },
+        {
+          "path": ".treeOut",
+          "samples": 23,
+          "visibleSamples": 23,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            9.67213e-08,
+            1
+          ],
+          "largestFrameGapMs": 14.700000047683716
+        },
+        {
+          "path": ".academicIn",
+          "samples": 76,
+          "visibleSamples": 75,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 56.89999997615814
+        },
+        {
+          "path": ".academicOut",
+          "samples": 73,
+          "visibleSamples": 17,
+          "partialOpacitySamples": 8,
+          "visibleOpacityRange": [
+            6.8286e-08,
+            1
+          ],
+          "largestFrameGapMs": 39.0
+        },
+        {
+          "path": ".detailIn",
+          "samples": 94,
+          "visibleSamples": 93,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 24.100000023841858
+        },
+        {
+          "path": ".detailOut",
+          "samples": 97,
+          "visibleSamples": 26,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            6.90574e-06,
+            1
+          ],
+          "largestFrameGapMs": 16.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".feedbackIn",
+          "samples": 71,
+          "visibleSamples": 43,
+          "partialOpacitySamples": 1,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 175.79999995231628
+        },
+        {
+          "path": ".feedbackOut",
+          "samples": 96,
+          "visibleSamples": 31,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            9.40336e-08,
+            1
+          ],
+          "largestFrameGapMs": 42.299999952316284
+        },
+        {
+          "path": ".drawerIn",
+          "samples": 99,
+          "visibleSamples": 98,
+          "partialOpacitySamples": 16,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 49.300000071525574
+        },
+        {
+          "path": ".drawerOut",
+          "samples": 108,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.66906e-08,
+            1
+          ],
+          "largestFrameGapMs": 16.5
+        },
+        {
+          "path": ".childIn",
+          "samples": 93,
+          "visibleSamples": 92,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 24.799999952316284
+        },
+        {
+          "path": ".childOut",
+          "samples": 96,
+          "visibleSamples": 25,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            7.81624e-08,
+            1
+          ],
+          "largestFrameGapMs": 13.400000095367432
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "signature-content-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 87,
+          "visibleSamples": 87,
+          "partialOpacitySamples": 8,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 47.299999952316284
+        },
+        {
+          "path": ".leaving",
+          "samples": 20,
+          "visibleSamples": 20,
+          "partialOpacitySamples": 7,
+          "visibleOpacityRange": [
+            7.0178e-06,
+            1
+          ],
+          "largestFrameGapMs": 34.0
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 84,
+          "visibleSamples": 83,
+          "partialOpacitySamples": 3,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 108.0
+        },
+        {
+          "path": ".modeIn",
+          "samples": 99,
+          "visibleSamples": 98,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 37.0
+        },
+        {
+          "path": ".historyIn",
+          "samples": 108,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 12.5
+        },
+        {
+          "path": ".historyOut",
+          "samples": 110,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            4.96163e-07,
+            1
+          ],
+          "largestFrameGapMs": 7.800000071525574
+        },
+        {
+          "path": ".leaving",
+          "samples": 103,
+          "visibleSamples": 33,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            5.01298e-08,
+            1
+          ],
+          "largestFrameGapMs": 19.90000009536743
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 95,
+          "visibleSamples": 94,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 63.0
+        },
+        {
+          "path": ".leaving",
+          "samples": 108,
+          "visibleSamples": 1,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 18.40000009536743
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 95,
+          "visibleSamples": 94,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 67.89999997615814
+        },
+        {
+          "path": ".leaving",
+          "samples": 106,
+          "visibleSamples": 1,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 27.600000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".menuIn",
+          "samples": 91,
+          "visibleSamples": 90,
+          "partialOpacitySamples": 7,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 78.5
+        },
+        {
+          "path": ".menuOut",
+          "samples": 109,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            5.18172e-07,
+            1
+          ],
+          "largestFrameGapMs": 7.0
+        },
+        {
+          "path": ".dialogIn",
+          "samples": 90,
+          "visibleSamples": 90,
+          "partialOpacitySamples": 6,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 88.89999997615814
+        },
+        {
+          "path": ".dialogOut",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.20554e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".menuIn",
+          "samples": 105,
+          "visibleSamples": 104,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 12.600000023841858
+        },
+        {
+          "path": ".menuOut",
+          "samples": 110,
+          "visibleSamples": 28,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            4.38463e-07,
+            1
+          ],
+          "largestFrameGapMs": 8.799999952316284
+        },
+        {
+          "path": ".detailsIn",
+          "samples": 103,
+          "visibleSamples": 102,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 27.600000023841858
+        },
+        {
+          "path": ".detailsOut",
+          "samples": 109,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.47751e-08,
+            1
+          ],
+          "largestFrameGapMs": 22.200000047683716
+        },
+        {
+          "path": ".materialsIn",
+          "samples": 92,
+          "visibleSamples": 92,
+          "partialOpacitySamples": 17,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 52.800000071525574
+        },
+        {
+          "path": ".materialsOut",
+          "samples": 50,
+          "visibleSamples": 49,
+          "partialOpacitySamples": 27,
+          "visibleOpacityRange": [
+            2.55903e-06,
+            1
+          ],
+          "largestFrameGapMs": 30.5
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".historyIn",
+          "samples": 101,
+          "visibleSamples": 101,
+          "partialOpacitySamples": 26,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 8.799999952316284
+        },
+        {
+          "path": ".historyOut",
+          "samples": 51,
+          "visibleSamples": 50,
+          "partialOpacitySamples": 27,
+          "visibleOpacityRange": [
+            3.10058e-06,
+            1
+          ],
+          "largestFrameGapMs": 19.899999976158142
+        },
+        {
+          "path": ".todoIn",
+          "samples": 93,
+          "visibleSamples": 93,
+          "partialOpacitySamples": 17,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 30.0
+        },
+        {
+          "path": ".todoOut",
+          "samples": 104,
+          "visibleSamples": 43,
+          "partialOpacitySamples": 25,
+          "visibleOpacityRange": [
+            2.59251e-06,
+            1
+          ],
+          "largestFrameGapMs": 11.600000023841858
+        },
+        {
+          "path": ".tabOut",
+          "samples": 106,
+          "visibleSamples": 48,
+          "partialOpacitySamples": 25,
+          "visibleOpacityRange": [
+            2.36985e-06,
+            1
+          ],
+          "largestFrameGapMs": 17.200000047683716
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 103,
+          "visibleSamples": 102,
+          "partialOpacitySamples": 26,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 40.200000047683716
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 54,
+          "partialOpacitySamples": 30,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 12.100000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".evaluationIn",
+          "samples": 79,
+          "visibleSamples": 78,
+          "partialOpacitySamples": 3,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 97.20000004768372
+        },
+        {
+          "path": ".evaluationOut",
+          "samples": 109,
+          "visibleSamples": 39,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.54359e-08,
+            1
+          ],
+          "largestFrameGapMs": 17.700000047683716
+        },
+        {
+          "path": ".searchIn",
+          "samples": 106,
+          "visibleSamples": 106,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 11.5
+        },
+        {
+          "path": ".searchOut",
+          "samples": 110,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            6.26006e-08,
+            1
+          ],
+          "largestFrameGapMs": 16.0
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".processIn",
+          "samples": 103,
+          "visibleSamples": 103,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 33.60000002384186
+        },
+        {
+          "path": ".processOut",
+          "samples": 38,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.12075e-08,
+            1
+          ],
+          "largestFrameGapMs": 6.5
+        },
+        {
+          "path": ".treeIn",
+          "samples": 92,
+          "visibleSamples": 92,
+          "partialOpacitySamples": 9,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 56.39999997615814
+        },
+        {
+          "path": ".treeOut",
+          "samples": 29,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 11,
+          "visibleOpacityRange": [
+            7.18081e-08,
+            1
+          ],
+          "largestFrameGapMs": 45.0
+        },
+        {
+          "path": ".academicIn",
+          "samples": 80,
+          "visibleSamples": 79,
+          "partialOpacitySamples": 5,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 48.5
+        },
+        {
+          "path": ".academicOut",
+          "samples": 94,
+          "visibleSamples": 24,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            5.72409e-08,
+            1
+          ],
+          "largestFrameGapMs": 23.5
+        },
+        {
+          "path": ".detailIn",
+          "samples": 106,
+          "visibleSamples": 105,
+          "partialOpacitySamples": 17,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 13.399999976158142
+        },
+        {
+          "path": ".detailOut",
+          "samples": 110,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.99527e-08,
+            1
+          ],
+          "largestFrameGapMs": 8.399999976158142
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".feedbackIn",
+          "samples": 83,
+          "visibleSamples": 56,
+          "partialOpacitySamples": 4,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 97.10000002384186
+        },
+        {
+          "path": ".feedbackOut",
+          "samples": 105,
+          "visibleSamples": 37,
+          "partialOpacitySamples": 17,
+          "visibleOpacityRange": [
+            7.9609e-08,
+            1
+          ],
+          "largestFrameGapMs": 30.100000023841858
+        },
+        {
+          "path": ".drawerIn",
+          "samples": 102,
+          "visibleSamples": 101,
+          "partialOpacitySamples": 15,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 30.100000023841858
+        },
+        {
+          "path": ".drawerOut",
+          "samples": 109,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            8.65505e-08,
+            1
+          ],
+          "largestFrameGapMs": 15.899999976158142
+        },
+        {
+          "path": ".childIn",
+          "samples": 104,
+          "visibleSamples": 103,
+          "partialOpacitySamples": 16,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 9.799999952316284
+        },
+        {
+          "path": ".childOut",
+          "samples": 109,
+          "visibleSamples": 37,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            8.2285e-08,
+            1
+          ],
+          "largestFrameGapMs": 9.100000023841858
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "signature-content-process",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 83,
+          "visibleSamples": 83,
+          "partialOpacitySamples": 4,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 83.69999992847443
+        },
+        {
+          "path": ".leaving",
+          "samples": 28,
+          "visibleSamples": 28,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            7.07699e-06,
+            1
+          ],
+          "largestFrameGapMs": 33.89999997615814
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 77,
+          "visibleSamples": 76,
+          "partialOpacitySamples": 5,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 82.0
+        },
+        {
+          "path": ".modeIn",
+          "samples": 105,
+          "visibleSamples": 104,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 28.799999952316284
+        },
+        {
+          "path": ".historyIn",
+          "samples": 108,
+          "visibleSamples": 107,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 10.799999952316284
+        },
+        {
+          "path": ".historyOut",
+          "samples": 110,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            6.2425e-07,
+            1
+          ],
+          "largestFrameGapMs": 8.899999976158142
+        },
+        {
+          "path": ".leaving",
+          "samples": 104,
+          "visibleSamples": 31,
+          "partialOpacitySamples": 14,
+          "visibleOpacityRange": [
+            7.81624e-08,
+            1
+          ],
+          "largestFrameGapMs": 13.700000047683716
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 95,
+          "visibleSamples": 94,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 54.0
+        },
+        {
+          "path": ".leaving",
+          "samples": 107,
+          "visibleSamples": 1,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 19.800000071525574
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 104,
+          "visibleSamples": 103,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 36.5
+        },
+        {
+          "path": ".leaving",
+          "samples": 107,
+          "visibleSamples": 1,
+          "partialOpacitySamples": 0,
+          "visibleOpacityRange": [
+            1,
+            1
+          ],
+          "largestFrameGapMs": 21.399999976158142
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-final",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 106,
+          "visibleSamples": 101,
+          "partialOpacitySamples": 18,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 32.09999990463257
+        },
+        {
+          "path": ".childIn",
+          "samples": 100,
+          "visibleSamples": 99,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 18.0
+        },
+        {
+          "path": ".childOut",
+          "samples": 101,
+          "visibleSamples": 29,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            7.9874e-08,
+            1
+          ],
+          "largestFrameGapMs": 26.899999976158142
+        },
+        {
+          "path": ".step",
+          "samples": 105,
+          "visibleSamples": 105,
+          "partialOpacitySamples": 23,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 18.600000023841858
+        },
+        {
+          "path": ".leaving",
+          "samples": 109,
+          "visibleSamples": 46,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            9.50728e-08,
+            1
+          ],
+          "largestFrameGapMs": 22.40000009536743
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 103,
+          "visibleSamples": 94,
+          "partialOpacitySamples": 16,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 39.699999928474426
+        },
+        {
+          "path": ".childIn",
+          "samples": 98,
+          "visibleSamples": 97,
+          "partialOpacitySamples": 12,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 18.100000023841858
+        },
+        {
+          "path": ".childOut",
+          "samples": 94,
+          "visibleSamples": 24,
+          "partialOpacitySamples": 10,
+          "visibleOpacityRange": [
+            0.000268593,
+            1
+          ],
+          "largestFrameGapMs": 41.699999928474426
+        },
+        {
+          "path": ".step",
+          "samples": 103,
+          "visibleSamples": 103,
+          "partialOpacitySamples": 26,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 32.200000047683716
+        },
+        {
+          "path": ".leaving",
+          "samples": 105,
+          "visibleSamples": 48,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            1.17331e-07,
+            1
+          ],
+          "largestFrameGapMs": 33.39999997615814
+        }
+      ]
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "touch",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "rendered-motion-frames",
+      "frames": [
+        {
+          "path": ".entering",
+          "samples": 96,
+          "visibleSamples": 90,
+          "partialOpacitySamples": 9,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 60.39999997615814
+        },
+        {
+          "path": ".childIn",
+          "samples": 103,
+          "visibleSamples": 102,
+          "partialOpacitySamples": 13,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 42.40000009536743
+        },
+        {
+          "path": ".childOut",
+          "samples": 109,
+          "visibleSamples": 38,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            1.05251e-07,
+            1
+          ],
+          "largestFrameGapMs": 8.899999976158142
+        },
+        {
+          "path": ".step",
+          "samples": 109,
+          "visibleSamples": 109,
+          "partialOpacitySamples": 28,
+          "visibleOpacityRange": [
+            0,
+            1
+          ],
+          "largestFrameGapMs": 16.90000009536743
+        },
+        {
+          "path": ".leaving",
+          "samples": 108,
+          "visibleSamples": 42,
+          "partialOpacitySamples": 19,
+          "visibleOpacityRange": [
+            7.85552e-08,
+            1
+          ],
+          "largestFrameGapMs": 22.0
+        }
+      ]
+    }
+  ],
+  "businessEvidence": [
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "desktop-light",
+      "test": "LQ immutable reversal continues from the live frame and settles without idle scheduling",
+      "attachment": "reversal-and-idle",
+      "data": {
+        "result": {
+          "before": 0.12141,
+          "beforeReopen": 0.0329279,
+          "afterReopen": 0.0329279,
+          "cancelled": false
+        },
+        "raf": {
+          "scheduled": 1,
+          "fired": 1
+        }
+      }
+    },
+    {
+      "run": "lq-motion-process-20261008-final",
+      "project": "touch-dark",
+      "test": "LQ immutable reversal continues from the live frame and settles without idle scheduling",
+      "attachment": "reversal-and-idle",
+      "data": {
+        "result": {
+          "before": 0.121352,
+          "beforeReopen": 1.39124e-05,
+          "afterReopen": 1.39124e-05,
+          "cancelled": false
+        },
+        "raf": {
+          "scheduled": 1,
+          "fired": 1
+        }
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "off",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "actual-blur-hosts",
+      "data": {
+        "restingBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.7)"
+          }
+        ],
+        "detailsBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.7)"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "class": "lq-surface lq-domain-raised lq-dialog__surface lq-modal course-popover-card",
+            "filter": "blur(24px) saturate(1.7)"
+          }
+        ],
+        "materialsBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.7)"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "class": "tw-fixed tw-left-[50%] tw-top-[50%] tw-z-50 tw-grid tw-w-full tw-max-w-lg tw-translate-x-[-50%] tw-translate-y-[-50%] tw-gap-4 tw-p-6 sm:tw-rounded-lg cw-dialog classroom-page classroom-workspace-v2",
+            "filter": "blur(24px) saturate(1.7)"
+          }
+        ]
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "idle-raf",
+      "data": {
+        "before": {
+          "scheduled": 41,
+          "fired": 41
+        },
+        "after": {
+          "scheduled": 41,
+          "fired": 41
+        },
+        "windowMs": 450
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "AI-reversal",
+      "data": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "native-document-motion",
+      "data": {
+        "supported": true,
+        "transition": true,
+        "frames": [
+          {
+            "time": 0,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 0.3999999761581421,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 19.700000047683716,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 30.899999976158142,
+            "old": 0.879174,
+            "next": 0.120826
+          },
+          {
+            "time": 197.70000004768372,
+            "old": 0.00339892,
+            "next": 0.996601
+          },
+          {
+            "time": 245.70000004768372,
+            "old": 0.000534942,
+            "next": 0.999465
+          },
+          {
+            "time": 272.5,
+            "old": 0,
+            "next": 1
+          },
+          {
+            "time": 303.3000000715256,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 324.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 362.2000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 374.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 383,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 385.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 392.5,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 398,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 403.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 409.7000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 416.60000002384186,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 421.60000002384186,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 427.7000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 433.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 440,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 445.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 452,
+            "old": 1,
+            "next": 1
+          }
+        ]
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "motion": "off",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": true,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "desktop",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "off",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real component laboratory preserves menu and modal motion with glass disabled",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "actual-blur-hosts",
+      "data": {
+        "restingBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.4)"
+          }
+        ],
+        "detailsBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.4)"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "class": "lq-surface lq-domain-raised lq-dialog__surface lq-modal course-popover-card",
+            "filter": "blur(24px) saturate(1.4)"
+          }
+        ],
+        "materialsBlur": [
+          {
+            "tag": "HEADER",
+            "id": "",
+            "class": "lq-domain-toolbar app-topbar cw-topbar role-teacher",
+            "filter": "blur(16px) saturate(1.4)"
+          },
+          {
+            "tag": "DIV",
+            "id": "",
+            "class": "tw-fixed tw-left-[50%] tw-top-[50%] tw-z-50 tw-grid tw-w-full tw-max-w-lg tw-translate-x-[-50%] tw-translate-y-[-50%] tw-gap-4 tw-p-6 sm:tw-rounded-lg cw-dialog classroom-page classroom-workspace-v2",
+            "filter": "blur(24px) saturate(1.4)"
+          }
+        ]
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real classroom menu course details and materials preserve both presence directions",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real student dashboard dialogs and classroom tab drafts retain intermediate frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "idle-raf",
+      "data": {
+        "before": {
+          "scheduled": 55,
+          "fired": 55
+        },
+        "after": {
+          "scheduled": 55,
+          "fired": 55
+        },
+        "windowMs": 450
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real 3D timetable expands and contracts through rendered frames and stops scheduling at rest",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real teacher evaluation and global search use shared domain presence",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real process forms tree selection and academic comparison keep contents through exits",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real feedback and nested class student drawer retain drafts through shared exits",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real signature handwriting pixels remain until the shared exit finishes",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "AI-reversal",
+      "data": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real AI workspace modes and history keep drafts and reject late focus after reversal",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "native-document-motion",
+      "data": {
+        "supported": true,
+        "transition": true,
+        "frames": [
+          {
+            "time": 0,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 0.3999999761581421,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 5.5,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 26.399999976158142,
+            "old": 1,
+            "next": 0
+          },
+          {
+            "time": 37.5,
+            "old": 0.763207,
+            "next": 0.236793
+          },
+          {
+            "time": 60.60000002384186,
+            "old": 0.406695,
+            "next": 0.593305
+          },
+          {
+            "time": 86.5,
+            "old": 0.198292,
+            "next": 0.801708
+          },
+          {
+            "time": 90.5,
+            "old": 0.164205,
+            "next": 0.835795
+          },
+          {
+            "time": 106.70000004768372,
+            "old": 0.135996,
+            "next": 0.864003
+          },
+          {
+            "time": 109.10000002384186,
+            "old": 0.0920889,
+            "next": 0.907911
+          },
+          {
+            "time": 134.39999997615814,
+            "old": 0.0399089,
+            "next": 0.960091
+          },
+          {
+            "time": 139.70000004768372,
+            "old": 0.0319736,
+            "next": 0.968026
+          },
+          {
+            "time": 149.5,
+            "old": 0.0254109,
+            "next": 0.974589
+          },
+          {
+            "time": 160.79999995231628,
+            "old": 0.0155148,
+            "next": 0.984485
+          },
+          {
+            "time": 161.5,
+            "old": 0.0118193,
+            "next": 0.988181
+          },
+          {
+            "time": 166,
+            "old": 0.00894426,
+            "next": 0.991056
+          },
+          {
+            "time": 178.60000002384186,
+            "old": 0.00664721,
+            "next": 0.993353
+          },
+          {
+            "time": 181.70000004768372,
+            "old": 0.00478081,
+            "next": 0.995219
+          },
+          {
+            "time": 201,
+            "old": 0.0033826,
+            "next": 0.996617
+          },
+          {
+            "time": 208.5,
+            "old": 0.000536008,
+            "next": 0.999464
+          },
+          {
+            "time": 214.89999997615814,
+            "old": 0.000274832,
+            "next": 0.999725
+          },
+          {
+            "time": 221.29999995231628,
+            "old": 0.000117331,
+            "next": 0.999883
+          },
+          {
+            "time": 227.20000004768372,
+            "old": 3.94589e-05,
+            "next": 0.999961
+          },
+          {
+            "time": 232.60000002384186,
+            "old": 7.11483e-06,
+            "next": 0.999993
+          },
+          {
+            "time": 238.89999997615814,
+            "old": 9.24159e-08,
+            "next": 1
+          },
+          {
+            "time": 244.79999995231628,
+            "old": 0,
+            "next": 1
+          },
+          {
+            "time": 250.79999995231628,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 257.2000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 264.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 268.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 275.2000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 281.10000002384186,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 287.2000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 293.5,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 331.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 339.5,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 343.5,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 349.10000002384186,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 354.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 361.2000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 367.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 373.2999999523163,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 379.7999999523163,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 385.7000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 408.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 410.89999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 415,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 421.2999999523163,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 433.2999999523163,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 435.7000000476837,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 441.39999997615814,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 445.5,
+            "old": 1,
+            "next": 1
+          },
+          {
+            "time": 451.2999999523163,
+            "old": 1,
+            "next": 1
+          }
+        ]
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real same-origin document navigation exposes native snapshot intermediate frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "motion": "off",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real off keeps classroom dialogs usable without visible partial frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": true,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-final",
+      "project": "touch",
+      "test": "real reduced keeps classroom dialogs usable without visible partial frames",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-final",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-final",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 1440,
+          "height": 980
+        },
+        "appearance": "light",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": false
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "desktop",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "touch",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "render-context",
+      "data": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "appearance": "dark",
+        "glass": "tinted",
+        "reduced": false,
+        "touch": true
+      }
+    },
+    {
+      "run": "lq-motion-app-20261008-onboarding-complete",
+      "project": "touch",
+      "test": "real classroom onboarding animates steps and nested editor while dismissal failures veto close",
+      "attachment": "uncaught-browser-errors",
+      "data": []
+    }
+  ],
+  "limitations": [
+    "First component run includes one 231.6ms host frame-sampling gap; unchanged single-case rerun passed.",
+    "Initial onboarding sampler targeted layout parent; corrected to actual shared shell. Mobile retry closes visible error toast through its button before retrying dismiss.",
+    "Chromium desktop and touch emulation only; source inventory remains pending/unknown.",
+    "Existing profile page has 3 mobile / 4 desktop viewport blur hosts and an existing CSS decorative loop; its production rAF remains idle. This is recorded rather than raising the shared layer budget or claiming full-platform performance acceptance."
+  ],
+  "compatibility": {
+    "revision": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+    "suite": "LQ motion compatibility and domain lifecycle",
+    "isolated": true,
+    "databaseUsed": false,
+    "productionChangedAfterFreeze": false,
+    "coveredCases": 56,
+    "passingCases": 56,
+    "initialRun": {
+      "passed": 55,
+      "failed": 1,
+      "failure": "New assignment-status HTML fixture omitted UTF-8 charset; Chinese role-name locator decoded incorrectly before any action."
+    },
+    "focusedRetry": {
+      "passed": 1,
+      "failed": 0,
+      "change": "Fixture content type and meta charset set to UTF-8; no production changes or lowered assertions."
+    },
+    "categories": {
+      "assignmentStatus": 1,
+      "blogDraftConflict": 1,
+      "domainControls": 11,
+      "legacyBridges": 34,
+      "motion": 9
+    },
+    "logs": [
+      "run.log",
+      "status-retry.log"
+    ]
+  },
+  "readonlyPlatform": {
+    "evidenceDirectory": ".codex-temp/lq-motion-platform-20261008",
+    "summary": {
+      "groups": 12,
+      "routeGaps": 0,
+      "distinctControlFindings": 2,
+      "overflowFrames": 0,
+      "executionFailures": 0,
+      "leafBlurFrames": 0,
+      "maximumBlurHosts": 8
+    },
+    "observations": 108,
+    "sourceChanges": 0,
+    "pageErrors": 0,
+    "execution": {
+      "startTime": "2026-10-08T10:08:25.593Z",
+      "duration": 303699.978,
+      "expected": 12,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "controlFindings": [
+      {
+        "kind": "menu",
+        "tag": "div",
+        "id": "",
+        "class": "app-topbar-menu",
+        "declaredComponent": null,
+        "sourceMapping": {
+          "status": "ambiguous-pending",
+          "totalCandidates": 2,
+          "candidates": [
+            {
+              "file": "templates/macros/app_utility_menus.html",
+              "line": 10,
+              "suggestedOwner": "shared/menu-tooltip",
+              "auditId": "lq-source-01074"
+            },
+            {
+              "file": "templates/macros/app_utility_menus.html",
+              "line": 31,
+              "suggestedOwner": "shared/menu-tooltip",
+              "auditId": "lq-source-01076"
+            }
+          ]
+        },
+        "issues": [
+          "unowned"
+        ],
+        "occurrences": 128,
+        "visibleOccurrences": 128,
+        "examples": [
+          {
+            "group": "student-1440-dark",
+            "url": "/blog",
+            "frame": "http://127.0.0.1:8361/blog"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/blog",
+            "frame": "http://127.0.0.1:8361/blog"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/dashboard",
+            "frame": "http://127.0.0.1:8361/dashboard"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/dashboard",
+            "frame": "http://127.0.0.1:8361/dashboard"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/profile?section=overview",
+            "frame": "http://127.0.0.1:8361/profile?section=overview"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/profile?section=overview",
+            "frame": "http://127.0.0.1:8361/profile?section=overview"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/profile?section=settings",
+            "frame": "http://127.0.0.1:8361/profile?section=settings"
+          },
+          {
+            "group": "student-1440-dark",
+            "url": "/profile?section=settings",
+            "frame": "http://127.0.0.1:8361/profile?section=settings"
+          }
+        ]
+      },
+      {
+        "kind": "menu",
+        "tag": "div",
+        "id": "",
+        "class": "cw-topbar-menu",
+        "declaredComponent": null,
+        "sourceMapping": {
+          "status": "candidate-pending",
+          "totalCandidates": 1,
+          "candidates": [
+            {
+              "file": "templates/macros/classroom_menus.html",
+              "line": 36,
+              "suggestedOwner": "domain/classroom",
+              "auditId": "lq-source-01079"
+            }
+          ]
+        },
+        "issues": [
+          "unowned"
+        ],
+        "occurrences": 8,
+        "visibleOccurrences": 8,
+        "examples": [
+          {
+            "group": "student-1440-dark",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "student-1440-light",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "student-390-dark",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "student-390-light",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "teacher-1440-dark",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "teacher-1440-light",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "teacher-390-dark",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          },
+          {
+            "group": "teacher-390-light",
+            "url": "/classroom/1",
+            "frame": "http://127.0.0.1:8361/classroom/1"
+          }
+        ]
+      }
+    ],
+    "interpretation": "Only app-topbar-menu/cw-topbar-menu layout wrappers remain unowned; their child NavMenu owns behavior and material. No false declaration added."
+  },
+  "profilePerformanceBoundary": [
+    {
+      "width": 390,
+      "account": "other owned synthetic student",
+      "before": {
+        "raf": {
+          "scheduled": 240,
+          "fired": 240
+        },
+        "hosts": [
+          {
+            "tag": "HEADER",
+            "class": "lq-domain-toolbar navbar app-topbar role-student",
+            "blur": "blur(14px)",
+            "viewport": true,
+            "box": {
+              "top": 0,
+              "bottom": 234.890625,
+              "left": 0,
+              "right": 390
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-hero profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": -75.109375,
+              "bottom": 831.75,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-section-head profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1443.578125,
+              "bottom": 1515.15625,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-cultivation-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 2134.328125,
+              "bottom": 2509.921875,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-activity-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3227.484375,
+              "bottom": 3374.640625,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3390.640625,
+              "bottom": 3914.703125,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3930.703125,
+              "bottom": 4274.734375,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "NAV",
+            "class": "app-bottomnav",
+            "blur": "blur(12px)",
+            "viewport": true,
+            "box": {
+              "top": 839,
+              "bottom": 900,
+              "left": 0,
+              "right": 390
+            }
+          }
+        ],
+        "animations": [
+          {
+            "type": "CSSAnimation",
+            "name": "cultivation-avatar-spin",
+            "target": "profile-hero__avatar-ring cultivation-avatar-frame cultivation-avatar-frame--large",
+            "duration": 9000,
+            "iterations": null
+          }
+        ]
+      },
+      "after": {
+        "raf": {
+          "scheduled": 240,
+          "fired": 240
+        },
+        "hosts": [
+          {
+            "tag": "HEADER",
+            "class": "lq-domain-toolbar navbar app-topbar role-student",
+            "blur": "blur(14px)",
+            "viewport": true,
+            "box": {
+              "top": 0,
+              "bottom": 234.890625,
+              "left": 0,
+              "right": 390
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-hero profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": -75.109375,
+              "bottom": 831.75,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-section-head profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1443.578125,
+              "bottom": 1515.15625,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-cultivation-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 2134.328125,
+              "bottom": 2509.921875,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-activity-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3227.484375,
+              "bottom": 3374.640625,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3390.640625,
+              "bottom": 3914.703125,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 3930.703125,
+              "bottom": 4274.734375,
+              "left": 13.59375,
+              "right": 376.40625
+            }
+          },
+          {
+            "tag": "NAV",
+            "class": "app-bottomnav",
+            "blur": "blur(12px)",
+            "viewport": true,
+            "box": {
+              "top": 839,
+              "bottom": 900,
+              "left": 0,
+              "right": 390
+            }
+          }
+        ],
+        "animations": [
+          {
+            "type": "CSSAnimation",
+            "name": "cultivation-avatar-spin",
+            "target": "profile-hero__avatar-ring cultivation-avatar-frame cultivation-avatar-frame--large",
+            "duration": 9000,
+            "iterations": null
+          }
+        ]
+      }
+    },
+    {
+      "width": 1440,
+      "account": "other owned synthetic student",
+      "before": {
+        "raf": {
+          "scheduled": 260,
+          "fired": 260
+        },
+        "hosts": [
+          {
+            "tag": "HEADER",
+            "class": "lq-domain-toolbar navbar app-topbar role-student",
+            "blur": "blur(14px)",
+            "viewport": true,
+            "box": {
+              "top": 0,
+              "bottom": 85.875,
+              "left": 0,
+              "right": 1440
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-hero profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 114.671875,
+              "bottom": 477.234375,
+              "left": 112,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-section-head profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 498.828125,
+              "bottom": 570.40625,
+              "left": 432,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-cultivation-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 750.40625,
+              "bottom": 1060.109375,
+              "left": 432,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-activity-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1426.890625,
+              "bottom": 1574.046875,
+              "left": 432,
+              "right": 992
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1076.109375,
+              "bottom": 1424.234375,
+              "left": 1008,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1440.234375,
+              "bottom": 1720.703125,
+              "left": 1008,
+              "right": 1328
+            }
+          }
+        ],
+        "animations": [
+          {
+            "type": "CSSAnimation",
+            "name": "cultivation-avatar-spin",
+            "target": "profile-hero__avatar-ring cultivation-avatar-frame cultivation-avatar-frame--large",
+            "duration": 9000,
+            "iterations": null
+          }
+        ]
+      },
+      "after": {
+        "raf": {
+          "scheduled": 260,
+          "fired": 260
+        },
+        "hosts": [
+          {
+            "tag": "HEADER",
+            "class": "lq-domain-toolbar navbar app-topbar role-student",
+            "blur": "blur(14px)",
+            "viewport": true,
+            "box": {
+              "top": 0,
+              "bottom": 85.875,
+              "left": 0,
+              "right": 1440
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-hero profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 114.671875,
+              "bottom": 477.234375,
+              "left": 112,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-section-head profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 498.828125,
+              "bottom": 570.40625,
+              "left": 432,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-cultivation-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": true,
+            "box": {
+              "top": 750.40625,
+              "bottom": 1060.109375,
+              "left": 432,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-activity-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1426.890625,
+              "bottom": 1574.046875,
+              "left": 432,
+              "right": 992
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1076.109375,
+              "bottom": 1424.234375,
+              "left": 1008,
+              "right": 1328
+            }
+          },
+          {
+            "tag": "SECTION",
+            "class": "profile-band profile-reveal",
+            "blur": "blur(16px)",
+            "viewport": false,
+            "box": {
+              "top": 1440.234375,
+              "bottom": 1720.703125,
+              "left": 1008,
+              "right": 1328
+            }
+          }
+        ],
+        "animations": [
+          {
+            "type": "CSSAnimation",
+            "name": "cultivation-avatar-spin",
+            "target": "profile-hero__avatar-ring cultivation-avatar-frame cultivation-avatar-frame--large",
+            "duration": 9000,
+            "iterations": null
+          }
+        ]
+      }
+    }
+  ]
+}

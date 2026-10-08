@@ -42,6 +42,30 @@ describe('layer forced destruction cancels shared presence resources', () => {
         expect(await pending).toBe(false); expect(listeners.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
         await vi.advanceTimersByTimeAsync(61000); expect(root.hidden).toBe(false);
     });
+    it('establishes a first frame even when native showModal already revealed the root', async () => {
+        vi.useFakeTimers(); const { root } = fixture();
+        const observed = [];
+        const readStyle = root.ownerDocument.defaultView.getComputedStyle;
+        root.ownerDocument.defaultView.getComputedStyle = () => {
+            observed.push(root.dataset.uiOverlayState); return readStyle();
+        };
+        const pending = setOverlayOpen(root, true);
+        expect(observed[0]).toBe('closed');
+        expect(root.dataset.uiOverlayState).toBe('open');
+        cancelOverlayMotion(root); expect(await pending).toBe(false);
+    });
+    it('does not rewind a visible closing surface before reversing it', async () => {
+        vi.useFakeTimers(); const { root } = fixture();
+        root.dataset.uiOverlayState = 'closed';
+        const observed = [];
+        const readStyle = root.ownerDocument.defaultView.getComputedStyle;
+        root.ownerDocument.defaultView.getComputedStyle = () => {
+            observed.push(root.dataset.uiOverlayState); return readStyle();
+        };
+        const pending = setOverlayOpen(root, true);
+        expect(observed).toEqual(['open']);
+        cancelOverlayMotion(root); expect(await pending).toBe(false);
+    });
     it('a new generation remains independent after cancellation and a late animation resolution', async () => {
         vi.useFakeTimers(); const { root, listeners } = fixture(); let finish;
         root.getAnimations = () => [{ effect: { getComputedTiming: () => ({ endTime: 60000 }) }, playState: 'running', finished: new Promise(resolve => { finish = resolve; }) }];

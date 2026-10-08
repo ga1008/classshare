@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const RESOURCE_CONFIG = {
     class: {
@@ -79,6 +80,8 @@ const RESOURCE_CONFIG = {
 let modal = null;
 let styleAdded = false;
 let activeState = null;
+let modalHandle = null;
+let saving = false;
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -104,7 +107,7 @@ function addStyleOnce() {
             position: fixed;
             inset: 0;
             z-index: 1600;
-            display: none;
+            display: flex;
             align-items: center;
             justify-content: center;
             padding: 18px;
@@ -215,7 +218,10 @@ function ensureModal() {
     if (modal) return modal;
     addStyleOnce();
     modal = document.createElement('div');
-    modal.className = 'resource-mode-backdrop';
+    modal.className = 'lq-domain-region resource-mode-backdrop';
+    modal.dataset.lqComponent = 'layer';
+    modal.dataset.lqPresence = 'domain';
+    modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     modal.innerHTML = `
         <section data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised resource-mode-dialog" role="dialog" aria-modal="true" aria-labelledby="resourceModeTitle">
@@ -249,24 +255,22 @@ function ensureModal() {
         }
     });
     modal.querySelector('#resourceModeForm')?.addEventListener('submit', saveAttributes);
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && modal?.classList.contains('is-open')) closeModal();
-    });
     return modal;
 }
 
 function closeModal() {
-    modal?.classList.remove('is-open');
-    modal?.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-    activeState = null;
+    if (modalHandle) return getLayerSystem(document).close(modalHandle, 'button');
 }
 
-function openModal() {
+function openModal(trigger) {
     ensureModal();
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
+    const layer = getLayerSystem(document);
+    layer.getPortalHost({ trigger }).append(modal);
+    const finish = () => { modal.classList.remove('is-open'); modal.setAttribute('aria-hidden', 'true'); activeState = null; modalHandle = null; };
+    modalHandle = layer.open(modal, { type: 'modal', surface: modal.querySelector('.resource-mode-dialog'), trigger,
+        beforeClose: () => !saving, onClose: finish, onDestroy: finish });
 }
 
 function renderField(field, attributes, canEdit) {
@@ -328,7 +332,7 @@ async function openAttributes(button) {
         ].join('');
         modal.querySelector('#resourceModeStats').innerHTML = renderStats(attributes.stats || {});
         modal.querySelector('#resourceModeSaveBtn').disabled = !canEdit;
-        openModal();
+        openModal(button);
     } catch (error) {
         showMessage(error.message || '属性加载失败', 'error');
     } finally {
@@ -354,7 +358,8 @@ function collectPayload(form) {
 
 async function saveAttributes(event) {
     event.preventDefault();
-    if (!activeState) return;
+    if (!activeState || saving) return;
+    saving = true;
     const saveBtn = modal.querySelector('#resourceModeSaveBtn');
     const originalText = saveBtn.textContent;
     saveBtn.disabled = true;
@@ -370,6 +375,7 @@ async function saveAttributes(event) {
     } catch (error) {
         showMessage(error.message || '属性保存失败', 'error');
     } finally {
+        saving = false;
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
     }

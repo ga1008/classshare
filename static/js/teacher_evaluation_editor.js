@@ -389,7 +389,9 @@ function ensureRewriteModal() {
     if (modal) return modal;
     modal = document.createElement('div');
     modal.id = 'te-ai-rewrite-modal';
-    modal.className = 'te-ai-modal-backdrop';
+    modal.className = 'lq-domain-region te-ai-modal-backdrop';
+    modal.dataset.lqComponent = 'layer';
+    modal.dataset.lqPresence = 'domain';
     modal.hidden = true;
     modal.innerHTML = `
         <section data-lq-component="layer" class="lq-domain-region te-ai-modal" data-lq-material="raised" role="dialog" aria-modal="true" aria-labelledby="te-ai-rewrite-title">

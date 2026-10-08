@@ -1,4 +1,5 @@
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 /** Conversation picker: authenticated server data, no HTML interpolation. */
 import { confirm as confirmGlass } from './lq/dialogs.js';
 
@@ -7,12 +8,21 @@ export function createConversationHistory(container, chat, notify) {
     panel.className = 'ai-agent-history-drawer ai-conversation-history';
     panel.dataset.lqComponent = 'drawer';
     panel.dataset.lqMaterial = 'raised';
+    panel.dataset.lqPresence = 'panel';
     panel.classList.add('lq-domain-raised');
     panel.hidden = true;
     panel.setAttribute('aria-label', '我的 AI 对话');
     panel.innerHTML = '<header><strong>我的对话</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass chat-btn" aria-label="收起对话历史">×</button></header><div class="ai-task-list" role="list"></div>';
     container.append(panel);
-    const close = () => { panel.hidden = true; };
+    let open = false, generation = 0;
+    const trigger = () => container.querySelector('#ai-chat-history-toggle');
+    const close = () => {
+        open = false; generation++;
+        if (panel.contains(document.activeElement)) trigger()?.focus({ preventScroll: true });
+        trigger()?.setAttribute('aria-expanded', 'false');
+        panel.inert = true;
+        return setOverlayOpen(panel, false).then(completed => { if (completed) panel.inert = false; });
+    };
     panel.querySelector('header button').addEventListener('click', close);
     panel.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.stopPropagation(); close(); container.querySelector('#ai-chat-history-toggle')?.focus(); }
@@ -20,13 +30,18 @@ export function createConversationHistory(container, chat, notify) {
     const api = {
         close,
         async toggle() {
-            if (!panel.hidden) return close();
-            panel.hidden = false;
+            if (open) return close();
+            open = true;
+            const ticket = ++generation;
+            panel.inert = false;
+            trigger()?.setAttribute('aria-expanded', 'true');
+            void setOverlayOpen(panel, true);
             const list = panel.querySelector('.ai-task-list');
             list.textContent = '正在读取…';
             try {
                 const response = await fetch('/api/ai/workspace/sessions', { credentials: 'same-origin' });
                 const data = await response.json();
+                if (!open || ticket !== generation) return;
                 if (!response.ok) throw new Error(data.detail || '读取对话失败');
                 list.replaceChildren();
                 for (const session of [...(data.sessions || []), ...(data.legacy_sessions || []).map(item => ({ ...item, legacy: true }))]) {
@@ -88,7 +103,7 @@ export function createConversationHistory(container, chat, notify) {
                 }
                 if (!list.childElementCount) list.textContent = '尚无对话，开始提问即可。';
                 panel.querySelector('header button').focus({ preventScroll: true });
-            } catch (error) { list.textContent = '暂时无法读取对话，请稍后重试。'; notify(error.message, 'error'); }
+            } catch (error) { if (open && ticket === generation) { list.textContent = '暂时无法读取对话，请稍后重试。'; notify(error.message, 'error'); } }
         },
     };
     return api;

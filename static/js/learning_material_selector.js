@@ -1,10 +1,12 @@
 import { apiFetch } from '/static/js/api.js';
 import { closeModal, escapeHtml, getFileIcon, openModal, showToast } from '/static/js/ui.js';
 import { ownClassroomMaterialFocus } from '/static/js/classroom_material_focus.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 const SELECTOR_MODAL_ID = 'learningMaterialSelectorModal';
 const SEARCH_DEBOUNCE_MS = 180;
 let releaseMaterialFocus = null;
+let selectorGeneration = 0;
 
 const state = {
     initialized: false,
@@ -315,8 +317,14 @@ function settle(result) {
     state.resolve = null;
     if (releaseMaterialFocus) {
         const modal = refs().modal;
-        modal.classList.remove('show'); modal.style.display = 'none';
-        releaseMaterialFocus(); releaseMaterialFocus = null;
+        const generation = selectorGeneration;
+        const release = releaseMaterialFocus;
+        void setOverlayOpen(modal, false).then((completed) => {
+            if (!completed || generation !== selectorGeneration) return;
+            modal.classList.remove('show'); modal.style.display = 'none';
+            release();
+            if (releaseMaterialFocus === release) releaseMaterialFocus = null;
+        });
     } else {
         closeModal(SELECTOR_MODAL_ID);
     }
@@ -475,9 +483,13 @@ export function initLearningMaterialSelector() {
             }
 
             resetState(options);
+            selectorGeneration += 1;
             const selection = new Promise((resolve) => { state.resolve = resolve; });
             if (options.manageClassroomFocus) {
+                releaseMaterialFocus?.(); releaseMaterialFocus = null;
+                dom.modal.dataset.lqPresence = 'fade';
                 dom.modal.style.display = 'flex'; dom.modal.classList.add('show');
+                void setOverlayOpen(dom.modal, true);
                 const dialog = dom.modal.querySelector('.modal-dialog');
                 dialog?.setAttribute('role', 'dialog');
                 dialog?.setAttribute('aria-modal', 'true');

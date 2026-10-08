@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { finishNativeDialogClose } from './lq/native-presence.js';
 import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-1';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
 import { SignaturePointControl } from './signature_point_workflow.js?v=material-workflows-20260908';
@@ -826,7 +827,7 @@ $('[data-afm-close-preview]')?.addEventListener('click', () => closeDialog(els.p
 // Escape closes a native <dialog> without running the close button handler, so the
 // preview iframe kept the previous document loaded. Release it on every close path.
 els.previewDialog?.addEventListener('close', () => {
-    els.previewFrame.src = 'about:blank';
+    void finishNativeDialogClose(els.previewDialog, () => { els.previewFrame.src = 'about:blank'; });
 });
 els.syncForm.addEventListener('submit', submitSync);
 els.editorForm.addEventListener('submit', saveEditor);

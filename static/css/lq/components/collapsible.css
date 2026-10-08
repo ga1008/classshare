@@ -7,6 +7,31 @@
 .lq-collapsible__summary[aria-disabled="true"] { cursor: default; }
 .lq-collapsible__summary[aria-disabled="true"] .lq-collapsible__indicator { visibility: hidden; }
 .lq-collapsible__content { min-width: 0; padding: 0 var(--ls-s-4) var(--ls-s-4); }
+/* Only declared application disclosures participate. Native open/toggle, form
+   and focus semantics remain browser-owned; document/Markdown details do not.
+   Older engines get entry only; discrete content-visibility enables exit and
+   interrupted reversal without animating height or delaying open changes. */
+@keyframes lq-disclosure-enter {
+    from { opacity: 0; translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / -4); }
+    to { opacity: 1; translate: 0 0; }
+}
+:is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) {
+    animation: lq-disclosure-enter var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out);
+}
+@supports (transition-behavior: allow-discrete) and selector(details::details-content) {
+    :is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))::details-content {
+        opacity: 0;
+        translate: 0 calc(var(--lq-motion-overlay-distance, 24px) / -4);
+        pointer-events: none;
+        transition: opacity var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out),
+            translate var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out),
+            content-visibility var(--lq-motion-control-duration, 180ms) allow-discrete;
+    }
+    :is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))[open]::details-content {
+        opacity: 1; translate: 0 0; pointer-events: auto;
+    }
+    :is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) { animation: none; }
+}
 .lq-collapsible__description { margin: 0 0 var(--ls-s-3); color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); overflow-wrap: anywhere; }
 .lq-collapsible__summary:focus-visible, .lq-filter-more:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
 .lq-filter-more { display: inline-flex; align-items: center; justify-content: center; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink-2)); font: inherit; font-size: var(--ls-t-sub); cursor: pointer; }
@@ -21,6 +46,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .lq-collapsible__indicator { transition: none; }
+    :is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))::details-content { transition: none !important; translate: none; }
+    :is(details.lq-collapsible, details:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) { animation: none !important; }
     [data-filter-overflow="scroll"] { scroll-behavior: auto; }
 }
 @media (forced-colors: active) {

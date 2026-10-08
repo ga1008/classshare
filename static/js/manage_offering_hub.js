@@ -3,6 +3,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
 import { LQ } from '/static/js/lq/index.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const listEl = document.getElementById('offeringHubList');
 const searchInput = document.getElementById('offeringHubSearchInput');
@@ -164,32 +165,30 @@ const drawerTitle = document.getElementById('offeringHubDrawerTitle');
 const drawerOpenFull = document.getElementById('offeringHubDrawerOpenFull');
 const drawerClose = document.getElementById('offeringHubDrawerClose');
 let drawerFrameLoads = 0;
-let drawerTrigger = null;
+const editDrawer = createDomainModal(drawerBackdrop, {
+    type: 'drawer', surface: drawerBackdrop?.querySelector('.offering-hub-drawer'), initialFocus: drawerClose,
+    onClose: () => {
+        document.body.classList.remove('offering-hub-drawer-open');
+        const dirty = drawerFrameLoads > 1;
+        if (drawerFrame) drawerFrame.src = 'about:blank';
+        // A successful embedded save reloads its document; refresh only after exit.
+        if (dirty) window.location.reload();
+    },
+});
 
 function openEditDrawer(href, title, trigger = null) {
     if (!drawerBackdrop || !drawerFrame || !href) return false;
     drawerFrameLoads = 0;
-    drawerTrigger = trigger || null;
     drawerFrame.src = `${href}${href.includes('?') ? '&' : '?'}embed=1`;
     if (drawerTitle) drawerTitle.textContent = title || '编辑课堂配置';
     if (drawerOpenFull) drawerOpenFull.href = href;
-    drawerBackdrop.hidden = false;
-    drawerBackdrop.setAttribute('aria-hidden', 'false');
     document.body.classList.add('offering-hub-drawer-open');
+    editDrawer.open({ trigger });
     return true;
 }
 
 function closeEditDrawer() {
-    if (!drawerBackdrop) return;
-    drawerBackdrop.hidden = true;
-    drawerBackdrop.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('offering-hub-drawer-open');
-    const dirty = drawerFrameLoads > 1;
-    if (drawerFrame) drawerFrame.src = 'about:blank';
-    if (drawerTrigger?.isConnected) drawerTrigger.focus();
-    drawerTrigger = null;
-    // iframe 内保存成功会自刷新（load 次数 > 1），此时刷新总台同步最新数据。
-    if (dirty) window.location.reload();
+    return editDrawer.close();
 }
 
 function bindDrawerEvents() {
@@ -200,11 +199,6 @@ function bindDrawerEvents() {
     drawerClose?.addEventListener('click', closeEditDrawer);
     drawerBackdrop?.addEventListener('click', (event) => {
         if (event.target === drawerBackdrop) closeEditDrawer();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-        if (drawerBackdrop && !drawerBackdrop.hidden) closeEditDrawer();
     });
 }
 

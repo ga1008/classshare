@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const source=fs.readFileSync('static/js/blog.js','utf8');
 const controller=source.slice(source.indexOf('class BlogCenter {'),source.lastIndexOf("document.addEventListener('DOMContentLoaded'"));
@@ -7,18 +8,25 @@ const controller=source.slice(source.indexOf('class BlogCenter {'),source.lastIn
 test('restored blog draft retains its original revision and a conflict preserves content until explicit review',async({page})=>{
   const requests:any[]=[];let accept=false;
   await page.route('http://blog-cas.test/**',async route=>{
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.startsWith('/static/')) {
+      const local = path.resolve('.' + pathname);
+      if (!local.startsWith(path.resolve('static') + path.sep)) throw new Error('Unexpected static path');
+      return route.fulfill({contentType:local.endsWith('.css')?'text/css':'text/javascript',body:fs.readFileSync(local)});
+    }
     if(route.request().method()==='PUT'){
       requests.push(route.request().postDataJSON());
       return route.fulfill({status:accept?200:409,json:accept?{status:'success',id:5}:{detail:'帖子已被更新，请重新读取并核对后再操作。'}});
     }
-    return route.fulfill({contentType:'text/html',body:`<main data-blog-center><section data-blog-composer-modal hidden>
+    return route.fulfill({contentType:'text/html',body:`<link rel="stylesheet" href="/static/css/tailwind-app.css"><main data-blog-center><section data-blog-composer-modal hidden><div class="blog-modal">
       <h2 data-blog-composer-title></h2><input data-blog-compose-title><textarea data-blog-compose-content></textarea><input data-blog-compose-tags>
       <input type="checkbox" data-blog-compose-comments><select data-blog-compose-visibility><option value="public">Public</option></select>
-      <select data-blog-compose-section><option value="general">General</option></select><select data-blog-compose-class></select></section></main>`});
+      <select data-blog-compose-section><option value="general">General</option></select><select data-blog-compose-class></select></div></section></main>`});
   });
   await page.goto('http://blog-cas.test/');
+  await page.evaluate(async()=>{(window as any).fixtureLayers=(await import('/static/js/lq/layer.js')).getLayerSystem;});
   await page.addScriptTag({content:`(()=>{const $=(q,root=document)=>root.querySelector(q);const $$=(q,root=document)=>[...root.querySelectorAll(q)];
-    const uniqueMediaItems=()=>[];const showToast=message=>window.messages.push(message);window.messages=[];
+    const getLayerSystem=window.fixtureLayers;const uniqueMediaItems=()=>[];const showToast=message=>window.messages.push(message);window.messages=[];
     const api={put:async(url,data)=>{const response=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const result=await response.json();if(!response.ok)throw new Error(result.detail);return result;}};
     ${controller}
     const app=Object.create(BlogCenter.prototype);app.shell=document.querySelector('main');app.userIdentity='student:7';app.composeUserMap=new Map();

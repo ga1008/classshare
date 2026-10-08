@@ -124,12 +124,12 @@
                     </div>
                 </div>
                 <div data-lq-component="menu" class="lq-domain-region tag-dropdown" id="tagDropdown">
-                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass tag-dropdown-btn" onclick="toggleTagDropdown(event)">
+                    <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass tag-dropdown-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="tagDropdownMenu" onclick="toggleTagDropdown(event)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
                         标签筛选
                         <span class="tag-dropdown-count" id="tagDropdownCount" style="display:none;">0</span>
                     </button>
-                    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tag-dropdown-menu" id="tagDropdownMenu">
+                    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tag-dropdown-menu" id="tagDropdownMenu" hidden>
                         <!-- Dynamic tag options injected by JS -->
                     </div>
                 </div>

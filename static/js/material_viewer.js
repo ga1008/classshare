@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { createDomainModal } from './lq/domain-modal.js';
 import { adoptDomainControl, adoptDomainContentSlot } from './lq/domain-controls.js';
 import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
@@ -28,12 +29,16 @@ const masteryCheckState = {
     modalEl: null,
     inlineEl: null,
     submitting: false,
-    returnFocusEl: null,
+    modalOwner: null,
 };
 
 let editorLoadingPromise = null;
 let editorLoaded = false;
 let editorEncoding = material.content_encoding || 'utf-8';
+const editorOwner = createDomainModal(editorBackdropEl, {
+    surface: editorBackdropEl?.querySelector('[role="dialog"]'),
+    initialFocus: () => editorTextareaEl,
+});
 
 function masterySkipStorageKey() {
     return `${MASTERY_SKIP_STORAGE_PREFIX}:${viewerContext.classOfferingId || '0'}:${viewerContext.materialId || material.id || '0'}`;
@@ -162,9 +167,6 @@ function ensureMasteryModal() {
     `;
     document.body.appendChild(modal);
     modal.querySelector('[data-mastery-form]')?.setAttribute('id', 'material-mastery-form');
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) closeMasteryModal({ skipped: true });
-    });
     modal.querySelector('[data-close-mastery-check]')?.addEventListener('click', () => closeMasteryModal({ skipped: true }));
     modal.querySelector('[data-skip-mastery-check]')?.addEventListener('click', () => closeMasteryModal({ skipped: true }));
     modal.querySelector('[data-mastery-form]')?.addEventListener('change', (event) => {
@@ -178,11 +180,13 @@ function ensureMasteryModal() {
             showToast(error.message || '提交心法检验失败', 'error');
         });
     });
-    document.addEventListener('keydown', (event) => {
-        if (!modal.hidden && event.key === 'Escape') {
-            event.preventDefault();
-            closeMasteryModal({ skipped: true });
-        }
+    masteryCheckState.modalOwner = createDomainModal(modal, {
+        surface: modal.querySelector('.material-mastery-dialog'),
+        initialFocus: () => modal.querySelector('input[type="radio"]') || modal.querySelector('.material-mastery-dialog'),
+        beforeClose: (reason) => {
+            if (['skip', 'escape', 'outside'].includes(reason)) sessionStorage.setItem(masterySkipStorageKey(), '1');
+        },
+        onClose: () => document.body.classList.remove('has-material-mastery-modal'),
     });
     masteryCheckState.modalEl = modal;
     return modal;
@@ -230,28 +234,13 @@ function renderMasteryModalQuestions() {
 function openMasteryModal() {
     if (!hasActionableMasteryCheck()) return;
     const modal = ensureMasteryModal();
-    masteryCheckState.returnFocusEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     renderMasteryModalQuestions();
-    modal.hidden = false;
-    modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-material-mastery-modal');
-    window.setTimeout(() => {
-        const firstInput = modal.querySelector('input[type="radio"]');
-        const dialog = modal.querySelector('.material-mastery-dialog');
-        (firstInput || dialog)?.focus();
-    }, 0);
+    masteryCheckState.modalOwner.open();
 }
 
 function closeMasteryModal(options = {}) {
-    const modal = masteryCheckState.modalEl;
-    if (!modal) return;
-    modal.hidden = true;
-    modal.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('has-material-mastery-modal');
-    if (options.skipped) {
-        sessionStorage.setItem(masterySkipStorageKey(), '1');
-    }
-    masteryCheckState.returnFocusEl?.focus?.();
+    return masteryCheckState.modalOwner?.close(options.skipped ? 'skip' : 'programmatic');
 }
 
 async function submitMasteryCheck() {
@@ -861,17 +850,12 @@ function updateEditorEncodingLabel() {
 
 function openSourceEditor() {
     if (!editorBackdropEl) return;
-    editorBackdropEl.hidden = false;
-    editorBackdropEl.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
-    window.requestAnimationFrame(() => editorTextareaEl?.focus());
+    editorOwner.open({ trigger: editSourceBtn });
 }
 
 function closeSourceEditor() {
     if (!editorBackdropEl) return;
-    editorBackdropEl.hidden = true;
-    editorBackdropEl.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
+    return editorOwner.close();
 }
 
 async function ensureSourceEditorContent() {
@@ -955,17 +939,6 @@ function bindSourceEditor() {
         handleSaveSourceEditor().catch((error) => {
             showToast(error.message || '保存源码失败', 'error');
         });
-    });
-    editorBackdropEl.addEventListener('click', (event) => {
-        if (event.target === editorBackdropEl) {
-            closeSourceEditor();
-        }
-    });
-    document.addEventListener('keydown', (event) => {
-        if (!editorBackdropEl.hidden && event.key === 'Escape') {
-            event.preventDefault();
-            closeSourceEditor();
-        }
     });
 }
 

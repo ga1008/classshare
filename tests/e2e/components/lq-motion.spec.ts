@@ -84,6 +84,70 @@ test('LQ motion modes inherit, can be customized, and switch off immediately dur
   expect(await page.locator('#loading .lq-spinner').evaluate(element => getComputedStyle(element).animationPlayState)).toBe('paused');
 });
 
+test('legacy button aliases and tabs retain the shared press, timing and disabled exclusions', async ({ page }) => {
+  await mount(page);
+  await page.locator('#scope').evaluate(scope => {
+    for (const [id, classes, attrs] of [
+      ['legacy', 'lq-btn lq-btn--glass btn', 'data-lq-component="button"'],
+      ['domain-control', 'lq-btn lq-btn--glass tsf-btn', 'data-lq-component="button"'],
+      ['tab-control', 'lq-tabs__tab', 'role="tab" aria-selected="false"'],
+      ['legacy-busy', 'lq-btn lq-btn--glass btn', 'aria-busy="true"'],
+      ['legacy-disabled', 'lq-btn lq-btn--glass btn', 'aria-disabled="true"'],
+    ]) scope.insertAdjacentHTML('beforeend', `<button id="${id}" class="${classes}" ${attrs}>测试控件</button>`);
+  });
+  for (const selector of ['#legacy', '#domain-control', '#tab-control']) {
+    expect(await page.locator(selector).evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0.18s, 0.18s, 0.18s');
+    await press(page, selector);
+    await expect.poll(() => matrix(page, selector)).toMatchObject({ x: 1.012, y: .965 });
+    expect(await page.locator(selector).evaluate(el => getComputedStyle(el).transitionDuration.split(',').every(value => value.trim() === '0.08s'))).toBe(true);
+    await page.mouse.up();
+    await page.mouse.move(0, 0);
+    await expect.poll(() => matrix(page, selector)).toEqual(neutral);
+  }
+  // The higher interaction priority must not flatten the variant's glass rim.
+  expect(await page.locator('#legacy').evaluate(el => getComputedStyle(el).getPropertyValue('--lq-ctrl-rim'))).toContain('inset');
+  for (const selector of ['#legacy-busy', '#legacy-disabled']) {
+    await press(page, selector);
+    expect(await matrix(page, selector)).toEqual(neutral);
+    await page.mouse.up();
+  }
+  await page.locator('html').evaluate(el => el.setAttribute('data-lq-motion', 'off'));
+  await press(page, '#legacy');
+  expect(await matrix(page, '#legacy')).toEqual(neutral);
+  await page.mouse.up();
+});
+
+test('declared native disclosures transition their content and leave document details untouched', async ({ page }) => {
+  await mount(page);
+  await page.locator('#stage').evaluate(stage => stage.insertAdjacentHTML('beforeend', `
+    <details id="disclosure"><summary class="lq-disclosure-trigger" data-lq-component="disclosure">展开详情</summary><div><button>内部按钮</button><p>本次内容</p></div></details>
+    <details id="document-details"><summary>文档内容</summary><div>用户文档原文</div></details>`));
+  const enter = await page.locator('#disclosure').evaluate(async element => {
+    const details = element as HTMLDetailsElement;
+    getComputedStyle(details, '::details-content').opacity;
+    details.open = true;
+    // Chromium exposes the actual ::details-content style while omitting its
+    // internal pseudo transitions from Element.getAnimations(). Sample frames.
+    const samples = [];
+    for (let frame = 0; frame < 18; frame++) {
+      await new Promise(requestAnimationFrame);
+      samples.push(Number(getComputedStyle(details, '::details-content').opacity));
+    }
+    return { open: details.open, samples, property: getComputedStyle(details, '::details-content').transitionProperty };
+  });
+  expect(enter.open).toBe(true);
+  expect(enter.samples.some(opacity => opacity > 0 && opacity < 1)).toBe(true);
+  await expect.poll(() => page.locator('#disclosure').evaluate(el => Number(getComputedStyle(el, '::details-content').opacity))).toBe(1);
+  expect(enter.property).not.toMatch(/height|width|filter|all/);
+  await page.locator('#disclosure').evaluate(async (details: HTMLDetailsElement) => { details.open = false; await new Promise(requestAnimationFrame); });
+  expect(await page.locator('#disclosure').evaluate(el => getComputedStyle(el, '::details-content').pointerEvents)).toBe('none');
+  await page.locator('#document-details').evaluate((details: HTMLDetailsElement) => { details.open = true; });
+  expect(await page.locator('#document-details').evaluate(el => el.getAnimations({ subtree: true }).length)).toBe(0);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.locator('#disclosure').evaluate((details: HTMLDetailsElement) => { details.open = true; });
+  expect(await page.locator('#disclosure').evaluate(el => el.getAnimations({ subtree: true }).length)).toBe(0);
+});
+
 test('LQ motion respects reduced motion changed during active input, even inside an expressive scope', async ({ page }) => {
   await mount(page);
   await page.locator('#scope').evaluate(element => element.setAttribute('data-lq-motion', 'expressive'));

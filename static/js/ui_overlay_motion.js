@@ -56,10 +56,12 @@ export function setOverlayOpen(element, open) {
     const onMotionChange = (event) => { if (event.matches) finish(true); };
     operations.set(element, operation);
 
-    if (open && element.hidden) {
+    if (open && (element.hidden || !element.dataset.uiOverlayState)) {
         element.dataset.uiOverlayState = 'closed';
         element.hidden = false;
-        // Establish the closed first frame before transitioning from display:none.
+        // Native showModal() and legacy hosts can reveal the root before this
+        // call. They still need a closed first frame on their first entrance.
+        // Never reset an in-flight reversal: its current rendered frame owns it.
         view.getComputedStyle(element).opacity;
         element.querySelectorAll('[data-ui-overlay-surface]').forEach((surface) => {
             view.getComputedStyle(surface).opacity;

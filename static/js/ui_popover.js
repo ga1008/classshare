@@ -1,4 +1,5 @@
 import { findPopoverParent, getPopoverPosition } from './ui_popover_geometry.js';
+import { cancelOverlayMotion, setOverlayOpen } from './ui_overlay_motion.js';
 export { findPopoverParent, getPopoverPosition } from './ui_popover_geometry.js';
 
 /** Configurable shared popover lifecycle; no editor or whiteboard state. */
@@ -8,15 +9,9 @@ export function createPopoverSystem({ prefix = 'ls' } = {}) {
  * 形态：popover（小面板）| panel（列表）| dialog（居中 + 遮罩）| sheet（移动端贴底）
  */
 
-const OPEN_MS = 160;
-const CLOSE_MS = 120;
 const VIEWPORT_MARGIN = 12;
 const ANCHOR_GAP = 8;
 const SHEET_BREAKPOINT = 760;
-
-function reducedMotion() {
-    return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-}
 
 class PopoverManager {
     constructor() {
@@ -119,7 +114,7 @@ const popoverManager = new PopoverManager();
 function createPopover(options) {
     const panel = options.panel;
     const kind = options.kind || 'popover';
-    panel.classList.add(prefix + '-popover', `${prefix}-popover--${kind}`);
+    panel.classList.add('lq-domain-popover', prefix + '-popover', `${prefix}-popover--${kind}`);
     panel.hidden = true;
     panel.setAttribute('role', options.role || 'dialog');
     if (options.label) panel.setAttribute('aria-label', options.label);
@@ -127,9 +122,11 @@ function createPopover(options) {
     panel.tabIndex = -1;
 
     let backdrop = null;
-    let closeTimer = null;
     let isOpen = false;
     let lastFocus = null;
+    let generation = 0;
+    let destroyed = false;
+    let closing = null;
 
     const api = {
         panel,
@@ -188,62 +185,70 @@ function createPopover(options) {
     }
 
     api.open = () => {
-        if (isOpen) return;
-        window.clearTimeout(closeTimer);
+        if (isOpen || destroyed) return;
+        generation++;
         isOpen = true;
-        lastFocus = document.activeElement;
+        if (!panel.contains(document.activeElement)) lastFocus = document.activeElement;
         const layer = popoverManager.layer();
-        if (options.modal) {
+        if (options.modal && !backdrop) {
             backdrop = document.createElement('div');
             backdrop.className = prefix + '-backdrop';
+            backdrop.hidden = true;
             backdrop.addEventListener('pointerdown', (event) => {
                 if (event.target === backdrop) api.close('backdrop');
             });
             layer.appendChild(backdrop);
             panel.classList.add(prefix + '-popover--modal');
         }
-        layer.appendChild(panel);
-        panel.hidden = false;
-        panel.classList.remove('is-open');
+        if (panel.parentNode !== layer) layer.appendChild(panel);
         panel.addEventListener('keydown', trapTab);
         api.anchor?.setAttribute('aria-expanded', 'true');
         popoverManager.open(api);
+        panel.classList.add('is-open');
+        backdrop?.classList.add('is-open');
+        void setOverlayOpen(panel, true);
+        if (backdrop) void setOverlayOpen(backdrop, true);
         position();
         options.onOpen?.();
-        const reveal = () => {
-            if (!isOpen) return;
-            panel.classList.add('is-open');
-            backdrop?.classList.add('is-open');
-            focusFirst();
-        };
-        if (reducedMotion()) reveal();
-        else window.requestAnimationFrame(() => window.requestAnimationFrame(reveal));
+        if (isOpen && !destroyed) focusFirst();
     };
 
     api.close = (reason = 'manual') => {
-        if (!isOpen) return;
+        if (!isOpen) return closing;
+        const ticket = ++generation;
         isOpen = false;
         panel.classList.remove('is-open');
         backdrop?.classList.remove('is-open');
         panel.removeEventListener('keydown', trapTab);
         api.anchor?.setAttribute('aria-expanded', 'false');
         popoverManager.released(api);
-        const finish = () => {
-            panel.hidden = true;
+        const leaving = [setOverlayOpen(panel, false)];
+        if (backdrop) leaving.push(setOverlayOpen(backdrop, false));
+        closing = Promise.all(leaving).then(completed => {
+            if (destroyed || isOpen || ticket !== generation || completed.some(value => !value)) return false;
             backdrop?.remove();
             backdrop = null;
             if ((!popoverManager.isOpen() || popoverManager.current === api.parent) && reason !== 'outside' && lastFocus && typeof lastFocus.focus === 'function' && document.contains(lastFocus)) {
                 lastFocus.focus({ preventScroll: true });
             }
-        };
-        closeTimer = window.setTimeout(finish, reducedMotion() ? 0 : CLOSE_MS);
+            options.onAfterClose?.(reason);
+            return true;
+        });
+        // Business cancellation is immediate; DOM teardown waits for the
+        // actual shared presence operation instead of a guessed 120ms delay.
         options.onClose?.(reason);
+        return closing;
     };
 
     api.toggle = () => (isOpen ? api.close('toggle') : api.open());
     api.reposition = position;
     api.destroy = () => {
+        if (destroyed) return;
         api.close('destroy');
+        destroyed = true; generation++;
+        cancelOverlayMotion(panel);
+        if (backdrop) cancelOverlayMotion(backdrop);
+        backdrop?.remove(); backdrop = null;
         panel.remove();
     };
     return api;

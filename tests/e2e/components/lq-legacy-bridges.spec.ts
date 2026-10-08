@@ -95,13 +95,14 @@ test.describe('LQ nested process-material compatibility', () => {
     expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
   });
 
-  test('standalone legacy close remains synchronous and force bypasses its existing veto', async ({ page }) => {
-    const result = await page.evaluate(() => {
+  test('standalone legacy force bypasses veto and finishes presence before one cleanup', async ({ page }) => {
+    const result = await page.evaluate(async () => {
       const w = window as any;
       document.getElementById('outside')!.focus();
       const dialog = w.processModal.openProcessMaterialModal('独立旧弹层', '<input autofocus>', { canClose: () => false, onClose: () => w.processClosed++ });
-      dialog.close(); const retained = dialog.overlay.isConnected;
-      dialog.close({ force: true }); dialog.close({ force: true });
+      await dialog.close(); const retained = dialog.overlay.isConnected;
+      const first = dialog.close({ force: true }); const second = dialog.close({ force: true });
+      await Promise.all([first, second]);
       return { retained, removed: !dialog.overlay.isConnected, closed: w.processClosed, focus: document.activeElement?.id, top: w.layer.top() };
     });
     expect(result).toEqual({ retained: true, removed: true, closed: 1, focus: 'outside', top: null });
@@ -114,7 +115,7 @@ test.describe('LQ nested process-material compatibility', () => {
       const w = window as any;
       w.allowProcessClose = false;
       const pending = w.processChild.close();
-      w.processChild.close({ force: true });
+      await w.processChild.close({ force: true });
       return { pending: await pending, connected: w.processChild.overlay.isConnected,
         closed: w.processClosed, focus: document.activeElement?.id, top: w.layer.top()?.root.id };
     });

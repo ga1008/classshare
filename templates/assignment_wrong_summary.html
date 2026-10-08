@@ -450,7 +450,6 @@
         place-items: center;
         padding: 18px;
         background: rgba(15, 23, 42, 0.46);
-        animation: wrong-summary-fade-in 0.18s ease both;
     }
 
     .knowledge-detail-dialog {
@@ -462,7 +461,6 @@
         border-radius: 12px;
         background: #fff;
         box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
-        animation: wrong-summary-dialog-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     }
 
     .knowledge-detail-dialog__head {
@@ -738,7 +736,6 @@
     }
 
     .wrong-summary-tab-panel {
-        animation: wrong-summary-panel-in 0.18s ease both;
     }
 
     .wrong-summary-section {
@@ -1252,7 +1249,6 @@
         place-items: center;
         padding: 18px;
         background: rgba(15, 23, 42, 0.42);
-        animation: wrong-summary-fade-in 0.18s ease both;
     }
 
     .wrong-answer-dialog {
@@ -1264,7 +1260,6 @@
         border-radius: 10px;
         background: #fff;
         box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
-        animation: wrong-summary-dialog-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
     }
 
     .wrong-answer-dialog__head {
@@ -1411,21 +1406,6 @@
         to {
             transform: rotate(360deg);
         }
-    }
-
-    @keyframes wrong-summary-fade-in {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    @keyframes wrong-summary-dialog-in {
-        from { opacity: 0; transform: translateY(8px) scale(0.985); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-
-    @keyframes wrong-summary-panel-in {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes wrong-summary-target-pulse {
@@ -1980,6 +1960,7 @@
 {% include "partials/markdown_assets.html" %}
 <script type="module">
     import { renderMarkdownHtml } from '{{ asset_url('js/grading_feedback.js') }}';
+    import { createDomainModal } from '{{ asset_url('js/lq/domain-modal.js') }}';
 
     const ASSIGNMENT_ID = {{ assignment.id | string | tojson }};
     const INITIAL_AI_ACTIVE = {{ summary.ai_status.is_active | tojson }};
@@ -2164,6 +2145,7 @@
         }
         const tabs = Array.from(root.querySelectorAll('[role="tab"][data-tab-target]'));
         const panels = Array.from(root.querySelectorAll('[data-tab-panel]'));
+        panels.forEach((panel) => { panel.dataset.lqPanelPresence = ''; });
         if (!tabs.length || !panels.length) {
             return null;
         }
@@ -2223,14 +2205,8 @@
             return;
         }
         let lastTrigger = null;
-
-        const closeModal = () => {
-            modal.hidden = true;
-            document.body.style.removeProperty('overflow');
-            if (lastTrigger) {
-                lastTrigger.focus();
-            }
-        };
+        const owner = createDomainModal(modal, { surface: modal.querySelector('.wrong-answer-dialog'), initialFocus: closeButton });
+        const closeModal = () => owner.close('button');
 
         const currentReturnTarget = (trigger) => {
             const anchor = trigger.closest('.wrong-question-card, .hard-question-card')?.id || '';
@@ -2307,9 +2283,7 @@
                     listNode.appendChild(item);
                 });
             }
-            modal.hidden = false;
-            document.body.style.overflow = 'hidden';
-            closeButton.focus();
+            owner.open({ trigger: lastTrigger });
         };
 
         document.addEventListener('click', (event) => {
@@ -2318,16 +2292,8 @@
                 openModal(trigger);
                 return;
             }
-            if (event.target === modal) {
-                closeModal();
-            }
         });
         closeButton.addEventListener('click', closeModal);
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !modal.hidden) {
-                closeModal();
-            }
-        });
     }
 
     function readKnowledgeAnalysis() {
@@ -2578,20 +2544,10 @@
         const openModal = (trigger) => {
             lastTrigger = trigger || null;
             build();
-            modal.hidden = false;
-            document.body.style.overflow = 'hidden';
-            if (closeButton) {
-                closeButton.focus();
-            }
+            owner.open({ trigger: lastTrigger });
         };
-
-        const closeModal = () => {
-            modal.hidden = true;
-            document.body.style.removeProperty('overflow');
-            if (lastTrigger && typeof lastTrigger.focus === 'function') {
-                lastTrigger.focus();
-            }
-        };
+        const owner = createDomainModal(modal, { surface: modal.querySelector('.knowledge-detail-dialog'), initialFocus: closeButton });
+        const closeModal = () => owner.close('button');
 
         triggers.forEach((trigger) => {
             trigger.addEventListener('click', (event) => {
@@ -2609,16 +2565,6 @@
         if (closeButton) {
             closeButton.addEventListener('click', closeModal);
         }
-        modal.addEventListener('click', (event) => {
-            if (event.target === modal) {
-                closeModal();
-            }
-        });
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !modal.hidden) {
-                closeModal();
-            }
-        });
     }
 
     async function pollAiStatus() {

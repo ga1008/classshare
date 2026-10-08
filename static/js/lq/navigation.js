@@ -135,7 +135,6 @@ export function tabs(root, options = {}) {
     if (!entries.some(enabled)) throw new TypeError('Tabs require an enabled view');
     let current = null, destroyed = false, generation = 0, resizeFrame = 0;
     const animations = new Set();
-    const motion = win.matchMedia('(prefers-reduced-motion: reduce)');
     const thumbProperties = ['--lq-thumb-x', '--lq-thumb-y', '--lq-thumb-w', '--lq-thumb-h'];
     const originalThumb = thumbProperties.map(key => [key, list.style.getPropertyValue(key), list.style.getPropertyPriority(key)]);
     const originalMarker = list.getAttribute('data-lq-thumb');
@@ -191,13 +190,14 @@ export function tabs(root, options = {}) {
             } catch { /* Sandboxed histories still permit local view changes. */ }
         }
         let presence = Promise.resolve();
-        if (previous && !motion.matches && next.panel.animate) {
-            const token = win.getComputedStyle(root).getPropertyValue('--ls-dur-fast').trim();
-            const time = parseFloat(token) * (token.endsWith('s') && !token.endsWith('ms') ? 1000 : 1);
-            const duration = Number.isFinite(time) && time >= 0 ? time : 120;
-            const animation = next.panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: 'ease-out' });
-            animations.add(animation);
-            presence = animation.finished.catch(() => {}).finally(() => { animations.delete(animation); });
+        if (previous && next.panel.getAnimations) {
+            // CSS owns presence and live off/reduced preferences. Observe only
+            // this panel's finite entrance, never a spinner in its content.
+            const entering = next.panel.getAnimations().filter(animation =>
+                Number.isFinite(animation.effect?.getComputedTiming().endTime));
+            entering.forEach(animation => animations.add(animation));
+            presence = Promise.allSettled(entering.map(animation => animation.finished))
+                .finally(() => entering.forEach(animation => animations.delete(animation)));
         }
         if (notify && previous) presence.then(() => {
             if (destroyed || ticket !== generation) return;
@@ -246,8 +246,6 @@ export function tabs(root, options = {}) {
     const observer = win.ResizeObserver ? new win.ResizeObserver(resized) : null;
     observer?.observe(list); entries.forEach(entry => observer?.observe(entry.tab));
     if (!observer) win.addEventListener('resize', resized);
-    const motionChanged = event => { if (event.matches) cancelPresence(); };
-    motion.addEventListener('change', motionChanged);
     const api = {
         get value() { return current?.key; }, select,
         refresh() {
@@ -273,7 +271,6 @@ export function tabs(root, options = {}) {
             win.removeEventListener('hashchange', historyChanged); win.removeEventListener('popstate', historyChanged);
             win.removeEventListener('resize', resized); observer?.disconnect();
             if (resizeFrame) win.cancelAnimationFrame(resizeFrame);
-            motion.removeEventListener('change', motionChanged);
             for (const [key, value, priority] of originalThumb) list.style.setProperty(key, value, priority);
             restoreAttribute('data-lq-thumb', originalMarker);
             if (fallbackFocus) restoreAttribute('tabindex', originalListTabindex);

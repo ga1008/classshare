@@ -36,6 +36,18 @@
 .lq-input[type="search"]::-webkit-search-cancel-button { appearance: none; }
 .lq-textarea { min-height: calc(var(--ls-s-12) * 2); resize: vertical; }
 .lq-select { cursor: pointer; }
+/* Focus is immediately identifiable by the outline from Button's shared
+   control block. Its rim/halo then settles with the same timing, without
+   moving text, selection or the native caret. Errors retain their own tint. */
+:is(.lq-input, .lq-textarea, .lq-select)[aria-invalid="true"] {
+    --lq-field-focus-border: hsl(var(--ls-tone-danger-fg));
+    --lq-field-focus-glow: var(--ls-tone-danger-soft);
+}
+:root :is(.lq-input, .lq-textarea, .lq-select):focus-visible:not(:disabled) {
+    --lq-control-border: var(--lq-field-focus-border, hsl(var(--ls-ring)));
+    --lq-ctrl-glow: 0 0 0 3px hsl(var(--lq-field-focus-glow, var(--ls-primary-soft)));
+    border-color: var(--lq-control-border);
+}
 /* Native popup options have their own OS surface, outside the scene carrier. */
 .lq-select option { --lq-control-background: hsl(var(--ls-surface-1)); background: var(--lq-control-background); --lq-control-color: hsl(var(--ls-ink)); color: var(--lq-control-color); }
 .lq-input[readonly], .lq-textarea[readonly] { --lq-control-background: transparent; background: var(--lq-control-background); --lq-control-border: transparent; border-color: var(--lq-control-border); border-bottom-color: hsl(var(--ls-input)); border-bottom-style: dashed; border-radius: 0; }
@@ -96,6 +108,10 @@
     .lq-switch::after { transition: none; }
 }
 @media (forced-colors: active) {
+    :root :is(.lq-input, .lq-textarea, .lq-select):focus-visible:not(:disabled) {
+        --lq-field-focus-border: Highlight;
+        --lq-ctrl-glow: 0 0 transparent;
+    }
     .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-error-summary, .lq-range__value { --lq-control-background: Canvas; background: var(--lq-control-background); --lq-control-color: CanvasText; color: var(--lq-control-color); --lq-control-border: CanvasText; border-color: var(--lq-control-border); box-shadow: none; }
     .lq-checkbox, .lq-radio, .lq-range, .lq-field__clear { box-shadow: none; }
     .lq-field__error, .lq-field__required, .lq-field__help, .lq-field__count, .lq-form-actions__hint, .lq-form-section__description { color: CanvasText; }

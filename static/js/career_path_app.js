@@ -1,3 +1,5 @@
+import { getLayerSystem } from './lq/layer.js';
+
 /* Career workspace: quiz, explainable directions, optional graph and background task status. */
 (function () {
   'use strict';
@@ -31,7 +33,7 @@
   var Client = window.CareerTools;
   var activePhase = '', quizActive = false, quizVersion = '', draftRevision = 0;
   var saveQueue = Promise.resolve(), saveError = null, submitting = false, questionLocked = false;
-  var panelTimer = null, modalTimer = null, modalReturnFocus = null, detailReturnFocus = null;
+  var panelTimer = null, modalHandle = null, detailReturnFocus = null;
   var detailStageScrollTop = null;
   var viewMode = 'list', renderedNetwork = '', lastTaskMarkup = '', browseBase = false, visibleNodes = [];
 
@@ -104,23 +106,27 @@
   // 平台弹窗（全屏浮层，懒创建一次）。
   var modal = null;
   function ensureModal() {
+    if (modalHandle) { modalHandle.destroy(); modalHandle = null; }
     if (modal) return modal;
     modal = document.createElement('div');
     modal.className = 'lq-domain-region career-modal';
     modal.dataset.lqComponent = 'layer';
+    modal.dataset.lqPresence = 'domain';
     modal.id = 'career-modal';
     modal.hidden = true;
     modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
-    root.appendChild(modal);
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal && !modal.hidden) closeModal(); });
+    getLayerSystem(document).getPortalHost().appendChild(modal);
     return modal;
   }
+  function openModal() {
+    var layer = getLayerSystem(document);
+    modal.classList.add('show');
+    var finish = function () { modal.classList.remove('show'); modal.innerHTML = ''; modalHandle = null; };
+    modalHandle = layer.open(modal, { type: 'modal', surface: modal.querySelector('.career-modal__panel'),
+      trigger: document.activeElement, onClose: finish, onDestroy: finish });
+  }
   function closeModal() {
-    if (!modal) return;
-    modal.classList.remove('show');
-    clearTimeout(modalTimer);
-    modalTimer = setTimeout(function () { if (modal) { modal.hidden = true; modal.innerHTML = ''; }
-      if (modalReturnFocus && modalReturnFocus.isConnected) modalReturnFocus.focus(); }, 260);
+    if (modalHandle) return getLayerSystem(document).close(modalHandle, 'button');
   }
 
   // ---------- 引导：拉取状态 ----------
@@ -606,14 +612,14 @@
   });
   document.getElementById('career-job-postings').addEventListener('click', openJobPostings);
   function openJobPostings() {
-    ensureModal(); clearTimeout(modalTimer); modalReturnFocus = document.activeElement;
+    ensureModal();
     modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true" aria-label="真实在招职位"><header class="career-modal__head"><h3>真实在招职位</h3><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>' +
       '<div class="career-modal__body"><p>仅显示带来源、未过期的职位记录。职业方向建议不代表正在招聘；应聘前请打开来源核对最新状态。</p>' +
       '<form class="career-posting-filters career-preferences-form"><label>岗位关键词<input data-lq-component="input" class="lq-input" name="keyword" maxlength="80" placeholder="例如：实习、运营"></label>' +
       '<label>城市<input data-lq-component="input" class="lq-input" name="city" maxlength="50" placeholder="默认使用职业偏好中的城市"></label><label>条件核对<select data-lq-component="select" class="lq-select" name="qualification"><option value="all">所有有效职位</option><option value="no_known_gaps">没有已知条件冲突</option><option value="confirmed">各项条件有资料支持</option></select></label><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" type="submit">筛选职位</button></form>' +
       '<div id="career-postings-results" aria-live="polite"></div><nav id="career-postings-pages" aria-label="职位分页"></nav>' +
       '<p>有自己找到的岗位描述？<a href="/resume/job-targets">导入个人岗位描述并分析</a></p></div></div>';
-    modal.hidden = false; modal.classList.add('show'); modal.querySelector('.career-modal__close').onclick = closeModal;
+    openModal(); modal.querySelector('.career-modal__close').onclick = closeModal;
     modal.querySelector('input').focus();
     var form = modal.querySelector('form'), resultBox = modal.querySelector('#career-postings-results'), pager = modal.querySelector('#career-postings-pages');
     var page = 1, requestId = 0;
@@ -657,7 +663,7 @@
     form.onsubmit = function (event) { event.preventDefault(); page = 1; refresh(); }; refresh();
   }
   function openPreferences() {
-    ensureModal(); clearTimeout(modalTimer); modalReturnFocus = document.activeElement;
+    ensureModal();
     var preferences = (STATE && STATE.preferences) || {};
     modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true" aria-label="职业偏好"><header class="career-modal__head"><h3>职业偏好</h3><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>' +
       '<form id="career-preferences-form" class="career-modal__body career-preferences-form"><p>填写你当前最在意的方向和约束，推荐会结合这些信息。可以随时调整。</p>' +
@@ -667,7 +673,7 @@
       '<label>工作方式<select data-lq-component="select" class="lq-select" name="work_mode"><option value="flexible">均可考虑</option><option value="onsite">现场办公</option><option value="remote">远程工作</option><option value="hybrid">混合办公</option></select></label>' +
       '<label>其他偏好<textarea data-lq-component="textarea" class="lq-textarea" name="notes" maxlength="500" placeholder="例如：优先实习、希望跨专业探索">' + esc(preferences.notes || '') + '</textarea></label>' +
       '<p role="status" id="career-preferences-status"></p><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass career-btn" type="submit">保存偏好</button></form></div>';
-    modal.hidden = false; modal.classList.add('show'); modal.querySelector('.career-modal__close').onclick = closeModal;
+    openModal(); modal.querySelector('.career-modal__close').onclick = closeModal;
     modal.querySelector('[name=goal]').value = preferences.goal || 'explore';
     modal.querySelector('[name=work_mode]').value = preferences.work_mode || 'flexible';
     modal.querySelector('input').focus();
@@ -684,7 +690,7 @@
     };
   }
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') { if (modal && !modal.hidden) closeModal(); else closePanels(); }
+    if (event.key === 'Escape' && !event.defaultPrevented && !getLayerSystem(document).top()) closePanels();
     if (event.key !== 'Tab' || !modal || modal.hidden) return;
     var focusable = Array.from(modal.querySelectorAll('button, a[href], input, textarea, select, [tabindex="0"]')).filter(function (node) { return !node.disabled; });
     if (!focusable.length) return;
@@ -882,7 +888,6 @@
   // ---------- 平台一键直达弹窗（按关键字归集） ----------
   function openPlatformModal(data, kws, focusKw, s) {
     ensureModal();
-    clearTimeout(modalTimer); modalReturnFocus = document.activeElement;
     var tr = (s && s.test_result) || {};
     var loc = tr.location_pref || '';
     var locLabel = tr.location_label || '';
@@ -929,8 +934,7 @@
       + '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass career-modal__close" aria-label="关闭">✕</button></header>'
       + '<div class="career-modal__body">' + resumeCta + groups + '</div></div>';
 
-    modal.hidden = false;
-    requestAnimationFrame(function () { modal.classList.add('show'); });
+    openModal();
     modal.querySelector('.career-modal__close').addEventListener('click', closeModal);
     modal.querySelector('.career-modal__close').focus();
     var focus = modal.querySelector('.career-kwgroup.is-focus');

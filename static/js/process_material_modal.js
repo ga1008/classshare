@@ -25,42 +25,21 @@ function pickInitialFocusTarget(overlay) {
     return focusable.find((element) => footer?.contains(element)) || focusable[0] || null;
 }
 
-function trapModalFocus(event, overlay) {
-    if (event.key !== 'Tab') return;
-    const focusable = getFocusableElements(overlay);
-    if (!focusable.length) {
-        event.preventDefault();
-        return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || !overlay.contains(active))) {
-        event.preventDefault();
-        last.focus({ preventScroll: true });
-        return;
-    }
-    if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus({ preventScroll: true });
-    }
-}
-
 export function openProcessMaterialModal(
     title,
     bodyHtml,
     { footerHtml = '', onMount, onClose, wide = false, closeAttr = 'data-pm-close', closeSelector = DEFAULT_CLOSE_SELECTOR, canClose } = {},
 ) {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // A legacy child opened from a coordinated modal must join that same stack.
-    // Standalone process-material dialogs retain their existing owner until
-    // their page family migrates; never run two focus/Escape controllers.
+    // All consumers share one stack, including standalone process dialogs.
     const layer = getLayerSystem(document);
     const parentLayer = layer.top();
     let layerHandle = null;
     const overlay = document.createElement('div');
     overlay.className = 'lq-domain-region lp-modal-overlay';
     overlay.dataset.lqComponent = 'layer';
+    overlay.dataset.lqPresence = 'domain';
+    overlay.hidden = true;
     overlay.innerHTML = `
         <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised lp-modal${wide ? ' lp-modal--wide' : ''}" role="dialog" aria-modal="true">
             <header class="lp-modal__head">
@@ -70,17 +49,12 @@ export function openProcessMaterialModal(
             <div class="lp-modal__body">${bodyHtml}</div>
             <footer class="lp-modal__foot">${footerHtml}</footer>
         </div>`;
-    (parentLayer ? layer.getPortalHost({ trigger: previousFocus, parentLayer }) : document.body).appendChild(overlay);
+    layer.getPortalHost({ trigger: previousFocus, parentLayer }).appendChild(overlay);
 
-    let closed = false;
-    function onKeydown(e) {
-        if (e.key === 'Escape') close();
-        if (e.key === 'Tab') trapModalFocus(e, overlay);
-    }
+    let closed = false, forceClose = false;
     function finish() {
         if (closed) return;
         closed = true;
-        document.removeEventListener('keydown', onKeydown);
         overlay.remove();
         if (typeof onClose === 'function') onClose();
         if (!layerHandle && previousFocus && document.contains(previousFocus)) {
@@ -91,17 +65,13 @@ export function openProcessMaterialModal(
         if (closed) return;
         const force = Boolean(options?.force);
         if (layerHandle) {
-            if (force) {
-                // Destroy also invalidates an already pending, vetoed close.
-                // Updating beforeClose alone would reuse that old promise.
-                layerHandle.destroy();
-                if (layer.top() === parentLayer && previousFocus?.isConnected
-                    && !previousFocus.closest('[hidden],[inert],[aria-hidden="true"]')) {
-                    previousFocus.focus({ preventScroll: true });
-                }
-                return;
-            }
-            return layer.close(layerHandle, 'programmatic');
+            forceClose ||= force;
+            // A successful submit bypasses its busy guard, but still exits.
+            // A close already checking an old veto must settle before retrying.
+            return layer.close(layerHandle, force ? 'confirmed' : 'programmatic').then((completed) => {
+                if (!completed && force && !closed) return layer.close(layerHandle, 'confirmed');
+                return completed;
+            });
         }
         if (!force && typeof canClose === 'function' && canClose() === false) return;
         finish();
@@ -110,31 +80,25 @@ export function openProcessMaterialModal(
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay || e.target.closest(closeSelector)) close();
     });
-    if (!parentLayer) document.addEventListener('keydown', onKeydown);
     if (onMount) onMount(overlay, close);
     if (closed) return { overlay, close };
-    if (parentLayer) {
-        if (!overlay.isConnected || !parentLayer.root.isConnected
-            || ['closed', 'destroyed'].includes(parentLayer.state)) {
-            finish();
-            return { overlay, close };
-        }
-        try {
-            layerHandle = layer.open(overlay, {
-                type: 'modal', surface: overlay.querySelector('.lp-modal'),
-                trigger: previousFocus, parentLayer,
-                initialFocus: () => pickInitialFocusTarget(overlay),
-                beforeClose: () => typeof canClose !== 'function' || canClose() !== false,
-                onClose: finish, onDestroy: finish,
-            });
-        } catch (error) {
-            finish();
-            throw error;
-        }
+    if (!overlay.isConnected || (parentLayer && (!parentLayer.root.isConnected
+        || ['closed', 'destroyed'].includes(parentLayer.state)))) {
+        finish();
         return { overlay, close };
     }
-    const focusTarget = pickInitialFocusTarget(overlay);
-    if (focusTarget instanceof HTMLElement) focusTarget.focus({ preventScroll: true });
+    try {
+        layerHandle = layer.open(overlay, {
+            type: 'modal', surface: overlay.querySelector('.lp-modal'),
+            trigger: previousFocus, parentLayer,
+            initialFocus: () => pickInitialFocusTarget(overlay),
+            beforeClose: () => forceClose || typeof canClose !== 'function' || canClose() !== false,
+            onClose: finish, onDestroy: finish,
+        });
+    } catch (error) {
+        finish();
+        throw error;
+    }
     return { overlay, close };
 }
 
@@ -160,11 +124,11 @@ export function openProcessMaterialConfirm({
             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn lp-btn--ghost lq-btn--ghost" data-pm-confirm-cancel>${escapeHtml(cancelText)}</button>
             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lp-btn ${confirmClass}" data-pm-confirm-ok autofocus>${escapeHtml(confirmText)}</button>`;
 
-        const settle = (value, close) => {
+        const settle = async (value, close) => {
             if (settled) return;
             settled = true;
+            await close();
             resolve(value);
-            close();
         };
 
         openProcessMaterialModal(title, body, {

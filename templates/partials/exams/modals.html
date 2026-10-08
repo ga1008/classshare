@@ -105,7 +105,7 @@
 </div>
 
 <!-- Tag Popover -->
-<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tag-popover" id="tagPopover">
+<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tag-popover" id="tagPopover" hidden>
     <div class="tag-popover-header">
         <span class="tag-popover-title">管理标签</span>
         <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass tag-popover-close" onclick="closeTagPopover()">
@@ -117,7 +117,7 @@
             <!-- Dynamic tag pills -->
         </div>
         <div class="tag-popover-input-row">
-            <input data-lq-component="input" class="lq-input" type="text" id="tagPopoverInput" placeholder="输入新标签..." maxlength="10" onkeydown="onTagInputKeydown(event)">
+            <input data-lq-component="input" class="lq-input" type="text" id="tagPopoverInput" data-autofocus placeholder="输入新标签..." maxlength="10" onkeydown="onTagInputKeydown(event)">
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass tag-popover-add-btn" id="tagPopoverAddBtn" onclick="addTagFromPopover()">添加</button>
         </div>
         <div class="tag-popover-hint">Enter 添加，单个 ≤10 字，最多 20 个</div>

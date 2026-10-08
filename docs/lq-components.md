@@ -452,3 +452,28 @@ Jinja `lq_nav_menu` 与 `lq_menu` 支持 `{% call(item) ... %}` 作者槽位。�
 
 `resolveMenuActionTrigger(node)` 为已关闭菜单中的后续 Popover 提供稳定锚点：若 node 属于被 `bindMenu` 管理且已关闭的菜单，返回该菜单触发按钮；否则原样返回。说明内容仍从原 menuitem 读取，几何/焦点使用稳定锚点，避免对隐藏条目测量。NavMenu 的 `align` 参数真实传入 bottom-start/end 定位；同层菜单互斥，关闭过程不能从已获焦点的另一个控件夺走焦点。
 
+### 过程动效与旧入口适配（2026-10-08）
+
+所有动效消费 `--lq-motion-*`；标准模式保留按压、回弹和进退场，`quiet/off` 与系统 reduce 优先级不变。关闭只能在实际过渡完成后隐藏、移除 DOM 或清空预览。不要新增固定 160/200/280ms 关闭计时器，不要为动画延迟原生关闭事件、表单保存或取消信号。
+
+已有业务弹层用 `createDomainModal` 显式接入同一个 LQ.layer：
+
+```js
+import { createDomainModal } from './lq/domain-modal.js';
+const owner = createDomainModal(root, {
+    surface: root.querySelector('[role="dialog"]'),
+    initialFocus: () => input,
+    beforeClose: () => !saving,
+    onClose: () => releasePreview(), // 实际退出完成后执行
+});
+owner.open({ trigger });
+await owner.close('cancel'); // false 表示被否决或被重新打开中止
+owner.destroy(); // 同步释放 LQ 资源并归还原 DOM 位置
+```
+
+该适配器只负责显式注册、portal 和清理回调，不增加全页面扫描或第二套焦点/滚动所有者。`data-lq-presence="domain"` 的根不透明、无材质，唯一 scrim 和显式 `data-ui-overlay-surface` 子节点分别过渡；内部输入与草稿节点不重建。独立业务已有所有者时，可用 `data-lq-presence="panel|fade"` 配合 `setOverlayOpen`，返回 Promise 只在当前代际完成后执行清理。标签页和原生 details 保留即时语义与焦点，共享 CSS 提供显示过程。
+
+原生 `<dialog>` 保留 `showModal()/close()` 的浏览器合同。只有临时 DOM 或 iframe 清理需要 `finishNativeDialogClose(dialog, cleanup)`；重新打开会使旧清理失效。DomainPopover 的 `onClose` 仍立即取消业务，`onAfterClose` 才清理内容。截图会话取消继续立即停止屏幕流、清空敏感画布；不延迟隐私清理。
+
+验收须使用不可变正式资源图逐帧观测中间状态，同时覆盖快速反向、嵌套、关闭否决、内容保留、移动端及 off/reduce。源码标记或最终截图不能替代过程验收。详见 [过程验收记录](lq-motion-process-acceptance-2026-10-08.md)。
+

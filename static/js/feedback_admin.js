@@ -126,6 +126,8 @@ class FeedbackAdmin {
         const target = this.cards.get(id);
         if (!target) return;
         const opening = forceOpen || target.body.hidden;
+        target.body.dataset.lqPanelPresence = '';
+        target.preview.dataset.lqPanelPresence = '';
         target.body.hidden = !opening;
         target.preview.hidden = opening;
         target.toggle.textContent = opening ? '收起对话' : '查看对话并回复';

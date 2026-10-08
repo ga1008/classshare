@@ -1,6 +1,14 @@
+import { cancelOverlayMotion, setOverlayOpen } from './ui_overlay_motion.js';
+
 /** Modeless window geometry/lifecycle shared by every authenticated page. */
 export function createAssistantWindow({ modal, container, fab, state, onOpen, onClose }) {
-    let gesture = null, gestureFrame = null, pendingPointer = null, closeAnimation = null;
+    let gesture = null, gestureFrame = null, pendingPointer = null;
+    // Keep the first closed frame unrendered until the shared presence owner
+    // reveals it. The legacy display:none alone can be cleared before priming.
+    modal.hidden = true;
+    modal.dataset.lqPresence = 'domain';
+    container.setAttribute('data-ui-overlay-surface', '');
+    let generation = 0;
     let maximized = false;
     let open = false;
     const abort = new AbortController();
@@ -43,16 +51,13 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     }
     function show({ focus = true } = {}) {
         stop();
-        const entering = !open;
-        closeAnimation?.cancel(); closeAnimation = null;
+        generation++;
         open = true;
         modal.style.display = 'block'; modal.setAttribute('aria-hidden', 'false');
         container.inert = false;
         fab.style.display = 'none';
         if (maximized) maximize(true); else apply(state.value.rect);
-        if (entering && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            container.animate([{ opacity: 0, transform: 'translateY(12px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.7,.3,1)' });
-        }
+        void setOverlayOpen(modal, true);
         state.patch({ open: true });
         window.dispatchEvent(new CustomEvent('ai-workspace:opened'));
         onOpen?.({ focus });
@@ -60,22 +65,23 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     function close({ persist = true } = {}) {
         if (!open) return;
         stop();
+        const returnFocus = container.contains(document.activeElement);
+        const ticket = ++generation;
         open = false;
         if (persist) state.patch({ open: false });
         onClose?.();
         container.inert = true;
         const finish = () => {
-            if (open) return;
+            if (open || ticket !== generation) return;
             modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true');
             fab.style.display = ''; container.inert = false;
             maximize(false);
+            if (returnFocus && [document.body, document.documentElement, modal].includes(document.activeElement)) {
+                fab.focus({ preventScroll: true });
+            }
             window.dispatchEvent(new CustomEvent('ai-workspace:closed'));
         };
-        if (matchMedia('(prefers-reduced-motion: reduce)').matches) finish();
-        else {
-            closeAnimation = container.animate([{ opacity: 1, transform: 'translateY(0) scale(1)' }, { opacity: 0, transform: 'translateY(8px) scale(.98)' }], { duration: 120, easing: 'ease-in', fill: 'none' });
-            closeAnimation.finished.then(finish).catch(() => {});
-        }
+        void setOverlayOpen(modal, false).then(completed => { if (completed) finish(); });
     }
     function start(event) {
         const handle = event.target.closest('.resizer');
@@ -146,7 +152,7 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
     container.addEventListener('keydown', event => {
         const blocking = [...document.querySelectorAll('[aria-modal="true"],dialog[open]')].some(node => node !== container && node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
         if (event.key === 'Escape' && !event.defaultPrevented && !blocking) {
-            event.preventDefault(); event.stopPropagation(); close(); fab.focus({ preventScroll: true });
+            event.preventDefault(); event.stopPropagation(); close();
         }
     }, opts);
     return {
@@ -156,6 +162,6 @@ export function createAssistantWindow({ modal, container, fab, state, onOpen, on
         restore() { if (state.value.open) show({ focus: false }); },
         suspend() { modal.style.visibility = 'hidden'; fab.style.visibility = 'hidden'; },
         resume() { modal.style.visibility = ''; fab.style.visibility = ''; },
-        destroy() { abort.abort(); closeAnimation?.cancel(); stop(); },
+        destroy() { abort.abort(); generation++; cancelOverlayMotion(modal); stop(); },
     };
 }

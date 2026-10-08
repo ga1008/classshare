@@ -671,6 +671,7 @@ function init(boot) {
 
     function renderDrawer() {
         if (!refs.drawer) return;
+        refs.drawer.dataset.lqPanelPresence = '';
         const selection = state.selectedKey ? resolveSelection(state.selectedKey) : null;
         refs.layout?.classList.toggle('has-drawer', Boolean(selection));
         if (!selection) { refs.drawer.hidden = true; refs.drawer.innerHTML = ''; state.form = null; return; }

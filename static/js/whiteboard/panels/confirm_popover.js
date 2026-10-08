@@ -50,7 +50,7 @@ export function openConfirm({ anchor, title, body = '', confirmLabel = '确定',
         placement,
         label: title,
         role: 'alertdialog',
-        onClose: () => window.setTimeout(() => panel.remove(), 200),
+        onAfterClose: () => panel.remove(),
     });
     popover.open();
     return popover;

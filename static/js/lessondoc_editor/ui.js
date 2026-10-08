@@ -58,7 +58,7 @@ export function panelSection(title,{open=true}={}) {const root=el('details','lde
 export function dialog(title,build,{wide=false,onClose}={}) {
     const panel=el('section','lde-dialog'+(wide?' lde-dialog-wide':'')),head=el('header','lde-dialog-head');head.append(el('h2','',title));panel.append(head);
     const body=el('div','lde-dialog-body'),foot=el('footer','lde-dialog-foot');panel.append(body,foot);
-    const api=popovers.createPopover({panel,kind:'dialog',modal:true,preserveOnResize:true,label:title,onClose:()=>{onClose?.();setTimeout(()=>panel.remove(),140);}});
+    const api=popovers.createPopover({panel,kind:'dialog',modal:true,preserveOnResize:true,label:title,onClose:()=>onClose?.(),onAfterClose:()=>panel.remove()});
     head.append(button('关闭',()=>api.close(),'lde-icon-button'));build({body,foot,close:()=>api.close(),panel});api.open();return api;
 }
 export function downloadJson(document,name='学习文档草稿.json') {

@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { finishNativeDialogClose } from './lq/native-presence.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
 import { SignatureMultiSelect } from './signature_multi_select.js';
 
@@ -119,7 +120,7 @@ export class MaterialSelectionPanel{
         const dialog=document.createElement('dialog');dialog.className='msw-dialog lq-glass lq-domain-raised';dialog.dataset.lqComponent='dialog';dialog.dataset.lqMaterial='raised';
         dialog.innerHTML=`<header class="msw-dialog__head"><h3>以下文档内容待补充</h3></header><div class="msw-dialog__body"><p class="msw-note">继续后，这些文档会按当前内容一同打包。</p><ul>${titles.map(title=>`<li>${esc(title)}</li>`).join('')}</ul></div><footer class="msw-dialog__foot"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button" data-cancel>取消</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass msw-button msw-primary" data-continue>继续打包全部文档</button></footer>`;
         document.body.append(dialog);dialog.showModal();
-        return new Promise(resolve=>{let proceed=false;dialog.querySelector('[data-continue]').onclick=()=>{proceed=true;dialog.close();};dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{dialog.remove();resolve(proceed);},{once:true});});
+        return new Promise(resolve=>{let proceed=false;dialog.querySelector('[data-continue]').onclick=()=>{proceed=true;dialog.close();};dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{void finishNativeDialogClose(dialog,()=>dialog.remove());resolve(proceed);},{once:true});});
     }
     async watchBundle(id){
         try{

@@ -8,6 +8,7 @@
  *   - or cancel the group requirement.
  */
 import { showToast, escapeHtml } from '/static/js/ui.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const API = {
   get: (id) => `/api/assignments/${encodeURIComponent(id)}/group-config`,
@@ -15,18 +16,11 @@ const API = {
 };
 
 let overlayEl = null;
+let modalOwner = null;
+let loadGeneration = 0;
 
 function closeModal() {
-  if (overlayEl) {
-    overlayEl.remove();
-    overlayEl = null;
-    document.removeEventListener('keydown', onKeydown);
-    document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
-  }
-}
-
-function onKeydown(event) {
-  if (event.key === 'Escape') closeModal();
+  return modalOwner?.close() || Promise.resolve(false);
 }
 
 async function postConfig(assignmentId, body) {
@@ -55,7 +49,7 @@ function schemeRow(scheme, boundSchemeId) {
     </label>`;
 }
 
-function render(assignmentId, title, data) {
+function render(assignmentId, title, data, trigger) {
   const binding = data.binding;
   const schemes = data.schemes || [];
   const boundSchemeId = binding ? binding.scheme_id : null;
@@ -117,8 +111,17 @@ function render(assignmentId, title, data) {
         </div>
       </footer>
     </div>`;
-  document.body.appendChild(overlayEl);
-  document.addEventListener('keydown', onKeydown);
+  const overlay = overlayEl;
+  modalOwner = createDomainModal(overlay, {
+    surface: overlay.querySelector('.ga-modal'),
+    onClose: () => {
+      overlay.remove();
+      if (overlayEl === overlay) { overlayEl = null; modalOwner = null; }
+      document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
+    },
+  });
+  modalOwner.open({ trigger });
+  const owner = modalOwner;
 
   overlayEl.addEventListener('click', (event) => {
     if (event.target === overlayEl) closeModal();
@@ -137,7 +140,7 @@ function render(assignmentId, title, data) {
       try {
         await postConfig(assignmentId, { action: 'unbind' });
         showToast('已取消按小组完成', 'success');
-        closeModal();
+        await owner.close();
       } catch (err) {
         showToast(err.message, 'error');
         unbindBtn.disabled = false;
@@ -172,7 +175,7 @@ function render(assignmentId, title, data) {
     try {
       await postConfig(assignmentId, body);
       showToast('已设置为按小组完成', 'success');
-      closeModal();
+      await owner.close();
     } catch (err) {
       showToast(err.message, 'error');
       saveBtn.disabled = false;
@@ -184,18 +187,21 @@ async function openModal(btn) {
   const assignmentId = btn.getAttribute('data-assignment-id');
   const title = btn.getAttribute('data-assignment-title') || '';
   if (!assignmentId) return;
-  closeModal();
+  const generation = ++loadGeneration;
+  await closeModal();
   try {
     const response = await fetch(API.get(assignmentId));
     const data = await response.json().catch(() => ({}));
+    if (generation !== loadGeneration) return;
     if (!response.ok) throw new Error(data.detail || data.message || '加载失败');
     if (data.supported === false) {
       showToast(data.message || '该作业未关联教学班，无法按小组完成', 'warning');
       document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
       return;
     }
-    render(assignmentId, title, data);
+    render(assignmentId, title, data, btn);
   } catch (err) {
+    if (generation !== loadGeneration) return;
     showToast(err.message || '加载分组配置失败', 'error');
     document.dispatchEvent(new CustomEvent('classroom:group-config-closed'));
   }

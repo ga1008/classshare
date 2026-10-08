@@ -428,6 +428,7 @@
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
     <script type="module">
         import { showToast } from '{{ asset_url('js/ui.js') }}';
+        import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         import { renderMarkdownHtml } from '{{ asset_url('js/grading_feedback.js') }}';
         import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
         import { enhancePromptPoolInput, recordPromptForInput } from '{{ asset_url("js/prompt_pool.js") }}';
@@ -910,6 +911,32 @@
             return validateScoringCompleteness().length === 0;
         }
 
+        const editorModalOwners = new Map();
+        function editorModalOwner(id, className = 'active') {
+            if (editorModalOwners.has(id)) return editorModalOwners.get(id);
+            const modal = document.getElementById(id);
+            const owner = createDomainModal(modal, {
+                surface: modal?.querySelector('.modal-box, .exam-paper-preview-dialog'),
+                onCloseRequested: () => {
+                    if (id === 'ai-exam-modal') {
+                        if (aiTaskInterval) clearInterval(aiTaskInterval);
+                        aiTaskInterval = null; currentTaskId = null;
+                    }
+                },
+                onClose: () => {
+                    modal.classList.remove(className); modal.style.display = 'none';
+                    if (id === 'scoring-modal') scoringSaveAfterApply = false;
+                },
+            });
+            editorModalOwners.set(id, owner);
+            return owner;
+        }
+        function showEditorModal(id, className = 'active') {
+            const modal = document.getElementById(id);
+            if (!modal) return;
+            modal.style.display = 'flex'; modal.classList.add(className);
+            editorModalOwner(id, className).open();
+        }
         window.openScoringModal = function(saveAfterApply = false) {
             if (!getAllEditorQuestions().length) {
                 showToast('请先添加题目，再设置评分标准', 'warning');
@@ -924,16 +951,13 @@
             showScoringWarning('');
             const applyBtn = document.getElementById('apply-scoring-btn');
             if (applyBtn) applyBtn.textContent = scoringSaveAfterApply ? '应用并保存试卷' : '应用评分标准';
-            modal.style.display = 'flex';
-            setTimeout(() => modal.classList.add('active'), 10);
+            showEditorModal('scoring-modal');
         };
 
         window.closeScoringModal = function() {
             const modal = document.getElementById('scoring-modal');
             if (!modal) return;
-            modal.classList.remove('active');
-            setTimeout(() => modal.style.display = 'none', 200);
-            scoringSaveAfterApply = false;
+            return editorModalOwner('scoring-modal').close();
         };
 
         window.distributeScoringPoints = function() {
@@ -1435,14 +1459,10 @@
             const modal = document.getElementById('paper-preview-modal');
             if (!modal) return;
             if (isOpen) {
-                modal.style.display = 'flex';
-                requestAnimationFrame(() => modal.classList.add('is-open'));
+                showEditorModal('paper-preview-modal', 'is-open');
                 return;
             }
-            modal.classList.remove('is-open');
-            setTimeout(() => {
-                if (!modal.classList.contains('is-open')) modal.style.display = 'none';
-            }, 180);
+            return editorModalOwner('paper-preview-modal', 'is-open').close();
         }
 
         window.closePaperPreviewModal = function() {
@@ -1469,12 +1489,6 @@
             if (event.target === event.currentTarget) setPaperPreviewModalOpen(false);
         });
 
-        document.addEventListener('keydown', (event) => {
-            const modal = document.getElementById('paper-preview-modal');
-            if (event.key === 'Escape' && modal?.classList.contains('is-open')) {
-                setPaperPreviewModalOpen(false);
-            }
-        });
 
         // Utility
         function escapeHtml(s) {
@@ -1722,8 +1736,7 @@
         window.openNativeJsonImportModal = function() {
             const modal = document.getElementById('json-exam-modal');
             if (!modal) return;
-            modal.style.display = 'flex';
-            setTimeout(() => modal.classList.add('active'), 10);
+            showEditorModal('json-exam-modal');
             nativeJsonMaterial = null;
             setNativeJsonFile(null);
             const fileInput = document.getElementById('json-exam-file');
@@ -1734,8 +1747,7 @@
         window.closeNativeJsonImportModal = function() {
             const modal = document.getElementById('json-exam-modal');
             if (!modal) return;
-            modal.classList.remove('active');
-            setTimeout(() => modal.style.display = 'none', 200);
+            return editorModalOwner('json-exam-modal').close();
         };
 
         window.chooseNativeJsonFile = function() {
@@ -1795,8 +1807,7 @@
             window.closeNativeJsonImportModal();
             const modal = document.getElementById('ai-exam-modal');
             if (modal) {
-                modal.style.display = 'flex';
-                setTimeout(() => modal.classList.add('active'), 10);
+                showEditorModal('ai-exam-modal');
                 // 重置表单
                 document.getElementById('ai-exam-form').reset();
                 document.getElementById('ai-exam-title').value = document.getElementById('exam-title').value || '';
@@ -1823,8 +1834,7 @@
         window.closeAIGenerateModal = function() {
             const modal = document.getElementById('ai-exam-modal');
             if (modal) {
-                modal.classList.remove('active');
-                setTimeout(() => modal.style.display = 'none', 200);
+                void editorModalOwner('ai-exam-modal').close();
                 // 停止轮询
                 if (aiTaskInterval) {
                     clearInterval(aiTaskInterval);

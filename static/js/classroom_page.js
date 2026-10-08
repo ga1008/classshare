@@ -986,6 +986,7 @@ function initTeachingTimeline() {
     let detailTransitionTimer = 0;
     let sessionMaterialAssistant = null;
     let activeModalSession = null;
+    let sessionDetailLayer = null;
     let sessionOpenOrigin = null;
     let materialRequest = null;
     let materialChoices = null;
@@ -1175,18 +1176,31 @@ function initTeachingTimeline() {
             document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'session-detail', origin: options.origin || sessionOpenOrigin, resume: Boolean(options.resume) } }));
             return;
         }
-        sessionModal.hidden = false;
+        const layers = getLayerSystem(document);
+        sessionModal.dataset.lqPresence = 'domain';
         sessionModal.classList.add('is-open');
         document.body.classList.add('has-teaching-session-modal');
-        sessionModalCloseBtn?.focus({ preventScroll: true });
+        layers.getPortalHost({ trigger: sessionOpenOrigin }).appendChild(sessionModal);
+        const finish = () => {
+            sessionDetailLayer = null;
+            sessionModal.classList.remove('is-open');
+            document.body.classList.remove('has-teaching-session-modal');
+            activeModalSession = null;
+        };
+        sessionDetailLayer = layers.open(sessionModal, {
+            type: 'modal', surface: sessionModal.querySelector('.teaching-session-modal'),
+            trigger: sessionOpenOrigin, initialFocus: sessionModalCloseBtn,
+            onClose: finish, onDestroy: finish,
+        });
     };
     const closeSessionModal = () => {
         if (!sessionModal) return;
-        if (compactWorkspace) document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { back: true } }));
-        sessionModal.classList.remove('is-open');
-        document.body.classList.remove('has-teaching-session-modal');
-        sessionModal.hidden = true;
-        activeModalSession = null;
+        if (compactWorkspace) {
+            document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { back: true } }));
+            activeModalSession = null;
+            return;
+        }
+        return sessionDetailLayer ? getLayerSystem(document).close(sessionDetailLayer, 'programmatic') : Promise.resolve(false);
     };
     const getMaxScrollLeft = () => Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
     const clampScrollLeft = (value) => Math.max(0, Math.min(getMaxScrollLeft(), Number(value) || 0));
@@ -2118,11 +2132,6 @@ function initTeachingTimeline() {
             closeSessionModal();
         }
     });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && sessionModal && !sessionModal.hidden) {
-            closeSessionModal();
-        }
-    });
     sessionModalOpenHomeBtn?.addEventListener('click', () => {
         if (!hasHomeMaterial()) {
             showToast(isTeacher ? '课程首页尚未配置材料' : '教师尚未配置课程首页', 'warning');
@@ -2261,6 +2270,7 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
 
     const addBtn = document.getElementById('semesterTodoAddBtn');
     const modal = document.getElementById('semesterTodoModal');
+    let semesterTodoLayer = null;
     const modalClose = document.getElementById('semesterTodoModalClose');
     const modalCancel = document.getElementById('semesterTodoModalCancel');
     const form = document.getElementById('semesterTodoForm');
@@ -2543,23 +2553,26 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
         setDateRole('due');
         pickerMonth = new Date();
         renderPicker();
-        modal.hidden = false;
+        const layers = getLayerSystem(document);
+        modal.dataset.lqPresence = 'domain';
         modal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('has-semester-todo-modal');
-        window.requestAnimationFrame(() => {
-            modal.classList.add('is-open');
-            form.elements.title?.focus();
+        modal.classList.add('is-open');
+        layers.getPortalHost({ trigger: addBtn }).appendChild(modal);
+        const finish = () => {
+            semesterTodoLayer = null;
+            modal.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('has-semester-todo-modal');
+        };
+        semesterTodoLayer = layers.open(modal, {
+            type: 'modal', surface: modal.querySelector('.semester-todo-modal-card, .semester-todo-modal, [role="dialog"]') || form,
+            trigger: addBtn, initialFocus: form.elements.title, onClose: finish, onDestroy: finish,
         });
     };
 
     const closeModal = () => {
-        if (!modal) return;
-        modal.classList.remove('is-open');
-        modal.setAttribute('aria-hidden', 'true');
-        window.setTimeout(() => {
-            modal.hidden = true;
-            document.body.classList.remove('has-semester-todo-modal');
-        }, 180);
+        return semesterTodoLayer ? getLayerSystem(document).close(semesterTodoLayer, 'programmatic') : Promise.resolve(false);
     };
 
     weeksEl.addEventListener('click', async (event) => {
@@ -2667,9 +2680,6 @@ function initSemesterTodoBoard(config = window.APP_CONFIG || {}) {
     modalCancel?.addEventListener('click', closeModal);
     modal?.addEventListener('click', (event) => {
         if (event.target === modal) closeModal();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && modal && !modal.hidden) closeModal();
     });
 
     renderOverview(overview);

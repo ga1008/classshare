@@ -1,5 +1,6 @@
 ﻿import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const parseJsonScript = (id, fallback) => {
     const el = document.getElementById(id);
@@ -662,12 +663,22 @@ function selectAttachment(index) {
     refs.attachView.scrollTop = 0;
 }
 
-// ---------------- bespoke-overlay focus bookkeeping ----------------
-// None of the five overlays on this page go through LQ.layer, so none of them
-// returned focus on close: dismissing one dropped the caret onto <body> and
-// sent a keyboard user back to the top of the document. Capturing whatever was
-// focused at open time fixes that without touching any existing call site.
+// Capture a trigger before asynchronous data loading; LQ owns focus and exit.
 const overlayTriggers = new Map();
+let readerGeneration = 0;
+const readerModal = createDomainModal(refs.reader, {
+    surface: refs.reader?.querySelector('.gw-reader-panel'),
+    onCloseRequested: () => { readerGeneration += 1; },
+    onClose: () => { state.readerId = null; state.allParts = []; state.attachParts = []; },
+});
+const attachModal = createDomainModal(refs.attachModal, { surface: refs.attachModal?.querySelector('[role="dialog"]') });
+const fullModal = createDomainModal(refs.fullModal, {
+    surface: refs.fullModal?.querySelector('[role="dialog"]'), onClose: () => { state.fullIndex = null; },
+});
+const followModal = createDomainModal(refs.followModal, { surface: refs.followModal?.querySelector('.gw-follow-modal') });
+const scopeModal = createDomainModal(refs.scopeModal, {
+    surface: refs.scopeModal?.querySelector('.gw-scope-modal'), onClose: () => { state.editingId = null; },
+});
 
 function rememberOverlayTrigger(overlay) {
     if (!overlay || !overlay.hidden) return;
@@ -675,10 +686,10 @@ function rememberOverlayTrigger(overlay) {
     overlayTriggers.set(overlay, active instanceof HTMLElement && active !== document.body ? active : null);
 }
 
-function restoreOverlayTrigger(overlay) {
+function takeOverlayTrigger(overlay) {
     const trigger = overlayTriggers.get(overlay);
     overlayTriggers.delete(overlay);
-    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+    return trigger;
 }
 
 function openAttachModal(index = 0) {
@@ -689,14 +700,12 @@ function openAttachModal(index = 0) {
             <span class="gw-attach-ext">${escapeHtml(part.ext || '文件')}</span>
             <span>${escapeHtml(part.name || '附件')}</span>
         </button>`).join('');
-    refs.attachModal.hidden = false;
+    attachModal.open({ trigger: takeOverlayTrigger(refs.attachModal) });
     selectAttachment(Math.min(Math.max(index, 0), state.attachParts.length - 1));
 }
 
 function closeAttachModal() {
-    if (!refs.attachModal || refs.attachModal.hidden) return;
-    refs.attachModal.hidden = true;
-    restoreOverlayTrigger(refs.attachModal);
+    return attachModal.close();
 }
 
 // ---------------- fullscreen part viewer + parsed-text editor ----------------
@@ -720,14 +729,11 @@ function openFullscreen(index) {
     } else {
         refs.fullDownload.hidden = true;
     }
-    refs.fullModal.hidden = false;
+    fullModal.open({ trigger: takeOverlayTrigger(refs.fullModal) });
 }
 
 function closeFullscreen() {
-    if (!refs.fullModal || refs.fullModal.hidden) return;
-    refs.fullModal.hidden = true;
-    state.fullIndex = null;
-    restoreOverlayTrigger(refs.fullModal);
+    return fullModal.close();
 }
 
 async function saveFullscreenText() {
@@ -755,34 +761,28 @@ async function saveFullscreenText() {
 }
 
 async function openReader(id, refresh = false) {
+    const generation = ++readerGeneration;
     state.readerId = id;
     state.allParts = [];
     state.attachParts = [];
     closeFullscreen();
     closeAttachModal();
     rememberOverlayTrigger(refs.reader);
-    refs.reader.hidden = false;
+    readerModal.open({ trigger: takeOverlayTrigger(refs.reader) });
     refs.readerSn.textContent = '';
     refs.readerTitle.textContent = '公文详情';
     refs.readerMeta.innerHTML = '';
     refs.readerBody.innerHTML = '<div class="gw-reader-loading">正在解析公文内容…</div>';
     try {
         const result = await apiFetch(`/api/manage/gongwen/documents/${id}/reader${refresh ? '?refresh=1' : ''}`);
-        renderReader(result.document);
+        if (generation === readerGeneration) renderReader(result.document);
     } catch (error) {
-        refs.readerBody.innerHTML = `<div class="gw-reader-unsupported">${escapeHtml(error.message || '读取公文失败。')}</div>`;
+        if (generation === readerGeneration) refs.readerBody.innerHTML = `<div class="gw-reader-unsupported">${escapeHtml(error.message || '读取公文失败。')}</div>`;
     }
 }
 
 function closeReader() {
-    closeFullscreen();
-    closeAttachModal();
-    if (refs.reader.hidden) return;
-    refs.reader.hidden = true;
-    restoreOverlayTrigger(refs.reader);
-    state.readerId = null;
-    state.allParts = [];
-    state.attachParts = [];
+    return readerModal.close();
 }
 
 // ---------------- 关注设置（关注项目 + 关注关键字） ----------------
@@ -848,7 +848,7 @@ async function openFollowModal() {
         state.followAutoKeywords = [...(settings.auto_keywords || [])];
         renderFollowKeywordTags();
         refs.followKeywordInput.value = '';
-        refs.followModal.hidden = false;
+        followModal.open({ trigger: takeOverlayTrigger(refs.followModal) });
     } catch (error) {
         showMessage(error.message || '读取关注设置失败。', 'error');
     } finally {
@@ -857,9 +857,7 @@ async function openFollowModal() {
 }
 
 function closeFollowModal() {
-    if (!refs.followModal || refs.followModal.hidden) return;
-    refs.followModal.hidden = true;
-    restoreOverlayTrigger(refs.followModal);
+    return followModal.close();
 }
 
 async function saveFollowSettings() {
@@ -936,14 +934,11 @@ async function openScopeEditor(doc) {
     applyLevelVisibility(level);
     fillOpennessOptions(level, doc.openness || 'school');
     rememberOverlayTrigger(refs.scopeModal);
-    refs.scopeModal.hidden = false;
+    scopeModal.open({ trigger: takeOverlayTrigger(refs.scopeModal) });
 }
 
 function closeScopeEditor() {
-    if (!refs.scopeModal || refs.scopeModal.hidden) return;
-    refs.scopeModal.hidden = true;
-    state.editingId = null;
-    restoreOverlayTrigger(refs.scopeModal);
+    return scopeModal.close();
 }
 
 async function saveScope() {
@@ -1096,19 +1091,6 @@ refs.attachModal?.addEventListener('click', (event) => { if (event.target === re
 refs.fullClose?.addEventListener('click', closeFullscreen);
 refs.fullSave?.addEventListener('click', saveFullscreenText);
 refs.fullModal?.addEventListener('click', (event) => { if (event.target === refs.fullModal) closeFullscreen(); });
-document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    // A stacked LQ.layer dialog owns Escape first; closing one of our backdrops
-    // out from under it would destroy its return-focus target.
-    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-    if (refs.fullModal && !refs.fullModal.hidden) { closeFullscreen(); return; }
-    if (refs.attachModal && !refs.attachModal.hidden) { closeAttachModal(); return; }
-    // The scope editor was missing from this chain entirely: it was the one
-    // overlay on the page that Escape could not dismiss.
-    if (refs.scopeModal && !refs.scopeModal.hidden) { closeScopeEditor(); return; }
-    if (refs.followModal && !refs.followModal.hidden) { closeFollowModal(); return; }
-    if (refs.reader && !refs.reader.hidden) closeReader();
-});
 
 refs.scopeLevel?.addEventListener('change', () => {
     const level = refs.scopeLevel.value;

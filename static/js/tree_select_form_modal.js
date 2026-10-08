@@ -21,6 +21,7 @@
  */
 
 import { escapeHtml } from './ui.js';
+import { getLayerSystem } from './lq/layer.js';
 import { enhancePromptPoolInput, recordPromptForInput, isPromptShareEnabled } from './prompt_pool.js';
 
 function safeText(value, fallback = '') {
@@ -57,8 +58,13 @@ export function openTreeSelectFormModal(config) {
     } = config || {};
 
     const overlay = document.createElement('div');
+    const layer = getLayerSystem(document);
+    const trigger = document.activeElement;
+    let layerHandle = null, disposed = false, forceClose = false;
     overlay.className = 'lq-domain-region lp-modal-overlay tsf-overlay';
     overlay.dataset.lqComponent = 'layer';
+    overlay.dataset.lqPresence = 'domain';
+    overlay.hidden = true;
     overlay.innerHTML = `
         <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised tsf-modal" role="dialog" aria-modal="true" aria-labelledby="tsf-modal-title">
             <header class="tsf-modal__head">
@@ -79,7 +85,7 @@ export function openTreeSelectFormModal(config) {
                 <section data-lq-component="surface" class="lq-surface tsf-panel" data-tsf-panel></section>
             </div>
         </div>`;
-    document.body.appendChild(overlay);
+    layer.getPortalHost({ trigger }).appendChild(overlay);
 
     const treeEl = overlay.querySelector('[data-tsf-tree]');
     const panelEl = overlay.querySelector('[data-tsf-panel]');
@@ -96,20 +102,24 @@ export function openTreeSelectFormModal(config) {
     };
 
     const close = ({ force = false } = {}) => {
-        if (state.submitting && !force) return;
-        overlay.remove();
-        document.removeEventListener('keydown', onKey);
+        if (disposed) return Promise.resolve(true);
+        forceClose ||= force;
+        return layer.close(layerHandle, force ? 'confirmed' : 'programmatic').then((completed) => {
+            if (!completed && force && !disposed) return layer.close(layerHandle, 'confirmed');
+            return completed;
+        });
     };
 
-    function onKey(e) {
-        if (e.key === 'Escape') close();
+    function finish() {
+        if (disposed) return;
+        disposed = true;
+        state.token += 1;
+        overlay.remove();
     }
 
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay || e.target.closest('[data-tsf-close]')) close();
     });
-    document.addEventListener('keydown', onKey);
-    closeBtn?.focus({ preventScroll: true });
 
     // Seed default expansion: first branch at each level, plus explicit expanded nodes.
     (function seedExpansion(nodes, prefix, depth) {
@@ -315,7 +325,7 @@ export function openTreeSelectFormModal(config) {
         } catch (_) {
             descriptor = { baseInfo: [], fields: [], note: '加载所选项信息失败，可直接生成或重试。' };
         }
-        if (token !== state.token) return;
+        if (disposed || token !== state.token) return;
         renderPanel(descriptor);
     }
 
@@ -378,6 +388,11 @@ export function openTreeSelectFormModal(config) {
 
     renderTree();
     renderPlaceholder();
+    layerHandle = layer.open(overlay, {
+        type: 'modal', surface: overlay.querySelector('.tsf-modal'), trigger,
+        initialFocus: closeBtn, beforeClose: () => forceClose || !state.submitting,
+        onClose: finish, onDestroy: finish,
+    });
 
     return { overlay, close };
 }

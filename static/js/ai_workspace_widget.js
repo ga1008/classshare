@@ -63,6 +63,7 @@ function setMode(next, { persist = true } = {}) {
     $('.ai-workspace-container')?.classList.toggle('is-agent-mode', mode === 'agent');
     document.body.dataset.aiAgentMode = mode;
     $all('[data-ai-workspace-panel]').forEach((panel) => {
+        panel.setAttribute('data-lq-panel-presence', '');
         const active = panel.dataset.aiWorkspacePanel === mode;
         panel.hidden = !active;
         panel.classList.toggle('is-active', active);

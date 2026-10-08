@@ -270,5 +270,92 @@
       "Earlier browserEvidence, scheduleBindingsReview and historical validation hashes remain preserved; they are not reclassified as this query feature acceptance.",
       "Complete platform dynamic/business acceptance remains pending."
     ]
+  },
+  "motionProcessReview": {
+    "reviewedAt": "2026-10-08",
+    "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+    "teamOwnership": {
+      "root": "Shared layer/presence lifecycle, native dialog, UI bridge, AI workspace and named consumers",
+      "menu_controls": "Shared CSS motion tokens and controls, document navigation, menu and remaining named consumers",
+      "platform_audit": "201-template/290-JS candidate inventory and domain lifecycle integration",
+      "verification_release": "Independent natural-frame component/application verification, synthetic GET audit and evidence maintenance"
+    },
+    "sourceInventory": "docs/lq-motion-source-inventory-2026-10-08.json",
+    "acceptanceRecord": "docs/lq-motion-process-acceptance-2026-10-08.md",
+    "evidence": {
+      "buildGraph": "e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e",
+      "componentUniquePassed": 22,
+      "applicationUniquePassed": 26,
+      "runs": [
+        {
+          "path": ".codex-temp/lq-motion-process-20261008-final/results.json",
+          "stats": {
+            "startTime": "2026-10-08T09:58:36.970Z",
+            "duration": 54926.312999999995,
+            "expected": 21,
+            "skipped": 0,
+            "unexpected": 1,
+            "flaky": 0
+          }
+        },
+        {
+          "path": ".codex-temp/lq-motion-process-20261008-resample/results.json",
+          "stats": {
+            "startTime": "2026-10-08T09:59:38.349Z",
+            "duration": 2532.116,
+            "expected": 1,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0
+          }
+        },
+        {
+          "path": ".codex-temp/lq-motion-app-20261008-final/results.json",
+          "stats": {
+            "startTime": "2026-10-08T10:00:01.653Z",
+            "duration": 353957.35599999997,
+            "expected": 24,
+            "skipped": 0,
+            "unexpected": 2,
+            "flaky": 0
+          }
+        },
+        {
+          "path": ".codex-temp/lq-motion-app-20261008-onboarding-final/results.json",
+          "stats": {
+            "startTime": "2026-10-08T10:06:09.605Z",
+            "duration": 39370.829000000005,
+            "expected": 1,
+            "skipped": 0,
+            "unexpected": 1,
+            "flaky": 0
+          }
+        },
+        {
+          "path": ".codex-temp/lq-motion-app-20261008-onboarding-complete/results.json",
+          "stats": {
+            "startTime": "2026-10-08T10:07:25.756Z",
+            "duration": 31399.035,
+            "expected": 2,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0
+          }
+        }
+      ],
+      "limitations": [
+        "First component run includes one 231.6ms host frame-sampling gap; unchanged single-case rerun passed.",
+        "Initial onboarding sampler targeted layout parent; corrected to actual shared shell. Mobile retry closes visible error toast through its button before retrying dismiss.",
+        "Chromium desktop and touch emulation only; source inventory remains pending/unknown.",
+        "Existing profile page has 3 mobile / 4 desktop viewport blur hosts and an existing CSS decorative loop; its production rAF remains idle. This is recorded rather than raising the shared layer budget or claiming full-platform performance acceptance."
+      ],
+      "frameEvidence": "docs/lq-motion-process-evidence-2026-10-08.json",
+      "readonlyPlatformEvidence": ".codex-temp/lq-motion-platform-20261008/summary.json"
+    },
+    "limitations": [
+      "Source declaration does not prove runtime ownership or business acceptance.",
+      "Chromium desktop and touch emulation only; no claim of Safari/Firefox/physical low-end device FPS.",
+      "Capture cancellation stops streams and clears sensitive canvas immediately. Native close/returnValue semantics stay immediate while visual disposal awaits presence completion."
+    ]
   }
 }

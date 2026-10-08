@@ -1,5 +1,6 @@
 import { adoptDomainControl, adoptDomainContentSlot } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 import {
     DEFAULT_FREQUENT_EMOJIS,
     EMOJI_CATEGORIES,
@@ -1232,12 +1233,11 @@ export class ClassroomChat {
         }
 
         this.discussionRoom?.classList.add('has-emoji-popover-open');
-        this.emojiPopover.hidden = false;
-        requestAnimationFrame(() => {
-            this.emojiPopover.classList.add('is-open');
-            this.emojiTriggerButton?.classList.add('is-open');
-            this.emojiTriggerButton?.setAttribute('aria-expanded', 'true');
-        });
+        this.emojiPopover.dataset.lqPresence = 'panel';
+        void setOverlayOpen(this.emojiPopover, true);
+        this.emojiPopover.classList.add('is-open');
+        this.emojiTriggerButton?.classList.add('is-open');
+        this.emojiTriggerButton?.setAttribute('aria-expanded', 'true');
 
         if (!this.emojiPanelLoaded) {
             this.updateUploadStatus('正在加载表情...', 'loading');
@@ -1258,12 +1258,13 @@ export class ClassroomChat {
         this.emojiTriggerButton?.classList.remove('is-open');
         this.emojiTriggerButton?.setAttribute('aria-expanded', 'false');
 
-        window.setTimeout(() => {
-            if (!this.emojiPopover?.classList.contains('is-open')) {
-                this.emojiPopover.hidden = true;
+        const panel = this.emojiPopover;
+        return setOverlayOpen(panel, false).then(completed => {
+            if (completed && this.emojiPopover === panel) {
                 this.discussionRoom?.classList.remove('has-emoji-popover-open');
             }
-        }, 180);
+            return completed;
+        });
     }
 
     isEmojiPopoverOpen() {

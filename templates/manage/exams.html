@@ -13,14 +13,14 @@
             <small>试卷生成表单</small>
         </span>
     </button>
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised exam-reverse-dropdown" id="materialReverseDropdown" role="menu" aria-labelledby="materialReverseMenuButton">
-        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" role="menuitem" onclick="openMaterialReverseModal('assessment_plan')">
-            <strong>考核计划表</strong>
-            <small>按试卷内容反推考核项目</small>
+    <div data-lq-component="menu" class="lq-menu lq-glass" hidden id="materialReverseDropdown" role="menu" aria-labelledby="materialReverseMenuButton">
+        <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--md lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="assessment-plan" onclick="openMaterialReverseModal('assessment_plan')">
+            <span class="lq-menu__copy"><strong>考核计划表</strong>
+            <small>按试卷内容反推考核项目</small></span>
         </button>
-        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" role="menuitem" onclick="openMaterialReverseModal('grading_rubric')">
-            <strong>评分细则表</strong>
-            <small>逐题生成给分与扣分标准</small>
+        <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--md lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="grading-rubric" onclick="openMaterialReverseModal('grading_rubric')">
+            <span class="lq-menu__copy"><strong>评分细则表</strong>
+            <small>逐题生成给分与扣分标准</small></span>
         </button>
     </div>
 </div>

@@ -1,8 +1,8 @@
-# 全平台组件源码审计（2026-10-08）
+# 全平台组件源码审计基线（2026-10-08）
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 518 个作者源码文件，覆盖 201 个 HTML 模板，发现 5300 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 520 个作者源码文件，覆盖 201 个 HTML 模板，发现 5302 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
@@ -10,8 +10,8 @@
 | field | 737 |
 | select | 299 |
 | surface | 659 |
-| menu | 33 |
-| dialog | 21 |
+| menu | 34 |
+| dialog | 22 |
 | tab | 31 |
 | choice | 163 |
 | toolbar | 133 |
@@ -25,10 +25,10 @@
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3695 |
+| component-declared | 3696 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
-| legacy-or-native | 91 |
+| legacy-or-native | 92 |
 | lq-marked-native | 112 |
 | runtime-output-unknown | 633 |
 | shared-adapter-call-candidate | 81 |
@@ -50,6 +50,10 @@
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
+
+## 动画过程专项审查
+
+当前正式资源图 `e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e`。201 个 HTML 模板与 290 个非压缩领域 JS 的显隐候选、继承关系和例外清单保留在 [动效源码清单](lq-motion-source-inventory-2026-10-08.json)；自然中间帧和真实业务验证见 [动效过程验收](lq-motion-process-acceptance-2026-10-08.md)。源码声明、只读页面扫描和领域业务验收分别记录，所有候选仍保留 pending/unknown，历史证据不删除。
 
 ## 页面台账缺口
 

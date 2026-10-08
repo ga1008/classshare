@@ -1,4 +1,5 @@
 import {openLessonDocPrompt} from './lessondoc_prompt.js';
+import {createDomainModal} from './lq/domain-modal.js';
 import {parseStagesText,stagesToText} from './lessondoc_stages.js';
 /**
  * LessonDoc 学习文档包向导(课程页入口)。
@@ -34,6 +35,8 @@ const STATUS_LABELS = {
 let modalEl = null;
 let pollTimer = null;
 let currentCourseId = 0;
+let modalOwner = null;
+let viewGeneration = 0;
 
 async function api(url, options = {}) {
     const resp = await fetch(url, {
@@ -62,19 +65,35 @@ function courseInfo(courseId) {
 }
 
 function closeWizard() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    modalEl?.remove();
-    modalEl = null;
+    return modalOwner?.close() || Promise.resolve(false);
 }
 
 function shell(title, bodyHtml, footHtml = '') {
-    closeWizard();
-    modalEl = document.createElement('div');
-    modalEl.className = 'modal-backdrop';
-    modalEl.style.display = 'flex';
-    modalEl.innerHTML = `
-        <div data-lq-component="layer" class="lq-domain-region modal-dialog modal-dialog-scrollable modal-dialog-wide">
-            <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content">
+    viewGeneration += 1;
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (!modalEl) {
+        const root = document.createElement('div');
+        root.className = 'modal-backdrop';
+        root.style.display = 'flex';
+        root.hidden = true;
+        root.innerHTML = '<div class="modal-dialog modal-dialog-scrollable modal-dialog-wide"><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised modal-content"></div></div>';
+        modalEl = root;
+        modalOwner = createDomainModal(root, {
+            surface: root.querySelector('.modal-dialog'),
+            onCloseRequested: () => {
+                viewGeneration += 1;
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            },
+            onClose: () => {
+                root.remove();
+                if (modalEl === root) { modalEl = null; modalOwner = null; }
+            },
+        });
+        root.addEventListener('click', (event) => {
+            if (event.target === root || event.target.closest('[data-ld-close]')) closeWizard();
+        });
+    }
+    modalEl.querySelector('.modal-content').innerHTML = `
                 <div class="modal-header">
                     <div>
                         <h3 class="modal-title">${esc(title)}</h3>
@@ -83,13 +102,8 @@ function shell(title, bodyHtml, footHtml = '') {
                     <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" data-ld-close>&times;</button>
                 </div>
                 <div class="modal-body" data-ld-body>${bodyHtml}</div>
-                ${footHtml ? `<div class="modal-footer" data-ld-foot>${footHtml}</div>` : ''}
-            </div>
-        </div>`;
-    document.body.appendChild(modalEl);
-    modalEl.addEventListener('click', (event) => {
-        if (event.target === modalEl || event.target.closest('[data-ld-close]')) closeWizard();
-    });
+                ${footHtml ? `<div class="modal-footer" data-ld-foot>${footHtml}</div>` : ''}`;
+    modalOwner.open();
     return modalEl;
 }
 
@@ -178,6 +192,7 @@ function renderCreateView(course) {
         <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-ld-submit ${rows.length ? '' : 'disabled'}>创建学习文档包</button>
     `);
 
+    const generation = viewGeneration;
     modalEl.querySelector('[data-ld-submit]')?.addEventListener('click', async (event) => {
         const btn = event.currentTarget;
         btn.disabled = true;
@@ -201,12 +216,13 @@ function renderCreateView(course) {
                 method: 'POST',
                 body: JSON.stringify(payload),
             });
+            if (generation !== viewGeneration) return;
             await renderManageView(result.pack, course);
             notify(result.message || '学习文档包已创建');
         } catch (error) {
             btn.disabled = false;
             btn.textContent = '创建学习文档包';
-            notify(error.message, true);
+            if (generation === viewGeneration) notify(error.message, true);
         }
     });
 }
@@ -276,6 +292,7 @@ async function renderManageView(packSummary, course) {
     `, `<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ld-close>关闭</button>`);
 
     const packId = pack.id;
+    const generation = viewGeneration;
     let idleReads = 0;
 
     function syncBatchProgress(lessons, readyCount, totalCount) {
@@ -301,6 +318,7 @@ async function renderManageView(packSummary, course) {
     async function reload() {
         try {
             const data = await api(`/api/lessondoc/packs/${packId}`);
+            if (generation !== viewGeneration) return;
             const fresh = data.pack;
             const tbody = modalEl?.querySelector('[data-ld-lessons]');
             const progress = modalEl?.querySelector('[data-ld-progress]');
@@ -318,7 +336,7 @@ async function renderManageView(packSummary, course) {
         pollTimer = setInterval(reload, 5000);
     }
 
-    modalEl.addEventListener('click', async (event) => {
+    modalEl.querySelector('[data-ld-body]').addEventListener('click', async (event) => {
         const gen = event.target.closest('[data-ld-gen]');
         const exclude = event.target.closest('[data-ld-exclude]');
         const restore = event.target.closest('[data-ld-restore]');
@@ -331,7 +349,7 @@ async function renderManageView(packSummary, course) {
                     description:'补充教学目标、内容要求或改进方向。生成在后台继续，可在课次列表查看进度。',
                     submit:hint=>api(`/api/lessondoc/packs/${packId}/lessons/${n}/generate`, {
                         method:'POST',body:JSON.stringify({mode:isRewrite?'rewrite':'generate',user_hint:hint})}),
-                    onSuccess:async(result)=>{notify(result.message);await reload();if(!pollTimer)pollTimer=setInterval(reload,5000);}
+                    onSuccess:async(result)=>{if(generation!==viewGeneration)return;notify(result.message);await reload();if(generation===viewGeneration&&!pollTimer)pollTimer=setInterval(reload,5000);}
                 });
             } else if (exclude || restore) {
                 const n = Number((exclude || restore).dataset.n);
@@ -346,13 +364,14 @@ async function renderManageView(packSummary, course) {
                 });
                 notify(result.message);
                 await reload();
-                if (!pollTimer) pollTimer = setInterval(reload, 5000);
+                if (generation === viewGeneration && !pollTimer) pollTimer = setInterval(reload, 5000);
             } else if (event.target.closest('[data-ld-stages-edit]')) {
                 await openStagesPanel(packId);
             } else if (event.target.closest('[data-ld-refresh-assets]')) {
                 const result = await api(`/api/lessondoc/packs/${packId}/refresh-assets`, { method: 'POST' });
                 // 刷新后指纹已一致，重开面板让「引擎可更新」高亮消失
                 const fresh = await api(`/api/lessondoc/packs/${packId}`);
+                if (generation !== viewGeneration) return;
                 await renderManageView(fresh.pack, course);
                 notify(result.message);
             } else if (event.target.closest('[data-ld-bind]')) {
@@ -458,12 +477,15 @@ async function openBindPanel(pack) {
 /** 按 pack_id 直开管理面板(材料页「管理课次」用,不经过课程维度查找)。 */
 window.openLessonDocPackManager = async function openLessonDocPackManager(packId) {
     shell('学习文档包', '<p>正在加载学习文档包…</p>');
+    const generation = viewGeneration;
     try {
         const data = await api(`/api/lessondoc/packs/${Number(packId)}`);
+        if (generation !== viewGeneration) return;
         const pack = data.pack;
         const courseName = pack?.manifest?.course?.name || '';
         await renderManageView(pack, { id: pack.course_id, name: courseName });
     } catch (error) {
+        if (generation !== viewGeneration) return;
         shell('学习文档包', `<p style="color:#dc2626;">${esc(error.message)}</p>`);
     }
 };
@@ -472,8 +494,10 @@ window.openLessonDocWizard = async function openLessonDocWizard(courseId) {
     currentCourseId = Number(courseId);
     const course = courseInfo(currentCourseId) || { id: currentCourseId, name: '' };
     shell(`学习文档包 · ${course.name || ''}`, '<p>正在检查该课程的学习文档包…</p>');
+    const generation = viewGeneration;
     try {
         const data = await api(`/api/lessondoc/packs?course_id=${currentCourseId}`);
+        if (generation !== viewGeneration) return;
         const packs = data.packs || [];
         if (packs.length) {
             await renderManageView(packs[0], course);
@@ -481,6 +505,7 @@ window.openLessonDocWizard = async function openLessonDocWizard(courseId) {
             renderCreateView(course);
         }
     } catch (error) {
+        if (generation !== viewGeneration) return;
         shell('学习文档包', `<p style="color:#dc2626;">${esc(error.message)}</p>`);
     }
 };

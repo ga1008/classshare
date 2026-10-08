@@ -1,6 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
 import { LQ } from '/static/js/lq/index.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const parseJsonScript = (id, fallback) => {
     const el = document.getElementById(id);
@@ -155,24 +156,17 @@ function renderCapabilities() {
     }).join('');
 }
 
-// The account overlay is bespoke (a plain hidden backdrop, not LQ.layer), so it
-// needs its own trigger bookkeeping: without it, closing the dialog drops focus
-// onto <body> and a keyboard user is thrown back to the top of the document.
-let accountModalTrigger = null;
+const accountModal = createDomainModal(refs.accountModal, {
+    surface: refs.accountModal?.querySelector('.gw-modal'), initialFocus: refs.username,
+});
 
 function openAccountModal(trigger) {
     if (!refs.accountModal) return;
-    accountModalTrigger = trigger instanceof HTMLElement ? trigger : null;
-    refs.accountModal.hidden = false;
-    refs.username?.focus({ preventScroll: true });
+    accountModal.open({ trigger });
 }
 
 function closeAccountModal() {
-    if (!refs.accountModal || refs.accountModal.hidden) return;
-    refs.accountModal.hidden = true;
-    const trigger = accountModalTrigger;
-    accountModalTrigger = null;
-    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+    return accountModal.close();
 }
 
 function renderAutoSync(autoSync) {
@@ -368,13 +362,6 @@ refs.accountManageBtn?.addEventListener('click', (event) => openAccountModal(eve
 refs.accountModalClose?.addEventListener('click', closeAccountModal);
 refs.accountModal?.addEventListener('click', (event) => {
     if (event.target === refs.accountModal) closeAccountModal();
-});
-document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    // A stacked LQ.layer dialog (e.g. the delete LQ.confirm) owns Escape first;
-    // tearing our backdrop down under it would destroy its return-focus target.
-    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-    if (refs.accountModal && !refs.accountModal.hidden) closeAccountModal();
 });
 refs.syncAllBtn?.addEventListener('click', (event) => syncGongwen(event.currentTarget));
 refs.capabilityRefreshBtn?.addEventListener('click', refreshCapabilities);

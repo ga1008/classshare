@@ -1407,6 +1407,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         const modal = document.createElement('div');
         modal.className = 'lq-domain-region semester-todo-modal-shell';
         modal.dataset.lqComponent = 'layer';
+        modal.dataset.lqPresence = 'domain';
         modal.hidden = true;
         modal.innerHTML = `
             <div class="semester-todo-modal-backdrop" data-semester-todo-modal-close></div>
@@ -1614,18 +1615,13 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
     function finishCloseTodoModal() {
         if (!todoModal) return;
         todoModal.classList.remove('is-open');
-        window.setTimeout(() => {
-            if (todoModal) todoModal.hidden = true;
-            document.body.classList.remove('has-semester-todo-modal');
-        }, 160);
+        todoModal.hidden = true;
+        document.body.classList.remove('has-semester-todo-modal');
     }
 
     function closeTodoModal(reason = 'programmatic') {
         if (!todoModal) return;
-        // Escape and focus-trap/return are owned by LQ.layer; the fade-out
-        // animation above still runs from its onClose callback below so the
-        // existing 160ms transition and .semester-todo-modal-card contract
-        // (dashboard-todo-modal.spec.ts) are unchanged.
+        // LQ owns both presence and the focus/scroll lifecycle.
         if (todoLayerHandle) { void getLayerSystem(document).close(todoLayerHandle, reason); return; }
         finishCloseTodoModal();
     }
@@ -1657,12 +1653,8 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
         if (form?.elements?.start_time) form.elements.start_time.value = '00:00';
         if (form?.elements?.due_time) form.elements.due_time.value = '23:59';
         resetTodoPicker(form);
-        modal.hidden = false;
         document.body.classList.add('has-semester-todo-modal');
-        window.requestAnimationFrame(() => {
-            modal.classList.add('is-open');
-            form?.elements?.title?.focus();
-        });
+        modal.classList.add('is-open');
         if (card) {
             todoLayerHandle = getLayerSystem(document).open(modal, {
                 type: 'modal',
@@ -1670,6 +1662,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 trigger: document.activeElement,
                 initialFocus: () => form?.elements?.title,
                 onClose: () => { todoLayerHandle = null; finishCloseTodoModal(); },
+                onDestroy: () => { todoLayerHandle = null; finishCloseTodoModal(); },
             });
         }
     }

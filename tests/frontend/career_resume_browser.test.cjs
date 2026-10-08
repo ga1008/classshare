@@ -26,11 +26,11 @@ function fixture(kind) {
   const body = block(template, career ? 'body' : 'content');
   const script = career ? 'career_path_app' : 'resume_' + (kind.startsWith('section_') ? 'section' : kind);
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    `<link rel="stylesheet" href="/static/css/${career ? 'career_path' : 'resume_console'}.css"></head>` +
+    `<link rel="stylesheet" href="/static/css/tailwind-app.css"><link rel="stylesheet" href="/static/css/${career ? 'career_path' : 'resume_console'}.css"></head>` +
     `<body class="${career ? 'career-page-body' : 'rz-body'}">${body}<div id="toast-container"></div>` +
     '<script src="/static/js/career_tools_client.js"></script>' +
     `<script src="/static/js/${career ? 'career_path_network' : 'resume_common'}.js"></script>` +
-    `<script src="/static/js/${script}.js"></script></body></html>`;
+    `<script ${career ? 'type="module" ' : ''}src="/static/js/${script}.js"></script></body></html>`;
 }
 async function open(kind, api, viewport = { width: 1440, height: 1000 }) {
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce' });

@@ -1,5 +1,6 @@
 // 全局搜索浮层：顶栏按钮或 "/" 快捷键唤起，一框搜 课堂/材料/作业考试/博客。
 // 结果由 /api/global-search 按角色圈定范围返回，前端只做渲染与跳转。
+import { getLayerSystem } from './lq/layer.js';
 
 const DEBOUNCE_MS = 220;
 const MIN_QUERY_LENGTH = 2;
@@ -7,6 +8,8 @@ const MIN_QUERY_LENGTH = 2;
 let overlay = null;
 let debounceTimer = 0;
 let activeRequest = 0;
+let layerHandle = null;
+let opened = false;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -20,35 +23,33 @@ function buildOverlay() {
   const node = document.createElement('div');
   node.className = 'lq-domain-region global-search-overlay';
   node.dataset.lqComponent = 'layer';
+  node.dataset.lqPresence = 'domain';
   node.hidden = true;
   node.innerHTML = `
     <style>
       .global-search-overlay {
         position: fixed; inset: 0; z-index: 6000;
-        background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(3px);
         display: flex; justify-content: center; align-items: flex-start;
         padding: 9vh 16px 16px;
       }
       .global-search-panel {
         width: min(620px, 100%); max-height: 72vh; display: flex; flex-direction: column;
-        background: #fff; border-radius: 16px; overflow: hidden;
-        box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.6);
+        overflow: hidden;
       }
       .global-search-input-row { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid rgba(148,163,184,.25); }
-      .global-search-input-row svg { flex-shrink: 0; color: #64748b; }
+      .global-search-input-row svg { flex-shrink: 0; }
       .global-search-input-row input {
-        flex: 1; border: none; outline: none; font-size: 1rem; background: transparent; color: #0f172a;
+        flex: 1; min-width: 0;
       }
       .global-search-results { overflow-y: auto; padding: 10px 10px 14px; }
       .global-search-group-title { padding: 10px 10px 4px; font-size: .72rem; font-weight: 800; color: #94a3b8; letter-spacing: .06em; }
       .global-search-item {
-        display: block; padding: 10px 12px; border-radius: 10px; text-decoration: none; color: #0f172a;
+        display: block; padding: 10px 12px; text-decoration: none;
       }
-      .global-search-item:hover, .global-search-item.is-active { background: rgba(14, 116, 144, 0.08); }
       .global-search-item strong { display: block; font-size: .9rem; }
       .global-search-item small { color: #64748b; font-size: .74rem; }
       .global-search-hint { padding: 26px 16px; text-align: center; color: #94a3b8; font-size: .85rem; }
-      .global-search-close { border: none; background: none; color: #94a3b8; cursor: pointer; font-size: .78rem; }
+      .global-search-close { font-size: .78rem; }
     </style>
     <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised global-search-panel" role="dialog" aria-modal="true" aria-label="全局搜索">
       <div class="global-search-input-row">
@@ -66,6 +67,7 @@ function buildOverlay() {
   node.querySelector('[data-global-search-close]').addEventListener('click', closeOverlay);
   const input = node.querySelector('[data-global-search-input]');
   input.addEventListener('input', () => {
+    activeRequest += 1;
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => runSearch(input.value), DEBOUNCE_MS);
   });
@@ -109,28 +111,39 @@ async function runSearch(rawQuery) {
       credentials: 'same-origin',
     });
     const payload = await response.json().catch(() => ({}));
-    if (requestId !== activeRequest) return; // 过期响应丢弃
+    if (!opened || requestId !== activeRequest) return; // 过期响应丢弃
     if (!response.ok || payload.status !== 'success') {
       renderResults({ query, groups: [] });
       return;
     }
     renderResults(payload);
   } catch {
-    if (requestId === activeRequest) renderResults({ query, groups: [] });
+    if (opened && requestId === activeRequest) renderResults({ query, groups: [] });
   }
 }
 
-function openOverlay() {
+function openOverlay(event) {
   if (!overlay) overlay = buildOverlay();
-  overlay.hidden = false;
+  opened = true;
+  activeRequest += 1;
+  window.clearTimeout(debounceTimer);
   const input = overlay.querySelector('[data-global-search-input]');
   input.value = '';
   renderResults({ query: '', groups: [] });
-  window.setTimeout(() => input.focus(), 30);
+  const layer = getLayerSystem(document);
+  layer.getPortalHost({ trigger: event?.currentTarget instanceof Element ? event.currentTarget : document.activeElement }).append(overlay);
+  layerHandle = layer.open(overlay, {
+    type: 'modal', surface: overlay.querySelector('.global-search-panel'),
+    trigger: event?.currentTarget instanceof Element ? event.currentTarget : document.activeElement,
+    initialFocus: input,
+    onCloseRequested: () => { opened = false; activeRequest += 1; window.clearTimeout(debounceTimer); },
+    onClose: () => { layerHandle = null; },
+    onDestroy: () => { opened = false; activeRequest += 1; window.clearTimeout(debounceTimer); layerHandle = null; },
+  });
 }
 
 function closeOverlay() {
-  if (overlay) overlay.hidden = true;
+  if (layerHandle) return getLayerSystem(document).close(layerHandle, 'button');
 }
 
 function isTypingContext(target) {
@@ -146,8 +159,6 @@ export function initGlobalSearch() {
     if (event.key === '/' && !isTypingContext(event.target)) {
       event.preventDefault();
       openOverlay();
-    } else if (event.key === 'Escape') {
-      closeOverlay();
     }
   });
 }

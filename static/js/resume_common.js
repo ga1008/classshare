@@ -96,6 +96,8 @@
     var root = document.createElement('div');
     root.className = 'lq-domain-region rz-modal';
     root.dataset.lqComponent = 'layer';
+    root.dataset.lqPresence = 'domain';
+    root.hidden = true;
     root.innerHTML =
       '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised rz-modal__panel ' + (opts.wide ? 'rz-modal__panel--wide' : '') + '">' +
       '<div class="rz-modal__head"><h3>' + esc(opts.title || '') + '</h3>' +
@@ -104,28 +106,33 @@
       '<div class="rz-modal__foot"></div></div>';
     document.body.appendChild(root);
     var panel = root.querySelector('.rz-modal__panel');
-    var previousFocus = document.activeElement, closed = false;
+    var previousFocus = document.activeElement, closed = false, layers = null, handle = null;
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', opts.title || '对话框');
     function close() {
-      if (closed) return; closed = true;
+      if (closed) return;
+      if (handle) return layers.close(handle, 'button');
+      closed = true;
       if (opts.onClose) opts.onClose();
-      document.removeEventListener('keydown', onKey);
-      root.classList.remove('show');
-      setTimeout(function () { root.remove(); if (previousFocus && previousFocus.isConnected && !document.querySelector('.rz-modal.show')) previousFocus.focus(); }, 200);
+      root.remove();
     }
-    root.addEventListener('click', function (e) { if (e.target === root) close(); });
     root.querySelector('.rz-modal__close').addEventListener('click', close);
-    function onKey(e) {
-      if (Array.from(document.querySelectorAll('.rz-modal')).pop() !== root) return;
-      if (e.key === 'Escape') { close(); return; }
-      if (e.key !== 'Tab') return;
-      var nodes = Array.from(root.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')).filter(function (node) { return !node.disabled && node.offsetParent !== null; });
-      if (!nodes.length) return;
-      if (e.shiftKey && document.activeElement === nodes[0]) { e.preventDefault(); nodes[nodes.length - 1].focus(); }
-      else if (!e.shiftKey && document.activeElement === nodes[nodes.length - 1]) { e.preventDefault(); nodes[0].focus(); }
-    }
-    document.addEventListener('keydown', onKey);
-    requestAnimationFrame(function () { root.classList.add('show'); root.querySelector('.rz-modal__close').focus(); });
+    // Keep the classic synchronous constructor/slots. Only presentation waits
+    // for the cached native module; closing before it loads cannot resurrect it.
+    import('/static/js/lq/layer.js').then(function (module) {
+      if (closed || !root.isConnected) return;
+      layers = module.getLayerSystem(document);
+      root.classList.add('show');
+      handle = layers.open(root, {
+        type: 'modal', surface: panel, trigger: previousFocus, initialFocus: root.querySelector('.rz-modal__close'),
+        onCloseRequested: function () { if (!closed) { closed = true; if (opts.onClose) opts.onClose(); } },
+        onClose: function () { root.remove(); },
+        onDestroy: function () { if (!closed) { closed = true; if (opts.onClose) opts.onClose(); } root.remove(); }
+      });
+    }).catch(function (error) {
+      close();
+      toast('对话框暂时无法打开，请刷新后重试', 'error');
+      console.error('Resume dialog presentation could not load', error);
+    });
     return { root: root, panel: panel, body: root.querySelector('.rz-modal__body'),
       foot: root.querySelector('.rz-modal__foot'), close: close };
   }

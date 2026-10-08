@@ -5,6 +5,7 @@
  */
 import { API, apiFetch } from './api.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { createDomainModal } from './lq/domain-modal.js';
 import { showToast } from './ui.js';
 import { createEmojiPicker } from './emoji_picker.js';
 import { FeedbackConversation, FEEDBACK_TYPES, feedbackStatus, feedbackTime, node, button } from './feedback_conversation.js';
@@ -93,7 +94,18 @@ class FeedbackModal {
         this.feedbackId = null;
         this.myFeedbackData = null;
         this.myPanelVisible = false;
-        this.closeTimer = null;
+        this.owner = createDomainModal(this.modalBackdrop, {
+            surface: this.modalBackdrop.querySelector('.modal'),
+            initialFocus: () => this.titleInput,
+            onClose: () => {
+                this.modalBackdrop.classList.remove('show');
+                this._ensureFormVisible();
+            },
+            onCloseRequested: () => this.emojiPicker?.close(),
+        });
+        [this.formPanel, this.myPanel, this.successPanel].forEach((panel) => {
+            if (panel) panel.dataset.lqPanelPresence = '';
+        });
         this.conversations = new Map();
         this.myCards = new Map();
 
@@ -129,10 +141,6 @@ class FeedbackModal {
             }
         });
 
-        // Close on backdrop click
-        this.modalBackdrop.addEventListener('click', (e) => {
-            if (e.target === this.modalBackdrop) this.close();
-        });
 
         // Close button
         const closeBtn = this.modalBackdrop.querySelector('[data-feedback-dismiss]');
@@ -178,10 +186,6 @@ class FeedbackModal {
             this.submitAnotherBtn.addEventListener('click', () => this._submitAnother());
         }
 
-        // Escape to close
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.modalBackdrop.classList.contains('show')) this.close();
-        });
     }
 
     /* ============================================================
@@ -199,51 +203,19 @@ class FeedbackModal {
     open() {
         if (!this.modalBackdrop) return;
 
-        if (this.closeTimer) {
-            clearTimeout(this.closeTimer);
-            this.closeTimer = null;
-        }
-
-        // Show backdrop FIRST so it is always visible regardless of
-        // any subsequent state manipulation.
-        this.modalBackdrop.hidden = false;
-        this.modalBackdrop.setAttribute('aria-hidden', 'false');
         this.modalBackdrop.style.display = '';
         this.modalBackdrop.classList.add('show');
-        document.body.style.overflow = 'hidden';
 
         // Now reset internal panels to form view
         this._ensureFormVisible();
         this._autoDetectSection();
+        this.owner.open();
     }
 
     close() {
         if (!this.modalBackdrop) return;
 
-        // Hide backdrop immediately
-        this.modalBackdrop.classList.remove('show');
-        this.modalBackdrop.setAttribute('aria-hidden', 'true');
-        document.body.style.overflow = '';
-
-        // Close emoji picker if open
-        if (this.emojiPicker && this.emojiPicker.isOpen()) this.emojiPicker.close();
-
-        // Reset panels directly (no helper that might have side effects)
-        if (this.successPanel) this.successPanel.setAttribute('hidden', '');
-        if (this.myPanel) this.myPanel.style.display = 'none';
-        if (this.formPanel) this.formPanel.style.display = '';
-        if (this.footerEl) this.footerEl.style.display = '';
-        this.myPanelVisible = false;
-        this._setSubmitting(false);
-
-        if (this.closeTimer) clearTimeout(this.closeTimer);
-        this.closeTimer = window.setTimeout(() => {
-            if (!this.modalBackdrop.classList.contains('show')) {
-                this.modalBackdrop.hidden = true;
-                this.modalBackdrop.style.display = '';
-            }
-            this.closeTimer = null;
-        }, 280);
+        return this.owner.close();
     }
 
     /** Make sure form is shown (hide success, hide my-panel, show footer). */

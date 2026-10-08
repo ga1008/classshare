@@ -615,7 +615,10 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
     // ------------------------------------------------------------ drawers
     function setDrawer(name) {
         state.drawer = state.drawer === name ? null : name;
-        root.querySelectorAll('[data-awb-drawer]').forEach((drawer) => { drawer.hidden = drawer.dataset.awbDrawer !== state.drawer; });
+        root.querySelectorAll('[data-awb-drawer]').forEach((drawer) => {
+            drawer.dataset.lqPanelPresence = '';
+            drawer.hidden = drawer.dataset.awbDrawer !== state.drawer;
+        });
         root.querySelectorAll('[data-awb-drawer-toggle]').forEach((button) => button.setAttribute('aria-expanded', String(button.dataset.awbDrawerToggle === state.drawer)));
         if (state.drawer === 'history') {
             renderList();

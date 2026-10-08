@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { escapeHtml, showToast } from './ui.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const SCOPE_LABELS = { global: '通用', school: '本校', department: '系部' };
 const STATUS_META = {
@@ -58,6 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryNode = root.querySelector('[data-life-tip-summary]');
     const modal = document.getElementById('life-tip-create-modal');
     const createForm = modal?.querySelector('[data-life-tip-create-form]');
+    const createModal = createDomainModal(modal, {
+        surface: modal?.querySelector('.life-tip-modal'), initialFocus: createForm?.elements.tip_text,
+    });
     const departmentField = modal?.querySelector('[data-life-tip-department-field]');
     const scopeInput = modal?.querySelector('[data-life-tip-scope-input]');
 
@@ -162,14 +166,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.querySelector('[data-life-tip-create-open]')?.addEventListener('click', () => {
-        if (modal) modal.hidden = false;
+    document.querySelector('[data-life-tip-create-open]')?.addEventListener('click', (event) => {
+        createModal.open({ trigger: event.currentTarget });
     });
     modal?.querySelector('[data-life-tip-create-close]')?.addEventListener('click', () => {
-        modal.hidden = true;
+        void createModal.close();
     });
     modal?.addEventListener('click', (event) => {
-        if (event.target === modal) modal.hidden = true;
+        if (event.target === modal) void createModal.close();
     });
     scopeInput?.addEventListener('change', () => {
         if (departmentField) departmentField.hidden = scopeInput.value !== 'department';
@@ -186,9 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 silent: true,
             });
             showToast(result.message || '提示语已入库。', 'success');
+            await createModal.close();
             createForm.reset();
             if (departmentField) departmentField.hidden = true;
-            if (modal) modal.hidden = true;
             currentPage = 1;
             await loadTips();
         } catch (error) {

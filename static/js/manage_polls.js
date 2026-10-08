@@ -1,5 +1,6 @@
 import { adoptDomainControl } from './lq/domain-controls.js';
 import { apiFetch } from './api.js';
+import { createDomainModal } from './lq/domain-modal.js';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { LQ } from './lq/index.js';
 import {
@@ -100,40 +101,39 @@ function renderList(data) {
 // --------------------------------------------------------------------------- #
 // overlay
 // --------------------------------------------------------------------------- #
-let overlayTrigger = null;
+let pollOverlay = null;
+let pollModal = null;
 let overlayFormsLease = null;
 function closeOverlay() {
-    overlayFormsLease?.dispose();
-    overlayFormsLease = null;
-    document.querySelectorAll('[data-poll-overlay]').forEach((node) => node.remove());
-    document.removeEventListener('keydown', onOverlayKeydown);
-    if (overlayTrigger?.isConnected) overlayTrigger.focus();
-    overlayTrigger = null;
-}
-function onOverlayKeydown(event) {
-    if (event.key !== 'Escape') return;
-    // An LQ.layer dialog (e.g. the delete-poll confirm) stacked on top of this
-    // overlay owns Escape first; let it close and return focus to its trigger
-    // before tearing the overlay (and that trigger) down.
-    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-    closeOverlay();
+    return pollModal?.close() || Promise.resolve(false);
 }
 // `content` is either the legacy HTML string or, on the LQ branch, a DOM node
 // built by the lq/forms.js factories. The string path must stay byte-identical
 // to the pre-LQ markup.
 function openOverlay(content, trigger = null) {
-    closeOverlay();
-    overlayTrigger = trigger || null;
     const isNode = typeof content !== 'string';
-    const overlay = document.createElement('div');
-    overlay.className = 'lq-domain-region poll-overlay';
-    overlay.dataset.lqComponent = 'layer';
-    overlay.setAttribute('data-poll-overlay', '');
-    overlay.innerHTML = `<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised poll-overlay__shell" role="dialog" aria-modal="true">${isNode ? '' : content}</div>`;
-    if (isNode) overlay.querySelector('.poll-overlay__shell').append(content);
-    document.body.appendChild(overlay);
+    const overlay = pollOverlay || document.createElement('div');
+    if (!pollOverlay) {
+        overlay.className = 'lq-domain-region poll-overlay';
+        overlay.dataset.lqComponent = 'layer';
+        overlay.hidden = true;
+        overlay.setAttribute('data-poll-overlay', '');
+        overlay.innerHTML = '<div class="poll-overlay__backdrop" data-poll-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised poll-overlay__shell" role="dialog" aria-modal="true"></div>';
+        pollOverlay = overlay;
+        pollModal = createDomainModal(overlay, {
+            surface: overlay.querySelector('.poll-overlay__shell'),
+            onClose: () => {
+                overlayFormsLease?.dispose(); overlayFormsLease = null;
+                overlay.remove(); pollOverlay = null; pollModal = null;
+            },
+        });
+    }
+    overlayFormsLease?.dispose(); overlayFormsLease = null;
+    const surface = overlay.querySelector('.poll-overlay__shell');
+    if (isNode) surface.replaceChildren(content);
+    else surface.innerHTML = content;
+    pollModal.open({ trigger });
     if (isNode) overlayFormsLease = enhanceForms(overlay);
-    document.addEventListener('keydown', onOverlayKeydown);
     return overlay;
 }
 

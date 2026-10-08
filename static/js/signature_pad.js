@@ -1,3 +1,6 @@
+import { createDomainModal } from './lq/domain-modal.js';
+import { escapeHtml } from './lq/html.js';
+
 /**
  * Shared handwriting pad for signature capture (鼠标/触摸通吃).
  *
@@ -9,12 +12,15 @@
  */
 export function openSignaturePad({ onConfirm, title = '手写签名' }) {
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:2600;display:grid;place-items:center;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);padding:16px;';
+    overlay.className = 'lq-domain-region';
+    overlay.dataset.lqComponent = 'layer';
+    overlay.hidden = true;
+    overlay.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;padding:16px;';
     overlay.innerHTML = `
-        <div style="display:grid;gap:12px;width:min(720px,100%);padding:18px;border-radius:14px;background:#fff;box-shadow:0 24px 70px rgba(15,23,42,.3);">
+        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" style="display:grid;gap:12px;width:min(720px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:18px;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                <strong style="color:#172033;font-size:1.05rem;">${title}</strong>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-pad-close style="width:32px;height:32px;border:0;border-radius:8px;background:#f1f5f9;color:#475569;font-size:20px;cursor:pointer;">×</button>
+                <strong style="font-size:1.05rem;">${escapeHtml(title)}</strong>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--icon lq-btn--glass" type="button" data-pad-close aria-label="关闭签名板">×</button>
             </div>
             <p style="margin:0;color:#64748b;font-size:0.85rem;">用鼠标或手指在下方白板上书写签名；提交后系统会自动裁边并把白底转为透明。</p>
             <canvas data-pad-canvas style="width:100%;height:280px;border:1px dashed #cbd5e1;border-radius:10px;background:#fff;cursor:crosshair;touch-action:none;"></canvas>
@@ -28,6 +34,13 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
         </div>
     `;
     document.body.appendChild(overlay);
+    const owner = createDomainModal(overlay, {
+        surface: overlay.firstElementChild,
+        initialFocus: () => overlay.querySelector('[data-pad-close]'),
+        onClose: () => overlay.remove(),
+        onDestroy: () => overlay.remove(),
+    });
+    owner.open();
 
     const canvas = overlay.querySelector('[data-pad-canvas]');
     const confirmButton = overlay.querySelector('[data-pad-confirm]');
@@ -46,6 +59,7 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
     /** @type {Array<Array<{x: number, y: number}>>} */
     const strokes = [];
     let activeStroke = null;
+    let exporting = false;
 
     const paintBackground = () => {
         ctx.save();
@@ -64,12 +78,12 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
             stroke.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
             ctx.stroke();
         });
-        if (confirmButton) confirmButton.disabled = !strokes.some((stroke) => stroke.length > 1);
+        if (confirmButton) confirmButton.disabled = exporting || !strokes.some((stroke) => stroke.length > 1);
     };
 
     const pointFromEvent = (event) => {
         const rect = canvas.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        return { x: (event.clientX - rect.left) * cssWidth / rect.width, y: (event.clientY - rect.top) * cssHeight / rect.height };
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -91,12 +105,9 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
     canvas.addEventListener('pointerup', endStroke);
     canvas.addEventListener('pointercancel', endStroke);
 
-    const close = () => overlay.remove();
+    const close = () => owner.close();
     overlay.querySelector('[data-pad-close]')?.addEventListener('click', close);
     overlay.querySelector('[data-pad-cancel]')?.addEventListener('click', close);
-    overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) close();
-    });
     overlay.querySelector('[data-pad-undo]')?.addEventListener('click', () => {
         strokes.pop();
         redraw();
@@ -106,7 +117,11 @@ export function openSignaturePad({ onConfirm, title = '手写签名' }) {
         redraw();
     });
     confirmButton?.addEventListener('click', () => {
+        if (exporting) return;
+        exporting = true;
+        confirmButton.disabled = true;
         canvas.toBlob((blob) => {
+            if (!overlay.isConnected || !['open', 'opening'].includes(owner.handle?.state)) return;
             if (blob) onConfirm(blob);
             close();
         }, 'image/png');

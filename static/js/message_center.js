@@ -36,6 +36,7 @@ if (app) {
     const markReadEl = document.getElementById('message-center-mark-read');
     const feedEl = document.getElementById('message-center-feed');
     const privatePanelEl = document.getElementById('message-center-private-panel');
+    for (const panel of [feedEl, privatePanelEl]) if (panel) panel.dataset.lqPanelPresence = '';
     const contactSearchEl = document.getElementById('message-center-contact-search');
     const contactSelectEl = document.getElementById('message-center-contact-select');
     const contactCurrentEl = document.getElementById('message-center-contact-current');

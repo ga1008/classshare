@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
+import { getLayerSystem } from './lq/layer.js';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -330,6 +331,10 @@ export function initAcademicSyncDialog({
     let resolutionStates = new Map();
     let activeCourseKey = '';
     let detailContext = null;
+    const layers = getLayerSystem(document);
+    let mainLayer = null, detailLayer = null;
+    root.dataset.lqPresence = 'domain';
+    detailBackdrop.dataset.lqPresence = 'domain';
 
     const semesterMap = new Map((Array.isArray(semesters) ? semesters : []).map((item) => [String(item.id), item]));
     select.innerHTML = [...semesterMap.values()].map((item) => `
@@ -401,6 +406,7 @@ export function initAcademicSyncDialog({
     }
 
     function openDialog(trigger) {
+        if (running) return;
         activeTrigger = trigger || null;
         succeeded = false;
         currentPlan = null;
@@ -411,34 +417,33 @@ export function initAcademicSyncDialog({
         lead.textContent = '先比较教务快照与本地课堂，再逐项选择采用本地或教务字段。';
         setView('select');
         updatePreview();
-        root.hidden = false;
         root.setAttribute('aria-hidden', 'false');
+        root.classList.add('is-open');
         document.body.classList.add('has-academic-sync-dialog');
-        requestAnimationFrame(() => {
-            root.classList.add('is-open');
-            (semesterMap.size ? select : panel)?.focus({ preventScroll: true });
+        layers.getPortalHost({ trigger: activeTrigger }).append(root);
+        const finish = () => {
+            mainLayer = null;
+            root.classList.remove('is-open');
+            root.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('has-academic-sync-dialog');
+        };
+        mainLayer = layers.open(root, {
+            type: 'modal', surface: panel, trigger: activeTrigger,
+            initialFocus: () => semesterMap.size ? select : panel,
+            beforeClose: () => !running, onClose: finish, onDestroy: finish,
         });
     }
 
     function closeDetail({ restoreFocus = true } = {}) {
-        if (detailBackdrop.hidden) return;
-        const trigger = detailContext?.trigger;
-        detailBackdrop.hidden = true;
-        detailBackdrop.setAttribute('aria-hidden', 'true');
-        root.classList.remove('has-detail-diff');
-        detailContext = null;
-        if (restoreFocus) trigger?.focus?.({ preventScroll: true });
+        if (!detailLayer) return Promise.resolve(true);
+        detailLayer.update({ returnFocus: restoreFocus ? detailContext?.trigger : false });
+        return layers.close(detailLayer, 'button');
     }
 
-    function closeDialog({ refresh = false } = {}) {
+    async function closeDialog({ refresh = false } = {}) {
         if (running) return;
-        closeDetail({ restoreFocus: false });
-        if (refresh) return window.location.reload();
-        root.classList.remove('is-open');
-        root.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('has-academic-sync-dialog');
-        window.setTimeout(() => { if (!root.classList.contains('is-open')) root.hidden = true; }, 170);
-        activeTrigger?.focus?.({ preventScroll: true });
+        if (mainLayer && !await layers.close(mainLayer, 'button')) return;
+        if (refresh) window.location.reload();
     }
 
     function setButtonsBusy(isBusy) {
@@ -513,18 +518,27 @@ export function initAcademicSyncDialog({
         detailSubtitle.textContent = `${item.entity_label || item.entity_type} · ${item.title}`;
         detailLocal.innerHTML = renderDiffLines(field.local, '−');
         detailRemote.innerHTML = renderDiffLines(field.remote, '+');
-        detailBackdrop.hidden = false;
         detailBackdrop.setAttribute('aria-hidden', 'false');
         root.classList.add('has-detail-diff');
-        requestAnimationFrame(() => detailDialog.focus({ preventScroll: true }));
+        layers.getPortalHost({ trigger, parentLayer: mainLayer }).append(detailBackdrop);
+        const finish = () => {
+            detailLayer = null;
+            detailContext = null;
+            detailBackdrop.setAttribute('aria-hidden', 'true');
+            root.classList.remove('has-detail-diff');
+        };
+        detailLayer = layers.open(detailBackdrop, {
+            type: 'modal', surface: detailDialog, trigger, parentLayer: mainLayer,
+            initialFocus: detailDialog, onClose: finish, onDestroy: finish,
+        });
     }
 
     function chooseFromDetail(choice) {
         if (!detailContext) return;
         const context = { ...detailContext };
         setFieldChoice(context.itemKey, context.fieldName, choice);
-        closeDetail({ restoreFocus: false });
-        requestAnimationFrame(() => {
+        closeDetail({ restoreFocus: false }).then((completed) => {
+            if (!completed || !mainLayer || detailLayer) return;
             Array.from(diffList.querySelectorAll('[data-academic-sync-field-row]'))
                 .find((node) => node.dataset.itemKey === context.itemKey && node.dataset.fieldName === context.fieldName)
                 ?.focus?.({ preventScroll: true });
@@ -658,11 +672,6 @@ export function initAcademicSyncDialog({
     detailRemoteChoice.addEventListener('click', () => chooseFromDetail('remote'));
     detailBackdrop.addEventListener('click', (event) => { if (event.target === detailBackdrop) closeDetail(); });
     root.addEventListener('click', (event) => { if (event.target === root) closeDialog(); });
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape' || root.hidden || running) return;
-        if (!detailBackdrop.hidden) closeDetail();
-        else closeDialog();
-    });
     updatePreview();
     return { open: openDialog, close: closeDialog };
 }

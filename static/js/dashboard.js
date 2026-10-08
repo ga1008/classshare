@@ -6,6 +6,7 @@ import { initStudentDashboardSchedule } from '/static/js/student_dashboard_sched
 import { bindSelection } from './lq/selection.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
 import { enhanceNavMenus } from './lq/nav-menu.js';
+import { getLayerSystem } from './lq/layer.js';
 
 const root = document.querySelector('[data-dashboard-root]');
 initStudentDashboardSchedule(root);
@@ -1333,6 +1334,8 @@ if (root) {
     let activeOfferingId = '';
     let returnFocus = null;
     let abortController = null;
+    const evaluationLayers = getLayerSystem(document);
+    let evaluationLayer = null;
 
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -1592,35 +1595,41 @@ if (root) {
         returnFocus = trigger || document.activeElement;
         abortController?.abort();
         abortController = new AbortController();
-        modal.hidden = false;
+        const request = abortController;
+        modal.dataset.lqPresence = 'domain';
         document.body.classList.add('academic-evaluation-modal-open');
         modalBody.innerHTML = loadingHtml();
         const card = document.querySelector(`[data-offering-card][data-offering-id="${CSS.escape(activeOfferingId)}"]`);
         if (modalTitle) modalTitle.textContent = card?.dataset.courseName || '教学评价详情';
         if (modalSubtitle) modalSubtitle.textContent = '读取本地同步结果，不会再次访问教务系统';
-        window.requestAnimationFrame(() => dialog?.focus());
+        evaluationLayers.getPortalHost({ trigger: returnFocus }).append(modal);
+        const finish = () => {
+            evaluationLayer = null;
+            document.body.classList.remove('academic-evaluation-modal-open');
+            activeOfferingId = '';
+        };
+        evaluationLayer = evaluationLayers.open(modal, {
+            type: 'modal', surface: dialog, trigger: returnFocus, initialFocus: dialog,
+            onCloseRequested: () => abortController?.abort(), onClose: finish,
+            onDestroy: () => { abortController?.abort(); finish(); },
+        });
         try {
             const response = await fetch(`/api/academic-evaluations/classrooms/${encodeURIComponent(activeOfferingId)}`, {
                 credentials: 'same-origin',
                 headers: { Accept: 'application/json' },
-                signal: abortController.signal,
+                signal: request.signal,
             });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.detail || '评价详情读取失败');
-            if (!modal.hidden && activeOfferingId === String(offeringId)) renderDetail(payload);
+            if (!request.signal.aborted && request === abortController && activeOfferingId === String(offeringId)) renderDetail(payload);
         } catch (error) {
-            if (error.name === 'AbortError') return;
+            if (error.name === 'AbortError' || request.signal.aborted || request !== abortController) return;
             modalBody.innerHTML = `<div class="academic-evaluation-modal__error"><strong>评价详情暂时无法读取</strong><small>${escapeHtml(error.message || '请稍后再试')}</small></div>`;
         }
     }
 
     function closeDetail() {
-        if (!modal || modal.hidden) return;
-        abortController?.abort();
-        modal.hidden = true;
-        document.body.classList.remove('academic-evaluation-modal-open');
-        activeOfferingId = '';
-        if (returnFocus instanceof HTMLElement) returnFocus.focus();
+        if (evaluationLayer) return evaluationLayers.close(evaluationLayer, 'button');
     }
 
     document.addEventListener('click', (event) => {
@@ -1636,19 +1645,6 @@ if (root) {
     });
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && panel?.open) panel.removeAttribute('open');
-        if (!modal || modal.hidden) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            closeDetail();
-            return;
-        }
-        if (event.key !== 'Tab' || !dialog) return;
-        const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'));
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
 
     syncButton?.addEventListener('click', () => synchronize(true, false));

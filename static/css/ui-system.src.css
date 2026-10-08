@@ -1958,13 +1958,10 @@
     overflow: hidden;
     outline: 0;
     opacity: 0;
-    transform: scale(0.95) translateY(-20px);
-    transition: transform var(--transition-normal), opacity var(--transition-normal);
 }
 
 .feedback-modal.show .modal {
     opacity: 1;
-    transform: scale(1) translateY(0);
 }
 
 .feedback-modal .modal-header {
@@ -4356,14 +4353,11 @@ body.has-cultivation-login-reveal {
     border: 1px solid rgba(148, 163, 184, 0.18);
     background: hsl(var(--ls-surface-1) / 0.98);
     box-shadow: 0 24px 46px rgba(15, 23, 42, 0.18);
-    transform: translateY(6px);
     opacity: 0;
-    transition: opacity 0.16s ease, transform 0.16s ease;
     pointer-events: none;
 }
 
 .emoji-picker.is-open {
-    transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
 }
@@ -4641,30 +4635,6 @@ body.has-cultivation-login-reveal {
 .onboarding-step-shell {
     display: grid;
     gap: 20px;
-    animation: onboardingStepIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-    will-change: opacity, transform;
-}
-
-.onboarding-step-shell.is-leaving {
-    animation: onboardingStepOut 0.26s cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-
-@keyframes onboardingStepIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes onboardingStepOut {
-    to {
-        opacity: 0;
-        transform: translateY(-12px);
-    }
 }
 
 .onboarding-step-title {
@@ -12566,8 +12536,6 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     isolation: isolate;
     overflow: hidden;
     pointer-events: auto;
-    transform: translateY(22px) scale(0.94);
-    transition: transform 0.36s cubic-bezier(.2, 1.2, .2, 1);
 }
 
 .learning-certificate-card[data-theme="qi_awakening"] { --seal-a: hsl(var(--ls-teal-bright)); --seal-b: #facc15; }
@@ -12583,9 +12551,6 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .learning-certificate-card[data-theme="self_directed"] { --seal-a: hsl(var(--ls-success)); --seal-b: #f472b6; }
 .learning-certificate-card[data-theme="teacher_guiding"] { --seal-a: hsl(var(--ls-teal)); --seal-b: #fbbf24; }
 
-.is-open .learning-certificate-card {
-    transform: translateY(0) scale(1);
-}
 
 .learning-certificate-card::before {
     content: "";
@@ -15012,16 +14977,13 @@ body.has-chat-image-preview-open {
     box-shadow: 0 30px 80px -28px rgba(15, 23, 42, 0.45);
     overflow: hidden;
     opacity: 0;
-    transform: translateY(12px) scale(0.98);
     transform-origin: bottom right;
-    transition: opacity 0.2s ease, transform 0.24s ease;
     pointer-events: none;
     z-index: 12;
 }
 
 .chat-emoji-popover.is-open {
     opacity: 1;
-    transform: translateY(0) scale(1);
     pointer-events: auto;
 }
 
@@ -20327,11 +20289,12 @@ body.has-chat-image-preview-open {
     width: min(720px, calc(100vw - 2rem));
     max-height: min(92vh, 780px);
     overflow-y: auto;
+}
+.semester-todo-modal-backdrop:not([data-lq-presence="domain"]) .semester-todo-modal {
     transform: translateY(10px) scale(0.98);
     transition: transform 190ms ease, opacity 180ms ease;
 }
-
-.semester-todo-modal-backdrop.is-open .semester-todo-modal {
+.semester-todo-modal-backdrop:not([data-lq-presence="domain"]).is-open .semester-todo-modal {
     transform: translateY(0) scale(1);
 }
 
@@ -27716,12 +27679,14 @@ body.has-chat-image-preview-open {
     background: hsl(var(--lq-page-raised));
     box-shadow: 0 34px 70px -42px rgba(15, 23, 42, 0.62);
     opacity: 0;
+}
+.semester-todo-modal-shell:not([data-lq-presence="domain"]) .semester-todo-modal-card {
     transform: translateY(10px);
     transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .semester-todo-modal-shell.is-open .semester-todo-modal-backdrop,
-.semester-todo-modal-shell.is-open .semester-todo-modal-card {
+.semester-todo-modal-shell:not([data-lq-presence="domain"]).is-open .semester-todo-modal-card {
     opacity: 1;
 }
 
@@ -27869,6 +27834,11 @@ body.has-chat-image-preview-open {
     background:
         linear-gradient(180deg, rgba(15, 23, 42, 0.36), rgba(15, 23, 42, 0.28));
     backdrop-filter: blur(8px);
+}
+/* A migrated layer already owns one shared scrim and raised sampling plane.
+   Retain this legacy node only as the existing outside-click target. */
+.semester-todo-modal-shell[data-lq-presence="domain"] > .semester-todo-modal-backdrop {
+    background: transparent; backdrop-filter: none; opacity: 1; transition: none;
 }
 
 .semester-todo-modal-card {
@@ -29668,14 +29638,11 @@ body.has-chat-image-preview-open {
     border: 1px solid rgba(148, 163, 184, 0.18);
     background: hsl(var(--ls-surface-1) / 0.98);
     box-shadow: 0 24px 46px rgba(15, 23, 42, 0.18);
-    transform: translateY(6px);
     opacity: 0;
-    transition: opacity 0.16s ease, transform 0.16s ease;
     pointer-events: none;
 }
 
 .emoji-picker.is-open {
-    transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
 }
@@ -32142,12 +32109,6 @@ body.has-academic-modal {
     border-left: 1px solid rgba(148, 163, 184, 0.24);
     background: hsl(var(--lq-page-raised));
     box-shadow: -24px 0 58px -42px rgba(15, 23, 42, 0.72);
-    transform: translateX(24px);
-    transition: transform 180ms ease;
-}
-
-.class-student-drawer-backdrop.is-open .class-student-drawer {
-    transform: translateX(0);
 }
 
 .class-student-drawer-head {
@@ -32534,12 +32495,6 @@ body.has-academic-sync-dialog {
     border-radius: 22px;
     background: hsl(var(--lq-page-raised));
     box-shadow: 0 42px 110px -48px rgba(2, 6, 23, 0.9), 0 18px 48px -32px rgba(15, 118, 110, 0.5);
-    transform: translateY(14px) scale(0.975);
-    transition: transform 170ms ease;
-}
-
-.academic-sync-dialog-backdrop.is-open .academic-sync-dialog {
-    transform: translateY(0) scale(1);
 }
 
 .academic-sync-dialog__header {
@@ -45416,7 +45371,8 @@ body.has-teaching-session-modal {
 
 /* Overlay primitives */
 .collab-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-.collab-overlay__backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
+.collab-overlay__backdrop { position: absolute; inset: 0; }
+.collab-overlay:not([data-lq-presence="domain"]) > .collab-overlay__backdrop { background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
 .collab-overlay__card { position: relative; z-index: 1; max-width: 92vw; max-height: 88vh; overflow: auto; background: hsl(var(--lq-page-raised)); border-radius: var(--radius-lg); box-shadow: 0 30px 70px -30px rgba(15, 23, 42, 0.6); padding: 1.1rem 1.2rem; }
 
 .collab-confirm { text-align: center; max-width: 360px; display: grid; gap: 0.5rem; }
@@ -46017,7 +45973,8 @@ body.has-teaching-session-modal {
 
 /* overlay (big popover) */
 .poll-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 1.2rem; }
-.poll-overlay__backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
+.poll-overlay__backdrop { position: absolute; inset: 0; }
+.poll-overlay:not([data-lq-presence="domain"]) > .poll-overlay__backdrop { background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
 .poll-overlay__shell {
     position: relative;
     width: min(640px, 100%);
@@ -48918,9 +48875,9 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
 .academic-evaluation-modal__backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 42, .56);
-    backdrop-filter: blur(10px) saturate(.85);
-    animation: academic-evaluation-fade .2s ease both;
+    /* The shared domain layer owns the scrim and surface frost. This node
+       remains the existing click target, with no second material or motion. */
+    background: transparent;
 }
 
 .academic-evaluation-modal__dialog {
@@ -48934,11 +48891,7 @@ a.material-delete-impact-item:hover .material-delete-impact-item__open { color: 
     border-radius: var(--radius-2xl);
     background: var(--gray-50);
     box-shadow: 0 30px 90px rgba(15, 23, 42, .3);
-    animation: academic-evaluation-rise .28s cubic-bezier(.2, .8, .2, 1) both;
 }
-
-@keyframes academic-evaluation-fade { from { opacity: 0; } }
-@keyframes academic-evaluation-rise { from { opacity: 0; transform: translateY(18px) scale(.985); } }
 
 .academic-evaluation-modal__header {
     display: flex;
@@ -49383,23 +49336,23 @@ body.academic-evaluation-modal-open { overflow: hidden; }
 }
 @media (prefers-reduced-motion: no-preference) {
     :is(.ls-page, .classroom-workspace-v2)
-    details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management)[open] > :not(summary) {
+    details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management):not(:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) {
         animation: ui-menu-enter var(--transition-fast);
     }
     @supports (transition-behavior: allow-discrete) and selector(details::details-content) {
         :is(.ls-page, .classroom-workspace-v2)
-        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management)::details-content {
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management):not(:has(> summary[data-lq-component="disclosure"]))::details-content {
             transition: content-visibility var(--transition-fast) allow-discrete;
         }
         :is(.ls-page, .classroom-workspace-v2)
-        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management) > :not(summary) {
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management):not(:has(> summary[data-lq-component="disclosure"])) > :not(summary) {
             opacity: 0;
             translate: 0 -4px;
             pointer-events: none;
             transition: opacity var(--transition-fast), translate var(--transition-fast);
         }
         :is(.ls-page, .classroom-workspace-v2)
-        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management)[open] > :not(summary) {
+        details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management):not(:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) {
             animation: none;
             opacity: 1;
             translate: none;
@@ -49407,7 +49360,7 @@ body.academic-evaluation-modal-open { overflow: hidden; }
         }
         @starting-style {
             :is(.ls-page, .classroom-workspace-v2)
-            details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management)[open] > :not(summary) {
+            details:is(.app-topbar-menu, .classroom-topbar-menu, .ls-tools-menu, .cw-session-management):not(:has(> summary[data-lq-component="disclosure"]))[open] > :not(summary) {
                 opacity: 0;
                 translate: 0 -4px;
             }
@@ -51316,7 +51269,7 @@ body.manage-embedded-page { background: transparent; }
     font-weight: 700;
     text-align: center;
 }
-.manage-nav-domain-toggle__chevron { flex: 0 0 auto; margin-left: auto; color: hsl(var(--ls-muted-foreground)); transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.manage-nav-domain-toggle__chevron { flex: 0 0 auto; margin-left: auto; color: hsl(var(--ls-muted-foreground)); transition: transform var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out); }
 .manage-nav-domain.is-open .manage-nav-domain-toggle__chevron { transform: rotate(180deg); }
 .manage-nav-domain.is-active .manage-nav-domain-toggle { color: hsl(var(--ls-domain-accent-strong)); }
 
@@ -51331,11 +51284,11 @@ body.manage-embedded-page { background: transparent; }
 .manage-nav-domain-items {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity: 0;
 }
 .manage-nav-domain-items-inner { min-height: 0; overflow: hidden; display: grid; gap: 2px; padding: 2px 0 6px; }
 .manage-nav-domain.is-open .manage-nav-domain-items,
-.manage-nav.is-searching .manage-nav-domain-items { grid-template-rows: 1fr; }
+.manage-nav.is-searching .manage-nav-domain-items { grid-template-rows: 1fr; opacity: 1; }
 
 .manage-nav-group { display: grid; gap: 1px; }
 .manage-nav-group.is-empty { display: none; }
@@ -51452,7 +51405,7 @@ body.manage-embedded-page { background: transparent; }
 .manage-sidebar.is-collapsed .manage-nav-empty { display: none; }
 .manage-sidebar.is-collapsed .manage-nav-domain-toggle { justify-content: center; padding: 8px 0; }
 /* Icon rail keeps every destination reachable: force domains open. */
-.manage-sidebar.is-collapsed .manage-nav-domain-items { grid-template-rows: 1fr; }
+.manage-sidebar.is-collapsed .manage-nav-domain-items { grid-template-rows: 1fr; opacity: 1; }
 .manage-sidebar.is-collapsed .manage-sidebar-collapse { transform: rotate(180deg); margin-left: 0; }
 .manage-sidebar.is-collapsed .manage-nav { padding-left: 0; padding-right: 0; }
 .manage-sidebar.is-collapsed .manage-nav-item { justify-content: center; padding: 8px 0; gap: 0; }
@@ -51496,15 +51449,7 @@ body.manage-embedded-page { background: transparent; }
 }
 .manage-content.is-embedded { max-width: none; padding: 0; margin: 0; }
 
-/* Page float-in / float-out transition (MPA-friendly).
-   fill-mode 必须是 backwards：forwards 会永久保留 transform，使本容器成为
-   position:fixed 的 containing block，页面内的 modal-backdrop 会被劫持。 */
-@media (prefers-reduced-motion: no-preference) {
-    .manage-content:not(.is-embedded) { animation: managePageEnter 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-    .manage-main.is-leaving .manage-content { animation: managePageLeave 0.16s ease-in forwards; }
-}
-@keyframes managePageEnter { from { opacity: 0; transform: translateY(16px) scale(0.995); } to { opacity: 1; transform: none; } }
-@keyframes managePageLeave { to { opacity: 0; transform: translateY(-10px); } }
+/* Native document navigation uses the shared opacity-only snapshot policy. */
 @media (prefers-reduced-motion: reduce) {
     .manage-nav-domain-items, .manage-nav-domain-toggle__chevron, .manage-sidebar { transition: none; }
 }
@@ -54173,52 +54118,6 @@ body.manage-embedded-page { background: transparent; }
     display: inline-flex;
 }
 
-.exam-reverse-dropdown {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    width: min(280px, calc(100vw - 24px));
-    padding: 8px;
-    border: 1px solid hsl(var(--ls-c-slate-400) / 0.28);
-    border-radius: 14px;
-    background: hsl(var(--ls-c-white) / 0.98);
-    box-shadow: 0 22px 50px hsl(var(--ls-c-slate-900) / 0.16);
-    backdrop-filter: blur(14px);
-    z-index: 1200;
-    display: none;
-}
-
-.exam-reverse-dropdown.open {
-    display: grid;
-    gap: 6px;
-}
-
-.exam-reverse-dropdown button {
-    border: 0;
-    background: transparent;
-    border-radius: 10px;
-    padding: 12px;
-    text-align: left;
-    cursor: pointer;
-    display: grid;
-    gap: 4px;
-    color: hsl(var(--ls-c-gray-900));
-}
-
-.exam-reverse-dropdown button:hover {
-    background: hsl(var(--ls-c-orange-50));
-}
-
-.exam-reverse-dropdown strong {
-    font-size: 0.95rem;
-}
-
-.exam-reverse-dropdown small {
-    color: hsl(var(--ls-c-slate-500));
-    font-size: 0.78rem;
-    line-height: 1.45;
-}
-
 .exam-reverse-modal {
     max-width: 860px;
 }
@@ -54710,23 +54609,10 @@ body.manage-embedded-page { background: transparent; }
 }
 
 .tag-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
     min-width: 220px;
     max-height: 280px;
     overflow-y: auto;
-    display: none;
-    z-index: 60;
     padding: var(--spacing-2);
-}
-
-.tag-dropdown-menu.open {
-    display: block;
 }
 
 .tag-dropdown-menu .tag-option {
@@ -54782,24 +54668,7 @@ body.manage-embedded-page { background: transparent; }
 
 /* === Tag Popover === */
 .tag-popover {
-    position: fixed;
-    z-index: 200;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-xl);
     width: 300px;
-    display: none;
-    animation: popover-fade-in 0.15s ease;
-}
-
-.tag-popover.active {
-    display: block;
-}
-
-@keyframes popover-fade-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 .tag-popover-header {

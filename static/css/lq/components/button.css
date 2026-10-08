@@ -26,7 +26,7 @@
    when unused, so hover interpolates slot for slot instead of snapping
    between lists of different length.
    ───────────────────────────────────────────────────────────────────────── */
-:is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+:is(.lq-btn, .lq-tabs__tab, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
     .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) {
     --lq-ctrl-rim: 0 0 transparent;
     --lq-ctrl-glow: 0 0 transparent;
@@ -34,6 +34,12 @@
     --lq-ctrl-glow-color: var(--ls-primary-soft);
     --lq-ctrl-edge: var(--ls-primary) / .35;
     box-shadow: var(--lq-ctrl-rim), var(--lq-ctrl-glow), var(--lq-ctrl-elev);
+}
+/* Legacy aliases coexist with the component class. Their later :active rule
+   must not replace the shared press, or the control jumps straight to neutral.
+   Only timing/interaction gain this specificity; variant paint slots stay low. */
+:root :is(.lq-btn, .lq-tabs__tab, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+    .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) {
     transition: transform var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)),
         box-shadow var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out)),
         border-color var(--lq-motion-control-duration, var(--ls-dur-fast)) var(--lq-motion-spring, var(--ls-ease-out));
@@ -49,34 +55,38 @@
    they answer to focus, not to the pointer, and a text box that lifts under
    the cursor reads as a button. */
 @media (hover: hover) and (pointer: fine) {
-    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
+    :root :is(.lq-btn, .lq-tabs__tab, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
         :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) {
         --lq-ctrl-glow: 0 0 0 3px hsl(var(--lq-ctrl-glow-color));
         --lq-control-border: hsl(var(--lq-ctrl-edge)); border-color: var(--lq-control-border);
         transform: translateY(var(--lq-motion-hover-y, -1px));
     }
 }
-:is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
+:root :is(.lq-btn, .lq-tabs__tab, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
     :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) {
     transform: translateY(0) scale(var(--lq-motion-press-x, .995), var(--lq-motion-press-y, .995));
     transition-duration: var(--lq-motion-press-duration, var(--ls-dur-fast));
     transition-timing-function: var(--lq-motion-ease, var(--ls-ease-out));
 }
-:is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+:is(.lq-btn, .lq-tabs__tab, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
     .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value):focus-visible {
     outline: 2px solid hsl(var(--ls-ring));
     outline-offset: 2px;
 }
+/* Opted-in controls may retain a legacy class whose hover rule only checks
+   native disabled. Busy/ARIA-disabled actions must not inherit that lift. */
+:root :is(.lq-btn, .lq-tabs__tab, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):is(
+    :disabled, .disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"]):not([data-lq-shape="surface"]) { transform: none; }
 /* The cancel has to repeat the `:not(...)` of the rules it cancels. Without it
    the hover rule wins on specificity and the lift survives reduced motion --
    measured, not assumed: tests/e2e/components/lq-u1-interaction.spec.ts caught
    exactly that. */
 @media (prefers-reduced-motion: reduce) {
-    :is(.lq-btn, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
+    :root :is(.lq-btn, .lq-tabs__tab, .lq-chip, .lq-chip__remove, .lq-selection__option, .lq-field__clear,
         .lq-input, .lq-textarea, .lq-select, .lq-switch, .lq-checkbox, .lq-radio, .lq-range, .lq-range__value) { transition: none; }
-    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
+    :root :is(.lq-btn, .lq-tabs__tab, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):hover:not(
         :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]),
-    :is(.lq-btn, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
+    :root :is(.lq-btn, .lq-tabs__tab, .lq-chip--filter, .lq-chip__remove, .lq-selection__option, .lq-field__clear):active:not(
         :disabled, .is-disabled, [aria-disabled="true"], [data-lq-disabled="true"], .is-loading, .loading, [aria-busy="true"], [data-lq-shape="surface"]) { transform: none; }
 }
 

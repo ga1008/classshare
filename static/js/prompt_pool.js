@@ -115,6 +115,7 @@ function ensurePanel(input, featureKey) {
 
     const panel = document.createElement('div');
     panel.className = 'prompt-pool-panel lq-domain-raised';
+    panel.dataset.lqPanelPresence = '';
     panel.dataset.lqComponent = 'selection'; panel.dataset.lqMaterial = 'raised';
     panel.hidden = true;
     panel.id = `prompt-pool-panel-${++panelIdSeed}`;

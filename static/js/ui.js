@@ -51,11 +51,11 @@ const modalBridge = document[MODAL_BRIDGE] ||= { handles: new WeakMap(), listeni
 
 function registerModal(modalOverlay, initialFocus = true) {
     const layer = getLayerSystem(document);
+    modalOverlay.dataset.lqPresence = 'domain';
     const handle = layer.open(modalOverlay, {
         type: 'modal', surface: modalOverlay.querySelector('.modal-dialog,.modal-box,.modal-content,.modal') || modalOverlay,
         initialFocus: initialFocus ? undefined : false,
-        onCloseRequested: () => modalOverlay.classList.remove('show'),
-        onClose: () => { modalOverlay.style.display = 'none'; },
+        onClose: () => { modalOverlay.classList.remove('show'); modalOverlay.style.display = 'none'; },
         onDestroy: () => { modalOverlay.classList.remove('show'); modalOverlay.style.display = 'none'; },
     });
     modalBridge.handles.set(modalOverlay, handle);
@@ -65,10 +65,10 @@ function registerModal(modalOverlay, initialFocus = true) {
 export function openModal(modalId) {
     const modalOverlay = document.getElementById(modalId);
     if (modalOverlay) {
+        const current = modalBridge.handles.get(modalOverlay);
+        if (!current || ['closed', 'destroyed'].includes(current.state)) modalOverlay.hidden = true;
         modalOverlay.style.display = 'flex';
-        modalOverlay.hidden = false;
-        // The existing show-class transition remains the visual contract.
-        window.getComputedStyle(modalOverlay).opacity;
+        // Retain the legacy visibility hook; shared presence owns both directions.
         modalOverlay.classList.add('show');
         registerModal(modalOverlay);
     } else {

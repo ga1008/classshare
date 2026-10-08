@@ -2,6 +2,7 @@ import { apiFetch } from '/static/js/api.js';
 import { showMessage } from '/static/js/ui.js';
 import { initAcademicSyncDialog } from '/static/js/academic_sync_dialog.js';
 import { LQ } from '/static/js/lq/index.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const data = window.MANAGE_CLASSES_DATA || {};
 const classes = Array.isArray(data.classes) ? data.classes : [];
@@ -66,10 +67,32 @@ const elements = {
 };
 
 let activeDrawerClass = null;
-let activeDrawerTrigger = null;
-let activeAddTrigger = null;
-let activeCustomTrigger = null;
 let reloadAfterAddModalClose = false;
+const drawerOwner = createDomainModal(elements.drawer, {
+    type: 'drawer', surface: elements.drawerPanel, initialFocus: () => elements.drawerPanel,
+    onClose: () => {
+        elements.drawer.classList.remove('is-open');
+        document.body.classList.remove('has-class-student-drawer');
+        activeDrawerClass = null;
+    },
+});
+const addOwner = createDomainModal(elements.addModal, {
+    surface: elements.addModalPanel, initialFocus: () => elements.addName,
+    onClose: () => {
+        elements.addModal.classList.remove('is-open');
+        document.body.classList.remove('has-class-student-modal');
+        const shouldReload = reloadAfterAddModalClose;
+        reloadAfterAddModalClose = false;
+        if (shouldReload) window.location.reload();
+    },
+});
+const customOwner = createDomainModal(elements.customModal, {
+    surface: elements.customModalPanel, initialFocus: () => elements.customName,
+    onClose: () => {
+        elements.customModal.classList.remove('is-open');
+        document.body.classList.remove('has-class-student-modal');
+    },
+});
 
 function normalize(value) {
     return String(value || '').trim().toLowerCase();
@@ -377,7 +400,6 @@ function filterStudentRows() {
 function openStudentDrawer(classItem, trigger = null) {
     if (!elements.drawer || !classItem) return;
     activeDrawerClass = classItem;
-    activeDrawerTrigger = trigger;
     if (elements.drawerTitle) elements.drawerTitle.textContent = classItem.name || '班级学生';
     if (elements.drawerKicker) elements.drawerKicker.textContent = classItem.department_label || classItem.department || '未分类';
     if (elements.drawerMeta) {
@@ -387,33 +409,17 @@ function openStudentDrawer(classItem, trigger = null) {
     }
     if (elements.drawerSearch) elements.drawerSearch.value = '';
     renderStudentRows(classItem);
-    elements.drawer.hidden = false;
-    elements.drawer.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-class-student-drawer');
-    window.requestAnimationFrame(() => {
-        elements.drawer.classList.add('is-open');
-        elements.drawerPanel?.focus({ preventScroll: true });
-    });
+    elements.drawer.classList.add('is-open');
+    drawerOwner.open({ trigger });
 }
 
 function closeStudentDrawer() {
-    if (!elements.drawer) return;
-    elements.drawer.classList.remove('is-open');
-    elements.drawer.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('has-class-student-drawer');
-    window.setTimeout(() => {
-        if (!elements.drawer.classList.contains('is-open')) {
-            elements.drawer.hidden = true;
-            activeDrawerTrigger?.focus?.({ preventScroll: true });
-            activeDrawerTrigger = null;
-            activeDrawerClass = null;
-        }
-    }, 180);
+    return drawerOwner.close();
 }
 
 function openAddStudentModal(classItem, trigger = null, options = {}) {
     if (!elements.addModal || !classItem) return;
-    activeAddTrigger = trigger;
     reloadAfterAddModalClose = Boolean(options.reloadOnClose);
     if (elements.addClassId) elements.addClassId.value = String(classItem.id || '');
     if (elements.addTitle) elements.addTitle.textContent = `加入 ${classItem.name || '班级'}`;
@@ -423,63 +429,28 @@ function openAddStudentModal(classItem, trigger = null, options = {}) {
     }
     elements.addForm?.reset();
     if (elements.addClassId) elements.addClassId.value = String(classItem.id || '');
-    elements.addModal.hidden = false;
-    elements.addModal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-class-student-modal');
-    window.requestAnimationFrame(() => {
-        elements.addModal.classList.add('is-open');
-        elements.addName?.focus({ preventScroll: true });
-    });
+    elements.addModal.classList.add('is-open');
+    addOwner.open({ trigger });
 }
 
 function closeAddStudentModal() {
-    if (!elements.addModal) return;
-    const shouldReload = reloadAfterAddModalClose;
-    reloadAfterAddModalClose = false;
-    elements.addModal.classList.remove('is-open');
-    elements.addModal.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('has-class-student-modal');
-    window.setTimeout(() => {
-        if (!elements.addModal.classList.contains('is-open')) {
-            elements.addModal.hidden = true;
-            if (shouldReload) {
-                window.location.reload();
-                return;
-            }
-            activeAddTrigger?.focus?.({ preventScroll: true });
-            activeAddTrigger = null;
-        }
-    }, 160);
+    return addOwner.close();
 }
 
 function openCustomClassModal(trigger = null) {
     if (!elements.customModal) return;
-    activeCustomTrigger = trigger;
     elements.customForm?.reset();
     if (elements.customCreateAndAddStudent) {
         elements.customCreateAndAddStudent.checked = true;
     }
-    elements.customModal.hidden = false;
-    elements.customModal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-class-student-modal');
-    window.requestAnimationFrame(() => {
-        elements.customModal.classList.add('is-open');
-        elements.customName?.focus({ preventScroll: true });
-    });
+    elements.customModal.classList.add('is-open');
+    customOwner.open({ trigger });
 }
 
 function closeCustomClassModal() {
-    if (!elements.customModal) return;
-    elements.customModal.classList.remove('is-open');
-    elements.customModal.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('has-class-student-modal');
-    window.setTimeout(() => {
-        if (!elements.customModal.classList.contains('is-open')) {
-            elements.customModal.hidden = true;
-            activeCustomTrigger?.focus?.({ preventScroll: true });
-            activeCustomTrigger = null;
-        }
-    }, 160);
+    return customOwner.close();
 }
 
 function normalizeCreatedClass(classItem) {
@@ -527,9 +498,9 @@ async function submitCustomClass(event) {
         const createdClass = normalizeCreatedClass(result.class);
         showMessage(result.message || '自定义班级已创建', 'success');
         const shouldAddStudent = Boolean(elements.customCreateAndAddStudent?.checked);
-        closeCustomClassModal();
+        await closeCustomClassModal();
         if (shouldAddStudent && createdClass.id) {
-            window.setTimeout(() => openAddStudentModal(createdClass, null, { reloadOnClose: true }), 180);
+            openAddStudentModal(createdClass, null, { reloadOnClose: true });
         } else {
             window.setTimeout(() => window.location.reload(), 650);
         }
@@ -722,24 +693,6 @@ function bindEvents() {
     elements.customModalCancel?.addEventListener('click', closeCustomClassModal);
     elements.customModal?.addEventListener('click', (event) => {
         if (event.target === elements.customModal) closeCustomClassModal();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        // An LQ.layer dialog (e.g. a destructive-action confirm) stacked on top of
-        // this legacy drawer/modal owns Escape first; let it close and return focus
-        // to its trigger before this page's own Escape handling runs.
-        if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-        if (elements.addModal && !elements.addModal.hidden) {
-            closeAddStudentModal();
-            return;
-        }
-        if (elements.customModal && !elements.customModal.hidden) {
-            closeCustomClassModal();
-            return;
-        }
-        if (elements.drawer && !elements.drawer.hidden) {
-            closeStudentDrawer();
-        }
     });
 }
 

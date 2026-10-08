@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { getLayerSystem } from './lq/layer.js';
 import { submitGradeMaterialWithPreflight } from './grade_material_preflight.js';
 import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
 import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
@@ -127,16 +128,34 @@ function isTeacher() {
     return config?.canGenerateFinalMaterials || config?.userRole === 'teacher' || config?.userInfo?.role === 'teacher';
 }
 
+const materialModalLayers = new WeakMap();
+
 function openModal(modal) {
     if (!modal) return;
     if (modal.id === 'classroom-material-detail-modal' && document.body.classList.contains('classroom-workspace-v2')) {
         document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { panel: 'material-detail' } }));
         return;
     }
+    const layers = getLayerSystem(document);
+    const existing = materialModalLayers.get(modal);
+    const trigger = existing?.trigger || document.activeElement;
+    if (!existing) modal.hidden = true;
+    modal.dataset.lqPresence = 'domain';
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
     modal.classList.add('show');
-    document.body.classList.add('modal-open');
+    layers.getPortalHost({ trigger }).appendChild(modal);
+    const finish = () => {
+        materialModalLayers.delete(modal);
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.classList.remove('show');
+    };
+    const handle = layers.open(modal, {
+        type: 'modal', surface: modal.querySelector('.modal-dialog') || modal.firstElementChild,
+        trigger, onClose: finish, onDestroy: finish,
+    });
+    materialModalLayers.set(modal, { handle, trigger });
 }
 
 function closeModal(modal) {
@@ -145,10 +164,8 @@ function closeModal(modal) {
         document.dispatchEvent(new CustomEvent('classroom:workspace-panel', { detail: { back: true } }));
         return;
     }
-    modal.style.display = 'none';
-    modal.setAttribute('aria-hidden', 'true');
-    modal.classList.remove('show');
-    document.body.classList.remove('modal-open');
+    const entry = materialModalLayers.get(modal);
+    return entry ? getLayerSystem(document).close(entry.handle, 'programmatic') : Promise.resolve(false);
 }
 
 function getMetaText(item) {

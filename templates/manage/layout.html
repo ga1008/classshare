@@ -84,7 +84,7 @@
                         <span class="manage-nav-domain-toggle__count">{{ domain.item_count }}</span>
                         <svg class="manage-nav-domain-toggle__chevron" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
                     </button>
-                    <div class="manage-nav-domain-items" id="manage-domain-items-{{ domain.key }}">
+                    <div class="manage-nav-domain-items" data-lq-panel-presence id="manage-domain-items-{{ domain.key }}">
                         <div class="manage-nav-domain-items-inner">
                             {% for group in domain.groups %}
                             <div class="manage-nav-group{% if group.active %} is-active{% endif %}" data-nav-group="{{ domain.key }}:{{ group.label }}">
@@ -357,27 +357,7 @@
         };
 
         {% if not _lq_manage_shell %}
-        // Float-out transition when navigating via the sidebar or topbar actions.
-        const REDUCED_MOTION_QUERY = window.matchMedia('(prefers-reduced-motion: reduce)');
-        document.addEventListener('click', (event) => {
-            if (event.defaultPrevented || event.button !== 0) return;
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            if (REDUCED_MOTION_QUERY.matches) return;
-            const link = event.target.closest('.manage-nav-item[href], .manage-context-actions a[href]');
-            if (!link) return;
-            const href = link.getAttribute('href') || '';
-            if (!href || href.startsWith('#') || link.target === '_blank') return;
-            if (href === window.location.pathname || href === `${window.location.pathname}${window.location.search}`) return;
-            event.preventDefault();
-            document.querySelector('.manage-main')?.classList.add('is-leaving');
-            window.setTimeout(() => { window.location.href = href; }, 150);
-        });
-
-        // bfcache restore: never leave the page stuck in its exit state.
-        window.addEventListener('pageshow', () => {
-            document.querySelector('.manage-main')?.classList.remove('is-leaving');
-        });
-
+        // Same-origin page navigation uses the shared native view-transition policy.
         document.addEventListener('click', (event) => {
             const sidebar = document.getElementById('sidebar');
             const toggle = document.querySelector('.mobile-toggle');

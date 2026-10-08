@@ -349,10 +349,18 @@
     }
 
     // ===== Tag Filter Dropdown =====
-    function toggleTagDropdown(e) {
+    const tagPopoverSystemModule = import('{{ asset_url("js/ui_popover.js") }}').then(({ createPopoverSystem }) => createPopoverSystem());
+    let tagFilterOwner = null;
+    let tagEditorOwner = null;
+    let tagOpenGeneration = 0;
+    async function toggleTagDropdown(e) {
         e.stopPropagation();
-        const menu = document.getElementById('tagDropdownMenu');
-        if (menu) menu.classList.toggle('open');
+        const anchor = e.currentTarget;
+        const system = await tagPopoverSystemModule;
+        const panel = document.getElementById('tagDropdownMenu');
+        if (!panel) return;
+        tagFilterOwner ||= system.createPopover({ panel, anchor, label: '标签筛选' });
+        tagFilterOwner.toggle();
     }
 
     function toggleFilterTag(tag, checked) {
@@ -672,42 +680,28 @@
     }
 
     // ===== Tag Popover =====
-    function openTagPopover(paperId, btnEl) {
-        closeTagPopover(); // close any existing
-
+    async function openTagPopover(paperId, btnEl) {
+        const generation = ++tagOpenGeneration;
+        const system = await tagPopoverSystemModule;
+        if (generation !== tagOpenGeneration) return;
+        const panel = document.getElementById('tagPopover');
+        if (!panel) return;
+        tagEditorOwner ||= system.createPopover({
+            panel, anchor: btnEl, label: '编辑试卷标签', placement: 'bottom-end',
+            onClose: () => { currentTagPaperId = null; },
+        });
+        tagEditorOwner.anchor?.setAttribute('aria-expanded', 'false');
+        tagEditorOwner.anchor = btnEl;
         currentTagPaperId = paperId;
-        const popover = document.getElementById('tagPopover');
-        const rect = btnEl.getBoundingClientRect();
-
-        // Position popover
-        const popWidth = 300;
-        let top = rect.bottom + 8;
-        let left = rect.right - popWidth;
-
-        // Keep within viewport
-        if (left < 8) left = 8;
-        if (left + popWidth > window.innerWidth - 8) left = window.innerWidth - popWidth - 8;
-        if (top + 260 > window.innerHeight) {
-            top = rect.top - 260;
-        }
-
-        popover.style.top = top + 'px';
-        popover.style.left = left + 'px';
-
         renderTagPopoverContent();
-        popover.classList.add('active');
-
-        // Focus input
-        setTimeout(() => {
-            const input = document.getElementById('tagPopoverInput');
-            if (input) input.focus();
-        }, 50);
+        tagEditorOwner.open();
+        tagEditorOwner.reposition();
     }
 
     function closeTagPopover() {
-        const popover = document.getElementById('tagPopover');
-        if (popover) popover.classList.remove('active');
+        tagOpenGeneration += 1;
         currentTagPaperId = null;
+        return tagEditorOwner?.close();
     }
 
     function renderTagPopoverContent() {
@@ -735,8 +729,6 @@
         if (e.key === 'Enter') {
             e.preventDefault();
             addTagFromPopover();
-        } else if (e.key === 'Escape') {
-            closeTagPopover();
         }
     }
 
@@ -849,24 +841,31 @@
     }
 
     // ===== Material Reverse =====
-    function toggleMaterialReverseMenu(event) {
+    let materialReverseMenuOwner = null;
+    const materialReverseMenuReady = import('{{ asset_url("js/lq/menus.js") }}').then(({ bindMenu }) => {
+        const trigger = document.getElementById('materialReverseMenuButton');
+        const panel = document.getElementById('materialReverseDropdown');
+        if (!trigger || !panel) return null;
+        trigger.removeAttribute('onclick');
+        materialReverseMenuOwner = bindMenu(trigger, panel, { nativeActions: true, placement: 'bottom-end' });
+        return materialReverseMenuOwner;
+    });
+    async function toggleMaterialReverseMenu(event) {
         event?.stopPropagation();
-        const dropdown = document.getElementById('materialReverseDropdown');
-        const button = document.getElementById('materialReverseMenuButton');
-        if (!dropdown) return;
-        const willOpen = !dropdown.classList.contains('open');
-        dropdown.classList.toggle('open', willOpen);
-        if (button) button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        const owner = await materialReverseMenuReady;
+        owner?.open();
     }
 
     function closeMaterialReverseMenu() {
-        const dropdown = document.getElementById('materialReverseDropdown');
-        const button = document.getElementById('materialReverseMenuButton');
-        if (dropdown) dropdown.classList.remove('open');
-        if (button) button.setAttribute('aria-expanded', 'false');
+        return materialReverseMenuOwner?.close();
     }
 
-    function openMaterialReverseModal(targetType) {
+    let materialReverseOwner = null;
+    let materialReverseGeneration = 0;
+    const domainModalModule = import('{{ asset_url("js/lq/domain-modal.js") }}');
+    async function openMaterialReverseModal(targetType) {
+        const generation = ++materialReverseGeneration;
+        const trigger = document.activeElement;
         const config = MATERIAL_REVERSE_TARGETS[targetType];
         if (!config) return;
         closeMaterialReverseMenu();
@@ -885,14 +884,22 @@
             button.textContent = config.buttonText;
         }
         renderMaterialReversePaperList();
-        modal?.classList.add('active');
-        setTimeout(() => prompt?.focus(), 40);
+        const { createDomainModal } = await domainModalModule;
+        if (generation !== materialReverseGeneration || !modal) return;
+        materialReverseOwner ||= createDomainModal(modal, {
+            surface: modal.querySelector('.modal-box'), initialFocus: prompt,
+            onClose: () => {
+                modal.classList.remove('active');
+                materialReverseTargetType = ''; materialReverseSelectedPaperId = '';
+            },
+        });
+        modal.classList.add('active');
+        materialReverseOwner.open({ trigger });
     }
 
     function closeMaterialReverseModal() {
-        document.getElementById('materialReverseModal')?.classList.remove('active');
-        materialReverseTargetType = '';
-        materialReverseSelectedPaperId = '';
+        materialReverseGeneration += 1;
+        return materialReverseOwner?.close();
     }
 
     function getPaperMetric(paper, metric, dataKey) {
@@ -992,32 +999,6 @@
             }
         }
     }
-
-    // ===== Close popups on outside click =====
-    document.addEventListener('click', function(e) {
-        const reverseTopbar = document.getElementById('materialReverseTopbar');
-        const reverseMenu = document.getElementById('materialReverseDropdown');
-        if (reverseMenu && reverseMenu.classList.contains('open') && reverseTopbar && !reverseTopbar.contains(e.target)) {
-            closeMaterialReverseMenu();
-        }
-
-        // Close tag dropdown
-        const tagDropdown = document.getElementById('tagDropdown');
-        const tagMenu = document.getElementById('tagDropdownMenu');
-        if (tagMenu && tagMenu.classList.contains('open') && !tagDropdown.contains(e.target)) {
-            tagMenu.classList.remove('open');
-        }
-
-        // Close tag popover
-        const tagPopover = document.getElementById('tagPopover');
-        if (tagPopover && tagPopover.classList.contains('active') && !tagPopover.contains(e.target)) {
-            // Check if click was on a tag button (to prevent closing immediately)
-            const isTagBtn = e.target.closest('[onclick*="openTagPopover"]');
-            if (!isTagBtn) {
-                closeTagPopover();
-            }
-        }
-    });
 
     // ===== Existing functionality preserved below =====
     let currentExamId = null;
@@ -1280,7 +1261,11 @@
     }
 
     // Assignment modal
+    let assignModalOwner = null;
+    let assignModalGeneration = 0;
     async function openAssignModal(examId, examTitle) {
+        const generation = ++assignModalGeneration;
+        const trigger = document.activeElement;
         currentExamId = examId;
         document.getElementById('assign-exam-name').textContent = examTitle;
         document.getElementById('assign-assessment-kind').value = '';
@@ -1288,10 +1273,20 @@
         resetAssignScheduleFields();
 
         try {
-            document.getElementById('assignModal').classList.add('active');
+            const { createDomainModal } = await domainModalModule;
+            if (generation !== assignModalGeneration) return;
+            const modal = document.getElementById('assignModal');
+            assignModalOwner ||= createDomainModal(modal, {
+                surface: modal?.querySelector('.modal-box'),
+                onCloseRequested: () => { assignModalGeneration += 1; },
+                onClose: () => { modal.classList.remove('active'); currentExamId = null; },
+            });
+            modal.classList.add('active');
+            assignModalOwner.open({ trigger });
 
             const resp = await fetch('/api/manage/offerings/list');
             const data = await resp.json();
+            if (generation !== assignModalGeneration) return;
 
             if (data.status === 'success' && data.offerings && data.offerings.length > 0) {
                 listDiv.innerHTML = data.offerings.map(o => `
@@ -1312,13 +1307,14 @@
                     </div>`;
             }
         } catch(e) {
+            if (generation !== assignModalGeneration) return;
             listDiv.innerHTML = `<div class="text-danger text-center p-3">加载课堂列表失败: ${e.message}</div>`;
         }
     }
 
     function closeAssignModal() {
-        document.getElementById('assignModal').classList.remove('active');
-        currentExamId = null;
+        assignModalGeneration += 1;
+        return assignModalOwner?.close();
     }
 
     async function confirmAssign() {
@@ -1434,14 +1430,6 @@
         });
     });
 
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeMaterialReverseMenu();
-            if (document.getElementById('materialReverseModal')?.classList.contains('active')) {
-                closeMaterialReverseModal();
-            }
-        }
-    });
 
     window.addEventListener('beforeunload', function() {
         stopPolling();
@@ -1451,9 +1439,17 @@
     import { apiFetch } from '{{ asset_url("js/api.js") }}';
     import { showMessage } from '{{ asset_url("js/ui.js") }}';
     import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
+    import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
     import { enhancePromptPoolInput } from '{{ asset_url("js/prompt_pool.js") }}';
 
     const paperPreviewCache = new Map();
+    let paperPreviewGeneration = 0;
+    const paperPreviewRoot = document.getElementById('paperPreviewModal');
+    const paperPreviewOwner = createDomainModal(paperPreviewRoot, {
+        surface: paperPreviewRoot?.querySelector('.exam-paper-preview-dialog'),
+        onCloseRequested: () => { paperPreviewGeneration += 1; },
+        onClose: () => { paperPreviewRoot.classList.remove('is-open'); paperPreviewRoot.style.display = 'none'; },
+    });
     enhancePromptPoolInput(document.getElementById('material-reverse-prompt'));
 
     function setPaperPreviewOpen(isOpen) {
@@ -1461,22 +1457,17 @@
         if (!modal) return;
         if (isOpen) {
             modal.style.display = 'flex';
-            requestAnimationFrame(() => modal.classList.add('is-open'));
-            document.body.style.overflow = 'hidden';
+            modal.classList.add('is-open');
+            paperPreviewOwner.open();
             return;
         }
-        modal.classList.remove('is-open');
-        setTimeout(() => {
-            if (!modal.classList.contains('is-open')) {
-                modal.style.display = 'none';
-                document.body.style.overflow = '';
-            }
-        }, 180);
+        return paperPreviewOwner.close();
     }
 
     window.openPaperPreview = async function(paperId) {
         const id = String(paperId || '').trim();
         if (!id) return;
+        const generation = ++paperPreviewGeneration;
         const body = document.getElementById('paperPreviewBody');
         const title = document.getElementById('paperPreviewTitle');
         if (!body) return;
@@ -1491,6 +1482,7 @@
                 paper = data?.paper || {};
                 paperPreviewCache.set(id, paper);
             }
+            if (generation !== paperPreviewGeneration) return;
             if (title) title.textContent = paper.title || '试卷预览';
             renderExamPaperPreview(body, {
                 paper: paper.questions_json || paper,
@@ -1499,6 +1491,7 @@
                 badgeText: '学生视角试卷预览',
             });
         } catch (error) {
+            if (generation !== paperPreviewGeneration) return;
             console.error('Failed to preview exam paper:', error);
             body.innerHTML = '<div class="exam-paper-preview__empty">试卷加载失败，请稍后重试。</div>';
             showMessage(error?.message || '试卷加载失败', 'error');
@@ -1515,12 +1508,4 @@
         }
     });
 
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            const modal = document.getElementById('paperPreviewModal');
-            if (modal?.classList.contains('is-open')) {
-                setPaperPreviewOpen(false);
-            }
-        }
-    });
 </script>

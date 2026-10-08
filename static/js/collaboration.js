@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { getLayerSystem } from './lq/layer.js';
 import { showToast, escapeHtml, formatSize, formatDate } from './ui.js';
 
 const SCORE_OPTIONS = [5, 4, 3, 2, 1];
@@ -716,27 +717,50 @@ function findSchemeGroup(snapshot, groupId) {
 
 // --- Lightweight overlay primitives -----------------------------------------
 
-function showOverlay(html, { onMount } = {}) {
+const collaborationOverlays = new Set();
+
+function showOverlay(html, { onMount, onClose } = {}) {
+    const layers = getLayerSystem(document);
+    const trigger = document.activeElement;
+    const parentLayer = layers.top();
+    let handle = null;
+    let disposed = false;
     const overlay = document.createElement('div');
     overlay.className = 'lq-domain-region collab-overlay';
     overlay.dataset.lqComponent = 'layer';
+    overlay.dataset.lqPresence = 'domain';
+    overlay.hidden = true;
     overlay.innerHTML = `<div class="collab-overlay__backdrop" data-collab-overlay-close></div><div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised collab-overlay__card" role="dialog" aria-modal="true">${html}</div>`;
-    document.body.appendChild(overlay);
-    const close = () => {
+    layers.getPortalHost({ trigger, parentLayer }).appendChild(overlay);
+    const finish = () => {
+        if (disposed) return;
+        disposed = true;
+        collaborationOverlays.delete(close);
         overlay.remove();
-        document.removeEventListener('keydown', onKey);
+        onClose?.();
     };
-    function onKey(ev) { if (ev.key === 'Escape') close(); }
+    const close = () => {
+        if (handle) return layers.close(handle, 'programmatic');
+        finish();
+        return Promise.resolve(true);
+    };
     overlay.addEventListener('click', (event) => {
         if (event.target.closest('[data-collab-overlay-close]')) close();
     });
-    document.addEventListener('keydown', onKey);
     if (onMount) onMount(overlay, close);
+    if (!disposed && overlay.isConnected) {
+        collaborationOverlays.add(close);
+        handle = layers.open(overlay, {
+            type: 'modal', surface: overlay.querySelector('.collab-overlay__card'), trigger, parentLayer,
+            onClose: finish, onDestroy: finish,
+        });
+    }
     return { overlay, close };
 }
 
 function confirmRandomJoin(scheme) {
     return new Promise((resolve) => {
+        let accepted = false;
         showOverlay(`
             <div class="collab-confirm">
                 <span class="collab-confirm__icon" aria-hidden="true">🎲</span>
@@ -749,13 +773,9 @@ function confirmRandomJoin(scheme) {
             </div>
         `, {
             onMount(overlay, close) {
-                let settled = false;
-                const done = (value) => { if (settled) return; settled = true; resolve(value); };
-                overlay.querySelector('[data-collab-confirm-yes]')?.addEventListener('click', () => { done(true); close(); });
-                overlay.addEventListener('click', (event) => {
-                    if (event.target.closest('[data-collab-overlay-close]')) done(false);
-                });
+                overlay.querySelector('[data-collab-confirm-yes]')?.addEventListener('click', () => { accepted = true; close(); });
             },
+            onClose: () => resolve(accepted),
         });
     });
 }
@@ -1370,7 +1390,7 @@ async function handleBlogDraft(root, state, groupId, submissionId) {
 }
 
 function closeOverlays() {
-    document.querySelectorAll('.collab-overlay').forEach((element) => element.remove());
+    return Promise.all(Array.from(collaborationOverlays, close => close()));
 }
 
 function applyAndRender(root, state, response) {

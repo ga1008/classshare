@@ -1,8 +1,8 @@
 import { apiFetch } from '/static/js/api.js';
 import { showToast } from '/static/js/ui.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const REVEAL_DELAY_MS = 560;
-const TRANSITION_MS = 280;
 
 const THEME_COLORS = {
     qi_awakening: ['#14b8a6', '#facc15'],
@@ -275,15 +275,15 @@ export function initLearningCertificateReveal(config = window.APP_CONFIG || {}) 
     const saveBtn = document.getElementById('learning-certificate-save');
     const storageKey = `learning-cert-seen:${payload.id}`;
     const hasLocalReveal = storageGet(storageKey) === '1';
-    const close = () => {
-        backdrop.classList.remove('is-open');
-        backdrop.setAttribute('aria-hidden', 'true');
-        storageSet(storageKey, '1');
-        window.setTimeout(() => {
-            backdrop.hidden = true;
-            document.body.classList.remove('has-learning-certificate');
-        }, TRANSITION_MS);
-    };
+    const finish = () => { backdrop.classList.remove('is-open'); document.body.classList.remove('has-learning-certificate'); };
+    // This existing reveal is modeless and permits interaction with the page.
+    // Register that exact behavior; do not turn the certificate into a blocker.
+    const owner = createDomainModal(backdrop, {
+        type: 'popover', surface: backdrop.querySelector('.learning-certificate-shell') || card,
+        closeOnOutside: false, initialFocus: closeBtn,
+        onCloseRequested: () => storageSet(storageKey, '1'), onClose: finish, onDestroy: finish,
+    });
+    const close = () => owner.close('button');
 
     saveBtn?.addEventListener('click', async () => {
         const originalText = saveBtn.textContent;
@@ -301,9 +301,6 @@ export function initLearningCertificateReveal(config = window.APP_CONFIG || {}) 
     });
 
     closeBtn?.addEventListener('click', close);
-    document.addEventListener('keydown', (event) => {
-        if (!backdrop.hidden && event.key === 'Escape') close();
-    });
 
     if (hasLocalReveal) {
         markCertificateRevealed(payload.id, backdrop);
@@ -313,13 +310,9 @@ export function initLearningCertificateReveal(config = window.APP_CONFIG || {}) 
     }
 
     window.setTimeout(() => {
-        backdrop.hidden = false;
-        backdrop.setAttribute('aria-hidden', 'false');
         document.body.classList.add('has-learning-certificate');
         markCertificateRevealed(payload.id, backdrop);
-        window.requestAnimationFrame(() => {
-            backdrop.classList.add('is-open');
-            closeBtn?.focus?.({ preventScroll: true });
-        });
+        backdrop.classList.add('is-open');
+        owner.open({ trigger: document.activeElement });
     }, REVEAL_DELAY_MS);
 }

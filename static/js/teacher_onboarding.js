@@ -1,6 +1,8 @@
 import { apiFetch } from '/static/js/api.js';
 import { showToast } from '/static/js/ui.js';
 import { enhancePromptPoolInput, recordPromptForInput } from '/static/js/prompt_pool.js';
+import { createDomainModal } from './lq/domain-modal.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 const modal = document.querySelector('[data-teacher-onboarding-modal]');
 const openButtons = Array.from(document.querySelectorAll('[data-teacher-onboarding-open]'));
@@ -26,9 +28,7 @@ if (modal) {
         payload: null,
         activeIndex: 0,
         isOpen: false,
-        lastFocused: null,
-        bodyOverflow: '',
-        closeTimer: null,
+        stepGeneration: 0,
         welcomeTimer: null,
         completing: false,
         materialExpandedIds: new Set(),
@@ -1134,9 +1134,14 @@ if (modal) {
         if (step.key === 'ai') renderAiStep(elements.content);
         if (step.key === 'success') renderSuccessStep(elements.content);
         updateFooter();
+        const shell = elements.content.querySelector('.onboarding-step-shell');
+        if (shell) {
+            shell.dataset.lqPresence = 'panel';
+            void setOverlayOpen(shell, true);
+        }
     }
 
-    function goToStep(index) {
+    async function goToStep(index) {
         const target = Math.min(Math.max(index, 0), steps.length - 1);
         if (target === state.activeIndex || state.completing) return;
         const shell = elements.content?.querySelector('.onboarding-step-shell');
@@ -1145,11 +1150,17 @@ if (modal) {
             render();
             return;
         }
-        shell.classList.add('is-leaving');
-        window.setTimeout(() => {
-            state.activeIndex = target;
-            render();
-        }, 260);
+        const generation = ++state.stepGeneration;
+        shell.dataset.lqPresence = 'panel';
+        shell.dataset.uiOverlayState = 'open';
+        if (!await setOverlayOpen(shell, false) || generation !== state.stepGeneration || !shell.isConnected) return;
+        state.activeIndex = target;
+        render();
+        const nextShell = elements.content?.querySelector('.onboarding-step-shell');
+        if (nextShell) {
+            nextShell.dataset.lqPresence = 'panel';
+            void setOverlayOpen(nextShell, true);
+        }
     }
 
     async function handleNext() {
@@ -1169,17 +1180,34 @@ if (modal) {
         }
     }
 
+    const submodalOwner = createDomainModal(submodal, {
+        surface: submodal?.querySelector('.teacher-onboarding-submodal-card'),
+        initialFocus: () => elements.submodalBody?.querySelector('input, textarea, select'),
+        closeOnOutside: false,
+        onClose: () => { if (elements.submodalBody) elements.submodalBody.innerHTML = ''; },
+    });
+    const guideOwner = createDomainModal(modal, {
+        surface: dialog,
+        initialFocus: () => modal.querySelector('[data-teacher-onboarding-dismiss]'),
+        closeOnOutside: false,
+        beforeClose: (reason) => markDismissed(reason === 'escape' ? 'manual_exit' : reason),
+        onClose: () => {
+            modal.classList.remove('is-open');
+            state.isOpen = false;
+            state.stepGeneration += 1;
+            window.clearTimeout(state.welcomeTimer);
+        },
+    });
+
     function closeSubmodal() {
-        if (!submodal) return;
-        submodal.hidden = true;
-        if (elements.submodalBody) elements.submodalBody.innerHTML = '';
+        return submodalOwner.close();
     }
 
     function openSubmodal(title, bodyHtml, onSubmit) {
         if (!submodal || !elements.submodalBody || !elements.submodalTitle) return null;
         elements.submodalTitle.textContent = title;
         elements.submodalBody.innerHTML = `<form data-submodal-form>${bodyHtml}</form>`;
-        submodal.hidden = false;
+        submodalOwner.open({ parentLayer: guideOwner.handle });
         const form = elements.submodalBody.querySelector('[data-submodal-form]');
         form?.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -1202,7 +1230,6 @@ if (modal) {
                 }
             }
         });
-        form?.querySelector('input, textarea, select')?.focus({ preventScroll: true });
         return form;
     }
 
@@ -1505,25 +1532,18 @@ if (modal) {
         state.materialExpandedIds.clear();
         state.materialLoadingIds.clear();
         state.courseSuggestionIds = [];
-        state.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        state.bodyOverflow = document.body.style.overflow || '';
         if (elements.welcome) {
             const teacherName = normalizeText(wizard().teacher?.name) || '';
             elements.welcome.textContent = `欢迎${teacherName}老师，接下来我们一起一步步完成课堂的开设`;
         }
         render();
 
-        window.clearTimeout(state.closeTimer);
         window.clearTimeout(state.welcomeTimer);
-        modal.hidden = false;
         dialog?.classList.remove('is-welcome-compact');
         dialog?.classList.add('is-welcome-pending');
-        document.body.style.overflow = 'hidden';
-        window.requestAnimationFrame(() => {
-            modal.classList.add('is-open');
-            state.isOpen = true;
-            modal.querySelector('[data-teacher-onboarding-dismiss]')?.focus({ preventScroll: true });
-        });
+        modal.classList.add('is-open');
+        state.isOpen = true;
+        guideOwner.open();
         state.welcomeTimer = window.setTimeout(() => {
             dialog?.classList.remove('is-welcome-pending');
             dialog?.classList.add('is-welcome-compact');
@@ -1532,20 +1552,7 @@ if (modal) {
 
     async function closeGuide(reason = 'manual_exit') {
         if (!state.isOpen) return;
-        const persisted = await markDismissed(reason);
-        if (!persisted) return;
-
-        modal.classList.remove('is-open');
-        state.isOpen = false;
-        document.body.style.overflow = state.bodyOverflow;
-        closeSubmodal();
-        window.clearTimeout(state.welcomeTimer);
-        state.closeTimer = window.setTimeout(() => {
-            if (!state.isOpen) modal.hidden = true;
-        }, 320);
-        if (state.lastFocused && document.contains(state.lastFocused)) {
-            state.lastFocused.focus({ preventScroll: true });
-        }
+        return guideOwner.close(reason);
     }
 
     openButtons.forEach((button) => {
@@ -1569,16 +1576,6 @@ if (modal) {
     elements.prevButton?.addEventListener('click', () => goToStep(state.activeIndex - 1));
     elements.nextButton?.addEventListener('click', handleNext);
 
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && state.isOpen) {
-            event.preventDefault();
-            if (submodal && !submodal.hidden) {
-                closeSubmodal();
-            } else {
-                closeGuide('manual_exit');
-            }
-        }
-    });
 
     window.setTimeout(async () => {
         const payload = await loadState({ silent: true });

@@ -8,28 +8,29 @@
  * when the group is finalized — so a missed rating never blocks finalization.
  */
 import { showToast, escapeHtml } from '/static/js/ui.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const DEFAULT_POINTS = 16;
 const MAX_POINTS = 20;
 
 let overlayEl = null;
 let resolveOpen = null;
+let modalOwner = null;
+let closeResult = { submitted: false };
+let loadGeneration = 0;
 
 function cleanup(result) {
-  if (overlayEl) {
-    overlayEl.remove();
-    overlayEl = null;
-    document.removeEventListener('keydown', onKeydown);
-  }
+  closeResult = result;
+  return modalOwner?.close() || Promise.resolve(false);
+}
+
+function finishClose() {
+  overlayEl?.remove(); overlayEl = null; modalOwner = null;
   if (resolveOpen) {
     const fn = resolveOpen;
     resolveOpen = null;
-    fn(result);
+    fn(closeResult);
   }
-}
-
-function onKeydown(event) {
-  if (event.key === 'Escape') cleanup({ submitted: false });
 }
 
 function pointButtons(peerId) {
@@ -58,7 +59,7 @@ function peerBlock(peer) {
     </div>`;
 }
 
-function render(assignmentId, peers) {
+function render(assignmentId, peers, trigger) {
   const selections = {};
   peers.forEach((p) => { selections[p.student_id] = DEFAULT_POINTS; });
 
@@ -82,8 +83,12 @@ function render(assignmentId, peers) {
         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-peer-submit>确认提交评分</button>
       </footer>
     </div>`;
-  document.body.appendChild(overlayEl);
-  document.addEventListener('keydown', onKeydown);
+  closeResult = { submitted: false };
+  modalOwner = createDomainModal(overlayEl, {
+    surface: overlayEl.querySelector('.peer-eval-modal'), onClose: finishClose,
+  });
+  modalOwner.open({ trigger });
+  const owner = modalOwner;
 
   overlayEl.addEventListener('click', (event) => {
     if (event.target === overlayEl) cleanup({ submitted: false });
@@ -118,7 +123,7 @@ function render(assignmentId, peers) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || payload.message || '提交失败');
       showToast('小组互评已提交', 'success');
-      cleanup({ submitted: true });
+      if (modalOwner === owner) cleanup({ submitted: true });
     } catch (err) {
       showToast(err.message || '互评提交失败', 'error');
       submitBtn.disabled = false;
@@ -133,9 +138,13 @@ function render(assignmentId, peers) {
  * @returns {Promise<{submitted: boolean}>}
  */
 window.openGroupPeerEval = async function openGroupPeerEval(assignmentId) {
+  const generation = ++loadGeneration;
+  const trigger = document.activeElement;
+  await cleanup({ submitted: false });
   try {
     const response = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/peer-eval`);
     const data = await response.json().catch(() => ({}));
+    if (generation !== loadGeneration) return { submitted: false, skipped: true };
     if (!response.ok || !data.is_group || !data.in_group) {
       return { submitted: false, skipped: true };
     }
@@ -145,7 +154,7 @@ window.openGroupPeerEval = async function openGroupPeerEval(assignmentId) {
     }
     return await new Promise((resolve) => {
       resolveOpen = resolve;
-      render(assignmentId, peers);
+      render(assignmentId, peers, trigger);
     });
   } catch (err) {
     return { submitted: false, skipped: true };

@@ -1,6 +1,7 @@
 import { initPageBackdrop, writeSceneHandoff } from './page_backdrop.js';
 import { sampleImageTone } from './lq/scene_tone.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 function clampPercent(value) {
     const number = Number(value || 0);
@@ -375,11 +376,14 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
         const imageUrl = scene?.imageUrl || (hasImage ? tip.image_url : null);
         const tone = scene?.tone || (loaded && loaded !== true ? sampleImageTone(loaded) : 'dark');
         const overlay = buildTipReveal(profile, tip, durationMs, hasImage, tone, imageUrl);
+        overlay.dataset.lqPresence = 'fade';
+        overlay.hidden = true;
         if (scene) overlay.classList.add('cultivation-login-reveal--scene');
         document.body.appendChild(overlay);
         document.documentElement.classList.add('has-cultivation-login-reveal');
         document.body.classList.add('has-cultivation-login-reveal');
-        window.requestAnimationFrame(() => overlay.classList.add('is-open'));
+        void setOverlayOpen(overlay, true);
+        overlay.classList.add('is-open');
         rememberSeenTip(tip.id);
 
         let finished = false;
@@ -397,13 +401,14 @@ function playLifeTipReveal(profile, tip, onDone, otherCandidates, scene = null) 
                 : Promise.resolve();
             void ready.finally(() => {
                 overlay.classList.add('is-closing');
-                window.setTimeout(() => {
+                void setOverlayOpen(overlay, false).then(completed => {
+                    if (!completed) return;
                     overlay.remove();
                     document.documentElement.classList.remove('has-cultivation-login-reveal');
                     document.body.classList.remove('has-cultivation-login-reveal');
                     if (!scene) ensureTopbarChip(tip.text);
                     onDone?.();
-                }, reducedMotion ? 0 : 320);
+                });
             });
         };
         const onKeydown = event => {
@@ -682,19 +687,23 @@ export function playCultivationReveal(profile, options = {}) {
 
     const durationMs = Math.max(3000, Math.min(5000, Number(options.durationMs || 3600)));
     const overlay = buildReveal(profile, durationMs);
+    overlay.dataset.lqPresence = 'fade';
+    overlay.hidden = true;
     document.body.appendChild(overlay);
     document.documentElement.classList.add('has-cultivation-login-reveal');
     document.body.classList.add('has-cultivation-login-reveal');
-    window.requestAnimationFrame(() => overlay.classList.add('is-open'));
+    void setOverlayOpen(overlay, true);
+    overlay.classList.add('is-open');
 
     window.setTimeout(() => {
         overlay.classList.add('is-closing');
-        window.setTimeout(() => {
+        void setOverlayOpen(overlay, false).then(completed => {
+            if (!completed) return;
             overlay.remove();
             document.documentElement.classList.remove('has-cultivation-login-reveal');
             document.body.classList.remove('has-cultivation-login-reveal');
             onDone?.();
-        }, 320);
+        });
     }, durationMs);
 }
 

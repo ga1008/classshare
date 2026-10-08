@@ -15,6 +15,7 @@ import {
     buildTwemojiUrl,
 } from './chat_emoji_catalog.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { setOverlayOpen } from './ui_overlay_motion.js';
 
 const MAX_FREQUENT_ITEMS = 8;
 
@@ -34,6 +35,7 @@ export function createEmojiPicker(options) {
     const container = document.createElement('div');
     container.className = 'emoji-picker lq-glass lq-domain-raised';
     container.dataset.lqComponent = 'popover'; container.dataset.lqMaterial = 'raised';
+    container.dataset.lqPresence = 'panel';
     container.hidden = true;
     container.setAttribute('role', 'dialog');
     container.setAttribute('aria-label', '表情选择器');
@@ -130,18 +132,14 @@ export function createEmojiPicker(options) {
 
     function open() {
         isOpen = true;
-        container.hidden = false;
-        requestAnimationFrame(() => container.classList.add('is-open'));
+        void setOverlayOpen(container, true);
+        container.classList.add('is-open');
     }
 
     function close() {
         isOpen = false;
         container.classList.remove('is-open');
-        setTimeout(() => {
-            if (!container.classList.contains('is-open')) {
-                container.hidden = true;
-            }
-        }, 160);
+        return setOverlayOpen(container, false);
     }
 
     function toggle() {

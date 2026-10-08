@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { finishNativeDialogClose } from './lq/native-presence.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
 
 const API = '/api/attendance-reports';
@@ -468,7 +469,8 @@ class ArchiveController {
         notify($('[data-att-review-message]', this.root), readonly ? '当前版本已冻结。可关闭后用原件重新解析，在新候选中更正。' : '');
         this.evidence.showModal();
     }
-    async closeEvidence() { if (this.saving) return; if (this.dirty && !(await this.ask('放弃本次尚未保存的核对修改？'))) return; this.dirty = false; this.evidence.close(); $('[data-att-evidence-frame]', this.root).removeAttribute('src'); if (this.reviewConflict) { this.reviewConflict = false; await this.loadDetail(); } }
+    clearEvidenceFrame() { void finishNativeDialogClose(this.evidence, () => $('[data-att-evidence-frame]', this.root).removeAttribute('src')); }
+    async closeEvidence() { if (this.saving) return; if (this.dirty && !(await this.ask('放弃本次尚未保存的核对修改？'))) return; this.dirty = false; this.evidence.close(); this.clearEvidenceFrame(); if (this.reviewConflict) { this.reviewConflict = false; await this.loadDetail(); } }
     async saveReview() {
         if (this.saving || !this.reviewContext || !this.reviewForm.reportValidity()) return;
         this.saving = true; const submit = $('[data-att-save-review]', this.root); submit.disabled = true;
@@ -482,7 +484,7 @@ class ArchiveController {
             } else if (context.targetType === 'student') changes = { student_number: form.student_number.value.trim(), source_name: form.source_name.value.trim(), source_class_name: form.source_class_name.value.trim(), local_student_id: form.local_student_id.value ? Number(form.local_student_id.value) : null };
             else changes = { source_header: form.source_header.value.trim(), source_datetime: form.source_datetime.value || null, local_session_id: form.local_session_id.value ? Number(form.local_session_id.value) : null };
             await request(`/${encodeURIComponent(this.reportId)}/runs/${encodeURIComponent(context.runId)}/review`, { method: 'PATCH', body: { target_type: context.targetType, target_id: context.target.id, changes, reason: form.reason.value.trim(), expected_revision: context.runRevision } });
-            this.dirty = false; this.evidence.close(); $('[data-att-evidence-frame]', this.root).removeAttribute('src'); notify(this.notice, '核对结果已保存，统计和确认条件已更新。'); await this.loadDetail();
+            this.dirty = false; this.evidence.close(); this.clearEvidenceFrame(); notify(this.notice, '核对结果已保存，统计和确认条件已更新。'); await this.loadDetail();
         } catch (error) { this.reviewConflict = error.status === 409; notify($('[data-att-review-message]', this.root), error.status === 409 ? '该解析已在另一窗口更新。本次输入已保留；请取消修改，重新打开当前记录对照后再保存。' : error.message, 'error'); }
         finally { this.saving = false; submit.disabled = false; }
     }

@@ -299,6 +299,7 @@ export class ClassroomPrivateMessages {
         if (!panel) {
             return;
         }
+        panel.dataset.lqPanelPresence = '';
         panel.hidden = !active;
         panel.classList.toggle('is-active', active);
         panel.setAttribute('aria-hidden', active ? 'false' : 'true');

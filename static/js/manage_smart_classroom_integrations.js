@@ -1,6 +1,7 @@
 import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
 import { LQ } from '/static/js/lq/index.js';
+import { createDomainModal } from './lq/domain-modal.js';
 
 const parseJsonScript = (id, fallback) => {
     const el = document.getElementById(id);
@@ -212,35 +213,25 @@ function renderCapabilities() {
 // Both overlays here are bespoke hidden backdrops rather than LQ.layer, so they
 // need their own trigger bookkeeping: without it, closing either one drops focus
 // onto <body> and a keyboard user is thrown back to the top of the document.
-let accountModalTrigger = null;
-let syncModalTrigger = null;
-
-function restoreTriggerFocus(trigger) {
-    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
-}
+const accountModal = createDomainModal(refs.accountModal, {
+    surface: refs.accountModal?.querySelector('.smart-classroom-modal'), initialFocus: refs.username,
+});
+const syncModal = createDomainModal(refs.syncModal, {
+    surface: refs.syncModal?.querySelector('.smart-classroom-modal'), initialFocus: refs.syncModalRun,
+    onClose: () => { state.activeCapability = null; },
+});
 
 function openAccountModal(trigger) {
     if (!refs.accountModal) return;
-    accountModalTrigger = trigger instanceof HTMLElement ? trigger : null;
-    refs.accountModal.hidden = false;
-    refs.username?.focus({ preventScroll: true });
+    accountModal.open({ trigger });
 }
 
 function closeAccountModal() {
-    if (!refs.accountModal || refs.accountModal.hidden) return;
-    refs.accountModal.hidden = true;
-    const trigger = accountModalTrigger;
-    accountModalTrigger = null;
-    restoreTriggerFocus(trigger);
+    return accountModal.close();
 }
 
 function closeSyncModal() {
-    if (!refs.syncModal || refs.syncModal.hidden) return;
-    refs.syncModal.hidden = true;
-    state.activeCapability = null;
-    const trigger = syncModalTrigger;
-    syncModalTrigger = null;
-    restoreTriggerFocus(trigger);
+    return syncModal.close();
 }
 
 function fillProbeForm(item) {
@@ -260,7 +251,6 @@ function fillProbeForm(item) {
 
 function openSyncModal(item, trigger) {
     if (!refs.syncModal || !item) return;
-    syncModalTrigger = trigger instanceof HTMLElement ? trigger : null;
     state.activeCapability = item;
     refs.syncModalTitle.textContent = item.label || '同步详情';
     refs.syncModalDescription.textContent = item.description || '';
@@ -279,8 +269,7 @@ function openSyncModal(item, trigger) {
         : '<div><span>同步参数</span><strong>由系统根据已保存账号和当前教师自动生成</strong></div>';
     refs.syncModalSafe.textContent = item.safe_note || '';
     fillProbeForm(item);
-    refs.syncModal.hidden = false;
-    refs.syncModalRun?.focus({ preventScroll: true });
+    syncModal.open({ trigger });
 }
 
 async function refreshCapabilities() {
@@ -571,18 +560,6 @@ refs.syncModalClose?.addEventListener('click', closeSyncModal);
 refs.syncModalCancel?.addEventListener('click', closeSyncModal);
 refs.syncModal?.addEventListener('click', (event) => {
     if (event.target === refs.syncModal) closeSyncModal();
-});
-document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    // A stacked LQ.layer dialog owns Escape first; tearing a backdrop down under
-    // it would destroy the return-focus target it is holding.
-    if (document.querySelector('[data-lq-dialog]:not([hidden])')) return;
-    // Sync detail sits above the account modal, so it closes first.
-    if (refs.syncModal && !refs.syncModal.hidden) {
-        closeSyncModal();
-        return;
-    }
-    if (refs.accountModal && !refs.accountModal.hidden) closeAccountModal();
 });
 refs.list?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-action]');

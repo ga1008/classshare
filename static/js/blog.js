@@ -1,5 +1,6 @@
 import { createEmojiPicker } from '/static/js/emoji_picker.js';
 import { escapeHtml, showToast } from '/static/js/ui.js';
+import { getLayerSystem } from '/static/js/lq/layer.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -176,6 +177,8 @@ class BlogCenter {
         this.composeAutosaveTimer = null;
         this.composeBaseline = '';
         this.composerReturnFocus = null;
+        this.composerLayer = null;
+        this.composerCloseApproved = false;
         this.detailHasListHistory = false;
         this.detailPreviousIsPost = false;
         this.lastListSnapshot = null;
@@ -412,7 +415,7 @@ class BlogCenter {
         $('[data-blog-report-form]', this.shell)?.addEventListener('submit', (event) => this.submitReport(event));
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
-                this.closeComposer();
+                if (!this.composerLayer) this.closeComposer();
                 this.closeCommentPanels();
             }
         });
@@ -434,7 +437,7 @@ class BlogCenter {
     handleClick(event) {
         const modal = $('[data-blog-composer-modal]', this.shell);
         if (modal && !modal.hidden && event.target === modal) {
-            this.closeComposer();
+            if (!this.composerLayer) this.closeComposer();
             return;
         }
 
@@ -1925,12 +1928,37 @@ class BlogCenter {
         this.setComposerMode('edit');
         this.updateComposerMetrics();
 
-        modal.hidden = false;
         document.body.classList.add('blog-composer-open');
         const currentFingerprint = this.composerFingerprint();
         this.composeBaseline = recovered ? '' : currentFingerprint;
         this.updateComposerSaveState(recovered ? '已恢复上次未完成的内容' : '内容会自动保存在此设备');
-        window.requestAnimationFrame(() => $('[data-blog-compose-title]', this.shell)?.focus());
+        this.composerCloseApproved = false;
+        modal.dataset.lqPresence = 'domain';
+        const finish = () => {
+            this.composerLayer = null;
+            this.composerCloseApproved = false;
+            document.body.classList.remove('blog-composer-open');
+            window.clearTimeout(this.composeAutosaveTimer);
+            this.state.editingPostId = null;
+            this.state.uploadedImages = [];
+            this.state.selectedUsers = [];
+            this.setSelectedAuthorMode('real_name');
+            this.updateAuthorModeHint();
+            this.renderImagePreviews();
+            this.renderSelectedUsers();
+            this.composerReturnFocus = null;
+        };
+        this.composerLayer = getLayerSystem(document).open(modal, {
+            type: 'modal', surface: $('.blog-modal', modal), trigger: this.composerReturnFocus,
+            initialFocus: $('[data-blog-compose-title]', modal),
+            beforeClose: () => this.composerCloseApproved || !this.isComposerDirty()
+                || window.confirm('还有未发布的修改，确定关闭编辑器吗？内容会保存在此设备。'),
+            onCloseRequested: () => {
+                if (this.isComposerDirty()) this.saveComposerRecovery();
+                window.clearTimeout(this.composeAutosaveTimer);
+            },
+            onClose: finish, onDestroy: finish,
+        });
     }
 
     closeComposer({ force = false } = {}) {
@@ -1939,19 +1967,8 @@ class BlogCenter {
         if (!force && this.isComposerDirty() && !window.confirm('还有未发布的修改，确定关闭编辑器吗？内容会保存在此设备。')) {
             return false;
         }
-        if (this.isComposerDirty()) this.saveComposerRecovery();
-        if (modal) modal.hidden = true;
-        document.body.classList.remove('blog-composer-open');
-        window.clearTimeout(this.composeAutosaveTimer);
-        this.state.editingPostId = null;
-        this.state.uploadedImages = [];
-        this.state.selectedUsers = [];
-        this.setSelectedAuthorMode('real_name');
-        this.updateAuthorModeHint();
-        this.renderImagePreviews();
-        this.renderSelectedUsers();
-        if (this.composerReturnFocus?.isConnected) this.composerReturnFocus.focus();
-        this.composerReturnFocus = null;
+        this.composerCloseApproved = true;
+        if (this.composerLayer) void getLayerSystem(document).close(this.composerLayer, force ? 'saved' : 'button');
         return true;
     }
 

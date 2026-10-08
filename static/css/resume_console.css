@@ -271,9 +271,7 @@
 .rz-modal.show { opacity: 1; }
 .rz-modal[hidden] { display: none; }
 .rz-modal__panel { background: var(--rz-card); border-radius: 16px; width: 100%; max-width: 720px;
-  max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 30px 80px -30px rgba(15,23,42,.6);
-  transform: translateY(8px); transition: transform .2s ease; }
-.rz-modal.show .rz-modal__panel { transform: none; }
+  max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 30px 80px -30px rgba(15,23,42,.6); }
 .rz-modal__panel--wide { max-width: min(1120px, calc(100vw - 32px)); }
 .rz-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px;
   border-bottom: 1px solid var(--rz-border); }

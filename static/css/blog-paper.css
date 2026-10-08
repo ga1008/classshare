@@ -2157,18 +2157,6 @@
     background: var(--blog-paper);
     box-shadow: var(--blog-shadow-lift);
     overflow: hidden;
-    animation: blog-modal-in 0.22s var(--blog-ease);
-}
-
-@keyframes blog-modal-in {
-    from {
-        opacity: 0;
-        transform: translateY(14px) scale(0.985);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
 }
 
 .blog-modal__header {

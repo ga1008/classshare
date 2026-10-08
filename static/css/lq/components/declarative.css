@@ -6,7 +6,7 @@
  */
 /* Component display recipes must never reveal a natively hidden control.
  * until-found keeps the browser's searchable, content-visibility behavior. */
-:root [data-lq-component][hidden]:not([hidden="until-found" i]) {
+:root :is([data-lq-component], [data-lq-presence])[hidden]:not([hidden="until-found" i]) {
     display: none !important;
 }
 /* Authored text slots follow the button's complete resting/selected/pressed
@@ -111,7 +111,7 @@
  * presence adds interruption-safe motion without wrapping showModal/close or
  * delaying any business event. Browsers without discrete transitions simply
  * close immediately, preserving the complete native interaction. */
-dialog:is(.lq-native-dialog, .lq-domain-region) {
+dialog:is(.lq-native-dialog, .lq-domain-region, [data-lq-component]) {
     opacity: 0;
     scale: var(--lq-motion-overlay-scale, .98);
     transition: opacity var(--lq-motion-presence-duration, 220ms) var(--lq-motion-ease, ease-out),
@@ -119,12 +119,17 @@ dialog:is(.lq-native-dialog, .lq-domain-region) {
         display var(--lq-motion-presence-duration, 220ms) allow-discrete,
         overlay var(--lq-motion-presence-duration, 220ms) allow-discrete;
 }
-dialog:is(.lq-native-dialog, .lq-domain-region)[open] { opacity: 1; scale: 1; }
+dialog:is(.lq-native-dialog, .lq-domain-region, [data-lq-component])[open] { opacity: 1; scale: 1; }
+/* Registered native dialogs stay open in the top layer until LQ finishes its
+   exit. Their presence state therefore precedes the browser's open attribute. */
+dialog:is(.lq-native-dialog, .lq-domain-region, [data-lq-component])[data-lq-layer-state][data-ui-overlay-state="closed"] {
+    opacity: 0; scale: var(--lq-motion-overlay-scale, .98);
+}
 @starting-style {
-    dialog:is(.lq-native-dialog, .lq-domain-region)[open] { opacity: 0; scale: var(--lq-motion-overlay-scale, .98); }
+    dialog:is(.lq-native-dialog, .lq-domain-region, [data-lq-component])[open] { opacity: 0; scale: var(--lq-motion-overlay-scale, .98); }
 }
 @media (prefers-reduced-motion: reduce) {
-    dialog:is(.lq-native-dialog, .lq-domain-region) { transition: none !important; scale: 1; }
+    dialog:is(.lq-native-dialog, .lq-domain-region, [data-lq-component]) { transition: none !important; scale: 1; }
 }
 @media (forced-colors: active) {
     :root [data-lq-component]:is(.lq-input, .lq-textarea, .lq-select) {
