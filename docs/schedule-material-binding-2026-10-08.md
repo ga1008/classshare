@@ -26,7 +26,7 @@
 
 测试均在隔离合成 SQLite、独立本地 Git remote 和隔离原生 PostgreSQL 中进行，不连接真实业务库运行测试。源码审计与运行验收分别记录，不把扫描中的 pending/unknown 宣称为完成。
 
-发布前运行 `tools/repair_schedule_learning_bindings.py --dry-run` 评估已保存数据；该命令默认全事务回滚，不发起教务、Git 或 AI 网络请求。审阅结果后才执行 `--apply`。既有部署流程先备份数据库、停写迁移并保护 `/lanshare/data`，随后独立核对服务器版本、不可变资产图与远端 Git。
+新版本数据库迁移完成后，先运行 `tools/repair_schedule_learning_bindings.py --dry-run` 评估已保存数据；该命令默认全事务回滚，不发起教务、Git 或 AI 网络请求。审阅结果后才执行 `--apply`。既有部署流程先备份数据库、停写迁移并保护 `/lanshare/data`，随后独立核对服务器版本、不可变资产图与远端 Git。
 
 ### 2026-10-08 隔离运行验收
 
@@ -41,4 +41,13 @@
 
 可重复夹具由 `prepare_ui_v3_runtime.py` 与 `tests/e2e/scripts/prepare_schedule_material_runtime.py` 创建，必须使用新的 `.codex-temp` 子目录。`serve_ui_v3.py` 仅开放 loopback、阻止 dotenv/真实 PostgreSQL 与外部 socket；夹具 Git 远程仅指向自建本地目录。E2E 配置为 `tests/e2e/schedule-material.playwright.config.ts`，通过 `SCHEDULE_MATERIAL_RUNTIME`、`SCHEDULE_MATERIAL_GRAPH` 与 `SCHEDULE_MATERIAL_OUTPUT` 指定本轮运行目录、构建图及证据目录。业务链会修改合成夹具，重复整体验收需重新创建夹具。
 
-发布版本、服务器核验和远端 Git 结果由实际发布完成后补充；上述本地通过不代替上线核验。
+### 2026-10-08 生产发布与存量修复
+
+- 功能提交 `5d4243d4226dd7004eaa2c0859cb0eda2f3d1395`，从独立发布工作树复制已验收源文件原始字节及正式构建产物。发布包未包含业务数据、密钥、研究缓存及用户未提交文档。
+- 服务器版本 `20261008-085739-2b568e368fab`。停写后数据库备份 `/tmp/lanshare-deploy-backups/db-cutover-20261008-085750.sql.gz`；迁移 177/177 必需表就绪，索引失败和跳过步骤均为 0，`/lanshare/data` 保留。
+- 线上不可变资产图与上述验收图完全一致，六个关键 CSS/JS 的公网响应与本地验收文件逐字节一致，教师及学生登录页引用新图。8 项 postflight 通过，8 个服务运行；已有后台任务历史失败计数 737、排队 28、过期 0 与发布前相同，不将该历史状态说成全部后台任务健康。
+- 先回滚预览，再提交离线修复：扫描 173 个课次、6 个已分配仓库，82 个课次的序号、物理时段或主教材发生修复。再次回滚预览的课次变更数为 0。只读回读确认本学期课堂 11、12、13 各有 30 个有效课次，取消记录保留在末尾；每课堂 10 个课次教材及 1 个首页投影，序号偏差和绑定缺失均为 0。
+- 上线视图在只读事务中核对：90 个正式课次保持为正式计数，20 条批准历史请求投影出 10 条当前有效调课关系，其中 8 条跨周；全部终点与修复后的物理课次一致。单课堂授权范围、教师课程筛选及两位学生的真实课表投影均未越界，历史原位置不混入正式课次计数。
+- 历史警告逐项只读核实：Python 的两条旧置换记录当前已处于正式批准终点，保持正确时段；三条旧审批是连续调课的中间站，后续正式终点已恢复。历史仓库 `rg2401` 的重复 lesson11 保留原人工教材，`rg2302/rg2303` 的 lesson16 无有效课次，`JWS2302` 的安装/编写说明无课次号；这些均不强制猜测绑定。本学期 Python 与计算机网络仓库没有教材入口歧义。待审请求仍为待审。
+
+本机发布证据：`E:/CodexTemp/schedule-material-20261008-deploy.log`；`.codex-temp/schedule-material-20261008-live-verification.json`；`.codex-temp/schedule-material-postflight/postflight-20261008-090103/summary.json`；`.codex-temp/schedule-material-20261008-production-{dryrun,apply,recheck,readback}.json`；`.codex-temp/schedule-repair-warning-audit.json` 与 `.codex-temp/schedule-repair-superseded-audit.json`。合成服务器和隔离 PostgreSQL 已停止，测试证据保留。
