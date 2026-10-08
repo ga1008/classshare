@@ -124,5 +124,80 @@
     "Source review and SSR are not complete production/browser acceptance.",
     "Old S3/S4 statuses and historical audit results are unchanged.",
     "Shared-source hashes are exact bytes, while lexical audit source hashes normalize source newlines."
-  ]
+  ],
+  "scheduleBindingsReview": {
+    "reviewedAt": "2026-10-08",
+    "scope": "Incremental approved schedule relationship projection and repository learning-document binding UI. Earlier shell/profile/browser records above remain historical and unchanged.",
+    "buildGraph": "52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad",
+    "sourceHashes": {
+      "static/js/course_schedule_change_links.js": "a6429787a2b2fe911b30fd1ae7dab303b1da4a09bc76789814949c139c07e954",
+      "static/js/course_schedule_deck.js": "4182b934964f44e285b5171ecf0b9540990d7de7d43251503a8b088ef28ff422",
+      "static/js/course_schedule_presentation.js": "8724b66c91e089ac30108f1a8f71197aa78b763e0bbc5d2fa149119047147da0",
+      "static/js/course_schedule_styles.js": "b6169050fe7e59b2323bdb8954209acbdff6f8d1de48011addbc4d70e7696037",
+      "static/js/course_schedule_editor.js": "f225731d33a1ff25e05d51c700382b455d8372523e3dce42e9cbfbefc7201c97",
+      "static/js/materials_manage.js": "6b96a5d198cb21bcde816d2540fc3bfa54cb215ffb9c8cdf4da961097eabd7c7",
+      "static/css/ui-system.src.css": "581fcc484435e946f1d3c1e365cfc850e81f10057d8f283a4bda5a7b5d92a36b",
+      "static/css/tailwind-app.css": "0d4334f89a725d807e9e402ad99a109ef943da88da8d8b17cb9b1b2fc7b7fcd9",
+      "templates/partials/materials/modals_repository.html": "ddb96f8bacd5780e953c154faaa1cb690e45ca7956a55bf6692df19941c53d6c",
+      "classroom_app/services/academic_schedule_prediction_service.py": "ce7abf6ca46e60aa88888a7221ab0cf5e6119d509c6471d3c77e40aab1fb11b0",
+      "classroom_app/services/academic_schedule_overview_service.py": "a9d11a1ce220e82ea46f59c9ba5f36a4526ed5e397b7cbca24642f229304a708",
+      "classroom_app/services/student_course_schedule_service.py": "2a41100d6198fb638cfc1bd691271c8a599f7d0a83f821f43b9da987565bfdc2",
+      "classroom_app/services/course_planning_service.py": "d652fd60152c5667e5ed2a6f0dd9e9d075f66c9b5fb3c3c6d6d0c6fa00b45150",
+      "docs/lq-components.md": "b327681f0ab014f65c7a557ad1c587267fe46e434030d7f2c3d8fc82551ee13b"
+    },
+    "contracts": [
+      "Approved and pending remain explicit distinct phases. Only exact reliable move relationships create view-only original-position history; canonical lesson identity and totals are unchanged.",
+      "Shared deck projection is the only producer of historical endpoints. Official-plus-pending data can show approved A to B and pending B to C concurrently; source payloads and host agenda callbacks exclude view-only history.",
+      "Buttons retain LQ Button classes, native type and accessible action labels; existing schedule layer bridge and active-week-only expanded rendering remain owners. New domain CSS supplies geometry only.",
+      "Repository command finally and auto-bind busy changes share one binding-panel renderer. A partial deterministic success leaves valid unresolved candidates available to the existing AI fallback; completed or invalid-only candidates stay disabled.",
+      "Binding row layout responds to its container width; long Chinese and unbroken Latin course labels wrap within the session column without crossing the source path or confidence label.",
+      "Academic lesson title relabeling is a read projection requiring the exact generated title plus its matching generated first content line. Raw title/content remain intact; hand-authored title/content are preserved.",
+      "Repository modal copy distinguishes deterministic ordinal synchronization from optional AI matching and manual selection. No endpoint, native form identifier, permission or submit action was changed by these UI edits."
+    ],
+    "checks": [
+      {
+        "command": "npm run build",
+        "status": "passed",
+        "assets": 464
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "passed"
+      },
+      {
+        "command": "node --test tests/frontend/materials_repository_bindings.test.cjs tests/frontend/materials_repository_refresh.test.cjs",
+        "passed": 15
+      },
+      {
+        "command": "npx vitest run frontend/src/lib/course-schedule-change-links.test.ts frontend/src/lib/academic-schedule.test.ts frontend/src/lib/course-schedule-presentation.test.ts",
+        "passed": 78
+      },
+      {
+        "command": "venv/Scripts/python.exe -B tools/test_backend.py --pattern test_academic_schedule_change_history.py",
+        "passed": 6
+      },
+      {
+        "command": "npx playwright test --config tests/e2e/components/playwright.config.ts academic-schedule-lines.spec.ts materials-repository-bindings.spec.ts --output .codex-temp/schedule-bindings-final-20261008",
+        "passed": 23,
+        "evidenceDirectory": ".codex-temp/schedule-bindings-final-20261008",
+        "notes": "Schedule cases use the current author modules and formal compiled CSS; repository renderer uses the immutable graph source and CSS, with source-hash parity asserted. Desktop/touch/reduced motion and binding labels at 320/390/1024px are covered."
+      },
+      {
+        "command": "git diff --check",
+        "status": "passed"
+      }
+    ],
+    "visualReview": {
+      "screenshots": [
+        ".codex-temp/schedule-bindings-final-20261008/materials-repository-bindi-fc730-eserve-long-labels-at-390px/repository-bindings.png",
+        ".codex-temp/schedule-bindings-final-20261008/materials-repository-bindi-bb98b-serve-long-labels-at-1024px/repository-bindings.png"
+      ],
+      "observed": "Both fully readable and contained; mobile places path/status above the lesson target and course name."
+    },
+    "limitations": [
+      "These fixtures use synthetic data and no business database. Full application/runtime and PostgreSQL release checks are recorded separately by the release verification owner.",
+      "Source inventory remains pending/unknown; no platform migration acceptance is promoted.",
+      "Historical browserEvidence above belongs to its own recorded graph and is not overwritten by this follow-up."
+    ]
+  }
 }

@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
 type Position = { date: string; sections: number[]; room: string };
@@ -37,13 +39,36 @@ function fixture() {
     section_range: { min: 1, max: 11 }, filters: { course_options: [...new Set(weeks.flatMap(w => w.lessons.map(l => l.course_name)))] }, weeks };
 }
 
-async function mount(page: Page) {
+function approvedFixture() {
+  const data: any = fixture();
+  const old = data.weeks[1].lessons.find((item: any) => item.event_key === 'later-old');
+  const current = data.weeks[2].lessons.find((item: any) => item.event_key === 'later-new');
+  data.approved_changes = [{ request_id: 'approved-later', detail_id: 'detail', phase: 'approved', kind: 'move',
+    target_event_key: current.event_key, session_id: current.session_id, class_offering_id: current.class_offering_id,
+    original_week_index: 4, effective_week_index: 5, original: old.adjustment.original, proposed: old.adjustment.proposed }];
+  const pending = { request_id: 'next-move', phase: 'pending', kind: 'move', endpoint: 'original',
+    original: old.adjustment.proposed, proposed: oldPosition('2026-09-30', [10, 11]), counterpart_event_key: 'after-new', counterpart_week_index: 5 };
+  current.adjustment = pending; current.counts_towards_total = true;
+  data.weeks[0].lessons = []; data.weeks[1].lessons = [];
+  data.weeks[2].lessons = [current, { ...current, event_key: 'after-new', date: pending.proposed.date, weekday: 3,
+    sections: [10, 11], counts_towards_total: false, adjustment: { ...pending, endpoint: 'proposed', counterpart_event_key: current.event_key } }];
+  return data;
+}
+
+async function mount(page: Page, options: { approved?: boolean; compiled?: boolean } = {}) {
   await page.route('http://schedule-lines.test/**', async route => {
+    const url = new URL(route.request().url());
+    if (options.compiled && (url.pathname.startsWith('/static/js/') || url.pathname === '/static/css/tailwind-app.css')) {
+      const file = path.resolve(`.${url.pathname}`);
+      if (!file.startsWith(path.resolve('static') + path.sep)) throw new Error('Unexpected static fixture path');
+      await route.fulfill({ contentType: file.endsWith('.css') ? 'text/css' : 'text/javascript', body: fs.readFileSync(file) }); return;
+    }
     if (await serveScheduleModule(route)) return;
-    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="/schedule-tokens.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><link rel="stylesheet" href="${options.compiled ? '/static/css/tailwind-app.css' : '/schedule-tokens.css'}"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:16px;font-family:Arial,sans-serif}</style><div id="deck"></div><script type="module">
       import { createScheduleDeck } from '/static/js/course_schedule_deck.js?v=fixture';
-      window.navigations=[]; window.fixture=${JSON.stringify(fixture())};
-      window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url)});
+      window.navigations=[]; window.hostWeeks=[]; window.fixture=${JSON.stringify(options.approved ? approvedFixture() : fixture())};
+      window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url),onWeekChange:week=>window.hostWeeks.push(week)});
+      ${options.compiled ? "const {connectScheduleLayer}=await import('/static/js/lq/schedule-bridge.js');connectScheduleLayer(window.deck);" : ''}
       window.deck.setOverview(window.fixture); window.deck.goToWeek(1); window.deck.openExpanded();
     </script></html>` });
   });
@@ -52,6 +77,38 @@ async function mount(page: Page) {
   await settle(page);
   await expect(page.locator('.cs-expand .cs-change-line')).not.toHaveCount(0);
 }
+
+for (const mobile of [false, true]) test.describe(`approved history ${mobile ? 'touch' : 'desktop'}`, () => {
+test.use({ hasTouch: mobile, isMobile: mobile });
+test('approved history and a later pending move retain separate routes and actions with LQ bridge', async ({ page }, testInfo) => {
+  if (mobile) { await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ reducedMotion: 'reduce' }); }
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await mount(page, { approved: true, compiled: true });
+  await expect(page.locator('#lq-layers .cs-expand')).toBeVisible();
+  const old = page.locator('.cs-expand .cs-lesson--history');
+  await expect(old).toHaveCount(1);
+  await expect(old).toContainText('原安排');
+  await old.locator('[data-csd-change]').click();
+  const current = page.locator('.cs-expand [data-event-key="later-new"]');
+  await expect(current).toHaveClass(/is-counterpart-focus/);
+  await expect(current.locator('[data-csd-change]')).toHaveCount(2);
+  await expect(current.locator('[data-csd-change-index="0"]')).toHaveAttribute('aria-label', /调课待审/);
+  await expect(current.locator('[data-csd-change-index="1"]')).toHaveAttribute('aria-label', /调课已生效.*原位置/);
+  await current.locator('[data-csd-change-index="0"]').click();
+  await expect(page.locator('.cs-expand [data-event-key="after-new"]')).toHaveClass(/is-counterpart-focus/);
+  await page.locator('.cs-expand [data-event-key="after-new"] [data-csd-change]').click();
+  await current.locator('[data-csd-change-index="1"]').click();
+  await expect(old).toHaveClass(/is-counterpart-focus/);
+  expect(await page.evaluate(() => (window as any).hostWeeks.flatMap((week: any) => week.lessons).some((lesson: any) => lesson.is_change_history))).toBe(false);
+  expect(await page.evaluate(() => (window as any).fixture.weeks.flatMap((week: any) => week.lessons).length)).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath('approved-and-pending.png') });
+  await page.evaluate(() => { (window as any).deck.setOverview({ ...(window as any).fixture, approved_changes: [] }, { keepWeek: true }); });
+  await expect(old).toHaveCount(0);
+  await page.evaluate(() => (window as any).deck.destroy());
+  await expect(page.locator('.cs-expand')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+});
 
 async function settle(page: Page) {
   await settleScheduleMotion(page);

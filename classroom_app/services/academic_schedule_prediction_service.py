@@ -2,8 +2,9 @@
 
 No network, template generation, schema writes, or commits happen here. Callers
 commit lease claims before fetching remotely, then commit publication (or roll
-back on error). Approved changes update schedule fields only; a date sort never
-chooses a lesson or overwrites teaching material.
+back on error). Approved changes retain physical session identities. A separate
+chronological pass numbers active lessons and rebinds teaching-material bundles
+by ordinal in the same transaction; assignments and attendance never migrate.
 """
 from __future__ import annotations
 
@@ -113,15 +114,8 @@ def _same_identity(left: dict, right: dict) -> bool:
 
 
 def _sections(text: Any) -> list[int]:
-    if isinstance(text, list):
-        return sorted(set(int(value) for value in text))
-    text = str(text or "").strip()
-    match = re.fullmatch(r"(?:第)?(\d+)\s*[-—－~～]\s*(\d+)(?:节)?", text)
-    if match:
-        return list(range(int(match[1]), int(match[2]) + 1))
-    if re.fullmatch(r"\d+", text):
-        return [int(text)]
-    return []
+    from .offering_session_resequence_service import _sections as parse_sections
+    return parse_sections(text)
 
 
 def _room(value: Any) -> str:
@@ -283,10 +277,10 @@ def _update_session(conn, session: dict, slot: dict, stamp: str, *, cancelled: b
 
 
 def _resequence_after_updates(conn, teacher_id: int, semester_id: int, sessions: list[dict], touched: set, stamp: str) -> list[dict]:
-    """Re-order the remaining lessons of every offering whose session dates just changed."""
+    """Repair ordinals on every complete publication, including unchanged replay."""
     from .offering_session_resequence_service import resequence_offerings_after_publish
 
-    offering_ids = {int(row["class_offering_id"]) for row in sessions if int(row["id"]) in touched}
+    offering_ids = {int(row["class_offering_id"]) for row in sessions}
     if not offering_ids:
         return []
     semester = conn.execute("SELECT start_date FROM academic_semesters WHERE id=?", (int(semester_id),)).fetchone()
@@ -295,6 +289,70 @@ def _resequence_after_updates(conn, teacher_id: int, semester_id: int, sessions:
     today = _clock(stamp).date()
     return resequence_offerings_after_publish(conn, teacher_id, semester_id, sessions, offering_ids,
                                               week1_monday=monday, today=today, stamp=stamp)
+
+
+def _repair_legacy_resequence_slots(conn, teacher_id, semester_id, sessions, bindings, official, stamp):
+    """Recover only proven old date permutations; never overwrite a manual edit.
+
+    The previous implementation recorded from/to slots while exchanging dates.
+    Recover the earliest recorded physical slot only when today's complete
+    official schedule still confirms it and the current row/baseline exactly
+    matches the last recorded target. Ambiguity remains a reviewable warning.
+    """
+    warnings, repairs = [], []
+    for session in sessions:
+        try:
+            metadata = json.loads(session.get("schedule_metadata_json") or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(metadata, dict) or metadata.get("resequence_identity_version") == 2:
+            continue
+        history = metadata.get("resequence_history")
+        if not isinstance(history, list) or not history:
+            continue
+        binding = bindings.get(session["id"])
+        if not binding or not all(isinstance(item, dict) and isinstance(item.get("from"), dict)
+                                  and isinstance(item.get("to"), dict) for item in history):
+            continue
+        previous, target = history[-1]["to"], history[0]["from"]
+        current = json.loads(binding["current_json"])
+        identity = json.loads(binding["identity_json"])
+        same = lambda a, b: _slot_key(a) == _slot_key(b) and _room(a.get("room")) == _room(b.get("room"))
+        try:
+            target_day = date.fromisoformat(str(target.get("date") or ""))
+        except ValueError:
+            _warning(warnings, "legacy_resequence_unresolved", message="历史课次日期记录不完整，保留现状并等待核对。")
+            continue
+        if (session.get("schedule_status") in {"cancelled", "canceled"}
+                or current.get("schedule_status", session.get("schedule_status")) != session.get("schedule_status")
+                or not _sections(target.get("sections"))
+                or not same(session["slot"], previous) or not same(current, session["slot"])
+                or not _covers(official, identity, target, room=bool(target.get("room")))):
+            _warning(warnings, "legacy_resequence_unresolved", message="历史课次日期置换无法从当前正式课表唯一核实，保留现状并等待核对。")
+            continue
+        target = {**target, "weekday": target_day.isoweekday()}
+        repairs.append((session, binding, metadata, identity, target))
+    candidates = {session["id"]: target for session, _, _, _, target in repairs}
+    blocked = set()
+    for session, _, _, _, target in repairs:
+        overlaps = [row for row in sessions if row["class_offering_id"] == session["class_offering_id"]
+                    and row.get("schedule_status") not in {"cancelled", "canceled"}
+                    and _slot_key(candidates.get(row["id"], row["slot"])) == _slot_key(target)]
+        if len(overlaps) != 1:
+            blocked.add(session["class_offering_id"])
+    for session, binding, metadata, identity, target in repairs:
+        if session["class_offering_id"] in blocked:
+            _warning(warnings, "legacy_resequence_unresolved", message="历史课次日期置换存在重叠，保留整门课堂并等待核对。")
+            continue
+        _update_session(conn, session, target, stamp)
+        from .offering_session_resequence_service import _section_text
+        metadata.update(resequence_identity_version=2, section_text=_section_text(target["sections"]))
+        conn.execute("UPDATE class_offering_sessions SET schedule_metadata_json=? WHERE id=?", (_json(metadata), session["id"]))
+        session["schedule_metadata_json"] = _json(metadata)
+        _bind(conn, teacher_id, semester_id, session, identity, target, stamp, "legacy_physical_identity_recovered")
+        binding["current_json"] = _json({**target, "schedule_status": session["schedule_status"]})
+        _warning(warnings, "legacy_resequence_repaired", message="已按完整正式课表和历史记录恢复课次物理身份，并按实际日期重新编号。")
+    return warnings
 
 
 def _split_official(official: list[dict], requests: list[dict], offerings: list[dict], sessions: list[dict]) -> list[dict]:
@@ -345,6 +403,45 @@ def _public_slot(slot: dict | None) -> dict | None:
     return {key: slot[key] for key in ("date", "sections", "room")} if slot else None
 
 
+def _approved_change_relations(lessons: list[dict], history: list[dict]) -> list[dict]:
+    """Read-only display evidence; never add old positions to business lessons.
+
+    A recorded approval is effective only while its exact destination is an
+    unambiguous official occurrence and its original time is no longer official.
+    Retained history may supply the approval when the remote list ages it out.
+    Later/rejected requests and subsequent moves naturally invalidate that edge.
+    """
+    official = [row for row in lessons if row.get("counts_towards_total", True)]
+    candidates = []
+    for request in history:
+        if request.get("status") != "approved" or request.get("kind") != "move":
+            continue
+        for detail in request.get("details", []):
+            original, proposed = detail.get("original"), detail.get("proposed")
+            if not original or not proposed or _slot_key(original) == _slot_key(proposed):
+                continue
+            same_course = [row for row in official if _same_identity(row, request)]
+            if any((row.get("actual_date"), tuple(row.get("sections") or [])) == _slot_key(original) for row in same_course):
+                continue
+            targets = [row for row in same_course
+                       if (row.get("actual_date"), tuple(row.get("sections") or [])) == _slot_key(proposed)
+                       and (not proposed.get("room") or _room(row.get("classroom")) == _room(proposed["room"]))]
+            if len(targets) != 1 or not targets[0].get("event_key"):
+                continue
+            target = targets[0]
+            candidates.append({"request_id": request["request_id"], "detail_id": detail["detail_id"],
+                               "kind": "move", "phase": "approved", "target_event_key": target["event_key"],
+                               "session_id": target.get("session_id"), "class_offering_id": target.get("class_offering_id"),
+                               "original": _public_slot(original), "proposed": _public_slot(proposed),
+                               "original_week_index": original["week"], "effective_week_index": proposed["week"]})
+    # Multiple approvals claiming the same current occurrence are not evidence
+    # of one unique history. Do not invent an order between review decisions.
+    counts = {}
+    for relation in candidates:
+        counts[relation["target_event_key"]] = counts.get(relation["target_event_key"], 0) + 1
+    return [relation for relation in candidates if counts[relation["target_event_key"]] == 1]
+
+
 def reconcile_and_publish_snapshot(conn, teacher_id: int, semester: dict | int, snapshot: dict, lease_token: str, *, now=None) -> dict:
     """Publish atomically without committing. Failed validation leaves old data intact."""
     teacher_id, stamp = int(teacher_id), _stamp(now)
@@ -379,12 +476,17 @@ def reconcile_and_publish_snapshot(conn, teacher_id: int, semester: dict | int, 
 
 
 def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str, stamp: str) -> dict:
+    # Git/local ordinal repairs can refresh this snapshot while holding course
+    # and offering locks. Read its revision only after acquiring those locks so
+    # a waiting publication cannot reuse a revision written by that repair.
+    offerings, sessions = _load_scope(conn, teacher_id, semester_id)
     old = conn.execute("SELECT * FROM teacher_academic_schedule_snapshots WHERE teacher_id=? AND semester_id=?", (teacher_id, semester_id)).fetchone()
     revision = int(old["revision"]) + 1 if old else 1
-    offerings, sessions = _load_scope(conn, teacher_id, semester_id)
     session_by_id = {row["id"]: row for row in sessions}
     bindings = [dict(row) for row in conn.execute("SELECT * FROM academic_schedule_session_bindings WHERE teacher_id=? AND semester_id=?", (teacher_id, semester_id)).fetchall()]
     bindings_by_session = {row["session_id"]: row for row in bindings}
+    legacy_warnings = _repair_legacy_resequence_slots(conn, teacher_id, semester_id, sessions,
+                                                     bindings_by_session, snapshot["official"], stamp)
     local_conflicts = set()
     for session_id, binding in bindings_by_session.items():
         session = session_by_id.get(session_id)
@@ -395,7 +497,7 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
                 or expected.get("schedule_status", session.get("schedule_status")) != session.get("schedule_status")):
             local_conflicts.add(session_id)
     links = {(row["request_id"], row["detail_id"]): dict(row) for row in conn.execute("SELECT * FROM academic_schedule_change_session_links WHERE teacher_id=? AND semester_id=?", (teacher_id, semester_id)).fetchall()}
-    warnings, resolved, request_session_ids = [], {}, {}
+    warnings, resolved, request_session_ids = legacy_warnings, {}, {}
     official, requests = snapshot["official"], snapshot["requests"]
     changed_sessions, cancelled_sessions = set(), set()
     approved_updates = {}
@@ -468,16 +570,12 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
         _update_session(conn, session, target, stamp, cancelled=request["kind"] == "cancel")
         _bind(conn, teacher_id, semester_id, session, request, target, stamp, "approved_official_confirmed")
         (cancelled_sessions if request["kind"] == "cancel" else changed_sessions).add(session_id)
-    # 课程一旦调整（审批通过并已体现在正式课表），剩余课次按新日期重排：已发生课次不变，
-    # 材料跟随课次序号自动重绑。重排失败只降级为警告，绝不让发布失败。
-    resequenced = []
-    if changed_sessions or cancelled_sessions:
-        try:
-            resequenced = _resequence_after_updates(conn, teacher_id, semester_id, sessions, changed_sessions | cancelled_sessions, stamp)
-        except Exception as exc:  # pragma: no cover - defensive
-            _warning(warnings, "resequence_failed", message=f"课次重排未完成：{str(exc)[:120]}")
+    # Keep physical identities/dates intact and number all active sessions by
+    # actual chronology. Numbering, material rebinding and snapshot publish form
+    # one transaction: failure must retain the previous complete snapshot.
+    resequenced = _resequence_after_updates(conn, teacher_id, semester_id, sessions, changed_sessions | cancelled_sessions, stamp)
     for report in resequenced:
-        _warning(warnings, "sessions_resequenced", message=f"调课已生效，{report['applied_count']} 个课次已按新日期重排（课次材料随序号保持不变）。")
+        _warning(warnings, "sessions_resequenced", message=f"{report['applied_count']} 个课次已按实际日期节次重新编号，教学材料已随序号重新绑定。")
     active_ids = {request["request_id"] for request in requests}
     for link in links.values():
         if link["request_id"] not in active_ids:
@@ -497,7 +595,8 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
                 _bind(conn, teacher_id, semester_id, session, item, session["slot"], stamp, "official_exact")
         elif offering:
             _warning(warnings, "unresolved_official", message="部分正式课次尚未精确关联课堂，保留正式安排且不猜测课堂课次。")
-        total = sum(row["class_offering_id"] == offering["id"] for row in sessions) if offering else 0
+        from .offering_session_resequence_service import is_numbered_session
+        total = sum(row["class_offering_id"] == offering["id"] and is_numbered_session(row) for row in sessions) if offering else 0
         lesson = _lesson(item, teacher_id, semester_id, offering, session, total)
         lessons.append(lesson)
         lesson_slots.setdefault((_identity_key(item), _slot_key(item)), []).append(lesson)
@@ -575,10 +674,12 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
 def _read_snapshot(row: dict) -> dict:
     snapshot = json.loads(row["snapshot_json"])
     lessons = json.loads(row["lessons_json"])
+    history = json.loads(row["request_history_json"])
     return {"semester_id": row["semester_id"], "teacher_id": row["teacher_id"], "lessons": lessons,
             "official_lessons": [item for item in lessons if item["counts_towards_total"]],
             "predicted_lessons": [item for item in lessons if not item["counts_towards_total"]],
-            "requests": snapshot["requests"], "request_history": json.loads(row["request_history_json"]),
+            "requests": snapshot["requests"], "request_history": history,
+            "approved_changes": _approved_change_relations(lessons, history),
             "covered_offering_ids": json.loads(row["covered_offering_ids_json"]), "warnings": json.loads(row["warnings_json"]),
             "sync_state": {"status": "ready", "semester_id": row["semester_id"], "revision": row["revision"], "last_success_at": row["published_at"]}}
 
@@ -609,7 +710,7 @@ def load_teacher_prediction_terms(conn, teacher_id: int) -> list[dict]:
 
 def load_authorized_prediction_lessons(conn, authorized_offering_ids, *, semester_id=None, academic_year=None, term=None) -> dict:
     """Caller supplies live authorized membership IDs; never accepts a student ID as scope."""
-    empty = {"lessons": [], "sync_states": [], "warnings": [], "covered_offering_ids": []}
+    empty = {"lessons": [], "approved_changes": [], "sync_states": [], "warnings": [], "covered_offering_ids": []}
     ids = sorted({int(value) for value in authorized_offering_ids if int(value) > 0})
     if not ids or not _table_exists(conn, "teacher_academic_schedule_snapshots"):
         return empty
@@ -650,6 +751,7 @@ def load_authorized_prediction_lessons(conn, authorized_offering_ids, *, semeste
     for key, snapshot in snapshots.items():
         allowed = allowed_by_snapshot[key]
         empty["lessons"].extend(row for row in snapshot["lessons"] if row.get("class_offering_id") in allowed)
+        empty["approved_changes"].extend(row for row in snapshot["approved_changes"] if row.get("class_offering_id") in allowed)
         empty["covered_offering_ids"].extend(value for value in snapshot["covered_offering_ids"] if value in allowed)
         empty["sync_states"].append(snapshot["sync_state"])
         # Request reasons and other classes' diagnostics are not student payloads.

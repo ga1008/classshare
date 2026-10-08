@@ -216,6 +216,7 @@ export const DECK_CSS = `
 .cs-lesson__link-hint { font-weight: 750; }
 .cs-lesson__footer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; min-width: 0; gap: 5px; }
 .cs-lesson__footer:has(.cs-adjustment-label) { grid-template-columns: minmax(0, 1fr) auto; }
+.cs-adjustment-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 0; max-width: var(--cs-compact-action-width, 96px); }
 .cs-lesson__room {
     display: block; min-width: 0; font-size: .68rem; line-height: 1.35;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 1;

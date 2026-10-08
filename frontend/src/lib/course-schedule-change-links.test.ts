@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { scheduleChangeConnections, scheduleChangeColors } from '../../../static/js/course_schedule_change_links.js';
+import { scheduleChangeConnections, scheduleChangeColors, projectScheduleChanges } from '../../../static/js/course_schedule_change_links.js';
+import { countScheduleLessons, scheduleChangeLabel } from '../../../static/js/course_schedule_deck.js';
 import { adjustmentActionText } from '../../../static/js/course_schedule_presentation.js';
 
 function pair(sourceWeek = 4, targetWeek = 4) {
@@ -16,6 +17,60 @@ function pair(sourceWeek = 4, targetWeek = 4) {
     : [{ week_index: sourceWeek, lessons: [original] }, { week_index: targetWeek, lessons: [proposed] }];
   return { overview: { weeks }, original, proposed, source: weeks[0], target: weeks.at(-1)! };
 }
+
+function approvedFixture() {
+  const original = { date: '2026-09-22', sections: [2, 3], room: 'B310' };
+  const proposed = { date: '2026-09-29', sections: [6, 7], room: 'B210' };
+  const current: any = { event_key: 'effective', course_name: '网络', session_id: 18, class_offering_id: 4,
+    actual_date: proposed.date, weekday: 2, sections: proposed.sections, classroom: proposed.room, counts_towards_total: true };
+  return { weeks: [{ week_index: 4, lessons: [] as any[] }, { week_index: 5, lessons: [current] }],
+    approved_changes: [{ request_id: 'approved-1', detail_id: 'detail-1', kind: 'move', phase: 'approved',
+      target_event_key: current.event_key, session_id: 18, class_offering_id: 4,
+      original_week_index: 4, effective_week_index: 5, original, proposed }] };
+}
+
+describe('approved history as a deck-only view', () => {
+  it('adds a reversible history endpoint without mutating canonical data or counting a prediction', () => {
+    const canonical = approvedFixture(), before = structuredClone(canonical);
+    const view = projectScheduleChanges(canonical);
+    expect(canonical).toEqual(before);
+    expect(view.weeks[0].lessons).toHaveLength(1);
+    expect(countScheduleLessons(view.weeks.flatMap(week => week.lessons))).toEqual({ lesson_count: 1, total_hours: 2, proposed_count: 0 });
+    const outgoing = scheduleChangeConnections(view, view.weeks[0])[0], incoming = scheduleChangeConnections(view, view.weeks[1])[0];
+    expect(outgoing).toMatchObject({ label: '已调课 · 时间更改 · 教室更改', direction: 'outgoing', jumpKey: 'effective', jumpWeek: 5 });
+    expect(incoming).toMatchObject({ direction: 'incoming', jumpWeek: 4, jumpKey: view.weeks[0].lessons[0].event_key });
+    expect(scheduleChangeLabel(view.weeks[0].lessons[0])).toBe('原安排（已调课）');
+    expect(projectScheduleChanges(view).weeks[0].lessons).toHaveLength(1);
+  });
+
+  it('preserves approved A to B alongside pending B to C and their separate actions', () => {
+    const canonical = approvedFixture();
+    const current = canonical.weeks[1].lessons[0];
+    const change = { request_id: 'pending-2', phase: 'pending', kind: 'move', original: canonical.approved_changes[0].proposed,
+      proposed: { date: '2026-09-30', sections: [8, 9], room: 'B210' }, endpoint: 'original', counterpart_event_key: 'future', counterpart_week_index: 5 };
+    current.adjustment = change;
+    canonical.weeks[1].lessons.push({ ...current, event_key: 'future', actual_date: '2026-09-30', weekday: 3, sections: [8, 9], counts_towards_total: false,
+      adjustment: { ...change, endpoint: 'proposed', counterpart_event_key: 'effective' } });
+    const view = projectScheduleChanges(canonical);
+    const connections = scheduleChangeConnections(view, view.weeks[1]);
+    expect(connections).toHaveLength(2);
+    expect(connections.map(edge => edge.label)).toEqual(expect.arrayContaining(['时间更改', '已调课 · 时间更改 · 教室更改']));
+    expect(view.weeks[1].lessons[0].schedule_changes.map((item: any) => item.phase)).toEqual(['pending', 'approved']);
+    expect(countScheduleLessons(view.weeks.flatMap(week => week.lessons))).toEqual({ lesson_count: 1, total_hours: 2, proposed_count: 1 });
+  });
+
+  it.each(['filtered', 'wrong-session', 'wrong-date', 'room-only', 'missing-week'])('rejects unreliable %s evidence', problem => {
+    const canonical = approvedFixture();
+    if (problem === 'filtered') canonical.weeks[1].lessons = [];
+    if (problem === 'wrong-session') canonical.approved_changes[0].session_id = 999;
+    if (problem === 'wrong-date') canonical.approved_changes[0].proposed.date = '2026-09-28';
+    if (problem === 'room-only') canonical.approved_changes[0].original = { ...canonical.approved_changes[0].proposed, room: 'B111' };
+    if (problem === 'missing-week') canonical.approved_changes[0].original_week_index = 99;
+    const view = projectScheduleChanges(canonical);
+    expect(view.weeks[0].lessons).toHaveLength(0);
+    expect(scheduleChangeConnections(view, view.weeks[1])).toEqual([]);
+  });
+});
 
 describe('explicit academic change connections', () => {
   it('directs a same-week change from original to proposed even when moving to an earlier day', () => {

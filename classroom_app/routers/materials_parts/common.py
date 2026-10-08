@@ -1306,15 +1306,10 @@ def _is_readme_material_row(row: dict) -> bool:
     if str(row.get("node_type") or "") != "file":
         return False
     name_lower = str(row.get("name") or "").strip().lower()
-    # README.md（Markdown）、HTML 入口（index/main.html）或 HTML 包课次入口
-    # （lesson_N.html）均可自动绑定课次/首页。
-    if name_lower == "readme.md" and str(row.get("preview_type") or "") == "markdown":
-        return True
-    if name_lower in HTML_INDEX_CANDIDATE_NAMES:
-        return True
-    from ...services.html_package_service import lesson_number_from_entry_name
-
-    return lesson_number_from_entry_name(name_lower) > 0
+    from ...services.git_learning_bindings_service import is_repository_learning_entry
+    if not is_repository_learning_entry(name_lower):
+        return False
+    return not name_lower.endswith(".md") or str(row.get("preview_type") or "") == "markdown"
 
 
 def _relative_material_path(root_path: str | None, material_path: str | None) -> str:
@@ -1411,7 +1406,7 @@ def _load_teacher_offering_map(conn, teacher_id: int, desired_ids: list[int]) ->
     placeholders = ",".join("?" for _ in desired_ids)
     rows = conn.execute(
         f"""
-        SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
+        SELECT o.id, o.semester, o.home_learning_material_id, c.name AS class_name, co.name AS course_name
         FROM class_offerings o
         JOIN classes c ON c.id = o.class_id
         JOIN courses co ON co.id = o.course_id
@@ -1627,6 +1622,9 @@ async def _run_ai_material_session_assignment(
     now = datetime.now().isoformat()
 
     with get_db_connection() as conn:
+        from ...services.session_learning_materials_service import lock_unchanged_material_targets
+        lock_unchanged_material_targets(conn, int(user["id"]), all_sessions_by_offering,
+            home_materials={oid: item.get("home_learning_material_id") for oid, item in offering_map.items()})
         for offering_id, home_item in home_assignments_by_offering.items():
             mat_id = int(home_item.get("material_id") or 0)
             if offering_id not in desired_ids or mat_id not in file_id_map:

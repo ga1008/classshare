@@ -408,6 +408,8 @@ async def ai_assign_material_to_sessions(
         if invalid_ids:
             raise HTTPException(403, "包含无权分配的课堂")
 
+        home_materials = {int(row["id"]): row["home_learning_material_id"] for row in conn.execute(
+            "SELECT id,home_learning_material_id FROM class_offerings WHERE teacher_id=?", (user["id"],)).fetchall()}
         all_sessions_by_offering: dict[int, list[dict]] = {}
         for offering_id in desired_ids:
             sessions = conn.execute(
@@ -503,6 +505,8 @@ async def ai_assign_material_to_sessions(
     now = datetime.now().isoformat()
 
     with get_db_connection() as conn:
+        from ...services.session_learning_materials_service import lock_unchanged_material_targets
+        lock_unchanged_material_targets(conn, int(user["id"]), all_sessions_by_offering, home_materials=home_materials)
         for offering_id, home_item in home_assignments_by_offering.items():
             mat_id = int(home_item.get("material_id") or 0)
             if offering_id not in allowed_ids or mat_id not in file_id_map:
@@ -613,6 +617,8 @@ async def update_classroom_home_learning_material(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
+        from ...services.session_learning_materials_service import _ensure_offering_owner
+        _ensure_offering_owner(conn, class_offering_id, int(user["id"]))
         offering_row = conn.execute(
             """
             SELECT id, teacher_id, home_learning_material_id
@@ -633,6 +639,10 @@ async def update_classroom_home_learning_material(
             else:
                 ensure_teacher_learning_material_owner(conn, learning_material_id, user["id"])
 
+        from ...services.session_learning_materials_service import unbind_material_in_transaction
+        previous_material = int(offering_row["home_learning_material_id"] or 0)
+        if previous_material and previous_material != learning_material_id:
+            unbind_material_in_transaction(conn, class_offering_id, 0, previous_material, int(user["id"]))
         conn.execute(
             """
             UPDATE class_offerings
@@ -676,6 +686,8 @@ async def update_classroom_session_learning_material(
     user: dict = Depends(get_current_teacher),
 ):
     with get_db_connection() as conn:
+        from ...services.session_learning_materials_service import _ensure_offering_owner
+        _ensure_offering_owner(conn, class_offering_id, int(user["id"]))
         session_row = conn.execute(
             """
             SELECT s.id,
@@ -708,6 +720,10 @@ async def update_classroom_session_learning_material(
             else:
                 ensure_teacher_learning_material_owner(conn, learning_material_id, user["id"])
 
+        from ...services.session_learning_materials_service import unbind_material_in_transaction
+        previous_material = int(session_row["learning_material_id"] or 0)
+        if previous_material and previous_material != learning_material_id:
+            unbind_material_in_transaction(conn, class_offering_id, session_id, previous_material, int(user["id"]))
         conn.execute(
             """
             UPDATE class_offering_sessions

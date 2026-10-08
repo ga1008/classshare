@@ -1,5 +1,5 @@
 /** Pair only the explicit pending endpoints supplied by the academic snapshot. */
-import { classroomChangeState } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { classroomChangeState, scheduleChanges } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 
 const text = value => typeof value === 'string' ? value.trim() : '';
 const positiveInteger = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
@@ -25,10 +25,44 @@ const sameSlot = (a, b) => sameTime(a, b) && a.room === b.room;
 const slotText = value => `${value.date} 第${value.sections.join('、')}节${value.room ? ` · ${value.room}` : ''}`;
 const sameKnownIdentity = (a, b, key) => a[key] == null || a[key] === '' || b[key] == null || b[key] === '' || String(a[key]) === String(b[key]);
 
-function pending(lesson) {
-    const change = lesson?.adjustment;
-    return change?.phase === 'pending' && text(change.request_id)
-        && ['original', 'proposed'].includes(change.endpoint) ? change : null;
+const changesFor = lesson => scheduleChanges(lesson).filter(change => text(change.request_id));
+
+/** Build only a deck view. Canonical lessons, summaries and backend identities
+ * remain untouched; old approved positions never become business sessions. */
+export function projectScheduleChanges(overview) {
+    if (!Array.isArray(overview?.approved_changes) || !overview.approved_changes.length) return overview;
+    const weeks = (overview.weeks || []).map(week => ({ ...week, lessons: (week.lessons || []).map(lesson => ({ ...lesson })) }));
+    const byKey = new Map();
+    for (const week of weeks) for (const lesson of week.lessons) {
+        const key = text(lesson.event_key);
+        if (key) byKey.set(key, byKey.has(key) ? null : { lesson, week });
+    }
+    for (const relation of overview.approved_changes) {
+        const target = byKey.get(text(relation.target_event_key));
+        const original = slot(relation.original), proposed = slot(relation.proposed);
+        const sourceWeek = weeks.find(week => Number(week.week_index) === Number(relation.original_week_index));
+        if (relation.phase !== 'approved' || relation.kind !== 'move' || !text(relation.request_id) || !text(relation.detail_id)
+            || !target || !sourceWeek || !original || !proposed || sameTime(original, proposed)
+            || Number(target.week.week_index) !== Number(relation.effective_week_index)
+            || !sameKnownIdentity(target.lesson, relation, 'session_id') || !sameKnownIdentity(target.lesson, relation, 'class_offering_id')
+            || (target.lesson.actual_date || target.lesson.date) !== proposed.date
+            || sections(target.lesson.sections)?.join(',') !== proposed.sections.join(',')) continue;
+        const originalKey = `${target.lesson.event_key}:approved:${relation.request_id}:${relation.detail_id}:original`;
+        if (byKey.has(originalKey)) continue;
+        const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: 'approved', kind: 'move', original, proposed };
+        const sourceChange = { ...shared, endpoint: 'original', counterpart_event_key: target.lesson.event_key, counterpart_week_index: target.week.week_index };
+        const targetChange = { ...shared, endpoint: 'effective', counterpart_event_key: originalKey, counterpart_week_index: sourceWeek.week_index };
+        target.lesson.schedule_changes = [...scheduleChanges(target.lesson), targetChange];
+        const weekday = new Date(`${original.date}T00:00:00Z`).getUTCDay() || 7;
+        const source = { ...target.lesson, event_key: originalKey, actual_date: original.date, date: original.date,
+            weekday, weekday_label: `星期${['一', '二', '三', '四', '五', '六', '日'][weekday - 1]}`, week_index: sourceWeek.week_index,
+            sections: original.sections, classroom: original.room, classroom_short: original.room,
+            section_label: `第${original.sections.join('、')}节`, time_label: '', start_time: '', end_time: '',
+            counts_towards_total: false, is_change_history: true, adjustment: null, schedule_changes: [sourceChange] };
+        sourceWeek.lessons.push(source);
+        byKey.set(originalKey, { lesson: source, week: sourceWeek });
+    }
+    return { ...overview, weeks };
 }
 
 function weekMatches(value, week) {
@@ -70,50 +104,53 @@ export function scheduleChangeConnections(overview, week) {
     for (const visibleKey of visible) {
         const entry = byKey.get(visibleKey);
         if (!entry || entry.weekIndex !== currentWeek) continue;
-        const change = pending(entry.lesson);
-        if (!change || change.kind !== 'move') continue;
+        for (const change of changesFor(entry.lesson)) {
+            if (change.kind !== 'move') continue;
 
-        const counterpartKey = text(change.counterpart_event_key);
-        const other = byKey.get(counterpartKey);
-        const counterpart = pending(other?.lesson);
-        if (!counterpartKey || counterpartKey === visibleKey || !other || !counterpart || counterpart.kind !== 'move'
-            || counterpart.endpoint === change.endpoint || text(counterpart.counterpart_event_key) !== visibleKey
-            || text(counterpart.request_id) !== text(change.request_id)
-            || !weekMatches(change.counterpart_week_index, other.weekIndex)
-            || !weekMatches(counterpart.counterpart_week_index, entry.weekIndex)
-            || !sameKnownIdentity(entry.lesson, other.lesson, 'session_id')
-            || !sameKnownIdentity(entry.lesson, other.lesson, 'class_offering_id')) continue;
+            const counterpartKey = text(change.counterpart_event_key);
+            const other = byKey.get(counterpartKey);
+            const counterpart = changesFor(other?.lesson).find(candidate => candidate.phase === change.phase
+                && text(candidate.request_id) === text(change.request_id) && text(candidate.detail_id) === text(change.detail_id)
+                && text(candidate.counterpart_event_key) === visibleKey);
+            if (!counterpartKey || counterpartKey === visibleKey || !other || !counterpart || counterpart.kind !== 'move'
+                || (counterpart.endpoint === 'original') === (change.endpoint === 'original') || text(counterpart.counterpart_event_key) !== visibleKey
+                || text(counterpart.request_id) !== text(change.request_id)
+                || !weekMatches(change.counterpart_week_index, other.weekIndex)
+                || !weekMatches(counterpart.counterpart_week_index, entry.weekIndex)
+                || !sameKnownIdentity(entry.lesson, other.lesson, 'session_id')
+                || !sameKnownIdentity(entry.lesson, other.lesson, 'class_offering_id')) continue;
 
-        const originalEntry = change.endpoint === 'original' ? entry : other;
-        const proposedEntry = change.endpoint === 'proposed' ? entry : other;
-        const originalKey = text(originalEntry.lesson.event_key), proposedKey = text(proposedEntry.lesson.event_key);
-        const originalChange = originalEntry.lesson.adjustment, proposedChange = proposedEntry.lesson.adjustment;
-        const original = slot(originalChange.original), proposed = slot(originalChange.proposed);
-        const otherOriginal = slot(proposedChange.original), otherProposed = slot(proposedChange.proposed);
-        if (!original || !proposed || !otherOriginal || !otherProposed
-            || !sameSlot(original, otherOriginal) || !sameSlot(proposed, otherProposed) || sameTime(original, proposed)) continue;
-        const connectionKey = JSON.stringify([text(originalChange.request_id), originalKey]);
-        if (emitted.has(connectionKey)) continue;
+            const originalEntry = change.endpoint === 'original' ? entry : other;
+            const proposedEntry = change.endpoint !== 'original' ? entry : other;
+            const originalKey = text(originalEntry.lesson.event_key), proposedKey = text(proposedEntry.lesson.event_key);
+            const originalChange = change.endpoint === 'original' ? change : counterpart, proposedChange = change.endpoint !== 'original' ? change : counterpart;
+            const original = slot(originalChange.original), proposed = slot(originalChange.proposed);
+            const otherOriginal = slot(proposedChange.original), otherProposed = slot(proposedChange.proposed);
+            if (!original || !proposed || !otherOriginal || !otherProposed
+                || !sameSlot(original, otherOriginal) || !sameSlot(proposed, otherProposed) || sameTime(original, proposed)) continue;
+            const connectionKey = JSON.stringify([text(originalChange.request_id), originalKey]);
+            if (emitted.has(connectionKey)) continue;
 
-        const sameWeek = originalEntry.weekIndex === proposedEntry.weekIndex;
-        if (sameWeek && (!visible.has(originalKey) || !visible.has(proposedKey))) continue;
-        const outgoing = entry.lesson === originalEntry.lesson;
-        const remoteWeek = outgoing ? proposedEntry.weekIndex : originalEntry.weekIndex;
-        const roomChanged = classroomChangeState(original.room, proposed.room) === true;
-        connections.push({
-            key: connectionKey,
-            sourceKey: sameWeek || outgoing ? originalKey : null,
-            targetKey: sameWeek || !outgoing ? proposedKey : null,
-            direction: sameWeek ? 'local' : outgoing ? 'outgoing' : 'incoming',
-            edge: sameWeek ? null : remoteWeek < currentWeek ? 'left' : 'right',
-            label: roomChanged ? '时间更改 · 教室更改' : '时间更改',
-            boundaryLabel: sameWeek ? '' : `${outgoing ? '至' : '来自'}第${remoteWeek}周`,
-            title: `${slotText(original)} → ${slotText(proposed)}`,
-            jumpKey: sameWeek || outgoing ? proposedKey : originalKey,
-            jumpWeek: sameWeek ? currentWeek : remoteWeek,
-            courseName: text(originalEntry.lesson.course_name),
-        });
-        emitted.add(connectionKey);
+            const sameWeek = originalEntry.weekIndex === proposedEntry.weekIndex;
+            if (sameWeek && (!visible.has(originalKey) || !visible.has(proposedKey))) continue;
+            const outgoing = entry.lesson === originalEntry.lesson;
+            const remoteWeek = outgoing ? proposedEntry.weekIndex : originalEntry.weekIndex;
+            const roomChanged = classroomChangeState(original.room, proposed.room) === true;
+            connections.push({
+                key: connectionKey,
+                sourceKey: sameWeek || outgoing ? originalKey : null,
+                targetKey: sameWeek || !outgoing ? proposedKey : null,
+                direction: sameWeek ? 'local' : outgoing ? 'outgoing' : 'incoming',
+                edge: sameWeek ? null : remoteWeek < currentWeek ? 'left' : 'right',
+                label: `${change.phase === 'approved' ? '已调课 · ' : ''}${roomChanged ? '时间更改 · 教室更改' : '时间更改'}`,
+                boundaryLabel: sameWeek ? '' : `${outgoing ? '至' : '来自'}第${remoteWeek}周`,
+                title: `${slotText(original)} → ${slotText(proposed)}`,
+                jumpKey: sameWeek || outgoing ? proposedKey : originalKey,
+                jumpWeek: sameWeek ? currentWeek : remoteWeek,
+                courseName: text(originalEntry.lesson.course_name),
+            });
+            emitted.add(connectionKey);
+        }
     }
     return connections;
 }

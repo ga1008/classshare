@@ -6,6 +6,30 @@ from classroom_app.services.course_planning_service import decorate_offering_ses
 
 
 class ClassroomWorkspaceProjectionTests(unittest.TestCase):
+    def test_generated_title_uses_current_ordinal_without_rewriting_source(self):
+        original = "课程 第 4 次课"
+        intro = "第 4 次课，按教务实际排课自动生成，请补充本次课要讲的知识点、实验内容或案例任务。"
+        result = decorate_offering_sessions([{"id": 4, "order_index": 3, "title": original,
+            "content": intro, "session_date": "2026-09-15", "schedule_source": "academic_sync"}], reference_date=date(2026, 9, 9))
+        item = result["sessions"][0]
+        self.assertEqual((item["title"], item["content"]), (original, intro))
+        self.assertEqual(item["detail_title"], "课程 第 3 次课")
+        self.assertEqual(result["focus_title"], "课程 第 3 次课")
+        self.assertEqual(item["workspace_summary"], "")
+        manual = decorate_offering_sessions([{"id": 4, "order_index": 3, "title": original,
+            "content": "手工内容", "session_date": "2026-09-15", "schedule_source": "academic_sync"}])
+        self.assertEqual(manual["sessions"][0]["detail_title"], original)
+
+    def test_cancelled_session_does_not_take_a_lesson_number_or_next_lesson_anchor(self):
+        result = decorate_offering_sessions([
+            {"id": 1, "order_index": 1, "title": "active", "session_date": "2026-09-15"},
+            {"id": 2, "order_index": 2, "title": "cancelled", "session_date": "2026-09-10", "schedule_status": "cancelled"},
+        ], reference_date=date(2026, 9, 9))
+        self.assertEqual(result["session_count"], 1)
+        self.assertEqual(result["anchor_session"]["id"], 1)
+        self.assertEqual(result["upcoming_count"] + result["current_count"], 1)
+        self.assertEqual(result["sessions"][-1]["session_number_label"], "已取消课次")
+
     def test_category_does_not_infer_from_title_or_change_answer_format(self):
         rows = [
             {"id": 1, "title": "期末考试", "exam_paper_id": "paper", "assessment_kind": "homework"},

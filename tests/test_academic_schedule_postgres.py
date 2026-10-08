@@ -15,6 +15,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from classroom_app.db.postgres import LanSharePostgresConnection, sqlite_compatible_dict_row
 from classroom_app.db.schema_academic_schedule_predictions import ensure_academic_schedule_prediction_schema
@@ -37,6 +38,10 @@ class AcademicSchedulePostgresTests(unittest.TestCase):
         cls.created = False
         admin_database = os.environ.get("ASSESSMENT_REHEARSAL_TEST_ADMIN_DATABASE", "lanshare_assessment_rehearsal")
         cls.admin = connect_offline(cluster_dir=cls.cluster, port=cls.port, database=admin_database)
+        from classroom_app import config
+        dialect = patch.object(config, "DB_ENGINE", "postgres")
+        dialect.start()
+        cls.addClassCleanup(dialect.stop)
         cls.admin.autocommit = True
         try:
             # No IF NOT EXISTS, reused DB, production DSN, or restored business data.
@@ -69,6 +74,16 @@ class AcademicSchedulePostgresTests(unittest.TestCase):
         self.conn.execute("DROP SCHEMA public CASCADE")
         self.conn.execute("CREATE SCHEMA public")
         self.conn.execute(SCHEMA.replace("PRAGMA foreign_keys=ON;", ""))
+        self.conn.execute("ALTER TABLE class_offering_sessions ADD COLUMN IF NOT EXISTS schedule_metadata_json TEXT DEFAULT '{}'")
+        self.conn.execute("ALTER TABLE class_offerings ADD COLUMN home_learning_material_id INTEGER")
+        self.conn.execute("CREATE UNIQUE INDEX native_session_order ON class_offering_sessions(class_offering_id,order_index)")
+        from classroom_app.db import schema_session_learning_materials
+        schema_session_learning_materials._SCHEMA_READY = False
+        schema_session_learning_materials.ensure_session_learning_materials_schema(self.conn)
+        self.conn.execute("""INSERT INTO class_offering_learning_materials
+            (class_offering_id,session_id,material_id,sort_order,created_by_teacher_id,ai_blurb)
+            VALUES (10,101,51,0,1,'ordinal one'),(10,102,52,0,1,'ordinal two'),
+                   (10,103,53,0,1,'ordinal three'),(10,101,91,1,1,'manual extra')""")
         ensure_academic_schedule_prediction_schema(self.conn, engine="postgres")
         self.conn.commit()
         self.now = datetime(2026, 9, 19, 2, tzinfo=timezone.utc)
@@ -84,6 +99,68 @@ class AcademicSchedulePostgresTests(unittest.TestCase):
     def read(self):
         return load_teacher_prediction_snapshot(self.conn, 1, 1)
 
+    def seed_repository(self):
+        # Reuse only the material table definitions from an in-memory fixture;
+        # every row below is synthetic and every PG target was created above.
+        from tests.test_session_learning_materials_service import _make_conn
+        template = _make_conn()
+        try:
+            for name in ('course_materials', 'course_material_assignments'):
+                self.conn.execute(template.execute('SELECT sql FROM sqlite_master WHERE name=?', (name,)).fetchone()[0])
+        finally:
+            template.close()
+        for mid, name, kind, preview, ext in [(500,'site','folder','folder',''),
+                (51,'site/lesson_1/README.md','file','markdown','md'),
+                (52,'site/lesson_2/README.md','file','markdown','md'),
+                (53,'site/lesson_3/README.md','file','markdown','md'),
+                (91,'manual.md','file','markdown','md')]:
+            self.conn.execute('INSERT INTO course_materials(id,teacher_id,root_id,name,material_path,node_type,preview_type,file_ext) VALUES (?,1,500,?,?,?,?,?)',
+                (mid,name.rsplit('/',1)[-1],name,kind,preview,ext))
+        self.conn.execute('INSERT INTO class_offerings(id,teacher_id,semester_id,course_id,academic_teaching_class_id) VALUES(30,1,1,1,\'NET-B\')')
+        self.conn.execute('''INSERT INTO class_offering_sessions(id,class_offering_id,order_index,title,session_date,academic_section_text,schedule_status)
+            SELECT id+200,30,order_index,title,session_date,academic_section_text,schedule_status FROM class_offering_sessions WHERE class_offering_id=10''')
+        self.conn.execute('INSERT INTO course_material_assignments(material_id,class_offering_id) VALUES(500,10),(500,30),(500,20)')
+        self.conn.commit()
+
+    def repository_sync(self, conn=None):
+        from classroom_app.services.git_learning_bindings_service import sync_repository_learning_bindings
+        conn = conn or self.conn
+        root = dict(conn.execute('SELECT * FROM course_materials WHERE id=500').fetchone())
+        rows = conn.execute('SELECT * FROM course_materials WHERE root_id=500').fetchall()
+        return sync_repository_learning_bindings(conn, root, rows, 1)
+
+    def test_git_projection_two_classrooms_resequence_suppression_and_two_connection_idempotency(self):
+        from classroom_app.services.session_learning_materials_service import unbind_material_in_transaction
+        self.seed_repository()
+        self.assertEqual(6, self.repository_sync()['total_assignments'])
+        self.conn.commit()
+        before_other = tuple(self.conn.execute('SELECT order_index,learning_material_id FROM class_offering_sessions WHERE id=201').fetchone().values())
+        snapshot = base_snapshot([request(status='approved')]); snapshot['official'][0] = official('2026-10-11')
+        self.publish(snapshot)
+        self.assertEqual(6, self.repository_sync()['total_assignments'])
+        self.assertEqual([(101,3,53),(102,1,51),(103,2,52)], [tuple(row.values()) for row in self.conn.execute(
+            'SELECT id,order_index,learning_material_id FROM class_offering_sessions WHERE class_offering_id=10 ORDER BY id')])
+        self.assertEqual((102,'manual extra'), tuple(self.conn.execute('SELECT session_id,ai_blurb FROM class_offering_learning_materials WHERE material_id=91').fetchone().values()))
+        self.assertEqual([(301,51),(302,52),(303,53)], [tuple(row.values()) for row in self.conn.execute(
+            'SELECT id,learning_material_id FROM class_offering_sessions WHERE class_offering_id=30 ORDER BY id')])
+        self.assertEqual(before_other, tuple(self.conn.execute('SELECT order_index,learning_material_id FROM class_offering_sessions WHERE id=201').fetchone().values()))
+        unbind_material_in_transaction(self.conn,10,101,53,1)
+        self.conn.commit()
+        barrier=threading.Barrier(2)
+        def sync():
+            conn=self.connection()
+            try:
+                barrier.wait(timeout=5)
+                result=self.repository_sync(conn);conn.commit();return result
+            finally:
+                conn.close()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(sync) for _ in range(2)]
+            results=[future.result(timeout=20) for future in futures]
+        self.assertEqual([1,1], [row['suppressed_count'] for row in results])
+        self.assertEqual(0,self.conn.execute('SELECT COUNT(*) FROM class_offering_learning_materials WHERE class_offering_id=10 AND material_id=53').fetchone()[0])
+        self.assertEqual(6,self.conn.execute('SELECT COUNT(*) FROM class_offering_git_learning_bindings').fetchone()[0])
+
     def test_pending_approved_then_middle_cancel_preserve_identity_and_material(self):
         self.publish(base_snapshot([request()]))
         pair = [row for row in self.read()["lessons"] if row.get("adjustment")]
@@ -96,14 +173,19 @@ class AcademicSchedulePostgresTests(unittest.TestCase):
         snapshot["official"][0] = official("2026-10-11")
         self.assertEqual([101], self.publish(snapshot)["updated_session_ids"])
         moved = self.conn.execute("SELECT session_date,order_index,title,content,course_lesson_id,learning_material_id FROM class_offering_sessions WHERE id=101").fetchone()
-        self.assertEqual(("2026-10-11", 1, "原第一课", "不可覆盖第一课内容", 11, 51), tuple(moved.values()))
+        self.assertEqual(("2026-10-11", 3, "原第一课", "不可覆盖第一课内容", 11, 53), tuple(moved.values()))
+        self.assertEqual([(101,53,'ordinal three'),(102,51,'ordinal one'),(102,91,'manual extra'),(103,52,'ordinal two')],
+            [tuple(row.values()) for row in self.conn.execute("SELECT session_id,material_id,ai_blurb FROM class_offering_learning_materials ORDER BY session_id,sort_order")])
         self.assertFalse(any(row.get("adjustment") for row in self.read()["lessons"]))
+        stable = [tuple(row.values()) for row in self.conn.execute("SELECT id,order_index,session_date,learning_material_id FROM class_offering_sessions ORDER BY id")]
+        self.publish(snapshot)
+        self.assertEqual(stable, [tuple(row.values()) for row in self.conn.execute("SELECT id,order_index,session_date,learning_material_id FROM class_offering_sessions ORDER BY id")])
 
         snapshot["requests"].append(request("C2", status="approved", original=slot("2026-09-26", (8, 9)), kind="cancel"))
         snapshot["official"].pop(1)
         self.assertEqual([102], self.publish(snapshot)["cancelled_session_ids"])
         rows = self.conn.execute("SELECT id,order_index,schedule_status FROM class_offering_sessions WHERE class_offering_id=10 ORDER BY id").fetchall()
-        self.assertEqual([(101, 1, "scheduled"), (102, 2, "cancelled"), (103, 3, "scheduled")], [tuple(row.values()) for row in rows])
+        self.assertEqual([(101, 2, "scheduled"), (102, 3, "cancelled"), (103, 1, "scheduled")], [tuple(row.values()) for row in rows])
         self.assertEqual([901, 902, 903], [row[0] for row in self.conn.execute("SELECT material_id FROM session_materials ORDER BY session_id").fetchall()])
         student = load_authorized_prediction_lessons(self.conn, [10, 20], semester_id=1)
         self.assertEqual([10], student["covered_offering_ids"])
@@ -156,6 +238,9 @@ class AcademicSchedulePostgresTests(unittest.TestCase):
             reconcile_and_publish_snapshot(self.conn, 1, 1, snapshot, lease["token"], now=self.now)
         # SAVEPOINT rollback leaves the caller's outer transaction usable.
         self.assertEqual("2026-09-20", self.conn.execute("SELECT session_date FROM class_offering_sessions WHERE id=101").fetchone()[0])
+        self.assertEqual([(101,1,51),(102,2,52),(103,3,53)], [tuple(row.values()) for row in self.conn.execute(
+            "SELECT id,order_index,learning_material_id FROM class_offering_sessions WHERE class_offering_id=10 ORDER BY id")])
+        self.assertEqual((101,'manual extra'), tuple(self.conn.execute("SELECT session_id,ai_blurb FROM class_offering_learning_materials WHERE material_id=91").fetchone().values()))
         self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM academic_schedule_change_session_links").fetchone()[0])
         fail_schedule_sync(self.conn, 1, lease["token"], error="合成失败")
         self.conn.commit()

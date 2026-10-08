@@ -11529,6 +11529,8 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
     margin-bottom: var(--spacing-sm);
 }
 .materials-ai-assign-list-scroll {
+    container-type: inline-size;
+    container-name: material-bindings;
     max-height: 240px;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -11578,13 +11580,38 @@ body[data-ai-workspace-active-tab="tasks"] #ai-chat-btn-new {
 .materials-ai-assign-session {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
     gap: 0.35rem;
     font-weight: 500;
 }
 .materials-ai-assign-session-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
     color: var(--text-secondary);
     font-weight: 400;
     font-size: var(--text-sm);
+}
+@container material-bindings (max-width: 36rem) {
+    .materials-ai-assign-item {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+    .materials-ai-assign-path {
+        grid-column: 1 / 3;
+        grid-row: 1;
+    }
+    .materials-ai-assign-arrow {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .materials-ai-assign-session {
+        grid-column: 2 / -1;
+        grid-row: 2;
+    }
+    .materials-ai-assign-item > .materials-ai-confidence {
+        grid-column: 3;
+        grid-row: 1;
+    }
 }
 .materials-ai-confidence {
     display: inline-block;

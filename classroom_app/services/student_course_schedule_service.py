@@ -165,9 +165,10 @@ def build_student_course_schedule_overview(
     items = []
     session_map = {}
     totals: dict[int, int] = {}
+    from .offering_session_resequence_service import is_numbered_session
     for row in rows:
         oid = int(row["class_offering_id"])
-        totals[oid] = max(totals.get(oid, 0), int(row["order_index"] or 0))
+        totals[oid] = totals.get(oid, 0) + int(is_numbered_session(dict(row)))
     unpositioned_count = 0
     for row in rows:
         on_date = _date(row["session_date"])
@@ -231,6 +232,8 @@ def build_student_course_schedule_overview(
                     "prediction_count": len(items) - len(official_items),
                     "max_week": max_week, "term_status": selected["status"], "unpositioned_count": unpositioned_count},
         "courses": _build_course_stats(official_items), "weeks": weeks,
+        "approved_changes": [change for change in projection.get('approved_changes', [])
+                             if any(item.get('event_key') == change['target_event_key'] for item in items)],
         "authorized_courses": authorized_courses,
         "section_range": {"min": 1, "max": max(11, max((max(i["sections"]) for i in items), default=11))},
     }

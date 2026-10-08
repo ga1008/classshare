@@ -39,6 +39,8 @@
 
 详见 [需求、模块与人工分类](lq-interface-modules-2026-10-08.md)、[共享模板完整审查](lq-interface-source-review-2026-10-08.json) 及 [源码与合同摘要](lq-platform-component-summary-2026-10-08.json)。源码声明仍为 pending，不能替代浏览器验收。
 
+本次增量覆盖已批准调课的可视历史端点、同一课次后续待审调课、课次重排展示与 Git 学习文档绑定结果；历史浏览器结果及迁移验收状态保留。正式构建图为 `52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad`，增量检查单列在 source-review 的 `scheduleBindingsReview`。
+
 | unknown 语法 | 数量 |
 | --- | ---: |
 | `create-element` | 30 |

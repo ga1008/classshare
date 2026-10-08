@@ -1322,9 +1322,10 @@ def _load_platform_offering_schedule_items(
     from .schedule_lesson_metadata import explicit_lesson_time, load_offering_class_labels
     class_labels = load_offering_class_labels(conn, [row['class_offering_id'] for row in rows], teacher_id=teacher_id)
     totals = {}
+    from .offering_session_resequence_service import is_numbered_session
     for row in rows:
         oid = int(row['class_offering_id'])
-        totals[oid] = max(totals.get(oid, 0), int(row['order_index'] or 0))
+        totals[oid] = totals.get(oid, 0) + int(is_numbered_session(dict(row)))
     grouped: dict[tuple, dict[str, Any]] = {}
     for row in rows:
         on_date = _parse_iso_date(row['session_date'])

@@ -399,6 +399,12 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 
 新回归入口：`tests/e2e/components/course-schedule-stack.spec.ts`；实际方案比较、性能口径与发布结果见 [修复验收记录](lq-schedule-stack-2026-09-29.md)。
 
+#### 已生效调课关系（2026-10-08）
+
+课表 overview 的 `approved_changes` 独立于业务 `weeks[].lessons`：每项提供 `request_id/detail_id`、`phase='approved'`、`kind='move'`、`target_event_key`、稳定 `session_id/class_offering_id`、`original/proposed {date,sections,room}` 及 `original_week_index/effective_week_index`。读层仅在审批记录与唯一正式新位置相符、原位置已不再正式排课时提供关系；仅换教室、停课、缺失/冲突或未体现在正式课表的审批不猜测箭头。教师筛选和学生授权同时过滤关系。
+
+共享 `projectScheduleChanges` 在 deck 的 `setOverview` 入口生成纯视图：原位置明确标为历史，`counts_towards_total=false`，不进入业务课次、预测数、课时或宿主 `onWeekChange` 的日程集合。视图 `schedule_changes` 可并存已批准 A→B 和待审 B→C，按钮与连线均按对应关系定位，不能覆盖原 pending `adjustment`。已生效和待审文案分开；原生 Button 保留单一 click owner，箭头路径仍是图表内容。3D 仅当前周连接内容、跨周同步定位、共享 LQ layer bridge 与销毁合同保持。
+
 ### 显式溢出标签（2026-09-29）
 
 `static/js/lq/overflow-label.js` 导出 `bindOverflowLabels(root: Element)`，仅增强指定 owner 内显式声明的标签，不扫描全页。相同 owner 重复绑定返回原控制器。标签完整文本、按钮名称及 click/Popover 行为仍归消费者；不能把查看详情伪装成带 `aria-pressed` 的筛选 Chip。

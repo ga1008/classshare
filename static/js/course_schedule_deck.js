@@ -20,10 +20,10 @@
  * 放大视图按节次给出早读(1)/上午(2-5)/下午(6-9)/晚上(10-11+)的背景分区。
  */
 
-import { scheduleChangeConnections, scheduleChangeColors } from './course_schedule_change_links.js?v=change-lines-glass-20260920';
+import { scheduleChangeConnections, scheduleChangeColors, projectScheduleChanges } from './course_schedule_change_links.js?v=change-lines-glass-20260920';
 import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-simple-20260920';
 
-import { compactClassroomName, adjustmentActionText } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { compactClassroomName, adjustmentActionText, scheduleChanges } from './course_schedule_presentation.js?v=schedule-glass-20260920';
 
 import { DECK_CSS } from './course_schedule_styles.js';
 
@@ -73,9 +73,10 @@ export function scheduleLessonLanes(lessons = []) {
     return result;
 }
 
-export function scheduleChangeLabel(lesson) {
-    const change = pendingScheduleChange(lesson);
+export function scheduleChangeLabel(lesson, suppliedChange = null) {
+    const change = suppliedChange || scheduleChanges(lesson)[0];
     if (!change) return '';
+    if (change.phase === 'approved') return change.endpoint === 'original' ? '原安排（已调课）' : '调课已生效';
     if (change.endpoint === 'proposed') return '正在申请变更';
     return ({ move: '调课待审', cancel: '停课待审', room: '更换教室待审' })[change.kind];
 }
@@ -257,6 +258,7 @@ export function createScheduleDeck(container, options = {}) {
         const laneStyle = lane.count > 1 ? `width:calc(100% / ${lane.count} - 2px);margin-left:calc(100% / ${lane.count} * ${lane.lane});` : '';
         const gridPos = `grid-column:${column};grid-row:${rowStart} / span ${rowSpan};${laneStyle}`;
         const change = pendingScheduleChange(lesson);
+        const changes = scheduleChanges(lesson);
         const proposed = change?.endpoint === 'proposed';
         const href = String(lesson.classroom_url || lesson.create_url || '');
         const isCreate = Boolean(href) && !lesson.classroom_url;
@@ -269,30 +271,34 @@ export function createScheduleDeck(container, options = {}) {
         const weekday = lesson.weekday_label || `星期${['一','二','三','四','五','六','日'][Math.min(6, Math.max(0, Number(lesson.weekday || 1) - 1))]}`;
         const time = [lesson.actual_date, weekday, lesson.time_label || [lesson.start_time, lesson.end_time].filter(Boolean).join('–'), lesson.section_label].filter(Boolean).join(' · ');
         const details = [
+            lesson.is_change_history ? '<span class="cs-lesson__meta">原安排已调出，不计入课时</span>' : '',
             `<span class="cs-lesson__meta">${escapeHtml(time)}</span>`,
             sessionText ? `<span class="cs-lesson__meta">${escapeHtml(sessionText)}${lesson.single_or_double_label ? ` · ${escapeHtml(lesson.single_or_double_label)}` : ''}</span>` : '',
             lesson.class_label ? `<span class="cs-lesson__meta">班级 ${escapeHtml(lesson.class_label)}${lesson.student_count ? ` · ${escapeHtml(lesson.student_count)}人` : ''}</span>` : '',
             linkHint ? `<span class="cs-lesson__meta cs-lesson__link-hint">${escapeHtml(linkHint)}</span>` : '',
         ].filter(Boolean).join('');
-        let button = '', comparison = '';
-        if (change) {
+        const comparisons = [];
+        const buttons = changes.map((change, changeIndex) => {
             const counterpart = change.kind === 'move' && change.counterpart_event_key;
-            const jump = counterpart ? ` ${proposed ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
-            const actionLabel = scheduleChangeLabel(lesson) + jump;
-            const shortLabel = adjustmentActionText(lesson);
-            button = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" aria-expanded="false" aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
+            const jump = counterpart ? ` ${change.endpoint !== 'original' ? '↩ 原位置' : '↗ 新位置'}${change.counterpart_week_index ? ` · 第${change.counterpart_week_index}周` : ''}` : (change.kind === 'room' ? ' · 查看对照' : ' · 查看说明');
+            const actionLabel = scheduleChangeLabel(lesson, change) + jump;
+            const shortLabel = adjustmentActionText(lesson, change);
             const positionText = value => value ? `${value.date || ''} ${(value.sections || []).join('、')}节 ${value.room || ''}`.trim() : '无补课去向';
-            const detail = `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`;
-            comparison = `<div class="cs-adjustment-details" hidden>${escapeHtml(detail)}</div>`;
-        }
-        const mainTag = change && href ? 'a' : 'div';
-        const mainAttrs = change ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
-        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
-        const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${proposed ? ' cs-lesson--proposed' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
+            comparisons.push(change.phase === 'approved'
+                ? `原安排：${positionText(change.original)}。现安排：${positionText(change.proposed)}。调课已审批通过并在正式课表生效；原位置仅供核对。`
+                : `原安排：${positionText(change.original)}。${change.kind === 'cancel' ? '停课申请尚待批准，不自动安排补课。' : `拟安排：${positionText(change.proposed)}。`}当前为待审核，正式安排以审批及课表生效为准。`);
+            return `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-adjustment-label" data-csd-change="${escapeHtml(eventKey)}" data-csd-change-index="${changeIndex}"${counterpart ? '' : ' aria-expanded="false"'} aria-label="${escapeHtml(actionLabel)}" title="${escapeHtml(actionLabel)}"><span class="cs-adjustment-label__short" aria-hidden="true">${escapeHtml(shortLabel).replace('+', '+<wbr>')}</span><span class="cs-adjustment-label__full" aria-hidden="true">${escapeHtml(actionLabel)}</span></button>`;
+        });
+        const button = buttons.length ? `<span class="cs-adjustment-actions">${buttons.join('')}</span>` : '';
+        const comparison = comparisons.length ? `<div class="cs-adjustment-details" hidden>${comparisons.map(escapeHtml).join('<br>')}</div>` : '';
+        const mainTag = changes.length && href ? 'a' : 'div';
+        const mainAttrs = changes.length ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
+        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface"><${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${lesson.is_change_history ? '原安排 · ' : ''}${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
+        const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${proposed ? ' cs-lesson--proposed' : ''}${lesson.is_change_history ? ' cs-lesson--history' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
         const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
         if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(`${lesson.course_name} · ${fullRoom}`)}">${content}</div>`;
-        const tag = !change && href ? 'a' : 'div';
-        const outerAttrs = !change ? href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"' : '';
+        const tag = !changes.length && href ? 'a' : 'div';
+        const outerAttrs = !changes.length ? href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"' : '';
         return `<div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}"><${tag} class="${classes}"${outerAttrs}${keyAttr} style="--cs-accent:${accent}">${content}</${tag}></div>`;
     }
 
@@ -472,7 +478,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function renderCompactWeek(week) {
-        const lessons = week.lessons || [];
+        const lessons = (week.lessons || []).filter(lesson => !lesson.is_change_history);
         return `<div class="cs-card__compact">${lessons.length ? `<ol>${lessons.slice(0, 3).map(lesson => `<li><span>${escapeHtml(lesson.weekday_label)} · ${escapeHtml(lesson.section_label)} · ${escapeHtml(compactClassroomName(lesson.classroom || lesson.classroom_short || '教室待定'))}</span><strong>${escapeHtml(lesson.course_name)}</strong></li>`).join('')}</ol><small>${lessons.length > 3 ? `还有 ${lessons.length - 3} 次安排 · ` : ''}点击放大查看整周课表</small>` : '<strong>这一周没有已排定课程</strong><small>其他课堂可从“全部课程”进入</small>'}</div>`;
     }
 
@@ -534,7 +540,9 @@ export function createScheduleDeck(container, options = {}) {
         }
         if (refs.prevBtn) refs.prevBtn.disabled = state.activeWeekIndex <= 0;
         if (refs.nextBtn) refs.nextBtn.disabled = state.activeWeekIndex >= weeks.length - 1;
-        options.onWeekChange?.(active || null, state.activeWeekIndex);
+        // History endpoints belong only to the visual routing canvas, not the
+        // host's agenda, attendance controls or official-course collection.
+        options.onWeekChange?.(active ? { ...active, lessons: (active.lessons || []).filter(lesson => !lesson.is_change_history) } : null, state.activeWeekIndex);
     }
 
     function goToWeek(index) {
@@ -577,13 +585,13 @@ export function createScheduleDeck(container, options = {}) {
         if (!button) return false;
         event.preventDefault(); event.stopPropagation(); pendingTouchPreview = null;
         const key = button.dataset.csdChange;
-        activateChange(key);
+        activateChange(key, Number(button.dataset.csdChangeIndex || 0));
         return true;
     }
 
-    function activateChange(key) {
+    function activateChange(key, changeIndex = 0) {
         const lesson = state.overview?.weeks?.flatMap(week => week.lessons || []).find(item => item.event_key === key);
-        const change = pendingScheduleChange(lesson);
+        const change = scheduleChanges(lesson)[changeIndex];
         if (!change) return true;
         if (change.kind === 'move' && change.counterpart_event_key) {
             focusLesson(change.counterpart_event_key, change.counterpart_week_index);
@@ -637,7 +645,7 @@ export function createScheduleDeck(container, options = {}) {
         const detail = cell?.querySelector('.cs-adjustment-details');
         if (!detail) return;
         detail.hidden = !open;
-        cell.querySelector('.cs-adjustment-label')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        cell.querySelectorAll('.cs-adjustment-label[aria-expanded]').forEach(button => button.setAttribute('aria-expanded', open ? 'true' : 'false'));
     }
 
     function clearLessonPreviews() {
@@ -1224,7 +1232,7 @@ export function createScheduleDeck(container, options = {}) {
         setOverview(overview, { keepWeek = false } = {}) {
             if (destroyed) return;
             const previousWeek = state.overview?.weeks?.[state.activeWeekIndex]?.week_index;
-            state.overview = overview || null;
+            state.overview = projectScheduleChanges(overview) || null;
             if (state.overview) {
                 state.overview = { ...state.overview, weeks: (state.overview.weeks || []).map(week => ({ ...week, ...countScheduleLessons(week.lessons || []) })) };
                 const term = state.overview.selected_term || {};

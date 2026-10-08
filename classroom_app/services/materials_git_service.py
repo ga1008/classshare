@@ -19,6 +19,7 @@ from ..db.connection import execute_insert_returning_id
 from .file_service import delete_global_file, global_file_write_path, resolve_global_file_path
 from .file_service import count_global_file_references as _count_global_file_references
 from .materials_service import infer_material_profile, is_git_internal_material_path, serialize_material_row
+from .git_learning_bindings_service import sync_repository_learning_bindings
 
 
 REPO_STATUS_UNSCANNED = "unscanned"
@@ -1351,6 +1352,7 @@ async def execute_material_repository_action(
                 raise HTTPException(exc.status, str(exc)) from exc
             removable_hashes: list[str] = []
             readme_candidates: list[dict] = []
+            learning_bindings = None
             with conn_factory() as conn:
                 latest_root_row = conn.execute(
                     "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
@@ -1376,11 +1378,19 @@ async def execute_material_repository_action(
                 for entry in document_entries:
                     sync_summary[entry["status"]] += 1
                 sync_summary["lessondoc_warnings"] = document_warnings
-                readme_candidates = (
-                    _collect_readme_auto_bind_candidates(changed_entries)
-                    if normalized_action == "update"
-                    else []
-                )
+                if normalized_action == "update":
+                    # Publication and lesson projection are one atomic change.
+                    # An unchanged pull must also repair previously missing links.
+                    published_rows = _fetch_subtree_rows(conn, dict(latest_root_row))
+                    learning_bindings = sync_repository_learning_bindings(
+                        conn, dict(latest_root_row), published_rows, int(teacher_user["id"]))
+                    unresolved = {int(item["material_id"]) for item in learning_bindings["unresolved"]}
+                    readme_candidates = [
+                        {"id": int(row["id"]), "material_id": int(row["id"]), "name": row["name"],
+                         "material_path": row["material_path"], "relative_path": _get_repo_root_relative_path(
+                             latest_root_row["material_path"], row["material_path"])}
+                        for row in published_rows if int(row["id"]) in unresolved
+                    ]
                 refreshed_row = refresh_root_git_metadata(conn, material_id, latest_root_row)
 
                 if credential:
@@ -1433,6 +1443,7 @@ async def execute_material_repository_action(
             "repository": updated_repository,
             "sync_summary": sync_summary,
             "readme_candidates": readme_candidates,
+            "learning_bindings": learning_bindings,
             "credential_saved": bool(credential),
             "credential_supported": auth_state["credential_supported"],
         }

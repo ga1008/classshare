@@ -106,21 +106,23 @@ class AcademicSchedulePredictionTests(unittest.TestCase):
         self.assertEqual(pair[1]["event_key"], pair[0]["adjustment"]["counterpart_event_key"])
         self.assertEqual(before, dict(self.conn.execute("SELECT * FROM class_offering_sessions WHERE id=101").fetchone()))
 
-    def test_approved_move_preserves_identity_order_material_after_crossing_two_classes(self):
+    def test_approved_move_preserves_identity_and_rebinds_material_by_new_order(self):
         self.publish(base_snapshot([request()]))
         snapshot = base_snapshot([request(status="approved")])
         snapshot["official"][0] = official("2026-10-11")
         result = self.publish(snapshot)
         session = dict(self.conn.execute("SELECT * FROM class_offering_sessions WHERE id=101").fetchone())
         self.assertEqual([101], result["updated_session_ids"])
-        self.assertEqual(("2026-10-11", 1, 11, 51, "原第一课", "不可覆盖第一课内容"),
+        self.assertEqual(("2026-10-11", 3, 11, 53, "原第一课", "不可覆盖第一课内容"),
                          tuple(session[key] for key in ("session_date", "order_index", "course_lesson_id", "learning_material_id", "title", "content")))
         self.assertEqual([(101, 901), (102, 902), (103, 903)], [tuple(row) for row in self.conn.execute("SELECT * FROM session_materials")])
         self.assertFalse(any(item.get("adjustment") for item in self.read()["lessons"]))
         self.assertEqual(101, self.read()["lessons"][-1]["session_id"])
-        self.assertEqual(1, self.read()["lessons"][-1]["session_no"])
+        self.assertEqual(3, self.read()["lessons"][-1]["session_no"])
+        once = [tuple(row) for row in self.conn.execute("SELECT id,order_index,session_date,learning_material_id FROM class_offering_sessions ORDER BY id")]
         self.publish(snapshot)
         self.assertEqual(101, self.read()["lessons"][-1]["session_id"])
+        self.assertEqual(once, [tuple(row) for row in self.conn.execute("SELECT id,order_index,session_date,learning_material_id FROM class_offering_sessions ORDER BY id")])
 
     def test_approved_not_reflected_is_plain_fact_with_warning_and_no_schedule_mutation(self):
         self.publish(base_snapshot([request()]))
@@ -131,7 +133,7 @@ class AcademicSchedulePredictionTests(unittest.TestCase):
         self.assertIn("approved_not_reflected", {item["code"] for item in state["warnings"]})
         self.assertEqual("2026-09-20", self.conn.execute("SELECT session_date FROM class_offering_sessions WHERE id=101").fetchone()[0])
 
-    def test_cancel_middle_session_does_not_shift_following_lessons(self):
+    def test_cancel_middle_session_preserves_identity_and_closes_numbering_gap(self):
         change = request(original=slot("2026-09-26", (8, 9)), kind="cancel")
         self.publish(base_snapshot([change]))
         self.assertEqual(3, len(self.read()["lessons"]))
@@ -140,8 +142,9 @@ class AcademicSchedulePredictionTests(unittest.TestCase):
         snapshot["official"].pop(1)
         self.publish(snapshot)
         rows = [tuple(row) for row in self.conn.execute("SELECT id,order_index,schedule_status FROM class_offering_sessions WHERE class_offering_id=10 ORDER BY id")]
-        self.assertEqual([(101, 1, "scheduled"), (102, 2, "cancelled"), (103, 3, "scheduled")], rows)
+        self.assertEqual([(101, 1, "scheduled"), (102, 3, "cancelled"), (103, 2, "scheduled")], rows)
         self.assertEqual([101, 103], [row["session_id"] for row in self.read()["lessons"]])
+        self.assertEqual([(1, 2), (2, 2)], [(row["session_no"], row["session_total"]) for row in self.read()["lessons"]])
 
     def test_room_change_has_one_card_then_updates_room_only_when_approved_and_reflected(self):
         change = request(proposed=slot("2026-09-20", room="B210"))

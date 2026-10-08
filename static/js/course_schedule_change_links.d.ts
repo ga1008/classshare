@@ -6,7 +6,7 @@ export type ScheduleConnection = {
   targetKey: string | null;
   direction: 'local' | 'outgoing' | 'incoming';
   edge: 'left' | 'right' | null;
-  label: '时间更改' | '时间更改 · 教室更改';
+  label: string;
   boundaryLabel: string;
   title: string;
   jumpKey: string;
@@ -14,6 +14,14 @@ export type ScheduleConnection = {
   courseName: string;
 };
 export type ScheduleConnectionWeek = { week_index?: number; lessons?: ScheduleLesson[] };
+export type ApprovedScheduleChange = {
+  request_id: string; detail_id: string; phase: 'approved'; kind: 'move';
+  target_event_key: string; session_id: number | null; class_offering_id: number | null;
+  original_week_index: number; effective_week_index: number;
+  original: { date: string; sections: number[]; room: string };
+  proposed: { date: string; sections: number[]; room: string };
+};
+export function projectScheduleChanges<T>(overview: T): T;
 export function scheduleChangeConnections(
   overview: { weeks?: ScheduleConnectionWeek[] } | null | undefined,
   week: ScheduleConnectionWeek | null | undefined,

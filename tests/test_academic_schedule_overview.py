@@ -104,16 +104,15 @@ class AcademicScheduleOverviewTests(unittest.TestCase):
         self.assertFalse(any(item.get('adjustment') for item in self.lessons(result)))
         snapshot['official'][0] = official('2026-10-11')
         self.publish(snapshot)
-        # 调课生效后剩余课次按日期重排：第 1 次课落到最早的剩余日期，10-11 变成最后一次课；
-        # 课次序号（材料绑定）不变，只有日期重新分配。
+        # 物理课次101保留获批的10-11时段，其教学序号成为3；不再交换日期。
         lessons = self.lessons(self.teacher())
         first = next(item for item in lessons if item['session_id'] == 101)
-        self.assertEqual(('2026-09-26', 1), (first['actual_date'], first['session_no']))
+        self.assertEqual(('2026-10-11', 3), (first['actual_date'], first['session_no']))
         self.assertNotIn('adjustment', first)
         last = next(item for item in lessons if item['actual_date'] == '2026-10-11')
-        self.assertEqual((103, 3), (last['session_id'], last['session_no']))
+        self.assertEqual((101, 3), (last['session_id'], last['session_no']))
         rows = self.conn.execute("SELECT id, session_date, order_index FROM class_offering_sessions WHERE class_offering_id=10 ORDER BY order_index").fetchall()
-        self.assertEqual([(101, '2026-09-26', 1), (102, '2026-09-27', 2), (103, '2026-10-11', 3)], [tuple(row) for row in rows])
+        self.assertEqual([(102, '2026-09-26', 1), (103, '2026-09-27', 2), (101, '2026-10-11', 3)], [tuple(row) for row in rows])
         self.assertEqual({901: 101, 902: 102, 903: 103}, {row[1]: row[0] for row in self.conn.execute("SELECT session_id, material_id FROM session_materials")})
 
     def test_teacher_filters_and_read_only_snapshot(self):

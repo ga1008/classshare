@@ -91,6 +91,7 @@ class MaterialRepositoryUpdateTests(unittest.IsolatedAsyncioTestCase):
             stack.enter_context(mock.patch.object(service, "_export_repository_workspace", side_effect=export))
             stack.enter_context(mock.patch.object(service, "_fetch_subtree_rows", return_value=[]))
             stack.enter_context(mock.patch.object(service, "refresh_root_git_metadata", return_value={}))
+            stack.enter_context(mock.patch.object(service, "sync_repository_learning_bindings", return_value={"unresolved": []}))
             stack.enter_context(mock.patch.object(git_sync, "capture", return_value={}))
             stack.enter_context(mock.patch.object(git_sync, "lock_and_check"))
             self.prepare = stack.enter_context(mock.patch.object(git_sync, "prepare", wraps=git_sync.prepare))

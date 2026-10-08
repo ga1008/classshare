@@ -113,6 +113,9 @@ def _rules() -> dict[str, MergeRule]:
     rules["class_offering_learning_materials"] = MergeRule(
         STRATEGY_DEDUP_SKIP, conflict_key=("session_id", "material_id"), session_ref_column="session_id"
     )
+    rules["class_offering_git_learning_bindings"] = MergeRule(
+        STRATEGY_DEDUP_SKIP, conflict_key=("repository_id", "lesson_order"), session_ref_column="session_id"
+    )
     rules["learning_material_progress"] = MergeRule(
         STRATEGY_REPOINT_GUARDED, conflict_key=("student_id", "material_id"), session_ref_column="session_id"
     )
@@ -166,6 +169,7 @@ MERGE_TABLE_LABELS = {
     "smart_attendance_source_offerings": "智慧课堂考勤来源",
     "academic_schedule_session_bindings": "教务课次同步身份",
     "academic_schedule_change_session_links": "教务调停课关联",
+    "class_offering_git_learning_bindings": "Git课次教材同步规则",
 }
 
 # 自身/合并机制表——不参与迁移

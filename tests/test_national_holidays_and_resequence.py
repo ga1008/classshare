@@ -143,10 +143,10 @@ CREATE TABLE class_offerings(id INTEGER PRIMARY KEY, teacher_id INTEGER, semeste
 INSERT INTO class_offerings VALUES(10, 1, 1);
 CREATE TABLE class_offering_sessions(id INTEGER PRIMARY KEY, class_offering_id INTEGER, order_index INTEGER, title TEXT,
  session_date TEXT, weekday INTEGER, week_index INTEGER, academic_section_text TEXT, academic_location TEXT,
- slot_section_count INTEGER, schedule_status TEXT DEFAULT 'scheduled', schedule_metadata_json TEXT DEFAULT '{}', updated_at TEXT);
+ slot_section_count INTEGER, schedule_status TEXT DEFAULT 'scheduled', schedule_metadata_json TEXT DEFAULT '{}', updated_at TEXT, learning_material_id INTEGER, UNIQUE(class_offering_id, order_index));
 CREATE TABLE academic_schedule_session_bindings(teacher_id INTEGER, semester_id INTEGER, session_id INTEGER, current_json TEXT,
  evidence TEXT, updated_at TEXT, PRIMARY KEY(teacher_id, semester_id, session_id));
-CREATE TABLE class_offering_learning_materials(session_id INTEGER, learning_material_id INTEGER);
+
 """
 
 
@@ -158,7 +158,7 @@ def seed_sessions(conn, count=6, week1_monday=date(2026, 8, 31)):
             " academic_section_text, academic_location, slot_section_count) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (100 + index, 10, index, f"第{index}课", day.isoformat(), 1, index, "4-5", "B416", 2),
         )
-        conn.execute("INSERT INTO class_offering_learning_materials VALUES(?, ?)", (100 + index, 900 + index))
+        conn.execute("UPDATE class_offering_sessions SET learning_material_id=? WHERE id=?", (900 + index, 100 + index))
         conn.execute("INSERT INTO academic_schedule_session_bindings VALUES(1, 1, ?, ?, 'official_exact', '')",
                      (100 + index, json.dumps({"date": day.isoformat(), "week": index, "weekday": 2, "sections": [4, 5],
                                                "room": "B416", "schedule_status": "scheduled"})))
@@ -176,44 +176,42 @@ class ResequenceTests(unittest.TestCase):
         return [(r["order_index"], r["session_date"], r["id"]) for r in self.conn.execute(
             "SELECT id, order_index, session_date FROM class_offering_sessions ORDER BY order_index")]
 
-    def test_moving_third_lesson_to_the_end_shifts_the_rest_forward_and_freezes_past(self):
-        # 今天 = 第 3 周周一；第 1、2 课已发生。把第 3 课（09-15）调到第 6 周之后（10-13）。
+    def test_preview_keeps_physical_slots_and_numbers_all_dates(self):
         moves = {103: {"date": "2026-10-13", "sections": [4, 5], "room": "B416"}}
-        plan = reseq.plan_offering_resequence(self.conn, 10, moves=moves, today=date(2026, 9, 14), week1_monday=date(2026, 8, 31))
-        self.assertEqual((plan["frozen_count"], plan["movable_count"]), (2, 4))
-        changed = {c["order_index"]: (c["old"]["date"], c["new"]["date"]) for c in plan["changes"]}
-        # 第 3 课拿到原第 4 课的日期，4 → 5 的日期，5 → 6 的日期，第 6 课去 10-13
-        self.assertEqual(changed, {3: ("2026-09-15", "2026-09-22"), 4: ("2026-09-22", "2026-09-29"),
-                                   5: ("2026-09-29", "2026-10-06"), 6: ("2026-10-06", "2026-10-13")})
-        self.assertTrue(next(c for c in plan["changes"] if c["order_index"] == 3)["moved_directly"])
-        self.assertEqual(next(c for c in plan["changes"] if c["order_index"] == 6)["new"]["week"], 7)
-        self.assertIn("第 3 次课", plan["summary"][0])
+        plan = reseq.plan_offering_resequence(self.conn, 10, moves=moves, today=date(2026, 12, 1), week1_monday=date(2026, 8, 31))
+        self.assertEqual((plan["frozen_count"], plan["movable_count"]), (0, 6))
+        self.assertEqual({item["session_id"]: item["order_index"] for item in plan["changes"]},
+                         {103: 6, 104: 3, 105: 4, 106: 5})
+        self.assertEqual("2026-10-13", next(item for item in plan["changes"] if item["session_id"] == 103)["new"]["date"])
+        self.assertEqual("2026-09-22", next(item for item in plan["changes"] if item["session_id"] == 104)["new"]["date"])
+        with self.assertRaisesRegex(ValueError, "待审批"):
+            reseq.apply_offering_resequence(self.conn, plan)
+        self.assertEqual("2026-09-15", self.conn.execute("SELECT session_date FROM class_offering_sessions WHERE id=103").fetchone()[0])
 
-    def test_apply_updates_dates_bindings_but_not_ids_order_or_materials(self):
-        # 模拟教务审批通过后：第 3 课的日期已被同步改成 10-13
-        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-10-13', week_index=7 WHERE id=103")
-        plan = reseq.plan_offering_resequence(self.conn, 10, today=date(2026, 9, 14), week1_monday=date(2026, 8, 31))
-        report = reseq.apply_offering_resequence(self.conn, plan, teacher_id=1, semester_id=1, note="test")
+    def test_apply_updates_ordinals_materials_without_exchanging_physical_dates(self):
+        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-10-13',week_index=7 WHERE id=103")
+        baseline = [tuple(row) for row in self.conn.execute("SELECT * FROM academic_schedule_session_bindings ORDER BY session_id")]
+        plan = reseq.plan_offering_resequence(self.conn, 10, today=date(2026, 12, 1))
+        report = reseq.apply_offering_resequence(self.conn, plan, teacher_id=1, semester_id=1)
         self.assertEqual(report["applied_count"], 4)
-        self.assertEqual(self.dates(), [(1, "2026-09-01", 101), (2, "2026-09-08", 102), (3, "2026-09-22", 103),
-                                        (4, "2026-09-29", 104), (5, "2026-10-06", 105), (6, "2026-10-13", 106)])
-        materials = {r[0]: r[1] for r in self.conn.execute("SELECT session_id, learning_material_id FROM class_offering_learning_materials")}
-        self.assertEqual(materials, {101: 901, 102: 902, 103: 903, 104: 904, 105: 905, 106: 906})
-        binding = json.loads(self.conn.execute("SELECT current_json FROM academic_schedule_session_bindings WHERE session_id=106").fetchone()[0])
-        self.assertEqual((binding["date"], binding["week"], binding["weekday"], binding["schedule_status"]), ("2026-10-13", 7, 2, "scheduled"))
-        row = self.conn.execute("SELECT week_index, weekday, schedule_metadata_json FROM class_offering_sessions WHERE id=106").fetchone()
-        self.assertEqual((row["week_index"], row["weekday"]), (7, 1))
-        self.assertIn("resequence_history", row["schedule_metadata_json"])
-        again = reseq.plan_offering_resequence(self.conn, 10, today=date(2026, 9, 14), week1_monday=date(2026, 8, 31))
-        self.assertEqual(again["changes"], [])  # 幂等
+        self.assertEqual(self.dates(), [(1, "2026-09-01", 101), (2, "2026-09-08", 102), (3, "2026-09-22", 104),
+                                        (4, "2026-09-29", 105), (5, "2026-10-06", 106), (6, "2026-10-13", 103)])
+        self.assertEqual([(101, 901), (102, 902), (103, 906), (104, 903), (105, 904), (106, 905)],
+                         [tuple(row) for row in self.conn.execute("SELECT id,learning_material_id FROM class_offering_sessions ORDER BY id")])
+        self.assertEqual(baseline, [tuple(row) for row in self.conn.execute("SELECT * FROM academic_schedule_session_bindings ORDER BY session_id")])
+        again = reseq.plan_offering_resequence(self.conn, 10)
+        self.assertEqual(again["changes"], [])
 
-    def test_cancelled_sessions_are_left_alone(self):
+    def test_cancelled_sessions_keep_materials_and_move_to_non_teaching_tail(self):
         self.conn.execute("UPDATE class_offering_sessions SET schedule_status='cancelled' WHERE id=104")
-        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-10-13', week_index=7 WHERE id=103")
-        plan = reseq.plan_offering_resequence(self.conn, 10, today=date(2026, 9, 1), week1_monday=date(2026, 8, 31))
-        self.assertNotIn(104, {c["session_id"] for c in plan["changes"]})
-        self.assertEqual({c["order_index"]: c["new"]["date"] for c in plan["changes"]},
-                         {3: "2026-09-29", 5: "2026-10-06", 6: "2026-10-13"})
+        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-10-13',week_index=7 WHERE id=103")
+        plan = reseq.plan_offering_resequence(self.conn, 10)
+        self.assertEqual(plan["active_count"], 5)
+        self.assertEqual([(item["session_id"], item["order_index"], item["active"]) for item in plan["assignments"]],
+                         [(101, 1, True), (102, 2, True), (105, 3, True), (106, 4, True), (103, 5, True), (104, 6, False)])
+        reseq.apply_offering_resequence(self.conn, plan)
+        self.assertEqual((904, "2026-09-22", "cancelled"), tuple(self.conn.execute(
+            "SELECT learning_material_id,session_date,schedule_status FROM class_offering_sessions WHERE id=104").fetchone()))
 
 
 if __name__ == "__main__":

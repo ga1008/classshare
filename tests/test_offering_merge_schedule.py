@@ -9,6 +9,25 @@ from tests.test_offering_merge_service import OfferingMergeServiceTests
 
 
 class OfferingMergeScheduleTests(OfferingMergeServiceTests):
+    def test_git_rules_follow_session_merge_and_keep_target_suppression_on_conflict(self):
+        with database.get_db_connection() as conn:
+            for offering, repo, session, material, suppressed in (
+                (self.source_id, 9001, self.source_session, 901, 0),
+                (self.target_id, 9002, self.target_session, 902, 1),
+                (self.source_id, 9002, self.source_session, 903, 0),
+            ):
+                conn.execute("INSERT INTO class_offering_git_learning_bindings "
+                    "(class_offering_id,repository_id,lesson_order,material_id,session_id,owns_binding,suppressed) VALUES (?,?,1,?,?,1,?)",
+                    (offering, repo, material, session, suppressed))
+            result = self._execute(conn)
+            rules = conn.execute("SELECT class_offering_id,repository_id,session_id,material_id,suppressed "
+                                 "FROM class_offering_git_learning_bindings ORDER BY repository_id").fetchall()
+            self.assertEqual([tuple(row) for row in rules], [
+                (self.target_id, 9001, self.target_session, 901, 0),
+                (self.target_id, 9002, self.target_session, 902, 1),
+            ])
+            self.assertGreater(result['archive_id'], 0)
+
     def seed_schedule(self, conn, *, source, binding=True, link=True):
         semester = execute_insert_returning_id(conn, """INSERT INTO academic_semesters
             (teacher_id,name,start_date,end_date) VALUES(?,'Schedule test','2026-03-01','2026-08-31')""",

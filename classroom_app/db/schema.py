@@ -29,6 +29,7 @@ from .schema_teacher_evaluations import ensure_teacher_evaluation_schema
 from .schema_prompt_pool import ensure_prompt_pool_schema
 from .schema_user_ui_preferences import ensure_user_ui_preferences_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
+from .schema_git_learning_bindings import ensure_git_learning_bindings_schema
 from .schema_academic_final_materials import ensure_academic_final_material_schema
 from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_offering_class_links import ensure_offering_class_links_schema
@@ -64,6 +65,7 @@ def init_database():
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
             ensure_signature_workflow_schema(conn)
             ensure_user_ui_preferences_schema(conn)
+            ensure_git_learning_bindings_schema(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
             report["runtime_tables"] = runtime_table_report
@@ -339,6 +341,7 @@ def init_database():
             ensure_offering_class_links_schema(conn)
             ensure_offering_merge_schema(conn)
             ensure_materials_integrations_schema(conn)
+            ensure_git_learning_bindings_schema(conn)
             ensure_attendance_report_schema(conn, engine="sqlite")
             ensure_learning_blog_signature_schema(conn)
             ensure_feedback_conversation_schema(conn, engine="sqlite")

@@ -5247,14 +5247,14 @@ function getReadmeCandidatePath(candidate) {
 
 function renderRepositoryAutoBindAssignments(assignments = []) {
     if (!assignments.length) {
-        return '<div class="text-muted text-sm materials-repo-autobind-result">AI 没有返回可绑定结果。</div>';
+        return '<div class="text-muted text-sm materials-repo-autobind-result">暂无新增课次绑定。</div>';
     }
 
     return `
         <div class="materials-ai-assign-list-scroll materials-repo-autobind-result">
             ${assignments.map((item) => {
                 const confidence = String(item.confidence || 'medium').toLowerCase();
-                const confidenceLabel = confidence === 'high' ? '高' : (confidence === 'low' ? '低' : '中');
+                const confidenceLabel = item.source === 'repository_ordinal' ? '按课次' : (confidence === 'high' ? '高' : (confidence === 'low' ? '低' : '中'));
                 const isHome = item.target_type === 'home';
                 const pathFull = item.material_path || '';
                 const pathShort = pathFull ? pathFull.split('/').slice(-2).join('/') : 'README.md';
@@ -5288,19 +5288,19 @@ function renderRepositoryAutoBindPanel() {
     }
 
     refs.repositoryAutoBindPanel.hidden = false;
-    if (result) {
+    if (result && !candidates.length) {
         refs.repositoryAutoBindSummary.textContent = result.message || '自动绑定已完成';
         refs.repositoryAutoBindList.innerHTML = renderRepositoryAutoBindAssignments(result.assignments || []);
     } else {
-        refs.repositoryAutoBindSummary.textContent = `发现 ${candidates.length} 个 README`;
+        refs.repositoryAutoBindSummary.textContent = [result?.message, `有 ${candidates.length} 个入口文档需要检查课次`].filter(Boolean).join('；');
         refs.repositoryAutoBindList.innerHTML = candidates.map((candidate) => {
-            const status = candidate.change_status === 'inserted' ? '新增' : '更新';
+            const status = candidate.change_status === 'inserted' ? '新增' : '待匹配';
             const path = getReadmeCandidatePath(candidate);
             return `
                 <div class="materials-repo-autobind-item">
                     <span class="materials-type-pill">${escapeHtml(status)}</span>
                     <strong title="${escapeHtml(path)}">${escapeHtml(path)}</strong>
-                    <span class="text-muted text-sm">README.md</span>
+                    <span class="text-muted text-sm">学习文档</span>
                 </div>
             `;
         }).join('');
@@ -5309,13 +5309,12 @@ function renderRepositoryAutoBindPanel() {
     if (refs.repositoryAutoBindRunBtn) {
         refs.repositoryAutoBindRunBtn.disabled = state.repository.busy
             || state.repository.autoBindBusy
-            || !candidates.length
-            || Boolean(result);
+            || !candidates.length;
         refs.repositoryAutoBindRunBtn.textContent = state.repository.autoBindBusy ? 'AI 识别中...' : 'AI 识别并绑定';
     }
     if (refs.repositoryAutoBindDismissBtn) {
         refs.repositoryAutoBindDismissBtn.disabled = state.repository.autoBindBusy;
-        refs.repositoryAutoBindDismissBtn.hidden = Boolean(result);
+        refs.repositoryAutoBindDismissBtn.hidden = !candidates.length;
     }
 }
 
@@ -5336,12 +5335,7 @@ function setRepositoryBusy(busy, statusText = '') {
     refs.repositoryAuthBtn.disabled = busy || !detail || !detail.credential_supported;
     refs.repositoryCredentialSaveBtn.disabled = busy || !detail || !detail.credential_supported;
     refs.repositoryCommandInput.disabled = busy || !detail;
-    if (refs.repositoryAutoBindRunBtn) {
-        refs.repositoryAutoBindRunBtn.disabled = busy
-            || state.repository.autoBindBusy
-            || !(state.repository.autoBindCandidates || []).length
-            || Boolean(state.repository.autoBindResult);
-    }
+    renderRepositoryAutoBindPanel();
 }
 
 function renderRepositoryModal() {
@@ -5362,7 +5356,6 @@ function renderRepositoryModal() {
     refs.repositorySyncSummary.textContent = state.repository.lastSyncSummary || '等待执行';
     refs.repositoryCommandInput.placeholder = '例如：git status -sb';
     setRepositoryBusy(state.repository.busy, refs.repositoryStatus.textContent);
-    renderRepositoryAutoBindPanel();
 }
 
 async function refreshRepositoryState() {
@@ -5464,7 +5457,7 @@ async function executeRepositoryAction(action, command = '') {
         if (!isCurrent()) return;
 
         state.repository.detail = result.repository || state.repository.detail;
-        state.repository.autoBindResult = null;
+        state.repository.autoBindResult = result.learning_bindings || null;
         state.repository.autoBindCandidates = (
             action === 'update' && result.status === 'success' && Array.isArray(result.readme_candidates)
         )
@@ -5491,11 +5484,12 @@ async function executeRepositoryAction(action, command = '') {
 
         state.repository.pendingAction = null;
         showToast(
-            result.message || (result.status === 'success' ? '仓库操作完成' : '仓库操作失败'),
+            [result.message || (result.status === 'success' ? '仓库操作完成' : '仓库操作失败'),
+                result.learning_bindings?.message].filter(Boolean).join('；'),
             result.status === 'success' ? 'success' : 'error',
         );
         if (state.repository.autoBindCandidates.length) {
-            showToast(`发现 ${state.repository.autoBindCandidates.length} 个入口文档（README/main/lesson_N），可确认后自动绑定到已分配课堂`, 'info', 5200);
+            showToast(`另有 ${state.repository.autoBindCandidates.length} 个入口文档无法确定课次，可在绑定面板中检查`, 'info', 5200);
             renderRepositoryAutoBindPanel();
         }
     } catch (error) {

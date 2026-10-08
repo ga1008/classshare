@@ -604,18 +604,16 @@ def plan_resequence_for_drafts(conn, teacher_id: int, overview: dict[str, Any], 
         plans.append({**plan, "course_label": names.get(offering_id, ""),
                       "change_count": len(plan["changes"]), "moved_count": sum(1 for c in plan["changes"] if c["moved_directly"])})
     return {"plans": plans, "today": context["today"], "draft_count": len(drafts),
-            "note": "调课经教务审批并同步后，剩余课次将按新日期自动重排；课次材料跟随课次序号，不需要重新绑定。"}
+            "note": "调课经教务审批并同步后，有效课次按实际日期与节次连续编号；教学材料按新序号自动重新绑定，课次身份与出勤记录保持不变。"}
 
 
 def apply_resequence_by_dates(conn, teacher_id: int, overview: dict[str, Any], *, offering_id: int | None = None,
                               note: str = "教师手动按日期重排") -> dict[str, Any]:
-    """Re-order the remaining lessons of the teacher's courses in this term by their *current* dates.
-
-    Used when dates were changed outside the 教务 flow (platform-only courses,
-    manual session edits) or to repair order after an adjustment landed before
-    this rule existed. Past lessons are frozen; ids, numbers and materials stay.
-    """
-    from .offering_session_resequence_service import apply_offering_resequence
+    """Repair teaching ordinals while preserving physical session identities."""
+    from .offering_session_resequence_service import (
+        apply_offering_resequence, lock_offering_sessions,
+    )
+    from .offering_plan_edit_service import lock_plan_row
 
     context = _term_context(overview)
     if not context["semester_id"]:
@@ -627,11 +625,20 @@ def apply_resequence_by_dates(conn, teacher_id: int, overview: dict[str, Any], *
             "SELECT id FROM class_offerings WHERE teacher_id = ? AND semester_id = ? ORDER BY id",
             (int(teacher_id), int(context["semester_id"])),
         ).fetchall()]
-    reports = []
+    owners = []
     for oid in offering_ids:
-        owner = conn.execute("SELECT teacher_id FROM class_offerings WHERE id = ?", (oid,)).fetchone()
+        owner = conn.execute("SELECT * FROM class_offerings WHERE id = ?", (oid,)).fetchone()
         if not owner or int(owner["teacher_id"]) != int(teacher_id):
             raise ScheduleEditError("只能重排本人课堂的课次。", status_code=403)
+        if int(owner["semester_id"]) != int(context["semester_id"]):
+            raise ScheduleEditError("课堂不属于当前选择的学期。", status_code=409)
+        owners.append(dict(owner))
+    for course_id in sorted({int(owner["course_id"]) for owner in owners if owner.get("course_id")}):
+        lock_plan_row(conn, "courses", course_id)
+    for oid in sorted(offering_ids):
+        lock_offering_sessions(conn, oid)
+    reports = []
+    for oid in sorted(offering_ids):
         plan = plan_offering_resequence(conn, oid, today=context["today"], week1_monday=context["week1_monday"])
         if not plan["changes"]:
             continue

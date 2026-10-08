@@ -185,7 +185,7 @@ async def api_schedule_editor_resequence_preview(year: str = "", term: str = "",
 
 @router.post("/academic/course-schedule/editor/resequence/apply", response_class=JSONResponse)
 async def api_schedule_editor_resequence_apply(request: Request, user: dict = Depends(get_current_teacher)):
-    """按当前日期重排本学期课次（已发生课次不变，课次序号与材料不变，只重新分配日期）。"""
+    """按实际日期节次连续编号，保持课次身份，教学材料随序号整体重绑。"""
     payload = await _parse_json_request(request)
     year, term = _term(payload.get("year")), _term(payload.get("term"))
     offering_id = payload.get("offering_id")

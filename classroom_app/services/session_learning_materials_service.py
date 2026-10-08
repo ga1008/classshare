@@ -122,6 +122,13 @@ def has_material_bindings_table(conn) -> bool:
     return bool(row)
 
 
+def _ensure_material_bindings(conn) -> None:
+    # Existing runtime tables need no CREATE INDEX relation locks. DDL is only
+    # needed on a legacy installation; normal startup owns schema creation.
+    if not has_material_bindings_table(conn):
+        ensure_session_learning_materials_schema(conn)
+
+
 def _insert_row(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int, sort_order: int) -> None:
     now = _now()
     if get_configured_db_engine() == "postgres":
@@ -174,7 +181,7 @@ def build_material_entries(
     """返回该课次/首页绑定的材料列表（含渲染入口与已存简介）。"""
     session_id = _normalize_session_id(session_id)
     if persist_legacy:
-        ensure_session_learning_materials_schema(conn)
+        _ensure_material_bindings(conn)
         _backfill_primary(conn, class_offering_id, session_id, teacher_id)
 
     rows = _fetch_rows(conn, class_offering_id, session_id) if (
@@ -257,7 +264,7 @@ def bind_material_in_transaction(
     conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int, *, make_primary: bool = False,
 ) -> dict:
     """Bind through normal access policy; caller commits the material and its reference together."""
-    ensure_session_learning_materials_schema(conn)
+    _ensure_material_bindings(conn)
     _ensure_offering_owner(conn, class_offering_id, teacher_id)
     session_id = _normalize_session_id(session_id)
     if session_id > 0:
@@ -301,7 +308,7 @@ def add_material(conn, class_offering_id: int, session_id: int, material_id: int
 
 
 def unbind_material_in_transaction(conn, class_offering_id: int, session_id: int, material_id: int, teacher_id: int) -> dict:
-    ensure_session_learning_materials_schema(conn)
+    _ensure_material_bindings(conn)
     _ensure_offering_owner(conn, class_offering_id, teacher_id)
     session_id = _normalize_session_id(session_id)
     if session_id > 0 and not conn.execute(
@@ -311,6 +318,9 @@ def unbind_material_in_transaction(conn, class_offering_id: int, session_id: int
     ).fetchone():
         raise HTTPException(404, "课次不存在或无权操作")
     _backfill_primary(conn, class_offering_id, session_id, teacher_id)
+
+    from .git_learning_bindings_service import suppress_git_binding
+    suppress_git_binding(conn, class_offering_id, session_id, int(material_id))
 
     conn.execute(
         "DELETE FROM class_offering_learning_materials WHERE class_offering_id = ? AND session_id = ? AND material_id = ?",
@@ -337,6 +347,77 @@ def material_binding_version(conn, class_offering_id: int, session_id: int) -> s
     payload = {"primary": _primary_material_id(conn, class_offering_id, session_id),
                "rows": [(int(row["material_id"]), int(row["sort_order"])) for row in rows]}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def lock_unchanged_material_targets(conn, teacher_id: int, snapshots: dict[int, list[dict]], *, home_materials=None) -> None:
+    """An AI result must not overwrite a timetable/manual edit made while waiting."""
+    if not snapshots:
+        return
+    from .offering_plan_edit_service import lock_plan_row
+    ids = sorted(snapshots)
+    rows = conn.execute("SELECT id,course_id FROM class_offerings WHERE teacher_id=? AND id IN ("
+                        + ",".join("?" for _ in ids) + ")", (teacher_id, *ids)).fetchall()
+    if {int(row["id"]) for row in rows} != set(ids):
+        raise HTTPException(403, "课堂权限已变化，请刷新后重试。")
+    for course_id in sorted({int(row["course_id"]) for row in rows if row["course_id"]}):
+        lock_plan_row(conn, "courses", course_id)
+    for oid in ids:
+        _ensure_offering_owner(conn, oid, teacher_id)
+        if home_materials is not None and _primary_material_id(conn, oid, 0) != int(home_materials.get(oid) or 0):
+            raise HTTPException(409, "识别期间课程首页已变化，请刷新后重新匹配。")
+        current = conn.execute("SELECT id,order_index,learning_material_id FROM class_offering_sessions WHERE class_offering_id=?", (oid,)).fetchall()
+        def revision(items):
+            return sorted((int(item["id"]), int(item["order_index"] or 0), int(item["learning_material_id"] or 0)) for item in items)
+        if revision(current) != revision(snapshots[oid]):
+            raise HTTPException(409, "识别期间课次顺序或学习材料已变化，请刷新后重新匹配。")
+
+
+def rebind_offering_materials_for_resequence(conn, offering_id: int, assignments: list[dict], *, stamp=None) -> dict:
+    """Move complete learning bundles by teaching ordinal, never session identities.
+
+    Cancelled/undated sessions retain their bundles. Compressing the old active
+    sequence makes the permutation lossless even when cancelled ordinals left gaps.
+    The caller holds the offering lock and commits this with its new numbering.
+    """
+    active = [row for row in assignments if row.get("active", True)]
+    old = sorted(active, key=lambda row: (int(row["old_order_index"]), int(row["session_id"])))
+    new = sorted(active, key=lambda row: (int(row["order_index"]), int(row["session_id"])))
+    moves = {int(source["session_id"]): int(target["session_id"])
+             for source, target in zip(old, new) if source["session_id"] != target["session_id"]}
+    if not moves:
+        return {"moved_count": 0}
+    # Some timetable-only import fixtures predate learning columns. Real schema
+    # always has them; query table metadata without hiding operational errors.
+    from .git_learning_bindings_service import table_exists
+    columns = (conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=?",
+                            ("class_offering_sessions",)).fetchall() if get_configured_db_engine() == "postgres"
+               else conn.execute("PRAGMA table_info(class_offering_sessions)").fetchall())
+    names = {row["column_name"] if get_configured_db_engine() == "postgres" else row["name"] for row in columns}
+    if "learning_material_id" not in names:
+        return {"moved_count": 0}
+    primaries = {int(row["id"]): row["learning_material_id"] for row in conn.execute(
+        "SELECT id, learning_material_id FROM class_offering_sessions WHERE class_offering_id=?", (offering_id,)).fetchall()}
+    list_exists = has_material_bindings_table(conn)
+    rules_exist = table_exists(conn, "class_offering_git_learning_bindings")
+    # Two passes avoid UNIQUE(offering,session,material) collisions in cycles and
+    # keep row IDs, blurbs, manual additions and ordering exactly intact.
+    for source in moves:
+        if list_exists:
+            conn.execute("UPDATE class_offering_learning_materials SET session_id=? WHERE class_offering_id=? AND session_id=?",
+                         (-source, offering_id, source))
+        if rules_exist:
+            conn.execute("UPDATE class_offering_git_learning_bindings SET session_id=? WHERE class_offering_id=? AND session_id=?",
+                         (-source, offering_id, source))
+    for source, target in moves.items():
+        if list_exists:
+            conn.execute("UPDATE class_offering_learning_materials SET session_id=? WHERE class_offering_id=? AND session_id=?",
+                         (target, offering_id, -source))
+        if rules_exist:
+            conn.execute("UPDATE class_offering_git_learning_bindings SET session_id=? WHERE class_offering_id=? AND session_id=?",
+                         (target, offering_id, -source))
+        conn.execute("UPDATE class_offering_sessions SET learning_material_id=? WHERE class_offering_id=? AND id=?",
+                     (primaries.get(source), offering_id, target))
+    return {"moved_count": len(moves)}
 
 
 

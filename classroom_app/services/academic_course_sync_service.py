@@ -2148,6 +2148,14 @@ def _sync_existing_offering_academic_sessions(
             replace_result = replace_offering_sessions(
                 conn, offering_id=int(offering["id"]), sessions=plan["sessions"], preserve_removed=True,
             )
+        # This feed may cancel a proven missing slot, but must not exchange
+        # physical identities. Keep teaching ordinals continuous after that
+        # reconciliation; unresolved incoming positions remain unguessed.
+        from .offering_session_resequence_service import plan_offering_resequence, apply_offering_resequence
+        ordinal_plan = plan_offering_resequence(conn, int(offering["id"]))
+        if ordinal_plan["changes"]:
+            apply_offering_resequence(conn, ordinal_plan, teacher_id=teacher_id,
+                                       semester_id=int(semester["id"]), stamp=synced_at)
         if int(replace_result.get("preserved_count") or 0):
             warnings.append(
                 f"{offering.get('course_name') or '课程'} / {offering.get('class_name') or '班级'}："

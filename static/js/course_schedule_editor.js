@@ -1286,7 +1286,7 @@ function init(boot) {
             const missingReason = list.filter(d => !String(d.reason || '').trim() && d.status !== 'pushed');
             const missingProof = list.filter(d => !(d.proofs || []).length);
             const plans = (preview?.plans || []).filter(p => p.changes?.length);
-            const planHtml = plans.length ? `<div class="cse-push__block"><strong>审批通过并同步后的课次重排</strong><ul class="cse-reseq__list">${plans.map(p => `<li><b>${escapeHtml(p.course_label || '')}</b>：已发生 ${p.frozen_count} 次不变，${p.change_count} 次重新分配日期${p.changes.slice(0, 3).map(c => `<br><small>第 ${c.order_index} 次课 ${escapeHtml(describeSlot(c.old))} → ${escapeHtml(describeSlot(c.new))}</small>`).join('')}${p.changes.length > 3 ? `<br><small>… 共 ${p.changes.length} 次</small>` : ''}</li>`).join('')}</ul><p class="cse-field__hint">课次序号与教学材料保持不变，只重新分配日期，无需手动改。</p></div>` : '';
+            const planHtml = plans.length ? `<div class="cse-push__block"><strong>审批通过并同步后的课次重排</strong><ul class="cse-reseq__list">${plans.map(p => `<li><b>${escapeHtml(p.course_label || '')}</b>：${p.change_count} 次课按真实上课时间调整顺序${p.changes.slice(0, 3).map(c => `<br><small>原第 ${c.old_order_index ?? c.order_index} 次 → 新第 ${c.order_index} 次 · ${escapeHtml(describeSlot(c.new))}</small>`).join('')}${p.changes.length > 3 ? `<br><small>… 共 ${p.changes.length} 次</small>` : ''}</li>`).join('')}</ul><p class="cse-field__hint">课次身份和真实上课时段不互换；教学材料按教学序号整体迁移，作业与出勤仍归原课次。</p></div>` : '';
             body.dataset.phase = phase;
             body.innerHTML = `<p class="cse-push__lead">${done ? '结果如下，有问题的项已给出建议。' : `${list.length} 项变更会先交给教务做冲突检测（不保存）；确认没有冲突的才写入教务的调停课申请草稿（待提交），平台不会替您提交申请。`}</p>
                 ${done ? renderDoneNote() : renderCheckNote()}

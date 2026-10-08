@@ -2,6 +2,15 @@
 const text = value => typeof value === 'string' ? value.trim() : '';
 const normalizedText = value => text(value).normalize('NFKC').replace(/[–—]/g, '-').replace(/\s+/g, ' ');
 
+/** View-only changes can coexist: an effective move and a later pending move. */
+export function scheduleChanges(lesson) {
+    const changes = Array.isArray(lesson?.schedule_changes) ? lesson.schedule_changes : [lesson?.adjustment];
+    return changes.filter(change => change && (
+        change.phase === 'pending' && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
+        || change.phase === 'approved' && change.kind === 'move' && ['original', 'effective'].includes(change.endpoint)
+    ));
+}
+
 function classroomCode(value) {
     const normalized = normalizedText(value);
     const candidates = [];
@@ -70,9 +79,10 @@ export function classroomChangeState(from, to) {
 }
 
 /** Compare known original/proposed facts; kind=move alone proves no time change. */
-export function adjustmentActionText(lesson) {
-    const change = lesson?.adjustment;
-    if (change?.phase !== 'pending') return '';
+export function adjustmentActionText(lesson, suppliedChange = null) {
+    const change = suppliedChange || scheduleChanges(lesson)[0];
+    if (!change) return '';
+    if (change.phase === 'approved') return change.endpoint === 'original' ? '已调至新位' : '查看原安排';
     if (change.kind === 'cancel') return '停课';
     const fromTime = normalizedTime(change.original), toTime = normalizedTime(change.proposed);
     const roomChanged = classroomChangeState(change.original?.room, change.proposed?.room);

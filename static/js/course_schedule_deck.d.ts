@@ -11,7 +11,7 @@ export type ScheduleLesson = {
 export function pendingScheduleChange(lesson?: ScheduleLesson): ScheduleLesson['adjustment'];
 export function countScheduleLessons(lessons?: ScheduleLesson[]): { lesson_count: number; total_hours: number; proposed_count: number };
 export function scheduleLessonLanes(lessons?: ScheduleLesson[]): Map<number, { lane: number; count: number }>;
-export function scheduleChangeLabel(lesson: ScheduleLesson): string;
+export function scheduleChangeLabel(lesson: ScheduleLesson, suppliedChange?: ScheduleLesson['adjustment']): string;
 
 /** Optional host adapter; the portable deck owns focus and its visual state. */
 export type ScheduleOverlayCoordinator = {
