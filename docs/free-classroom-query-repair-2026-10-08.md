@@ -30,4 +30,16 @@
 | 原生数据库迁移门禁 | 复用同日已完成的离线迁移演练，重新核对 72 个迁移源码与原始备份摘要一致；`.codex-temp/classroom-availability-native-gate.json` |
 | 正式构建与预算 | `2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d`，源文件摘要匹配；LQ 入口 17776/18432 gzip 字节 |
 
-两入口结果为 `.codex-temp/classroom-availability-20261008-final2/results.json`，截图位于同目录 `test-results/`；原生业务证据为 `.codex-temp/classroom-native-business-{old-negative,final}.log`。编辑器 B310 不在首批候选中仍通过独立查询确认其状态；目标查询失败保留候选并显示待核实，选用第 43 个候选 B312 后表单保留选择。[详细隔离验收记录](classroom-availability-acceptance-2026-10-08.md)包含可重复夹具与测试矩阵。源码审计更新只登记本次真实覆盖，保留此前浏览器证据和未决项。服务器发布结果在完成后补入。
+两入口结果为 `.codex-temp/classroom-availability-20261008-final2/results.json`，截图位于同目录 `test-results/`；原生业务证据为 `.codex-temp/classroom-native-business-{old-negative,final}.log`。编辑器 B310 不在首批候选中仍通过独立查询确认其状态；目标查询失败保留候选并显示待核实，选用第 43 个候选 B312 后表单保留选择。[详细隔离验收记录](classroom-availability-acceptance-2026-10-08.md)包含可重复夹具与测试矩阵。源码审计更新只登记本次真实覆盖，保留此前浏览器证据和未决项。
+
+## 服务器发布与实际查询
+
+2026-10-08 09:43（北京时间）完成授权发布，版本 `20261008-094117-d7a9395727b9`。应用源码来自 `a69cdf73237b0ea3a98e87a69df33253f52abf80`（功能提交 `68c355ae0e67165beb97dcb5c1ecf8e57bed6fde`），本文发布结果随后以独立文档提交补充，不改变已验收应用。
+
+- 独立工作树逐字节复制已验收源码与正式构建，DryRun 和原生 PostgreSQL 迁移门禁通过；3367 项发布清单不包含运行数据、个人文档或 `research_cache`。
+- 停写后备份数据库到 `/tmp/lanshare-deploy-backups/db-cutover-20261008-094129.sql.gz`，保留代码备份及回退镜像，部署脚本以 `DEPLOY_DONE` 成功结束，8 个服务运行。
+- 公网发布号、教师/学生登录页及不可变资源图一致；6 个关键线上资源与本地验收构建逐字节相同。发布后检查 8/8 通过，报告为 `.codex-temp/free-rooms-postflight/postflight-20261008-094340/summary.json`。
+- 实际教务查询使用截图条件：2026–2027 第一学期、五合校区、B310、第 6 周、周四、第 2–3 节、全部类别。返回 `status=success`、0 个空闲场地、5 个推荐项；这是有效的空结果，原 HTTP 502/SQL 故障不再出现。诊断连接强制只读并回滚，证据为 `.codex-temp/free-rooms-20261008-production-query.json`。
+- 主服务健康为 `ok`，数据库为 PostgreSQL，写入与邮件工作线程正常。后台任务总指标仍因既有 737 条失败记录为 `false`，与发布前一致；不把历史失败计数解释为本次查询修复失败，也不声称已修复这些历史任务。
+
+部署日志与归档位于 `E:/CodexTemp/free-rooms-20261008-deploy.log` 和 `E:/CodexTemp/lanshare-deploy-20261008-094117/`；公网核验证据为 `.codex-temp/free-rooms-20261008-live-verification.json`。线上验收没有写入测试课次、调课申请或教室占用缓存。
