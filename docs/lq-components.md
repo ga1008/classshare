@@ -487,7 +487,7 @@ owner.destroy(); // 同步释放 LQ 资源并归还原 DOM 位置
 
 ### 原生选择值与 Dropdown 呈现（2026-10-08）
 
-`LQ.load('dropdown')` 提供 `bindDropdown(select, options)`、`getDropdown(select)`、`enhanceDropdowns(root)` 和 `installDropdowns(document)`。平台 select 声明 `data-lq-dropdown`；可加 `data-lq-searchable` 和 `data-lq-placeholder`。Jinja/JS Form 的 select 工厂默认声明同一入口。可访问名称依次来自 aria-label、aria-labelledby、关联 label、显式 options.label 或 title；包裹 label 的 option、代理控件与装饰文字不参与命名。没有名称的声明记录诊断并跳过，不中断同一弹窗其他业务。
+`LQ.load('dropdown')` 提供 `bindDropdown(select, options)`、`getDropdown(select)`、`enhanceDropdowns(root)` 和 `installDropdowns(document)`。平台 select 声明 `data-lq-dropdown`；可加 `data-lq-searchable` 和 `data-lq-placeholder`。Jinja/JS Form 的 select 工厂默认声明同一入口，使用正式布尔参数 `searchable=True/true` 开启搜索（不能从受保护的 attrs 偷传组件属性）。Field 的控制槽将 Dropdown 撑满剩余宽度；sm/md/lg 复用 Form 的 `--lq-form-control-height`、`--lq-form-control-padding-y` 和 `--lq-form-control-font-size` 尺寸变量，粗指针保留至少 44px 触达高度。可访问名称依次来自 aria-label、aria-labelledby、关联 label、显式 options.label 或 title；包裹 label 的 option、代理控件与装饰文字不参与命名。没有名称的声明记录诊断并跳过，不中断同一弹窗其他业务。
 
 安装器仅做一次初始声明扫描，动态控件由原生事件委托首次接管；明确构造或重绘的 owner 优先调用 `enhanceDropdowns(root)`。不替换 select、不全页反复扫描、不向原型写入属性、不定时轮询。已有 Selection/筛选代理须声明 `data-lq-selection-owner`；React 等显式绑定的控件声明 `data-lq-dropdown-manual`。这些节点不由自动入口抢占，显式 bindSelection 会先销毁此前的 Dropdown，保持单一呈现所有者。
 

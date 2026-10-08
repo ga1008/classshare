@@ -19,8 +19,8 @@ async function mount(page: Page, html: string) {
       return route.fulfill({ contentType: file.endsWith('.css') ? 'text/css' : 'text/javascript', body: fs.readFileSync(file) });
     }
     return route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><html lang="zh" data-theme="lanshare" data-appearance="light" data-lq-glass="tinted"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${asset('css/tailwind-app.css')}"><style>body{padding:24px}#area{max-width:360px}label{display:block}select{min-width:180px}.lq-dropdown{margin-block:8px}</style></head><body><main id="area">${html}</main><div id="unrelated"></div><script type="module">
-      import * as dropdown from '${asset('js/lq/dropdown.js')}';import {bindSelection} from '${asset('js/lq/selection.js')}';import {getLayerSystem} from '${asset('js/lq/layer.js')}';
-      window.fixture={...dropdown,bindSelection,getLayerSystem};window.events=[];document.addEventListener('input',e=>{if(e.target.tagName==='SELECT')events.push('input')});document.addEventListener('change',e=>{if(e.target.tagName==='SELECT')events.push('change')});window.ready=true;
+      import * as dropdown from '${asset('js/lq/dropdown.js')}';import {bindSelection} from '${asset('js/lq/selection.js')}';import {getLayerSystem} from '${asset('js/lq/layer.js')}';import {createForm} from '${asset('js/lq/forms.js')}';
+      window.fixture={...dropdown,bindSelection,getLayerSystem,createForm};window.events=[];document.addEventListener('input',e=>{if(e.target.tagName==='SELECT')events.push('input')});document.addEventListener('change',e=>{if(e.target.tagName==='SELECT')events.push('change')});window.ready=true;
     </script></body></html>` });
   });
   await page.goto('https://dropdown.test/'); await page.waitForFunction(() => (window as any).ready); return errors;
@@ -199,4 +199,28 @@ for (const width of [390, 1440]) test(`long labels and grouped choices stay with
   const rect = await page.locator('.lq-dropdown__popup').boundingBox(); expect(rect!.x).toBeGreaterThanOrEqual(0); expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
   const violations = (await new AxeBuilder({ page }).include('#area').include('.lq-dropdown__popup').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact || ''));
   expect(violations).toEqual([]);
+});
+
+for (const width of [390, 1440]) test(`typed searchable Fields keep full control-slot width and real sm/md/lg geometry at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 860 }); await mount(page, '');
+  await page.evaluate(() => {
+    const api = (window as any).fixture;
+    for (const size of ['sm', 'md', 'lg']) document.getElementById('area')!.append(api.createForm('field', {
+      id: `field-${size}`, label: `课程${size}`, control: 'select', size, searchable: true, value: 'a',
+      options: [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta' }],
+    }));
+    api.installDropdowns(document);
+  });
+  const geometry = await page.evaluate(() => [...document.querySelectorAll('.lq-field__control')].map(slot => {
+    const trigger = slot.querySelector('.lq-dropdown__trigger')!, style = getComputedStyle(trigger);
+    return { slot: slot.getBoundingClientRect().width, width: trigger.getBoundingClientRect().width, height: trigger.getBoundingClientRect().height, minHeight: parseFloat(style.minHeight), padding: parseFloat(style.paddingTop), font: parseFloat(style.fontSize) };
+  }));
+  for (const item of geometry) expect(Math.abs(item.width - item.slot)).toBeLessThan(1);
+  expect(geometry.map(item => item.minHeight)).toEqual([32, 40, 48]);
+  expect(geometry[0].height).toBeLessThan(geometry[1].height); expect(geometry[1].height).toBeLessThan(geometry[2].height);
+  expect(geometry[0].padding).toBeLessThan(geometry[1].padding); expect(geometry[2].font).toBeGreaterThan(geometry[1].font);
+  await page.locator('#field-md + .lq-dropdown .lq-dropdown__trigger').click();
+  const search = page.getByRole('combobox', { name: '筛选课程md', exact: true }); await expect(search).toBeVisible(); await search.fill('Beta');
+  await expect(page.getByRole('option', { name: 'Alpha', exact: true })).toHaveCount(0); await page.getByRole('option', { name: 'Beta', exact: true }).click();
+  expect(await page.locator('#field-md').inputValue()).toBe('b'); expect(await page.evaluate(() => (window as any).events)).toEqual(['input', 'change']);
 });

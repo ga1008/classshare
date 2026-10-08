@@ -30,8 +30,8 @@
    is --ls-ink-2, not --ls-ink-3 (that one is only guaranteed on the .74
    content material). The opacity reset keeps Firefox from thinning it. */
 .lq-input::placeholder, .lq-textarea::placeholder { --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink-2))); color: var(--lq-control-color); opacity: 1; }
-.lq-control--sm { min-height: var(--ls-s-8); padding-block: var(--ls-s-1); }
-.lq-control--lg { min-height: var(--ls-s-12); font-size: var(--ls-t-body); }
+.lq-control--sm { --lq-form-control-height: var(--ls-s-8); --lq-form-control-padding-y: var(--ls-s-1); min-height: var(--lq-form-control-height); padding-block: var(--lq-form-control-padding-y); }
+.lq-control--lg { --lq-form-control-height: var(--ls-s-12); --lq-form-control-font-size: var(--ls-t-body); min-height: var(--lq-form-control-height); font-size: var(--lq-form-control-font-size); }
 .lq-input[type="search"] { min-height: calc(var(--ls-s-8) + var(--ls-s-1)); border-radius: var(--ls-r-capsule); }
 .lq-input[type="search"]::-webkit-search-cancel-button { appearance: none; }
 .lq-textarea { min-height: calc(var(--ls-s-12) * 2); resize: vertical; }

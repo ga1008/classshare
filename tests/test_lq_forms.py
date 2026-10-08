@@ -108,6 +108,13 @@ class LqFormsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 lq_form_props('select', id='x', label='x', value='b', options=options)
 
+    def test_searchable_is_a_typed_select_option_and_cannot_be_smuggled_in_attrs(self):
+        self.assertIn('data-lq-searchable', Parsed(self.render('field', id='term', label='学期', control='select', searchable=True)).first('select'))
+        self.assertNotIn('data-lq-searchable', Parsed(self.render('select', id='term', label='学期', searchable=False, attrs={'data-lq-searchable': ''})).first('select'))
+        for kind, value in (('select', 'true'), ('select', 1), ('input', True)):
+            with self.subTest(kind=kind, value=value), self.assertRaises(ValueError):
+                self.render(kind, id='term', label='学期', searchable=value)
+
     def test_radio_requires_group_name_and_switch_is_native_checkbox_with_role(self):
         with self.assertRaises(ValueError):
             lq_form_props('radio', id='x', label='x')

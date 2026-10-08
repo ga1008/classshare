@@ -81,7 +81,8 @@ def _control(kind, p):
     if readonly and kind not in ("input", "textarea"):
         raise ValueError("This native control does not support readonly")
     for key, allowed in (("clearable", ("input",)), ("count", ("textarea",)),
-                         ("auto_grow", ("textarea",)), ("checked", ("checkbox", "radio", "switch"))):
+                         ("auto_grow", ("textarea",)), ("checked", ("checkbox", "radio", "switch")),
+                         ("searchable", ("select",))):
         if key in p and _flag(p, key) and kind not in allowed:
             raise ValueError(f"{key} is not supported by this native control")
     attrs = _attrs(p.get("attrs"))
@@ -124,6 +125,8 @@ def _control(kind, p):
         children = [value]
     elif kind == "select":
         attrs["data-lq-dropdown"] = ""
+        if _flag(p, "searchable"):
+            attrs["data-lq-searchable"] = ""
         options = p.get("options", [])
         if not isinstance(options, (list, tuple)):
             raise ValueError("LQ select options must be a list")

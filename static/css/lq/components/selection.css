@@ -59,12 +59,13 @@
 
 /* ---- LQ dropdown (single / searchable / multi) — trigger is a control, popup is the overlay material ---- */
 .lq-dropdown { position: relative; min-width: 0; }
+.lq-field__control > .lq-dropdown { flex: 1 1 0%; }
 .lq-dropdown[hidden] { display: none !important; }
 .lq-dropdown__trigger {
-    box-sizing: border-box; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: var(--ls-s-10);
-    padding: var(--ls-s-2) 6px var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-sm);
+    box-sizing: border-box; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: var(--lq-form-control-height, var(--ls-s-10));
+    padding: var(--lq-form-control-padding-y, var(--ls-s-2)) 6px var(--lq-form-control-padding-y, var(--ls-s-2)) var(--ls-s-3); border: 1px solid hsl(var(--ls-input)); border-radius: var(--ls-r-sm);
     background: hsl(var(--lq-control-fill, var(--ls-glass-fill-control))); color: hsl(var(--lq-control-ink, var(--ls-ink)));
-    font: inherit; font-size: var(--ls-t-callout); line-height: var(--ls-leading-callout); text-align: left; cursor: pointer;
+    font: inherit; font-size: var(--lq-form-control-font-size, var(--ls-t-callout)); line-height: var(--ls-leading-callout); text-align: left; cursor: pointer;
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)); transition: border-color var(--lq-motion-control-duration, 160ms) var(--lq-motion-ease, var(--ls-ease-out)), box-shadow var(--lq-motion-control-duration, 160ms) var(--lq-motion-ease, var(--ls-ease-out));
 }
 .lq-dropdown__trigger:hover:not(:disabled) { border-color: hsl(var(--ls-primary) / .45); }
@@ -89,7 +90,7 @@
 .lq-dropdown__option[aria-selected="true"] .lq-dropdown__check::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 5px; height: 10px; border: solid hsl(var(--ls-primary-foreground, 0 0% 100%)); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .lq-dropdown--multi .lq-dropdown__option[aria-selected="true"] { background: none; font-weight: 600; }
 .lq-dropdown--multi .lq-dropdown__option[aria-selected="true"]:hover, .lq-dropdown--multi .lq-dropdown__option[data-active] { background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--ls-glass-fill-control)); }
-@media (pointer: coarse) { .lq-dropdown__trigger { min-height: 44px; } }
+@media (pointer: coarse) { .lq-dropdown__trigger { min-height: max(44px, var(--lq-form-control-height, var(--ls-s-10))); } }
 @media (prefers-reduced-motion: reduce) { .lq-dropdown__chevron { transition: none; } }
 @media (forced-colors: active) {
     .lq-dropdown__trigger { background: Canvas; color: CanvasText; border-color: ButtonText; box-shadow: none; }

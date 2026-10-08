@@ -30,7 +30,7 @@ function control(kind, p) {
   if (!label || !['sm', 'md', 'lg'].includes(size)) throw new TypeError('A visible label and valid control size are required');
   const required = flag(p, 'required'), disabled = flag(p, 'disabled'), readonly = flag(p, 'readOnly');
   if (readonly && !['input', 'textarea'].includes(kind)) throw new TypeError('This native control does not support readonly');
-  for (const [key, allowed] of [['clearable', ['input']], ['count', ['textarea']], ['autoGrow', ['textarea']], ['checked', ['checkbox', 'radio', 'switch']]]) {
+  for (const [key, allowed] of [['clearable', ['input']], ['count', ['textarea']], ['autoGrow', ['textarea']], ['checked', ['checkbox', 'radio', 'switch']], ['searchable', ['select']]]) {
     if (key in p && flag(p, key) && !allowed.includes(kind)) throw new TypeError(`${key} is not supported by this native control`);
   }
   const a = attrs(p.attrs);
@@ -59,6 +59,7 @@ function control(kind, p) {
     children = [value];
   } else if (kind === 'select') {
     a['data-lq-dropdown'] = '';
+    if (flag(p, 'searchable')) a['data-lq-searchable'] = '';
     const options = own(p, 'options', []), values = new Set();
     if (!Array.isArray(options)) throw new TypeError('Select options must be a list');
     for (const item of options) {
