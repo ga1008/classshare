@@ -60,7 +60,7 @@
 
 兼容与领域回归由独立代理执行：9 个 motion、34 个 legacy bridge、11 个 domain controls、1 个博客草稿冲突、1 个作业状态场景，共 56 个场景均有通过证据。首跑 55/56，新作业状态 HTML 夹具缺 UTF-8 导致中文定位失败，补正确字符集后该项 1/1 通过，生产源码未变。证据在 `.codex-temp/lq-motion-compat-20261008/acceptance.json`。另共享单元 178、履历浏览器函数 28、Python 合同 78 + partial-scope 12 均通过；构建源哈希校验通过，LQ gzip 17786 / 18432 字节。
 
-上述文档与 QA 文件已冻结；运行中的合成服务保留供发布前复看，由主任务确认后停止。Git 提交、推送和服务器部署结果由主任务的发布记录填写。
+上述 QA 文件已冻结；主任务核对进程命令行后停止本轮合成服务（PID 45164 / 8361），原始证据保留。
 
 ## 有意保留的即时行为
 
@@ -69,3 +69,12 @@
 ## 边界
 
 目前仅 Chromium 桌面/移动模拟环境，不能声称 Safari、Firefox 或真实低性能手机已全部验收。全平台源码审计与只读 GET 扫描负责发现入口和布局回归；每一种有数据、权限、冲突或上传状态仍需要各领域既有业务门禁，不把本轮动画场景计数冒充全平台业务完成率。
+
+## 发布核验
+
+- 代码提交：`65df171af4d56e2414191011e01aa2d569c1c9d8`。从该提交建立独立发布工作树，逐字节复制已验收的 3357 个跟踪文件；未复制合成库、未提交个人文件或研究目录。
+- 现有 `deployment/deploy_remote.ps1` 的 DryRun、原生 PostgreSQL 迁移门禁与正式部署均成功。本轮没有数据库或迁移源码变更，使用仍匹配源码与原始备份哈希的原生演练报告。3379 个发布文件的路径审计未包含 data/storage/submissions/logs、环境配置或非 ASCII 个人文件。
+- 发布编号：`20261008-181719-c240e2b56fe5`。服务器切换前停止全部应用写入进程并完成 PostgreSQL 备份 `/tmp/lanshare-deploy-backups/db-cutover-20261008-181731.sql.gz`；代码备份为同目录 `code-20261008-181731.tgz`。既有部署流程保护 `/lanshare/data`，日志记录 `DEPLOY_DONE`。
+- 线上 `/api/internal/health`、响应头发布编号、教师/学生登录页与不可变资源图一致。正式资源图仍为 `e335ac7d8d73a4ec2c15c45702a6a5bf48b21bba1c8febe1537739dcbeb6d18e`；共享 CSS、overlay motion、旧 UI 桥、popover、domain modal、native presence、AI 窗口、反馈和 onboarding 共 9 个资源与本地验收构建逐字节一致。
+- `tools/deploy/postflight.ps1 -CheckPostgres` 的 8 项只读检查通过；应用、AI、邮件、数据库、网关及调度服务正常运行，行为写入和邮件 worker 正常。后台任务聚合仍含既有失败记录与排队告警（本次读取为 740 条失败记录、28 项排队），不把该聚合视为全绿或本轮动效验收证据。
+- 发布日志保存在 `E:/CodexTemp/lanshare-motion-release-20261008/`；只读上线校验在 `.codex-temp/lq-motion-20261008-live-verification.json`，8 项 postflight 报告在 `.codex-temp/lq-motion-postflight/postflight-20261008-181958/summary.json`。未对生产业务库运行测试或进行测试写入。
