@@ -99,7 +99,7 @@
                     </div>
                     <label>
                         <span>地区</span>
-                        <select data-lq-component="select" class="lq-select" data-blog-career-region>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-career-region>
                             <option value="">全部地区</option>
                             <option value="nanning">南宁</option>
                             <option value="guangxi">广西</option>
@@ -108,7 +108,7 @@
                     </label>
                     <label>
                         <span>类型</span>
-                        <select data-lq-component="select" class="lq-select" data-blog-career-type>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-career-type>
                             <option value="">全部类型</option>
                             <option value="campus_recruitment">校园招聘</option>
                             <option value="internship">实习机会</option>
@@ -121,7 +121,7 @@
                     </label>
                     <label>
                         <span>截止</span>
-                        <select data-lq-component="select" class="lq-select" data-blog-career-deadline>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-career-deadline>
                             <option value="">全部时间</option>
                             <option value="7">7 天内</option>
                             <option value="30">30 天内</option>
@@ -130,7 +130,7 @@
                     </label>
                     <label>
                         <span>我的进度</span>
-                        <select data-lq-component="select" class="lq-select" data-blog-career-state>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-career-state>
                             <option value="">全部机会</option>
                             <option value="saved">已收藏</option>
                             <option value="preparing">准备材料</option>
@@ -295,7 +295,7 @@
                     <div class="blog-composer__options">
                         <div class="blog-composer__option blog-composer__option--section">
                             <label>发布到板块</label>
-                            <select data-lq-component="select" class="lq-select blog-visibility-select blog-section-select" data-blog-compose-section>
+                            <select aria-label="发布到板块" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select blog-section-select" data-blog-compose-section>
                                 {% for section in blog_sections if section.allow_user_posts %}
                                 <option value="{{ section.section_key }}">{{ section.name }}</option>
                                 {% endfor %}
@@ -303,7 +303,7 @@
                         </div>
                         <div class="blog-composer__option">
                             <label>可见范围</label>
-                            <select data-lq-component="select" class="lq-select blog-visibility-select" data-blog-compose-visibility>
+                            <select aria-label="可见范围" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select" data-blog-compose-visibility>
                                 <option value="public">全部可见</option>
                                 <option value="class_visible">同班可见</option>
                                 <option value="selected_users">指定用户可见</option>
@@ -311,7 +311,7 @@
                         </div>
                         <div class="blog-composer__option" data-blog-compose-class-wrap hidden>
                             <label>选择班级</label>
-                            <select data-lq-component="select" class="lq-select" data-blog-compose-class></select>
+                            <select aria-label="选择班级" data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-compose-class></select>
                         </div>
                         <div class="blog-composer__option">
                             <label>
@@ -366,7 +366,7 @@
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-report-cancel aria-label="关闭">×</button>
             </div>
             <label>问题类型
-                <select data-lq-component="select" class="lq-select" data-blog-report-reason required>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-report-reason required>
                     <option value="false_information">信息不实或已失效</option>
                     <option value="job_scam">疑似招聘诈骗</option>
                     <option value="spam">广告或垃圾内容</option>

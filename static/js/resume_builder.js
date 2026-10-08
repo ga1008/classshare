@@ -585,7 +585,7 @@
         return '<fieldset data-lq-component="field" class="lq-form-section rz-snapshot-fields"><legend>' + (entry.section === 'personal' ? '本份个人信息' : RZ.esc(labelOf(entry.section, entry.item))) + '</legend>' +
           Object.keys(fields[entry.section]).map(function (key) {
             var value = RZ.esc(entry.item[key] || ''), attrs = ' data-entry="' + index + '" data-field="' + key + '"';
-            var input = key === 'degree' ? '<select data-lq-component="select" class="lq-select rz-select"' + attrs + '>' + ['', '高中', '中专', '大专', '本科', '硕士', '博士', '其他'].map(function (degree) { return '<option value="' + degree + '"' + (degree === entry.item[key] ? ' selected' : '') + '>' + (degree || '待确认') + '</option>'; }).join('') + '</select>' :
+            var input = key === 'degree' ? '<select aria-label="学历" data-lq-dropdown data-lq-component="select" class="lq-select rz-select"' + attrs + '>' + ['', '高中', '中专', '大专', '本科', '硕士', '博士', '其他'].map(function (degree) { return '<option value="' + degree + '"' + (degree === entry.item[key] ? ' selected' : '') + '>' + (degree || '待确认') + '</option>'; }).join('') + '</select>' :
               entry.section === 'personal' || /_date$/.test(key) ? '<input data-lq-component="input" class="lq-input rz-input" maxlength="200" value="' + value + '"' + attrs + '>' :
               '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" rows="3" maxlength="6000"' + attrs + '>' + value + '</textarea>';
             return '<label class="rz-field">' + RZ.esc(fields[entry.section][key]) + input + '</label>'; }).join('') + '</fieldset>';

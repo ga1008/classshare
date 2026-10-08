@@ -57,7 +57,7 @@ function renderCandidateRow(item, textbooks) {
             <span><strong>${item.session_count}</strong><small>次排课</small></span>
         </span>
         <span class="obs-row__textbook">
-            <select data-lq-component="select" class="lq-select form-control" data-obs-textbook>${textbookOptions(textbooks, item.suggested_textbook)}</select>
+            <select aria-label="教材" data-lq-dropdown data-lq-component="select" class="lq-select form-control" data-obs-textbook>${textbookOptions(textbooks, item.suggested_textbook)}</select>
         </span>
         <span class="obs-row__status" data-obs-status></span>
     </label>`;

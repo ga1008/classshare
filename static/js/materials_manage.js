@@ -2758,7 +2758,7 @@ function renderScopePropertyControl(detail) {
         return `
             <label class="materials-property-field">
                 <span>开放范围</span>
-                <select data-lq-component="select" class="lq-select form-control" data-property-scope>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" data-property-scope>
                     ${scopeOptions.map(([value, label]) => `<option value="${value}" ${scopeLevel === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
             </label>

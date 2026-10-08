@@ -36,11 +36,11 @@
                         </div>
                         <div class="lq-field lq-messages__filter-field">
                             <label class="lq-field__label" for="message-center-filter">阅读状态</label>
-                            <select id="message-center-filter" class="message-center-filter lq-select" aria-label="阅读状态"></select>
+                            <select data-lq-component="select" data-lq-dropdown id="message-center-filter" class="message-center-filter lq-select" aria-label="阅读状态"></select>
                         </div>
                         {% else %}
                         <input data-lq-component="input" id="message-center-search" class="lq-input message-center-search" type="search" placeholder="搜索关键词">
-                        <select data-lq-component="select" id="message-center-filter" class="lq-select message-center-filter"></select>
+                        <select data-lq-dropdown data-lq-component="select" id="message-center-filter" class="lq-select message-center-filter"></select>
                         {% endif %}
                         {% if _messages_lq %}{{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}{% else %}<button data-lq-component="button" type="button" id="message-center-mark-read" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">标记当前已读</button>{% endif %}
                     </div>
@@ -58,7 +58,7 @@
                                 <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
                                 <input data-lq-component="input" id="message-center-contact-search" class="lq-input message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词">
                                 <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
-                                <select data-lq-component="select" id="message-center-contact-select" class="lq-select message-center-contact-select"></select>
+                                <select data-lq-dropdown data-lq-component="select" id="message-center-contact-select" class="lq-select message-center-contact-select"></select>
                                 <div id="message-center-contact-current" class="message-center-contact-current"></div>
                                 {% if _messages_lq %}<div id="message-center-recent-contacts" hidden></div>{% endif %}
                             </div>

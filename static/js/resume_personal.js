@@ -25,7 +25,7 @@
     var req = REQUIRED.indexOf(def.key) >= 0 ? '<span class="req">*</span>' : '';
     var input;
     if (def.type === 'select') {
-      input = '<select data-lq-component="select" class="lq-select rz-select" name="' + def.key + '"><option value="">请选择</option>' +
+      input = '<select aria-label="' + RZ.esc(def.label) + '" data-lq-dropdown data-lq-component="select" class="lq-select rz-select" name="' + def.key + '"><option value="">请选择</option>' +
         def.options.map(function (o) { return '<option value="' + o + '">' + o + '</option>'; }).join('') + '</select>';
     } else if (def.type === 'month') {
       input = RZ.monthPickerHtml(def.key, '', { placeholder: '请选择生日年月' });

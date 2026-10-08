@@ -66,6 +66,7 @@ async function setup(page: Page, savedRestore = false) {
   return errors;
 }
 const dialog=(page:Page)=>page.locator('[data-ui-dialog-content]');
+const nativeSelect=(page:Page,label:string)=>dialog(page).locator('.lq-field').filter({has:page.locator('label').filter({hasText:new RegExp(`^${label}$`)})}).locator('select');
 
 test('real classroom surface retains identity/draft/order and delivers the editor only after exit',async({page})=>{
   const errors=await setup(page);
@@ -155,7 +156,8 @@ for (const appearance of ['light', 'dark']) for (const width of [1440, 390]) tes
   await expect(dialog(page)).toHaveCSS('backdrop-filter', /blur\(/);
   await expect(page.locator('[data-ui-dialog-overlay]')).toHaveClass(/lq-scrim/);
   await expect(page.locator('[data-ui-dialog-overlay]')).toHaveCSS('backdrop-filter', 'none');
-  await expect(dialog(page).getByLabel('课堂', { exact: true })).toHaveClass(/lq-select/);
+  await expect(nativeSelect(page, '课堂')).toHaveClass(/lq-select/);
+  await expect(dialog(page).getByRole('combobox', { name: '课堂', exact: true })).toHaveClass(/lq-dropdown__trigger/);
   await expect(dialog(page).getByRole('button', { name: '关闭', exact: true })).toHaveClass(/lq-btn/);
   await expect(dialog(page).getByRole('button', { name: '全部事项', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(await dialog(page).locator('[data-lq-component]').evaluateAll(nodes => nodes.every(node => getComputedStyle(node).backdropFilter === 'none'))).toBe(true);
@@ -184,9 +186,11 @@ for (const appearance of ['light', 'dark']) for (const width of [1440, 390]) tes
   expect(await page.locator('#cw-tasks-preview button:not(.lq-btn):not(.lq-chip)').count()).toBe(0);
   await page.locator('#cw-tasks-preview').screenshot({ path: `.codex-temp/lq-react-workspaces/classroom-cards-${appearance}-${width}.png` });
   await page.locator('#tasks-trigger').click();
-  await expect(dialog(page).getByLabel('任务分类')).toHaveClass(/lq-select/);
-  await dialog(page).getByLabel('任务状态').selectOption('draft');
-  await expect(dialog(page).getByLabel('任务状态')).toHaveValue('draft');
+  await expect(nativeSelect(page, '任务分类')).toHaveClass(/lq-select/);
+  await dialog(page).getByRole('combobox', { name: '任务状态', exact: true }).click();
+  await page.getByRole('option', { name: '草稿', exact: true }).click();
+  await expect(nativeSelect(page, '任务状态')).toHaveValue('draft');
+  await expect(dialog(page).getByRole('combobox', { name: '任务状态', exact: true })).toHaveText('草稿');
   await expect(dialog(page).getByLabel('查找任务')).toHaveClass(/lq-input/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(dialog(page)).toHaveCSS('opacity', '1');

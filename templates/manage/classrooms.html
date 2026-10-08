@@ -90,7 +90,7 @@
             <div class="classroom-filter-fields">
                 <label class="academic-filter-field" for="classroomCampusFilter">
                     <span>校区</span>
-                    <select data-lq-component="select" id="classroomCampusFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classroomCampusFilter" class="lq-select form-control">
                         <option value="">全部校区</option>
                         {% for item in options.campuses or [] %}
                         {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
@@ -99,7 +99,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomBuildingFilter">
                     <span>楼号</span>
-                    <select data-lq-component="select" id="classroomBuildingFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classroomBuildingFilter" class="lq-select form-control">
                         {% for item in options.buildings or [] %}
                         <option value="{{ item.id }}">{{ item.name }}</option>
                         {% endfor %}
@@ -107,7 +107,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomTypeFilter">
                     <span>类别</span>
-                    <select data-lq-component="select" id="classroomTypeFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classroomTypeFilter" class="lq-select form-control">
                         {% for item in options.room_types or [] %}
                         <option value="{{ item.id }}">{{ item.name }}</option>
                         {% endfor %}
@@ -115,7 +115,7 @@
                 </label>
                 <label class="academic-filter-field" for="classroomAvailabilityFilter">
                     <span>状态</span>
-                    <select data-lq-component="select" id="classroomAvailabilityFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classroomAvailabilityFilter" class="lq-select form-control">
                         <option value="">全部状态</option>
                         <option value="schedulable">可排课</option>
                         <option value="borrowable">可借用</option>
@@ -153,7 +153,7 @@
                    要迁必须先有页面级 CSS（本包未获授权新增 lq/pages 样式）。 #}
                 <label class="classroom-page-size" for="classroomPageSizeSelect">
                     <span>每页</span>
-                    <select data-lq-component="select" id="classroomPageSizeSelect" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classroomPageSizeSelect" class="lq-select form-control">
                         <option value="10" selected>10 条</option>
                         <option value="20">20 条</option>
                         <option value="50">50 条</option>
@@ -195,7 +195,7 @@
                 <div class="classroom-free-grid">
                     <label class="academic-filter-field is-wide" for="freeRoomSemesterSelect">
                         <span>学期</span>
-                        <select data-lq-component="select" id="freeRoomSemesterSelect" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="freeRoomSemesterSelect" class="lq-select form-control">
                             <option value="">自动识别当前学期</option>
                             {% for semester in semester_options %}
                             <option
@@ -220,7 +220,7 @@
                     {% else %}
                     <label class="academic-filter-field" for="freeRoomCampusSelect">
                         <span>校区</span>
-                        <select data-lq-component="select" id="freeRoomCampusSelect" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="freeRoomCampusSelect" class="lq-select form-control">
                             {% for item in options.campuses or [] %}
                             {% if item.id %}<option value="{{ item.id }}">{{ item.name }}</option>{% endif %}
                             {% endfor %}
@@ -228,7 +228,7 @@
                     </label>
                     <label class="academic-filter-field" for="freeRoomBuildingSelect">
                         <span>楼号</span>
-                        <select data-lq-component="select" id="freeRoomBuildingSelect" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="freeRoomBuildingSelect" class="lq-select form-control">
                             {% for item in options.buildings or [] %}
                             <option value="{{ item.id }}">{{ item.name }}</option>
                             {% endfor %}
@@ -236,7 +236,7 @@
                     </label>
                     <label class="academic-filter-field" for="freeRoomTypeSelect">
                         <span>类别</span>
-                        <select data-lq-component="select" id="freeRoomTypeSelect" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="freeRoomTypeSelect" class="lq-select form-control">
                             {% for item in options.room_types or [] %}
                             <option value="{{ item.id }}">{{ item.name }}</option>
                             {% endfor %}

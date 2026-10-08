@@ -211,7 +211,7 @@ function renderCreatePanel(state) {
                 `}
                 <label class="interaction-field">
                     <span>结果可见</span>
-                    <select data-lq-component="select" class="lq-select" name="show_results">${visibilityOptions('', kind)}</select>
+                    <select data-lq-dropdown data-lq-component="select" class="lq-select" name="show_results">${visibilityOptions('', kind)}</select>
                 </label>
                 <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent">发布互动</button>
             </form>

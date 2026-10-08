@@ -58,6 +58,7 @@ function control(kind, p) {
     if (count) a['data-lq-count'] = `${identity}--lq-count`;
     children = [value];
   } else if (kind === 'select') {
+    a['data-lq-dropdown'] = '';
     const options = own(p, 'options', []), values = new Set();
     if (!Array.isArray(options)) throw new TypeError('Select options must be a list');
     for (const item of options) {

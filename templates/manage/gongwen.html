@@ -40,25 +40,25 @@
                 <div class="gwlist-search">
                     <input data-lq-component="input" class="lq-input" type="search" id="gw-doc-search" placeholder="搜索标题 / 文号 / 发文单位 / 正文内容…" autocomplete="off" aria-label="搜索公文">
                 </div>
-                <select data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-category" aria-label="按分类筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-category" aria-label="按分类筛选">
                     <option value="">全部分类</option>
                     {% for cat in (gongwen_facets.categories if gongwen_facets else gongwen_categories) or [] %}
                     <option value="{{ cat.name }}">{{ cat.name }}（{{ cat.total }}）</option>
                     {% endfor %}
                 </select>
-                <select data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-author" aria-label="按发文单位筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-author" aria-label="按发文单位筛选">
                     <option value="">全部发文单位</option>
                     {% for a in (gongwen_facets.authors if gongwen_facets else []) %}
                     <option value="{{ a.name }}">{{ a.name }}（{{ a.total }}）</option>
                     {% endfor %}
                 </select>
-                <select data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-sender" aria-label="按发送人筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-sender" aria-label="按发送人筛选">
                     <option value="">全部发送人</option>
                     {% for s in (gongwen_facets.senders if gongwen_facets else []) %}
                     <option value="{{ s.name }}">{{ s.name }}（{{ s.total }}）</option>
                     {% endfor %}
                 </select>
-                <select data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-parse" aria-label="按解析状态筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control gwlist-select" id="gw-doc-parse" aria-label="按解析状态筛选">
                     <option value="">全部解析状态</option>
                     <option value="done">已解析</option>
                     <option value="pending">未解析 / 解析中</option>
@@ -102,7 +102,7 @@
 {% else %}            <span id="gw-doc-count"></span>
 {% endif %}            <div class="gwlist-pager">
                 <label for="gw-doc-pagesize">每页</label>
-                <select data-lq-component="select" class="lq-select form-control gwlist-pagesize" id="gw-doc-pagesize" aria-label="每页条数">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control gwlist-pagesize" id="gw-doc-pagesize" aria-label="每页条数">
                     <option value="10">10</option>
                     <option value="20" selected>20</option>
                     <option value="50">50</option>
@@ -182,7 +182,7 @@
         <div class="gw-scope-body">
             <div class="form-group">
                 <label class="form-label" for="gw-scope-level">归属级别</label>
-                <select data-lq-component="select" class="lq-select form-control" id="gw-scope-level">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="gw-scope-level">
                     <option value="school">学校（校级）</option>
                     <option value="college">学院（院级）</option>
                     <option value="department">系部</option>
@@ -198,7 +198,7 @@
             </div>
             <div class="form-group">
                 <label class="form-label" for="gw-scope-openness">开放范围</label>
-                <select data-lq-component="select" class="lq-select form-control" id="gw-scope-openness"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="gw-scope-openness"></select>
                 <p class="gwlist-time" style="margin-top:6px;">开放范围从归属级别起向上可选：系部归属可选本系部/本院级/本校/完全公开，院级归属从本院级起，校级归属从本校起。</p>
             </div>
         </div>

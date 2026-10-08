@@ -86,7 +86,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    z-index: -1;
+    z-index: var(--ls-z-material-sheen);
     pointer-events: none;
     background: hsl(var(--ls-scrim));
     opacity: 1;

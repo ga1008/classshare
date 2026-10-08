@@ -82,13 +82,13 @@
     return '<div class="rz-form-grid rz-app-form">'
       + '<div class="rz-field"><label>公司 / 组织<span class="req">*</span></label><input data-lq-component="input" class="lq-input rz-input" name="company_name" aria-label="公司或组织" value="' + escAttr(item.company_name) + '"></div>'
       + '<div class="rz-field"><label>目标岗位<span class="req">*</span></label><input data-lq-component="input" class="lq-input rz-input" name="target_position" aria-label="目标岗位" value="' + escAttr(item.target_position) + '"></div>'
-      + '<div class="rz-field"><label>当前状态</label><select data-lq-component="select" class="lq-select rz-select" name="status" aria-label="当前状态">' + statusOptions + '</select></div>'
+      + '<div class="rz-field"><label>当前状态</label><select data-lq-dropdown data-lq-component="select" class="lq-select rz-select" name="status" aria-label="当前状态">' + statusOptions + '</select></div>'
       + '<div class="rz-field"><label>投递渠道</label><input data-lq-component="input" class="lq-input rz-input" name="channel" aria-label="投递渠道" value="' + escAttr(item.channel) + '" placeholder="官网 / 招聘平台 / 内推"></div>'
       + '<div class="rz-field"><label>投递日期</label><input data-lq-component="input" class="lq-input rz-input" type="date" name="applied_on" aria-label="投递日期" value="' + escAttr(item.applied_on) + '"></div>'
       + '<div class="rz-field"><label>下一步时间</label><input data-lq-component="input" class="lq-input rz-input" type="datetime-local" name="next_action_at" aria-label="下一步时间" value="' + escAttr(item.next_action_at) + '"></div>'
       + '<div class="rz-field rz-field--full"><label>下一步行动</label><input data-lq-component="input" class="lq-input rz-input" name="next_action" aria-label="下一步行动" value="' + escAttr(item.next_action) + '" placeholder="例如：周五前准备英文自我介绍"></div>'
-      + '<div class="rz-field"><label>关联岗位分析</label><select data-lq-component="select" class="lq-select rz-select" name="job_target_id" aria-label="关联岗位分析">' + targetOptions + '</select></div>'
-      + '<div class="rz-field"><label>本次使用简历</label><select data-lq-component="select" class="lq-select rz-select" name="resume_id" aria-label="本次使用简历">' + resumeOptions + '</select></div>'
+      + '<div class="rz-field"><label>关联岗位分析</label><select data-lq-dropdown data-lq-component="select" class="lq-select rz-select" name="job_target_id" aria-label="关联岗位分析">' + targetOptions + '</select></div>'
+      + '<div class="rz-field"><label>本次使用简历</label><select data-lq-dropdown data-lq-component="select" class="lq-select rz-select" name="resume_id" aria-label="本次使用简历">' + resumeOptions + '</select></div>'
       + '<div class="rz-field rz-field--full"><label>备注</label><textarea data-lq-component="textarea" class="lq-textarea rz-textarea" name="note" aria-label="备注" placeholder="面试反馈、联系人、要补充的材料等">' + RZ.esc(item.note || '') + '</textarea></div></div>';
   }
   function collect(scope) {

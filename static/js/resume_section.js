@@ -214,7 +214,7 @@
     var req = f.required ? '<span class="req">*</span>' : '';
     var input;
     if (f.type === 'select') {
-      input = '<select data-lq-component="select" class="lq-select rz-select" name="' + f.key + '">' +
+      input = '<select aria-label="' + RZ.esc(f.label) + '" data-lq-dropdown data-lq-component="select" class="lq-select rz-select" name="' + f.key + '">' +
         f.options.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
     } else if (f.type === 'textarea') {
       input = '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" name="' + f.key + '" placeholder="' + RZ.esc(f.placeholder || '') + '">' + RZ.esc(val) + '</textarea>';

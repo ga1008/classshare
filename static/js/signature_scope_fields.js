@@ -55,10 +55,10 @@ export class SignatureScopeFields {
         this.root.classList.add('signature-scope-control');
         this.root.innerHTML = `
             <label class="signature-scope-field"><span>可见范围</span>
-                <select data-lq-component="select" class="lq-select" data-scope-level aria-describedby="${this.id}-help">${this.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === this.scope ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-scope-level aria-describedby="${this.id}-help">${this.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === this.scope ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select>
             </label>
             <label class="signature-scope-field" data-scope-membership-field><span>共享到的组织</span>
-                <select data-lq-component="select" class="lq-select" data-scope-membership aria-label="共享到的组织"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-scope-membership aria-label="共享到的组织"></select>
             </label>
             <div class="signature-scope-org" data-scope-admin-org>
                 <label class="signature-scope-field"><span>学校</span><input data-lq-component="input" class="lq-input" data-scope-school list="${this.id}-schools" placeholder="选择学校或输入学校代码" autocomplete="off"></label>

@@ -93,7 +93,7 @@
                                         </div>
                                         <div class="form-group">
                                             <label class="form-label" for="portfolio-visibility-{{ item.id }}">可见范围</label>
-                                            <select data-lq-component="select" id="portfolio-visibility-{{ item.id }}" name="visibility" class="lq-select form-control">
+                                            <select data-lq-dropdown data-lq-component="select" id="portfolio-visibility-{{ item.id }}" name="visibility" class="lq-select form-control">
                                                 {% for option in portfolio_ctx['visibility_options'] %}
                                                 <option value="{{ option.value }}" {% if option.value == item.visibility %}selected{% endif %}>{{ option.label }}</option>
                                                 {% endfor %}

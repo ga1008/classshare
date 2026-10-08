@@ -41,7 +41,7 @@ function scoreSelect(name, label) {
     return `
         <label class="collaboration-form-field">
             <span>${label}</span>
-            <select data-lq-component="select" class="lq-select" name="${name}" required>
+            <select data-lq-dropdown data-lq-component="select" class="lq-select" name="${name}" required>
                 ${SCORE_OPTIONS.map((score) => `<option value="${score}">${score} 分</option>`).join('')}
             </select>
         </label>
@@ -174,7 +174,7 @@ function renderMembers(snapshot, group) {
             </div>
             ${snapshot.role === 'teacher' && group.can_manage ? `
                 <form class="collaboration-inline-form" data-collab-add-member="${group.id}">
-                    <select data-lq-component="select" class="lq-select" name="student_id" required>
+                    <select aria-label="添加组员" data-lq-dropdown data-lq-component="select" class="lq-select" name="student_id" required>
                         <option value="">选择学生加入小组</option>
                         ${studentOptions(snapshot)}
                     </select>
@@ -248,10 +248,10 @@ function renderSubmissions(snapshot, group) {
             ${group.can_submit ? `
                 <form class="collaboration-submission-form" data-collab-submit-work="${group.id}">
                     <input data-lq-component="input" class="lq-input" type="text" name="title" value="${escapeHtml(latest.title || group.name)}" placeholder="成果标题" required>
-                    <select data-lq-component="select" class="lq-select" name="assignment_id">
+                    <select aria-label="关联作业" data-lq-dropdown data-lq-component="select" class="lq-select" name="assignment_id">
                         ${assignmentOptions(snapshot, latest.assignment_id || group.assignment_id)}
                     </select>
-                    <select data-lq-component="select" class="lq-select" name="final_file_id">
+                    <select aria-label="成果文件" data-lq-dropdown data-lq-component="select" class="lq-select" name="final_file_id">
                         <option value="">不指定最终文件</option>
                         ${(group.files || []).map((file) => `<option value="${file.id}"${String(file.id) === String(latest.final_file_id || '') ? ' selected' : ''}>${escapeHtml(file.name)}</option>`).join('')}
                     </select>
@@ -321,7 +321,7 @@ function renderPeerReviews(snapshot, group) {
                 <form class="collaboration-review-form" data-collab-peer-review="${group.id}">
                     <label class="collaboration-form-field">
                         <span>评价对象</span>
-                        <select data-lq-component="select" class="lq-select" name="reviewee_student_id" required>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" name="reviewee_student_id" required>
                             <option value="">选择组员</option>
                             ${reviewTargets.map((member) => `<option value="${member.student_id}">${escapeHtml(member.name)}</option>`).join('')}
                         </select>
@@ -357,7 +357,7 @@ function renderCreateForm(snapshot, open) {
             </div>
             <form class="collaboration-create-form" data-collab-create-form>
                 <input data-lq-component="input" class="lq-input" name="name" type="text" placeholder="小组名称，例如：网络实验 A 组" required maxlength="60">
-                <select data-lq-component="select" class="lq-select" name="assignment_id">${assignmentOptions(snapshot)}</select>
+                <select aria-label="关联作业" data-lq-dropdown data-lq-component="select" class="lq-select" name="assignment_id">${assignmentOptions(snapshot)}</select>
                 <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="3" placeholder="小组目标、分工建议或约定"></textarea>
                 <div class="collaboration-form-row">
                     <label class="collaboration-form-field">
@@ -367,7 +367,7 @@ function renderCreateForm(snapshot, open) {
                     ${isTeacher ? `
                         <label class="collaboration-form-field">
                             <span>加入方式</span>
-                            <select data-lq-component="select" class="lq-select" name="join_policy">
+                            <select data-lq-dropdown data-lq-component="select" class="lq-select" name="join_policy">
                                 <option value="teacher_assigned">教师分配</option>
                                 <option value="open">开放加入</option>
                                 <option value="locked">锁定</option>
@@ -378,11 +378,11 @@ function renderCreateForm(snapshot, open) {
                 ${isTeacher ? `
                     <label class="collaboration-form-field">
                         <span>初始成员</span>
-                        <select data-lq-component="select" class="lq-select" name="member_student_ids" multiple size="6">${studentOptions(snapshot)}</select>
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" name="member_student_ids" multiple size="6">${studentOptions(snapshot)}</select>
                     </label>
                     <label class="collaboration-form-field">
                         <span>组长</span>
-                        <select data-lq-component="select" class="lq-select" name="leader_student_id">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" name="leader_student_id">
                             <option value="">稍后指定</option>
                             ${studentOptions(snapshot)}
                         </select>

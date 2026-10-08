@@ -89,8 +89,9 @@ export const EDITOR_CSS = `
 .cse-stage__bar strong { font-size: 1.3rem; font-weight: 850; letter-spacing: -.02em; }
 .cse-stage__bar span { font-size: .84rem; color: hsl(var(--ls-ink-2)); }
 .cse-stage__hint { margin-left: auto; font-size: .74rem; color: hsl(var(--ls-ink-2)); }
-.cse-stage__body { position: relative; min-height: 600px; padding: 16px 20px 20px; }
-.cse-stage__body > .cs-grid { inset: 16px 20px 20px; }
+.cse-stage__body { position: relative; display: grid; gap: 12px; min-height: 600px; padding: 16px 20px 20px; }
+.cse-stage__body > .cs-grid { position: relative; inset: auto; min-height: 560px; }
+.cse-request-relations .lq-btn { max-width: 100%; white-space: normal; text-align: start; }
 .cse-grid .cs-grid__cellbg { transition: background-color .12s ease, box-shadow .12s ease; }
 .cse-grid .cs-grid__cellbg--locked { background: repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--ls-ink-3) / .12) 6px 8px), color-mix(in srgb, hsl(var(--ls-warning)) 8%, var(--cse-inset)); }
 .cse-grid .cs-grid__cellbg.is-drop-ok { background: color-mix(in srgb, hsl(var(--ls-primary)) 32%, var(--cse-inset)); box-shadow: inset 0 0 0 2px hsl(var(--ls-primary) / .75); }

@@ -75,7 +75,7 @@
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-value="idle">未开课<span class="filter-chip__count">{{ course_stats.course_count - course_stats.active_course_count }}</span></button>
                     </div>
                     {% endif %}
-                    <select data-lq-component="select" id="courseFilterSelect" class="lq-select filter-proxy-select" aria-hidden="true" tabindex="-1">
+                    <select data-lq-selection-owner="filter-chips" data-lq-component="select" id="courseFilterSelect" class="lq-select filter-proxy-select" aria-hidden="true" tabindex="-1">
                         <option value="all">全部课程</option>
                         <option value="active">已开设课堂</option>
                         <option value="complete">结构完整</option>
@@ -381,7 +381,7 @@
                         <div class="course-ai-grid">
                             <div class="form-group">
                                 <label class="form-label" for="courseAiTextbookSelect">教材</label>
-                                <select data-lq-component="select" id="courseAiTextbookSelect" class="lq-select form-control">
+                                <select data-lq-dropdown data-lq-component="select" id="courseAiTextbookSelect" class="lq-select form-control">
                                     <option value="">请选择教材</option>
                                     {% for textbook in textbooks_json %}
                                     <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>

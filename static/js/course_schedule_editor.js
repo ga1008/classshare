@@ -12,7 +12,9 @@
 
 import { DECK_CSS } from './course_schedule_styles.js';
 import { EDITOR_CSS } from './course_schedule_editor_styles.js';
-import { compactClassroomName } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { compactClassroomName, scheduleChanges, scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { projectScheduleChanges } from './course_schedule_change_links.js';
+import { scheduleLessonLanes } from './course_schedule_deck.js';
 import { syncAcademicSchedule } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 import { getLQ } from './lq/index.js';
 import { bindDropdown } from './lq/dropdown.js';
@@ -114,7 +116,12 @@ function init(boot) {
 
     /* ------------------------------------------------------------------ data helpers */
     const overview = () => state.payload?.overview || {};
-    const weeks = () => overview().weeks || [];
+    const displayViews = new WeakMap();
+    const weeks = () => {
+        const canonical = overview();
+        if (!displayViews.has(canonical)) displayViews.set(canonical, projectScheduleChanges(canonical));
+        return displayViews.get(canonical).weeks || [];
+    };
     const rules = () => state.payload?.rules || { min_section: 2, max_section: 11, max_week: weeks().length };
     const drafts = () => state.payload?.drafts || [];
     const term = () => overview().selected_term || {};
@@ -185,9 +192,10 @@ function init(boot) {
             if (!(info?.kind === 'workday' && info.makeup_for_date && info.makeup_week)) continue;
             const source = weeks().find(w => Number(w.week_index) === Number(info.makeup_week));
             for (const lesson of source?.lessons || []) {
-                if (Number(lesson.weekday) !== Number(info.makeup_weekday) || lesson.edit_ghost || lesson.edit_draft) continue;
+                if (Number(lesson.weekday) !== Number(info.makeup_weekday) || lesson.edit_ghost || lesson.edit_draft || lesson.counts_towards_total === false) continue;
                 out.push({ ...lesson, weekday, edit_mirror: true, mirror_label: `调休 · 按${info.makeup_for_weekday || ''}课表`, actual_date: day.iso,
-                    event_key: `mirror:${lesson.event_key}:${day.iso}`, source_event_key: lesson.event_key, edit_ghost: false, edit_draft: null, adjustment: null, counts_towards_total: true });
+                    event_key: `mirror:${lesson.event_key}:${day.iso}`, source_event_key: lesson.event_key, edit_ghost: false, edit_draft: null,
+                    adjustment: null, schedule_changes: [], counts_towards_total: true });
             }
         }
         return out;
@@ -441,12 +449,13 @@ function init(boot) {
         scheduleSwapLines();
     }
 
-    function lessonCardHtml(lesson, { minSection, maxSection, columnBase }) {
+    function lessonCardHtml(lesson, { minSection, maxSection, columnBase, lane = { lane: 0, count: 1 } }) {
         const sections = lesson.sections || [];
         const start = Math.max(minSection, sections[0] || minSection);
         const end = Math.min(maxSection, sections[sections.length - 1] || start);
         const column = Math.min(7, Math.max(1, lesson.weekday || 1)) + columnBase - 1;
-        const gridPos = `grid-column:${column};grid-row:${start - minSection + 2} / span ${Math.max(1, end - start + 1)};`;
+        const laneStyle = lane.count > 1 ? `width:calc(100% / ${lane.count} - 2px);margin-left:calc(100% / ${lane.count} * ${lane.lane});` : '';
+        const gridPos = `grid-column:${column};grid-row:${start - minSection + 2} / span ${Math.max(1, end - start + 1)};${laneStyle}`;
         const room = String(lesson.classroom || lesson.classroom_short || '教室待定');
         const ghost = Boolean(lesson.edit_ghost);
         const moved = Boolean(lesson.edit_draft);
@@ -457,14 +466,15 @@ function init(boot) {
         const key = lesson.event_key || '';
         const selected = state.selectedKey && (state.selectedKey === key || (ghost && state.selectedKey === lesson.source_event_key) || (moved && state.selectedKey === `draft:${lesson.edit_draft.id}`));
         const dragging = state.drag && (state.drag.sourceKey === key || state.drag.ghostKey === key);
-        const pendingChange = lesson.adjustment && lesson.counts_towards_total === false;
+        const changes = scheduleChanges(lesson);
+        const pendingChange = changes.length && lesson.counts_towards_total === false;
         const classes = ['lq-domain-region', 'cs-lesson', 'cs-lesson--cell', 'cse-lesson', ghost ? 'cse-lesson--ghost' : '', moved ? 'cse-lesson--moved' : '', mirror ? 'cse-lesson--mirror' : '', past ? 'cse-lesson--past' : '',
             selected ? 'is-selected' : '', dragging ? 'is-drag-source' : '', pendingChange ? 'cs-lesson--proposed' : ''].filter(Boolean).join(' ');
         const roomBusy = ghost ? lesson.edit_room_status === 'busy' : (moved && lesson.edit_draft.room_status === 'busy');
         const tag = mirror ? `<span class="cse-tag cse-tag--workday">${escapeHtml(lesson.mirror_label || '调休上课')}</span>`
             : ghost ? `<span class="cse-tag cse-tag--${escapeHtml(status)}">${escapeHtml(statusLabel)}</span>${roomBusy ? '<span class="cse-tag cse-tag--room">需换教室</span>' : ''}`
                 : moved ? `<span class="cse-tag cse-tag--muted">已计划调至 ${escapeHtml(lesson.edit_draft.proposed_label)}</span>`
-                    : pendingChange ? '<span class="cse-tag cse-tag--muted">待审拟安排（不可编辑）</span>'
+                    : changes.length ? `<span class="cse-tag cse-tag--muted">${escapeHtml(changes.map(change => scheduleChangeLabel(lesson, change)).join('；'))}${pendingChange ? '（仅对照，不可编辑）' : ''}</span>`
                         : past ? '<span class="cse-tag cse-tag--muted">已上过 · 不可调整</span>' : '';
         const time = [lesson.actual_date, lesson.section_label].filter(Boolean).join(' · ');
         return `<div class="cs-lesson-slot" style="${gridPos}">
@@ -485,6 +495,22 @@ function init(boot) {
                 </div>
             </div>
         </div>`;
+    }
+
+    function requestRelationsHtml(week) {
+        const seen = new Set(), entries = [];
+        for (const lesson of week.lessons || []) for (const change of scheduleChanges(lesson)) {
+            const id = JSON.stringify([change.phase, change.request_id, change.detail_id || lesson.session_id]);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const isOriginal = change.endpoint === 'original';
+            const originalKey = isOriginal ? lesson.event_key : change.counterpart_event_key;
+            const targetKey = isOriginal ? change.counterpart_event_key : lesson.event_key;
+            const position = slot => slot ? `${slot.date} ${sectionText(slot.sections)} ${slot.room || ''}`.trim() : '无目标课次';
+            const jump = (key, label) => key ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--ghost lq-btn--sm" data-cse-request-jump="${escapeHtml(key)}">${escapeHtml(label)}</button>` : escapeHtml(label);
+            entries.push(`<p><strong>${escapeHtml(lesson.course_name)} · ${escapeHtml(scheduleChangeLabel(lesson, change))}</strong><br>${jump(originalKey, `原安排：${position(change.original)}`)} → ${jump(targetKey, `${change.phase === 'approved' ? '现安排' : '计划安排'}：${position(change.proposed)}`)}</p>`);
+        }
+        return entries.length ? `<section data-lq-component="surface" class="lq-surface cse-request-relations" data-lq-padding="sm" aria-label="调课申请关系"><strong>调课申请 · 原安排与计划位置</strong><p>以下来自调课申请，与节假日调休分开；计划位置仅供对照，不计入正式课时。</p>${entries.join('')}</section>` : '';
     }
 
     function renderStage() {
@@ -546,9 +572,11 @@ function init(boot) {
                 blockStart = offset;
             }
         }
-        const lessons = [...(week.lessons || []), ...mirrorLessons(week)].map(lesson => lessonCardHtml(lesson, { minSection: 1, maxSection, columnBase })).join('');
+        const visibleLessons = [...(week.lessons || []), ...mirrorLessons(week)];
+        const lanes = scheduleLessonLanes(visibleLessons);
+        const lessons = visibleLessons.map((lesson, index) => lessonCardHtml(lesson, { minSection: 1, maxSection, columnBase, lane: lanes.get(index) })).join('');
         const rows = Array.from({ length: sectionCount }, (_, offset) => (1 + offset < minSection ? 'minmax(22px, .5fr)' : 'minmax(40px, 1fr)')).join(' ');
-        refs.stageBody.innerHTML = `<div class="cs-grid cs-grid--expanded cse-grid" style="grid-template-columns:30px 54px repeat(7, minmax(0, 1fr));grid-template-rows:44px ${rows};">
+        refs.stageBody.innerHTML = `${requestRelationsHtml(week)}<div class="cs-grid cs-grid--expanded cse-grid" style="grid-template-columns:30px 54px repeat(7, minmax(0, 1fr));grid-template-rows:44px ${rows};">
             <div class="cs-grid__corner" style="grid-column:1 / span 2;grid-row:1;">节</div>${dayHeads}${bands.join('')}${sectionLabels}${cells}${lessons}
         </div>`;
         renderCalendarNote();
@@ -1445,6 +1473,10 @@ function init(boot) {
 
     function selectLesson(key) {
         const selection = resolveSelection(key);
+        if (selection?.lesson.counts_towards_total === false && !selection.lesson.edit_ghost) {
+            toast(`${scheduleChangeLabel(selection.lesson) || '计划位置'}仅供对照，请在原正式课次上编辑。`, 'info');
+            return;
+        }
         state.selectedKey = selection ? selection.lesson.event_key : '';
         state.form = null;
         renderStage(); renderDrawer(); renderLegend(); renderWeekRail();
@@ -1641,6 +1673,17 @@ function init(boot) {
         if (next) { state.activeWeek = Number(next.week_index); renderWeekRail(); renderStage(); refs.weeks.querySelector('.cse-week.is-active')?.focus(); }
     });
     refs.stageBody?.addEventListener('pointerdown', onStagePointerDown);
+    refs.stageBody?.addEventListener('click', event => {
+        const jump = event.target.closest('[data-cse-request-jump]');
+        if (!jump) return;
+        const target = findLesson(jump.dataset.cseRequestJump);
+        if (!target) return;
+        state.activeWeek = Number(target.week.week_index);
+        state.selectedKey = ''; state.form = null;
+        renderWeekRail(); renderStage(); renderDrawer(); renderLegend();
+        const card = [...refs.stageBody.querySelectorAll('[data-cse-lesson]')].find(node => node.dataset.cseLesson === target.lesson.event_key);
+        card?.focus({ preventScroll: true }); card?.scrollIntoView({ block: 'nearest' });
+    });
     refs.stageBody?.addEventListener('keydown', event => {
         const card = event.target.closest('[data-cse-lesson]');
         if (card && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectLesson(card.dataset.cseLesson); }

@@ -6,7 +6,7 @@ const normalizedText = value => text(value).normalize('NFKC').replace(/[–—]/
 export function scheduleChanges(lesson) {
     const changes = Array.isArray(lesson?.schedule_changes) ? lesson.schedule_changes : [lesson?.adjustment];
     return changes.filter(change => change && (
-        change.phase === 'pending' && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
+        ['pending', 'planned'].includes(change.phase) && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
         || change.phase === 'approved' && change.kind === 'move' && ['original', 'effective'].includes(change.endpoint)
     ));
 }
@@ -83,6 +83,7 @@ export function adjustmentActionText(lesson, suppliedChange = null) {
     const change = suppliedChange || scheduleChanges(lesson)[0];
     if (!change) return '';
     if (change.phase === 'approved') return change.endpoint === 'original' ? '已调至新位' : '查看原安排';
+    if (change.phase === 'planned') return change.kind === 'cancel' ? '已批准待停课' : change.endpoint === 'original' ? '已批准待落实' : '计划新位置';
     if (change.kind === 'cancel') return '停课';
     const fromTime = normalizedTime(change.original), toTime = normalizedTime(change.proposed);
     const roomChanged = classroomChangeState(change.original?.room, change.proposed?.room);
@@ -94,4 +95,15 @@ export function adjustmentActionText(lesson, suppliedChange = null) {
     if (timeChanged) return '改时间';
     if (roomChanged) return '改教室';
     return '待审变更';
+}
+
+
+export function scheduleChangeLabel(lesson, suppliedChange = null) {
+    const change = suppliedChange || scheduleChanges(lesson)[0];
+    if (!change) return '';
+    if (change.phase === 'approved') return change.endpoint === 'original' ? '原安排（已调课）' : '调课已生效';
+    if (change.phase === 'planned') return change.kind === 'cancel' ? '停课已批准·待落实'
+        : change.endpoint === 'original' ? '原安排 · 已批准·待落实' : '计划安排 · 已批准·待落实';
+    if (change.endpoint === 'proposed') return '正在申请变更';
+    return ({ move: '调课待审', cancel: '停课待审', room: '更换教室待审' })[change.kind];
 }

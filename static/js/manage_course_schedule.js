@@ -9,6 +9,7 @@
 
 import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260925-editor';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
+import { bindDropdown } from './lq/dropdown.js';
 import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
 
 const bootElement = document.getElementById('course-schedule-boot');
@@ -34,6 +35,11 @@ const refs = {
     deckMount: document.querySelector('[data-cs-deck]'),
     toast: document.querySelector('[data-cs-toast]'),
 };
+
+const filterDropdowns = [
+    [refs.termSelect, '学年学期'], [refs.courseSelect, '课程'], [refs.classSelect, '班级'],
+].filter(([select]) => select).map(([select, label]) => bindDropdown(select, { label, searchable: select !== refs.termSelect }));
+window.addEventListener('pagehide', event => { if (!event.persisted) filterDropdowns.forEach(binding => binding.destroy()); });
 
 const deck = createScheduleDeck(refs.deckMount, {
     title: '周课程时间轴',

@@ -118,7 +118,7 @@
                         <form id="gw-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="gw-system-code">系统</label>
-                                <select data-lq-component="select" class="lq-select form-control" id="gw-system-code" name="system_code" required>
+                                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="gw-system-code" name="system_code" required>
                                     {% for profile in gongwen_profiles %}
                                     <option value="{{ profile.system_code }}">{{ profile.system_name }}</option>
                                     {% endfor %}

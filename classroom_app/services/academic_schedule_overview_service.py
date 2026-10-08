@@ -114,6 +114,9 @@ def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='
     warning_texts = list(dict.fromkeys(
         text for text in (str(w.get('message', '')) if isinstance(w, dict) else str(w) for w in warnings) if text
     ))
+    planned = [change for change in snapshot.get('planned_changes', [])
+               if any(item.get('event_key') == change['source_event_key'] for item in items)]
+    planned_sections = [section for change in planned for section in (change.get('proposed') or {}).get('sections', [])]
     return {
         'status': 'success', 'has_data': bool(all_items), 'schedule_source': 'academic',
         'message': '；'.join(warning_texts[:3]), 'warnings': warnings,
@@ -128,5 +131,6 @@ def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='
         'courses': stats, 'weeks': weeks,
         'approved_changes': [change for change in snapshot.get('approved_changes', [])
                              if any(item.get('event_key') == change['target_event_key'] for item in items)],
-        'section_range': {'min': 1, 'max': max(11, max((max(i['sections']) for i in items), default=11))},
+        'planned_changes': planned,
+        'section_range': {'min': 1, 'max': max(11, max((max(i['sections']) for i in items), default=11), max(planned_sections, default=11))},
     }

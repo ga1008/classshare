@@ -1,8 +1,9 @@
 import { getLayerSystem } from './layer.js';
+import { enhanceDropdowns } from './dropdown.js';
 
 /** Explicit adapter for an existing domain root; LQ alone owns its lifecycle. */
 export function createDomainModal(root, options = {}) {
-    let current = null;
+    let current = null, dropdowns = [];
     const parent = root?.parentNode;
     const next = root?.nextSibling;
     const restore = () => {
@@ -26,7 +27,11 @@ export function createDomainModal(root, options = {}) {
                 const handle = args[args.length - 1];
                 if (current === handle) current = null;
                 root.setAttribute('aria-hidden', 'true');
-                if (destroyed) restore();
+                if (destroyed) {
+                    dropdowns.forEach(binding => binding.destroy());
+                    dropdowns = [];
+                    restore();
+                }
                 (destroyed ? settings.onDestroy || settings.onClose : settings.onClose)?.(...args);
             };
             current = layers.open(root, {
@@ -34,12 +39,15 @@ export function createDomainModal(root, options = {}) {
                 onClose: (...args) => finish(false, ...args),
                 onDestroy: (...args) => finish(true, ...args),
             });
+            dropdowns = enhanceDropdowns(root);
             return current;
         },
         close(reason = 'programmatic') {
             return current ? getLayerSystem(root.ownerDocument).close(current, reason) : Promise.resolve(false);
         },
         destroy() {
+            dropdowns.forEach(binding => binding.destroy());
+            dropdowns = [];
             current?.destroy();
             current = null;
             restore();

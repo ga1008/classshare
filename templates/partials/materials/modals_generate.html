@@ -15,7 +15,7 @@
                     <div data-lq-component="toolbar" class="lq-domain-toolbar materials-classroom-picker-toolbar" id="materials-classroom-picker-toolbar">
                         <label class="materials-classroom-picker-field">
                             <span>学期</span>
-                            <select data-lq-component="select" class="lq-select" id="materials-classroom-semester-filter" aria-label="按学期筛选课堂">
+                            <select data-lq-dropdown data-lq-component="select" class="lq-select" id="materials-classroom-semester-filter" aria-label="按学期筛选课堂">
                                 <option value="">全部学期</option>
                             </select>
                         </label>
@@ -231,14 +231,14 @@
                 <div class="materials-ai-import-grid">
                     <label class="materials-form-field">
                         <span>生成模板</span>
-                        <select data-lq-component="select" id="materials-ai-generate-group" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="materials-ai-generate-group" class="lq-select form-control">
                             <option value="teaching_material">普通课程材料</option>
                             <option value="final_material">期末归档材料</option>
                         </select>
                     </label>
                     <label class="materials-form-field">
                         <span>材料类型</span>
-                        <select data-lq-component="select" id="materials-ai-generate-type" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="materials-ai-generate-type" class="lq-select form-control">
                             <option value="teaching_document" data-group="teaching_material">教学文档</option>
                             <option value="assessment_plan" data-group="final_material">课程考核计划表</option>
                             <option value="exam_paper" data-group="final_material">课程考核试卷</option>
@@ -313,7 +313,7 @@
             <div class="modal-body">
                 <label class="materials-form-field" id="materials-ai-rewrite-strictness-field" hidden>
                     <span>改动限制</span>
-                    <select data-lq-component="select" id="materials-ai-rewrite-strictness" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="materials-ai-rewrite-strictness" class="lq-select form-control">
                         <option value="strict">严格 · 一字不改，只调整排版</option>
                         <option value="balanced" selected>一般 · 均衡排版和原文</option>
                         <option value="loose">宽松 · 排版优先，可改写表达</option>
@@ -321,7 +321,7 @@
                 </label>
                 <label class="materials-form-field" id="materials-ai-rewrite-offering-field" hidden>
                     <span>润色目标课堂（可选）</span>
-                    <select data-lq-component="select" id="materials-ai-rewrite-offering" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="materials-ai-rewrite-offering" class="lq-select form-control">
                         <option value="">不关联课堂，按通用教学标准润色</option>
                     </select>
                 </label>
@@ -353,11 +353,11 @@
                 <div class="materials-ai-import-grid">
                     <label class="materials-form-field">
                         <span>材料大类</span>
-                        <select data-lq-component="select" id="materials-ai-import-group" class="lq-select form-control"></select>
+                        <select data-lq-dropdown data-lq-component="select" id="materials-ai-import-group" class="lq-select form-control"></select>
                     </label>
                     <label class="materials-form-field">
                         <span>材料类型</span>
-                        <select data-lq-component="select" id="materials-ai-import-type" class="lq-select form-control"></select>
+                        <select data-lq-dropdown data-lq-component="select" id="materials-ai-import-type" class="lq-select form-control"></select>
                     </label>
                 </div>
                 <section class="final-grade-import-context" id="materials-final-grade-import-context" hidden>
@@ -370,7 +370,7 @@
                     </div>
                     <label class="materials-form-field final-grade-import-context__wide">
                         <span>关联课堂</span>
-                        <select data-lq-component="select" id="materials-final-grade-import-offering" class="lq-select form-control" required aria-required="true">
+                        <select data-lq-dropdown data-lq-component="select" id="materials-final-grade-import-offering" class="lq-select form-control" required aria-required="true">
                             <option value="">请选择课堂</option>
                             {% for offering in offerings %}
                             <option value="{{ offering.id }}">{{ offering.course_name }} · {{ offering.class_name }} · {{ offering.semester }}</option>
@@ -384,7 +384,7 @@
                         </label>
                         <label class="materials-form-field">
                             <span>学期</span>
-                            <select data-lq-component="select" id="materials-final-grade-import-semester" class="lq-select form-control" required aria-required="true">
+                            <select data-lq-dropdown data-lq-component="select" id="materials-final-grade-import-semester" class="lq-select form-control" required aria-required="true">
                                 <option value="">请选择</option>
                                 <option value="第一学期">第一学期</option>
                                 <option value="第二学期">第二学期</option>

@@ -87,7 +87,7 @@ function renderFields() {
         let control;
         if (def.type === 'select') {
             const opts = def.options.map((o) => `<option value="${escapeHtml(o)}"${o === value ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('');
-            control = `<select data-lq-component="select" class="lq-select" data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
+            control = `<select aria-label="${escapeHtml(def.label)}" data-lq-dropdown data-lq-component="select" class="lq-select" data-field="${def.key}"><option value="">未填写</option>${opts}</select>`;
         } else {
             control = `<input data-lq-component="input" class="lq-input" data-field="${def.key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.placeholder || '')}">`;
         }

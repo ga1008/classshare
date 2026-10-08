@@ -1422,7 +1422,7 @@ export function initSemesterCalendar(root, config = {}, options = {}) {
                 <form class="semester-todo-modal-form">
                     <label class="form-group">
                         <span>所属课堂</span>
-                        <select data-lq-component="select" name="class_offering_id" class="lq-select form-control" required></select>
+                        <select data-lq-dropdown data-lq-component="select" name="class_offering_id" class="lq-select form-control" required></select>
                     </label>
                     <label class="form-group">
                         <span>待办名称</span>

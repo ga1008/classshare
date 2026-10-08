@@ -56,7 +56,7 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringSemesterSelect">学期</label>
                         <div class="academic-split-field">
-                            <select data-lq-component="select" id="offeringSemesterSelect" class="lq-select form-control" required>
+                            <select data-lq-dropdown data-lq-component="select" id="offeringSemesterSelect" class="lq-select form-control" required>
                                 <option value="">请选择学期</option>
                                 {% for semester in my_semesters %}
                                 <option value="{{ semester.id }}" {% if default_semester_id and semester.id == default_semester_id %}selected{% endif %}>{{ semester.name }} · {{ semester.start_date }} 至 {{ semester.end_date }}{% if semester.is_shared_semester %} · 同校共享{% endif %}</option>
@@ -69,7 +69,7 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringClassSelect">班级</label>
                         <div class="academic-split-field">
-                            <select data-lq-component="select" id="offeringClassSelect" class="lq-select form-control" required>
+                            <select data-lq-dropdown data-lq-component="select" id="offeringClassSelect" class="lq-select form-control" required>
                                 <option value="">请选择班级</option>
                                 {% for class_item in my_classes %}
                                 <option value="{{ class_item.id }}">{{ class_item.name }}{% if class_item.department %} · {{ class_item.department }}{% endif %}</option>
@@ -102,7 +102,7 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringCourseSelect">课程</label>
                         <div class="academic-split-field">
-                            <select data-lq-component="select" id="offeringCourseSelect" class="lq-select form-control" required>
+                            <select data-lq-dropdown data-lq-component="select" id="offeringCourseSelect" class="lq-select form-control" required>
                                 <option value="">请选择课程</option>
                                 {% for course in my_courses %}
                                 <option value="{{ course.id }}">{{ course.name }}{% if course.department %} · {{ course.department }}{% endif %}{% if course.is_shared_course %} · 系内共享{% endif %}</option>
@@ -115,7 +115,7 @@
                     <div class="form-group">
                         <label class="form-label required" for="offeringTextbookSelect">教材</label>
                         <div class="academic-split-field">
-                            <select data-lq-component="select" id="offeringTextbookSelect" class="lq-select form-control" required>
+                            <select data-lq-dropdown data-lq-component="select" id="offeringTextbookSelect" class="lq-select form-control" required>
                                 <option value="">请选择教材</option>
                                 {% for textbook in my_textbooks %}
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>
@@ -127,7 +127,7 @@
 
                     <div class="form-group">
                         <label class="form-label required" for="offeringScheduleSourceSelect">排课来源</label>
-                        <select data-lq-component="select" id="offeringScheduleSourceSelect" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="offeringScheduleSourceSelect" class="lq-select form-control">
                             <option value="academic_sync">优先使用教务实际排课</option>
                             <option value="fixed_cycle">手动固定周循环</option>
                         </select>
@@ -149,7 +149,7 @@
                         <div class="offering-academic-class-grid">
                             <div class="form-group">
                                 <label class="form-label" for="offeringAcademicClassSelect">教务教学班</label>
-                                <select data-lq-component="select" id="offeringAcademicClassSelect" class="lq-select form-control">
+                                <select data-lq-dropdown data-lq-component="select" id="offeringAcademicClassSelect" class="lq-select form-control">
                                     <option value="">自动匹配或请选择教学班</option>
                                 </select>
                             </div>
@@ -257,7 +257,7 @@
         </div>
         <div class="form-group">
             <label class="form-label">周几上课</label>
-            <select data-lq-component="select" class="lq-select form-control" data-field="weekday">
+            <select aria-label="周几上课" data-lq-dropdown data-lq-component="select" class="lq-select form-control" data-field="weekday">
                 <option value="0">周一</option>
                 <option value="1">周二</option>
                 <option value="2">周三</option>

@@ -1002,7 +1002,7 @@ function initIdentityEditor() {
             .join('');
         const rows = state.items.map((item, index) => `
             <div class="profile-identity-row${profileLq ? ' lq-profile-identity-row' : ''}" data-identity-row="${index}" ${profileLq ? '' : 'style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;"'}>
-                <select class="form-control${profileLq ? ' lq-select' : ''}" data-identity-field="identity_category" ${profileLq ? 'aria-label="任职身份"' : 'style="flex:1;min-width:120px;"'}>${optionHtml(item.identity_category)}</select>
+                <select data-lq-component="select" data-lq-dropdown class="form-control lq-select" data-identity-field="identity_category" aria-label="任职身份" ${profileLq ? '' : 'style="flex:1;min-width:120px;"'}>${optionHtml(item.identity_category)}</select>
                 <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_start" value="${escapeHtml(item.term_start || '')}" title="任期开始（可空）" ${profileLq ? 'aria-label="任期开始（可空）"' : 'style="flex:1;min-width:130px;"'}>
                 <input type="date" class="form-control${profileLq ? ' lq-input' : ''}" data-identity-field="term_end" value="${escapeHtml(item.term_end || '')}" title="任期结束（可空，到期自动降级）" ${profileLq ? 'aria-label="任期结束（可空，到期自动降级）"' : 'style="flex:1;min-width:130px;"'}>
                 ${item.status === 'expired' ? (profileLq ? '<span class="lq-profile-identity-expired">已到期</span>' : '<span style="color:#92400e;font-size:0.78rem;font-weight:700;">已到期</span>') : ''}

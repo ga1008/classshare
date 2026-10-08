@@ -123,6 +123,7 @@ def _control(kind, p):
             attrs["data-lq-count"] = identity + "--lq-count"
         children = [value]
     elif kind == "select":
+        attrs["data-lq-dropdown"] = ""
         options = p.get("options", [])
         if not isinstance(options, (list, tuple)):
             raise ValueError("LQ select options must be a list")

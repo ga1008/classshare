@@ -30,14 +30,14 @@ const changesFor = lesson => scheduleChanges(lesson).filter(change => text(chang
 /** Build only a deck view. Canonical lessons, summaries and backend identities
  * remain untouched; old approved positions never become business sessions. */
 export function projectScheduleChanges(overview) {
-    if (!Array.isArray(overview?.approved_changes) || !overview.approved_changes.length) return overview;
+    if (!overview?.approved_changes?.length && !overview?.planned_changes?.length) return overview;
     const weeks = (overview.weeks || []).map(week => ({ ...week, lessons: (week.lessons || []).map(lesson => ({ ...lesson })) }));
     const byKey = new Map();
     for (const week of weeks) for (const lesson of week.lessons) {
         const key = text(lesson.event_key);
         if (key) byKey.set(key, byKey.has(key) ? null : { lesson, week });
     }
-    for (const relation of overview.approved_changes) {
+    for (const relation of overview.approved_changes || []) {
         const target = byKey.get(text(relation.target_event_key));
         const original = slot(relation.original), proposed = slot(relation.proposed);
         const sourceWeek = weeks.find(week => Number(week.week_index) === Number(relation.original_week_index));
@@ -61,6 +61,44 @@ export function projectScheduleChanges(overview) {
             counts_towards_total: false, is_change_history: true, adjustment: null, schedule_changes: [sourceChange] };
         sourceWeek.lessons.push(source);
         byKey.set(originalKey, { lesson: source, week: sourceWeek });
+    }
+    for (const relation of overview.planned_changes || []) {
+        const source = byKey.get(text(relation.source_event_key));
+        const original = slot(relation.original), proposed = slot(relation.proposed);
+        const destination = weeks.find(week => Number(week.week_index) === Number(relation.proposed_week_index));
+        if (relation.phase !== 'planned' || relation.approval_status !== 'approved' || !['move', 'room', 'cancel'].includes(relation.kind)
+            || !text(relation.request_id) || !text(relation.detail_id) || !source || !original
+            || source.lesson.counts_towards_total === false
+            || Number(source.week.week_index) !== Number(relation.original_week_index)
+            || !sameKnownIdentity(source.lesson, relation, 'session_id') || !sameKnownIdentity(source.lesson, relation, 'class_offering_id')
+            || (source.lesson.actual_date || source.lesson.date) !== original.date
+            || sections(source.lesson.sections)?.join(',') !== original.sections.join(',')
+            || relation.kind !== 'cancel' && (!proposed || !destination)
+            || relation.kind === 'move' && sameTime(original, proposed)
+            || relation.kind === 'room' && !sameTime(original, proposed)) continue;
+        // This adapter is repeatable; never duplicate an already projected plan.
+        if (scheduleChanges(source.lesson).some(change => change.phase === 'planned'
+            && change.request_id === relation.request_id && change.detail_id === relation.detail_id)) continue;
+        const proposedKey = relation.kind === 'move'
+            ? `${source.lesson.event_key}:planned:${relation.request_id}:${relation.detail_id}` : null;
+        if (proposedKey && byKey.has(proposedKey)) continue;
+        const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: 'planned',
+            approval_status: 'approved', kind: relation.kind, original, proposed };
+        const sourceChange = { ...shared, endpoint: 'original', counterpart_event_key: proposedKey,
+            counterpart_week_index: proposedKey ? destination.week_index : null };
+        source.lesson.schedule_changes = [...scheduleChanges(source.lesson), sourceChange];
+        if (!proposedKey) continue;
+        const weekday = new Date(`${proposed.date}T00:00:00Z`).getUTCDay() || 7;
+        const planned = { ...source.lesson, event_key: proposedKey, actual_date: proposed.date, date: proposed.date,
+            weekday, weekday_label: `星期${['一', '二', '三', '四', '五', '六', '日'][weekday - 1]}`, week_index: destination.week_index,
+            sections: proposed.sections, classroom: proposed.room, classroom_short: proposed.room,
+            section_label: `第${proposed.sections.join('、')}节`, time_label: '', start_time: '', end_time: '',
+            counts_towards_total: false, is_change_plan: true, is_change_history: false,
+            edit_ghost: false, edit_draft: null, adjustment: null,
+            schedule_changes: [{ ...shared, endpoint: 'proposed', counterpart_event_key: source.lesson.event_key,
+                counterpart_week_index: source.week.week_index }] };
+        destination.lessons.push(planned);
+        byKey.set(proposedKey, { lesson: planned, week: destination });
     }
     return { ...overview, weeks };
 }
@@ -142,7 +180,7 @@ export function scheduleChangeConnections(overview, week) {
                 targetKey: sameWeek || !outgoing ? proposedKey : null,
                 direction: sameWeek ? 'local' : outgoing ? 'outgoing' : 'incoming',
                 edge: sameWeek ? null : remoteWeek < currentWeek ? 'left' : 'right',
-                label: `${change.phase === 'approved' ? '已调课 · ' : ''}${roomChanged ? '时间更改 · 教室更改' : '时间更改'}`,
+                label: `${change.phase === 'approved' ? '已调课 · ' : change.phase === 'planned' ? '已批准·待落实 · ' : ''}${roomChanged ? '时间更改 · 教室更改' : '时间更改'}`,
                 boundaryLabel: sameWeek ? '' : `${outgoing ? '至' : '来自'}第${remoteWeek}周`,
                 title: `${slotText(original)} → ${slotText(proposed)}`,
                 jumpKey: sameWeek || outgoing ? proposedKey : originalKey,

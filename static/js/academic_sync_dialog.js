@@ -251,7 +251,7 @@ function renderDiffItem(item, states) {
                 </div>
             </header>
             <div data-lq-component="toolbar" class="lq-domain-toolbar academic-sync-diff-item__toolbar">
-                <label><span>本次处理</span><select data-lq-component="select" class="lq-select" data-academic-sync-action>${actionOptions(item, state)}</select></label>
+                <label><span>本次处理</span><select data-lq-dropdown data-lq-component="select" class="lq-select" data-academic-sync-action>${actionOptions(item, state)}</select></label>
                 ${item.local_id ? `<span>保留本地 ID ${escapeHtml(item.local_id)}</span>` : '<span>尚无本地对象</span>'}
             </div>
             <div class="academic-sync-diff-item__fields">

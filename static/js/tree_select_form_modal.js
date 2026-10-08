@@ -226,7 +226,7 @@ export function openTreeSelectFormModal(config) {
                     return `<option value="${htmlAttr(optionValue)}"${selected}>${escapeHtml(optionLabel ?? '')}</option>`;
                 })
                 .join('');
-            return `<select data-lq-component="select" class="lq-select" data-tsf-field="${htmlAttr(key)}"><option value="">未填写</option>${opts}</select>`;
+            return `<select aria-label="${htmlAttr(field.label || key)}" data-lq-dropdown data-lq-component="select" class="lq-select" data-tsf-field="${htmlAttr(key)}"><option value="">未填写</option>${opts}</select>`;
         }
         return `<input data-lq-component="input" class="lq-input" data-tsf-field="${htmlAttr(key)}" value="${htmlAttr(value)}" placeholder="${htmlAttr(field.placeholder || '')}">`;
     }

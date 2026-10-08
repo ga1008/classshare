@@ -58,7 +58,7 @@
             <div class="class-filter-fields">
                 <label class="academic-filter-field" for="offeringHubSemesterFilter">
                     <span>学期</span>
-                    <select data-lq-component="select" id="offeringHubSemesterFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="offeringHubSemesterFilter" class="lq-select form-control">
                         <option value="all">全部学期</option>
                         {% for option in hub_semester_options %}
                         <option value="{{ option.value }}"{% if option.is_default %} selected{% endif %}>{{ option.label }}</option>
@@ -67,7 +67,7 @@
                 </label>
                 <label class="academic-filter-field" for="offeringHubStatusFilter">
                     <span>状态</span>
-                    <select data-lq-component="select" id="offeringHubStatusFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="offeringHubStatusFilter" class="lq-select form-control">
                         <option value="all">全部状态</option>
                         <option value="active">进行中</option>
                         <option value="upcoming">未开始</option>
@@ -80,7 +80,7 @@
                 </label>
                 <label class="academic-filter-field" for="offeringHubSortSelect">
                     <span>排序</span>
-                    <select data-lq-component="select" id="offeringHubSortSelect" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="offeringHubSortSelect" class="lq-select form-control">
                         <option value="next-session">按下次上课时间</option>
                         <option value="course">按课程与班级</option>
                         <option value="progress-desc">进度从高到低</option>

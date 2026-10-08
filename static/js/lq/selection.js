@@ -56,6 +56,9 @@ export function bindSelection(select, options = {}) {
     if (!selectionKinds.includes(mode) || (mode === 'combobox' && select.multiple)) throw new TypeError('Invalid selection mode');
     for (const key of ['onQuery', 'onError']) if (options[key] !== undefined && typeof options[key] !== 'function') throw new TypeError(`Invalid selection ${key}`);
     const bindings = doc[BINDINGS] ||= new WeakMap(); if (bindings.has(select)) return bindings.get(select);
+    // An explicit domain Selection owner takes precedence over an earlier
+    // declarative dropdown bootstrap; never return the wrong controller API.
+    doc[Symbol.for('lanshare.lq.dropdown-bindings.v1')]?.get(select)?.destroy();
     const system = getLayerSystem(doc), listeners = [], ownedOptions = new Set(), optionIds = new WeakMap();
     let id; do { id = `lq-selection-${doc[IDS] = (doc[IDS] || 0) + 1}`; } while (doc.getElementById(id));
     const original = new Map(['hidden', 'tabindex', 'aria-hidden'].map(name => [name, select.getAttribute(name)]));

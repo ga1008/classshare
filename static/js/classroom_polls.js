@@ -359,14 +359,14 @@ function renderForm(state, poll) {
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">投票形式</span>
-                    <select data-lq-component="select" class="lq-select" name="vote_type">
+                    <select aria-label="投票形式" data-lq-dropdown data-lq-component="select" class="lq-select" name="vote_type">
                         <option value="single"${voteType === 'single' ? ' selected' : ''}>单选</option>
                         <option value="multiple"${voteType === 'multiple' ? ' selected' : ''}>多选</option>
                     </select>
                 </div>
                 <div class="poll-form-field">
                     <span class="poll-form-label">统计可见时机</span>
-                    <select data-lq-component="select" class="lq-select" name="result_visibility">
+                    <select aria-label="统计可见时机" data-lq-dropdown data-lq-component="select" class="lq-select" name="result_visibility">
                         ${VISIBILITY_OPTIONS.map((opt) => `<option value="${opt.value}"${visibility === opt.value ? ' selected' : ''}>${opt.label}</option>`).join('')}
                     </select>
                 </div>

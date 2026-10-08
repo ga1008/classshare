@@ -3,6 +3,8 @@ import { componentTree, type PresentationTree } from '../../../static/js/lq/comp
 // These pure native descriptors own the DOM and accessibility contract.
 // @ts-expect-error The shared native form module is intentionally plain JavaScript.
 import { formProps } from '../../../static/js/lq/forms.js';
+// @ts-expect-error The shared native dropdown retains the original select/form owner.
+import { bindDropdown } from '../../../static/js/lq/dropdown.js';
 // @ts-expect-error The shared native content module is intentionally plain JavaScript.
 import { contentProps } from '../../../static/js/lq/content.js';
 // @ts-expect-error The shared native status module is intentionally plain JavaScript.
@@ -111,6 +113,22 @@ export function LqField({ kind, label, fieldClassName, help, error, controlSize 
   NativeFieldOptions & { kind: 'input' | 'textarea' | 'select'; nativeProps: NativeControlProps; controlRef?: React.Ref<NativeControl> }) {
   const generatedId = React.useId();
   const identity = nativeProps.id || `lq-react-${generatedId.replace(/[^A-Za-z0-9_-]/g, '')}`;
+  const nativeControl = React.useRef<NativeControl | null>(null);
+  const dropdown = React.useRef<ReturnType<typeof bindDropdown> | null>(null);
+  const setControlRef = React.useCallback((node: NativeControl | null) => {
+    nativeControl.current = node;
+    if (typeof controlRef === 'function') controlRef(node);
+    else if (controlRef) controlRef.current = node;
+  }, [controlRef]);
+  React.useLayoutEffect(() => {
+    if (kind !== 'select' || !nativeControl.current) return;
+    const binding = bindDropdown(nativeControl.current, { label });
+    dropdown.current = binding;
+    return () => { binding.destroy(); if (dropdown.current === binding) dropdown.current = null; };
+  }, [kind, identity, label]);
+  // React commits its controlled value/options before presentation refresh;
+  // refreshing must never dispatch another input/change or own React state.
+  React.useLayoutEffect(() => { dropdown.current?.refresh(); });
   const { children, className, ...controlProps } = nativeProps;
   const tree = formProps(kind, { id: identity, label, help, error, size: controlSize,
     type: kind === 'input' ? (nativeProps as React.InputHTMLAttributes<HTMLInputElement>).type : undefined,
@@ -124,10 +142,11 @@ export function LqField({ kind, label, fieldClassName, help, error, controlSize 
     if (node.attrs.id === identity) {
       // Never introduce a value/defaultValue on an uncontrolled native field.
       delete props.value;
-      return React.createElement(node.tag, { ...props, ...controlProps, id: identity, ref: controlRef,
+      return React.createElement(node.tag, { ...props, ...controlProps, id: identity, ref: setControlRef,
         'aria-describedby': node.attrs['aria-describedby'] || controlProps['aria-describedby'],
         'aria-invalid': error ? true : controlProps['aria-invalid'],
         'data-lq-component': kind === 'select' ? 'native-select' : kind,
+        ...(kind === 'select' ? { 'data-lq-dropdown': '', 'data-lq-dropdown-manual': 'react' } : {}),
         className: [node.attrs.class, className].filter(Boolean).join(' '),
       }, kind === 'select' ? children : undefined);
     }

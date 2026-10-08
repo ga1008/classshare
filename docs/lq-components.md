@@ -430,6 +430,14 @@ labels.destroy(); // 卸载 owner；幂等，不销毁按钮、不替换内容�
 
 时长复用 `--lq-motion-control-duration`，标准速度约 50px/s、最短 900ms；开始延迟为两倍 `--lq-motion-menu-duration`。`quiet/off` 静态显示，系统 reduce 始终优先；交互中改变模式立即终止 CSS 过渡，无需监听 DOM 属性。无无限动画、常驻 will-change、rAF、timer、MutationObserver 或 ResizeObserver，也不为每个标签绑定事件。回归入口为 `tests/e2e/components/lq-overflow-label.spec.ts`。
 
+### 已批准、待落实的调课计划（2026-10-08）
+
+`planned_changes` 是从已存正式课表与当前申请只读派生的关系：`phase=planned`、`approval_status=approved`，以 `source_event_key` 指向唯一原正式课次，并提供原/计划日期、节次、教室及周次。它与原有待审 `adjustment.phase=pending`、已落实 `approved_changes` 分开；撤回/退回/未知或已从当前列表消失的申请不会保留为有效计划。同原位置多申请、重复正式端点或原目标均仍正式排课时不猜唯一关系，显示核对说明。
+
+`projectScheduleChanges` 只在视图生成 `is_change_plan=true`、`counts_towards_total=false` 的计划目标；同时间换教室和待落实停课仅在原卡对照，不制造时间箭头。正式业务 lessons、课时、课次数、session 身份/日期、教学序号及材料绑定均不改变。Deck 使用“已批准·待落实”文字和原/目标双向定位，宿主日程回调排除虚拟计划；已生效 A→B 与计划 B→C 可共存。
+
+编辑器使用相同投影和独立“调课申请”对照入口，虚拟位置不可拖动、编辑或发起材料/可用性查询。节假日调休仍由原 calendar owner 处理；调休镜像只消费正式课次并清除申请关系，避免把计划目标再复制成补课。领域 CSS 仅调整对照区与网格布局。相关回归为 `test_academic_schedule_planned_changes.py` 与 `course-schedule-planned-changes.test.ts`；源码和单元结果不替代正式构建浏览器验收。
+
 ### Surface 几何、Dialog 边界与 NavMenu 作者槽位（2026-10-08）
 
 本轮来源、消费者、未决项与浏览器证据统一登记在 [界面组件修复记录](lq-interface-modules-2026-10-08.md)。
@@ -476,4 +484,14 @@ owner.destroy(); // 同步释放 LQ 资源并归还原 DOM 位置
 原生 `<dialog>` 保留 `showModal()/close()` 的浏览器合同。只有临时 DOM 或 iframe 清理需要 `finishNativeDialogClose(dialog, cleanup)`；重新打开会使旧清理失效。DomainPopover 的 `onClose` 仍立即取消业务，`onAfterClose` 才清理内容。截图会话取消继续立即停止屏幕流、清空敏感画布；不延迟隐私清理。
 
 验收须使用不可变正式资源图逐帧观测中间状态，同时覆盖快速反向、嵌套、关闭否决、内容保留、移动端及 off/reduce。源码标记或最终截图不能替代过程验收。详见 [过程验收记录](lq-motion-process-acceptance-2026-10-08.md)。
+
+### 原生选择值与 Dropdown 呈现（2026-10-08）
+
+`LQ.load('dropdown')` 提供 `bindDropdown(select, options)`、`getDropdown(select)`、`enhanceDropdowns(root)` 和 `installDropdowns(document)`。平台 select 声明 `data-lq-dropdown`；可加 `data-lq-searchable` 和 `data-lq-placeholder`。Jinja/JS Form 的 select 工厂默认声明同一入口。可访问名称依次来自 aria-label、aria-labelledby、关联 label、显式 options.label 或 title；包裹 label 的 option、代理控件与装饰文字不参与命名。没有名称的声明记录诊断并跳过，不中断同一弹窗其他业务。
+
+安装器仅做一次初始声明扫描，动态控件由原生事件委托首次接管；明确构造或重绘的 owner 优先调用 `enhanceDropdowns(root)`。不替换 select、不全页反复扫描、不向原型写入属性、不定时轮询。已有 Selection/筛选代理须声明 `data-lq-selection-owner`；React 等显式绑定的控件声明 `data-lq-dropdown-manual`。这些节点不由自动入口抢占，显式 bindSelection 会先销毁此前的 Dropdown，保持单一呈现所有者。
+
+返回值提供 `select/trigger/wrapper/popup/listbox/search`、`open/close/refresh/query/setResults/destroy` 和只读 handle。单选无搜索使用保持触发器焦点的 select-only combobox；搜索框支持 IME，multiple 使用原生 selectedOptions。原生 id/name/form/value/defaultSelected/required/disabled/optgroup/表单重置及 FormData 仍为唯一真值。只有用户实际改变选择时发出一次 input 和一次 change；程序赋值不制造事件。`value/selectedIndex/option.selected` 通过可恢复的实例属性描述符在微任务刷新；select 自身与直接祖先监听覆盖选项、禁用、隐藏、移动和卸载，显式 `refresh()` 可用于宿主自有不可配置属性。reset 在原生默认动作之后刷新，取消的 reset 不改状态。
+
+Popup 复用 LQ.layer 的 portal、父子关系、焦点、关闭及反向打开，样式复用共享控件和 raised 配方。长选项在列表内换行，触发器省略但保留完整标题；原生空字符串选项仍显示其实际标签。`query(text)` 产生 query/generation 票据，`setResults({query,generation,options,status,message})` 只接当前票据，先验证全部候选再修改原生 options；关闭、reset、销毁使旧票据失效。destroy 恢复原节点标签、描述符与属性，释放监听、观察器、层和代理。页面及组件最终验收必须使用同一正式资产图，组件源码别名测试不能替代实际页面验收。
 

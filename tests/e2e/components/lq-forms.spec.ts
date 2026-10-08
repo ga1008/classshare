@@ -59,6 +59,7 @@ test.describe('LQ native forms', () => {
       expect(item.props, `${item.kind}/${item.id} props`).toEqual(fixture.cases[i].normalized);
       expect(item.html, `${item.kind}/${item.id} HTML`).toEqual(item.jinja);
       expect(item.element, `${item.kind}/${item.id} Element`).toEqual(item.jinja);
+      if (item.kind === 'select') expect(JSON.stringify(item.html)).toContain('data-lq-dropdown');
     });
   });
 

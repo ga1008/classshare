@@ -42,7 +42,7 @@
             {# 真实 <select> 原样保留（material_hub.js 只读 #mh-scope 的 .value），只追加
                既有的 .filter-proxy-select（display:none，courses.html 同款先例）把它变成代理载体；
                可见的选择器换成 lq_chip_row，点击由 manage_filter_chips.js 写回真实 select 并派发 change。 #}
-            <select data-lq-component="select" class="lq-select form-control mh-scope-select filter-proxy-select" id="mh-scope" aria-label="归属层级筛选" tabindex="-1">
+            <select data-lq-dropdown data-lq-component="select" class="lq-select form-control mh-scope-select filter-proxy-select" id="mh-scope" aria-label="归属层级筛选" tabindex="-1">
                 <option value="all">全部范围</option>
                 <option value="private">本人</option>
                 <option value="department">本系部</option>
@@ -61,7 +61,7 @@
                 ]) }}
             </div>
             {% else %}
-            <select data-lq-component="select" class="lq-select form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
+            <select data-lq-dropdown data-lq-component="select" class="lq-select form-control mh-scope-select" id="mh-scope" aria-label="归属层级筛选">
                 <option value="all">全部范围</option>
                 <option value="private">本人</option>
                 <option value="department">本系部</option>

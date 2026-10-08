@@ -1235,7 +1235,7 @@ class BlogCenter {
                 ${facts.length ? `<dl class="blog-opportunity-detail__grid">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>` : ''}
                 <div class="blog-opportunity-detail__workflow">
                     <label for="blog-opportunity-state-${opportunity.id}">我的求职进度</label>
-                    <select data-lq-component="select" class="lq-select" id="blog-opportunity-state-${opportunity.id}" data-blog-opportunity-state="${opportunity.id}">
+                    <select data-lq-dropdown data-lq-component="select" class="lq-select" id="blog-opportunity-state-${opportunity.id}" data-blog-opportunity-state="${opportunity.id}">
                         <option value=""${!opportunity.user_state ? ' selected' : ''}>尚未跟进</option>
                         ${Object.entries(OPPORTUNITY_STATE_LABELS).map(([value, label]) => `<option value="${value}"${opportunity.user_state === value ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
                     </select>

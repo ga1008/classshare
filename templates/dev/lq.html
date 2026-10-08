@@ -13,21 +13,21 @@
   </header>
   <form class="lq-preview__controls" aria-label="本地预览选项" data-lq-preview-controls>
     <label>配色
-      <select name="palette_key" data-lq-preview-option>
+      <select class="lq-select" data-lq-component="select" data-lq-dropdown name="palette_key" data-lq-preview-option>
         {% for key, label in [('teal', '青碧'), ('indigo', '靛蓝'), ('sky', '天青'), ('mint', '薄荷'), ('violet', '紫藤'), ('rose', '玫瑰')] %}
         <option value="{{ key }}"{% if ui_palette.palette_key == key %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </label>
     <label>外观
-      <select name="appearance" data-lq-preview-option>
+      <select class="lq-select" data-lq-component="select" data-lq-dropdown name="appearance" data-lq-preview-option>
         {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
         <option value="{{ key }}"{% if ui_palette.appearance == key %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </label>
     <label>玻璃效果
-      <select name="glass" data-lq-preview-option>
+      <select class="lq-select" data-lq-component="select" data-lq-dropdown name="glass" data-lq-preview-option>
         <option value="tinted"{% if ui_palette.glass == 'tinted' %} selected{% endif %}>开启</option>
         <option value="off"{% if ui_palette.glass == 'off' %} selected{% endif %}>关闭</option>
       </select>

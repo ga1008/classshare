@@ -220,6 +220,9 @@ def build_student_course_schedule_overview(
         "focus_week": len(weeks) if selected["status"] == "ended" else (min(max(live_week, 1), len(weeks)) if weeks else 0),
         "live_cur_week": live_week, "max_week": max_week, "week1_monday": monday.isoformat() if monday else "",
     })
+    planned = [change for change in projection.get('planned_changes', [])
+               if any(item.get('event_key') == change['source_event_key'] for item in items)]
+    planned_sections = [section for change in planned for section in (change.get('proposed') or {}).get('sections', [])]
     return {
         "status": "success", "has_data": bool(items),
         "message": f"有 {unpositioned_count} 次课尚未设置完整的日期或节次，请进入课堂查看。" if unpositioned_count else "",
@@ -234,6 +237,7 @@ def build_student_course_schedule_overview(
         "courses": _build_course_stats(official_items), "weeks": weeks,
         "approved_changes": [change for change in projection.get('approved_changes', [])
                              if any(item.get('event_key') == change['target_event_key'] for item in items)],
+        "planned_changes": planned,
         "authorized_courses": authorized_courses,
-        "section_range": {"min": 1, "max": max(11, max((max(i["sections"]) for i in items), default=11))},
+        "section_range": {"min": 1, "max": max(11, max((max(i["sections"]) for i in items), default=11), max(planned_sections, default=11))},
     }

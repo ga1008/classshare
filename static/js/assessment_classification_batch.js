@@ -1,4 +1,5 @@
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { bindDropdown, getDropdown } from './lq/dropdown.js';
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 
@@ -25,6 +26,7 @@ function initBatch(root) {
     }
 
     function render() {
+        tbody.querySelectorAll('select').forEach(select => getDropdown(select)?.destroy());
         tbody.replaceChildren();
         for (const item of rows) {
             const tr = document.createElement('tr');
@@ -44,6 +46,7 @@ function initBatch(root) {
             const selectCell = document.createElement('td');
             const select = document.createElement('select');
             adoptDomainControl(select, { kind: 'select' });
+            select.dataset.lqDropdown = '';
             select.setAttribute('aria-label', `${item.title} 的任务分类`);
             const blank = document.createElement('option');
             blank.value = '';
@@ -82,6 +85,7 @@ function initBatch(root) {
             select.addEventListener('change', () => { checkbox.checked = Boolean(select.value); sync(); });
             checkbox.addEventListener('change', sync);
             tbody.append(tr);
+            bindDropdown(select);
         }
         updateControls();
     }

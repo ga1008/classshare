@@ -39,7 +39,7 @@
   </div>
   <form class="lq-preview__form" data-lq-demo-composer-form aria-label="本地消息输入示例">
     <p>消息和附件只用于本地交互预览；检查后保留草稿，不发送消息或上传文件。</p>
-    <label>输入状态<select id="preview-composer-state" class="lq-select"><option value="ready">可编辑</option><option value="busy">处理中</option><option value="disabled">不可用</option></select></label>
+    <label>输入状态<select data-lq-component="select" data-lq-dropdown id="preview-composer-state" class="lq-select"><option value="ready">可编辑</option><option value="busy">处理中</option><option value="disabled">不可用</option></select></label>
     {{ lq_composer(label='预览消息草稿', id='preview-composer', value='', sendLabel='检查预览消息', attachment='选择本地附件示例', emoji='插入笑脸示例', submit_name='intent', submit_value='preview') }}
     <input type="file" hidden multiple aria-label="本地消息附件" data-lq-demo-composer-file>
     <p data-lq-demo-composer-files>尚未选择附件。</p>

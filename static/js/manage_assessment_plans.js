@@ -382,7 +382,7 @@ function openCreateBlankModal() {
         <form data-ap-form-blank class="lp-form">
             <label>标题<input data-lq-component="input" class="lq-input" name="title" placeholder="如：服务器配置与管理 考核计划表"></label>
             <label>绑定课堂（自动带入课程/班级/考核类型，可选）
-                <select data-lq-component="select" class="lq-select" name="class_offering_id">${offeringOptionsHtml(true)}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" name="class_offering_id">${offeringOptionsHtml(true)}</select>
             </label>
             <p class="lp-form__hint">创建后进入编辑器，用完整表单填写基础信息和考核项目（分值合计须为 100）。</p>
         </form>`;
@@ -612,7 +612,7 @@ async function openAttributesModal(id) {
         <form data-ap-form-attr class="lp-form">
             <label>标题<input data-lq-component="input" class="lq-input" name="title" value="${escapeHtml(data.title || '')}"></label>
             <label>公开范围
-                <select data-lq-component="select" class="lq-select" name="scope_level">${scopeOptions}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" name="scope_level">${scopeOptions}</select>
             </label>
             <p class="lp-form__hint">默认私有；可设为本系部 / 本院级 / 全校公开，公开后其他老师可一键继承。</p>
         </form>`;

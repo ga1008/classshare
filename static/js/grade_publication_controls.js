@@ -25,7 +25,7 @@ export function openGradePublicationModal(detail) {
         <div class="grade-publication">
             <p>${materialId ? `从「${escapeHtml(detail.name || '当前成绩材料')}」公布课程成绩。` : '查看课堂成绩的公布状态与历史记录。重新公布请进入已分配的正式成绩材料。'}学生在成绩查看页仅能看到本人的公布分数。</p>
             <label class="materials-property-field"><span>公布到课堂</span>
-                <select data-lq-component="select" class="lq-select form-control" data-gp-offering>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" data-gp-offering>
                     <option value="">请选择已分配的课堂</option>
                     ${offerings.map((item) => `<option value="${Number(item.class_offering_id)}" ${Number(item.class_offering_id) === offeringId ? 'selected' : ''}>${escapeHtml([item.course_name, item.class_name, item.semester].filter(Boolean).join(' · '))}</option>`).join('')}
                 </select>

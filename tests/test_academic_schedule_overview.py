@@ -99,7 +99,7 @@ class AcademicScheduleOverviewTests(unittest.TestCase):
         snapshot = base_snapshot([request(status='approved')])
         self.publish(snapshot)
         result = self.teacher()
-        self.assertIn('申请已通过', result['message'])
+        self.assertIn('申请已批准', result['message'])
         self.assertNotIn("{'code'", result['message'])
         self.assertFalse(any(item.get('adjustment') for item in self.lessons(result)))
         snapshot['official'][0] = official('2026-10-11')

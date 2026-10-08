@@ -30,7 +30,7 @@
                             <div class="profile-form-grid">
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-email-provider">邮箱服务商</label>
-                                    <select data-lq-component="select" id="profile-email-provider" name="provider" class="lq-select lq-control--md form-control">
+                                    <select data-lq-dropdown data-lq-component="select" id="profile-email-provider" name="provider" class="lq-select lq-control--md form-control">
                                         <option value="qq">QQ邮箱</option>
                                         <option value="netease_163">网易163邮箱</option>
                                         <option value="netease_126">网易126邮箱</option>
@@ -81,7 +81,7 @@
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-email-smtp-security">SMTP 加密</label>
-                                    <select data-lq-component="select" id="profile-email-smtp-security" name="smtp_security" class="lq-select lq-control--md form-control">
+                                    <select data-lq-dropdown data-lq-component="select" id="profile-email-smtp-security" name="smtp_security" class="lq-select lq-control--md form-control">
                                         <option value="ssl">SSL</option>
                                         <option value="starttls">STARTTLS</option>
                                         <option value="none">无</option>
@@ -101,7 +101,7 @@
                                 </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-email-imap-security">IMAP 加密</label>
-                                    <select data-lq-component="select" id="profile-email-imap-security" name="imap_security" class="lq-select lq-control--md form-control">
+                                    <select data-lq-dropdown data-lq-component="select" id="profile-email-imap-security" name="imap_security" class="lq-select lq-control--md form-control">
                                         <option value="ssl">SSL</option>
                                         <option value="starttls">STARTTLS</option>
                                         <option value="none">无</option>

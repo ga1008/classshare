@@ -346,7 +346,7 @@ function openCreateBlankModal() {
         <form data-lp-form-blank class="lp-form">
             <label>教案标题<input data-lq-component="input" class="lq-input" name="title" placeholder="如：服务器配置与管理 教案" required></label>
             <label>绑定课堂（自动带出封面信息，可选）
-                <select data-lq-component="select" class="lq-select" name="class_offering_id">${offeringOptions}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" name="class_offering_id">${offeringOptions}</select>
             </label>
             <label>课次数量<input data-lq-component="input" class="lq-input" name="session_count" type="number" min="0" max="60" value="16"></label>
             <p class="lp-form__hint">创建后进入编辑器逐项填写；也可改用「按课堂生成」让 AI 自动生成整学期内容。</p>
@@ -518,7 +518,7 @@ function renderPlannerDetail(plan, offering, loading = false) {
             </div>
             <div class="lp-gen-add">
                 <label>插入位置
-                    <select data-lq-component="select" class="lq-select" data-gen-insert-index>${insertOptions}</select>
+                    <select data-lq-dropdown data-lq-component="select" class="lq-select" data-gen-insert-index>${insertOptions}</select>
                 </label>
                 <label class="lp-form__full">新增课次提示
                     <textarea data-lq-component="textarea" class="lq-textarea" data-gen-new-prompt data-prompt-pool-key="lesson_plan.session_draft" rows="2" placeholder="输入本次课主要内容，AI 会结合前后课次润色成可生成的课次卡片"></textarea>
@@ -920,7 +920,7 @@ async function openAttributesModal(id) {
         <form data-lp-form-attr class="lp-form">
             <label>教案标题<input data-lq-component="input" class="lq-input" name="title" value="${escapeHtml(data.title || '')}"></label>
             <label>公开范围
-                <select data-lq-component="select" class="lq-select" name="scope_level">${scopeOptions}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" name="scope_level">${scopeOptions}</select>
             </label>
             <p class="lp-form__hint">默认私有；公开后其他老师可在自己的教案库一键继承。</p>
         </form>`;

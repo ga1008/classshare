@@ -112,13 +112,13 @@
                 共 {{ wrong_book['items']|length }} 道{% if wrong_book.items_truncated %}（仅展示最近 {{ wrong_book['items']|length }} 道）{% endif %}，点“回顾原卷”可回到试卷与批改反馈。
             </p>
             <div class="wrongbook-filters">
-                <select data-lq-component="select" class="lq-select" data-filter-course aria-label="按课程筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-filter-course aria-label="按课程筛选">
                     <option value="">全部课程</option>
                     {% for course in wrong_book.courses %}
                     <option value="{{ course.course_id }}">{{ course.course_name }}（{{ course.wrong_count }}）</option>
                     {% endfor %}
                 </select>
-                <select data-lq-component="select" class="lq-select" data-filter-point aria-label="按知识点筛选">
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-filter-point aria-label="按知识点筛选">
                     <option value="">全部知识点</option>
                     {% for point in wrong_book.knowledge_mastery %}
                     <option value="{{ point.name }}">{{ point.name }}（错 {{ point.wrong }}）</option>

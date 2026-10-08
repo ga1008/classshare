@@ -553,14 +553,14 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">批改模式</label>
-                        <select data-lq-component="select" id="edit-grading-mode" class="lq-select form-select">
+                        <select aria-label="批改模式" data-lq-dropdown data-lq-component="select" id="edit-grading-mode" class="lq-select form-select">
                             <option value="manual" {{ 'selected' if assignment.grading_mode == 'manual' else '' }}>手动批改</option>
                             <option value="ai" {{ 'selected' if assignment.grading_mode in ['ai', 'auto', 'mixed'] else '' }}>AI 辅助批改</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">试炼阶段</label>
-                        <select data-lq-component="select" id="edit-learning-stage-key" class="lq-select form-select">
+                        <select aria-label="试炼阶段" data-lq-dropdown data-lq-component="select" id="edit-learning-stage-key" class="lq-select form-select">
                             <option value="">普通经验，不绑定境界试炼</option>
                             {% for stage in learning_stage_options %}
                             <option value="{{ stage.key }}" {{ 'selected' if assignment.learning_stage_key == stage.key else '' }}>{{ stage.level_name }} · 通过后点亮至此境界</option>
@@ -581,7 +581,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="edit-availability-mode">答题时间策略</label>
-                        <select data-lq-component="select" id="edit-availability-mode" class="lq-select form-select">
+                        <select data-lq-dropdown data-lq-component="select" id="edit-availability-mode" class="lq-select form-select">
                             <option value="permanent" {{ 'selected' if assignment.availability_mode == 'permanent' else '' }}>长期有效</option>
                             <option value="deadline" {{ 'selected' if assignment.availability_mode == 'deadline' else '' }}>截止时间</option>
                             <option value="countdown" {{ 'selected' if assignment.availability_mode == 'countdown' else '' }}>倒计时</option>
@@ -646,7 +646,7 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="edit-late-penalty-strategy">扣分策略</label>
-                                <select data-lq-component="select" id="edit-late-penalty-strategy" class="lq-select form-select">
+                                <select data-lq-dropdown data-lq-component="select" id="edit-late-penalty-strategy" class="lq-select form-select">
                                     <option value="gradient" {{ 'selected' if assignment.late_penalty_strategy == 'gradient' else '' }}>梯度扣分</option>
                                     <option value="fixed" {{ 'selected' if assignment.late_penalty_strategy == 'fixed' else '' }}>定量扣分</option>
                                 </select>

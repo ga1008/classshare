@@ -29,7 +29,7 @@
     <form data-lq-component="surface" class="lq-surface sa-form-card" id="super-admin-form">
         <div class="sa-form-card__title">调整超管设置</div>
         <label class="form-label" for="super-admin-teacher-id">选择教师</label>
-        <select data-lq-component="select" class="lq-select form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
+        <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="super-admin-teacher-id" name="teacher_id" {% if not can_manage_super_admin %}disabled{% endif %}>
             {% for teacher in teacher_rows %}
             <option value="{{ teacher.id }}" {% if teacher.is_super_admin %}selected{% endif %}>
                 {{ teacher.name }}{% if teacher.email %}（{{ teacher.email }}）{% endif %}

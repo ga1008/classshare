@@ -99,6 +99,7 @@ class LqFormsTests(unittest.TestCase):
 
     def test_select_is_native_selected_value_and_disabled_option(self):
         doc = Parsed(self.render('select', id='term', label='学期', value='b', options=[{'value': 'a', 'label': 'A', 'disabled': True}, {'value': 'b', 'label': 'B'}]))
+        self.assertIn('data-lq-dropdown', doc.first('select'))
         self.assertIn('disabled', doc.first('option'))
         self.assertTrue(any(tag == 'option' and a.get('value') == 'b' and 'selected' in a for tag, a in doc.nodes))
 

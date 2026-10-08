@@ -19,7 +19,7 @@
         <div class="exam-chip-groups" role="group" aria-label="主筛选">
             <div class="exam-chip-group" data-filter-chips="statusFilter" role="group" aria-label="状态">
                 <span class="exam-chip-group__label">状态</span>
-                <select data-lq-component="select" id="statusFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-selection-owner="exam-filter-chips" data-lq-component="select" id="statusFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部状态</option>
                     <option value="ready">可用</option>
                     <option value="draft">草稿</option>
@@ -36,7 +36,7 @@
             </div>
             <div class="exam-chip-group" data-filter-chips="assignmentFilter" role="group" aria-label="分配">
                 <span class="exam-chip-group__label">分配</span>
-                <select data-lq-component="select" id="assignmentFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-selection-owner="exam-filter-chips" data-lq-component="select" id="assignmentFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部分配</option>
                     <option value="unassigned">未分配</option>
                     <option value="assigned">已分配</option>
@@ -47,7 +47,7 @@
             </div>
             <div class="exam-chip-group" data-filter-chips="sourceFilter" role="group" aria-label="来源">
                 <span class="exam-chip-group__label">来源</span>
-                <select data-lq-component="select" id="sourceFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
+                <select data-lq-selection-owner="exam-filter-chips" data-lq-component="select" id="sourceFilter" class="lq-select exam-filter-select" hidden aria-hidden="true" tabindex="-1" onchange="onFilterControlChange()">
                     <option value="all">全部来源</option>
                     <option value="manual">手动 / 导入</option>
                     <option value="ai">AI 生成</option>
@@ -63,7 +63,7 @@
             <div class="exam-control-row secondary">
                 <div class="exam-filter-field">
                     <label for="structureFilter">结构</label>
-                    <select data-lq-component="select" id="structureFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="structureFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部结构</option>
                         <option value="objective">客观题</option>
                         <option value="subjective">主观题</option>
@@ -73,7 +73,7 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="scopeFilter">开放</label>
-                    <select data-lq-component="select" id="scopeFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="scopeFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部范围</option>
                         <option value="owned">我管理的</option>
                         <option value="shared">共享给我的</option>
@@ -84,19 +84,19 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="schoolFilter">学校</label>
-                    <select data-lq-component="select" id="schoolFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="schoolFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部学校</option>
                     </select>
                 </div>
                 <div class="exam-filter-field">
                     <label for="departmentFilter">系部</label>
-                    <select data-lq-component="select" id="departmentFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="departmentFilter" class="lq-select exam-filter-select" onchange="onFilterControlChange()">
                         <option value="all">全部系部</option>
                     </select>
                 </div>
                 <div class="exam-filter-field">
                     <label for="sortSelect">排序</label>
-                    <select data-lq-component="select" id="sortSelect" class="lq-select exam-filter-select" onchange="onSortChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="sortSelect" class="lq-select exam-filter-select" onchange="onSortChange()">
                         <option value="updated-desc">最近更新</option>
                         <option value="created-desc">最新创建</option>
                         <option value="title-asc">名称 A-Z</option>
@@ -107,7 +107,7 @@
                 </div>
                 <div class="exam-filter-field">
                     <label for="groupModeSelect">归集</label>
-                    <select data-lq-component="select" id="groupModeSelect" class="lq-select exam-filter-select" onchange="onGroupModeChange()">
+                    <select data-lq-dropdown data-lq-component="select" id="groupModeSelect" class="lq-select exam-filter-select" onchange="onGroupModeChange()">
                         <option value="none">不归集</option>
                         <option value="status">按状态</option>
                         <option value="tag">按首个标签</option>

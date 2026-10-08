@@ -286,7 +286,7 @@ function renderField(field, attributes, canEdit) {
         const options = (field.options || []).map(([optionValue, label]) => `
             <option value="${escapeHtml(optionValue)}"${value === optionValue ? ' selected' : ''}>${escapeHtml(label)}</option>
         `).join('');
-        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><select data-lq-component="select" class="lq-select" name="${field.key}"${disabled}${required}>${options}</select></div>`;
+        return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><select aria-label="${escapeHtml(field.label)}" data-lq-dropdown data-lq-component="select" class="lq-select" name="${field.key}"${disabled}${required}>${options}</select></div>`;
     }
     if (field.type === 'list') {
         return `<div class="${fieldClass}"><label>${escapeHtml(field.label)}</label><input data-lq-component="input" class="lq-input" name="${field.key}" type="text" value="${escapeHtml(normalizeList(rawValue).join('、'))}"${disabled}${required}></div>`;

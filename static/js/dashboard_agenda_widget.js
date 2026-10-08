@@ -62,7 +62,7 @@ function buildPopover() {
       <div class="agenda-popover__remind-row">
         <span>提前</span>
         <input data-lq-component="input" class="lq-input" type="number" min="1" max="999" value="30" inputmode="numeric" data-remind-value aria-label="提前时间数值" />
-        <select data-lq-component="select" class="lq-select" data-remind-unit aria-label="提前时间单位">
+        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-remind-unit aria-label="提前时间单位">
           <option value="minute">分钟</option>
           <option value="hour">小时</option>
           <option value="day">天</option>
@@ -664,7 +664,7 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
           <div class="agenda-todo-scope__panel">
             <label class="agenda-todo-field">
               <span>关联课堂（可选）</span>
-              <select name="class_offering_id" data-todo-course aria-label="关联课堂（可选）"></select>
+              <select class="lq-select" data-lq-component="select" data-lq-dropdown name="class_offering_id" data-todo-course aria-label="关联课堂（可选）"></select>
             </label>
             <p>关联只用于分类和快速回到课堂，不会把这条待办展示给学生。</p>
           </div>
@@ -672,7 +672,7 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
     : `
         <label class="agenda-todo-field agenda-todo-field--classroom">
           <span>所属课堂</span>
-          <select name="class_offering_id" data-todo-course required></select>
+          <select class="lq-select" data-lq-component="select" data-lq-dropdown name="class_offering_id" data-todo-course required></select>
         </label>`;
   const modal = document.createElement('div');
   modal.className = 'lq-domain-region agenda-todo-modal';
@@ -729,7 +729,7 @@ function buildTodoModalDom({ actorRole = 'student' } = {}) {
           <div class="agenda-todo-reminder__lead" data-reminder-lead>
             <span>提前</span>
             <input type="number" name="reminder_lead_value" min="1" max="60" value="1" inputmode="numeric" aria-label="提前数值">
-            <select name="reminder_lead_unit" aria-label="提前单位">
+            <select class="lq-select" data-lq-component="select" data-lq-dropdown name="reminder_lead_unit" aria-label="提前单位">
               <option value="day">天</option>
               <option value="hour">小时</option>
               <option value="minute">分钟</option>

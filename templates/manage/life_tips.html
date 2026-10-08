@@ -16,30 +16,30 @@
         explain_label='一言提示说明', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}<div class="manage-life-tips__summary" data-life-tip-summary></div>{% endcall %}
 
     <form class="manage-life-tips__filters" data-life-tip-filters>
-        <select data-lq-component="select" class="lq-select" name="scope">
+        <select aria-label="投放范围" data-lq-dropdown data-lq-component="select" class="lq-select" name="scope">
             <option value="">全部作用域</option>
             <option value="global">通用</option>
             <option value="school">本校</option>
             <option value="department">系部</option>
         </select>
-        <select data-lq-component="select" class="lq-select" name="status">
+        <select aria-label="投放状态" data-lq-dropdown data-lq-component="select" class="lq-select" name="status">
             <option value="">全部状态</option>
             <option value="active">投放中</option>
             <option value="draft">草稿</option>
             <option value="retired">已下架</option>
         </select>
-        <select data-lq-component="select" class="lq-select" name="source_kind">
+        <select aria-label="内容来源" data-lq-dropdown data-lq-component="select" class="lq-select" name="source_kind">
             <option value="">全部来源</option>
             <option value="seed">内置种子</option>
             <option value="ai_gongwen">公文挖掘</option>
             <option value="manual">手工录入</option>
         </select>
-        <select data-lq-component="select" class="lq-select" name="audience">
+        <select aria-label="受众" data-lq-dropdown data-lq-component="select" class="lq-select" name="audience">
             <option value="">全部受众</option>
             <option value="student">学生</option>
             <option value="teacher">教师</option>
         </select>
-        <select data-lq-component="select" class="lq-select" name="category" data-life-tip-category-filter>
+        <select aria-label="内容类别" data-lq-dropdown data-lq-component="select" class="lq-select" name="category" data-life-tip-category-filter>
             <option value="">全部分类</option>
         </select>
         <input data-lq-component="input" class="lq-input" type="search" name="keyword" placeholder="搜索提示语或来源…">
@@ -62,11 +62,11 @@
             <div class="life-tip-modal__grid">
                 <label class="life-tip-modal__field">
                     <span>分类</span>
-                    <select data-lq-component="select" class="lq-select" name="category" data-life-tip-category-input></select>
+                    <select data-lq-dropdown data-lq-component="select" class="lq-select" name="category" data-life-tip-category-input></select>
                 </label>
                 <label class="life-tip-modal__field">
                     <span>作用域</span>
-                    <select data-lq-component="select" class="lq-select" name="scope" data-life-tip-scope-input>
+                    <select aria-label="投放范围" data-lq-dropdown data-lq-component="select" class="lq-select" name="scope" data-life-tip-scope-input>
                         <option value="school">本校</option>
                         <option value="department">指定系部</option>
                         <option value="global">全平台通用</option>
@@ -78,7 +78,7 @@
                 </label>
                 <label class="life-tip-modal__field">
                     <span>受众</span>
-                    <select data-lq-component="select" class="lq-select" name="audience">
+                    <select aria-label="受众" data-lq-dropdown data-lq-component="select" class="lq-select" name="audience">
                         <option value="student">学生</option>
                         <option value="teacher">教师</option>
                         <option value="all">全部</option>

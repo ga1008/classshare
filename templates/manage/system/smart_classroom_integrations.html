@@ -120,7 +120,7 @@
                         <form id="smart-classroom-credential-form" autocomplete="off">
                             <div class="form-group">
                                 <label class="form-label" for="smart-platform-code">平台</label>
-                                <select data-lq-component="select" class="lq-select form-control" id="smart-platform-code" name="platform_code" required>
+                                <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="smart-platform-code" name="platform_code" required>
                                     {% for profile in smart_classroom_profiles %}
                                     <option value="{{ profile.platform_code }}">{{ profile.platform_name }}</option>
                                     {% endfor %}
@@ -181,7 +181,7 @@
                 <div class="smart-classroom-request-grid">
                     <div class="form-group">
                         <label class="form-label" for="smart-probe-method">方法</label>
-                        <select data-lq-component="select" class="lq-select form-control" id="smart-probe-method">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="smart-probe-method">
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
                         </select>
@@ -201,7 +201,7 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="smart-probe-body-mode">载荷格式</label>
-                    <select data-lq-component="select" class="lq-select form-control" id="smart-probe-body-mode">
+                    <select data-lq-dropdown data-lq-component="select" class="lq-select form-control" id="smart-probe-body-mode">
                         <option value="form">Form 表单</option>
                         <option value="json">JSON</option>
                         <option value="raw">Raw 文本</option>

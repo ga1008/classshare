@@ -66,13 +66,13 @@ data-afm-open-sync {{ explain_attrs(
                 '期末材料按学期归档。默认显示当前日期所在学期；假期期间默认显示刚结束的上一学期，可切换到任意学期或全部。',
                 placement='bottom'
             ) }}>
-                <select data-lq-component="select" class="lq-select" data-afm-semester-filter aria-label="按学期筛选"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-semester-filter aria-label="按学期筛选"></select>
             </label>
             <label class="afm-semester-filter">
-                <select data-lq-component="select" class="lq-select" data-afm-course-filter aria-label="按课程筛选"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-course-filter aria-label="按课程筛选"></select>
             </label>
             <label class="afm-semester-filter">
-                <select data-lq-component="select" class="lq-select" data-afm-class-filter aria-label="按班级筛选"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-class-filter aria-label="按班级筛选"></select>
             </label>
         </div>
         <label class="afm-search">
@@ -113,7 +113,7 @@ data-afm-open-sync {{ explain_attrs(
         </header>
         <div class="afm-sync-filters" data-afm-sync-filters>
             <label class="afm-semester-filter">
-                <select data-lq-component="select" class="lq-select" data-afm-sync-semester aria-label="按学期筛选课堂"></select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-sync-semester aria-label="按学期筛选课堂"></select>
             </label>
             <label class="afm-search afm-search--dialog">
                 <span aria-hidden="true">⌕</span>
@@ -162,27 +162,27 @@ data-afm-open-sync {{ explain_attrs(
                 </div>
                 <div class="afm-fields-grid">
                     <label class="afm-field"><span>命题形式</span>
-                        <select data-lq-component="select" class="lq-select" data-afm-field="proposition_form">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-field="proposition_form">
                             <option value="">请选择</option><option>试题库</option><option>试卷库</option><option>教师组题</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>考试形式</span>
-                        <select data-lq-component="select" class="lq-select" data-afm-field="exam_form">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-field="exam_form">
                             <option value="">请选择</option><option>开卷</option><option>闭卷</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>教考分离</span>
-                        <select data-lq-component="select" class="lq-select" data-afm-field="separate_teaching_exam">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-field="separate_teaching_exam">
                             <option value="">请选择</option><option>是</option><option>否</option>
                         </select>
                     </label>
                     <label class="afm-field"><span>课程性质</span>
-                        <select data-lq-component="select" class="lq-select" data-afm-field="course_nature">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-field="course_nature">
                             <option value="">请选择</option><option>选修</option><option>必修</option>
                         </select>
                     </label>
                     <label class="afm-field afm-field--wide"><span>阅卷形式</span>
-                        <select data-lq-component="select" class="lq-select" data-afm-field="marking_form">
+                        <select data-lq-dropdown data-lq-component="select" class="lq-select" data-afm-field="marking_form">
                             <option value="">请选择</option><option>本人阅卷</option><option>同行阅卷</option>
                             <option>集体阅卷</option><option>机器阅卷</option><option>其他</option>
                         </select>

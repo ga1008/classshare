@@ -49,7 +49,7 @@
                 <form id="aiConfigForm" action="/api/manage/ai/configure" method="post" class="academic-form-grid">
                     <div class="academic-field">
                         <label for="aiOfferingSelect">课堂</label>
-                        <select data-lq-component="select" id="aiOfferingSelect" name="class_offering_id" class="lq-select form-control" required>
+                        <select data-lq-dropdown data-lq-component="select" id="aiOfferingSelect" name="class_offering_id" class="lq-select form-control" required>
                             <option value="">请选择课堂</option>
                             {% for offering in my_offerings %}
                             <option value="{{ offering.id }}" data-textbook-id="{{ offering.textbook_id or '' }}">{{ offering.course_name }} / {{ offering.class_name }}{% if offering.semester %} · {{ offering.semester }}{% endif %}</option>
@@ -59,7 +59,7 @@
                     <div class="academic-field">
                         <label for="aiTextbookSelect">教材绑定</label>
                         <div class="academic-split-field">
-                            <select data-lq-component="select" id="aiTextbookSelect" name="textbook_id" class="lq-select form-control">
+                            <select data-lq-dropdown data-lq-component="select" id="aiTextbookSelect" name="textbook_id" class="lq-select form-control">
                                 <option value="">暂不绑定教材</option>
                                 {% for textbook in my_textbooks %}
                                 <option value="{{ textbook.id }}">{{ textbook.title }} · {{ textbook.author_display }}</option>

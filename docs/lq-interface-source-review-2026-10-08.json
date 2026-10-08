@@ -14,26 +14,44 @@
     },
     {
       "path": "templates/dashboard.html",
-      "sha256": "271d1d17bbefec8b254267e323924493341919e4d256516bdc18b9822f82ff8d",
+      "sha256": "eef595e3ca4a8747c94010397820dfe925558d58211587d927bca0d39761a31e",
       "previousReviewedSha256": [
         "cb75621532d79343803d366481c44036a2fb39e6ca5b63e2cce4f3e2c2000010",
-        "11a375c2f422b4bd52e582984c86b0ccd88eb57c1f35d68b4c858605d7dd41f5"
+        "11a375c2f422b4bd52e582984c86b0ccd88eb57c1f35d68b4c858605d7dd41f5",
+        "271d1d17bbefec8b254267e323924493341919e4d256516bdc18b9822f82ff8d"
       ],
       "review": "Reviewed both dashboard family branches, student schedule, focus items/manual todo metadata, teacher filters/form fields, course links, quick actions, evaluation panel and calendar storage. Only the two schedule-tools blocks are replaced by the same shared partial. The role-gated sync endpoint and all action data hooks are preserved; the student schedule retains its second calendar opener. Final screenshot review exposed fallback outer course/domain/tool material without inset. These roots now explicitly consume Surface, with md only where there is no responsive Collapsible inside; existing family-enabled desktop/mobile inset remains unchanged.",
       "onlyClassAndLqAttributesChanged": false,
-      "businessBranchesRetained": true
+      "businessBranchesRetained": true,
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
     },
     {
       "path": "templates/dashboard_teacher.html",
-      "sha256": "9f24e0b6b1bb1dcc002e262efcce40c744c2b01eeb84f09e0275ab2f7af95b5b",
+      "sha256": "de2e9b9d7ee87a043d74cbc368e09ced608890ede2720d895e0a328b66f75276",
       "previousReviewedSha256": [
         "2806cf50148ef9cf1556cf6b7319fb561850c8f9b72c517a82252ff8236372fd",
         "84e1631274e1c950e55d3b4c8dd0fd1c89e7458c33445173717cb070a6ce3d52",
-        "c07c835e0ddf94fe764815400447e69eab0687714e62f8931225d9fb797ef961"
+        "c07c835e0ddf94fe764815400447e69eab0687714e62f8931225d9fb797ef961",
+        "9f24e0b6b1bb1dcc002e262efcce40c744c2b01eeb84f09e0275ab2f7af95b5b"
       ],
       "review": "Reviewed manage shell/header, todo permission flag, focus/inbox metadata, search/filter native form, class/offering links, evaluation synchronization, domain navigation, calendar storage and evaluation modal. Only the two schedule-tools blocks move into the shared partial; teacher-only sync, calendar subscription and explanation hooks remain. Final live audit also identified domain articles without a shared Surface. They now explicitly consume the shared content material and md inset in both family states; article links, explanation hooks and actions remain unchanged. Final screenshot review exposed fallback outer course/domain/tool material without inset. These roots now explicitly consume Surface, with md only where there is no responsive Collapsible inside; existing family-enabled desktop/mobile inset remains unchanged.",
       "onlyClassAndLqAttributesChanged": false,
-      "businessBranchesRetained": true
+      "businessBranchesRetained": true,
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
     },
     {
       "path": "templates/report_card.html",
@@ -44,6 +62,84 @@
       "review": "Reviewed full template, fallback and pilot branches, published grade visibility, zero/pending/returned/group/regrading states, assessment-kind and class-offering URL preservation, record links, empty state, personal trials, escaped chart JSON and exclusive chart owners. Four filter links and the empty-state home CTA now use the existing shared Button recipe in both feature states. No projection, grading, permission, filter, URL, JSON or chart lifecycle change.",
       "onlyClassAndLqAttributesChanged": true,
       "businessBranchesRetained": true
+    },
+    {
+      "path": "templates/manage/classes.html",
+      "review": "",
+      "sha256": "584f2ffb13d7205881082f3a590fc31237ad994b321a30d8f60a56ad2077efa4",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
+    },
+    {
+      "path": "templates/manage/courses.html",
+      "review": "",
+      "sha256": "f5dae1dfb587994eb9ead792fb597e57a05f7123861d73e907a0833f45e5de3b",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
+    },
+    {
+      "path": "templates/manage/lesson_plans.html",
+      "review": "",
+      "sha256": "144d1acbbaef3b05a8571689bde6a38ccfe0fc23627d31de09ee620382c1a060",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
+    },
+    {
+      "path": "templates/manage/offering_hub.html",
+      "review": "",
+      "sha256": "056c53caba378bbfefbc8d5a6c2f95466f8abef3c376ed475cc1cfec5e61fd02",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
+    },
+    {
+      "path": "templates/manage/system/users.html",
+      "review": "",
+      "sha256": "d982c3bd9d80349cf4e0493635d53cdc7799f9b8a203e0b191cb32d5fba54148",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
+    },
+    {
+      "path": "templates/manage/textbooks.html",
+      "review": "",
+      "sha256": "d64417b9f3ba2711319647bddfa263b3b19e6ce2e94ce0471c46210636eaefa1",
+      "selectionDeclarationReview": {
+        "date": "2026-10-08",
+        "scope": "Full current diff reviewed: explicit shared dropdown declaration and accessible names; dashboard Selection family and hidden course chip value proxy retain sole owner. Native names/options/events/permissions/business branches preserved. Source review only; final browser evidence pending.",
+        "tests": [
+          "tests/e2e/specs/lq-selection-app.spec.ts",
+          "tests/e2e/specs/lq-platform-component-audit.spec.ts"
+        ]
+      }
     }
   ],
   "dependentSources": [

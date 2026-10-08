@@ -84,6 +84,11 @@ export function getLQ(doc = document) {
         Object.defineProperty(api, 'layer', { enumerable: true, get: () => getLayerSystem(doc) });
         const start = () => {
             runtime.enhancements = enhanceComponents(doc);
+            // Authored select declarations share one progressive entry point.
+            // Dynamic owners may mount explicitly; delegated first activation
+            // covers later declared controls without a document-wide observer.
+            api.load('dropdown').then(module => { runtime.dropdowns = module.installDropdowns(doc); })
+                .catch(error => doc.defaultView?.console?.warn('LQ dropdown enhancement unavailable', error));
             runtime.resolve();
         };
         if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', start, { once: true });

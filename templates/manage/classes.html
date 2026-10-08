@@ -60,7 +60,7 @@
             <div class="class-filter-fields">
                 <label class="academic-filter-field" for="classDepartmentFilter">
                     <span>系别</span>
-                    <select data-lq-component="select" id="classDepartmentFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classDepartmentFilter" class="lq-select form-control">
                         <option value="all">全部系别</option>
                         {% for department in department_options %}
                         <option value="{{ department }}">{{ department }}</option>
@@ -70,7 +70,7 @@
                 </label>
                 <label class="academic-filter-field" for="classHealthFilter">
                     <span>名单状态</span>
-                    <select data-lq-component="select" id="classHealthFilter" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classHealthFilter" class="lq-select form-control">
                         <option value="all">全部状态</option>
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
@@ -83,7 +83,7 @@
                 </label>
                 <label class="academic-filter-field" for="classSortSelect">
                     <span>排序</span>
-                    <select data-lq-component="select" id="classSortSelect" class="lq-select form-control">
+                    <select data-lq-dropdown data-lq-component="select" id="classSortSelect" class="lq-select form-control">
                         <option value="department">按系别与名称</option>
                         <option value="students-desc">学生数从多到少</option>
                         <option value="missing-desc">缺邮箱优先</option>
@@ -375,7 +375,7 @@
             </div>
             <div class="academic-field">
                 <label for="classStudentAddGender">性别</label>
-                <select data-lq-component="select" id="classStudentAddGender" name="gender" class="lq-select form-control">
+                <select data-lq-dropdown data-lq-component="select" id="classStudentAddGender" name="gender" class="lq-select form-control">
                     <option value="">未填写</option>
                     <option value="男">男</option>
                     <option value="女">女</option>
@@ -433,7 +433,7 @@
             </div>
             <div class="academic-field">
                 <label for="classCustomScopeInput">可见范围</label>
-                <select data-lq-component="select" id="classCustomScopeInput" name="scope_level" class="lq-select form-control">
+                <select data-lq-dropdown data-lq-component="select" id="classCustomScopeInput" name="scope_level" class="lq-select form-control">
                     <option value="private">仅维护教师</option>
                     <option value="department">本系部</option>
                     <option value="school">本学校</option>

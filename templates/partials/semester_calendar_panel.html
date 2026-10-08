@@ -55,7 +55,7 @@
     <div data-lq-component="toolbar" class="lq-domain-toolbar semester-calendar-panel__toolbar">
         <label class="semester-calendar-panel__field"{% if compact %} data-explain data-explain-title="{{ panel_title }}" data-explain-text="{{ panel_subtitle }} {{ panel_hint }} 周末、节假日、当前周和今天会自动高亮。"{% endif %}>
             <span>当前查看学期</span>
-            <select data-lq-component="select" class="lq-select form-control" data-semester-calendar-select></select>
+            <select {% if lq_family_enabled('calendar') %}data-lq-selection-owner="calendar"{% else %}data-lq-dropdown{% endif %} data-lq-component="select" class="lq-select form-control" data-semester-calendar-select></select>
         </label>
     </div>
 

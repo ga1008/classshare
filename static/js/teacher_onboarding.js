@@ -899,7 +899,7 @@ if (modal) {
                 </div>
                 <div class="onboarding-field">
                     <label>绑定材料</label>
-                    <select data-lq-component="select" class="lq-select" data-field="learning_material_id">${materialOptions}</select>
+                    <select aria-label="绑定材料" data-lq-dropdown data-lq-component="select" class="lq-select" data-field="learning_material_id">${materialOptions}</select>
                 </div>
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-action="remove-lesson">删除</button>
                 <div class="onboarding-field full-span">

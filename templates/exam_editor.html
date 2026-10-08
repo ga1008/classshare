@@ -65,7 +65,7 @@
                 </div>
                 <div class="form-group mt-3 mb-0">
                     <label class="form-label text-xs text-muted mb-1">开放范围</label>
-                    <select data-lq-component="select" id="exam-scope-level" class="lq-select form-control form-control-sm">
+                    <select aria-label="开放范围" data-lq-dropdown data-lq-component="select" id="exam-scope-level" class="lq-select form-control form-control-sm">
                         <option value="private" {% if paper and paper.scope_level == 'private' %}selected{% endif %}>仅自己可见</option>
                         <option value="department" {% if not paper or not paper.scope_level or paper.scope_level == 'department' %}selected{% endif %}>本系部开放</option>
                         <option value="school" {% if paper and paper.scope_level == 'school' %}selected{% endif %}>全校开放</option>
@@ -149,7 +149,7 @@
                         </div>
                         <div class="form-group mb-0">
                             <label class="form-label">评分风格</label>
-                            <select data-lq-component="select" id="scoring-style" class="lq-select form-control">
+                            <select aria-label="评分风格" data-lq-dropdown data-lq-component="select" id="scoring-style" class="lq-select form-control">
                                 <option value="strict">严格</option>
                                 <option value="medium" selected>中等</option>
                                 <option value="loose">宽松</option>
@@ -214,7 +214,7 @@
                 <form id="ai-exam-form">
                     <div class="form-group">
                         <label class="form-label" for="ai-exam-assessment-kind">本次出题用途</label>
-                        <select data-lq-component="select" id="ai-exam-assessment-kind" class="lq-select form-control">
+                        <select data-lq-dropdown data-lq-component="select" id="ai-exam-assessment-kind" class="lq-select form-control">
                             <option value="">尚未确定</option>
                             <option value="homework">平时作业</option>
                             <option value="midterm">期中测验</option>
@@ -234,7 +234,7 @@
                             </div>
                             <div class="form-group mb-0">
                                 <label class="form-label">关联课堂（可选）</label>
-                                <select data-lq-component="select" id="ai-exam-offering" class="lq-select form-control">
+                                <select aria-label="关联课堂（可选）" data-lq-dropdown data-lq-component="select" id="ai-exam-offering" class="lq-select form-control">
                                     <option value="">不关联特定课堂</option>
                                     {% for offering in offerings %}
                                     <option value="{{ offering.id }}">{{ offering.course_name }} - {{ offering.class_name }}</option>
@@ -282,7 +282,7 @@
                         <div class="assist-form-grid">
                             <div class="form-group">
                                 <label class="form-label">难度</label>
-                                <select data-lq-component="select" id="ai-exam-difficulty" class="lq-select form-control">
+                                <select aria-label="难度" data-lq-dropdown data-lq-component="select" id="ai-exam-difficulty" class="lq-select form-control">
                                     <option value="easy">简单</option>
                                     <option value="medium" selected>中等</option>
                                     <option value="hard">困难</option>
@@ -1142,7 +1142,7 @@
                         </div>
                     </div>
                     <div class="q-actions opacity-50 group-hover:opacity-100 transition-opacity">
-                        <select data-lq-component="select" class="lq-select q-type-select" onchange="window.changeQType(${idx}, this.value)">
+                        <select aria-label="题目类型" data-lq-dropdown data-lq-component="select" class="lq-select q-type-select" onchange="window.changeQType(${idx}, this.value)">
                             <option value="radio" ${q.type==='radio'?'selected':''}>单选题</option>
                             <option value="checkbox" ${q.type==='checkbox'?'selected':''}>多选题</option>
                             <option value="text" ${q.type==='text'?'selected':''}>填空题</option>

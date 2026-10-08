@@ -11,21 +11,21 @@
     </summary>
     <div data-lq-component="surface" class="lq-surface ui-preferences-panel" data-ui-preferences-panel data-lq-material="raised" aria-label="界面外观设置">
         <label class="ui-preferences-field"><span>配色</span>
-            <select class="ui-palette-select lq-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
+            <select data-lq-component="select" data-lq-selection-owner="preferences" class="ui-palette-select lq-select" data-ui-palette-select aria-label="界面配色" {{ explain_attrs('界面配色', '选择后保存到当前账号。课程、作品与打印内容保留自己的颜色。') }}>
                 {% for preset in preferences.presets %}
                 <option value="{{ preset.key }}"{% if preset.key == preferences.palette_key %} selected{% endif %}>{{ preset.name }}</option>
                 {% endfor %}
             </select>
         </label>
         <label class="ui-preferences-field"><span>外观</span>
-            <select class="ui-palette-select lq-select" data-ui-preference-select="appearance" aria-label="界面外观" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>
+            <select data-lq-component="select" data-lq-selection-owner="preferences" class="ui-palette-select lq-select" data-ui-preference-select="appearance" aria-label="界面外观" {{ explain_attrs('界面外观', '自动跟随系统，也可以固定为浅色或深色。') }}>
                 {% for key, label in [('auto', '跟随系统'), ('light', '浅色'), ('dark', '深色')] %}
                 <option value="{{ key }}"{% if key == preferences.appearance|default('auto') %} selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </label>
         <label class="ui-preferences-field"><span>玻璃效果</span>
-            <select class="ui-palette-select lq-select" data-ui-preference-select="glass" aria-label="玻璃效果" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>
+            <select data-lq-component="select" data-lq-selection-owner="preferences" class="ui-palette-select lq-select" data-ui-preference-select="glass" aria-label="玻璃效果" {{ explain_attrs('玻璃效果', '系统辅助功能或浏览器不支持时自动降低透明度，不改变已保存的选择。') }}>
                 <option value="tinted"{% if preferences.glass|default('tinted') == 'tinted' %} selected{% endif %}>柔和玻璃</option>
                 <option value="off"{% if preferences.glass|default('tinted') == 'off' %} selected{% endif %}>关闭玻璃</option>
             </select>
@@ -43,7 +43,7 @@
 {% set mode = preferences.backdrop|default('scene') %}
 <div{% if gallery %} id="profile-backdrop" class="lq-profile-appearance__group"{% endif %}>
     <label class="ui-preferences-field"><span>页面背景</span>
-        <select class="ui-palette-select lq-select" data-ui-preference-select="backdrop" aria-label="页面背景">
+        <select data-lq-component="select" data-lq-selection-owner="preferences" class="ui-palette-select lq-select" data-ui-preference-select="backdrop" aria-label="页面背景">
             <option value="scene"{% if mode == 'scene' %} selected{% endif %}>跟随本次开屏</option>
             {% for category in scene.categories|default([]) %}
             <option value="{{ category.key }}"{% if category.key == mode %} selected{% endif %}>{{ category.name }}</option>
@@ -60,7 +60,7 @@
     <details class="ui-backdrop-gallery" data-ui-backdrop-gallery>
         <summary data-lq-component="disclosure" class="lq-disclosure-trigger">浏览背景图库</summary>
         <label class="ui-preferences-field"><span>筛选图库</span>
-            <select class="ui-palette-select lq-select" data-ui-backdrop-category aria-label="筛选背景图库">
+            <select data-lq-component="select" data-lq-selection-owner="preferences" class="ui-palette-select lq-select" data-ui-backdrop-category aria-label="筛选背景图库">
                 <option value="">全部图片</option>
                 {% for category in scene.categories|default([]) %}<option value="{{ category.name }}">{{ category.name }}</option>{% endfor %}
             </select>

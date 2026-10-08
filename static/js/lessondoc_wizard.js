@@ -181,7 +181,7 @@ function renderCreateView(course) {
         </div>
         <div>
             <strong>⑤ 立即生成范围</strong>
-            <select data-lq-component="select" class="lq-select" data-ld-scope style="margin-left:8px;">
+            <select aria-label="立即生成范围" data-lq-dropdown data-lq-component="select" class="lq-select" data-ld-scope style="margin-left:8px;">
                 <option value="first2" selected>首页 + 前 2 课(推荐)</option>
                 <option value="all">全部课次(耗时较长)</option>
                 <option value="none">仅创建骨架,稍后手动生成</option>
@@ -268,7 +268,7 @@ async function renderManageView(packSummary, course) {
             <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="${esc(pack.render_shell_url)}" target="_blank" rel="noopener">打开首页</a>
             <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/materials/lessondoc-editor/${pack.id}?lesson=0&return_to=${encodeURIComponent(location.pathname+location.search)}">编辑首页</a>
             <label style="font-size:.9em;">主题
-                <select data-lq-component="select" class="lq-select" data-ld-theme>${themeOptions}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-ld-theme>${themeOptions}</select>
             </label>
             <button data-lq-component="button" class="lq-btn lq-btn--sm btn ${pack.assets_outdated ? 'btn-primary lq-btn--prominent' : 'btn-ghost lq-btn--ghost'} btn-sm" data-ld-refresh-assets
                 title="${pack.assets_outdated ? '平台渲染引擎已升级，点击把包内副本更新到最新（不影响已生成内容）' : '把包内引擎更新到平台最新版本'}">

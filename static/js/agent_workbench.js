@@ -646,7 +646,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
                 <span class="awb-sub__copy"><strong>${escapeHtml(item.label || item.key)}</strong>
                 <small>${escapeHtml(item.enabled ? `下次 ${item.next_run_at || ''}${item.last_run_message ? ` · 上次：${item.last_run_message}` : ''}` : (item.description || ''))}</small>
                 ${item.attention_message ? `<small class="awb-warn">${escapeHtml(item.attention_message)}</small>` : ''}</span>
-                <select data-lq-component="select" class="lq-select" data-awb-sub-hour="${escapeHtml(item.key)}" aria-label="执行时间">${hours}</select>
+                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-awb-sub-hour="${escapeHtml(item.key)}" aria-label="执行时间">${hours}</select>
             </label>`).join('') : '<p class="awb-dim">暂无可用的定时任务模板。</p>';
         subscriptions.forEach((item) => {
             const select = el['subs-list'].querySelector(`[data-awb-sub-hour="${CSS.escape(String(item.key))}"]`);

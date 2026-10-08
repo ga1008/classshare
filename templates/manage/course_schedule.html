@@ -21,28 +21,22 @@
     <div data-lq-component="surface" class="lq-surface cs-panel">
         <div data-lq-component="toolbar" class="lq-domain-toolbar cs-toolbar">
             {% if _cs_lq_enabled %}
-            {# 只迁三个筛选 select 的字段外壳。manage_course_schedule.js 不属于任何 S5 包、
-               不得修改：它只用 [data-cs-term] / [data-cs-course] / [data-cs-class] 找控件，
-               并对它们写 innerHTML，lq_field 渲染的仍是原生 <select>，契约不变；
-               新增的 id 是纯增量，JS 不依赖 id。
-               「重置筛选」按钮不迁 lq_btn：JS 第 128 行直接写 resetBtn.disabled，
-               而 lq-btn 的禁用态还要同步 is-disabled / aria-disabled / data-lq-disabled，
-               只改 .disabled 会出现「看着可点、其实点不动」的状态错位。 #}
+            {# 控制器保留原生 select 真值与筛选事件；共享 Dropdown 负责展开列表。 #}
             {{ lq_field('csTermSelect', '学年学期', control='select', options=[], attrs={'data-cs-term': ''}) }}
-            {{ lq_field('csCourseSelect', '课程', control='select', options=[{'value': '', 'label': '全部课程'}], attrs={'data-cs-course': ''}) }}
-            {{ lq_field('csClassSelect', '班级', control='select', options=[{'value': '', 'label': '全部班级'}], attrs={'data-cs-class': ''}) }}
+            {{ lq_field('csCourseSelect', '课程', control='select', options=[{'value': '', 'label': '全部课程'}], attrs={'data-cs-course': '', 'data-lq-searchable': ''}) }}
+            {{ lq_field('csClassSelect', '班级', control='select', options=[{'value': '', 'label': '全部班级'}], attrs={'data-cs-class': '', 'data-lq-searchable': ''}) }}
             {% else %}
             <div class="cs-toolbar__field">
                 <label>学年学期</label>
-                <select data-lq-component="select" class="lq-select" data-cs-term></select>
+                <select aria-label="学年学期" data-lq-dropdown data-lq-component="select" class="lq-select" data-cs-term></select>
             </div>
             <div class="cs-toolbar__field">
                 <label>课程</label>
-                <select data-lq-component="select" class="lq-select" data-cs-course><option value="">全部课程</option></select>
+                <select aria-label="课程" data-lq-dropdown data-lq-searchable data-lq-component="select" class="lq-select" data-cs-course><option value="">全部课程</option></select>
             </div>
             <div class="cs-toolbar__field">
                 <label>班级</label>
-                <select data-lq-component="select" class="lq-select" data-cs-class><option value="">全部班级</option></select>
+                <select aria-label="班级" data-lq-dropdown data-lq-searchable data-lq-component="select" class="lq-select" data-cs-class><option value="">全部班级</option></select>
             </div>
             {% endif %}
             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cs-reset-btn" data-cs-reset>重置筛选</button>

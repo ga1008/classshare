@@ -99,7 +99,7 @@
         </label>
         <label class="review-course-filter">
             <span>课程</span>
-            <select data-lq-component="select" class="lq-select">
+            <select data-lq-dropdown data-lq-component="select" class="lq-select">
                 <option value="0">全部课程</option>
                 {% for option in review_context.course_options %}
                 <option value="{{ option.course_id }}" {% if option.course_id == review_context.active_course_id %}selected{% endif %}>

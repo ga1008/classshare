@@ -45,10 +45,12 @@ adoptDomainControl(existingInput, { kind: 'input' });
 ```html
 <button data-lq-component="button" class="lq-btn lq-btn--glass lq-btn--sm" type="button">操作</button>
 <input data-lq-component="input" class="lq-input" id="title" name="title" required>
-<select data-lq-component="select" class="lq-select" id="term" name="term"></select>
+<select data-lq-component="select" data-lq-dropdown class="lq-select" id="term" name="term" aria-label="学期"></select>
 ```
 
 保留的旧类只能作为布局/业务钩子。`declarative.css` 将显式组件的背景、前景和边框绑定到共享配方，避免晚加载的旧样式夺回外观所有权；参数来自 `button.css/forms.css` 的同一配方，不新增一套颜色。新增领域 CSS 禁止重新声明控件背景、文字色、边框色、滤镜和交互动效；只允许布局、几何以及受控内容槽位。
+
+平台选择列表声明 `data-lq-dropdown`，由共享 Dropdown 呈现；原生 select 继续独占值、表单与校验。已有 Selection 或筛选代理的作者入口标记 `data-lq-selection-owner`，React 等显式生命周期标记 `data-lq-dropdown-manual`，同一 select 只能有一个呈现所有者；动态领域 owner 调用 `enhanceDropdowns(root)`，不自行实现第二套下拉。
 
 复合选择卡使用 `kind='choice'` 和作者内容槽；原 `aria-pressed/selected` 与领域选择状态保持一致。颜色样本使用 `data-lq-visual='color'`，其颜色是用户数据，不能被普通玻璃 fill 覆盖。普通动态标签按钮应由当前子文本命名，不能把初次标签永久写入 aria-label；纯图标按钮必须提供稳定而准确的名称。
 

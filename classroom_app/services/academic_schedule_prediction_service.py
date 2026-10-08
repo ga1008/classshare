@@ -442,6 +442,60 @@ def _approved_change_relations(lessons: list[dict], history: list[dict]) -> list
     return [relation for relation in candidates if counts[relation["target_event_key"]] == 1]
 
 
+def _planned_change_relations(lessons: list[dict], requests: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Read-only approved plans which still have one official original occurrence.
+
+    An approval is not proof that a physical session moved. These relations are
+    display evidence only, including for already stored snapshots; never feed
+    them into session numbering, material rebinding or availability writes.
+    """
+    official = [item for item in lessons if item.get("counts_towards_total", True)]
+    groups = {}
+    for request in requests:
+        if request.get("status") in {"pending", "approved"}:
+            for detail in request.get("details", []):
+                groups.setdefault((_identity_key(request), _slot_key(detail["original"])), []).append((request, detail))
+    relations, warnings = [], []
+    for group in groups.values():
+        approved = [(request, detail) for request, detail in group if request.get("status") == "approved"]
+        if not approved:
+            continue
+        for request, detail in approved:
+            original, proposed = detail["original"], detail.get("proposed")
+            sources = [item for item in official if _same_identity(item, request)
+                       and (item.get("actual_date"), tuple(item.get("sections") or [])) == _slot_key(original)]
+            # No original occurrence means this may already be applied (or is
+            # unresolved). The established approved-history adapter owns that.
+            if not sources:
+                continue
+            if len(group) != 1 or len(sources) != 1:
+                _warning(warnings, "planned_source_ambiguous", request_id=request["request_id"],
+                         message="同一原安排存在多条申请或多条正式课次，计划关系尚不能唯一确认；未选择或合并其中一条。")
+                continue
+            source = sources[0]
+            if request.get("kind") not in {"move", "cancel"} or (request["kind"] == "move" and not proposed):
+                continue
+            kind = "cancel" if request["kind"] == "cancel" else "room" if _slot_key(original) == _slot_key(proposed) else "move"
+            if kind == "room" and _room(source.get("classroom")) == _room(proposed.get("room")):
+                continue  # Room-only approval already reflected in this card.
+            if kind == "move" and any(_same_identity(item, request)
+                    and (item.get("actual_date"), tuple(item.get("sections") or [])) == _slot_key(proposed)
+                    for item in official):
+                _warning(warnings, "planned_target_ambiguous", request_id=request["request_id"],
+                         message="申请的原位置和目标位置均仍有同教学班正式课次，暂不推断它们属于同一次课；请核对正式课表。")
+                continue
+            if not source.get("event_key"):
+                continue
+            relations.append({"request_id": request["request_id"], "detail_id": detail["detail_id"],
+                              "kind": kind, "phase": "planned", "approval_status": "approved",
+                              "source_event_key": source["event_key"], "session_id": source.get("session_id"),
+                              "class_offering_id": source.get("class_offering_id"),
+                              "original": _public_slot(original), "proposed": _public_slot(proposed),
+                              "original_week_index": original["week"],
+                              "proposed_week_index": proposed["week"] if proposed else None})
+    return relations, warnings
+
+
 def reconcile_and_publish_snapshot(conn, teacher_id: int, semester: dict | int, snapshot: dict, lease_token: str, *, now=None) -> dict:
     """Publish atomically without committing. Failed validation leaves old data intact."""
     teacher_id, stamp = int(teacher_id), _stamp(now)
@@ -557,7 +611,7 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
                 target = original if request["kind"] == "cancel" else proposed
                 approved_updates.setdefault(session["id"], []).append((request, target, session))
             elif not effective:
-                _warning(warnings, "approved_not_reflected", request_id=request["request_id"], message="申请已通过，正式课表尚未完整体现；当前仅显示正式课表。")
+                _warning(warnings, "approved_not_reflected", request_id=request["request_id"], message="申请已通过，正式课表尚未完整体现；请核对原安排与申请目标。")
     # Resolve all approved claims before writing any session. List order is never
     # an approval priority; contradictory effective targets preserve local state.
     for session_id, updates in approved_updates.items():
@@ -675,12 +729,40 @@ def _read_snapshot(row: dict) -> dict:
     snapshot = json.loads(row["snapshot_json"])
     lessons = json.loads(row["lessons_json"])
     history = json.loads(row["request_history_json"])
+    claims = {}
+    for request in snapshot["requests"]:
+        if request.get("status") in {"pending", "approved"}:
+            for detail in request.get("details", []):
+                key = (_identity_key(request), _slot_key(detail["original"]))
+                claims[key] = claims.get(key, 0) + 1
+    # Older snapshots projected one pending request even when an approved plan
+    # claimed that same original occurrence. Reading must not pick that pending
+    # target as the winner; retain the official card and the explicit warning.
+    displayed = []
+    for lesson in lessons:
+        change = lesson.get("adjustment") or {}
+        key = (_identity_key(lesson), _slot_key(change.get("original") or {}))
+        if change.get("phase") == "pending" and claims.get(key, 0) > 1:
+            if not lesson.get("counts_towards_total", True):
+                continue
+            lesson.pop("adjustment", None)
+        displayed.append(lesson)
+    lessons = displayed
+    planned, plan_warnings = _planned_change_relations(lessons, snapshot["requests"])
+    planned_requests = {item["request_id"] for item in planned}
+    warnings = json.loads(row["warnings_json"])
+    for warning in warnings:
+        if warning.get("code") == "approved_not_reflected":
+            warning["message"] = ("申请已批准、待落实：计划安排单独标出，正式课次与课时保持不变。"
+                                  if warning.get("request_id") in planned_requests else
+                                  "申请已批准，但正式课表尚未完整体现且计划位置不能唯一确认；请核对申请明细。")
     return {"semester_id": row["semester_id"], "teacher_id": row["teacher_id"], "lessons": lessons,
             "official_lessons": [item for item in lessons if item["counts_towards_total"]],
             "predicted_lessons": [item for item in lessons if not item["counts_towards_total"]],
             "requests": snapshot["requests"], "request_history": history,
             "approved_changes": _approved_change_relations(lessons, history),
-            "covered_offering_ids": json.loads(row["covered_offering_ids_json"]), "warnings": json.loads(row["warnings_json"]),
+            "planned_changes": planned,
+            "covered_offering_ids": json.loads(row["covered_offering_ids_json"]), "warnings": warnings + plan_warnings,
             "sync_state": {"status": "ready", "semester_id": row["semester_id"], "revision": row["revision"], "last_success_at": row["published_at"]}}
 
 
@@ -710,7 +792,7 @@ def load_teacher_prediction_terms(conn, teacher_id: int) -> list[dict]:
 
 def load_authorized_prediction_lessons(conn, authorized_offering_ids, *, semester_id=None, academic_year=None, term=None) -> dict:
     """Caller supplies live authorized membership IDs; never accepts a student ID as scope."""
-    empty = {"lessons": [], "approved_changes": [], "sync_states": [], "warnings": [], "covered_offering_ids": []}
+    empty = {"lessons": [], "approved_changes": [], "planned_changes": [], "sync_states": [], "warnings": [], "covered_offering_ids": []}
     ids = sorted({int(value) for value in authorized_offering_ids if int(value) > 0})
     if not ids or not _table_exists(conn, "teacher_academic_schedule_snapshots"):
         return empty
@@ -752,6 +834,7 @@ def load_authorized_prediction_lessons(conn, authorized_offering_ids, *, semeste
         allowed = allowed_by_snapshot[key]
         empty["lessons"].extend(row for row in snapshot["lessons"] if row.get("class_offering_id") in allowed)
         empty["approved_changes"].extend(row for row in snapshot["approved_changes"] if row.get("class_offering_id") in allowed)
+        empty["planned_changes"].extend(row for row in snapshot["planned_changes"] if row.get("class_offering_id") in allowed)
         empty["covered_offering_ids"].extend(value for value in snapshot["covered_offering_ids"] if value in allowed)
         empty["sync_states"].append(snapshot["sync_state"])
         # Request reasons and other classes' diagnostics are not student payloads.
