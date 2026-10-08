@@ -69,7 +69,8 @@ class AvailabilityServiceTests(unittest.TestCase):
         self.assertEqual(data["students"]["5"]["1"]["2"], "计算机科学2606班 高等数学")
         self.assertNotIn("4", data["students"]["5"])  # the lesson's own slot is not a clash
         self.assertEqual(data["teacher"]["5"]["2"]["6"], "本人 Python程序设计")
-        self.assertIn("6", data["room_busy"]["5"]["3"])
+        self.assertEqual(data["room_busy_blocks"][0]["sections"], [6, 7])
+        self.assertNotIn("3", data["room_busy"].get("5", {}))
         self.assertEqual(data["room_checked"]["5"]["5"]["6"], "free")
 
     def test_slot_verdicts(self):
@@ -80,6 +81,22 @@ class AvailabilityServiceTests(unittest.TestCase):
         self.assertEqual(avail.check_slot(data, week=5, weekday=5, sections=[6, 7])["level"], "ok")
         self.assertEqual(avail.check_slot(data, week=6, weekday=5, sections=[6, 7])["level"], "unknown")
         self.assertEqual(avail.check_slot(data, week=9, weekday=1, sections=[2, 3])["level"], "unknown")  # 高数 ends week 8
+
+    def test_combined_busy_is_not_a_claim_about_each_section(self):
+        data = avail.build_lesson_availability(self.conn, 1, self.overview, "ev-a")
+        for sections in ([6], [7], [5, 6], [7, 8]):
+            self.assertEqual(avail.check_slot(data, week=5, weekday=3, sections=sections)["level"], "unknown")
+        self.assertEqual(avail.check_slot(data, week=5, weekday=3, sections=[5, 6, 7])["level"], "room")
+        self.assertEqual(avail.check_slot(data, week=5, weekday=5, sections=[6])["level"], "ok")
+
+    def test_rechecking_same_combination_updates_one_cache_row(self):
+        avail.record_room_slot_check(self.conn, year="2026-2027", term="1", room_id="136B310", room_name="B310",
+                                     week=5, weekday=3, sections=[7, 6, 6], status="free")
+        count = self.conn.execute("SELECT COUNT(*) FROM academic_room_slot_checks WHERE week=5 AND weekday=3").fetchone()[0]
+        self.assertEqual(count, 1)
+        data = avail.build_lesson_availability(self.conn, 1, self.overview, "ev-a")
+        self.assertEqual(data["room_busy_blocks"], [])
+        self.assertEqual(avail.check_slot(data, week=5, weekday=3, sections=[6, 7])["level"], "ok")
 
     def test_save_draft_blocks_student_clash_and_flags_busy_room(self):
         with self.assertRaisesRegex(editor.ScheduleEditError, "学生有其他课程"):
@@ -184,8 +201,12 @@ class AvailabilitySyncAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_free_room_search_records_room_verdict(self):
         async def fake_query(_teacher_id, filters):
-            return {"status": "success", "items": [{"place_id": "130C108", "display_name": "（大成楼C108）AI数智财务创新中心", "seat_count": 80}], "total_count": 1}
-        with patch.object(sync, "query_free_classrooms_from_academic_system", fake_query):
+            if filters.get("cd_id"):
+                return {"status": "success", "items": [], "total_count": 0, "school_code": "gxufl"}
+            return {"status": "success", "items": [{"place_id": "130C108", "display_name": "（大成楼C108）AI数智财务创新中心", "seat_count": 80}], "total_count": 1, "school_code": "gxufl"}
+        with patch.object(sync, "query_free_classrooms_from_academic_system", fake_query), patch.object(sync, "_free_room_target", return_value={
+            "place_id": "136B310", "campus_id": "1", "school_code": "gxufl", "room_name": "B310",
+        }):
             result = await sync.search_free_rooms(1, year="2026-2027", term="1", week=5, weekday=3, sections=[6, 7], room_id="136B310", room_name="（知新楼B310）金融科技综合实验室")
         self.assertEqual(result["room_status"], "busy")
         row = self.conn.execute("SELECT status FROM academic_room_slot_checks WHERE room_id='136B310' AND week=5 AND weekday=3").fetchone()

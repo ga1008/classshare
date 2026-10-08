@@ -1,5 +1,6 @@
 import { apiFetch } from '/static/js/api.js';
 import { escapeHtml, showMessage } from '/static/js/ui.js';
+import { tableMarkup } from './lq/tables.js';
 
 function parseJsonScript(id, fallback) {
     const el = document.getElementById(id);
@@ -27,6 +28,11 @@ const state = {
     selectedWeekday: 1,
     freeOptions: (boot.dashboard && boot.dashboard.options) || {},
     freeQueryTerm: null,
+    freeOptionsRequest: 0,
+    freeOptionsLoading: false,
+    freeQueryRequest: 0,
+    freeQueryLoading: false,
+    freeQuerySnapshot: null,
 };
 
 const refs = {
@@ -76,6 +82,7 @@ const refs = {
     freeResultEmpty: document.getElementById('freeRoomResultEmpty'),
     freeResultSummary: document.getElementById('freeRoomResultSummary'),
     freeResultTerm: document.getElementById('freeRoomResultTerm'),
+    freePagination: document.getElementById('freeRoomPagination'),
     freeRecommendationPanel: document.getElementById('freeRoomRecommendationPanel'),
     freeRecommendationList: document.getElementById('freeRoomRecommendationList'),
     freeRecommendationReason: document.getElementById('freeRoomRecommendationReason'),
@@ -380,9 +387,13 @@ function freeOptionParams() {
 }
 
 async function loadFreeOptions({ silent = false } = {}) {
-    if (refs.freeSubmit) refs.freeSubmit.disabled = true;
+    const requestId = ++state.freeOptionsRequest;
+    const params = freeOptionParams().toString();
+    state.freeOptionsLoading = true;
+    updateFreeQueryBusy();
     try {
-        const result = await apiFetch(`/api/manage/classrooms/free-options?${freeOptionParams().toString()}`);
+        const result = await apiFetch(`/api/manage/classrooms/free-options?${params}`, { silent: true });
+        if (requestId !== state.freeOptionsRequest) return;
         state.freeQueryTerm = result.term || null;
         const options = result.options || {};
         updateSelectOptions(refs.freeBuilding, options.buildings || [], { keepValue: true });
@@ -392,11 +403,33 @@ async function loadFreeOptions({ silent = false } = {}) {
             refs.freeResultTerm.textContent = result.semester_name || (result.term ? `${result.term.xnm}-${result.term.xqm}` : '教务实时');
         }
     } catch (error) {
+        if (requestId !== state.freeOptionsRequest) return;
         if (!silent) showMessage(error.message || '读取教务系统教室选项失败。', 'error');
         renderSections();
     } finally {
-        if (refs.freeSubmit) refs.freeSubmit.disabled = false;
+        if (requestId === state.freeOptionsRequest) {
+            state.freeOptionsLoading = false;
+            updateFreeQueryBusy();
+        }
     }
+}
+
+function updateFreeQueryBusy() {
+    if (!refs.freeSubmit) return;
+    refs.freeSubmit.disabled = state.freeOptionsLoading || state.freeQueryLoading;
+    refs.freeSubmit.textContent = state.freeQueryLoading ? '查询中' : '查询空闲教室';
+}
+
+function clearFreeQuery(message = '查询条件已改变，请重新查询。') {
+    state.freeQueryRequest += 1;
+    state.freeQueryLoading = false;
+    state.freeQuerySnapshot = null;
+    if (refs.freeResultList) refs.freeResultList.innerHTML = '';
+    if (refs.freePagination) { refs.freePagination.hidden = true; refs.freePagination.innerHTML = ''; }
+    renderFreeRecommendations();
+    if (refs.freeResultSummary) refs.freeResultSummary.textContent = '尚未查询';
+    if (refs.freeResultEmpty) { refs.freeResultEmpty.hidden = false; refs.freeResultEmpty.textContent = message; }
+    updateFreeQueryBusy();
 }
 
 function selectedSections() {
@@ -455,16 +488,17 @@ function renderFreeRecommendations(recommendations = {}) {
     }
 }
 
-function describeFreeQuery(result) {
+function describeFreeQuery(result, query) {
     const term = result.semester_name || (result.term ? `${result.term.xnm}-${result.term.xqm}` : '');
-    const sectionText = selectedSections().join('、');
-    const weekday = `周${['', '一', '二', '三', '四', '五', '六', '日'][state.selectedWeekday] || state.selectedWeekday}`;
-    return [term, `第 ${state.selectedWeek} 周`, weekday, `第 ${sectionText} 节`]
+    const sectionText = query.sections.join('、');
+    const day = query.weekday[0];
+    const weekday = `周${['', '一', '二', '三', '四', '五', '六', '日'][day] || day}`;
+    return [term, `第 ${query.weeks[0]} 周`, weekday, `第 ${sectionText} 节`]
         .filter(Boolean)
         .join(' · ');
 }
 
-async function queryFreeRooms(event) {
+async function queryFreeRooms(event, { page = 1, snapshot = null } = {}) {
     event?.preventDefault();
     if (!state.selectedWeek) {
         showMessage('请选择周次。', 'warning');
@@ -478,12 +512,19 @@ async function queryFreeRooms(event) {
         showMessage('请选择节次。', 'warning');
         return;
     }
-    setBusy([refs.freeSubmit], true, '查询中');
+    const query = { ...(snapshot || freeQueryPayload()), page };
+    clearFreeQuery('正在向教务查询空闲教室…');
+    const requestId = state.freeQueryRequest;
+    state.freeQueryLoading = true;
+    updateFreeQueryBusy();
     try {
         const result = await apiFetch('/api/manage/classrooms/free-query', {
             method: 'POST',
-            body: freeQueryPayload(),
+            body: query,
+            silent: true,
         });
+        if (requestId !== state.freeQueryRequest) return;
+        state.freeQuerySnapshot = query;
         const items = Array.isArray(result.items) ? result.items : [];
         const recommendations = result.recommendations && typeof result.recommendations === 'object'
             ? result.recommendations
@@ -491,13 +532,19 @@ async function queryFreeRooms(event) {
         const recommendationItems = Array.isArray(recommendations.items) ? recommendations.items : [];
         refs.freeResultList.innerHTML = items.map(renderFreeCard).join('');
         renderFreeRecommendations(recommendations);
-        refs.freeResultEmpty.hidden = items.length > 0 && recommendationItems.length === 0;
+        refs.freeResultEmpty.hidden = items.length > 0;
         const visibleCount = numberValue(result.total_count || items.length);
         if (refs.freeResultSummary) {
             const suffix = recommendationItems.length
                 ? `，目标教室不可用，推荐 ${recommendationItems.length} 间同类型空闲场地`
                 : `，共 ${visibleCount} 个可用场地`;
-            refs.freeResultSummary.textContent = `${describeFreeQuery(result)}${suffix}`;
+            refs.freeResultSummary.textContent = `${describeFreeQuery(result, query)}${suffix}`;
+        }
+        if (refs.freePagination) {
+            const totalPages = Math.max(1, Number(result.total_page) || Math.ceil(visibleCount / query.page_size));
+            const currentPage = Math.max(1, Math.min(Number(result.page) || page, totalPages));
+            refs.freePagination.hidden = totalPages <= 1;
+            refs.freePagination.innerHTML = totalPages > 1 ? tableMarkup('pager', { page: currentPage, totalPages, label: '空闲教室结果分页' }) : '';
         }
         if (refs.freeResultTerm) {
             refs.freeResultTerm.textContent = result.semester_name || '教务实时';
@@ -508,9 +555,15 @@ async function queryFreeRooms(event) {
                 : '<strong>选择的时间段没有可用教室！</strong>可以调整校区、楼号、类别、周次或节次后重新查询。';
         }
     } catch (error) {
+        if (requestId !== state.freeQueryRequest) return;
+        if (refs.freeResultSummary) refs.freeResultSummary.textContent = '查询未完成';
+        if (refs.freeResultEmpty) {
+            refs.freeResultEmpty.hidden = false;
+            refs.freeResultEmpty.textContent = error.message || '空闲教室实时查询失败，请稍后重试。';
+        }
         showMessage(error.message || '空闲教室实时查询失败。', 'error');
     } finally {
-        setBusy([refs.freeSubmit], false);
+        if (requestId === state.freeQueryRequest) { state.freeQueryLoading = false; updateFreeQueryBusy(); }
     }
 }
 
@@ -550,21 +603,26 @@ function bindEvents() {
         reloadPlacesFromFirstPage({ silent: true });
     });
     refs.freeSemester?.addEventListener('change', () => {
+        clearFreeQuery();
         state.selectedWeek = defaultWeekForSemester(selectedSemester());
         renderWeeks();
         loadFreeOptions();
     });
-    refs.freeCampus?.addEventListener('change', () => loadFreeOptions());
+    refs.freeCampus?.addEventListener('change', () => { clearFreeQuery(); loadFreeOptions(); });
+    [refs.freeBuilding, refs.freeType].forEach(select => select?.addEventListener('change', () => clearFreeQuery()));
+    refs.freeName?.addEventListener('input', () => clearFreeQuery());
     refs.freeWeekRow?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-week]');
         if (!button) return;
         state.selectedWeek = numberValue(button.dataset.week);
+        clearFreeQuery();
         refreshToggleState(refs.freeWeekRow, '[data-week]', state.selectedWeek);
     });
     refs.freeWeekdayRow?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-weekday]');
         if (!button) return;
         state.selectedWeekday = numberValue(button.dataset.weekday);
+        clearFreeQuery();
         refreshToggleState(refs.freeWeekdayRow, '[data-weekday]', state.selectedWeekday);
     });
     refs.freeSectionRow?.addEventListener('click', (event) => {
@@ -578,8 +636,14 @@ function bindEvents() {
             state.selectedSections.add(value);
         }
         button.classList.toggle('is-active', state.selectedSections.has(value));
+        clearFreeQuery();
     });
     refs.freeForm?.addEventListener('submit', queryFreeRooms);
+    refs.freePagination?.addEventListener('click', event => {
+        const button = event.target.closest('[data-lq-page]');
+        if (!button || button.disabled || !state.freeQuerySnapshot) return;
+        queryFreeRooms(event, { page: Number(button.dataset.lqPage), snapshot: state.freeQuerySnapshot });
+    });
 }
 
 function init() {

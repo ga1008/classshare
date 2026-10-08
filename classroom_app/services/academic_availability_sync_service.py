@@ -35,7 +35,10 @@ from typing import Any
 import httpx
 
 from ..database import get_db_connection
-from .academic_classroom_sync_service import query_free_classrooms_from_academic_system
+from .academic_classroom_sync_service import (
+    load_teacher_teaching_place_by_key, load_teacher_teaching_places,
+    query_free_classrooms_from_academic_system,
+)
 from .academic_course_sync_service import (
     ZF_TIMETABLE_FIELD_KEYS, _build_timetable_form, _fetch_timetable_field_keys, _parse_schedule_response,
     _parse_week_numbers,
@@ -284,41 +287,80 @@ async def sync_availability_for_term(teacher_id: int, *, year: str, term: str, o
 
 
 def _room_matches(item: dict[str, Any], room_id: str, room_name: str) -> bool:
-    candidates = {str(item.get(key) or "").strip() for key in ("place_id", "room_code", "room_name", "room_full_name", "display_name")}
-    return bool(candidates & {room_id, room_name}) if (room_id or room_name) else False
+    ids = {str(item.get(key) or "").strip() for key in ("place_id", "room_code")} - {""}
+    if room_id and ids:
+        return room_id in ids
+    names = {str(item.get(key) or "").strip() for key in ("room_name", "room_full_name", "display_name")} - {""}
+    return bool(room_name and room_name in names)
+
+
+def _free_room_target(conn, teacher_id: int, room_id: str, room_name: str) -> dict | None:
+    if room_id:
+        return load_teacher_teaching_place_by_key(conn, teacher_id, place_id=room_id)
+    if room_name:
+        matches = load_teacher_teaching_places(conn, teacher_id, search=room_name, limit=2)
+        if len(matches) == 1 and _room_matches(matches[0], "", room_name):
+            return matches[0]
+    return None
 
 
 async def search_free_rooms(teacher_id: int, *, year: str, term: str, week: int, weekday: int, sections: list[int],
                             keyword: str = "", room_id: str = "", room_name: str = "", building: str = "",
-                            room_type: str = "") -> dict[str, Any]:
+                            room_type: str = "", campus: str = "", page: int = 1, page_size: int = 40) -> dict[str, Any]:
     """二次搜索：free rooms for one slot via the existing 空闲教室 query; also records the
     verdict for ``room_id`` (the lesson's current room) in the slot-check cache."""
     identity = identity_from_year_term(year, term)
     if identity is None:
         return {"status": "invalid", "message": "学年学期无效。", "items": []}
     xnm, xqm = identity.as_xnm_xqm()
+    year, term = identity.as_year_term()
+    with get_db_connection() as conn:
+        target = _free_room_target(conn, teacher_id, room_id.strip(), room_name.strip())
+    campus_id = campus.strip() or str((target or {}).get("campus_id") or "1")
     filters = {"xnm": xnm, "xqm": xqm, "weeks": [int(week)], "weekday": [int(weekday)], "sections": [int(s) for s in sections],
-               "cdmc": keyword.strip(), "lh": building.strip(), "cdlb_id": room_type.strip() or "05", "page_size": 200}
+               "cdmc": keyword.strip(), "lh": building.strip(), "cdlb_id": room_type.strip(), "xqh_id": campus_id,
+               "page": page, "page_size": page_size, "recommendations": False}
     try:
         result = await query_free_classrooms_from_academic_system(int(teacher_id), filters)
     except Exception as exc:  # 教务 offline / unexpected payload must not 500 the editor
-        logger.warning("Free-room search failed for teacher %s: %s", teacher_id, exc)
-        result = {"status": "academic_unavailable", "message": f"教务系统暂时无法查询空闲教室：{str(exc)[:120]}", "items": []}
+        logger.warning("Free-room search failed for teacher %s (%s)", teacher_id, type(exc).__name__)
+        result = {"status": "academic_unavailable", "message": "教务系统暂时无法查询空闲教室，请稍后重试。", "items": []}
     items = result.get("items") or []
     room_status = "unknown"
-    if result.get("status") == "success" and (room_id or room_name):
-        # Only a keyword-free query enumerates every free room, so the absence of the
-        # current room is conclusive only then.
-        matched = any(_room_matches(item, room_id, room_name) for item in items)
-        if matched:
+    room_status_message = ""
+    target_id = str((target or {}).get("place_id") or "")
+    target_name = str((target or {}).get("room_full_name") or (target or {}).get("room_name") or room_name)
+    target_campus = str((target or {}).get("campus_id") or "")
+    school_code = str(result.get("school_code") or "")
+    scoped_target = bool(target_id and target_campus and school_code and school_code == str((target or {}).get("school_code") or ""))
+    if result.get("status") == "success" and scoped_target:
+        if any(_room_matches(item, target_id, target_name) for item in items):
             room_status = "free"
-        elif not keyword.strip() and not building.strip():
-            room_status = "busy"
-        if room_status != "unknown" and room_id:
+        else:
+            # Candidate filters/pages cannot prove absence: independently query
+            # the scoped room, with its actual campus and all room types.
+            target_filters = {**filters, "cd_id": target_id, "cdmc": "", "lh": "", "cdlb_id": "",
+                              "xqh_id": target_campus, "page": 1, "page_size": 200}
+            try:
+                checked = await query_free_classrooms_from_academic_system(int(teacher_id), target_filters)
+            except Exception as exc:
+                logger.warning("Target room check failed (%s)", type(exc).__name__)
+                checked = {"status": "academic_unavailable"}
+            if checked.get("status") == "success" and checked.get("school_code") == school_code:
+                if any(_room_matches(item, target_id, target_name) for item in checked.get("items") or []):
+                    room_status = "free"
+                elif checked.get("total_count") == 0:
+                    room_status = "busy"
+            if room_status == "unknown":
+                room_status_message = "候选教室已查询；原教室的实时占用未能确认，请重试。"
+        if room_status != "unknown":
             with get_db_connection() as conn:
-                record_room_slot_check(conn, year=year, term=term, room_id=room_id, room_name=room_name, week=int(week),
+                record_room_slot_check(conn, year=year, term=term, room_id=target_id, room_name=target_name, week=int(week),
                                        weekday=int(weekday), sections=[int(s) for s in sections], status=room_status,
-                                       detail="实时查空：教室未在空闲列表" if room_status == "busy" else "实时查空：空闲")
+                                       school_code=school_code,
+                                       detail="实时查空：目标教室在所选完整时段不可用" if room_status == "busy" else "实时查空：空闲")
                 conn.commit()
-    return {**result, "items": items, "room_status": room_status,
+    elif result.get("status") == "success" and (room_id or room_name):
+        room_status_message = "原教室尚无可确认的校区和场地标识，占用状态保持待核实。"
+    return {**result, "items": items, "room_status": room_status, "room_status_message": room_status_message,
             "slot": {"week": int(week), "weekday": int(weekday), "sections": [int(s) for s in sections]}}

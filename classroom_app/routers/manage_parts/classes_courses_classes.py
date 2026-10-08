@@ -380,7 +380,7 @@ async def api_load_free_classroom_options(
         semester_id=str(request.query_params.get("semester_id") or "").strip(),
         xqh_id=str(request.query_params.get("xqh_id") or "1").strip() or "1",
     )
-    if result.get("status") == "missing_credential":
+    if result.get("status") in ("missing_credential", "invalid"):
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")
     if result.get("status") != "success":
         raise HTTPException(502, result.get("message") or "未能读取教务系统教室选项。")
@@ -402,8 +402,8 @@ async def api_query_free_classrooms(
         result = await query_free_classrooms_from_academic_system(int(user["id"]), payload)
     except HTTPException:
         raise
-    except Exception as exc:  # 教务停机/升级期间返回可读错误而不是 500
-        raise HTTPException(502, f"教务系统暂时无法查询空闲教室，请稍后重试（{str(exc)[:120]}）。") from exc
+    except Exception as exc:  # Preserve an error result without disclosing SQL or remote credentials.
+        raise HTTPException(502, "教务系统暂时无法查询空闲教室，请稍后重试。") from exc
     status = result.get("status")
     if status == "missing_credential":
         raise HTTPException(400, result.get("message") or "请先配置教务系统账号。")

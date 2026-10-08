@@ -199,5 +199,76 @@
       "Source inventory remains pending/unknown; no platform migration acceptance is promoted.",
       "Historical browserEvidence above belongs to its own recorded graph and is not overwritten by this follow-up."
     ]
+  },
+  "classroomFreeQueryReview": {
+    "reviewedAt": "2026-10-08",
+    "scope": "Incremental free-classroom query state and pagination in the teacher classroom page and 3D schedule editor.",
+    "buildGraph": "2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d",
+    "sourceHashes": {
+      "static/js/manage_classrooms.js": "60d3b48f73e7426ae615ab5d2e18609ac3d4a63876b5c56cc2e644b06ec8ae6c",
+      "static/js/course_schedule_editor.js": "7da18c523873599bf5f7ac3d1a83ef1de9be113fc0584bc923d67c2223dc347e",
+      "templates/manage/classrooms.html": "8e5691aa171920ef8ed8a989684bd0f3205ef1dffa2072a748f4bc35031f8f92",
+      "static/js/lq/tables.js": "39761cacfba26749b52c1231fd2741085bb3da1994d7e7394af112f531d3c12f",
+      "docs/lq-component-contract-2026-09-27.md": "ac5c163b9028afb2680efdc8e9a0e955391425af9e974fa76c62415f27e9ddd2",
+      "docs/lq-components.md": "b327681f0ab014f65c7a557ad1c587267fe46e434030d7f2c3d8fc82551ee13b"
+    },
+    "contracts": [
+      "Free-option and query response generations prevent prior semester/campus/slot responses from replacing current controls or clearing a newer busy state. Display labels use the submitted query snapshot.",
+      "Changing query criteria clears prior free-room claims. Query failure remains distinct from a successful empty result and appears in the result region.",
+      "The classroom page uses shared LQ Pager markup and the existing page/page_size backend contract. Page changes preserve the submitted filters and time slot.",
+      "Editor free-room identity includes term, lesson, time slot and selected room. It requests one page of 40 candidates at a time; shared Button controls expose subsequent pages without silently truncating candidates.",
+      "A later-page failure retains prior valid choices and can retry the same page; changing the lesson or room discards obsolete responses. Current-room unknown diagnostics are escaped and remain separate from successful candidate results.",
+      "Existing LQ selection ownership, native room select value, draft save parameters, proof upload, cancellation and remote save flows are unchanged. Only domain state and existing component author slots were changed; no material CSS was added.",
+      "A cached multi-section busy observation proves only the complete group is unavailable. Editor slotVerdict consumes room_busy_blocks only when the requested slot contains the entire group; subsets/partial overlaps remain unknown, known single-section free facts remain usable, and student/teacher conflicts retain priority.",
+      "Both actual page templates use asset_url for their controller entry; the classroom page no longer loads the dated mutable /static/js alias. The release graph owns dependent LQ Pager imports."
+    ],
+    "checks": [
+      {
+        "command": "node --test tests/frontend/classroom_free_queries.test.cjs",
+        "passed": 12
+      },
+      {
+        "command": "npm run build",
+        "status": "passed",
+        "intermediateGraph": "1a87170434a09d4a9a8fed50c3cac10e012aa3998fadd57b529986c1d3074069"
+      },
+      {
+        "command": "npm run build:assets",
+        "status": "passed",
+        "buildGraph": "2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d",
+        "assets": 464,
+        "reason": "Final unknown-status message and grouped busy-slot interpretation were completed after the full build."
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "passed"
+      },
+      {
+        "command": "npx playwright test --config tests/e2e/components/playwright.config.ts course-schedule-editor-changes.spec.ts --output .codex-temp/classroom-free-editor-20261008",
+        "passed": 20,
+        "scope": "Existing editor behavior, comparison geometry, permissions and draft lifecycle; executed before the final unknown-status text addition."
+      },
+      {
+        "command": "npx playwright test --config tests/e2e/components/playwright.config.ts course-schedule-editor-changes.spec.ts --grep 'immutable release graph' --output .codex-temp/classroom-free-editor-final-20261008",
+        "passed": 1,
+        "scope": "Prior immutable graph stage, before grouped busy-slot interpretation; render, grouping and lazy details with no source fallback.",
+        "buildGraph": "76b2f25f8edb8870c686b2e0efeb14384c5e1abd32d3e8c129934e4ec7aef780"
+      },
+      {
+        "command": "git diff --check",
+        "status": "passed"
+      },
+      {
+        "command": "npx playwright test --config tests/e2e/components/playwright.config.ts course-schedule-editor-changes.spec.ts --grep 'immutable release graph' --output .codex-temp/classroom-free-editor-group-final-20261008",
+        "passed": 1,
+        "buildGraph": "2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d",
+        "scope": "Final grouped busy-state graph: immutable render, grouping and lazy details with no source fallback."
+      }
+    ],
+    "limitations": [
+      "All checks here use synthetic APIs and no business database. The release verification owner records both real application entry paths separately.",
+      "Earlier browserEvidence, scheduleBindingsReview and historical validation hashes remain preserved; they are not reclassified as this query feature acceptance.",
+      "Complete platform dynamic/business acceptance remains pending."
+    ]
   }
 }

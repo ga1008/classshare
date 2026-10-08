@@ -72,6 +72,10 @@ class AcademicSessionRedirectError(RuntimeError):
     """Raised when JWXT redirects a read-only AJAX request back to login."""
 
 
+class AcademicQueryResponseError(RuntimeError):
+    """A free-room response did not establish a valid availability result."""
+
+
 @dataclass
 class AcademicTeachingPlace:
     place_key: str
@@ -343,12 +347,30 @@ def _free_item_from_place(place: AcademicTeachingPlace) -> dict[str, Any]:
 
 
 def _free_items_from_payload(payload: Any) -> tuple[list[dict[str, Any]], int, int]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        raise AcademicQueryResponseError("教务系统未返回有效的空闲教室列表，请稍后重试。")
+    if not any(key in payload for key in ("totalCount", "totalResult")):
+        raise AcademicQueryResponseError("教务系统未返回可确认的空闲教室总数，请重新查询。")
+    if payload.get("success") is False or payload.get("status") in ("error", "failed", "fail"):
+        raise AcademicQueryResponseError("教务系统拒绝了空闲教室查询，请重新确认登录和查询条件。")
+    for key in ("totalCount", "totalResult", "totalPage"):
+        if key in payload and not re.fullmatch(r"\d+", str(payload[key])):
+            raise AcademicQueryResponseError("教务系统返回的空闲教室分页信息无效。")
     rows, total_count, total_page = _extract_items(payload)
+    for key in ("totalCount", "totalResult"):
+        if key in payload:
+            total_count = int(payload[key])
+            break
+    if len(rows) != len(payload["items"]):
+        raise AcademicQueryResponseError("教务系统返回的空闲教室记录格式无效。")
     items: list[dict[str, Any]] = []
     for row in rows:
         place = _place_from_row(row)
-        if place:
-            items.append(_free_item_from_place(place))
+        if not place:
+            raise AcademicQueryResponseError("教务系统返回的空闲教室缺少场地标识。")
+        items.append(_free_item_from_place(place))
+    if total_count < len(items):
+        raise AcademicQueryResponseError("教务系统返回的空闲教室数量不一致，请重新查询。")
     return items, total_count, total_page
 
 
@@ -466,7 +488,7 @@ def _prepare_free_room_recommendations(
         "total_count": total_count,
         "total_page": total_page,
         "limit": 5,
-        "reason": f"{target_name or '目标教室'} 当前时段不可用，已按 {room_type} 查询空闲场地，并优先推荐编号接近的教室。",
+        "reason": f"当前筛选未找到 {target_name or '目标教室'}，已按 {room_type} 查询空闲场地，并优先推荐编号接近的教室。",
     }
 
 
@@ -506,10 +528,15 @@ def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
 async def _resolve_term_params(teacher_id: int, requested: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any] | None]:
     xnm = _normalize_space(requested.get("xnm"))
     xqm = _normalize_space(requested.get("xqm"))
+    if (xnm or xqm) and (not re.fullmatch(r"\d{4}", xnm) or xqm not in ("3", "12", "16")):
+        raise ValueError("请提供有效的教务学年和学期。")
     if xnm and xqm:
         return {"xnm": xnm, "xqm": xqm}, None
 
-    semester_id = _parse_int(requested.get("semester_id"))
+    raw_semester_id = requested.get("semester_id")
+    if raw_semester_id not in (None, "", 0, "0") and not re.fullmatch(r"[1-9]\d*", str(raw_semester_id)):
+        raise ValueError("学期编号无效，请重新选择。")
+    semester_id = _parse_int(raw_semester_id)
     with get_db_connection() as conn:
         semester = None
         if semester_id:
@@ -518,6 +545,8 @@ async def _resolve_term_params(teacher_id: int, requested: dict[str, Any]) -> tu
                 (semester_id, int(teacher_id)),
             ).fetchone()
             semester = dict(row) if row is not None else None
+            if semester is None:
+                raise ValueError("所选学期不存在或无权访问，请重新选择。")
         if semester is None:
             semester = _load_current_semester(conn, int(teacher_id))
 
@@ -537,40 +566,45 @@ async def _resolve_term_params(teacher_id: int, requested: dict[str, Any]) -> tu
     return {"xnm": str(year_start), "xqm": "12" if 2 <= today.month <= 7 else "3"}, None
 
 
-def _bitmap(values: Any, *, min_value: int, max_value: int) -> int:
+def _selection_values(values: Any, *, min_value: int, max_value: int) -> list[int]:
     if isinstance(values, str):
-        raw_values = re.findall(r"\d+", values)
+        raw_values = re.split(r"[,\s]+", values.strip()) if values.strip() else []
     elif isinstance(values, (list, tuple, set)):
         raw_values = list(values)
     else:
         raw_values = [values]
-    bitmap = 0
+    numbers: set[int] = set()
     for raw in raw_values:
-        try:
-            number = int(raw)
-        except (TypeError, ValueError):
-            continue
-        if min_value <= number <= max_value:
-            bitmap += 1 << (number - 1)
+        if isinstance(raw, bool) or not re.fullmatch(r"\d+", str(raw)):
+            raise ValueError("周次、星期和节次必须为完整的有效整数。")
+        number = int(raw)
+        if not min_value <= number <= max_value:
+            raise ValueError(f"查询时段超出范围（{min_value}–{max_value}）。")
+        numbers.add(number)
+    return sorted(numbers)
+
+
+def _bitmap(values: Any, *, min_value: int, max_value: int) -> int:
+    bitmap = 0
+    for number in _selection_values(values, min_value=min_value, max_value=max_value):
+        bitmap |= 1 << (number - 1)
     return bitmap
 
 
+def _selection_mask(filters: dict, key: str, values: Any, maximum: int) -> int:
+    raw = filters.get(key)
+    if raw not in (None, "", 0, "0"):
+        if isinstance(raw, bool) or not re.fullmatch(r"\d+", str(raw)) or not 0 < int(raw) < 1 << maximum:
+            raise ValueError("查询时段位图无效，请重新选择周次和节次。")
+        mask = int(raw)
+        if values not in (None, "") and mask != _bitmap(values, min_value=1, max_value=maximum):
+            raise ValueError("查询时段与位图不一致，请重新选择。")
+        return mask
+    return _bitmap(values, min_value=1, max_value=maximum)
+
+
 def _normalize_weekdays(value: Any) -> str:
-    if isinstance(value, str):
-        raw_values = re.findall(r"\d+", value)
-    elif isinstance(value, (list, tuple, set)):
-        raw_values = list(value)
-    else:
-        raw_values = [value]
-    weekdays: list[str] = []
-    for raw in raw_values:
-        try:
-            number = int(raw)
-        except (TypeError, ValueError):
-            continue
-        if 1 <= number <= 7 and str(number) not in weekdays:
-            weekdays.append(str(number))
-    return ",".join(weekdays)
+    return ",".join(str(number) for number in _selection_values(value, min_value=1, max_value=7))
 
 
 def _free_room_form(filters: dict[str, Any], term_params: dict[str, str]) -> dict[str, Any]:
@@ -580,14 +614,14 @@ def _free_room_form(filters: dict[str, Any], term_params: dict[str, str]) -> dic
     sections_value = filters.get("sections")
     if sections_value in (None, ""):
         sections_value = filters.get("section")
-    zcd = _parse_int(filters.get("zcd")) or _bitmap(weeks_value, min_value=1, max_value=30)
-    jcd = _parse_int(filters.get("jcd")) or _bitmap(sections_value, min_value=1, max_value=20)
+    zcd = _selection_mask(filters, "zcd", weeks_value, 30)
+    jcd = _selection_mask(filters, "jcd", sections_value, 20)
     xqj = _normalize_weekdays(filters.get("xqj") or filters.get("weekday"))
     return {
         "xqh_id": _normalize_space(filters.get("xqh_id")) or "1",
         "xnm": term_params["xnm"],
         "xqm": term_params["xqm"],
-        "cdlb_id": _normalize_space(filters.get("cdlb_id")) or "05",
+        "cdlb_id": _normalize_space(filters.get("cdlb_id", "05")),
         "cdejlb_id": _normalize_space(filters.get("cdejlb_id")),
         "qszws": _normalize_space(filters.get("qszws")),
         "jszws": _normalize_space(filters.get("jszws")),
@@ -898,7 +932,7 @@ def _build_teacher_teaching_place_filters(
         compact_haystack = (
             "REPLACE(REPLACE(REPLACE(("
             + haystack
-            + "), ' ', ''), CHAR(9), ''), '　', '')"
+            + "), ' ', ''), ?, ''), '　', '')"
         )
         token_terms = [term for term in re.split(r"\s+", normalized_search) if term]
         token_clause = ""
@@ -916,6 +950,7 @@ def _build_teacher_teaching_place_filters(
             """
         )
         params.extend([direct_like] * len(fields))
+        params.append("\t")
         params.append(compact_like)
         params.extend(token_params)
     return where, params
@@ -1106,10 +1141,12 @@ async def load_free_classroom_options_from_academic_system(
             "options": local_options,
         }
 
-    term_params, semester = await _resolve_term_params(
-        int(teacher_id),
-        {"xnm": xnm, "xqm": xqm, "semester_id": semester_id},
-    )
+    try:
+        term_params, semester = await _resolve_term_params(
+            int(teacher_id), {"xnm": xnm, "xqm": xqm, "semester_id": semester_id},
+        )
+    except ValueError as exc:
+        return {"status": "invalid", "message": str(exc), "options": local_options}
     campus_id = _normalize_space(xqh_id) or "1"
     try:
         async with open_authenticated_academic_client(access_payload) as (client, _profile, _login_result):
@@ -1199,8 +1236,14 @@ async def query_free_classrooms_from_academic_system(
             "message": "请先在系统设置中配置并验证教务系统账号。",
         }
 
-    term_params, semester = await _resolve_term_params(int(teacher_id), filters)
-    base_form = _free_room_form(filters, term_params)
+    try:
+        term_params, semester = await _resolve_term_params(int(teacher_id), filters)
+        base_form = _free_room_form(filters, term_params)
+        for key in ("page", "page_size"):
+            if key in filters and not re.fullmatch(r"[1-9]\d*", str(filters[key])):
+                raise ValueError("分页参数无效，请重新查询。")
+    except ValueError as exc:
+        return {"status": "invalid", "message": str(exc), "items": []}
     if _parse_int(base_form.get("zcd")) <= 0:
         return {"status": "invalid", "message": "请选择要查询的周次。"}
     if not base_form.get("xqj"):
@@ -1232,6 +1275,9 @@ async def query_free_classrooms_from_academic_system(
                     referer_path=ZF_FREE_ROOM_INDEX_PATH,
                 )
                 items, total_count, total_page = _free_items_from_payload(payload)
+                total_page = max(total_page, (total_count + page_size - 1) // page_size)
+                if total_count and page <= total_page and not items:
+                    raise AcademicQueryResponseError("教务系统返回的空闲教室分页不完整，请重新查询。")
                 source_summary.append(
                     {
                         "endpoint": str(profile.base_url).rstrip("/") + ZF_FREE_ROOM_QUERY_PATH,
@@ -1241,7 +1287,7 @@ async def query_free_classrooms_from_academic_system(
                         "purpose": "direct_free_room_query",
                     }
                 )
-                if not items and total_count <= 0 and recommendation_target:
+                if not items and total_count <= 0 and recommendation_target and filters.get("recommendations", True):
                     recommendation_form = _build_free_room_recommendation_form(base_form, recommendation_target)
                     try:
                         await asyncio.sleep(random.uniform(0.28, 0.72))
@@ -1267,7 +1313,7 @@ async def query_free_classrooms_from_academic_system(
                                 "limit": 5,
                             }
                         )
-                    except (AcademicSessionRedirectError, httpx.HTTPError) as exc:
+                    except (AcademicSessionRedirectError, AcademicQueryResponseError, httpx.HTTPError) as exc:
                         target_name = _value_from_place(
                             recommendation_target,
                             "display_name",
@@ -1282,7 +1328,7 @@ async def query_free_classrooms_from_academic_system(
                             "total_count": 0,
                             "total_page": 0,
                             "limit": 5,
-                            "reason": f"{target_name or '目标教室'} 当前时段不可用，但同类型推荐查询暂时失败。",
+                            "reason": f"当前筛选未找到 {target_name or '目标教室'}，同类型推荐查询暂时失败。",
                             "error": str(exc)[:160],
                         }
             break
@@ -1303,6 +1349,9 @@ async def query_free_classrooms_from_academic_system(
                 "semester_id": semester.get("id") if semester else None,
                 "semester_name": str(semester.get("name") or "") if semester else "",
             }
+        except AcademicQueryResponseError as exc:
+            return {"status": "academic_unavailable", "message": str(exc), "items": [],
+                    "total_count": 0, "total_page": 0, "page": page, "page_size": page_size}
         except ValueError as exc:
             return {
                 "status": "academic_login_failed",
@@ -1338,6 +1387,8 @@ async def query_free_classrooms_from_academic_system(
         "total_page": total_page,
         "page": page,
         "page_size": page_size,
+        "has_more": page < total_page,
+        "school_code": normalize_school_code(access_payload.get("school_code")),
         "term": term_params,
         "semester_id": semester.get("id") if semester else None,
         "semester_name": str(semester.get("name") or "") if semester else "",

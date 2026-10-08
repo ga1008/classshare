@@ -3,14 +3,14 @@
   "summary": {
     "files": 518,
     "htmlTemplates": 201,
-    "entries": 5298,
+    "entries": 5300,
     "byKind": {
       "toolbar": 133,
       "surface": 659,
       "choice": 163,
-      "button": 2206,
+      "button": 2207,
       "field": 737,
-      "unknown": 761,
+      "unknown": 762,
       "menu": 33,
       "layer": 139,
       "select": 299,
@@ -25,24 +25,24 @@
     "bySyntax": {
       "jinja-component-call": 438,
       "jinja-html": 2499,
-      "dynamic-html-sink": 632,
-      "js-html-candidate": 1296,
+      "dynamic-html-sink": 633,
+      "js-html-candidate": 1297,
       "create-element": 159,
       "component-factory-call": 77,
       "react-jsx": 173,
       "python-generated-jinja-html": 24
     },
     "byCanonicalContract": {
-      "not-declared": 1523,
-      "canonical-declared-pending": 3691,
+      "not-declared": 1524,
+      "canonical-declared-pending": 3692,
       "canonical-resolution-pending": 3,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
       "shared-component-call": 582,
       "lq-marked-native": 112,
-      "component-declared": 3694,
-      "runtime-output-unknown": 632,
+      "component-declared": 3695,
+      "runtime-output-unknown": 633,
       "legacy-or-native": 91,
       "shared-definition": 52,
       "shared-adapter-call-candidate": 81,
@@ -50,8 +50,8 @@
       "external-icon-content-slot": 34
     },
     "byStatus": {
-      "pending": 4537,
-      "unknown": 761
+      "pending": 4538,
+      "unknown": 762
     },
     "largestFiles": [
       {
@@ -115,11 +115,11 @@
         "entries": 56
       },
       {
-        "file": "static/js/career_path_app.js",
-        "entries": 55
+        "file": "static/js/course_schedule_editor.js",
+        "entries": 56
       },
       {
-        "file": "static/js/course_schedule_editor.js",
+        "file": "static/js/career_path_app.js",
         "entries": 55
       },
       {
@@ -387,7 +387,7 @@
     ]
   },
   "unknownBySyntax": {
-    "dynamic-html-sink": 632,
+    "dynamic-html-sink": 633,
     "create-element": 30,
     "jinja-component-call": 43,
     "jinja-html": 14,
@@ -395,8 +395,8 @@
   },
   "manualInterpretation": "docs/lq-interface-modules-2026-10-08.md#源码审计的人工解释",
   "sourceReview": "docs/lq-interface-source-review-2026-10-08.json",
-  "buildGraph": "52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad",
-  "buildGraphStatus": "scoped-component-validation-passed; full application validation recorded separately",
+  "buildGraph": "2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d",
+  "buildGraphStatus": "scoped-query-controller-validation-passed; two-entry application verification recorded separately",
   "changedContractHashes": {
     "docs/lq-component-contract-2026-09-27.md": "ac5c163b9028afb2680efdc8e9a0e955391425af9e974fa76c62415f27e9ddd2",
     "docs/lq-components.md": "b327681f0ab014f65c7a557ad1c587267fe46e434030d7f2c3d8fc82551ee13b",
@@ -441,21 +441,24 @@
     "static/js/course_schedule_deck.js": "4182b934964f44e285b5171ecf0b9540990d7de7d43251503a8b088ef28ff422",
     "static/js/course_schedule_presentation.js": "8724b66c91e089ac30108f1a8f71197aa78b763e0bbc5d2fa149119047147da0",
     "static/js/course_schedule_styles.js": "b6169050fe7e59b2323bdb8954209acbdff6f8d1de48011addbc4d70e7696037",
-    "static/js/course_schedule_editor.js": "f225731d33a1ff25e05d51c700382b455d8372523e3dce42e9cbfbefc7201c97",
+    "static/js/course_schedule_editor.js": "7da18c523873599bf5f7ac3d1a83ef1de9be113fc0584bc923d67c2223dc347e",
     "static/js/materials_manage.js": "6b96a5d198cb21bcde816d2540fc3bfa54cb215ffb9c8cdf4da961097eabd7c7",
     "templates/partials/materials/modals_repository.html": "ddb96f8bacd5780e953c154faaa1cb690e45ca7956a55bf6692df19941c53d6c",
     "classroom_app/services/academic_schedule_prediction_service.py": "ce7abf6ca46e60aa88888a7221ab0cf5e6119d509c6471d3c77e40aab1fb11b0",
     "classroom_app/services/academic_schedule_overview_service.py": "a9d11a1ce220e82ea46f59c9ba5f36a4526ed5e397b7cbca24642f229304a708",
     "classroom_app/services/student_course_schedule_service.py": "2a41100d6198fb638cfc1bd691271c8a599f7d0a83f821f43b9da987565bfdc2",
-    "classroom_app/services/course_planning_service.py": "d652fd60152c5667e5ed2a6f0dd9e9d075f66c9b5fb3c3c6d6d0c6fa00b45150"
+    "classroom_app/services/course_planning_service.py": "d652fd60152c5667e5ed2a6f0dd9e9d075f66c9b5fb3c3c6d6d0c6fa00b45150",
+    "static/js/manage_classrooms.js": "60d3b48f73e7426ae615ab5d2e18609ac3d4a63876b5c56cc2e644b06ec8ae6c",
+    "templates/manage/classrooms.html": "8e5691aa171920ef8ed8a989684bd0f3205ef1dffa2072a748f4bc35031f8f92",
+    "static/js/lq/tables.js": "39761cacfba26749b52c1231fd2741085bb3da1994d7e7394af112f531d3c12f"
   },
   "validationEvidence": {
-    "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#scheduleBindingsReview",
-    "componentEvidenceDirectory": ".codex-temp/schedule-bindings-final-20261008",
-    "componentPassed": 23,
-    "repositoryFunctionPassed": 15,
-    "scheduleUnitPassed": 78,
-    "scope": "Approved history routing and repository binding presentation; complete platform dynamic/business acceptance remains pending."
+    "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#classroomFreeQueryReview",
+    "functionPassed": 12,
+    "existingEditorComponentPassed": 20,
+    "finalImmutableComponentPassed": 1,
+    "scope": "Free-query state and pagination contracts; complete platform acceptance remains pending.",
+    "finalImmutableEvidenceDirectory": ".codex-temp/classroom-free-editor-group-final-20261008"
   },
   "incrementalBuilds": [
     {
@@ -463,6 +466,13 @@
       "buildGraph": "52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad",
       "status": "formal build and scoped component validation passed; full application validation recorded separately",
       "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#scheduleBindingsReview",
+      "historicalBrowserEvidencePreserved": true
+    },
+    {
+      "scope": "Free classroom query repair (2026-10-08 follow-up)",
+      "buildGraph": "2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d",
+      "status": "scoped-query-controller-validation-passed; two-entry application verification recorded separately",
+      "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#classroomFreeQueryReview",
       "historicalBrowserEvidencePreserved": true
     }
   ],
@@ -520,6 +530,70 @@
         "initialPlatformVisits": 152,
         "backendPassed": 223,
         "scope": "Focused UI contracts and affected routes; complete platform dynamic/business acceptance remains pending."
+      }
+    },
+    {
+      "buildGraph": "52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad",
+      "buildGraphStatus": "scoped-component-validation-passed; full application validation recorded separately",
+      "changedContractHashes": {
+        "docs/lq-component-contract-2026-09-27.md": "ac5c163b9028afb2680efdc8e9a0e955391425af9e974fa76c62415f27e9ddd2",
+        "docs/lq-components.md": "b327681f0ab014f65c7a557ad1c587267fe46e434030d7f2c3d8fc82551ee13b",
+        "frontend/src/islands/message-center-sync.tsx": "72d627cf6de348108f4499379cb3b78a384e5baa8a7fecb2655fcd6a759a6008",
+        "static/css/classroom_workspace.css": "ca792f619cbfb748aac82b71a9228af7f5961db487aafd67b452a4845d832de5",
+        "static/css/lq/components/content.css": "9e739052c4dcc4b20985905aba8c215b0355b496403ed90187d9873fae1c374d",
+        "static/css/lq/components/declarative.css": "f9978060a6b63b77b0b2b1340b865ca606f8ae12fc891ec5babc21da8cad6a1b",
+        "static/css/lq/components/dialogs.css": "662dc549458a63405f457fd0631dcff1fd333b45c68952582d1deaed02ca0cc0",
+        "static/css/lq/components/material-boundaries.css": "03330c834cacb2172361c3bf1ee64c25bcd44fb0739a16e951de5543848a40b5",
+        "static/css/lq/components/menus.css": "4a8cc89f927fddfe17131b140f4a33650881ed93b7fbd3f1c9080d972f3eb5b6",
+        "static/css/lq/pages/calendar.css": "1db313d4cee6c38b83abc2e231e7714e12dbe70b1647bfd99d193ebde44df6e4",
+        "static/css/lq/pages/dashboard.css": "2036cfc1e83d716ef289da6ba0c2832e83fd1699ba3f056b019df5a2ade9ac27",
+        "static/css/lq/pages/profile.css": "855328545473e98ffcbb45da594168194e2dbecf0e46aa3d588c6f197d9e43dd",
+        "static/css/tailwind-app.css": "0d4334f89a725d807e9e402ad99a109ef943da88da8d8b17cb9b1b2fc7b7fcd9",
+        "static/css/ui-system.src.css": "581fcc484435e946f1d3c1e365cfc850e81f10057d8f283a4bda5a7b5d92a36b",
+        "static/js/classroom_page.js": "1904e14edf6a03893281aa1bc298072339d4cb9e3e954083adacda679db1a1fb",
+        "static/js/dashboard.js": "5d7e513c49b3b2ac8ec14e1b017773988d3423376da1ccb930a0fa0da5cc48c9",
+        "static/js/lq/layer.js": "dab04ce9f224f05286c372f2bc8436088877011855c6e989cee297c584d6ae97",
+        "static/js/lq/menus.js": "760924b5d2d6463f6bfa1465a5da81d771994e5aa0f659aec305e698d1f47383",
+        "static/js/lq/nav-menu.js": "b29d2a860b8ae72bd038e31af7133d53bd051faa9a3c5d7cf077e5c2af1e4f6a",
+        "static/js/message_center_bell.js": "cc17e550639647b509f2dbe89e682dec57c26929d7310f4c88756e526e8d3ed9",
+        "static/js/message_center_bell_dom.d.ts": "e78cc266978983dc35322ecbf0ac961412ed470e31edaae45835cf58796d5fa2",
+        "static/js/message_center_bell_dom.js": "0bac074aa2dc412ce87a2ae791435982e24a4a354fcdce375f0331fa56acffc2",
+        "static/js/ui_explanation.js": "fe3de1fba4ded7be03e139c1352c8b8483739cac7beb79f016141329e8051717",
+        "templates/base_navbar.html": "01402a291efc01df62b0eb7d711fa23d2492b2a00319eb8138f07fe4d8e3b8b0",
+        "templates/classroom_main_v4.html": "406f48926e4dc82c53d146d3d1f1063390391b1f983f85d87c4cc3655575cacf",
+        "templates/dashboard.html": "271d1d17bbefec8b254267e323924493341919e4d256516bdc18b9822f82ff8d",
+        "templates/dashboard_teacher.html": "9f24e0b6b1bb1dcc002e262efcce40c744c2b01eeb84f09e0275ab2f7af95b5b",
+        "templates/macros/app_utility_menus.html": "93b6edbaf414d10ac21d6b3a721c68cd279c9379666c636d79da10a269a812e2",
+        "templates/macros/classroom_menus.html": "f01852378be86007d1e4ebc8d0281cdcad7a377c98452dd2f4b6990ffabb1231",
+        "templates/macros/lq/menus.html": "a02af0f99189725efa696044b63b46a8595201095e533a36e96005f0736cc8c1",
+        "templates/macros/lq/nav-menu.html": "102f203e0364417613a8aa6bccb645b0e36de92235bc02a788fc11eb275792db",
+        "templates/partials/app_topbar_utility_actions.html": "2e94821150d273afca80452f925c489de5753958d2c1e767766b661649b31639",
+        "templates/partials/dashboard_schedule_tools.html": "40402125cdf2b6bfb5b0c80783136aa2ee1ecfe2602483de4414db0cd6f97d54",
+        "templates/partials/profile/email.html": "a565bd845c6edb6d9a8e7f4c8d23f0559dc893609be116cf1e039e91772ebfdd",
+        "templates/partials/profile/messages.html": "76db28c06afba82ebc33014b7822feae317f3cf63d3bde73229e7c1199a6f5c8",
+        "templates/partials/profile/security.html": "1742e18479a98a19faec849bfe54751ee98f210c58c773cc04e5e6e1ba10daf2",
+        "templates/partials/profile/settings.html": "f043ee9f0e8617314c24a6bd16009f2b58c8e65050e533da8896a7e67eefd7d2",
+        "templates/partials/semester_calendar_panel.html": "0050050f61c0df35d0266c88c6019f2ba421c41ef953a9fa05e6c91d6df1cb7b",
+        "templates/report_card.html": "683cf566a7cfd3e0703cfd14183725830bf5e16f7260cb0c14ac22e6dde60d03",
+        "static/js/course_schedule_change_links.js": "a6429787a2b2fe911b30fd1ae7dab303b1da4a09bc76789814949c139c07e954",
+        "static/js/course_schedule_deck.js": "4182b934964f44e285b5171ecf0b9540990d7de7d43251503a8b088ef28ff422",
+        "static/js/course_schedule_presentation.js": "8724b66c91e089ac30108f1a8f71197aa78b763e0bbc5d2fa149119047147da0",
+        "static/js/course_schedule_styles.js": "b6169050fe7e59b2323bdb8954209acbdff6f8d1de48011addbc4d70e7696037",
+        "static/js/course_schedule_editor.js": "f225731d33a1ff25e05d51c700382b455d8372523e3dce42e9cbfbefc7201c97",
+        "static/js/materials_manage.js": "6b96a5d198cb21bcde816d2540fc3bfa54cb215ffb9c8cdf4da961097eabd7c7",
+        "templates/partials/materials/modals_repository.html": "ddb96f8bacd5780e953c154faaa1cb690e45ca7956a55bf6692df19941c53d6c",
+        "classroom_app/services/academic_schedule_prediction_service.py": "ce7abf6ca46e60aa88888a7221ab0cf5e6119d509c6471d3c77e40aab1fb11b0",
+        "classroom_app/services/academic_schedule_overview_service.py": "a9d11a1ce220e82ea46f59c9ba5f36a4526ed5e397b7cbca24642f229304a708",
+        "classroom_app/services/student_course_schedule_service.py": "2a41100d6198fb638cfc1bd691271c8a599f7d0a83f821f43b9da987565bfdc2",
+        "classroom_app/services/course_planning_service.py": "d652fd60152c5667e5ed2a6f0dd9e9d075f66c9b5fb3c3c6d6d0c6fa00b45150"
+      },
+      "validationEvidence": {
+        "sourceReview": "docs/lq-interface-source-review-2026-10-08.json#scheduleBindingsReview",
+        "componentEvidenceDirectory": ".codex-temp/schedule-bindings-final-20261008",
+        "componentPassed": 23,
+        "repositoryFunctionPassed": 15,
+        "scheduleUnitPassed": 78,
+        "scope": "Approved history routing and repository binding presentation; complete platform dynamic/business acceptance remains pending."
       }
     }
   ]

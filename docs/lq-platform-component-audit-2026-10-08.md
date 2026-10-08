@@ -2,11 +2,11 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 518 个作者源码文件，覆盖 201 个 HTML 模板，发现 5298 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 518 个作者源码文件，覆盖 201 个 HTML 模板，发现 5300 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2206 |
+| button | 2207 |
 | field | 737 |
 | select | 299 |
 | surface | 659 |
@@ -21,16 +21,16 @@
 | chip | 8 |
 | domain | 18 |
 | status | 44 |
-| unknown | 761 |
+| unknown | 762 |
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3694 |
+| component-declared | 3695 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
 | legacy-or-native | 91 |
 | lq-marked-native | 112 |
-| runtime-output-unknown | 632 |
+| runtime-output-unknown | 633 |
 | shared-adapter-call-candidate | 81 |
 | shared-component-call | 582 |
 | shared-definition | 52 |
@@ -41,10 +41,12 @@
 
 本次增量覆盖已批准调课的可视历史端点、同一课次后续待审调课、课次重排展示与 Git 学习文档绑定结果；历史浏览器结果及迁移验收状态保留。正式构建图为 `52d9070c0fd971673d59343c26ffdbc9f5aa4873fc49bc5e3b0b9362fc2c77ad`，增量检查单列在 source-review 的 `scheduleBindingsReview`。
 
+本次后续增量覆盖教室查询页与 3D 课表编辑器的空闲查询状态、分页和当前教室未知状态说明；使用共享 Pager、Button 与既有选值 owner，无新增私有材质。当前构建图 `2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d`，独立记录于 source-review 的 `classroomFreeQueryReview`；上轮浏览器证据原样保留。
+
 | unknown 语法 | 数量 |
 | --- | ---: |
 | `create-element` | 30 |
-| `dynamic-html-sink` | 632 |
+| `dynamic-html-sink` | 633 |
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
@@ -99,8 +101,8 @@
 | `static/js/attendance_reports.js` | 61 |
 | `templates/dashboard_teacher.html` | 56 |
 | `templates/manage/classes.html` | 56 |
+| `static/js/course_schedule_editor.js` | 56 |
 | `static/js/career_path_app.js` | 55 |
-| `static/js/course_schedule_editor.js` | 55 |
 | `templates/dashboard.html` | 54 |
 | `templates/manage/system/users.html` | 53 |
 | `static/js/manage_lesson_plans.js` | 49 |

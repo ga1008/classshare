@@ -132,13 +132,12 @@ def record_room_slot_check(conn, *, year: str, term: str, room_id: str, room_nam
     ensure_schedule_availability_schema(conn)
     key = json.dumps(_int_list(sections))
     conn.execute(
-        "DELETE FROM academic_room_slot_checks WHERE school_code = ? AND academic_year = ? AND academic_term = ? AND room_id = ? AND week = ? AND weekday = ? AND sections_json = ?",
-        (school_code, year, term, room_id, int(week), int(weekday), key),
-    )
-    conn.execute(
         """
         INSERT INTO academic_room_slot_checks (school_code, academic_year, academic_term, room_id, room_name, week, weekday,
             sections_json, status, detail, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (school_code, academic_year, academic_term, room_id, week, weekday, sections_json)
+        DO UPDATE SET room_name = excluded.room_name, status = excluded.status,
+                      detail = excluded.detail, checked_at = excluded.checked_at
         """,
         (school_code, year, term, room_id, room_name, int(week), int(weekday), key, status, _clean(detail)[:400], _now_iso()),
     )
@@ -315,8 +314,16 @@ def build_lesson_availability(conn, teacher_id: int, overview: dict[str, Any], e
             for section in _int_list(slot.get("sections_json")):
                 mark(room_busy, week, int(slot.get("weekday") or 0), section, label)
     room_checked: dict[str, dict] = {}
+    room_busy_blocks: list[dict[str, Any]] = []
     for check in _room_checks(conn, year=year, term=term, room_id=rid) if rid else []:
-        for section in _int_list(check.get("sections_json")):
+        checked_sections = _int_list(check.get("sections_json"))
+        if _clean(check.get("status")) == "busy" and len(checked_sections) > 1:
+            # A combined query proves at least one section is unavailable, not
+            # that every section is busy. Preserve that precise evidence.
+            room_busy_blocks.append({"week": int(check.get("week") or 0), "weekday": int(check.get("weekday") or 0),
+                                     "sections": checked_sections, "detail": _clean(check.get("detail"))})
+            continue
+        for section in checked_sections:
             mark(room_checked, int(check.get("week") or 0), int(check.get("weekday") or 0), section, _clean(check.get("status")))
             if _clean(check.get("status")) == "busy":
                 mark(room_busy, int(check.get("week") or 0), int(check.get("weekday") or 0), section, _clean(check.get("detail")) or "教室已被占用")
@@ -328,9 +335,10 @@ def build_lesson_availability(conn, teacher_id: int, overview: dict[str, Any], e
         "coverage": {
             "students": "synced" if class_slots else ("no_scope" if not scope_keys else "none"),
             "admin_classes": admin_classes,
-            "room": "timetable" if room_slots else ("checks" if room_checked else "none"),
+            "room": "timetable" if room_slots else ("checks" if room_checked or room_busy_blocks else "none"),
         },
         "students": students, "teacher": teacher, "room_busy": room_busy, "room_checked": room_checked,
+        "room_busy_blocks": room_busy_blocks,
     }
 
 
@@ -351,6 +359,13 @@ def check_slot(availability: dict[str, Any], *, week: int, weekday: int, section
     if reasons:
         return {"level": "block", "reasons": reasons}
     room_reasons = []
+    requested_sections = set(_int_list(sections))
+    for block in availability.get("room_busy_blocks") or []:
+        block_sections = set(_int_list(block.get("sections")))
+        if (str(block.get("week")) == w and str(block.get("weekday")) == d
+                and block_sections and block_sections <= requested_sections):
+            label = "、".join(str(section) for section in sorted(block_sections))
+            room_reasons.append(f"第{label}节组合：教室在该完整时段不可用")
     unknown = 0
     for section in sections:
         s = str(int(section))

@@ -155,17 +155,21 @@ async def api_schedule_editor_availability_sync(request: Request, user: dict = D
 @router.get("/academic/course-schedule/editor/free-rooms", response_class=JSONResponse)
 async def api_schedule_editor_free_rooms(year: str = "", term: str = "", week: int = 0, weekday: int = 0, sections: str = "",
                                          q: str = "", room_id: str = "", room: str = "", building: str = "",
-                                         room_type: str = "", user: dict = Depends(get_current_teacher)):
+                                         room_type: str = "", campus: str = "", page: int = 1, page_size: int = 40,
+                                         user: dict = Depends(get_current_teacher)):
     """二次搜索：目标时段的空闲教室（实时查教务），并记录原教室在该时段的占用结论。"""
     try:
         section_list = sorted({int(part) for part in sections.split(",") if part.strip()})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="节次格式错误。") from exc
-    if not year or not term or week < 1 or not 1 <= weekday <= 7 or not section_list:
+    if not year or not term or not 1 <= week <= 30 or not 1 <= weekday <= 7 or not section_list or any(s < 1 or s > 20 for s in section_list):
         raise HTTPException(status_code=400, detail="请提供学年学期、周次、星期和节次。")
+    if page < 1 or not 1 <= page_size <= 200:
+        raise HTTPException(status_code=400, detail="分页参数超出范围。")
     result = await search_free_rooms(int(user["id"]), year=_term(year), term=_term(term), week=week, weekday=weekday,
                                      sections=section_list, keyword=_term(q), room_id=_term(room_id), room_name=_term(room),
-                                     building=_term(building), room_type=_term(room_type))
+                                     building=_term(building), room_type=_term(room_type), campus=_term(campus),
+                                     page=page, page_size=page_size)
     return JSONResponse({"status": "success", "result": result}, headers=_NO_STORE)
 
 

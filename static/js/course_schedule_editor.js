@@ -85,9 +85,11 @@ function init(boot) {
         payload: null, activeWeek: 0, selectedKey: '', drag: null, form: null, roomsTimer: null, roomsRequest: null,
         busy: false, lastPush: null, materials: { key: '', items: null, loading: false },
         availability: { key: '', roomKey: '', data: null, loading: false },
-        freeRooms: { slotKey: '', items: [], status: '', roomStatus: '', loading: false, message: '' },
+        freeRooms: { slotKey: '', items: [], status: '', roomStatus: '', loading: false, message: '', page: 0, hasMore: false },
         proofsBusy: false,
     };
+    let availabilityRequestId = 0;
+    let freeRoomsRequestId = 0;
     const refs = {
         termSelect: root.querySelector('[data-cse-term]'),
         meta: root.querySelector('[data-cse-meta]'),
@@ -230,6 +232,13 @@ function init(boot) {
             if (st === 'room') { level = 'room'; reasons.push(`第${section}节：教室已占用（${cellReason(data, week, weekday, section)}）`); }
             else if (st === 'unknown' && level === 'ok') level = 'unknown';
         }
+        const requested = new Set(sections.map(Number));
+        for (const block of data.room_busy_blocks || []) {
+            if (Number(block.week) !== Number(week) || Number(block.weekday) !== Number(weekday)
+                || !block.sections?.length || !block.sections.every(section => requested.has(Number(section)))) continue;
+            level = 'room';
+            reasons.push(`第${block.sections.join('、')}节组合不可用${block.detail ? `（${block.detail}）` : ''}`);
+        }
         return { level, reasons };
     }
 
@@ -254,15 +263,19 @@ function init(boot) {
     async function loadAvailability(sourceKey, { roomId = '', roomName = '' } = {}) {
         if (!sourceKey || !state.payload?.editable) return null;
         const roomKey = `${roomId}|${roomName}`;
-        if (state.availability.key === sourceKey && state.availability.roomKey === roomKey && (state.availability.data || state.availability.loading)) return state.availability.data;
-        state.availability = { key: sourceKey, roomKey, data: null, loading: true };
+        const termKey = `${term().year}|${term().term}`;
+        if (state.availability.key === sourceKey && state.availability.roomKey === roomKey && state.availability.termKey === termKey && (state.availability.data || state.availability.loading)) return state.availability.data;
+        const requestId = ++availabilityRequestId;
+        const isCurrent = () => requestId === availabilityRequestId && termKey === `${term().year}|${term().term}`;
+        state.availability = { key: sourceKey, roomKey, termKey, data: null, loading: true };
         try {
             const params = new URLSearchParams({ year: term().year || '', term: term().term || '', event_key: sourceKey, room_id: roomId, room: roomName });
             const data = await api(`${API}/availability?${params}`);
-            if (state.availability.key !== sourceKey || state.availability.roomKey !== roomKey) return null;
-            state.availability = { key: sourceKey, roomKey, data: data.availability || null, loading: false };
+            if (!isCurrent()) return null;
+            state.availability = { key: sourceKey, roomKey, termKey, data: data.availability || null, loading: false };
         } catch (error) {
-            state.availability = { key: sourceKey, roomKey, data: null, loading: false };
+            if (!isCurrent()) return null;
+            state.availability = { key: sourceKey, roomKey, termKey, data: null, loading: false };
             toast(error.message, 'danger');
         }
         renderWeekRail(); renderStage(); renderLegend(); renderDrawerVerdict();
@@ -730,7 +743,7 @@ function init(boot) {
                     <div class="cse-field cse-free-rooms" data-cse-free-rooms-panel>
                         <div class="cse-free-rooms__head">
                             <label>该时段空闲教室（实时查教务）</label>
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-free-rooms${locked ? ' disabled' : ''}>查询空闲教室</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-free-rooms data-cse-locked="${locked}"${locked ? ' disabled' : ''}>查询空闲教室</button>
                         </div>
                         <div class="cse-free-rooms__body" data-cse-free-rooms-list></div>
                     </div>
@@ -861,45 +874,73 @@ function init(boot) {
 
     function freeRoomSlotKey() {
         const form = state.form;
-        return form ? `${term().year}|${term().term}|${form.week}|${form.weekday}|${currentFormSections().join(',')}` : '';
+        return form ? JSON.stringify([term().year, term().term, form.key, form.week, form.weekday,
+            currentFormSections(), form.room_id || '', form.room_id ? form.room : resolveSelection(form.key)?.lesson?.classroom || '']) : '';
     }
 
     function renderFreeRooms() {
         const list = refs.drawer?.querySelector('[data-cse-free-rooms-list]');
         if (!list || !state.form) return;
+        if (state.freeRooms.slotKey && state.freeRooms.slotKey !== freeRoomSlotKey()) {
+            freeRoomsRequestId += 1;
+            state.freeRooms = { slotKey: '', items: [], status: '', roomStatus: '', loading: false, message: '', page: 0, hasMore: false };
+        }
         const fr = state.freeRooms;
-        if (fr.slotKey !== freeRoomSlotKey()) { list.innerHTML = '<div class="cse-materials__empty">选择目标时段后点击「查询空闲教室」，教务会返回该时段所有空闲教室。</div>'; return; }
-        if (fr.loading) { list.innerHTML = '<div class="cse-materials__empty">正在向教务查询空闲教室…</div>'; return; }
+        const queryButton = refs.drawer.querySelector('[data-cse-free-rooms]');
+        if (queryButton) {
+            queryButton.disabled = queryButton.dataset.cseLocked === 'true' || fr.loading;
+            queryButton.textContent = fr.loading ? '查询中…' : '查询空闲教室';
+        }
+        if (fr.slotKey !== freeRoomSlotKey()) { list.innerHTML = '<div class="cse-materials__empty">选择目标时段后点击「查询空闲教室」，教务会返回该时段空闲教室。</div>'; return; }
+        if (fr.loading && !fr.items.length) { list.innerHTML = '<div class="cse-materials__empty">正在向教务查询空闲教室…</div>'; return; }
         if (fr.status !== 'success') { list.innerHTML = `<div class="cse-materials__empty">${escapeHtml(fr.message || '查询失败')}</div>`; return; }
-        const roomLine = fr.roomStatus === 'busy' ? '<div class="cse-status cse-status--conflict">原教室该时段已被占用，请从下方选择一间空闲教室。</div>'
-            : fr.roomStatus === 'free' ? '<div class="cse-status cse-status--pushed">原教室该时段空闲，可直接保存。</div>' : '';
-        const items = fr.items.slice(0, 40).map(room => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-rooms__item" data-cse-room="${escapeHtml(room.place_id || room.room_code || '')}" data-cse-room-name="${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}"><span>${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}</span><small>${escapeHtml([room.campus_name, room.building_name, room.seat_count ? `${room.seat_count} 座` : '', room.room_type_name].filter(Boolean).join(' · '))}</small></button>`).join('');
-        list.innerHTML = `${roomLine}${items ? `<div class="cse-free-rooms__grid">${items}</div><div class="cse-field__hint">共 ${fr.items.length} 间空闲教室，点击即选用。</div>` : '<div class="cse-materials__empty">该时段没有空闲教室。</div>'}`;
+        const roomLine = fr.roomStatus === 'busy' ? '<div class="cse-status cse-status--conflict">当前教室该时段已被占用，请从下方选择一间空闲教室。</div>'
+            : fr.roomStatus === 'free' ? '<div class="cse-status cse-status--pushed">当前教室该时段空闲，可直接保存。</div>'
+                : fr.roomStatusMessage ? `<div class="cse-materials__empty" role="status">${escapeHtml(fr.roomStatusMessage)}</div>` : '';
+        const items = fr.items.map(room => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-rooms__item" data-cse-room="${escapeHtml(room.place_id || room.room_code || '')}" data-cse-room-name="${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}"><span>${escapeHtml(room.display_name || room.room_full_name || room.room_name || '')}</span><small>${escapeHtml([room.campus_name, room.building_name, room.seat_count ? `${room.seat_count} 座` : '', room.room_type_name].filter(Boolean).join(' · '))}</small></button>`).join('');
+        const more = fr.hasMore ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-cse-free-more${fr.loading ? ' disabled' : ''}>${fr.loading ? '查询中…' : '查看更多空闲教室'}</button>` : '';
+        const error = fr.pageError ? `<div class="cse-materials__empty" role="status">${escapeHtml(fr.pageError)}</div>` : '';
+        list.innerHTML = `${roomLine}${items ? `<div class="cse-free-rooms__grid">${items}</div><div class="cse-field__hint">已显示 ${fr.items.length} 间${fr.total ? `，共 ${fr.total} 间` : ''}，点击即选用。</div>` : '<div class="cse-materials__empty">该时段没有空闲教室。</div>'}${error}${more}`;
     }
 
-    async function searchFreeRooms() {
+    async function searchFreeRooms({ append = false } = {}) {
         const form = state.form;
         if (!form) return;
         const key = freeRoomSlotKey();
+        if (state.freeRooms.slotKey === key && state.freeRooms.loading) return;
+        const previous = state.freeRooms.slotKey === key && append ? state.freeRooms : null;
+        const page = previous ? previous.page + 1 : 1;
+        const requestId = ++freeRoomsRequestId;
+        const isCurrent = () => requestId === freeRoomsRequestId && freeRoomSlotKey() === key;
         const original = resolveSelection(form.key)?.lesson;
         const roomId = form.room_id || '';
         const roomName = form.room_id ? form.room : (original?.classroom || '');
-        state.freeRooms = { slotKey: key, items: [], status: '', roomStatus: '', loading: true, message: '' };
+        state.freeRooms = { slotKey: key, items: [], status: '', roomStatus: '', message: '', page: 0, hasMore: false, ...previous, loading: true, pageError: '' };
         renderFreeRooms();
         try {
             const eff = effectiveSlot(form.week, form.weekday); // 调休上课日按被补那天查教室占用
-            const params = new URLSearchParams({ year: term().year || '', term: term().term || '', week: String(eff.week), weekday: String(eff.weekday), sections: currentFormSections().join(','), room_id: roomId, room: roomName });
+            const params = new URLSearchParams({ year: term().year || '', term: term().term || '', week: String(eff.week), weekday: String(eff.weekday), sections: currentFormSections().join(','), room_id: roomId, room: roomName, page: String(page), page_size: '40' });
             const data = await api(`${API}/free-rooms?${params}`);
+            if (!isCurrent()) return;
             const result = data.result || {};
-            state.freeRooms = { slotKey: key, items: result.items || [], status: result.status || 'failed', roomStatus: result.room_status || 'unknown', loading: false, message: result.message || '' };
+            if (result.status !== 'success') throw new Error(result.message || '空闲教室查询失败，请稍后重试。');
+            const received = Array.isArray(result.items) ? result.items : [];
+            const items = [...(previous?.items || [])];
+            for (const item of received) if (!items.some(known => String(known.place_id || known.room_code) === String(item.place_id || item.room_code))) items.push(item);
+            state.freeRooms = { slotKey: key, items, status: 'success', roomStatus: result.room_status || 'unknown', loading: false, message: result.message || '', page,
+                roomStatusMessage: result.room_status_message || '',
+                total: Number(result.total_count) || items.length,
+                hasMore: Boolean(result.has_more ?? (page < Number(result.total_page || 1))) && received.length > 0 };
             if (result.room_status && result.room_status !== 'unknown') {
                 state.availability = { ...state.availability, data: null };
                 await loadAvailability(form.key, { roomId, roomName: roomId ? roomName : '' });
             }
         } catch (error) {
-            state.freeRooms = { slotKey: key, items: [], status: 'failed', roomStatus: 'unknown', loading: false, message: error.message };
+            if (!isCurrent()) return;
+            state.freeRooms = previous ? { ...previous, loading: false, pageError: error.message }
+                : { slotKey: key, items: [], status: 'failed', roomStatus: 'unknown', loading: false, message: error.message, page: 0, hasMore: false };
         }
-        renderFreeRooms();
+        if (isCurrent()) renderFreeRooms();
     }
 
     async function syncAvailability() {
@@ -1621,6 +1662,7 @@ function init(boot) {
         }
         const freeRooms = event.target.closest('[data-cse-free-rooms]');
         if (freeRooms) { await searchFreeRooms(); return; }
+        if (event.target.closest('[data-cse-free-more]')) { await searchFreeRooms({ append: true }); return; }
         if (event.target.closest('[data-cse-reason-ai]')) { await fillReasonByAi(); return; }
         const proofDel = event.target.closest('[data-cse-proof-del]');
         if (proofDel && state.form) {

@@ -282,6 +282,7 @@
                     <span class="classroom-badge is-live" id="freeRoomResultTerm">教务实时</span>
                 </div>
                 <div class="classroom-free-results" id="freeRoomResultList"></div>
+                <div id="freeRoomPagination" hidden></div>
                 <div class="classroom-empty" id="freeRoomResultEmpty">
                     <strong>等待查询条件</strong>
                     选择周次、星期和节次后即可查看可用场地。
@@ -313,5 +314,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="/static/js/manage_classrooms.js?v=academic-classrooms-20260519"></script>
+<script type="module" src="{{ asset_url('js/manage_classrooms.js') }}"></script>
 {% endblock %}
