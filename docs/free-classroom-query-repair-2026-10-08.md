@@ -30,4 +30,4 @@
 | 原生数据库迁移门禁 | 复用同日已完成的离线迁移演练，重新核对 72 个迁移源码与原始备份摘要一致；`.codex-temp/classroom-availability-native-gate.json` |
 | 正式构建与预算 | `2dcac58147515a2c9021d34109035f3dc675797511c415fa0e06e2ae08ac833d`，源文件摘要匹配；LQ 入口 17776/18432 gzip 字节 |
 
-两入口结果为 `.codex-temp/classroom-availability-20261008-final2/results.json`，截图位于同目录 `test-results/`；原生业务证据为 `.codex-temp/classroom-native-business-{old-negative,final}.log`。编辑器 B310 不在首批候选中仍通过独立查询确认其状态；目标查询失败保留候选并显示待核实，选用第 43 个候选 B312 后表单保留选择。源码审计更新只登记本次真实覆盖，保留此前浏览器证据和未决项。服务器发布结果在完成后补入。
+两入口结果为 `.codex-temp/classroom-availability-20261008-final2/results.json`，截图位于同目录 `test-results/`；原生业务证据为 `.codex-temp/classroom-native-business-{old-negative,final}.log`。编辑器 B310 不在首批候选中仍通过独立查询确认其状态；目标查询失败保留候选并显示待核实，选用第 43 个候选 B312 后表单保留选择。[详细隔离验收记录](classroom-availability-acceptance-2026-10-08.md)包含可重复夹具与测试矩阵。源码审计更新只登记本次真实覆盖，保留此前浏览器证据和未决项。服务器发布结果在完成后补入。
