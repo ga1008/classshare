@@ -1,6 +1,6 @@
 """Save timetable edit drafts into the 教务系统 (正方) 调停课申请 *draft* list.
 
-Scope, deliberately narrow — this module talks to exactly four 教务 endpoints:
+Scope, deliberately narrow — this module talks to exactly five 教务 endpoints:
 
 * ``ttksq_cxTtksqView.html``  open the 调停课申请 form for one teaching class
   (教务 allocates / reuses a draft ``ttk_id`` and returns the class's official
@@ -8,18 +8,27 @@ Scope, deliberately narrow — this module talks to exactly four 教务 endpoint
 * ``ttksq_cxConflictCtzt.html`` the same conflict check the browser runs
   before 保存草稿;
 * ``ttksq_cxSaveTtksj.html``  保存草稿 — append one detail row to the draft;
-* ``ttksq_scTtksqsj.html``    remove one saved detail (撤回).
+* ``ttksq_scTtksqsj.html``    remove one saved detail (撤回);
+* ``ttksq_cxUpdateTkyy.html`` save the application-level 调动原因/备注/附件. 教务
+  keeps these on the application header, not on the detail rows — the detail
+  save silently ignores ``tkyy`` — so without this call the draft shows an
+  empty 原因 and 无附件 (verified 2026-10-09 against index_ttksq.js
+  ``saveTkyy``, which the 提交申请 button runs *before* its separate submit).
 
 It never calls the 提交 endpoint. Submitting stays a human action inside 教务:
-the teacher signs in, reviews the saved drafts, fills 调动原因/附件 and presses
-提交申请 there (see docs/course-schedule-editor-2026-09.md).
+the teacher signs in, reviews the saved drafts and presses 提交申请 there
+(see docs/course-schedule-editor-2026-09.md).
 """
 
 from __future__ import annotations
 
+import html
+import io
 import json
 import logging
 import re
+import zipfile
+from pathlib import Path
 from html.parser import HTMLParser
 from typing import Any
 
@@ -41,6 +50,14 @@ FORM_VIEW_PATH = "/tkgl/ttksq_cxTtksqView.html"
 CONFLICT_CHECK_PATH = f"/tkgl/ttksq_cxConflictCtzt.html?gnmkdm={GNMKDM}"
 SAVE_DETAIL_PATH = f"/tkgl/ttksq_cxSaveTtksj.html?gnmkdm={GNMKDM}"
 DELETE_DETAIL_PATH = f"/tkgl/ttksq_scTtksqsj.html?gnmkdm={GNMKDM}"
+UPDATE_REASON_PATH = f"/tkgl/ttksq_cxUpdateTkyy.html?gnmkdm={GNMKDM}"
+ZF_REASON_MAX = 180                       # #tkyy validate stringMaxLength:180
+ZF_NOTE_MAX = 500
+ZF_ATTACHMENT_SUFFIXES = {".jpg", ".jpeg", ".png", ".doc", ".docx", ".pdf", ".zip", ".rar"}
+ZF_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024  # filehandle maxSize/maxTotal 10MB, maxCount 1
+ZF_ATTACHMENT_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".pdf": "application/pdf",
+                      ".doc": "application/msword", ".zip": "application/zip", ".rar": "application/octet-stream",
+                      ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 HTTP_TIMEOUT_SECONDS = 25.0
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 TK_TYPE_CODE = "01"          # 调课类别：调课
@@ -138,6 +155,8 @@ def parse_form_page(page_html: str) -> dict[str, Any]:
         "max_section": int(inputs.get("dqjc") or 0) or None,
         "slots": _inline_list(page_html, "modelList"),
         "existing_details": _inline_list(page_html, "tkxxList"),
+        # 待提交 rows of the open draft application; they carry the header fields (tkyy/tksm/tksmfjm/fjm).
+        "draft_details": _inline_list(page_html, "tjModelList"),
     }
 
 
@@ -329,6 +348,125 @@ def conflict_outcome(payload: Any) -> dict[str, Any]:
             "details": details[:MAX_CONFLICT_DETAILS], "detail_count": len(details), "student_count": len(students)}
 
 
+# ---------------------------------------------------------------------------
+# Application header: 调动原因 / 备注 / 附件 (one per 教务 application = teaching class)
+# ---------------------------------------------------------------------------
+
+def _unique_texts(values: list[str]) -> list[str]:
+    seen: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.append(text)
+    return seen
+
+
+def _normalized(text: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(str(text or ""))).strip()
+
+
+def build_application_reason(drafts: list[dict[str, Any]], existing: str = "") -> tuple[str, str]:
+    """One 教务 application holds every saved detail of a class, so the per-change
+    reasons are merged into its single 调动原因 (≤180 字); a reason the teacher already
+    typed in 教务 is kept first. Notes go to 备注说明."""
+    reason = "；".join(_unique_texts([*str(existing or "").split("；"), *[d.get("reason", "") for d in drafts]]))
+    note = "；".join(_unique_texts([d.get("note", "") for d in drafts]))
+    return reason[:ZF_REASON_MAX], note[:ZF_NOTE_MAX]
+
+
+def build_application_attachment(teacher_id: int, drafts: list[dict[str, Any]]) -> tuple[tuple[str, bytes] | None, str]:
+    """教务 accepts exactly one attachment (jpg/png/pdf/doc/docx/zip/rar, ≤10MB).
+
+    A single compatible proof is sent as-is; several proofs (or a type 教务 refuses,
+    e.g. webp/txt) are bundled into one zip. Returns (file, warning)."""
+    from .schedule_editor_service import ScheduleEditError, draft_proof_path
+
+    files: list[tuple[str, Path]] = []
+    for draft in drafts:
+        for proof in draft.get("proofs") or []:
+            try:
+                path = draft_proof_path(teacher_id, draft["id"], str(proof.get("stored") or ""))
+            except ScheduleEditError:
+                continue
+            if path.is_file():
+                files.append((str(proof.get("name") or path.name), path))
+    if not files:
+        return None, ""
+    # Refuse before reading anything into memory; zipping barely shrinks PDFs/images.
+    if sum(path.stat().st_size for _name, path in files) > ZF_ATTACHMENT_MAX_BYTES:
+        return None, "证明材料合计超过教务 10MB 上限，未上传附件，请在教务手动上传。"
+    if len(files) == 1 and Path(files[0][0]).suffix.lower() in ZF_ATTACHMENT_SUFFIXES:
+        name, path = files[0]
+        content = path.read_bytes()
+    else:
+        buffer = io.BytesIO()
+        used: set[str] = set()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for index, (name, path) in enumerate(files, start=1):
+                entry = name if name not in used else f"{index}-{name}"
+                used.add(entry)
+                archive.write(path, entry)
+        name, content = "调课证明材料.zip", buffer.getvalue()
+    if len(content) > ZF_ATTACHMENT_MAX_BYTES:
+        return None, "证明材料合计超过教务 10MB 上限，未上传附件，请在教务手动上传。"
+    return (name, content), ""
+
+
+def _application_form(page: dict[str, Any], reason: str, note: str, attachment: tuple[str, bytes] | None) -> list[Any]:
+    """The #ajaxForm submission ``saveTkyy`` posts (header fields + one ``myFile`` part)."""
+    fields: list[tuple[str, str]] = [
+        ("ttk_id", page["ttk_id"]), ("spl_id", TK_FLOW_ID), ("sfqxtj", "0"), ("bdlb", ""),
+        ("yylb", ""), ("tkyy", reason), ("tksm", note), ("sfyxsgt", "1"), ("jxnr", ""), ("xskcd", ""),
+    ]
+    parts: list[Any] = _multipart(fields)
+    if attachment:
+        name, content = attachment
+        parts.append(("myFile", (name, content, ZF_ATTACHMENT_MIME.get(Path(name).suffix.lower(), "application/octet-stream"))))
+    else:
+        parts.append(("myFile", ("", b"", "application/octet-stream")))
+    return parts
+
+
+def _application_header_state(page: dict[str, Any]) -> dict[str, Any] | None:
+    rows = page.get("draft_details") or []
+    if not rows:
+        return None
+    first = rows[0]
+    return {"reason": str(first.get("tkyy") or "").strip(), "has_attachment": str(first.get("tksmfjm") or "") == "1"}
+
+
+async def _sync_application(client: httpx.AsyncClient, page: dict[str, Any], teacher_id: int,
+                            class_drafts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Write 调动原因/备注/附件 onto the open draft application, then read it back.
+
+    Returns ``{"status": synced|unverified|skipped|failed, "message": ...}`` and never raises, so a
+    header hiccup cannot undo details that 教务 already saved."""
+    previous = _application_header_state(page) or {}
+    reason, note = build_application_reason(class_drafts, previous.get("reason", ""))
+    if not reason:
+        return {"status": "skipped", "message": "未填写调动原因，请在教务补填后再提交。"}
+    try:
+        attachment, warning = build_application_attachment(teacher_id, class_drafts)
+        await _request(client, "POST", UPDATE_REASON_PATH, label="保存教务调动原因",
+                       files=_application_form(page, reason, note, attachment), headers=_headers())
+        fresh = await open_form_page(client, jxb_id=page["jxb_id"], xnm=page["xnm"], xqm=page["xqm"])
+    except (DraftPushError, OSError, zipfile.BadZipFile) as exc:
+        return {"status": "failed", "message": f"调动原因/附件未能写入教务（{exc}），请在教务补填。"}
+    except Exception:
+        logger.exception("Application header sync failed for teacher %s", teacher_id)
+        return {"status": "failed", "message": "调动原因/附件写入时发生异常，请在教务补填。"}
+    state = _application_header_state(fresh)
+    sent = "调动原因" + ("和附件" if attachment else "")
+    if fresh["ttk_id"] != page["ttk_id"] or state is None:
+        return {"status": "unverified", "message": f"已发送{sent}，但教务未回显，提交前请在教务核对。{warning}"}
+    if not state["reason"] or (attachment and not state["has_attachment"]):
+        missing = "附件" if state["reason"] else "调动原因"
+        return {"status": "failed", "message": f"教务未保存{missing}，请在教务补填后再提交。"}
+    if _normalized(state["reason"]) != _normalized(reason):
+        return {"status": "unverified", "message": f"已写入{sent}，但教务回显的原因与发送内容不完全一致，提交前请在教务核对。{warning}"}
+    return {"status": "synced", "message": f"{sent}已写入教务草稿。{warning}"}
+
+
 async def _check_one(client: httpx.AsyncClient, page: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
     """Read-only dry run of ``_save_one``: the same conflict check 教务 performs before saving, nothing saved."""
     slot = find_original_slot(page["slots"], draft["original"])
@@ -406,6 +544,69 @@ async def check_drafts_conflicts(teacher_id: int, *, year: str, term: str, draft
             "message": "，".join(part for part in parts if part) + "。"}
 
 
+async def _sync_pushed_applications(client: httpx.AsyncClient, teacher_id: int, pages: dict[str, dict[str, Any]],
+                                    drafts: list[dict[str, Any]], results: list[dict[str, Any]]) -> None:
+    """After details are saved, write each touched application's 原因/附件 (covering earlier saved
+    details of the same application too) and annotate the per-draft results."""
+    pushed_now = {item["draft_id"] for item in results if item["status"] == "pushed"}
+    for jxb_id, page in pages.items():
+        class_results = [item for item in results if item["teaching_class_id"] == jxb_id and item["draft_id"] in pushed_now]
+        if not class_results:
+            continue
+        members = [d for d in drafts if d["teaching_class_id"] == jxb_id and (
+            d["id"] in pushed_now or (d["status"] == "pushed" and d.get("remote_ttk_id") == page["ttk_id"]))]
+        header = await _sync_application(client, page, teacher_id, members)
+        for item in class_results:
+            item["application"] = header
+            item["message"] = f"{item['message']}{header['message']}"
+
+
+async def sync_application_reasons(teacher_id: int, *, year: str, term: str) -> dict[str, Any]:
+    """Re-send 原因/附件 for drafts already saved to 教务 (e.g. saved before this was supported,
+    or edited afterwards). Only touches applications that are still unsubmitted drafts."""
+    teacher_id = int(teacher_id)
+    identity = identity_from_year_term(year, term)
+    if identity is None:
+        return {"status": "invalid_semester", "message": "学年学期无效。", "results": []}
+    xnm, xqm = identity.as_xnm_xqm()
+    with get_db_connection() as conn:
+        credential = load_teacher_academic_access_method(conn, teacher_id, school_code="gxufl")
+        drafts = list_drafts(conn, teacher_id, year, term)
+    if not credential:
+        return {"status": "missing_credential", "message": "请先在教务系统对接设置中验证并保存账号。", "results": []}
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for draft in drafts:
+        if draft["status"] == "pushed" and draft.get("remote_ttk_id"):
+            groups.setdefault(draft["teaching_class_id"], []).append(draft)
+    if not groups:
+        return {"status": "nothing", "message": "没有已保存到教务的草稿。", "results": []}
+    results: list[dict[str, Any]] = []
+    try:
+        async with open_authenticated_academic_client(credential) as (client, profile, _login):
+            if profile.school_code != "gxufl":
+                raise DraftPushError("当前学校尚未启用调停课草稿保存。")
+            await _request(client, "GET", ENTRY_PATH, label="打开教务调停课页面", headers=_headers(html=True))
+            for jxb_id, members in groups.items():
+                course = members[0]["course_name"]
+                page = await open_form_page(client, jxb_id=jxb_id, xnm=xnm, xqm=xqm)
+                members = [d for d in members if d["remote_ttk_id"] == page["ttk_id"]]
+                if not members:
+                    results.append({"teaching_class_id": jxb_id, "course_name": course, "status": "skipped",
+                                    "message": "该申请已在教务提交或变化，原因/附件请在教务查看。"})
+                    continue
+                header = await _sync_application(client, page, teacher_id, members)
+                results.append({"teaching_class_id": jxb_id, "course_name": course, **header})
+    except (ValueError, httpx.HTTPError) as exc:
+        message = str(exc) if isinstance(exc, ValueError) else "教务系统访问失败。"
+        return {"status": "failed", "message": message, "results": results}
+    except Exception:
+        logger.exception("Application reason re-sync failed for teacher %s", teacher_id)
+        return {"status": "failed", "message": "写入调动原因时发生未知错误，请稍后重试。", "results": results}
+    synced = sum(1 for r in results if r["status"] in ("synced", "unverified"))
+    return {"status": "success" if synced == len(results) else ("partial" if synced else "failed"),
+            "message": f"已为 {synced}/{len(results)} 个教务申请写入调动原因和材料。", "results": results}
+
+
 async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: str, draft_ids: list[int] | None = None,
                                          force: bool = False, force_note: str = "") -> dict[str, Any]:
     """Save every pending local draft of the term into 教务 as 待提交 草稿."""
@@ -450,6 +651,7 @@ async def push_drafts_to_academic_system(teacher_id: int, *, year: str, term: st
                     outcome = {"status": "failed", "message": str(exc)}
                 results.append({"draft_id": draft["id"], "teaching_class_id": jxb_id, "course_name": draft["course_name"],
                                 "original_label": describe_slot(draft["original"]), "proposed_label": describe_slot(draft["proposed"]), **outcome})
+            await _sync_pushed_applications(client, teacher_id, pages, drafts, results)
     except (ValueError, httpx.HTTPError) as exc:
         batch_error = str(exc) if isinstance(exc, ValueError) else "教务系统访问中断，请核对尚未确认的保存结果。"
     except Exception:

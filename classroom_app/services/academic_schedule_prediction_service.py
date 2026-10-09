@@ -794,7 +794,7 @@ def _read_snapshot(row: dict) -> dict:
     warnings = json.loads(row["warnings_json"])
     for warning in warnings:
         if warning.get("code") == "approved_not_reflected":
-            warning["message"] = ("申请已批准、待落实：计划安排单独标出，正式课次与课时保持不变。"
+            warning["message"] = ("申请已批准、待落实：课表已按批准结果显示，课时统计在教务正式课表更新后同步。"
                                   if warning.get("request_id") in planned_requests else
                                   "申请已批准，但正式课表尚未完整体现且计划位置不能唯一确认；请核对申请明细。")
     return {"semester_id": row["semester_id"], "teacher_id": row["teacher_id"], "lessons": lessons,

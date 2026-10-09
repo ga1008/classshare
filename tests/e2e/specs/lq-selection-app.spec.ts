@@ -73,23 +73,15 @@ test('real course statistics long class picker filters once and programmatic res
   await info.attach('filter-requests',{body:JSON.stringify(requests),contentType:'application/json'});
 });
 
-test('real native sync dialog keeps labels keyboard disabled validation form reset and parent ownership',async({page},info)=>{
+test('real 教务同步 menu syncs the selected term at once and opens the read-only application list',async({page},info)=>{
   await loginTeacher(page,f);await page.goto('/manage/academic/course-schedule');await openSync(page);
-  const dialog=page.locator('dialog.cs-sync-dialog'),scope=dialog.locator('select[name="scope"]'),term=dialog.locator('select[name="term"]');
-  const scopeTrigger=await triggerFor(scope),termTrigger=await triggerFor(term);await expect(scopeTrigger).toHaveAccessibleName('同步范围');await expect(termTrigger).toHaveAccessibleName('学期');
-  await scopeTrigger.focus();await scopeTrigger.press('ArrowDown');await page.getByRole('option',{name:'发现教务当前学期',exact:true}).click();
-  await expect(scope).toHaveValue('current');await expect(termTrigger).toBeDisabled();await expect(dialog.locator('input[name="year"]')).toBeDisabled();
-  expect(await dialog.locator('form').evaluate(n=>Object.fromEntries(new FormData(n as HTMLFormElement)))).toEqual({scope:'current'});
-  await choose(scope,'指定学年学期');await expect(termTrigger).toBeEnabled();await termTrigger.focus();await termTrigger.press('ArrowDown');await termTrigger.press('End');await termTrigger.press('Enter');
-  await expect(term).toHaveValue('3');await expect(termTrigger).toContainText('夏季学期');
-  await dialog.locator('form').evaluate(n=>(n as HTMLFormElement).reset());await expect(term).toHaveValue('1');await expect(termTrigger).toContainText('第一学期');
-  await dialog.locator('input[name="year"]').fill('');expect(await dialog.locator('form').evaluate(n=>(n as HTMLFormElement).reportValidity())).toBe(false);await expect(dialog.locator('input[name="year"]')).toBeFocused();
-  await termTrigger.click();expect(await page.locator('.lq-dropdown__popup').evaluate(n=>Boolean(n.closest('dialog[open]')))).toBe(true);await page.keyboard.press('Escape');await expect(dialog).toBeVisible();
+  await expect(page.getByRole('menuitem',{name:'立即同步'})).toBeVisible();await expect(page.getByRole('menuitem',{name:'申请列表'})).toBeVisible();
   const submitted:any[]=[];await page.route('**/api/manage/academic/course-schedule/academic-sync',async route=>{submitted.push(route.request().postDataJSON());await route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({status:'error',message:'合成验收：同步冲突，已有课表保留'})});});
-  await dialog.locator('input[name="year"]').fill(s.year);await dialog.locator('button[type="submit"]').click();await expect.poll(()=>submitted.length).toBe(1);expect(submitted[0]).toEqual({year:s.year,term:'1'});await expect(dialog).toBeHidden();
-  await expect(page.locator('.cs-course-card').first()).toBeVisible();await openSync(page);
-  await dialog.locator('[data-sync-cancel]').click();await expect(dialog).toBeHidden();await expect(page.locator('.lq-dropdown__popup')).toHaveCount(0);
-  await info.attach('native-values',{body:JSON.stringify({scope:await scope.inputValue(),term:await term.inputValue(),submitted}),contentType:'application/json'});
+  await page.getByRole('menuitem',{name:'立即同步'}).click();await expect.poll(()=>submitted.length).toBe(1);expect(submitted[0]).toEqual({year:s.year,term:s.term});
+  await expect(page.locator('.cs-sync-feedback')).toContainText('原有课表已保留');await expect(page.locator('.cs-course-card').first()).toBeVisible();
+  await openSync(page);await page.getByRole('menuitem',{name:'申请列表'}).click();
+  const dialog=page.getByRole('dialog',{name:'教务调停课申请'});await expect(dialog).toBeVisible();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
+  await info.attach('sync-requests',{body:JSON.stringify(submitted),contentType:'application/json'});
 });
 
 test('real React task and dashboard filters preserve state across unmount without duplicate selection owners',async({page},info)=>{

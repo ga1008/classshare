@@ -38,6 +38,28 @@ def prediction_lesson_items(lessons: list[dict], *, class_labels=None, sessions=
     return items
 
 
+# 正在申请/审核的排最前：审核中 → 已退回（待处理）→ 草稿 → 已通过 → 未通过。
+REQUEST_STATUS_ORDER = {'pending': 0, 'returned': 1, 'draft': 2, 'approved': 3, 'rejected': 4}
+_REQUEST_SLOT_KEYS = ('date', 'week', 'weekday', 'sections', 'room')
+
+
+def academic_request_list(requests: list[dict]) -> list[dict]:
+    """Teacher-only summary of the 教务 调停课申请 list from the published snapshot."""
+    def slot(value):
+        return {key: value.get(key) for key in _REQUEST_SLOT_KEYS} if isinstance(value, dict) else None
+
+    rows = [{
+        'request_id': r.get('request_id', ''), 'serial': r.get('serial', ''), 'status': r.get('status', ''),
+        'kind': r.get('kind', ''), 'course_name': r.get('course_name', ''), 'teaching_class_name': r.get('teaching_class_name', ''),
+        'class_label': r.get('class_label', ''), 'reason': r.get('reason', ''), 'applied_at': r.get('applied_at', ''),
+        'details': [{'detail_id': d.get('detail_id', ''), 'original': slot(d.get('original')), 'proposed': slot(d.get('proposed'))}
+                    for d in r.get('details') or []],
+    } for r in requests or []]
+    rows.sort(key=lambda row: row['applied_at'] or '', reverse=True)
+    rows.sort(key=lambda row: REQUEST_STATUS_ORDER.get(row['status'], 9))
+    return rows
+
+
 def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='', course='', class_label=''):
     from .academic_schedule_prediction_service import load_teacher_prediction_snapshot, load_teacher_prediction_terms
     from .smart_classroom_schedule_sync_service import _build_course_stats, _build_week_deck, _offering_create_url
@@ -132,5 +154,6 @@ def build_academic_prediction_overview(conn, teacher_id: int, *, year='', term='
         'approved_changes': [change for change in snapshot.get('approved_changes', [])
                              if any(item.get('event_key') == change['target_event_key'] for item in items)],
         'planned_changes': planned,
+        'academic_requests': academic_request_list(snapshot.get('requests')),
         'section_range': {'min': 1, 'max': max(11, max((max(i['sections']) for i in items), default=11), max(planned_sections, default=11))},
     }

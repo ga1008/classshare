@@ -7,10 +7,10 @@
  * - 顶栏「同步智慧课堂」立即拉取 teacherSchedule/list 并替换本地学期数据。
  */
 
-import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20260925-editor';
+import { createScheduleDeck, courseAccentFor } from '/static/js/course_schedule_deck.js?v=deck3d-20261009';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
 import { bindDropdown } from './lq/dropdown.js';
-import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
+import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20261009';
 
 const bootElement = document.getElementById('course-schedule-boot');
 const boot = bootElement ? JSON.parse(bootElement.textContent || '{}') : {};
@@ -290,6 +290,8 @@ async function runSync() {
 const academicSync = createAcademicScheduleSync({
     button: document.querySelector('[data-academic-schedule-sync]'),
     getTerm: () => currentFilters(), getContext: () => `${currentFilters().year}|${currentFilters().term}`,
+    getOverview: () => state.overview,
+    getEditorUrl: term => `/manage/academic/course-schedule/editor?year=${encodeURIComponent(term.year || '')}&term=${encodeURIComponent(term.term || '')}`,
     onStart: () => {
         if (state.syncing) throw new Error('智慧课堂正在同步，请完成后再同步教务课表。');
         state.request?.abort(); state.request = null; state.loading = false;

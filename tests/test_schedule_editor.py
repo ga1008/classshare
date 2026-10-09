@@ -184,7 +184,8 @@ class DraftPushAdapterTests(unittest.TestCase):
     def test_module_never_references_the_submit_endpoint(self):
         source = Path(push.__file__).read_text(encoding="utf-8")
         self.assertNotIn("tj" + "Ttksq", source)
-        self.assertNotIn("cxUpdate" + "Tkyy", source)
+        # cxUpdateTkyy only stores the application's 原因/附件 (教务 runs it *before* the separate submit).
+        self.assertIn("ttksq_cxUpdateTkyy.html", source)
 
     def test_bitmasks_follow_zf_week_and_section_encoding(self):
         self.assertEqual(push.week_bitmask(5), 16)
@@ -253,14 +254,15 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.conn.close)
 
     def fake_client(self, *, conflict_num=0, save_response=None, form_response=None,
-                    delete_response=None, exit_error=None):
+                    delete_response=None, exit_error=None, header_echo=True):
         calls = self.calls
+        header = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
             form = {}
             body = request.content.decode("utf-8", "ignore")
-            for name in ("yzcd", "yxqj", "yjc", "xzcd", "xxqj", "xjc", "ttk_id", "jxb_id", "xcd_id", "sfctttk", "tkyy"):
+            for name in ("yzcd", "yxqj", "yjc", "xzcd", "xxqj", "xjc", "ttk_id", "jxb_id", "xcd_id", "sfctttk", "tkyy", "tksm", "sfqxtj"):
                 marker = f'name="{name}"'
                 if marker in body:
                     tail = body.split(marker, 1)[1].split("\r\n\r\n", 1)[1]
@@ -271,7 +273,15 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
             if path.endswith("ttksq_cxTtksqIndex.html"):
                 return httpx.Response(200, text="<div id='searchForm'></div>")
             if path.endswith("ttksq_cxTtksqView.html"):
-                return httpx.Response(200, text=form_response(request) if form_response else FORM_PAGE)
+                page = form_response(request) if form_response else FORM_PAGE
+                if header and header_echo:
+                    page = page.replace("tjModelList=eval();", "tjModelList=eval(" + json.dumps([header]) + ");")
+                return httpx.Response(200, text=page)
+            if path.endswith("ttksq_cxUpdateTkyy.html"):
+                match = re.search(r'name="myFile"; filename="([^"]*)"', body)
+                form["myFile"] = match.group(1) if match else None
+                header.update(tkyy=form.get("tkyy", ""), tksmfjm="1" if form["myFile"] else "0")
+                return httpx.Response(200, text="")
             if path.endswith("ttksq_cxConflictCtzt.html"):
                 return httpx.Response(200, json={"conflictNum": conflict_num, "ctxxList": [{"x": 1}] if conflict_num else []})
             if path.endswith("ttksq_cxSaveTtksj.html"):
@@ -290,6 +300,9 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
                 raise exit_error
 
         return patch.object(push, "open_authenticated_academic_client", opener)
+
+    def saved_form(self):
+        return [form for _m, path, form in self.calls if path.endswith("ttksq_cxSaveTtksj.html")][-1]
 
     def add_second_draft(self, *, jxb_id="JXB-0003"):
         base = overview({7: [lesson("ev-b", week=7, weekday=4, sections=(4, 5), jxb=jxb_id)]})
@@ -313,8 +326,9 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "success", result)
         paths = [path for _method, path, _form in self.calls]
         self.assertEqual(paths, ["/tkgl/ttksq_cxTtksqIndex.html", "/tkgl/ttksq_cxTtksqView.html",
-                                 "/tkgl/ttksq_cxConflictCtzt.html", "/tkgl/ttksq_cxSaveTtksj.html"])
-        save_form = self.calls[-1][2]
+                                 "/tkgl/ttksq_cxConflictCtzt.html", "/tkgl/ttksq_cxSaveTtksj.html",
+                                 "/tkgl/ttksq_cxUpdateTkyy.html", "/tkgl/ttksq_cxTtksqView.html"])
+        save_form = self.saved_form()
         self.assertEqual((save_form["yzcd"], save_form["xzcd"], save_form["xjc"], save_form["ttk_id"], save_form["tkyy"]), ("32", "64", "96", "TTK-DRAFT", "调休"))
         self.assertNotIn("sfctttk", save_form)
         stored = editor.get_draft(self.conn, 1, self.draft["id"])
@@ -334,7 +348,7 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         with self.fake_client(conflict_num=4):
             forced = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1", force=True, force_note="已协调")
         self.assertEqual(forced["status"], "success", forced)
-        self.assertEqual(self.calls[-1][2]["sfctttk"], "1")
+        self.assertEqual(self.saved_form()["sfctttk"], "1")
         self.assertEqual(editor.get_draft(self.conn, 1, self.draft["id"])["status"], "pushed")
 
     async def test_hard_conflict_is_never_forced(self):
@@ -408,7 +422,8 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
             result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
         self.assertEqual((result["status"], result["pushed"]), ("success", 2))
         self.assertEqual([form["ttk_id"] for form in saved], ["TTK-DRAFT", "TTK-DRAFT"])
-        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 1)
+        # one form open for the details + one read-back after writing the application's 原因/附件
+        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 2)
         self.assertEqual({row["teaching_class_id"] for row in result["results"]}, {"JXB-0003"})
         drafts = [editor.get_draft(self.conn, 1, item["id"]) for item in (self.draft, second)]
         self.assertEqual([draft["remote_detail_id"] for draft in drafts], ["DETAIL-1", "DETAIL-2"])
@@ -432,7 +447,7 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row["course_name"] for row in result["results"]}, {"计算机网络原理"})
         self.assertEqual({(form["jxb_id"], form["ttk_id"]) for form in saved},
                          {("JXB-0003", "TTK-JXB-0003"), ("JXB-OTHER", "TTK-JXB-OTHER")})
-        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 2)
+        self.assertEqual(sum(path.endswith("ttksq_cxTtksqView.html") for _m, path, _f in self.calls), 4)
 
     async def test_withdraw_only_one_detail_of_shared_application(self):
         second = self.add_second_draft()
@@ -529,6 +544,67 @@ class DraftPushFlowTests(unittest.IsolatedAsyncioTestCase):
         stored = editor.get_draft(self.conn, 1, self.draft["id"])
         self.assertEqual((stored["status"], stored["remote_detail_id"]), ("pushed", "DETAIL-NEW"))
         self.assertIn("session close", result["batch_error"])
+
+    def attach_proof(self, draft, name, content=b"proof"):
+        editor.add_draft_proof(self.conn, 1, draft["id"], filename=name, content=content)
+        self.conn.commit()
+
+    def use_proof_root(self):
+        import tempfile
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        target = patch.object(editor, "_proof_root", return_value=Path(holder.name))
+        target.start()
+        self.addCleanup(target.stop)
+
+    async def test_push_writes_application_reason_and_attachment_then_reads_them_back(self):
+        self.use_proof_root()
+        self.attach_proof(self.draft, "证明.pdf")
+        with self.fake_client():
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        update = [form for _m, path, form in self.calls if path.endswith("ttksq_cxUpdateTkyy.html")]
+        self.assertEqual(len(update), 1)
+        self.assertEqual((update[0]["ttk_id"], update[0]["tkyy"], update[0]["sfqxtj"], update[0]["myFile"]),
+                         ("TTK-DRAFT", "调休", "0", "证明.pdf"))
+        item = result["results"][0]
+        self.assertEqual(item["application"]["status"], "synced", item)
+        self.assertIn("调动原因和附件已写入", item["message"])
+        self.assertFalse(any("tjTtksq" in path for _m, path, _f in self.calls))
+
+    async def test_same_application_merges_reasons_and_zips_several_proofs(self):
+        self.use_proof_root()
+        second = self.add_second_draft()
+        self.attach_proof(self.draft, "a.webp")
+        self.attach_proof(second, "b.pdf")
+        drafts = [editor.get_draft(self.conn, 1, d["id"]) for d in (self.draft, second)]
+        self.assertEqual(push.build_application_reason(drafts), ("调休；教学安排", ""))
+        attachment, warning = push.build_application_attachment(1, drafts)
+        self.assertEqual((attachment[0], warning), ("调课证明材料.zip", ""))
+        with self.fake_client(save_response=lambda form: {"ttkxx_id": "D-" + form["xzcd"]}):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        update = [form for _m, path, form in self.calls if path.endswith("ttksq_cxUpdateTkyy.html")]
+        self.assertEqual(len(update), 1, "one application = one header update")
+        self.assertEqual((update[0]["tkyy"], update[0]["myFile"]), ("调休；教学安排", "调课证明材料.zip"))
+        self.assertTrue(all(item["application"]["status"] == "synced" for item in result["results"]))
+
+    async def test_unechoed_header_is_reported_unverified_not_synced(self):
+        with self.fake_client(header_echo=False):
+            result = await push.push_drafts_to_academic_system(1, year="2026-2027", term="1")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["results"][0]["application"]["status"], "unverified")
+        self.assertIn("核对", result["results"][0]["message"])
+
+    async def test_resync_reasons_skips_applications_that_were_already_submitted(self):
+        self.mark_pushed(ttk_id="TTK-OLD")
+        with self.fake_client():
+            result = await push.sync_application_reasons(1, year="2026-2027", term="1")
+        self.assertEqual(result["results"][0]["status"], "skipped")
+        self.assertFalse(any(path.endswith("ttksq_cxUpdateTkyy.html") for _m, path, _f in self.calls))
+        self.calls.clear()
+        self.mark_pushed(ttk_id="TTK-DRAFT")
+        with self.fake_client():
+            result = await push.sync_application_reasons(1, year="2026-2027", term="1")
+        self.assertEqual((result["status"], result["results"][0]["status"]), ("success", "synced"))
 
 
 if __name__ == "__main__":

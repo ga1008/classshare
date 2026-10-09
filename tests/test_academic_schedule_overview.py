@@ -219,5 +219,21 @@ class AcademicScheduleOverviewTests(unittest.TestCase):
         self.assertEqual('', explicit_lesson_time(lesson, session)['time_label'])
 
 
+
+
+class AcademicRequestListTests(unittest.TestCase):
+    def test_in_progress_applications_come_first_then_newest(self):
+        from classroom_app.services.academic_schedule_overview_service import academic_request_list
+        rows = academic_request_list([
+            {"request_id": "a", "status": "approved", "applied_at": "2026-10-09 09:00:00", "details": []},
+            {"request_id": "b", "status": "pending", "applied_at": "2026-09-01 09:00:00", "details": []},
+            {"request_id": "c", "status": "draft", "applied_at": "", "details": [{"detail_id": "d", "original": {"week": 6, "weekday": 4, "sections": [4, 5], "room": "B310", "date": "2026-10-08", "teacher_code": "x"}, "proposed": None}]},
+            {"request_id": "e", "status": "pending", "applied_at": "2026-10-01 09:00:00", "details": []},
+            {"request_id": "f", "status": "returned", "applied_at": "2026-08-01 09:00:00", "details": []},
+        ])
+        self.assertEqual([row["request_id"] for row in rows], ["e", "b", "f", "c", "a"])
+        self.assertNotIn("teacher_code", rows[3]["details"][0]["original"])
+        self.assertIsNone(rows[3]["details"][0]["proposed"])
+
 if __name__ == '__main__':
     unittest.main()

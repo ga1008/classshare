@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ...database import get_db_connection
 from ...dependencies import get_current_teacher
 from ...services.academic_schedule_draft_push_service import (
-    check_drafts_conflicts, push_drafts_to_academic_system, withdraw_draft_from_academic_system,
+    check_drafts_conflicts, push_drafts_to_academic_system, sync_application_reasons, withdraw_draft_from_academic_system,
 )
 from ...services.academic_availability_sync_service import search_free_rooms, sync_availability_for_term
 from ...services.schedule_availability_service import build_lesson_availability
@@ -100,6 +100,17 @@ async def api_schedule_editor_push(request: Request, user: dict = Depends(get_cu
         overview = _load_overview(conn, int(user["id"]), year, term)
         editor = build_editor_payload(conn, int(user["id"]), overview)
     return JSONResponse({**editor, "status": "success", "result": result}, headers=_NO_STORE)
+
+
+@router.post("/academic/course-schedule/editor/push/reasons", response_class=JSONResponse)
+async def api_schedule_editor_push_reasons(request: Request, user: dict = Depends(get_current_teacher)):
+    """把已保存到教务草稿的调动原因/证明材料重新写入教务申请（不提交申请）。"""
+    payload = await _parse_json_request(request)
+    year, term = _term(payload.get("year")), _term(payload.get("term"))
+    if not year or not term:
+        raise HTTPException(status_code=400, detail="请先选择学年学期。")
+    result = await sync_application_reasons(int(user["id"]), year=year, term=term)
+    return JSONResponse({"status": "success", "result": result}, headers=_NO_STORE)
 
 
 @router.post("/academic/course-schedule/editor/drafts/{draft_id}/withdraw", response_class=JSONResponse)
@@ -270,7 +281,7 @@ async def api_schedule_editor_reason_suggest(request: Request, user: dict = Depe
 
 @router.post("/academic/course-schedule/editor/drafts/{draft_id}/proofs", response_class=JSONResponse)
 async def api_schedule_editor_upload_proof(draft_id: int, files: list[UploadFile] = File(...), user: dict = Depends(get_current_teacher)):
-    """为一条调课草稿附加证明材料（放假通知、会议通知等），提交教务时提醒一并上传。"""
+    """为一条调课草稿附加证明材料（放假通知、会议通知等），保存到教务时作为申请附件写入。"""
     stored = []
     with get_db_connection() as conn:
         for upload in files:

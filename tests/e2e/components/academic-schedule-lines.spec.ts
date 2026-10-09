@@ -69,7 +69,7 @@ async function mount(page: Page, options: { approved?: boolean; compiled?: boole
       window.navigations=[]; window.hostWeeks=[]; window.fixture=${JSON.stringify(options.approved ? approvedFixture() : fixture())};
       window.deck=createScheduleDeck(document.getElementById('deck'),{onNavigate:url=>window.navigations.push(url),onWeekChange:week=>window.hostWeeks.push(week)});
       ${options.compiled ? "const {connectScheduleLayer}=await import('/static/js/lq/schedule-bridge.js');connectScheduleLayer(window.deck);" : ''}
-      window.deck.setOverview(window.fixture); window.deck.goToWeek(1); window.deck.openExpanded();
+      window.deck.setOverview(window.fixture); window.deck.goToWeek(${options.approved ? 2 : 1}); window.deck.openExpanded();
     </script></html>` });
   });
   await page.goto('http://schedule-lines.test/');
@@ -80,30 +80,20 @@ async function mount(page: Page, options: { approved?: boolean; compiled?: boole
 
 for (const mobile of [false, true]) test.describe(`approved history ${mobile ? 'touch' : 'desktop'}`, () => {
 test.use({ hasTouch: mobile, isMobile: mobile });
-test('approved history and a later pending move retain separate routes and actions with LQ bridge', async ({ page }, testInfo) => {
+test('an effective approved move shows only its final card while a later pending move keeps its route', async ({ page }, testInfo) => {
   if (mobile) { await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ reducedMotion: 'reduce' }); }
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await mount(page, { approved: true, compiled: true });
   await expect(page.locator('#lq-layers .cs-expand')).toBeVisible();
-  const old = page.locator('.cs-expand .cs-lesson--history');
-  await expect(old).toHaveCount(1);
-  await expect(old).toContainText('原安排');
-  await old.locator('[data-csd-change]').click();
+  // Completed in 教务: no history card, no arrow — the official card already sits at its final slot.
+  await expect(page.locator('.cs-expand .cs-lesson--history')).toHaveCount(0);
   const current = page.locator('.cs-expand [data-event-key="later-new"]');
-  await expect(current).toHaveClass(/is-counterpart-focus/);
-  await expect(current.locator('[data-csd-change]')).toHaveCount(2);
+  await expect(current.locator('[data-csd-change]')).toHaveCount(1);
   await expect(current.locator('[data-csd-change-index="0"]')).toHaveAttribute('aria-label', /调课待审/);
-  await expect(current.locator('[data-csd-change-index="1"]')).toHaveAttribute('aria-label', /调课已生效.*原位置/);
   await current.locator('[data-csd-change-index="0"]').click();
   await expect(page.locator('.cs-expand [data-event-key="after-new"]')).toHaveClass(/is-counterpart-focus/);
-  await page.locator('.cs-expand [data-event-key="after-new"] [data-csd-change]').click();
-  await current.locator('[data-csd-change-index="1"]').click();
-  await expect(old).toHaveClass(/is-counterpart-focus/);
-  expect(await page.evaluate(() => (window as any).hostWeeks.flatMap((week: any) => week.lessons).some((lesson: any) => lesson.is_change_history))).toBe(false);
   expect(await page.evaluate(() => (window as any).fixture.weeks.flatMap((week: any) => week.lessons).length)).toBe(2);
   await page.screenshot({ path: testInfo.outputPath('approved-and-pending.png') });
-  await page.evaluate(() => { (window as any).deck.setOverview({ ...(window as any).fixture, approved_changes: [] }, { keepWeek: true }); });
-  await expect(old).toHaveCount(0);
   await page.evaluate(() => (window as any).deck.destroy());
   await expect(page.locator('.cs-expand')).toHaveCount(0);
   expect(errors).toEqual([]);

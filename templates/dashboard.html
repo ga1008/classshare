@@ -89,7 +89,7 @@
             </details>
         {%- elif lq_slot == 'actions' -%}
             <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass ls-button">搜索</button>
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>同步教务课表</button>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>教务同步 ▾</button>
         {%- endif -%}
         {% endcall %}
         </div>
@@ -97,7 +97,7 @@
             <form method="get" action="/dashboard" class="ls-course-search" data-dashboard-search-form>
                 <input type="hidden" name="filter" value="{{ dashboard_initial_filter }}" data-dashboard-filter-field>
                 <label class="sr-only" for="dashboard-search">搜索课堂</label><input data-lq-component="input" id="dashboard-search" type="search" name="q" class="lq-input ls-input" placeholder="搜索课程、班级" value="{{ dashboard_initial_search }}" data-dashboard-search><button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass ls-button">搜索</button>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>同步教务课表</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ls-button" data-academic-schedule-sync>教务同步 ▾</button>
             </form>
             <details class="ls-course-options"{% if dashboard_initial_filter != 'all' %} open{% endif %}>
                 <summary data-lq-component="disclosure" class="lq-disclosure-trigger">筛选与显示</summary><div class="ls-course-options-body">

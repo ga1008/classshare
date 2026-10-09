@@ -15,7 +15,6 @@ export const DECK_CSS = `
 /* 头部悬于后排堆叠卡片之上，避免被 Flip3D 上浮的卡片遮住 */
 .cs-deck-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: relative; z-index: 520; }
 .cs-deck-head__copy h3 { margin: 0; font-size: 1.05rem; font-weight: 800; color: hsl(var(--ls-ink)); }
-.cs-deck-head__copy p { margin: 0; font-size: 0.78rem; color: hsl(var(--ls-ink-2)); }
 .cs-deck-term {
     min-width: 190px;
     padding: 8px 12px;
@@ -366,6 +365,9 @@ a.cs-lesson--create .cs-lesson__link-hint { text-decoration: underline dashed; t
 .cs-lesson.is-counterpart-focus::after { content: '已定位'; position: absolute; right: 4px; top: 4px; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); border: 1px solid hsl(var(--ls-warning)); padding: 1px 4px; border-radius: var(--ls-r-xs); font-size: 10px; pointer-events: none; }
 .cs-deck-feedback { font-size: .8rem; color: hsl(var(--ls-ink-2)); line-height: 1.6; }
 .cs-deck-feedback:empty { display: none; }
+.cs-deck-feedback { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.cs-deck-notes summary { cursor: pointer; }
+.cs-deck-notes ul { margin: 6px 0 0; padding-left: 1.2em; }
 .cs-lesson-slot[data-cs-lanes] { padding-right: 2px; }
 
 /* ---- 放大视图 ---- */

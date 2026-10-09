@@ -2,7 +2,7 @@
 
 ## 目标
 
-在现有 3D 课表之上增加「编辑模式」：教师在平台上拖拽/设置课次的新时间与教室，平台把变更先记录为本地草稿，再以教师本人的教务账号把草稿**保存**进教务系统（正方）调停课申请的「待提交」列表。平台**不提交申请**：提交需要教师登录教务系统核对并点击「提交申请」（附件、原因可在教务补充）。
+在现有 3D 课表之上增加「编辑模式」：教师在平台上拖拽/设置课次的新时间与教室，平台把变更先记录为本地草稿，再以教师本人的教务账号把草稿**保存**进教务系统（正方）调停课申请的「待提交」列表。平台**不提交申请**：提交需要教师登录教务系统核对并点击「提交申请」（调动原因与证明材料随草稿写入申请表头，见第六轮）。
 
 ## 入口
 
@@ -24,7 +24,7 @@
 
 - 表 `teacher_schedule_edit_drafts`（`classroom_app/db/schema_schedule_editor.py`，运行时 engine-aware 建表，仿 polls 模式）：原/新安排 JSON、原因、状态 `draft|pushed|conflict|failed`、教务 `ttk_id`/`ttkxx_id`、教务返回文本、冲突 JSON。
 - `services/schedule_editor_service.py`：校验（周次/节次范围、连续、早读禁放、占用节数一致、本人课表与草稿重叠）、草稿 CRUD、周表装饰（原课次 `edit_draft`、目标周 `edit_ghost` 幽灵卡）、教务场地搜索（`teacher_academic_teaching_places`，全校共享）。
-- `services/academic_schedule_draft_push_service.py`：教务写入适配器，**只**调用四个端点：
+- `services/academic_schedule_draft_push_service.py`：教务写入适配器，**只**调用五个端点（第 5 个见第六轮）：
   1. `POST /tkgl/ttksq_cxTtksqView.html?jxb_id&xnm&xqm` 打开申请表单——教务为该教学班分配/复用草稿 `ttk_id`，页面内联 `modelList`（正式课位：`xqj`、`zc` 周次位掩码、`jcarr`、`cd_id`、`jgh_id`）与 `tkxxList`（已保存的待提交明细）；
   2. `POST /tkgl/ttksq_cxConflictCtzt.html` 冲突检测（`conflictNum` 位：2 教师、4 场地、8 已申请、16 课表、32 学生、64 已补课、128 实践课；8/64 为硬冲突不可强制）；
   3. `POST /tkgl/ttksq_cxSaveTtksj.html` 保存草稿明细（multipart，字段与浏览器 `getDatas()` + `#ajaxForm` 完全一致：`yzcd/xzcd` 周次位掩码 `2^(周-1)`，`yjc/xjc` 节次位掩码，`yxqj/xxqj` 星期，`ycd_id/xcd_id` 场地，`tklxdm=01`、`spl_id=TKGL_TK`、`tkyy` 原因）；返回 `{bcName, ttkxx_id}`；
@@ -97,7 +97,7 @@
 - **调休连线**：方向按上课理解——被补那天（课从这里来）→ 调休上课日（课在这里上）：起点实心小圆点贴在线段起点，终点实心三角箭头；调休上课日那一列用细虚线包裹（留内边距，不侵占相邻列）。同周画列头之间的弧线；跨周：源在当前周则从列头连到左侧目标周卡，目标在当前周则从源周卡连到列头；两周都不在当前周时只画周卡间的括线（同周的不画，周卡徽标已标）。学期日历面板（`renderSwapArrows`）同样改为该方向与实心箭头。
 - **去掉「课次重排」面板与页面 page_head**：重排在教务审批同步后自动执行（`_publish` 钩子），只在「保存到教务」弹窗里预览、保存成功后 toast 提示。工具栏放大（`cse-toolbar--lg`）。
 - **右侧属性栏**：原安排改为卡片；「调整到」= 周次 + 节次 两列、星期整行（选项带日期与 已过/学期外/节假日/调休 提示）、教室改为可搜索下拉（输入楼名/教室号实时查教务场地，可"沿用原教室"）、调课原因带「AI 填写」（`POST editor/reason-suggest`：快速 AI `fast_text_response` 写 ≤30 字，AI 不可用时按校历规则兜底）、已保存草稿下方有「证明材料」区（上传/下载/删除）。
-- **证明材料**：草稿表新增 `proof_json`（`[{id, name, size, stored, uploaded_at}]`），文件存 `DATA_DIR/schedule_editor_proofs/<teacher>/<draft>/<id>.<ext>`，仅本人可读；限 PDF/图片/Word/文本、10 MB、每条 6 份。API：`POST editor/drafts/{id}/proofs`（multipart `files`）、`DELETE .../proofs/{file_id}`、`GET .../proofs/{file_id}`。**教务侧附件上传接口未逆向**（正方 `tksmfjm`/附件管理），因此平台只保存并在保存成功后提醒"提交申请时在教务附上"；变更清单与弹窗都提示缺原因/缺材料。
+- **证明材料**：草稿表新增 `proof_json`（`[{id, name, size, stored, uploaded_at}]`），文件存 `DATA_DIR/schedule_editor_proofs/<teacher>/<draft>/<id>.<ext>`，仅本人可读；限 PDF/图片/Word/文本、10 MB、每条 6 份。API：`POST editor/drafts/{id}/proofs`（multipart `files`）、`DELETE .../proofs/{file_id}`、`GET .../proofs/{file_id}`。（第六轮起随草稿作为教务申请附件写入，见下文）；变更清单与弹窗都提示缺原因/缺材料。
 - **保存到教务弹窗**（替代原确认框）：变更清单（原因/材料状态）、「AI 填写全部」补齐缺失原因、批量上传证明材料到本批全部草稿、课次重排预览；确认后再推送。
 - **液态玻璃下拉（新组件 `static/js/lq/dropdown.js`，特性名 `dropdown`）**：`bindDropdown(select, {searchable, placeholder, onQuery})`，原生 `<select>` 仍是值的唯一所有者（表单/校验/change 监听不变），组件只渲染玻璃触发按钮 + 通过 layer 系统浮出的 `lq-selection__popup lq-glass` 列表；`searchable` 在弹层顶部加筛选框（可配 `onQuery`/`setResults` 异步取数）；`select.multiple` 变为多选（勾选框、选后不关闭、触发按钮汇总"A、B 等 N 项"）；声明式 `<select data-lq-dropdown data-lq-searchable>` + `enhanceDropdowns(root)`。样式在 `selection.css` 的 `.lq-dropdown*`。**坑**：LQ 按钮 props 不接受 `aria-*`/`tabindex` attrs（会抛 Unsupported LQ attribute），装饰属性要创建后再 set。
 - 验证：`tests/test_schedule_editor_round4.py`（学期结束禁放、证明材料存取/越权/路径穿越、AI 原因与兜底）；Playwright 审计覆盖日历箭头方向与实心箭头、周卡锁定/发光、四个玻璃下拉、可搜索教室、AI 原因、证明材料上传、跨周拖拽、调休箭头与虚线列、保存弹窗与推送反馈、移动端；控制台零错误。
@@ -111,3 +111,18 @@
 - **说法与流程**：按钮「保存到教务」→「检测冲突并保存」（title 说明先检测再保存）。弹窗四阶段 checking → checked → saving → done：逐项结论徽章（无冲突可保存 / 教务已有记录 / 有冲突可强制保存 / 不能保存 / 检测失败）+ 分组冲突明细 + 下一步建议（换时段或教室、撤回教务旧申请或撤销本条、先同步课表）；主按钮变为「保存无冲突的 N 项」（未预检成功则「直接尝试保存」），软冲突另有「连同 N 项冲突一起保存」（二次确认，`force`）；保存后同一弹窗进入结果阶段：已保存/冲突未保存/失败 逐项标注 + 「打开教务调停课申请」深链 + 三步后续指引；未配置教务账号在预检和结果阶段都直接给「去设置教务账号」。卡片与抽屉显示预检结论。
 - **玻璃弹窗**：`lq/toast.js` 根类改为 `lq-glass lq-glass--thick`，`toast.css` 去掉 `backdrop-filter: none` 并用 `--lq-material-ink` 着色，`material-boundaries.css` 的模糊选择器不再排除 `.lq-toast`。
 - 验证：`tests/test_schedule_editor.py::test_precheck_runs_conflict_check_only_and_records_verdict_on_draft`（假教务：只打冲突检测、不打保存、status 不变、zf_precheck 落库、hard 判定）；P03 Playwright `editor-audit.spec.ts` 第 8 步改为预检弹窗（无凭据提示、「直接尝试保存」、done 阶段、卡片预检按钮）。
+
+## 第六轮（2026-10-09）：原因/附件写入教务 + 最终课表 + 申请列表
+
+**根因**：教务把 调动原因（`tkyy`）/原因类别（`yylb`）/备注（`tksm`）/附件（`myFile`）存在**申请表头**，不在明细行；`ttksq_cxSaveTtksj` 收到的 `tkyy` 被忽略。教务自己的「提交申请」按钮先跑 `saveTkyy()` → `POST ttksq_cxUpdateTkyy.html`（`#ajaxForm` 整表 multipart + `ttk_id/spl_id/sfqxtj=0/bdlb`），成功回调里才调 `tjSj()` → `ttksq_tjTtksq.html` 提交；列表页的「提交」按钮直接 `tjTtksq`、不写原因。所以此前平台保存的草稿在教务里原因为空、无附件（逆向素材：`index_ttksq.js` `saveTkyy/cxUpdateTkyy2/tjSj/tjSjData`、`cxTtksqView.js` 读回 `tjModelList[0].tkyy/tksmfjm/fjm`；附件限制 `filehandle`：jpg/jpeg/png/doc/docx/pdf/rar/zip、10MB、1 个）。
+
+**修复**（`academic_schedule_draft_push_service.py`）：
+- 第 5 个端点 `ttksq_cxUpdateTkyy.html`：明细保存后，每个教务申请（= 教学班）调一次 `_sync_application`；原因 = 该申请所有本地草稿原因去重以「；」合并（≤180 字），备注同理；附件 = 单个兼容文件原样上传，多份或 webp/txt 打包成 `调课证明材料.zip`，超 10MB 不传并告知。
+- 写后**读回核验**：重开表单解析 `tjModelList`，比对 `tkyy` 与 `tksmfjm=='1'`；结果 synced / unverified（教务未回显）/ failed / skipped（无原因）逐项写进推送结果与 `remote_message`，从不抛错、不影响已保存明细。
+- 已保存草稿补写：`sync_application_reasons()` + `POST editor/push/reasons`（变更清单「重新写入原因和材料」），只处理 `ttk_id` 仍与本地记录一致的未提交申请；已提交的跳过并提示。
+- 单测：`test_push_writes_application_reason_and_attachment_then_reads_them_back`、`..._merges_reasons_and_zips_several_proofs`、`..._unechoed_header_is_reported_unverified_not_synced`、`test_resync_reasons_skips_applications_that_were_already_submitted`；源码仍不含 `ttksq_tjTtksq`。
+
+**3D 课表显示口径**（`course_schedule_change_links.projectScheduleChanges`）：教务已完成（approved 且生效）→ 只显示最终课表，不画历史卡与箭头（`approved_changes` 不再投影）；已批准待落实（planned）→ 直接按批准结果显示（移走/停课隐藏原卡、换教室改卡片教室并标「已换教室」）；**审核中与草稿**才画箭头与调整信息，草稿新增目标位「草稿位置」卡 + 「草稿 · 时间更改」连线。课时仍以正式课表为准。
+
+**头部精简与申请列表**：deck 头部去掉说明行（改为标题 title 提示）；同步提示折叠为「N 条同步提示」；「同步教务课表」改为 LQ Menu「教务同步 ▾」：立即同步（直接同步当前学期，去掉原同步范围弹窗）/ 申请列表（LQ Dialog 卡片：审核中 → 已退回 → 草稿 → 已通过 → 未通过，点开为原/新对照，复用 `createChangeComparison`；只读，只给「去教务…」深链与草稿「编辑草稿」）。数据来自教师 overview 的 `academic_requests`（发布快照，教师专用，学生端不经此构建器）。
+

@@ -3441,6 +3441,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/course-schedule/editor/push/reasons",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_schedule_editor_push_reasons",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/academic/course-schedule/editor/reason-suggest",
     "methods": [
       "POST"

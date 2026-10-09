@@ -29,21 +29,17 @@ function approvedFixture() {
       original_week_index: 4, effective_week_index: 5, original, proposed }] };
 }
 
-describe('approved history as a deck-only view', () => {
-  it('adds a reversible history endpoint without mutating canonical data or counting a prediction', () => {
+describe('effective approved moves show only the final timetable', () => {
+  it('projects no history card and no arrow for a move already in the official timetable', () => {
     const canonical = approvedFixture(), before = structuredClone(canonical);
     const view = projectScheduleChanges(canonical);
     expect(canonical).toEqual(before);
-    expect(view.weeks[0].lessons).toHaveLength(1);
+    expect(view.weeks[0].lessons).toHaveLength(0);
+    expect(view.weeks.flatMap(week => scheduleChangeConnections(view, week))).toEqual([]);
     expect(countScheduleLessons(view.weeks.flatMap(week => week.lessons))).toEqual({ lesson_count: 1, total_hours: 2, proposed_count: 0 });
-    const outgoing = scheduleChangeConnections(view, view.weeks[0])[0], incoming = scheduleChangeConnections(view, view.weeks[1])[0];
-    expect(outgoing).toMatchObject({ label: '已调课 · 时间更改 · 教室更改', direction: 'outgoing', jumpKey: 'effective', jumpWeek: 5 });
-    expect(incoming).toMatchObject({ direction: 'incoming', jumpWeek: 4, jumpKey: view.weeks[0].lessons[0].event_key });
-    expect(scheduleChangeLabel(view.weeks[0].lessons[0])).toBe('原安排（已调课）');
-    expect(projectScheduleChanges(view).weeks[0].lessons).toHaveLength(1);
   });
 
-  it('preserves approved A to B alongside pending B to C and their separate actions', () => {
+  it('still draws a pending B to C on top of an effective A to B', () => {
     const canonical = approvedFixture();
     const current = canonical.weeks[1].lessons[0];
     const change = { request_id: 'pending-2', phase: 'pending', kind: 'move', original: canonical.approved_changes[0].proposed,
@@ -53,9 +49,7 @@ describe('approved history as a deck-only view', () => {
       adjustment: { ...change, endpoint: 'proposed', counterpart_event_key: 'effective' } });
     const view = projectScheduleChanges(canonical);
     const connections = scheduleChangeConnections(view, view.weeks[1]);
-    expect(connections).toHaveLength(2);
-    expect(connections.map(edge => edge.label)).toEqual(expect.arrayContaining(['时间更改', '已调课 · 时间更改 · 教室更改']));
-    expect(view.weeks[1].lessons[0].schedule_changes.map((item: any) => item.phase)).toEqual(['pending', 'approved']);
+    expect(connections.map(edge => edge.label)).toEqual(['时间更改']);
     expect(countScheduleLessons(view.weeks.flatMap(week => week.lessons))).toEqual({ lesson_count: 1, total_hours: 2, proposed_count: 1 });
   });
 

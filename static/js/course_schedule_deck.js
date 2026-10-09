@@ -20,10 +20,10 @@
  * 放大视图按节次给出早读(1)/上午(2-5)/下午(6-9)/晚上(10-11+)的背景分区。
  */
 
-import { scheduleChangeConnections, scheduleChangeColors, projectScheduleChanges } from './course_schedule_change_links.js?v=change-lines-glass-20260920';
+import { scheduleChangeConnections, scheduleChangeColors, projectScheduleChanges } from './course_schedule_change_links.js?v=change-final-20261009';
 import { routeScheduleChanges, roundedScheduleRoute } from './course_schedule_change_routes.js?v=change-lines-simple-20260920';
 
-import { compactClassroomName, adjustmentActionText, scheduleChanges, scheduleChangeLabel, scheduleChangeBadge } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { compactClassroomName, adjustmentActionText, scheduleChanges, scheduleChangeLabel, scheduleChangeBadge } from './course_schedule_presentation.js?v=schedule-final-20261009';
 
 import { DECK_CSS } from './course_schedule_styles.js';
 
@@ -73,7 +73,7 @@ export function scheduleLessonLanes(lessons = []) {
     return result;
 }
 
-export { scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+export { scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-final-20261009';
 
 
 function ensureStyles() {
@@ -163,8 +163,7 @@ export function createScheduleDeck(container, options = {}) {
     container.innerHTML = `
         <div class="cs-deck-head">
             <div class="cs-deck-head__copy">
-                <h3>${escapeHtml(config.title)}</h3>
-                <p>${escapeHtml(config.description)}</p>
+                <h3 title="${escapeHtml(config.description)}">${escapeHtml(config.title)}</h3>
             </div>
             ${config.showTermSelect ? '<select data-lq-component="select" class="lq-select cs-deck-term" data-lq-dropdown data-csd-term aria-label="学年学期"></select>' : ''}
             <div class="cs-deck-nav">
@@ -557,6 +556,14 @@ export function createScheduleDeck(container, options = {}) {
         if (next === state.activeWeekIndex) return;
         state.activeWeekIndex = next;
         layoutDeck();
+    }
+
+    /** One short line; the detailed sync warnings stay folded until asked for. */
+    function showNotes(pending, warnings) {
+        const notes = [...new Set((Array.isArray(warnings) ? warnings : []).map(item => typeof item === 'string' ? item : item?.message || '').filter(Boolean))];
+        const lead = pending ? `${pending} 项待审预测不计入课时` : '';
+        refs.feedback.innerHTML = `${lead ? `<span>${escapeHtml(lead)}</span>` : ''}${notes.length ? `<details class="cs-deck-notes"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">${notes.length} 条同步提示</summary><ul>${notes.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul></details>` : ''}`;
+        refs.expandFeedback.textContent = '';
     }
 
     function announce(message, expanded = true) {
@@ -1245,8 +1252,7 @@ export function createScheduleDeck(container, options = {}) {
                 changeColorsByTerm.set(colorScope, changeColors);
                 const sync = state.overview.sync_state;
                 const pending = state.overview.weeks.reduce((sum, week) => sum + week.proposed_count, 0);
-                const warnings = state.overview.warnings || sync?.warnings || [];
-                announce([...new Set([state.overview.message, pending ? `${pending} 项待审预测不计入正式课时` : '', Array.isArray(warnings) ? warnings.map(item => typeof item === 'string' ? item : item.message || '').filter(Boolean).join('；') : ''].filter(Boolean))].join(' · '), false);
+                showNotes(pending, [...String(state.overview.message || '').split('；'), ...(state.overview.warnings || sync?.warnings || [])]);
             } else announce('');
             const weeks = state.overview?.weeks || [];
             // 打开定位：后端 focus_week（本周 / 假期→上学期最后教学周 / 未开学→第1周）

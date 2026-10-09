@@ -1,7 +1,7 @@
 import { formatDate, showMessage } from '/static/js/ui.js';
-import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20260925-editor';
+import { createScheduleDeck, countScheduleLessons } from '/static/js/course_schedule_deck.js?v=deck3d-20261009';
 import { connectScheduleLayer } from './lq/schedule-bridge.js';
-import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
+import { createAcademicScheduleSync } from '/static/js/academic_schedule_sync.js?v=academic-sync-20261009';
 import { initStudentDashboardSchedule } from '/static/js/student_dashboard_schedule.js?v=academic-schedule-20260919';
 import { bindSelection } from './lq/selection.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
@@ -567,10 +567,12 @@ if (root) {
     let scheduleDeckSelectedTerm = null;
     let scheduleDeckUnsupportedTerm = false;
 
+    const scheduleEditorUrl = (term) => (term?.year ? `/manage/academic/course-schedule/editor?year=${encodeURIComponent(term.year)}&term=${encodeURIComponent(term.term)}` : '/manage/academic/course-schedule/editor');
     const currentScheduleTerm = () => scheduleDeckSelectedTerm || semesterKeyToTerm(activeSemesterKey) || scheduleDeckOverview?.selected_term || {};
     const scheduleContext = () => { const value = currentScheduleTerm(); return `${value.year || ''}|${value.term || ''}`; };
     if (dashboardRole === 'teacher') createAcademicScheduleSync({
         button: root.querySelector('[data-academic-schedule-sync]'), getTerm: currentScheduleTerm, getContext: scheduleContext,
+        getOverview: () => scheduleDeckOverview, getEditorUrl: scheduleEditorUrl,
         onStart: () => { scheduleDeckRequest?.abort(); scheduleDeckRequest = null; scheduleDeckLoading = false; },
         onSuccess: (data, { context }) => {
             if (scheduleContext() !== context) { showMessage('教务同步完成，已保留你当前切换后的学期。', 'info'); return; }
@@ -768,9 +770,7 @@ if (root) {
                     }
                     applyFilters();
                 },
-                editorUrl: dashboardRole === 'teacher'
-                    ? (term) => (term?.year ? `/manage/academic/course-schedule/editor?year=${encodeURIComponent(term.year)}&term=${encodeURIComponent(term.term)}` : '/manage/academic/course-schedule/editor')
-                    : null,
+                editorUrl: dashboardRole === 'teacher' ? scheduleEditorUrl : null,
                 emptyHtml: () => scheduleDeckUnsupportedTerm
                     ? '<strong>该学期暂无可用的3D课表</strong><p>请使用列表查看课堂，或选择已配置的学年学期。</p>'
                     : dashboardRole === 'student'

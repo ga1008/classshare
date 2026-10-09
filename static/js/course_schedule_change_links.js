@@ -1,5 +1,5 @@
 /** Pair only the explicit pending endpoints supplied by the academic snapshot. */
-import { classroomChangeState, scheduleChanges } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { classroomChangeState, scheduleChanges } from './course_schedule_presentation.js?v=schedule-final-20261009';
 
 const text = value => typeof value === 'string' ? value.trim() : '';
 const positiveInteger = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
@@ -27,52 +27,48 @@ const sameKnownIdentity = (a, b, key) => a[key] == null || a[key] === '' || b[ke
 
 const changesFor = lesson => scheduleChanges(lesson).filter(change => text(change.request_id));
 
-/** Build only a deck view. Canonical lessons, summaries and backend identities
- * remain untouched; old approved positions never become business sessions. */
+const weekdayOf = date => new Date(`${date}T00:00:00Z`).getUTCDay() || 7;
+const WEEKDAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
+
+/** A copy of ``lesson`` placed at ``position`` in ``week`` (view only). */
+function relocated(lesson, key, position, week, extra) {
+    const weekday = weekdayOf(position.date);
+    return { ...lesson, event_key: key, actual_date: position.date, date: position.date,
+        weekday, weekday_label: `星期${WEEKDAY_NAMES[weekday - 1]}`, week_index: week.week_index,
+        sections: position.sections, classroom: position.room, classroom_short: position.room,
+        section_label: `第${position.sections.join('、')}节`, time_label: '', start_time: '', end_time: '',
+        edit_ghost: false, edit_draft: null, adjustment: null, ...extra };
+}
+
+/**
+ * Build the deck's view of the *final* timetable; canonical lessons, summaries
+ * and backend identities remain untouched.
+ *  - approved & effective: the official card already sits at its final slot, so
+ *    no history card and no arrow are projected (``approved_changes`` is not
+ *    drawn); an approved room change only marks the card.
+ *  - planned (approved, official timetable not yet updated): shown in its final
+ *    state (moved, cancelled or re-roomed) without an arrow.
+ *  - draft (an unsubmitted 教务 application): marked original + proposed ghost,
+ *    connected like a pending change. Pending endpoints arrive on the lessons.
+ */
 export function projectScheduleChanges(overview) {
-    if (!overview?.approved_changes?.length && !overview?.planned_changes?.length) return overview;
+    if (!overview?.planned_changes?.length) return overview;
     const weeks = (overview.weeks || []).map(week => ({ ...week, lessons: (week.lessons || []).map(lesson => ({ ...lesson })) }));
     const byKey = new Map();
     for (const week of weeks) for (const lesson of week.lessons) {
         const key = text(lesson.event_key);
         if (key) byKey.set(key, byKey.has(key) ? null : { lesson, week });
     }
-    for (const relation of overview.approved_changes || []) {
-        const target = byKey.get(text(relation.target_event_key));
-        const original = slot(relation.original), proposed = slot(relation.proposed);
-        const sourceWeek = weeks.find(week => Number(week.week_index) === Number(relation.original_week_index));
-        if (relation.phase !== 'approved' || relation.kind !== 'move' || !text(relation.request_id) || !text(relation.detail_id)
-            || !target || !sourceWeek || !original || !proposed || sameTime(original, proposed)
-            || Number(target.week.week_index) !== Number(relation.effective_week_index)
-            || !sameKnownIdentity(target.lesson, relation, 'session_id') || !sameKnownIdentity(target.lesson, relation, 'class_offering_id')
-            || (target.lesson.actual_date || target.lesson.date) !== proposed.date
-            || sections(target.lesson.sections)?.join(',') !== proposed.sections.join(',')) continue;
-        const originalKey = `${target.lesson.event_key}:approved:${relation.request_id}:${relation.detail_id}:original`;
-        if (byKey.has(originalKey)) continue;
-        const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: 'approved', kind: 'move', original, proposed };
-        const sourceChange = { ...shared, endpoint: 'original', counterpart_event_key: target.lesson.event_key, counterpart_week_index: target.week.week_index };
-        const targetChange = { ...shared, endpoint: 'effective', counterpart_event_key: originalKey, counterpart_week_index: sourceWeek.week_index };
-        target.lesson.schedule_changes = [...scheduleChanges(target.lesson), targetChange];
-        const weekday = new Date(`${original.date}T00:00:00Z`).getUTCDay() || 7;
-        const source = { ...target.lesson, event_key: originalKey, actual_date: original.date, date: original.date,
-            weekday, weekday_label: `星期${['一', '二', '三', '四', '五', '六', '日'][weekday - 1]}`, week_index: sourceWeek.week_index,
-            sections: original.sections, classroom: original.room, classroom_short: original.room,
-            section_label: `第${original.sections.join('、')}节`, time_label: '', start_time: '', end_time: '',
-            counts_towards_total: false, is_change_history: true, adjustment: null, schedule_changes: [sourceChange] };
-        sourceWeek.lessons.push(source);
-        byKey.set(originalKey, { lesson: source, week: sourceWeek });
-    }
-    for (const relation of overview.planned_changes || []) {
+    const hidden = new Set();
+    for (const relation of overview.planned_changes) {
         const source = byKey.get(text(relation.source_event_key));
         const original = slot(relation.original), proposed = slot(relation.proposed);
         const destination = weeks.find(week => Number(week.week_index) === Number(relation.proposed_week_index));
-        // planned: approved, not yet official. draft: the teacher's unsubmitted request.
-        // approved+room: a room-only change already reflected by the official card.
         const phaseValid = relation.phase === 'planned' ? relation.approval_status === 'approved'
             : relation.phase === 'draft' ? relation.approval_status === 'draft'
             : relation.phase === 'approved' ? relation.kind === 'room' && relation.approval_status === 'approved' : false;
         if (!phaseValid || !['move', 'room', 'cancel'].includes(relation.kind)
-            || !text(relation.request_id) || !text(relation.detail_id) || !source || !original
+            || !text(relation.request_id) || !text(relation.detail_id) || !source || !original || hidden.has(source.lesson)
             || source.lesson.counts_towards_total === false
             || Number(source.week.week_index) !== Number(relation.original_week_index)
             || !sameKnownIdentity(source.lesson, relation, 'session_id') || !sameKnownIdentity(source.lesson, relation, 'class_offering_id')
@@ -81,32 +77,41 @@ export function projectScheduleChanges(overview) {
             || relation.kind !== 'cancel' && (!proposed || !destination)
             || relation.kind === 'move' && sameTime(original, proposed)
             || relation.kind === 'room' && !sameTime(original, proposed)) continue;
-        // This adapter is repeatable; never duplicate an already projected plan.
-        if (scheduleChanges(source.lesson).some(change => change.phase === relation.phase
-            && change.request_id === relation.request_id && change.detail_id === relation.detail_id)) continue;
-        // Only an approved plan draws its target; a draft is unsubmitted and stays on its card.
-        const proposedKey = relation.kind === 'move' && relation.phase === 'planned'
-            ? `${source.lesson.event_key}:planned:${relation.request_id}:${relation.detail_id}` : null;
-        if (proposedKey && byKey.has(proposedKey)) continue;
+        // This adapter is repeatable; never apply one request detail twice.
+        if (scheduleChanges(source.lesson).some(change => change.request_id === relation.request_id && change.detail_id === relation.detail_id)) continue;
         const shared = { request_id: relation.request_id, detail_id: relation.detail_id, phase: relation.phase,
             approval_status: relation.approval_status, kind: relation.kind, original, proposed };
-        const sourceChange = { ...shared, endpoint: relation.phase === 'approved' ? 'effective' : 'original', counterpart_event_key: proposedKey,
-            counterpart_week_index: proposedKey ? destination.week_index : null };
-        source.lesson.schedule_changes = [...scheduleChanges(source.lesson), sourceChange];
+        const roomMark = { ...shared, phase: 'approved', kind: 'room', endpoint: 'effective' };
+        if (relation.phase !== 'draft') {
+            // Approved: show the outcome. A move/cancel hides the old slot; a room change re-labels the card.
+            if (relation.kind === 'room') {
+                Object.assign(source.lesson, { classroom: proposed.room, classroom_short: proposed.room });
+                source.lesson.schedule_changes = [...scheduleChanges(source.lesson), roomMark];
+                continue;
+            }
+            hidden.add(source.lesson);
+            if (relation.kind === 'cancel') continue;
+            const key = `${source.lesson.event_key}:planned:${relation.request_id}:${relation.detail_id}`;
+            if (byKey.has(key)) continue;
+            const roomChanged = classroomChangeState(original.room, proposed.room) === true;
+            const moved = relocated(source.lesson, key, proposed, destination, { schedule_changes: roomChanged ? [roomMark] : [] });
+            destination.lessons.push(moved);
+            byKey.set(key, { lesson: moved, week: destination });
+            continue;
+        }
+        const proposedKey = relation.kind === 'move' ? `${source.lesson.event_key}:draft:${relation.request_id}:${relation.detail_id}` : null;
+        if (proposedKey && byKey.has(proposedKey)) continue;
+        source.lesson.schedule_changes = [...scheduleChanges(source.lesson), { ...shared, endpoint: 'original',
+            counterpart_event_key: proposedKey, counterpart_week_index: proposedKey ? destination.week_index : null }];
         if (!proposedKey) continue;
-        const weekday = new Date(`${proposed.date}T00:00:00Z`).getUTCDay() || 7;
-        const planned = { ...source.lesson, event_key: proposedKey, actual_date: proposed.date, date: proposed.date,
-            weekday, weekday_label: `星期${['一', '二', '三', '四', '五', '六', '日'][weekday - 1]}`, week_index: destination.week_index,
-            sections: proposed.sections, classroom: proposed.room, classroom_short: proposed.room,
-            section_label: `第${proposed.sections.join('、')}节`, time_label: '', start_time: '', end_time: '',
+        const ghost = relocated(source.lesson, proposedKey, proposed, destination, {
             counts_towards_total: false, is_change_plan: true, is_change_history: false,
-            edit_ghost: false, edit_draft: null, adjustment: null,
             schedule_changes: [{ ...shared, endpoint: 'proposed', counterpart_event_key: source.lesson.event_key,
-                counterpart_week_index: source.week.week_index }] };
-        destination.lessons.push(planned);
-        byKey.set(proposedKey, { lesson: planned, week: destination });
+                counterpart_week_index: source.week.week_index }] });
+        destination.lessons.push(ghost);
+        byKey.set(proposedKey, { lesson: ghost, week: destination });
     }
-    return { ...overview, weeks };
+    return { ...overview, weeks: hidden.size ? weeks.map(week => ({ ...week, lessons: week.lessons.filter(lesson => !hidden.has(lesson)) })) : weeks };
 }
 
 function weekMatches(value, week) {
@@ -186,7 +191,7 @@ export function scheduleChangeConnections(overview, week) {
                 targetKey: sameWeek || !outgoing ? proposedKey : null,
                 direction: sameWeek ? 'local' : outgoing ? 'outgoing' : 'incoming',
                 edge: sameWeek ? null : remoteWeek < currentWeek ? 'left' : 'right',
-                label: `${change.phase === 'approved' ? '已调课 · ' : change.phase === 'planned' ? '已批准·待落实 · ' : ''}${roomChanged ? '时间更改 · 教室更改' : '时间更改'}`,
+                label: `${change.phase === 'draft' ? '草稿 · ' : ''}${roomChanged ? '时间更改 · 教室更改' : '时间更改'}`,
                 boundaryLabel: sameWeek ? '' : `${outgoing ? '至' : '来自'}第${remoteWeek}周`,
                 title: `${slotText(original)} → ${slotText(proposed)}`,
                 jumpKey: sameWeek || outgoing ? proposedKey : originalKey,

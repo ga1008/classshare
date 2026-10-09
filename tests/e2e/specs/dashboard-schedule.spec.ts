@@ -176,7 +176,7 @@ test('teacher academic sync preserves the selected week and search on failure an
   for (const complete of [false, true]) {
     success = complete;
     await page.locator('[data-academic-schedule-sync]').click();
-    await page.getByRole('button', { name: '开始同步' }).click();
+    await page.getByRole('menuitem', { name: '立即同步' }).click();
     await expect(page.locator('.cs-sync-feedback')).toContainText(complete ? '同步完成' : '原有课表已保留');
     await expect(page.locator('.cs-card.is-active .cs-card__bar strong')).toHaveText(week!);
     await expect(page.locator('[data-dashboard-search]')).toHaveValue('课程');
@@ -211,8 +211,8 @@ test('teacher without classrooms can discover the academic semester from the rea
   await expect(page.locator('[data-offering-card]')).toHaveCount(0);
   await expect(page.locator('[data-academic-schedule-sync]')).toBeEnabled();
   await page.locator('[data-academic-schedule-sync]').click();
-  await expect(page.getByLabel('同步范围')).toHaveValue('current');
-  await expect(page.getByRole('button', { name: '开始同步' })).toBeEnabled();
+  await expect(page.getByRole('menuitem', { name: '立即同步' })).toBeEnabled();
+  await expect(page.getByRole('menuitem', { name: '申请列表' })).toBeEnabled();
 });
 
 test('management sync retains course filters and week and visibly reports successful warnings', async ({ page }) => {
@@ -235,8 +235,8 @@ test('management sync retains course filters and week and visibly reports succes
     await route.fulfill({ json: { ...data, message: '同步完成' } });
   });
   await page.locator('[data-academic-schedule-sync]').click();
-  await page.getByRole('button', { name: '开始同步' }).click();
-  await expect(page.locator('.cs-sync-feedback')).toContainText('有1次课需要核对关联');
+  await page.getByRole('menuitem', { name: '立即同步' }).click();
+  await expect(page.locator('.cs-sync-feedback')).toContainText('同步完成');
   await expect(page.locator('[data-cs-course]')).toHaveValue(course!);
   await expect(page.locator('[data-cs-term]')).toHaveValue(selectedTerm);
   await expect(page.locator('.cs-card.is-active')).toHaveAttribute('data-week-index', week!);

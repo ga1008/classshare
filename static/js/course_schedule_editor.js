@@ -12,10 +12,10 @@
 
 import { DECK_CSS } from './course_schedule_styles.js';
 import { EDITOR_CSS } from './course_schedule_editor_styles.js';
-import { compactClassroomName, scheduleChanges, scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-glass-20260920';
+import { compactClassroomName, scheduleChanges, scheduleChangeLabel } from './course_schedule_presentation.js?v=schedule-final-20261009';
 import { projectScheduleChanges } from './course_schedule_change_links.js';
 import { scheduleLessonLanes } from './course_schedule_deck.js';
-import { syncAcademicSchedule } from '/static/js/academic_schedule_sync.js?v=academic-sync-20260919';
+import { syncAcademicSchedule } from '/static/js/academic_schedule_sync.js?v=academic-sync-20261009';
 import { getLQ } from './lq/index.js';
 import { bindDropdown } from './lq/dropdown.js';
 import { bindOverflowLabels } from './lq/overflow-label.js';
@@ -1137,7 +1137,7 @@ function init(boot) {
                 <div class="cse-change-group__head">${statusChip(label)}<span>${escapeHtml(group.drafts[0].class_label || group.drafts[0].teaching_class_name || '')}</span>${group.drafts.length > 1 ? `<span>${group.remoteId ? '共用一份申请，各项可单独定位和撤回' : '同一教学班，保存时合并申请'}</span>` : ''}</div>${group.drafts.map(row).join('')}</section>`;
         }).join('');
         const applications = new Set(list.filter(d => d.status === 'pushed' && d.remote_ttk_id && d.remote_detail_id).map(d => d.remote_ttk_id)).size;
-        const next = pushed ? `<div class="cse-drafts__next"><span>${pushed} 项已保存${applications ? ` · ${applications} 份教务申请` : ''}</span><a class="lq-btn lq-btn--link lq-btn--sm" data-lq-component="button" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">前往教务核对 / 提交 ↗</a></div>` : '';
+        const next = pushed ? `<div class="cse-drafts__next"><span>${pushed} 项已保存${applications ? ` · ${applications} 份教务申请` : ''}</span><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" data-cse-resync-reasons title="把各项的调动原因与证明材料重新写入教务申请草稿">重新写入原因和材料</button><a class="lq-btn lq-btn--link lq-btn--sm" data-lq-component="button" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">前往教务核对 / 提交 ↗</a></div>` : '';
         refs.drafts.classList.add('lq-surface'); refs.drafts.dataset.lqComponent = 'surface';
         refs.drafts.innerHTML = `<div class="cse-drafts__head"><h3>变更清单</h3><p>上原下新，红色为变更项。保存到教务后仍需自行提交申请。</p></div>
             ${list.length ? `<div class="cse-drafts__list">${rows}</div>` : '<div class="cse-materials__empty">还没有任何调整。按住课次拖到新的节次，或单击课次在右侧设置。</div>'}${next}`;
@@ -1346,7 +1346,7 @@ function init(boot) {
             if (!pushResult) return '';
             const title = pushResult.status === 'success' ? '已保存到教务草稿' : pushResult.status === 'partial' ? '部分已保存，其余需处理' : pushResult.status === 'missing_credential' ? '未配置教务账号' : '未能保存';
             const proofCount = current().reduce((n, d) => n + ((d.proofs || []).length), 0);
-            const steps = pushResult.pushed ? `<div class="cse-push__block"><strong>下一步</strong><span>1) 登录教务系统 → 调停课申请 → 核对「待提交」并点击「提交申请」；2) 提交时附上证明材料${proofCount ? '（变更清单可下载已上传的材料）' : '（本批尚未上传）'}；3) 审批通过并同步后，剩余课次自动重排，材料随序号不变。</span><a data-lq-component="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--primary lq-btn--prominent" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">打开教务调停课申请 ↗</a></div>` : '';
+            const steps = pushResult.pushed ? `<div class="cse-push__block"><strong>下一步</strong><span>1) 调动原因${proofCount ? '与证明材料' : ''}已随草稿写入教务（逐项结果见上方）；2) 登录教务系统 → 调停课申请 → 核对后点击「提交申请」；3) 审批通过并同步后，剩余课次自动重排，材料随序号不变。</span><a data-lq-component="button" class="lq-btn lq-btn--sm cse-btn cse-btn--sm cse-btn--primary lq-btn--prominent" href="${escapeHtml(state.payload?.zf_entry_url || '#')}" target="_blank" rel="noopener">打开教务调停课申请 ↗</a></div>` : '';
             const fix = pushResult.status === 'missing_credential' ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm" href="${CREDENTIAL_URL}">去设置教务账号</a>` : '';
             return `<div class="cse-push__block cse-status ${pushResult.status === 'success' ? 'cse-status--pushed' : 'cse-status--conflict'}"><strong>${title}</strong><span>${escapeHtml(pushResult.message || '')}</span>${fix}</div>${steps}`;
         };
@@ -1362,7 +1362,7 @@ function init(boot) {
                 ${done ? renderDoneNote() : renderCheckNote()}
                 <ul class="cse-push__list">${list.map(renderItem).join('')}</ul>
                 ${done || !missingReason.length ? '' : `<div class="cse-push__block cse-status cse-status--conflict"><strong>${missingReason.length} 项未填写调课原因</strong><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cse-btn cse-btn--sm cse-btn--ai" data-cse-push-ai-all>AI 填写全部</button></div>`}
-                ${done ? '' : `<div class="cse-push__block"><strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，教务提交申请时需附上。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span><label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input data-lq-component="file" class="lq-native-file" type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label></div>`}
+                ${done ? '' : `<div class="cse-push__block"><strong>证明材料</strong><span class="cse-section__hint">放假通知、会议通知等，保存时自动作为教务申请附件（多份合并为一个压缩包）。${missingProof.length ? `当前 ${missingProof.length} 项还没有材料。` : '全部已有材料。'}</span><label class="cse-btn cse-btn--sm cse-upload${state.proofsBusy ? ' is-busy' : ''}"><input data-lq-component="file" class="lq-native-file" type="file" data-cse-push-proofs multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt" hidden>${state.proofsBusy ? '上传中…' : '为这些变更上传证明材料'}</label></div>`}
                 ${done ? '' : planHtml}`;
             const busy = phase === 'checking' || phase === 'saving';
             const blocked = check && (check.status === 'missing_credential' || check.status === 'nothing');
@@ -1445,6 +1445,19 @@ function init(boot) {
             state.form = null;
             applyPayload(data);
             toast(data.result?.message || '已撤回。', data.result?.status === 'success' ? 'success' : 'danger');
+        } catch (error) { toast(error.message, 'danger'); }
+        finally { setBusy(false); }
+    }
+
+    /** Re-send 调动原因/证明材料 for applications already saved to 教务 (still unsubmitted). */
+    async function resyncReasons() {
+        if (state.busy) return;
+        setBusy(true);
+        try {
+            const data = await api(`${API}/push/reasons`, { method: 'POST', body: JSON.stringify({ year: term().year, term: term().term }) });
+            const result = data.result || {};
+            const lines = (result.results || []).map(item => `${item.course_name}：${item.message}`);
+            toast([result.message, ...lines].filter(Boolean).join('；'), result.status === 'success' ? 'success' : result.status === 'partial' ? 'warning' : 'danger');
         } catch (error) { toast(error.message, 'danger'); }
         finally { setBusy(false); }
     }
@@ -1756,6 +1769,7 @@ function init(boot) {
         if (discard) { await discardDraft(discard.dataset.cseDiscard); return; }
         const withdraw = event.target.closest('[data-cse-withdraw]');
         if (withdraw) { await withdrawDraft(withdraw.dataset.cseWithdraw); return; }
+        if (event.target.closest('[data-cse-resync-reasons]')) { await resyncReasons(); return; }
         const force = event.target.closest('[data-cse-force]');
         if (force) { await pushDrafts({ draftIds: [Number(force.dataset.cseForce)], force: true }); return; }
         const precheck = event.target.closest('[data-cse-precheck]');

@@ -7,7 +7,7 @@ export function scheduleChanges(lesson) {
     const changes = Array.isArray(lesson?.schedule_changes) ? lesson.schedule_changes : [lesson?.adjustment];
     return changes.filter(change => change && (
         ['pending', 'planned'].includes(change.phase) && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
-        || change.phase === 'draft' && ['move', 'cancel', 'room'].includes(change.kind) && change.endpoint === 'original'
+        || change.phase === 'draft' && ['move', 'cancel', 'room'].includes(change.kind) && ['original', 'proposed'].includes(change.endpoint)
         || change.phase === 'approved' && change.kind === 'move' && ['original', 'effective'].includes(change.endpoint)
         || change.phase === 'approved' && change.kind === 'room' && change.endpoint === 'effective'
     ));
@@ -37,6 +37,7 @@ export function scheduleChangeBadge(lesson) {
     const badge = PHASE_BADGES[stage.phase];
     if (stage.phase === 'planned' && stage.endpoint === 'proposed') return { phase: 'planned', label: '计划位置', tone: 'info', roomChanged, title: '已批准调课的计划位置，正式课表待落实' };
     if (stage.phase === 'pending' && stage.endpoint === 'proposed') return { phase: 'pending', label: '拟位置', tone: 'warning', roomChanged, title: '待审申请的拟安排位置' };
+    if (stage.phase === 'draft' && stage.endpoint === 'proposed') return { phase: 'draft', label: '草稿位置', tone: 'neutral', roomChanged, title: '申请草稿的拟安排位置，尚未提交教务' };
     return { phase: stage.phase, label: roomChanged && stage.kind !== 'cancel' ? `${badge.label}·换教室` : badge.label, tone: badge.tone, roomChanged, title: badge.title };
 }
 
@@ -132,7 +133,8 @@ export function scheduleChangeLabel(lesson, suppliedChange = null) {
     const change = suppliedChange || scheduleChanges(lesson)[0];
     if (!change) return '';
     if (change.phase === 'approved') return change.kind === 'room' ? '教室已更换 · 申请已批准' : change.endpoint === 'original' ? '原安排（已调课）' : '调课已生效';
-    if (change.phase === 'draft') return change.kind === 'cancel' ? '停课申请草稿 · 未提交' : '调课申请草稿 · 未提交';
+    if (change.phase === 'draft') return change.kind === 'cancel' ? '停课申请草稿 · 未提交'
+        : change.endpoint === 'proposed' ? '草稿拟安排 · 未提交' : '调课申请草稿 · 未提交';
     if (change.phase === 'planned') return change.kind === 'cancel' ? '停课已批准·待落实'
         : change.endpoint === 'original' ? '原安排 · 已批准·待落实' : '计划安排 · 已批准·待落实';
     if (change.endpoint === 'proposed') return '正在申请变更';
