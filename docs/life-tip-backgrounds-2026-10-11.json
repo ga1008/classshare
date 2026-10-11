@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-10-11-xianxia-manual-release",
-  "status": "integrated-awaiting-validation-and-release",
+  "status": "completed",
   "requested_by_user": "Deploy and push the four approved preview backgrounds",
   "base_commit": "dbbf1e57a6d5ec2226a241e315b679139cd23630",
   "before": 320,
@@ -131,14 +131,96 @@
     }
   ],
   "prepared_at": "2026-10-11T12:34:22.522690+08:00",
-  "pending": [
-    "isolated validation",
-    "frozen native PostgreSQL gate",
-    "DryRun",
-    "deployment",
-    "public postflight",
-    "Git push"
-  ],
+  "pending": [],
   "base_commit_at_start": "aeda685933d2aaa930c0a117f4571491cfad1e36",
-  "compatibility": "Existing login_scene.js daytime pool requires -sunny- in names; both day assets include it. Runtime JS unchanged."
+  "compatibility": "Existing login_scene.js daytime pool requires -sunny- in names; both day assets include it. Runtime JS unchanged.",
+  "completed_at": "2026-10-11T13:01:26.373672+08:00",
+  "validation": {
+    "isolated_tests": 18,
+    "browser_scenarios": 16,
+    "browser_errors": 0,
+    "resource_failures": 0,
+    "roles": [
+      "student",
+      "teacher"
+    ],
+    "viewports": [
+      [
+        1440,
+        900
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "real_database_test_connections": 0,
+    "source_audit": {
+      "files": 521,
+      "templates": 201,
+      "candidateEntries": 5310,
+      "acceptance": "pending; source inventory only"
+    },
+    "formal_asset_graph": "a1e0999034199b2d0cacb7d6b367d82e36671baba8460ced8a56d93e789a0ef5",
+    "lq_gzip_bytes": 17839,
+    "lq_gzip_budget": 18432,
+    "old_asset_hashes_preserved": 640,
+    "decoded_image_files": 648,
+    "native_migration_source_files": 72,
+    "native_required_tables_per_pass": 177,
+    "native_startup_passes": 2,
+    "native_report": "E:/CodexTemp/lanshare-schedule-material-pg-20261008/gate-final/native-report.json",
+    "migration_backup": "E:/CodexTemp/lanshare-lq-release-20260923/snapshot.dump"
+  },
+  "deployment": {
+    "release_id": "20261011-125455-d0b6f0ad66e0",
+    "source_commit": "0e1177ddddf2175e7de709fcb2189311331c3c9c",
+    "content_commit_verified_on_origin_dev": "0e1177ddddf2175e7de709fcb2189311331c3c9c",
+    "dry_run_passed": true,
+    "deploy_exit_code": 0,
+    "deploy_done": true,
+    "code_backup": "/tmp/lanshare-deploy-backups/code-20261011-125506.tgz",
+    "cutover_backup": "/tmp/lanshare-deploy-backups/db-cutover-20261011-125506.sql.gz",
+    "public_new_asset_hashes_verified": 8,
+    "old_deployed_asset_hashes_verified": 640,
+    "runtime_manifest_count": 324,
+    "healthy_services": 8,
+    "login_pages_verified": [
+      {
+        "role": "student",
+        "status": 200,
+        "release_id": "20261011-125455-d0b6f0ad66e0",
+        "asset_hash_matches": true,
+        "clear_site_data": "cache-only"
+      },
+      {
+        "role": "teacher",
+        "status": 200,
+        "release_id": "20261011-125455-d0b6f0ad66e0",
+        "asset_hash_matches": true,
+        "clear_site_data": "cache-only"
+      }
+    ],
+    "existing_background_task_ledger_ok": false,
+    "existing_background_task_summary": {
+      "task_type_count": 11,
+      "total_queue_depth": 32,
+      "total_running_count": 0,
+      "total_failed_count": 762,
+      "total_stale_count": 0,
+      "active_worker_count": 4,
+      "problem_task_types": [
+        "ai_grading",
+        "material_ai_import",
+        "email_outbox",
+        "blog_news_crawler",
+        "agent_task",
+        "scheduled_task"
+      ]
+    },
+    "cache_invalidation": "cache-only; preserve cookies, local storage, login state and drafts",
+    "record_commit": "Final evidence-only commit is recorded in this file Git history; deployed source remains source_commit above."
+  },
+  "evidence_directory": ".codex-temp/xianxia-release-20261011/",
+  "followup": "These four image files are already published. Future weekly runs compare these complete prompts and actual images before generating new designs; do not regenerate or charge for this approved batch."
 }
