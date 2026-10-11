@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-10-12",
-  "status": "prepared-awaiting-validation-and-release",
+  "status": "completed",
   "before": 324,
   "after": 326,
   "added_count": 2,
@@ -130,11 +130,27 @@
       }
     ]
   },
-  "pending": [
-    "validation",
-    "deployment",
-    "content_publication",
-    "postflight",
-    "git_push"
-  ]
+  "pending": [],
+  "completed_at": "2026-10-12T05:25:35.521221+08:00",
+  "validation": {
+    "isolated_tests": 18,
+    "browser_scenarios": 4,
+    "screenshots_reviewed": 8,
+    "errors": 0,
+    "old_image_hashes_preserved": 648,
+    "decoded_files": 652,
+    "frozen_tested_files": 2982,
+    "native_gate_files": 72
+  },
+  "deployment": {
+    "release_id": "20261012-052208-a5fef7faf9c8",
+    "source_commit": "652f64431164d602530348a6bd676ac955ffa35e",
+    "remote_content_commit_verified": "652f64431164d602530348a6bd676ac955ffa35e",
+    "backups": [
+      "/tmp/lanshare-deploy-backups/code-20261012-052219.tgz",
+      "/tmp/lanshare-deploy-backups/db-cutover-20261012-052219.sql.gz"
+    ],
+    "public_image_files_verified": 4,
+    "runtime_image_count": 326
+  }
 }
