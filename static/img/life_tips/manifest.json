@@ -2036,6 +2036,77 @@
       "tone": "dark"
     },
     {
+      "file": "xianxia-cloud-terrace-night-20261011-35eb73ef.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "放松",
+        "休息",
+        "情绪",
+        "压力",
+        "生活",
+        "节奏"
+      ],
+      "luma": 82,
+      "tone": "dark"
+    },
+    {
+      "file": "xianxia-moon-palace-night-20261011-a294acc3.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "休息",
+        "睡眠",
+        "复盘",
+        "积累",
+        "方向"
+      ],
+      "luma": 75,
+      "tone": "dark"
+    },
+    {
+      "file": "xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
+      "categories": [
+        "人生大实话",
+        "职业路径",
+        "教学相长"
+      ],
+      "tags": [
+        "目标",
+        "规划",
+        "方向",
+        "坚持",
+        "成长",
+        "选择"
+      ],
+      "luma": 185,
+      "tone": "light"
+    },
+    {
+      "file": "xianxia-sunny-yaochi-day-20261011-a04c8cff.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "复盘",
+        "专注",
+        "节奏",
+        "学习",
+        "平静"
+      ],
+      "luma": 175,
+      "tone": "light"
+    },
+    {
       "file": "xueye-blue-observatory08-23014e24.webp",
       "categories": [
         "学业规则"

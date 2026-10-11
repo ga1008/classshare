@@ -1,0 +1,144 @@
+{
+  "batch_id": "2026-10-11-xianxia-manual-release",
+  "status": "integrated-awaiting-validation-and-release",
+  "requested_by_user": "Deploy and push the four approved preview backgrounds",
+  "base_commit": "dbbf1e57a6d5ec2226a241e315b679139cd23630",
+  "before": 320,
+  "after": 324,
+  "added_count": 4,
+  "retired_count": 0,
+  "generation_calls_this_release": 0,
+  "original_preview_generation_calls": 4,
+  "source_preview_batch": "2026-10-11-manual-preview",
+  "old_entries_and_hashes_preserved": true,
+  "prior_image_files_verified": 640,
+  "tips_or_business_data_changed": false,
+  "added": [
+    {
+      "file": "xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
+      "categories": [
+        "人生大实话",
+        "职业路径",
+        "教学相长"
+      ],
+      "tags": [
+        "目标",
+        "规划",
+        "方向",
+        "坚持",
+        "成长",
+        "选择"
+      ],
+      "luma": 185,
+      "tone": "light",
+      "title": "云中南天门 · 日景",
+      "bytes": 121692,
+      "width": 1600,
+      "height": 900,
+      "sha256": "64cca9361bff762c2bd4fb650709aee045783ad355bb4ef791611d113fca2cdc",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-bc36ef05-9907-48e3-9c81-270fa2ec15cf.png",
+      "preview_key": "01-nantianmen-day",
+      "frost": "static/img/life_tips/frost/xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
+      "frost_sha256": "18430a4534e350b2a1f5462e2bf13c03ebef22eb82bfde046029b91d3bd28e87",
+      "design": "中轴天路与巨大门洞，晴朗侧光，远距巨构",
+      "prompt": "Create one original landscape background image, aspect ratio 16:9, edge-to-edge artwork only. Subject: 云中南天门, an immense celestial gate of Chinese xianxia mythology rising above a luminous ocean of clouds. Photorealistic cinematic environment, awe-inspiring but serene, fine believable materials, not a video-game poster or painting.\nCamera is on a small white marble observation terrace, looking from a great distance through an 85mm photographic lens. A slender white jade bridge begins at the lower center and recedes toward a gigantic rectangular gateway centered in the upper portion of the image. Its deeply recessed open doorway frames blue sky, the enormous white stone piers are partly lost in distant clouds, and its dark wooden roof projects beyond the upper frame. Coherent structural engineering with dark timber beams, layered dougong brackets, wide restrained eaves, very subtle antique gold details. Ordinary-sized balustrades, lamps and one tiny distant pavilion communicate vast scale; no people are necessary.\nPale clean cyan sky and moon-white stone, crisp soft morning side light, transparent cool blue shadows, no orange wash. Clouds have bright textured tops, blue-gray depths and atmospheric perspective: thin near mist, large middle cloud masses, low-contrast horizon. Keep the central middle area peaceful with soft low-contrast clouds around the bridge; important gateway silhouette in upper center and bridge in lower center must remain recognizable in a portrait crop showing only the central 26% of image width. Sparse fine detail behind the central text area, no text actually rendered. Refined natural contrast and exposure, beautiful weathered mineral stone and real dark wood grain. No sun or moon visible; gate is the single wonder. Avoid crowded palaces, malformed columns, chaotic roof stacks, fantasy glow, magic circles, neon, cartoon rendering, cotton-ball clouds, fog hiding the gate, modern structures, Western castles, people closeups. No lettering, inscriptions, watermark, logo, interface, caption, borders or screenshot."
+    },
+    {
+      "file": "xianxia-sunny-yaochi-day-20261011-a04c8cff.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "复盘",
+        "专注",
+        "节奏",
+        "学习",
+        "平静"
+      ],
+      "luma": 175,
+      "tone": "light",
+      "title": "瑶池水镜 · 日景",
+      "bytes": 122018,
+      "width": 1600,
+      "height": 900,
+      "sha256": "a04c8cff4a08c9f887296c8d78b2b1629d918d61919eff0960de9413bcbcefaf",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-79946297-591b-42ef-913a-5e0f164b215c.png",
+      "preview_key": "02-yaochi-day",
+      "frost": "static/img/life_tips/frost/xianxia-sunny-yaochi-day-20261011-a04c8cff.webp",
+      "frost_sha256": "e426b9b0e324a6b6e3dce22a9e3058f12b6e732ebdd6585a6dac81879e81e454",
+      "design": "临水低视点，斜向玉道与清透水镜，轻盈晨光",
+      "prompt": "Generate a single new 16:9 landscape artwork used as a quiet xianxia fantasy splash-screen background. 瑶池水镜: an infinite shallow celestial lake above the clouds. Cinematic photorealism, airy and contemplative, tangible real water, stone and timber rather than illustrative brushwork.\nCamera is low beside water, a restrained 50mm view. An elegant slender white marble causeway enters from the lower middle slightly off center and leads to a single stately Chinese celestial hall at upper center. Low carved stone balustrades and occasional lotus-shaped lantern pedestals repeat toward one coherent vanishing point. The distant hall has layered dark wooden beams, restrained dark red timber, pale jade base, broad dignified curved eaves and only tiny gold accents. Around it is spacious clean blue sky and immense natural layered white clouds, water extending toward a distant horizon with no visible land. The palace and clouds reflect in the water with physically coherent softened reflection, a few gentle spreading circular ripples, subtly visible mineral lakebed only in the near shallows. No lotus clutter, fish, birds or people.\nThe composition is primarily space and clean pale blue water. Place recognizable palace silhouette within the upper central 26% of image width and the causeway in the lower central strip so a smartphone center crop still works. The middle portion is a calm subtly shaded area of water and atmosphere, without a strong horizon line crossing the intended central text region. Delicate morning light from the side, moon-white highlights, cool translucent shadows, cloud texture never blown out. One fantastic phenomenon only: the elevated boundless water mirror. No giant celestial bodies, waterfalls, special-effect glows, excessive symmetry, miniature toy palace, modern infinity pool, western fountains, glass-floor illusion, chrome, cartoon style, dense haze or orange color grading. Edge-to-edge image only, absolutely no text, watermark, logo, typography, UI, labels or borders."
+    },
+    {
+      "file": "xianxia-moon-palace-night-20261011-a294acc3.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "休息",
+        "睡眠",
+        "复盘",
+        "积累",
+        "方向"
+      ],
+      "luma": 75,
+      "tone": "dark",
+      "title": "巨月临阙 · 月夜",
+      "bytes": 115186,
+      "width": 1600,
+      "height": 900,
+      "sha256": "a294acc35d0ce22193e7b8dffc900d0338b4d93344b5450830a89c242344038c",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-61a12700-9b33-4d23-b405-5e8122508656.png",
+      "preview_key": "03-moon-palace-night",
+      "frost": "static/img/life_tips/frost/xianxia-moon-palace-night-20261011-a294acc3.webp",
+      "frost_sha256": "85a2ab47ece624adea05e6edcc8c68966e527b7a3bc231c2142ca4f3dfb4555f",
+      "design": "侧向长廊、巨月与远山云海，冷月光配少量暖灯",
+      "prompt": "Create one exquisite 16:9 landscape cinematic photorealistic Chinese xianxia environment at tranquil blue moonlight night, a background image rather than a poster. Theme 巨月临阙: a single immense softly textured pale moon hanging beyond a long celestial palace corridor above a cloud sea. Natural believable materials and restrained color, graceful quiet grandeur.\nView from the outer edge of a high white jade terrace with a 70mm photographic perspective. A richly constructed but restrained dark timber colonnade runs from the side toward the upper central distance, repeated columns and stone railings diminish coherently. The palace roof is broad and elegant with traditional dougong brackets, worn dark red wood, white marble base and minute antique gilt details. The far corridor end and a compact pavilion silhouette enter the central vertical crop; the near colonnade may continue outside the frame. A large single moon sits high near center, behind thin soft atmospheric veils, its tonal lunar texture visible, not a white glowing disk or a planet with rings. No visible stars required.\nAn open blue-gray cloud sea fills the middle and lower distance with graceful layered volume. Pale moonlight touches jade edges and tiled eaves, a few tiny amber lanterns beneath the distant corridor add warmth without making the image gold. Deep blue, slate cyan, moon-white, cool shadows retain enough detail; no crushed blacks. Leave the actual middle-center region softly shaded, uncluttered and low contrast for a future UI message; keep the bright moon entirely in the upper region away from that text area. The upper central 26% of image width still contains a clear moon/palace relation, and lower center retains terrace/path depth after narrow smartphone center cropping. No people needed.\nOnly one celestial moon. No sun, galaxies, purple neon, magical runes, beams of energy, battles, flying swords, overexposed moon glow, dense fog hiding architecture, chaotic roofs, warped columns, plastic stone, Western castles or modern city. No lettering, plaque characters, UI, watermark, logo, subtitles, frame or ornamental title card."
+    },
+    {
+      "file": "xianxia-cloud-terrace-night-20261011-35eb73ef.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "放松",
+        "休息",
+        "情绪",
+        "压力",
+        "生活",
+        "节奏"
+      ],
+      "luma": 82,
+      "tone": "dark",
+      "title": "云宫露台 · 蓝调夜景",
+      "bytes": 120794,
+      "width": 1600,
+      "height": 900,
+      "sha256": "35eb73efc0bb026f9be5a9914902bb7b961dff323d6fd6c442b4475bbabba891",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-d13df27e-9139-4912-80b2-0f1da50911d9.png",
+      "preview_key": "04-cloud-terrace-night",
+      "frost": "static/img/life_tips/frost/xianxia-cloud-terrace-night-20261011-35eb73ef.webp",
+      "frost_sha256": "b87cbbdf25b70525837b1169511665bb372457806662e5ca2a3c9a39e6a9f49b",
+      "design": "开放露台与古松前景，开阔蓝调天空，月体不入画",
+      "prompt": "Produce a single 16:9 wide background artwork, original Chinese celestial cultivation fantasy, photorealistic cinema environment. Theme 云宫露台 at early night blue hour, profoundly calm, spacious, refined. No characters or narrative action; the feeling is quietly looking out across an infinite sea of clouds.\nAn eye-level 32mm view from a vast open white marble terrace. A small corner of traditional dark timber eave and one structural column serve only as a peripheral frame, never form a tunnel or enclosure. A venerable pine tree reaches from one side above the open horizon with a gnarled naturally weathered trunk and airy tiers of dark green needles. It is graceful and singular, not a bonsai or decorative topiary. Terrace stone has subtle mineral grain, small worn relief details and a restrained soft sky reflection. A low coherent stone balustrade occupies the lower edge, beyond it layered cloud mountains extend into a clear indigo-cyan horizon. Only two or three faint distant roof silhouettes emerge above clouds.\nThe pine crown gently reaches into the upper center so a narrow mobile crop retains a recognizable tree/cloud relationship, but the trunk, nearest column and dense needles stay away from the middle-center text region. Keep the central 26% of image width a complete simple composition: high open pine canopy or open sky at top, a broad low-contrast blue cloud layer through the middle, and quiet terrace foreground at bottom. No bright horizon stripe behind the central message area. A dim cool moonlit ambient wash reveals cloud contours; one or two small warm lanterns are tucked far to the side under the eave. The moon itself is out of frame. Balanced night exposure, visible detail in shadows, gentle pale jade edges, deep blue-green atmosphere, no artificial purple cast. Spacious air and plausible botanical and architectural forms.\nNo people, teapot props, oversized furniture, huge celestial bodies, waterfalls, bright stars, magic glows, dense fog, crowded buildings, Western architecture, excessive gilding, cartoon or painterly rendering, malformed tree limbs, bent columns, lens flares, monochrome blackness. Absolutely no text, UI, watermark, logo, frame, subtitles or screenshot interface."
+    }
+  ],
+  "prepared_at": "2026-10-11T12:34:22.522690+08:00",
+  "pending": [
+    "isolated validation",
+    "frozen native PostgreSQL gate",
+    "DryRun",
+    "deployment",
+    "public postflight",
+    "Git push"
+  ],
+  "base_commit_at_start": "aeda685933d2aaa930c0a117f4571491cfad1e36",
+  "compatibility": "Existing login_scene.js daytime pool requires -sunny- in names; both day assets include it. Runtime JS unchanged."
+}
