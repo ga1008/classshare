@@ -1532,6 +1532,45 @@
             return `${(size / 1024 / 1024).toFixed(1)} MB`;
         }
 
+        const SOURCE_ROOT_FALLBACK = '材料库根目录';
+        const sourceNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
+
+        // Files of one material share the first path segment ("python-course/lesson_9/x.json").
+        function groupSourceCandidates(items) {
+            const groups = new Map();
+            items.forEach(item => {
+                const segments = String(item.material_path || '').split('/').filter(Boolean);
+                const root = segments.length > 1 ? segments[0] : SOURCE_ROOT_FALLBACK;
+                const folder = segments.length > 2 ? segments.slice(1, -1).join('/') : '';
+                if (!groups.has(root)) groups.set(root, []);
+                groups.get(root).push({ item, folder });
+            });
+            return [...groups.entries()].map(([root, entries]) => ({
+                root,
+                entries: [...entries].sort((a, b) => sourceNameCollator.compare(
+                    `${a.folder}/${a.item.name}`, `${b.folder}/${b.item.name}`,
+                )),
+            }));
+        }
+
+        function renderSourceCandidateRow({ item, folder }, selectedMap, onClickName) {
+            const id = Number(item.id);
+            const selected = selectedMap.has(id);
+            const meta = [formatSourceSize(item.file_size), item.scope_label].filter(Boolean).join(' · ');
+            return `
+                <button data-lq-component="choice" data-lq-shape="surface" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass source-candidate-btn ${selected ? 'is-selected' : ''}" onclick="${onClickName}(${id})" data-source-id="${id}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(item.material_path || item.name)}">
+                    <span class="source-candidate-main">
+                        <strong>${escapeHtml(item.name)}</strong>
+                        ${folder ? `<small>${escapeHtml(folder)}/</small>` : ''}
+                    </span>
+                    <span class="source-candidate-meta">${escapeHtml(meta)}</span>
+                    <span class="source-candidate-check" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                    </span>
+                </button>
+            `;
+        }
+
         function renderSourceCandidateList(containerId, items, selectedMap, onClickName) {
             const container = document.getElementById(containerId);
             if (!container) return;
@@ -1539,19 +1578,18 @@
                 container.innerHTML = '<div class="text-xs text-muted">没有找到可用材料。</div>';
                 return;
             }
-            container.innerHTML = items.map(item => {
-                const selected = selectedMap.has(Number(item.id));
-                const meta = [item.file_ext, formatSourceSize(item.file_size), item.scope_label].filter(Boolean).join(' · ');
-                return `
-                    <button data-lq-component="choice" type="button" class="lq-btn lq-btn--sm lq-domain-choice lq-btn--glass source-candidate-btn ${selected ? 'is-selected' : ''}" onclick="${onClickName}(${Number(item.id)})" data-source-id="${Number(item.id)}">
-                        <span>
-                            <strong>${escapeHtml(item.name)}</strong>
-                            <small>${escapeHtml(item.material_path || '')}</small>
-                        </span>
-                        <small>${escapeHtml(meta)}</small>
-                    </button>
-                `;
-            }).join('');
+            container.innerHTML = groupSourceCandidates(items).map(group => `
+                <section class="source-candidate-group" role="group" aria-label="${escapeHtml(group.root)}">
+                    <header class="source-candidate-group-head">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                        <strong>${escapeHtml(group.root)}</strong>
+                        <span>${group.entries.length} 个文件</span>
+                    </header>
+                    <div class="source-candidate-group-items">
+                        ${group.entries.map(entry => renderSourceCandidateRow(entry, selectedMap, onClickName)).join('')}
+                    </div>
+                </section>
+            `).join('');
         }
 
         async function fetchExamSourceMaterials({ query = '', jsonOnly = false } = {}) {

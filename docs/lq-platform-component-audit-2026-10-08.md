@@ -2,37 +2,37 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5305 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5310 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2207 |
-| field | 737 |
-| select | 299 |
-| surface | 660 |
+| button | 2210 |
+| field | 736 |
+| select | 297 |
+| surface | 663 |
 | menu | 36 |
-| dialog | 22 |
+| dialog | 21 |
 | tab | 31 |
 | choice | 163 |
 | toolbar | 133 |
 | layer | 139 |
 | content-slot | 45 |
 | handle | 1 |
-| chip | 8 |
+| chip | 10 |
 | domain | 18 |
 | status | 44 |
-| unknown | 762 |
+| unknown | 763 |
 
 | 来源 | 数量 |
 |---|---:|
 | component-declared | 3713 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
-| legacy-or-native | 85 |
+| legacy-or-native | 86 |
 | lq-marked-native | 104 |
 | runtime-output-unknown | 633 |
 | shared-adapter-call-candidate | 81 |
-| shared-component-call | 581 |
+| shared-component-call | 585 |
 | shared-definition | 54 |
 
 ## 本轮审查与动态入口解释
@@ -137,3 +137,5 @@
 - JS strings with UI markup remain candidates unless proven to be plain-text sinks; dynamically assembled markup and runtime-only API content still require DOM inventory.
 - Source occurrences cannot enumerate data-dependent instance counts, authorization branches, native popups, shadow DOM, portal/iframe states, or generated server HTML.
 - Pair the source inventory with the isolated runtime route/DOM/state matrix; all pending and unknown records need an owner, contract, and scenario or an explicit reviewed exception.
+
+本次后续增量（2026-10-11）覆盖试卷编辑器本站材料选择列表：结果按材料根目录分组、组内自然排序，行改用既有 `lq-domain-choice` 的 `data-lq-shape="surface"` 几何与共享选中态，无新增私有材质。
