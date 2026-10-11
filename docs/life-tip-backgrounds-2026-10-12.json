@@ -1,0 +1,140 @@
+{
+  "batch_id": "2026-10-12",
+  "status": "prepared-awaiting-validation-and-release",
+  "before": 324,
+  "after": 326,
+  "added_count": 2,
+  "retired_count": 0,
+  "generation_calls": 2,
+  "generator": "built-in imagegen; imagegen skill; no retries or external API",
+  "added": [
+    {
+      "file": "xianxia-sunny-taixu-bell-20261012-0b552150.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "目标",
+        "成长",
+        "坚持"
+      ],
+      "luma": 160,
+      "tone": "light",
+      "bytes": 119296,
+      "width": 1600,
+      "height": 900,
+      "quality": 66,
+      "sha256": "0b552150527213996ffe538d16094ee9079286e017ea1f2ce597729aa607c782",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-8affddcf-29ab-45e5-92ed-46352c6623bb.png",
+      "key": "day",
+      "nearest_history": "xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
+      "frost": "static\\img\\life_tips\\frost\\xianxia-sunny-taixu-bell-20261012-0b552150.webp",
+      "frost_sha256": "2ddcaaa163ed2f2f05a15bec8dd8d37416d30c7dcbe87044b8da7a72e5f3f328"
+    },
+    {
+      "file": "zhichang-evening-amphitheater-20261012-eff6bb16.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "交流",
+        "演示",
+        "合作",
+        "反馈",
+        "思考"
+      ],
+      "luma": 79,
+      "tone": "dark",
+      "bytes": 121948,
+      "width": 1600,
+      "height": 900,
+      "quality": 42,
+      "sha256": "eff6bb161a4eab8326c60da79383f41c50b9b1e361f56097042a3fd40fe070ad",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-5431d664-8dc0-46c4-8931-4d31bd39d58f.png",
+      "key": "night",
+      "nearest_history": "zhichang-evening-listening-court-20260928-802561ac.webp",
+      "frost": "static\\img\\life_tips\\frost\\zhichang-evening-amphitheater-20261012-eff6bb16.webp",
+      "frost_sha256": "f09a0a2e9d157ed47b46a575a2dd3e7313d7db14970f08bcadda9dfbb3917c0f"
+    }
+  ],
+  "prompt_evidence": {
+    "batch_id": "2026-10-12",
+    "prompts": {
+      "day": "Use case: stylized-concept. Asset: an original 16:9 edge-to-edge landscape background for a university welcome screen. Eastern Chinese xianxia celestial realm, cinematic photorealistic environment. Single wonder: 太虚天钟, one colossal weathered bronze bell hanging securely inside an open cloud-top bell pavilion. Camera stands just inside a side opening on a broad white marble landing, low oblique three-quarter view using a 50mm photographic visual language; look diagonally across the landing, not along a central bridge toward a distant palace. The bronze bell occupies the upper central part, its heavy circular lip and deep patinated metal curved surface unmistakable even within the central 26 percent vertical crop. A visible credible dark timber crossbeam and reinforced traditional suspension carry its weight above; ordered Chinese dougong joinery and a little deep red timber frame the edges, without stacks of roofs. Shallow broad marble steps enter from the lower right and curve gently toward an open lower landing, no people. Ordinary small balustrades and one distant plain lamp communicate huge scale. The bell is green-brown oxidized bronze with restrained cloud-and-thunder geometric relief and small rubbed warm-metal edges, no inscriptions. Clear late-morning cool daylight enters laterally from the left, grazing bronze texture and white mineral-veined marble. Outside the pavilion, thin near mist, volumetric blue-gray cloud valleys and luminous textured white cloud tops fade into a pale cyan horizon; distant space stays open, no additional palaces, sun, moon or other wonders. Quiet awe, physical substance, believable architecture and diffuse sky bounce preserve all shadows. Center mobile crop retains the bell lip high above and broad quiet pale floor below; the actual middle text area is a restful low-detail transition of soft clouds and cool marble, no sharp high-contrast lines crossing its center. Do not draw any text card or overlay. No crowd, people closeups, Western church bells, iron gantries, gears, plastic metal, crumbling supports, bent columns, melted roofs, neon, magic circles, lightning, game effects, cotton clouds or thick obscuring fog. No writing, glyphs, logos, watermark, captions, borders, phone or video interface. Refined natural color, not orange filtered, no overexposure.",
+      "night": "Use case: photorealistic-natural. Asset: original 16:9 landscape background for a university learning platform, suitable for a very narrow central portrait crop. An empty contemporary subtropical Chinese university outdoor rehearsal amphitheater after a light shower at blue hour. Camera is above the upper seating terrace, looking diagonally downward across three broad fan-shaped timber seating tiers into a small sunken oval pale-stone rehearsal floor, with a 35mm lens and a clearly elevated viewpoint. The stage is an informal place to practice a presentation, not a concert venue: no screens, lectern, equipment or audience. The upper center contains a legible descending curve of timber tiers and a softly lit planted edge; the central middle and lower part hold the quiet open stone floor, gently reflecting the indigo sky with a few restrained amber recessed step lights. A single slender broad-canopy tree rises from a planting pocket toward the upper center, soft dark leaves framing a patch of twilight blue sky, sparse ornamental grasses around the edge, distant low campus windows soft and unobtrusive. Believable human-scale architecture, real damp limestone grain and dark honey timber, finite soft reflections rather than a mirror lake, cool diffuse dusk ambient light from above balanced with warm concealed lamps from below. Spacious welcoming atmosphere, realistic editorial architectural photography, enough light to distinguish steps and edges without black voids. Strong structural difference from an eye-level courtyard: descending terraces seen from above, diagonally organized space and an open sunken floor, no central corridor, bridge, desk, shelf or distant monumental building. The middle 26 percent vertical crop still clearly shows the stepped tiers at its upper part and quiet floor below, with low-detail low-local-contrast space behind centered welcome text. No text actually drawn, no dark overlay, no panels. No people, event banners, readable signs, logos, watermark, interface, laser beams, stars, moon, fantasy architecture, theater curtains, crowded chairs, plastic materials or oversaturated neon."
+    },
+    "designs": [
+      {
+        "key": "day",
+        "theme": "太虚天钟",
+        "time": "day",
+        "nearest_old": "xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
+        "planned_differences": [
+          "近处开放钟楼内部斜侧仰望，替代远距中轴桥门",
+          "巨型氧化青铜钟、斜阶与侧向日光，替代白玉天门和外部晴空"
+        ],
+        "rotation": "First weekly xianxia image; daylight per requested initial default; manual batch contains both day/night."
+      },
+      {
+        "key": "night",
+        "theme": "校园下沉排练剧场",
+        "time": "night",
+        "nearest_old": "zhichang-evening-listening-court-20260928-802561ac.webp",
+        "planned_differences": [
+          "上层台阶俯看扇形木质座阶与下沉地面，替代平视环形庭院",
+          "雨后湿石地面与分层台阶灯，替代单个圆形地灯与包围式直立墙面"
+        ]
+      }
+    ],
+    "history_prompt_files": [
+      ".codex-temp\\life-tip-weekly-20260914\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20260928\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261005\\image-prompts.json",
+      ".codex-temp\\xianxia-preview-20261011\\prompts.json",
+      "docs\\life-tip-backgrounds-2026-10-11.json"
+    ],
+    "unique_full_prompts_compared": 10,
+    "weekly_batches_available": [
+      "2026-09-14",
+      "2026-09-28",
+      "2026-10-05"
+    ],
+    "coverage_gap": "Only three prior weekly batches have local prompt records; searched all available records and viewed all 324 gallery thumbnails, including four 2026-10-11 manual images. Older raw gallery has no full prompt archive here.",
+    "normalized_duplicate": false,
+    "actual_visual_review": [
+      {
+        "key": "day",
+        "actual_differences": [
+          "镜头在近处钟楼内部斜侧看向外部云海，替代远望中轴玉桥和天门",
+          "上部主景为深绿铜钟与可辨纹饰，下部斜阶和空石台，主体材质与近中远组织改变"
+        ],
+        "crop": "390×844中心裁切仍有上方铜钟、中央云海与下方斜阶；巨钟和远距天门在手机上也明显不同。光从侧面擦亮青铜与白玉，中心云层为浅色提示留白。",
+        "limitations": "钟悬挂顶部在画外；未据此声称完整悬挂结构已验收。日景露台有栏杆但不以中轴桥通宫殿。"
+      },
+      {
+        "key": "night",
+        "actual_differences": [
+          "高机位斜俯看下沉扇形木座阶与大块空场，替代旧图平视围合庭院及中心圆座",
+          "取消中心环形地灯与高格栅墙，改为沿多层台阶分布暖灯、真实树冠与湿石地面"
+        ],
+        "crop": "中心裁切保留树冠、左侧入画阶梯与下方空场；背景保持蓝调、暗处可辨，并与旧图中心圆座明显区分。"
+      }
+    ]
+  },
+  "pending": [
+    "validation",
+    "deployment",
+    "content_publication",
+    "postflight",
+    "git_push"
+  ]
+}

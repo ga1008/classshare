@@ -2089,6 +2089,24 @@
       "tone": "light"
     },
     {
+      "file": "xianxia-sunny-taixu-bell-20261012-0b552150.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "目标",
+        "成长",
+        "坚持"
+      ],
+      "luma": 160,
+      "tone": "light"
+    },
+    {
       "file": "xianxia-sunny-yaochi-day-20261011-a04c8cff.webp",
       "categories": [
         "人生大实话",
@@ -2532,6 +2550,25 @@
         "职称科研"
       ],
       "luma": 76,
+      "tone": "dark"
+    },
+    {
+      "file": "zhichang-evening-amphitheater-20261012-eff6bb16.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "交流",
+        "演示",
+        "合作",
+        "反馈",
+        "思考"
+      ],
+      "luma": 79,
       "tone": "dark"
     },
     {
