@@ -1241,6 +1241,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/comments/{comment_id}/reply-context",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_comment_reply_context",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/custom-emojis",
     "methods": [
       "GET"
@@ -1262,6 +1270,14 @@
       "GET"
     ],
     "name": "api_blog_following",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/following/seen",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_blog_following_seen",
     "include_in_schema": true
   },
   {
@@ -5257,6 +5273,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/message-center/preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_message_center_preferences",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/preferences",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_set_message_center_preference",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/message-center/private/ai-jobs/{job_id}",
     "methods": [
       "GET"
@@ -5334,6 +5366,14 @@
       "POST"
     ],
     "name": "api_message_center_mark_read",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/message-center/read-by-ref",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_message_center_read_by_ref",
     "include_in_schema": true
   },
   {

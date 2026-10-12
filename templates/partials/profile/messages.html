@@ -42,6 +42,7 @@
                         <input data-lq-component="input" id="message-center-search" class="lq-input message-center-search" type="search" placeholder="搜索关键词">
                         <select data-lq-dropdown data-lq-component="select" id="message-center-filter" class="lq-select message-center-filter"></select>
                         {% endif %}
+                        {% if _messages_lq and active_section != 'private' %}{{ lq_btn('通知设置', id='message-center-settings', variant='ghost', icon='settings') }}{% endif %}
                         {% if _messages_lq %}{{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}{% else %}<button data-lq-component="button" type="button" id="message-center-mark-read" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">标记当前已读</button>{% endif %}
                     </div>
                 </section>

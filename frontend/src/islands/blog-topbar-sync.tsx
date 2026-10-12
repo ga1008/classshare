@@ -4,6 +4,7 @@ import {
   blogAriaLabel,
   blogCaption,
   blogCountText,
+  blogHasBadge,
   blogTitle,
   normalizeBlogTopbarResponse,
   type BlogTopbarSummary,
@@ -30,22 +31,21 @@ function updateBlogTopbar(
   captionNodes: HTMLElement[],
   summary: BlogTopbarSummary,
 ) {
-  const todayNewCount = summary.todayNewCount;
-  const hasNewCount = todayNewCount > 0;
+  const hasNewCount = blogHasBadge(summary);
 
   for (const entry of entries) {
     entry.classList.toggle('has-new-count', hasNewCount);
-    entry.setAttribute('aria-label', blogAriaLabel(todayNewCount));
-    entry.title = blogTitle(todayNewCount);
+    entry.setAttribute('aria-label', blogAriaLabel(summary));
+    entry.title = blogTitle(summary);
   }
 
   for (const captionNode of captionNodes) {
-    captionNode.textContent = blogCaption(todayNewCount);
+    captionNode.textContent = blogCaption(summary);
   }
 
   for (const countNode of countNodes) {
     countNode.hidden = !hasNewCount;
-    countNode.textContent = hasNewCount ? blogCountText(todayNewCount) : '+0';
+    countNode.textContent = hasNewCount ? blogCountText(summary) : '+0';
   }
 }
 

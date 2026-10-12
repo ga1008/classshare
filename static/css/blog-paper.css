@@ -2812,3 +2812,13 @@ body.blog-composer-open {
         margin-left: 20px;
     }
 }
+
+/* Blog plan §6.4: the following feed is the reader's own stream; the editorial
+   spotlight and trending rail belong to "全部". Layout only. */
+[data-blog-center][data-blog-nav-view="following"] :is([data-blog-spotlight], [data-blog-trending-card]) {
+    display: none;
+}
+
+[data-blog-nav="following"] [data-blog-following-badge] {
+    margin-inline-start: var(--ls-s-1);
+}

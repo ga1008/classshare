@@ -15,7 +15,9 @@ class BlogNotificationTests(unittest.TestCase):
             "author_user_pk": 0,
         }
 
-        with patch.object(blog_notifications, "_insert_notification") as insert_notification:
+        with patch.object(blog_notifications, "_send") as insert_notification, patch.object(
+            blog_notifications, "_can_see_post", return_value=True,
+        ):
             blog_notifications.notify_new_comment(
                 conn,
                 post,
@@ -39,7 +41,9 @@ class BlogNotificationTests(unittest.TestCase):
             "author_display_name": "管家",
         }
 
-        with patch.object(blog_notifications, "_insert_notification") as insert_notification:
+        with patch.object(blog_notifications, "_send") as insert_notification, patch.object(
+            blog_notifications, "_can_see_post", return_value=True,
+        ):
             blog_notifications.notify_new_comment(
                 conn,
                 {"id": 12, "title": "讨论帖"},
@@ -63,7 +67,9 @@ class BlogNotificationTests(unittest.TestCase):
             "author_display_name": "小林",
         }
 
-        with patch.object(blog_notifications, "_insert_notification") as insert_notification:
+        with patch.object(blog_notifications, "_send") as insert_notification, patch.object(
+            blog_notifications, "_can_see_post", return_value=True,
+        ):
             blog_notifications.notify_new_comment(
                 conn,
                 {"id": 12, "title": "讨论帖"},
@@ -91,7 +97,9 @@ class BlogNotificationTests(unittest.TestCase):
             "author_user_pk": 0,
         }
 
-        with patch.object(blog_notifications, "_insert_notification") as insert_notification:
+        with patch.object(blog_notifications, "_send") as insert_notification, patch.object(
+            blog_notifications, "_can_see_post", return_value=True,
+        ):
             blog_notifications.notify_post_featured(
                 conn,
                 post,

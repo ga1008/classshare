@@ -208,23 +208,24 @@ function updateBlogTopbar(summary) {
     const activeBlogEntries = legacyBlogEntries();
     const activeBlogCountNodes = legacyBlogCountNodes();
     const activeBlogCaptionNodes = legacyBlogCaptionNodes();
-    const todayNewCount = Number(summary?.today_new_count || 0);
-    const countText = todayNewCount > 99 ? '+99' : `+${todayNewCount}`;
-    const captionText = todayNewCount > 0
-        ? `\u4eca\u65e5\u65b0\u589e ${todayNewCount > 99 ? '99+' : todayNewCount} \u7bc7`
-        : '\u89c2\u70b9\u4e0e\u4ea4\u6d41';
+    const todayNewCount = Math.max(0, Number(summary?.today_new_count || 0));
+    // Followed-author updates come before today's count (blog plan section 6.4); same
+    // wording as frontend/src/lib/blog-topbar.ts for React-managed shells.
+    const followingCount = Math.max(0, Number(summary?.following_unread_count || 0));
+    const capped = (count) => (count > 99 ? '99+' : String(count));
+    const hasBadge = followingCount > 0 || todayNewCount > 0;
+    const countText = followingCount > 0 ? capped(followingCount) : (todayNewCount > 99 ? '+99' : `+${todayNewCount}`);
+    const phrase = followingCount > 0
+        ? `\u5173\u6ce8\u66f4\u65b0 ${followingCount} \u7bc7`
+        : `\u4eca\u65e5\u65b0\u589e ${todayNewCount} \u7bc7`;
+    let captionText = '\u89c2\u70b9\u4e0e\u4ea4\u6d41';
+    if (followingCount > 0) captionText = `\u5173\u6ce8\u66f4\u65b0 ${capped(followingCount)}`;
+    else if (todayNewCount > 0) captionText = `\u4eca\u65e5\u65b0\u589e ${capped(todayNewCount)} \u7bc7`;
 
     activeBlogEntries.forEach((entry) => {
-        entry.classList.toggle('has-new-count', todayNewCount > 0);
-        entry.setAttribute(
-            'aria-label',
-            todayNewCount > 0
-                ? `\u6253\u5f00\u535a\u5ba2\uff0c\u4eca\u65e5\u65b0\u589e ${todayNewCount} \u7bc7`
-                : '\u6253\u5f00\u535a\u5ba2',
-        );
-        entry.title = todayNewCount > 0
-            ? `\u535a\u5ba2\uff1a\u4eca\u65e5\u65b0\u589e ${todayNewCount} \u7bc7`
-            : '\u535a\u5ba2';
+        entry.classList.toggle('has-new-count', hasBadge);
+        entry.setAttribute('aria-label', hasBadge ? `\u6253\u5f00\u535a\u5ba2\uff0c${phrase}` : '\u6253\u5f00\u535a\u5ba2');
+        entry.title = hasBadge ? `\u535a\u5ba2\uff1a${phrase}` : '\u535a\u5ba2';
     });
 
     activeBlogCaptionNodes.forEach((captionNode) => {
@@ -232,8 +233,8 @@ function updateBlogTopbar(summary) {
     });
 
     activeBlogCountNodes.forEach((countNode) => {
-        countNode.hidden = todayNewCount <= 0;
-        countNode.textContent = todayNewCount > 0 ? countText : '+0';
+        countNode.hidden = !hasBadge;
+        countNode.textContent = hasBadge ? countText : '+0';
     });
 }
 

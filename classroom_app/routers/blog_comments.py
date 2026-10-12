@@ -103,3 +103,13 @@ def api_get_comment(comment_id: int, user: dict = Depends(get_current_user)):
             return {"status": "success", "comment": comments.get_comment_view(conn, user, comment_id)}
         except (ValueError, PermissionError) as exc:
             raise _http_error(exc) from exc
+
+
+@router.get("/api/blog/comments/{comment_id}/reply-context", response_class=JSONResponse)
+def api_comment_reply_context(comment_id: int, user: dict = Depends(get_current_user)):
+    """Quote, comment and allowed faces for replying from a notification card."""
+    with get_db_connection() as conn:
+        try:
+            return {"status": "success", **comments.reply_context(conn, user, comment_id)}
+        except (ValueError, PermissionError) as exc:
+            raise _http_error(exc) from exc

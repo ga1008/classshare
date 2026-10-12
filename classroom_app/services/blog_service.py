@@ -1043,6 +1043,10 @@ def create_post(
     )
     _sync_post_attachments(conn, post_id, media_assets)
     moderation_state = _queue_post_review(conn, post_id, 1, review_plan)
+    if is_published and mod_states.is_public_state(moderation_state):
+        from .blog_notifications import best_effort
+
+        best_effort(conn, _after_post_public, conn, post_id)
     return {
         "id": post_id, "status": normalized_status, "created_at": now, "content_revision": 1,
         "moderation_state": moderation_state,
@@ -1250,10 +1254,28 @@ def update_post(
             ),
         )
 
+    from .blog_notifications import best_effort, set_post_target_state
+
+    if next_status == POST_STATUS_PUBLISHED and mod_states.is_public_state(moderation_state):
+        best_effort(conn, _after_post_public, conn, post_id)
+    elif next_status != current_status:
+        # Withdrawn to a draft: other people's cards about it lead nowhere now.
+        best_effort(conn, set_post_target_state, conn, post, gone=True)
     return {
         "id": post_id, "updated": True, "edited_at": now, "updated_at": now, "content_revision": next_revision,
         "moderation_state": moderation_state,
     }
+
+
+def _after_post_public(conn, post_id: int) -> None:
+    """A post (again) visible to others: revive its cards, tell people it @-mentions."""
+    from .blog_notifications import notify_post_mentions, set_post_target_state
+
+    post = _get_post_raw(conn, post_id)
+    if post is None:
+        return
+    set_post_target_state(conn, post, gone=False)
+    notify_post_mentions(conn, post_id)
 
 
 def _merged_review_text(post: dict, title: Optional[str], content_md: Optional[str], tags) -> tuple[str, str, str]:
@@ -1267,8 +1289,11 @@ def _merged_review_text(post: dict, title: Optional[str], content_md: Optional[s
 
 
 def delete_post(conn, user: dict, post_id: int, *, expected_updated_at: Optional[str] = None) -> dict:
+    from .blog_notifications import best_effort, set_post_target_state
+
     user_pk, role, identity = _ensure_identity(user)
-    _post_for_mutation(conn, user, post_id, expected_updated_at)
+    post = _post_for_mutation(conn, user, post_id, expected_updated_at)
+    best_effort(conn, set_post_target_state, conn, post, gone=True, deleted=True)
     audited = conn.execute("SELECT 1 FROM blog_moderation_logs WHERE post_id = ? LIMIT 1", (post_id,)).fetchone()
     if audited is not None:
         # Moderation logs (incl. identity reveals) cascade with the post row,
@@ -1995,6 +2020,9 @@ def notify_released_comment(conn, comment_id: int) -> None:
             _safe_json_loads(item.get("emoji_payload_json"), []),
         ),
     )
+    from .blog_notifications import best_effort, notify_comment_mentions
+
+    best_effort(conn, notify_comment_mentions, conn, int(item["id"]))
 
 
 def _resolve_comment_face(
@@ -2194,6 +2222,9 @@ def add_comment(
             display_name,
             _build_comment_preview(normalized_content, normalized_attachments, normalized_emojis),
         )
+        from .blog_notifications import best_effort, notify_comment_mentions
+
+        best_effort(conn, notify_comment_mentions, conn, comment_id)
 
     _maybe_notify_post_hot(conn, post_id, notify_callback=hot_notify_callback)
     return {"id": comment_id, "post_id": post_id, "created_at": now, "moderation_state": comment_plan.state}
@@ -2220,14 +2251,15 @@ def toggle_like(conn, user: dict, target_type: str, target_id: int, *, hot_notif
         count_table = "blog_posts"
     else:
         row = conn.execute(
-            """
+            f"""
             SELECT c.id, c.post_id, p.*
             FROM blog_comments c
             JOIN blog_posts p ON p.id = c.post_id
             WHERE c.id = ? AND c.status = 'active'
+              AND ({mod_states.public_state_sql('c')} OR c.author_identity = ?)
             LIMIT 1
             """,
-            (target_id,),
+            (target_id, identity),
         ).fetchone()
         if row is None:
             raise ValueError("评论不存在")
@@ -2280,7 +2312,10 @@ def toggle_like(conn, user: dict, target_type: str, target_id: int, *, hot_notif
         (target_type, target_id, identity, role, user_pk, _now_iso(), target_type, target_id, identity),
     )
     if inserted:
+        from .blog_notifications import best_effort, notify_like
+
         conn.execute(f"UPDATE {count_table} SET like_count = like_count + 1 WHERE id = ?", (target_id,))
+        best_effort(conn, notify_like, conn, target_type=target_type, target_id=target_id, liker_identity=identity)
     row = conn.execute(f"SELECT like_count FROM {count_table} WHERE id = ?", (target_id,)).fetchone()
     if inserted and target_type == TARGET_TYPE_POST:
         _maybe_notify_post_hot(conn, target_id, notify_callback=hot_notify_callback)

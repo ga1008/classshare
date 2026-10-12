@@ -18,8 +18,10 @@ from ..services.blog_safety_service import BlogSafetyBlocked
 from ..services.rate_limit_service import RateLimitExceededError
 from ..services.blog_community_service import (
     create_report,
+    count_following_unread,
     list_following_posts,
     list_follows,
+    mark_following_seen,
     list_pending_reports,
     resolve_report,
     set_follow,
@@ -185,9 +187,12 @@ def api_list_posts(
 @router.get("/api/blog/summary", response_class=JSONResponse)
 def api_blog_summary(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
+        summary = get_blog_topbar_summary(conn, user)
+        if str(user.get("role") or "") in {"student", "teacher"}:
+            summary = {**summary, "following_unread_count": count_following_unread(conn, user)}
         return {
             "status": "success",
-            "summary": get_blog_topbar_summary(conn, user),
+            "summary": summary,
         }
 
 
@@ -819,7 +824,21 @@ def api_blog_following(
 ):
     with get_db_connection() as conn:
         result = list_following_posts(conn, user, page=page, limit=limit)
-        return {"status": "success", **result}
+        # Lets the empty feed say "follow someone" vs "nothing new yet" (plan §6.4).
+        has_follows = bool(result["posts"]) or bool(list_follows(conn, user))
+        return {"status": "success", **result, "has_follows": has_follows}
+
+
+@router.post("/api/blog/following/seen", response_class=JSONResponse)
+def api_blog_following_seen(user: dict = Depends(get_current_user)):
+    """Opening the following feed clears "关注更新 N" (plan §6.4)."""
+    with get_db_connection() as conn:
+        try:
+            seen_at = mark_following_seen(conn, user)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="当前账号不能使用该功能") from exc
+        conn.commit()
+    return {"status": "success", "seen_at": seen_at}
 
 
 @router.get("/api/blog/follows", response_class=JSONResponse)

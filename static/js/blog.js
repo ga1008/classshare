@@ -979,6 +979,9 @@ class BlogCenter {
         $$('[data-blog-nav]', this.shell).forEach((button) => {
             button.classList.toggle('is-active', button.dataset.blogNav === this.state.currentNav);
         });
+        // The following feed hides the editorial spotlight and trending rail (plan §6.4).
+        this.shell.dataset.blogNavView = this.state.currentNav || 'feed';
+        this.renderFollowingBadge();
         this.updateSortTabs();
     }
 
@@ -1521,6 +1524,7 @@ class BlogCenter {
     }
 
     async loadDiscovery() {
+        void this.refreshFollowingBadge();
         const controller = this.beginRequest('discovery');
         this.renderDiscoveryLoading();
         try {
@@ -1739,8 +1743,12 @@ class BlogCenter {
             const nextPosts = data.posts || [];
             this.state.hasMore = Boolean(data.has_more);
             this.state.posts = append ? [...this.state.posts, ...nextPosts] : nextPosts;
+            if (useFollowingFeed && !append) void this.markFollowingSeen();
             if (append) {
                 container.insertAdjacentHTML('beforeend', nextPosts.map((post) => this.postCardHtml(post)).join(''));
+            } else if (useFollowingFeed && !this.state.posts.length) {
+                const emptyMarkup = await this.followingEmptyHtml(Boolean(data.has_follows));
+                if (!controller.signal.aborted) container.innerHTML = emptyMarkup;
             } else {
                 container.innerHTML = this.state.posts.length
                     ? this.state.posts.map((post) => this.postCardHtml(post)).join('')
@@ -1894,6 +1902,7 @@ class BlogCenter {
             this.scheduleModerationPoll(post);
             const focusComment = Number(new URL(window.location.href).searchParams.get('comment') || 0);
             this.loadFloors({ around: focusComment || null });
+            this.markPostNotificationsRead(postId);
         } catch (error) {
             if (error?.name === 'AbortError') return;
             this.state.detailPost = null;
@@ -3720,6 +3729,7 @@ class BlogCenter {
             const before = $('[data-blog-floors-earlier-wrap]', this.shell);
             if (before) before.hidden = (this.floorFirstPage || 1) <= 1;
             if (data.focus_comment_id) this.focusComment(data.focus_comment_id, { instant: true });
+            else if (around && !append && !earlier) void this.showMissingCommentNotice(list, token);
         } catch (error) {
             if (token !== this.floorsToken) return;
             if (!append && !earlier) list.innerHTML = `<p class="blog-comment-list__status">${escapeHtml(error.message || '评论加载失败')}</p>`;
@@ -3755,6 +3765,68 @@ class BlogCenter {
             button.disabled = false;
             showToast(error.message || '回复加载失败', 'error');
         }
+    }
+
+    /** Plan §6.3: a deep link to a comment that is gone says so above the floors. */
+    async showMissingCommentNotice(list, token) {
+        const status = await LQ.load('status');
+        if (token !== this.floorsToken || !list.isConnected) return;
+        $('[data-blog-missing-comment]', this.shell)?.remove();
+        list.insertAdjacentHTML('beforebegin', status.statusMarkup('alert', {
+            tone: 'info',
+            title: '你要找的评论已不存在',
+            body: '它可能已被删除或处理，下面是这篇帖子现有的评论。',
+            announce: 'polite',
+            attrs: { 'data-blog-missing-comment': '' },
+        }));
+    }
+
+    /** Plan §6.3: opening a post settles every unread notification about it. */
+    markPostNotificationsRead(postId) {
+        api.post('/api/message-center/read-by-ref', { source: 'blog', post_id: Number(postId) })
+            .then((data) => {
+                if (Number(data?.updated_count) > 0 && typeof window.refreshMessageCenterBell === 'function') {
+                    window.refreshMessageCenterBell({ allowPopup: false });
+                }
+            })
+            .catch(() => { /* Ambient: the cards simply stay unread. */ });
+    }
+
+    /** Plan §6.4: "关注" carries the count of followed posts since the feed was last opened. */
+    async refreshFollowingBadge() {
+        // A count fetched before the feed was opened must not bring the badge back.
+        const seenVersion = this.followingSeenVersion || 0;
+        let count = 0;
+        try {
+            const data = await api.get('/api/blog/summary');
+            count = Math.max(0, Number(data?.summary?.following_unread_count || 0));
+        } catch { /* Ambient: no badge. */ }
+        if (seenVersion !== (this.followingSeenVersion || 0)) return;
+        this.state.followingUnread = count;
+        this.renderFollowingBadge();
+    }
+
+    renderFollowingBadge() {
+        const count = this.state.currentNav === 'following' ? 0 : Number(this.state.followingUnread || 0);
+        $$('[data-blog-nav="following"]', this.shell).forEach((button) => {
+            $('[data-blog-following-badge]', button)?.remove();
+            if (count > 0) {
+                button.insertAdjacentHTML('beforeend', LQ.html.badge({
+                    value: count > 99 ? '99+' : count, tone: 'info', label: `${count} 篇关注更新`,
+                    attrs: { 'data-blog-following-badge': '' },
+                }));
+            }
+        });
+    }
+
+    async markFollowingSeen() {
+        this.followingSeenVersion = (this.followingSeenVersion || 0) + 1;
+        this.state.followingUnread = 0;
+        this.renderFollowingBadge();
+        try {
+            await api.post('/api/blog/following/seen', {});
+            if (typeof window.refreshBlogTopbar === 'function') window.refreshBlogTopbar();
+        } catch { /* The count reappears on the next refresh. */ }
     }
 
     focusComment(commentId, { instant = false } = {}) {
@@ -3944,6 +4016,18 @@ class BlogCenter {
 
     skeletonHtml(count) {
         return Array.from({ length: count }, () => '<div class="blog-skeleton" style="height: 140px; margin-bottom: var(--spacing-md);"></div>').join('');
+    }
+
+    async followingEmptyHtml(hasFollows) {
+        const content = await LQ.load('content');
+        return content.contentMarkup('empty', {
+            variant: 'card',
+            title: hasFollows ? '关注的作者和板块还没有新帖子' : '还没有关注任何作者或板块',
+            description: hasFollows
+                ? '有新帖子时，“关注”旁会显示更新数。'
+                : '在作者卡片或板块标题旁点“关注”，他们的新帖子会出现在这里。',
+            actions: [{ label: '去发现', variant: 'soft', attrs: { 'data-blog-nav': 'feed' } }],
+        });
     }
 
     emptyHtml(title) {

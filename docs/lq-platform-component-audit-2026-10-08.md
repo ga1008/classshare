@@ -2,14 +2,14 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 524 个作者源码文件，覆盖 202 个 HTML 模板，发现 5340 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 525 个作者源码文件，覆盖 202 个 HTML 模板，发现 5353 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2211 |
+| button | 2215 |
 | field | 738 |
 | select | 297 |
-| surface | 666 |
+| surface | 669 |
 | menu | 36 |
 | dialog | 21 |
 | tab | 32 |
@@ -18,21 +18,21 @@
 | layer | 139 |
 | content-slot | 45 |
 | handle | 1 |
-| chip | 10 |
+| chip | 12 |
 | domain | 18 |
 | status | 44 |
-| unknown | 783 |
+| unknown | 787 |
 
 | 来源 | 数量 |
 |---|---:|
 | component-declared | 3721 |
 | external-icon-content-slot | 34 |
-| factory-ownership-unknown | 20 |
-| legacy-or-native | 88 |
+| factory-ownership-unknown | 21 |
+| legacy-or-native | 89 |
 | lq-marked-native | 104 |
-| runtime-output-unknown | 652 |
+| runtime-output-unknown | 655 |
 | shared-adapter-call-candidate | 81 |
-| shared-component-call | 586 |
+| shared-component-call | 594 |
 | shared-definition | 54 |
 
 ## 本轮审查与动态入口解释
@@ -45,8 +45,8 @@
 
 | unknown 语法 | 数量 |
 | --- | ---: |
-| `create-element` | 32 |
-| `dynamic-html-sink` | 652 |
+| `create-element` | 33 |
+| `dynamic-html-sink` | 655 |
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
@@ -97,9 +97,9 @@
 | `templates/classroom_main_v4.html` | 222 |
 | `templates/assignment_detail_teacher.html` | 172 |
 | `static/js/materials_manage.js` | 117 |
+| `static/js/blog.js` | 111 |
 | `templates/exam_editor.html` | 108 |
 | `static/js/collaboration.js` | 102 |
-| `static/js/blog.js` | 107 |
 | `templates/blog.html` | 77 |
 | `templates/manage/signatures.html` | 67 |
 | `static/js/teacher_onboarding.js` | 67 |
@@ -141,3 +141,5 @@
 本次后续增量（2026-10-11）覆盖试卷编辑器本站材料选择列表：结果按材料根目录分组、组内自然排序，行改用既有 `lq-domain-choice` 的 `data-lq-shape="surface"` 几何与共享选中态，无新增私有材质。
 
 本次后续增量（2026-10-12，博客 P0）：作者头像统一改用共享 `LQ.html.avatar`（含匿名/管家首字回退与破图回退），删除博客私有头像材质；评论“作者”标记使用共享 Chip；编辑器新增“撤回为草稿”使用共享 Button 与 `LQ.confirm`，版本冲突使用 `LQ.choose`；无新增私有材质。
+
+本次后续增量（2026-10-12，博客 P5 通知闭环）：新增 `static/js/message_center_blog.js`，消息中心博客卡片只用共享 Chip（“内容已不可见”“已回复”）、AvatarStack（聚合卡最近的人）、Prose（被回复原文引用与对方评论）、Composer（内联回复）、nativeSelect（回复身份）、Switch 与 Dialog（通知设置）；博客页“关注”数用共享 Badge，评论深链失效用共享 status Alert，关注页空态用共享 Empty。领域 CSS（`static/css/lq/pages/message-center.css`、`blog-paper.css`）只加布局，无新增私有材质。

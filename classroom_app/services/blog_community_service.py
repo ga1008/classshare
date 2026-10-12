@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from . import blog_service
+from . import notification_delivery as delivery
 from .blog_section_service import resolve_blog_section_key
 
 
 FOLLOW_TARGET_TYPES = {"section", "author", "tag"}
+# "关注更新 N" counts followed posts since the feed was last opened (plan §6.4).
+FOLLOWING_SEEN_KEY = "blog.following"
+FOLLOWING_FIRST_LOOK_DAYS = 7
+MAX_FOLLOWS = 500
+# The topbar polls the summary for every signed-in user; the following count
+# is cached per person for a short while (and dropped when they open the feed).
+FOLLOWING_COUNT_TTL_SECONDS = 45
+_FOLLOWING_COUNT_CACHE: dict[str, tuple[float, int]] = {}
+_FOLLOWING_COUNT_CACHE_LIMIT = 2000
 REPORT_TARGET_TYPES = {"post", "comment", "opportunity"}
 # "privacy_identity" = "暴露了我的身份或个人信息": pinned first on the review desk.
 REPORT_REASONS = {"false_information", "spam", "abuse", "job_scam", "privacy", "privacy_identity", "other"}
@@ -22,6 +34,11 @@ def _normalize_follow_target(conn, target_type: Any, target_key: Any) -> tuple[s
     elif normalized_type == "author":
         if not blog_service.IDENTITY_PATTERN.fullmatch(normalized_key):
             raise ValueError("作者标识不正确")
+        role, _, raw_pk = normalized_key.partition(":")
+        table = {"student": "students", "teacher": "teachers"}.get(role)
+        # Following someone notifies them: only real accounts can be followed.
+        if table is None or conn.execute(f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1", (int(raw_pk),)).fetchone() is None:
+            raise ValueError("作者不存在")
     else:
         normalized_key = normalized_key[:40]
     return normalized_type, normalized_key
@@ -50,6 +67,9 @@ def set_follow(conn, user: dict, *, target_type: Any, target_key: Any, following
     ).fetchone()
     next_following = not bool(existing) if following is None else bool(following)
     if next_following and existing is None:
+        total = conn.execute("SELECT COUNT(*) AS total FROM blog_follows WHERE user_identity = ?", (identity,)).fetchone()
+        if int(total["total"] or 0) >= MAX_FOLLOWS:
+            raise ValueError(f"最多关注 {MAX_FOLLOWS} 个作者、板块或标签")
         conn.execute(
             """
             INSERT INTO blog_follows (user_identity, user_role, user_pk, target_type, target_key)
@@ -58,8 +78,13 @@ def set_follow(conn, user: dict, *, target_type: Any, target_key: Any, following
             """,
             (identity, role, user_pk, normalized_type, normalized_key),
         )
+        _forget_following_count(identity)
     elif not next_following and existing is not None:
         conn.execute("DELETE FROM blog_follows WHERE id = ?", (int(existing["id"]),))
+    if next_following and existing is None and normalized_type == "author":
+        from .blog_notifications import best_effort, notify_follow
+
+        best_effort(conn, notify_follow, conn, follower=user, target_identity=normalized_key)
     return {"target_type": normalized_type, "target_key": normalized_key, "following": next_following}
 
 
@@ -70,10 +95,41 @@ def list_following_posts(
     page: int = 1,
     limit: int = 20,
 ) -> dict[str, Any]:
+    _user_pk, _role, identity = blog_service._ensure_identity(user)
+    where = _following_where(conn, user)
+    if where is None:
+        return {"posts": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+    where_sql, params = where
+    total = int(conn.execute(f"SELECT COUNT(*) AS total FROM blog_posts p WHERE {where_sql}", params).fetchone()["total"])
+    offset = max(page - 1, 0) * limit
+    rows = conn.execute(
+        f"""
+        SELECT p.*,
+               LENGTH(p.content_md) AS content_length,
+               EXISTS(SELECT 1 FROM blog_likes bl WHERE bl.target_type = 'post' AND bl.target_id = p.id AND bl.user_identity = ?) AS is_liked,
+               EXISTS(SELECT 1 FROM blog_bookmarks bb WHERE bb.post_id = p.id AND bb.user_identity = ?) AS is_bookmarked
+        FROM blog_posts p
+        WHERE {where_sql}
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        [identity, identity, *params, limit, offset],
+    ).fetchall()
+    row_items = [dict(row) for row in rows]
+    badge_map = blog_service._build_author_cultivation_badge_map(conn, row_items)
+    posts = [
+        blog_service._serialize_post_summary(row, viewer_identity=identity, cultivation_badge_map=badge_map)
+        for row in row_items
+    ]
+    return {"posts": posts, "total": total, "page": page, "limit": limit, "has_more": offset + limit < total}
+
+
+def _following_where(conn, user: dict) -> tuple[str, list[Any]] | None:
+    """SQL for "posts from what I follow" (alias ``p``); None when following nothing."""
     user_pk, _role, identity = blog_service._ensure_identity(user)
     follows = list_follows(conn, user)
     if not follows:
-        return {"posts": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+        return None
     visibility_sql, visibility_params = blog_service._build_post_visibility_sql(
         user,
         viewer_identity=identity,
@@ -99,31 +155,47 @@ def list_following_posts(
             )
             follow_params.extend((f'%"{target_key}"%', f'%"{target_key}"%'))
     if not follow_clauses:
-        return {"posts": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+        return None
     where_sql = f"({visibility_sql}) AND p.status = ? AND ({' OR '.join(follow_clauses)})"
-    params = [*visibility_params, blog_service.POST_STATUS_PUBLISHED, *follow_params]
-    total = int(conn.execute(f"SELECT COUNT(*) AS total FROM blog_posts p WHERE {where_sql}", params).fetchone()["total"])
-    offset = max(page - 1, 0) * limit
-    rows = conn.execute(
-        f"""
-        SELECT p.*,
-               LENGTH(p.content_md) AS content_length,
-               EXISTS(SELECT 1 FROM blog_likes bl WHERE bl.target_type = 'post' AND bl.target_id = p.id AND bl.user_identity = ?) AS is_liked,
-               EXISTS(SELECT 1 FROM blog_bookmarks bb WHERE bb.post_id = p.id AND bb.user_identity = ?) AS is_bookmarked
-        FROM blog_posts p
-        WHERE {where_sql}
-        ORDER BY p.created_at DESC, p.id DESC
-        LIMIT ? OFFSET ?
-        """,
-        [identity, identity, *params, limit, offset],
-    ).fetchall()
-    row_items = [dict(row) for row in rows]
-    badge_map = blog_service._build_author_cultivation_badge_map(conn, row_items)
-    posts = [
-        blog_service._serialize_post_summary(row, viewer_identity=identity, cultivation_badge_map=badge_map)
-        for row in row_items
-    ]
-    return {"posts": posts, "total": total, "page": page, "limit": limit, "has_more": offset + limit < total}
+    return where_sql, [*visibility_params, blog_service.POST_STATUS_PUBLISHED, *follow_params]
+
+
+def _forget_following_count(identity: str) -> None:
+    _FOLLOWING_COUNT_CACHE.pop(identity, None)
+
+
+def count_following_unread(conn, user: dict) -> int:
+    """Followed posts published since the following feed was last opened (not pushed)."""
+    _user_pk, _role, identity = blog_service._ensure_identity(user)
+    cached = _FOLLOWING_COUNT_CACHE.get(identity)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    count = _count_following_unread(conn, user, identity)
+    if len(_FOLLOWING_COUNT_CACHE) >= _FOLLOWING_COUNT_CACHE_LIMIT:
+        _FOLLOWING_COUNT_CACHE.clear()
+    _FOLLOWING_COUNT_CACHE[identity] = (time.monotonic() + FOLLOWING_COUNT_TTL_SECONDS, count)
+    return count
+
+
+def _count_following_unread(conn, user: dict, identity: str) -> int:
+    where = _following_where(conn, user)
+    if where is None:
+        return 0
+    where_sql, params = where
+    seen_at = delivery.get_seen_at(conn, identity, FOLLOWING_SEEN_KEY) or (
+        datetime.now() - timedelta(days=FOLLOWING_FIRST_LOOK_DAYS)).isoformat()
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total FROM blog_posts p WHERE {where_sql} "
+        "AND p.author_identity <> ? AND COALESCE(p.published_at, p.created_at) > ?",
+        [*params, identity, seen_at],
+    ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def mark_following_seen(conn, user: dict) -> str:
+    _user_pk, _role, identity = blog_service._ensure_identity(user)
+    _forget_following_count(identity)
+    return delivery.mark_seen(conn, identity, FOLLOWING_SEEN_KEY)
 
 
 def create_report(

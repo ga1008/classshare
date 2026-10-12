@@ -10,7 +10,7 @@ from typing import Any
 from ..db.connection import get_configured_db_engine
 from .assessment_classification_service import ASSESSMENT_KIND_LABELS, assessment_kind_info
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
-from .message_center_service import CATEGORY_LABELS, get_message_center_summary
+from .message_center_service import CATEGORY_LABELS, get_message_center_summary, serialize_notification_rows
 from .offering_membership_service import (
     offering_student_where,
     student_offering_where_by_student_id,
@@ -3283,14 +3283,14 @@ def _load_recent_activity(conn, user: dict, limit: int = 6) -> list[dict[str, An
     role = str(user.get("role") or "").strip().lower()
     user_pk = int(user["id"])
     primary_sql = """
-        SELECT id, category, title, body_preview, link_url, read_at, created_at
+        SELECT *
         FROM message_center_notifications
         WHERE recipient_role = ? AND recipient_user_pk = ?
         ORDER BY created_at DESC, id DESC
         LIMIT ?
         """
     fallback_sql = """
-        SELECT id, category, title, body_preview, link_url, read_at, created_at
+        SELECT *
         FROM message_center_notifications NOT INDEXED
         WHERE recipient_role = ? AND recipient_user_pk = ?
         ORDER BY created_at DESC, id DESC
@@ -3312,16 +3312,18 @@ def _load_recent_activity(conn, user: dict, limit: int = 6) -> list[dict[str, An
             print(f"[DB WARN] Failed to load recent activity without index: {fallback_exc}")
             return []
     items = []
-    for row in rows:
-        category = str(row["category"] or "")
+    # Same serialization as the message center: blog cards show the actor's
+    # current persona (never a name hidden later) and drop dead links.
+    for row in serialize_notification_rows(conn, rows):
+        category = str(row.get("category") or "")
         items.append({
-            "title": str(row["title"] or "新提醒"),
-            "description": str(row["body_preview"] or "点击查看详情"),
-            "href": str(row["link_url"] or "/message-center"),
+            "title": str(row.get("title") or "新提醒"),
+            "description": str(row.get("body_preview") or "点击查看详情"),
+            "href": str(row.get("link_url") or "/message-center"),
             "label": CATEGORY_LABELS.get(category, category or "提醒"),
             "tone": ACTIVITY_TONE_BY_CATEGORY.get(category, "neutral"),
-            "is_unread": not row["read_at"],
-            "created_at": str(row["created_at"] or ""),
+            "is_unread": bool(row.get("is_unread")),
+            "created_at": str(row.get("created_at") or ""),
         })
     return items
 

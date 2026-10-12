@@ -9,6 +9,7 @@ from ..db.connection import get_configured_db_engine
 from .message_center_service import (
     MESSAGE_CATEGORY_PRIVATE,
     build_user_identity,
+    serialize_notification_rows,
 )
 from . import signature_identity_service
 from .learning_progress_service import build_student_global_cultivation_profile
@@ -293,7 +294,7 @@ def build_profile_nav(conn, user: dict, active_section: str, *, include_appearan
 def _load_recent_notifications(conn, *, role: str, user_id: int, limit: int = 5) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT title, body_preview, category, actor_display_name, created_at, read_at, link_url
+        SELECT *
         FROM message_center_notifications
         WHERE recipient_role = ?
           AND recipient_user_pk = ?
@@ -303,16 +304,18 @@ def _load_recent_notifications(conn, *, role: str, user_id: int, limit: int = 5)
         """,
         (role, user_id, MESSAGE_CATEGORY_PRIVATE, max(1, min(int(limit), 10))),
     ).fetchall()
+    # Serialized like the message center: blog cards re-render the actor's
+    # current persona, so a later anonymous switch never shows a real name here.
     return [
         {
             "type": "通知",
-            "title": str(row["title"] or ""),
-            "subtitle": str(row["body_preview"] or row["actor_display_name"] or ""),
-            "created_at": str(row["created_at"] or ""),
-            "href": str(row["link_url"] or "/profile?section=notifications"),
-            "is_unread": not bool(row["read_at"]),
+            "title": str(item.get("title") or ""),
+            "subtitle": str(item.get("body_preview") or item.get("actor_display_name") or ""),
+            "created_at": str(item.get("created_at") or ""),
+            "href": str(item.get("link_url") or "/profile?section=notifications"),
+            "is_unread": bool(item.get("is_unread")),
         }
-        for row in rows
+        for item in serialize_notification_rows(conn, rows)
     ]
 
 

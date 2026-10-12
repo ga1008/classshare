@@ -1,6 +1,6 @@
 # 博客中心闭环改进计划（2026-10-12）
 
-> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0–P3 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，P3 `04ad5f49` release `20261012-201621-2f01d431bdfc`）；**P4 已实现并在隔离环境验收，未提交、未发布**（见 §7 实施记录）；P5–P7 未动工。
+> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0–P4 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，P3 `04ad5f49` release `20261012-201621-2f01d431bdfc`，P4 `1fb52483` release `20261012-213055-9d68ecbcbe05`）；**P5 实施中**；P6–P7 未动工。
 > 范围：博客中心（`/blog`）全部前后端，以及它与消息中心、个人中心、头像服务、AI 网关、调度器、作品集、Agent 平台的接口。
 > 前置阅读：[液态玻璃组件开发合同](lq-component-contract-2026-09-27.md)、[组件 API](lq-components.md)、[场景前景色契约](lq-scene-ink-2026-09-26.md)、[AI 与 Agent 工程规范](ai-and-agent-engineering-standard.md)、[通知邮件降噪](notification-email-policy-2026-09-18.md)、[博客重设计（2026-08）](blog-redesign-2026-08.md)。
 > 证据来源：2026-10-12 的两路代码审查（后端、前端）、三路专题调查（身份/头像、审核/通知、创作中心/回复），以及隔离 P03 运行环境中以学生和教师身份的实测。文中 `file:line` 均指当日 `dev`（`dbbf1e57`）。
@@ -473,6 +473,22 @@ persona = {
 
 ## 6. 通知闭环（改进项 4）
 
+> **P5 实施记录（2026-10-12，未提交、未发布）**。代码：通用投递 `classroom_app/services/notification_delivery.py`（聚合、静音开关、按帖已读、内容失效）；博客事件 `classroom_app/services/blog_notifications.py`（事件目录 `BLOG_EVENTS`、各事件、读取时 persona 渲染）；内联回复上下文 `blog_comment_service.reply_context`；接口 `POST /api/message-center/read-by-ref`、`GET/PUT /api/message-center/preferences`、`GET /api/blog/comments/{id}/reply-context`、`POST /api/blog/following/seen`，`/api/blog/summary` 增加 `following_unread_count`；前端 `static/js/message_center_blog.js`（博客卡片、内联回复、通知设置弹层）、`blog.js`（读帖即已读、关注数、评论失效提示、关注空态）、顶栏 `frontend/src/lib/blog-topbar.ts` 与 `message_center_bell.js`。与下文原方案的差异与补充：
+> - **不改表**：P1 已加 `aggregate_key/aggregate_count/ref_post_id/target_state` 与 `user_notification_preferences`。结构化载荷沿用已有 `metadata_json`（`event/post_id/comment_id/actor/title_template`），未新增 `payload_json`；PG 部分唯一索引兜底未做，聚合只在应用层合并（并发两条同时到达时最多多出一张未读卡）。因此 P5 不需要原生 PG 演练门禁。
+> - **聚合**：写入时只并入同 `aggregate_key` 的**未读**行（PG 上 `FOR UPDATE` 锁住该行，计数在 SQL 内自增；行在此期间被读则另起新卡，不丢事件）；`aggregate_member` 以服务端密钥 HMAC 的 16 位摘要记录参与者，同一键下（含已读卡）每人只计一次——同一人当天取消再点赞不会再提醒；`aggregate_recent` 保留最近 4 个评论/关注者用于 AvatarStack，二者都不下发到前端，`aggregate_key` 也不下发。楼中楼回复按帖、间隔 1 小时内连续合并，点赞按“帖/评论 + 自然日”，关注按自然日。
+> - **读取时渲染**：卡片标题用 `title_template` + 当前 persona 渲染；非实名面孔一律清空 `actor_identity/actor_role/actor_user_pk`。作者事后把帖子改为匿名，旧回复卡也显示“楼主”。首页“最近动态”和个人中心最近通知改走同一序列化（安全评审 M1），不再直接读存储标题。
+> - **@ 提及**：没有全站人名解析，只认本帖已公开的面孔（帖子作者与评论者的实名/笔名）和发起人关注的作者；匿名面孔永远不是候选；同名两人时视为歧义、谁都不提醒；最长名字优先，无需分隔符，每条最多 10 人。同一条评论已经给某人发过评论/回复卡就不再发提及卡；同一人在同一帖子里反复 @ 同一人合并为一张未读卡（“……（3 次）”），防止刷屏。帖子内提及在帖子（再次）公开时发送，每帖每人一次。
+> - **内容失效**：`target_state` 分为 `gone_post`（帖子对该接收人不可见）与 `gone_comment`（评论删除/被处置）。帖子删除对所有人失效；帖子被限制/移除/撤回草稿只对作者以外的人失效（作者仍要能打开去申诉），恢复公开时只复原 `gone_post`，已删除评论的卡不会被帖子编辑或恢复“复活”。审核类卡（`blog_moderation`）不随之失效，读帖即已读也不会把它们置读。失效卡去掉跳转，打开通知回到消息中心。
+> - **通知是副作用**：所有新增触发点经 `best_effort`（SAVEPOINT 隔离）调用，通知失败只记日志，点赞、评论、关注、发帖本身照常成功。
+> - **关注**：只能关注真实存在的账号，每人最多 500 个关注对象（安全评审 M2）。
+> - **举报结果**：内容已被处理时卡片不带链接。**加精**改为“博客中心”发出，`ref_type=blog_featured` 每帖一次。
+> - **审核兜底补发**：P3 遗漏——待审评论因超时或审核失败被放行时没有补发通知；现在与通过审核一致，补发评论/回复/提及通知，帖子补发提及。
+> - **关注未读**：`last_seen_following_at` 存在 `user_notification_preferences` 的 `seen:blog.following` 行（`updated_at`），不进开关列表；从未打开过关注页时按近 7 天计。顶栏每分钟轮询，计数按人进程内缓存 45 秒，打开关注页或新关注时清掉。关注页空态区分“还没有关注”与“暂无新帖子”。
+> - **通知设置**：放在消息中心工具栏“通知设置”（个人中心 → 通知中心），LQ Switch 按事件键开关；“内容被处理”“申诉结果”为强制项只展示不可关，服务端也拒绝。
+> - **内联回复**只在 LQ 消息中心（生产已开 `messages` 家族）出现；关注通知暂时链接到“我的”，P6 创作中心粉丝页上线后改链。深链高亮沿用 P4 的 `is-focused`。邮件：博客事件全部不发，已在《通知邮件降噪》补记。
+> - 评审：代码评审与安全评审均无 CRITICAL/HIGH，未发现匿名/笔名身份泄露；采纳的 MEDIUM/LOW 修复见上（失效状态分型、聚合并发、通知副作用隔离、读帖不置读审核卡、关注计数缓存、提及合并与歧义、关注存在性与上限、首页/个人中心按 persona 渲染、回复上下文不泄露帖子存在、引用标签区分“你写的/回复的是”、关注数竞态）。
+> - 测试：`tests/test_blog_p5_notifications.py`（36 项，覆盖 10.4 通知矩阵与评审回归）；顶栏 vitest 3 项。
+
 ### 6.1 事件目录
 
 | 事件键 | 触发 | 接收人 | 聚合 | 发起人显示 | 深链 | 默认 |
@@ -537,7 +553,7 @@ persona = {
 
 ## 7. 评论、回复与消息中心闭环（改进项 6）
 
-> **P4 实施记录（2026-10-12，未部署）**。代码：`classroom_app/services/blog_comment_service.py`（楼层、回复分页、编辑、软删、单条视图）、`classroom_app/routers/blog_comments.py`（`GET /api/blog/posts/{id}/floors?page&around`、`GET .../floors/{root}/replies?offset`、`PUT /api/blog/comments/{id}`、`POST /api/blog/comments/{id}/delete`、`GET /api/blog/comments/{id}`）；前端 `static/js/blog.js`。与下文原方案的差异与补充：
+> **P4 实施记录（2026-10-12，已发布 `1fb52483` / release `20261012-213055-9d68ecbcbe05`）**。代码：`classroom_app/services/blog_comment_service.py`（楼层、回复分页、编辑、软删、单条视图）、`classroom_app/routers/blog_comments.py`（`GET /api/blog/posts/{id}/floors?page&around`、`GET .../floors/{root}/replies?offset`、`PUT /api/blog/comments/{id}`、`POST /api/blog/comments/{id}/delete`、`GET /api/blog/comments/{id}`）；前端 `static/js/blog.js`。与下文原方案的差异与补充：
 > - **楼层在 SQL 中分页**（每页 20，按时间升序）；每层用 `ROW_NUMBER` 窗口预载前 3 条回复，其余“展开 N 条回复”每次 20 条。被删除/被处置的楼层只在下面仍有可见回复时显示为无作者、无内容的占位（文案区分作者删除/帖子作者删除/管理员移除）。合成 1000 条评论的楼层接口 P95 < 300ms（单测实测）。
 > - **深链** `?comment=` → `around` 计算所在页并把目标回复一并载入；落在后面页时显示“加载更早的评论”。看不到的评论（被处置、他人待审）深链回到第一页，`GET /api/blog/comments/{id}` 对其返回 404，也不能被回复。
 > - **“回复 @X”**：X 是被回复评论的公开面孔；回复楼层本身不加标签；被回复的评论已不可见时写“回复 一条已处理的评论”。

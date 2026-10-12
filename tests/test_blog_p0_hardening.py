@@ -256,7 +256,7 @@ class AnonymityTests(BlogP0Fixture):
         parent = blog_service.add_comment(self.conn, CLASSMATE, post_id, content_md="请问一下")
         captured = []
         with patch.object(
-            blog_notifications, "_insert_notification", side_effect=lambda conn, payload: captured.append(payload),
+            blog_notifications, "_send", side_effect=lambda conn, payload, **kw: captured.append(payload),
         ):
             blog_service.add_comment(
                 self.conn, AUTHOR, post_id, content_md="回答你", parent_comment_id=parent["id"],
@@ -290,7 +290,7 @@ class HousekeeperFailureTests(BlogP0Fixture):
         self.conn.commit()
         captured = []
         with patch.object(blog_ai_service, "get_db_connection", return_value=_ReuseConnection(self.conn)), patch.object(
-            blog_notifications, "_insert_notification", side_effect=lambda conn, payload: captured.append(payload),
+            blog_notifications, "_send", side_effect=lambda conn, payload, **kw: captured.append(payload),
         ):
             for reason in ("管家暂时无法回复，请稍后重新 @管家", "again"):
                 # The second abandon of the same job is a no-op: no duplicate notice.

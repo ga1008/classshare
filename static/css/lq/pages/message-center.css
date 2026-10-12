@@ -371,3 +371,75 @@
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
 }
+
+/* Blog cards (blog plan §6.2/§7.5): layout only. The quote, the new comment,
+   the composer, chips, AvatarStack and switches are LQ components and keep
+   their own presentation; the reply panel sits inside the Row's main column. */
+.lq-messages .lq-row__lead:has(.lq-avatar-stack) {
+    align-self: center;
+}
+
+.mc-blog-reply {
+    display: grid;
+    gap: var(--ls-s-2);
+    margin-top: var(--ls-s-3);
+    padding-top: var(--ls-s-3);
+    border-top: 1px solid hsl(var(--ls-line));
+}
+
+/* Chips and the "去帖子查看" link keep their own width inside the grid. */
+.mc-blog-reply > :is(.lq-chip, .lq-btn) {
+    justify-self: start;
+}
+
+.mc-blog-reply__label {
+    margin: 0;
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-sub);
+}
+
+.mc-blog-reply [data-blog-reply-quote] {
+    padding-inline-start: var(--ls-s-3);
+    border-inline-start: 2px solid hsl(var(--ls-line));
+    color: hsl(var(--ls-ink-2));
+    white-space: pre-line;
+}
+
+.mc-blog-reply__form {
+    display: grid;
+    gap: var(--ls-s-2);
+}
+
+.mc-blog-reply__status,
+.mc-blog-reply__hint {
+    margin: 0;
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-sub);
+}
+
+.mc-notify-settings {
+    display: grid;
+    gap: var(--ls-s-4);
+}
+
+.mc-notify-settings__group {
+    display: grid;
+    gap: var(--ls-s-2);
+}
+
+.mc-notify-settings__title {
+    margin: 0;
+    font-size: var(--ls-t-body);
+    font-weight: 600;
+}
+
+.mc-notify-settings__forced {
+    margin: 0;
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-sub);
+}
+
+.mc-notify-settings__actions {
+    display: flex;
+    justify-content: flex-end;
+}

@@ -204,7 +204,12 @@ def _settle(conn, target_type: str, target_id: int, revision: int, state: str, b
         """,
         (state, by, _now().isoformat(), reason_code, note, int(target_id), int(revision)),
     )
-    return int(cursor.rowcount or 0) == 1
+    if int(cursor.rowcount or 0) != 1:
+        return False
+    from .blog_notifications import best_effort, sync_target_state
+
+    best_effort(conn, sync_target_state, conn, target_type, int(target_id), state)
+    return True
 
 
 def _finish_receipt(conn, target_type: str, target_id: int, revision: int, status: str, **fields: Any) -> None:
@@ -259,13 +264,27 @@ def _apply_verdict(conn, target_type: str, target: dict, revision: int, verdict:
     return f"settled: {state}"
 
 
+def _after_release(conn, target_type: str, target_id: int) -> None:
+    """A held item became visible without a verdict (timeout / failed review):
+    send what it held back, as a passed verdict would."""
+    from .blog_notifications import best_effort, sync_target_state
+
+    if target_type == "comment":
+        from .blog_service import notify_released_comment
+
+        best_effort(conn, notify_released_comment, conn, int(target_id))
+    best_effort(conn, sync_target_state, conn, target_type, int(target_id), states.STATE_FLAGGED)
+
+
 def _settle_failed(conn, target_type: str, target_id: int, revision: int) -> None:
-    conn.execute(
+    cursor = conn.execute(
         f"UPDATE {_table(target_type)} SET moderation_state = ?, moderated_by = ?, moderated_at = ? "
         "WHERE id = ? AND content_revision = ? AND moderation_state = ? AND COALESCE(moderated_by, '') <> ?",
         (states.STATE_FLAGGED, states.BY_AI, _now().isoformat(), int(target_id), int(revision), states.STATE_PENDING,
          states.BY_RESUBMIT),
     )
+    if int(cursor.rowcount or 0) == 1:
+        _after_release(conn, target_type, target_id)
 
 
 async def handle_blog_content_review(task: dict[str, Any]) -> str:
@@ -320,5 +339,7 @@ async def handle_blog_content_review_timeout(task: dict[str, Any]) -> str:
              states.BY_RESUBMIT),
         )
         released = int(cursor.rowcount or 0) == 1
+        if released:
+            _after_release(conn, target_type, target_id)
         conn.commit()
     return "released: flagged after timeout" if released else "noop: already reviewed"

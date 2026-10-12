@@ -18,6 +18,8 @@ if (app) {
     const [lqPresentation, lqContent, lqForms, lqSelection] = lqEnabled
         ? await Promise.all([import('./lq/components.js'), import('./lq/content.js'), import('./lq/forms.js'), import('./lq/selection.js')])
         : [null, null, null, null];
+    // Blog cards (inline reply, stacks, settings) only exist in the LQ notification view.
+    const blogUi = lqEnabled ? await import('./message_center_blog.js') : null;
     const PRIVATE_TAB = 'private_message';
     const WORKSPACE_EVENT = 'lanshare:message-center-workspace-change';
     const WORKSPACE_COMMAND_EVENT = 'lanshare:message-center-workspace-command';
@@ -1006,7 +1008,8 @@ if (app) {
                 });
                 const body = document.createElement('p'); body.className = 'lq-messages__notification-copy'; body.textContent = item.body_preview || '暂无更多内容';
                 row.querySelector('.lq-row__main').append(body);
-                if (item.is_unread) row.querySelector('.lq-row__trail').prepend(lqPresentation.createComponent('chip', { label: '未读', tone: 'primary', size: 'sm' }));
+                if (item.is_unread) row.querySelector('.lq-row__trail').prepend(lqPresentation.createComponent('chip', { label: '未读', tone: 'primary', size: 'sm', attrs: { 'data-mc-unread-chip': '' } }));
+                if (item.blog) blogUi.decorateBlogRow(row, item, { onRead: (summary, id) => syncInlineRead(row, summary, id) });
                 return row;
             });
             feedEl.replaceChildren(lqContent.createContent('list', { label: '通知列表' }, { items: rows }));
@@ -1048,6 +1051,18 @@ if (app) {
             </article>
         `).join('');
         publishWorkspaceSnapshot();
+    }
+
+    // An inline blog reply marked one card read: update it in place, since a
+    // re-render would close the reply panel that now says "已回复".
+    function syncInlineRead(row, summary, id) {
+        state.items = state.items.map((entry) => (Number(entry.id) === id ? { ...entry, is_unread: false } : entry));
+        row.classList.remove('is-unread');
+        row.querySelector('[data-mc-unread-chip]')?.remove();
+        if (Array.isArray(summary?.tabs)) applySummary(summary);
+        if (typeof window.refreshMessageCenterBell === 'function') {
+            void Promise.resolve(window.refreshMessageCenterBell({ allowPopup: false })).catch(() => {});
+        }
     }
 
     function contactMatchesFilter(contact) {
@@ -2046,6 +2061,9 @@ if (app) {
     contactSearchEl.addEventListener('input', handleContactSearchInput);
 
     markReadEl.addEventListener('click', markCurrentRead);
+    document.getElementById('message-center-settings')?.addEventListener('click', () => {
+        void blogUi?.openNotificationSettings();
+    });
     window.addEventListener(WORKSPACE_COMMAND_EVENT, handleWorkspaceCommand);
 
     feedEl.addEventListener('click', async (event) => {

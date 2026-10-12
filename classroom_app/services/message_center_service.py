@@ -57,6 +57,9 @@ MESSAGE_CATEGORY_BLOG_HOT = "blog_hot"
 MESSAGE_CATEGORY_BLOG_CAREER = "blog_career"
 # Moderation outcomes for one's own blog content (review, limits, appeals).
 MESSAGE_CATEGORY_BLOG_MODERATION = "blog_moderation"
+# Likes and follows are counted per day, never naming who liked (plan §6.1).
+MESSAGE_CATEGORY_BLOG_LIKE = "blog_like"
+MESSAGE_CATEGORY_BLOG_FOLLOW = "blog_follow"
 MESSAGE_CATEGORY_APP_FEEDBACK = "app_feedback"
 MESSAGE_CATEGORY_PASSWORD_RESET = "password_reset_request"
 MESSAGE_CATEGORY_TODO = "todo"
@@ -148,6 +151,8 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_AI_FEEDBACK,
     MESSAGE_CATEGORY_LEARNING_PROGRESS,
     MESSAGE_CATEGORY_BLOG_COMMENT,
+    MESSAGE_CATEGORY_BLOG_LIKE,
+    MESSAGE_CATEGORY_BLOG_FOLLOW,
     MESSAGE_CATEGORY_BLOG_HOT,
     MESSAGE_CATEGORY_BLOG_CAREER,
     MESSAGE_CATEGORY_BLOG_MODERATION,
@@ -171,6 +176,8 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_GRADING_RESULT,
         MESSAGE_CATEGORY_LEARNING_PROGRESS,
         MESSAGE_CATEGORY_BLOG_COMMENT,
+        MESSAGE_CATEGORY_BLOG_LIKE,
+        MESSAGE_CATEGORY_BLOG_FOLLOW,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_BLOG_CAREER,
         MESSAGE_CATEGORY_BLOG_MODERATION,
@@ -191,6 +198,8 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_AI_FEEDBACK,
         MESSAGE_CATEGORY_LEARNING_PROGRESS,
         MESSAGE_CATEGORY_BLOG_COMMENT,
+        MESSAGE_CATEGORY_BLOG_LIKE,
+        MESSAGE_CATEGORY_BLOG_FOLLOW,
         MESSAGE_CATEGORY_BLOG_HOT,
         MESSAGE_CATEGORY_BLOG_CAREER,
         MESSAGE_CATEGORY_BLOG_MODERATION,
@@ -217,6 +226,8 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_AI_FEEDBACK: "AI反馈",
     MESSAGE_CATEGORY_LEARNING_PROGRESS: "学习成长",
     MESSAGE_CATEGORY_BLOG_COMMENT: "博客评论",
+    MESSAGE_CATEGORY_BLOG_LIKE: "博客点赞",
+    MESSAGE_CATEGORY_BLOG_FOLLOW: "博客关注",
     MESSAGE_CATEGORY_BLOG_HOT: "博客热度",
     MESSAGE_CATEGORY_BLOG_CAREER: "就业机会",
     MESSAGE_CATEGORY_BLOG_MODERATION: "博客审核",
@@ -1553,16 +1564,24 @@ def _build_notification_payload(
     }
 
 
+# Optional columns (aggregation, read-by-post, stale target) written only by
+# callers that set them, so older narrow test tables keep working.
+_NOTIFICATION_LOOP_FIELDS = ("aggregate_key", "aggregate_count", "ref_post_id", "target_state")
+
+
 def _insert_notification(conn, payload: dict[str, Any]) -> int:
     db_engine = get_configured_db_engine()
-    insert_sql = """
+    loop_fields = [field for field in _NOTIFICATION_LOOP_FIELDS if field in payload]
+    loop_columns = "".join(f", {field}" for field in loop_fields)
+    loop_marks = ", ?" * len(loop_fields)
+    insert_sql = f"""
         INSERT INTO message_center_notifications (
             recipient_identity, recipient_role, recipient_user_pk,
             category, severity, actor_identity, actor_role, actor_user_pk, actor_display_name,
             title, body_preview, link_url, class_offering_id,
-            ref_type, ref_id, metadata_json, created_at
+            ref_type, ref_id, metadata_json, created_at{loop_columns}
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?{loop_marks})
     """
     notification_id = execute_insert_returning_id(
         conn,
@@ -1585,6 +1604,7 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
             payload["ref_id"],
             payload["metadata_json"],
             payload["created_at"],
+            *(payload[field] for field in loop_fields),
         ),
         engine=db_engine,
     )
@@ -1837,7 +1857,24 @@ def _serialize_notification(row) -> dict[str, Any]:
             "\u5728\u8bfe\u5802\u8ba8\u8bba\u4e2d @\u4e86\u6240\u6709\u4eba"
         )
     item.pop("metadata_json", None)
+    # Grouping keys are server bookkeeping (they may embed keyed actor hashes).
+    item.pop("aggregate_key", None)
     return item
+
+
+def serialize_notification_rows(conn, rows) -> list[dict[str, Any]]:
+    """Public form of ``_serialize_notifications`` for other notification readers."""
+    return _serialize_notifications(conn, rows)
+
+
+def _serialize_notifications(conn, rows) -> list[dict[str, Any]]:
+    """Serialize a page; blog cards re-render their actor's current persona."""
+    items = [_serialize_notification(row) for row in rows]
+    if any(str(item.get("category") or "").startswith("blog_") for item in items):
+        from .blog_notifications import render_notifications
+
+        items = render_notifications(conn, items)
+    return items
 
 
 def get_latest_unread_notification(conn, user: dict) -> Optional[dict[str, Any]]:
@@ -1856,7 +1893,7 @@ def get_latest_unread_notification(conn, user: dict) -> Optional[dict[str, Any]]
     ).fetchone()
     if row is None:
         return None
-    return _serialize_notification(row)
+    return _serialize_notifications(conn, [row])[0]
 
 
 def _serialize_private_message(
@@ -2060,7 +2097,7 @@ def list_message_center_items(
         """,
         (*params, max(1, min(int(limit), 300)), max(0, int(offset))),
     ).fetchall()
-    return [_serialize_notification(row) for row in rows]
+    return _serialize_notifications(conn, rows)
 
 
 def mark_message_center_items_read(
@@ -2169,7 +2206,7 @@ def open_message_center_notification(conn, user: dict, notification_id: int | st
             "SELECT * FROM message_center_notifications WHERE id = ? LIMIT 1",
             (normalized_id,),
         ).fetchone()
-    return _serialize_notification(row)
+    return _serialize_notifications(conn, [row])[0]
 
 
 def _mark_private_conversation_read(

@@ -231,6 +231,73 @@ async def api_message_center_mark_read(request: Request, user: dict = Depends(ge
     }
 
 
+@router.post("/api/message-center/read-by-ref", response_class=JSONResponse)
+async def api_message_center_read_by_ref(request: Request, user: dict = Depends(get_current_user)):
+    """Opening a blog post settles every unread notification about it (plan §6.3)."""
+    from ..services.blog_notifications import mark_post_read
+
+    try:
+        data = await request.json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or str(data.get("source") or "") != "blog":
+        raise HTTPException(status_code=400, detail="请求格式不正确")
+    try:
+        post_id = int(data.get("post_id"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="缺少帖子编号") from exc
+    with get_db_connection() as conn:
+        try:
+            updated_count = mark_post_read(conn, user, post_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail="当前账号不能使用该功能") from exc
+        summary = get_message_center_summary(conn, user, include_private=False)
+        conn.commit()
+    return {"status": "success", "updated_count": updated_count, "summary": summary}
+
+
+@router.get("/api/message-center/preferences", response_class=JSONResponse)
+def api_message_center_preferences(user: dict = Depends(get_current_user)):
+    from ..services.blog_notifications import preferences_view
+
+    identity = _preference_identity(user)
+    with get_db_connection() as conn:
+        return {"status": "success", "groups": [
+            {"key": "blog", "label": "博客", "events": preferences_view(conn, identity)},
+        ]}
+
+
+@router.put("/api/message-center/preferences", response_class=JSONResponse)
+async def api_set_message_center_preference(request: Request, user: dict = Depends(get_current_user)):
+    from ..services.blog_notifications import preferences_view, set_preference
+
+    identity = _preference_identity(user)
+    try:
+        data = await request.json()
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("enabled"), bool):
+        raise HTTPException(status_code=400, detail="请求格式不正确")
+    with get_db_connection() as conn:
+        try:
+            set_preference(conn, identity, str(data.get("event_key") or ""), data["enabled"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+        return {"status": "success", "events": preferences_view(conn, identity)}
+
+
+def _preference_identity(user: dict) -> str:
+    role = str(user.get("role") or "").strip().lower()
+    try:
+        user_pk = int(user.get("id"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=403, detail="当前账号不能使用该功能") from exc
+    if role not in {"student", "teacher"}:
+        raise HTTPException(status_code=403, detail="当前账号不能使用该功能")
+    return f"{role}:{user_pk}"
+
+
 @router.get(
     "/api/message-center/private/contacts",
     response_class=JSONResponse,

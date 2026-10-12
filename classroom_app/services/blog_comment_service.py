@@ -385,7 +385,7 @@ def edit_comment(conn, user: dict, comment_id: int, *, content_md: Any, expected
 def delete_comment(conn, user: dict, comment_id: int, *, reason: Any = "") -> dict[str, Any]:
     """Soft delete. Replies stay; an emptied floor keeps a placeholder for them."""
     from .blog_moderation_service import log_action
-    from .blog_notifications import notify_blog_moderation
+    from .blog_notifications import best_effort, notify_blog_moderation, set_comment_target_state
 
     viewer = _Viewer(conn, user)
     row = conn.execute(
@@ -417,6 +417,7 @@ def delete_comment(conn, user: dict, comment_id: int, *, reason: Any = "") -> di
         raise ValueError("评论不存在")
     # A deleted comment's images are no longer served to anyone.
     conn.execute("DELETE FROM blog_comment_media WHERE comment_id = ?", (int(comment_id),))
+    best_effort(conn, set_comment_target_state, conn, int(comment_id), gone=True)
     conn.execute(
         "UPDATE blog_posts SET comment_count = CASE WHEN COALESCE(comment_count, 0) <= 1 THEN 0 "
         "ELSE comment_count - 1 END, updated_at = ? WHERE id = ?",
@@ -434,3 +435,70 @@ def delete_comment(conn, user: dict, comment_id: int, *, reason: Any = "") -> di
     return {"id": int(comment_id), "post_id": int(comment["post_id"]), "deleted": True, "deleted_by": deleted_by,
             # Older callers read a count; replies are no longer deleted with it.
             "deleted_count": 1}
+
+
+QUOTE_MAX_LINES = 3
+QUOTE_MAX_CHARS = 180
+
+
+def _quote(text: Any) -> str:
+    lines = [line for line in str(text or "").strip().splitlines() if line.strip()][:QUOTE_MAX_LINES]
+    joined = "\n".join(lines)
+    return joined if len(joined) <= QUOTE_MAX_CHARS else f"{joined[:QUOTE_MAX_CHARS]}…"
+
+
+def _reply_faces(conn, viewer: _Viewer, post: dict) -> dict[str, Any]:
+    """Which faces the viewer may reply with here (plan §3.4 / §7.5)."""
+    from . import blog_persona_service as persona
+    from .blog_service import _load_user_profile_snapshot, is_anonymous_post_author
+
+    if is_anonymous_post_author(post, viewer.identity):
+        return {"forced_mode": persona.MODE_ANONYMOUS, "forced_label": persona.OP_ANON_NAME,
+                "modes": [persona.MODE_ANONYMOUS], "default_mode": persona.MODE_ANONYMOUS}
+    modes = [persona.MODE_REAL]
+    if viewer.role == "student":
+        nickname = str(_load_user_profile_snapshot(conn, viewer.role, viewer.user_pk).get("nickname") or "").strip()
+        if nickname and not persona.pen_name_problem(conn, nickname, self_role=viewer.role, self_pk=viewer.user_pk):
+            modes.append(persona.MODE_PEN)
+        if bool(post.get("allow_anonymous_comments", 1)):
+            modes.append(persona.MODE_ANONYMOUS)
+    last = conn.execute(
+        "SELECT author_display_mode FROM blog_comments WHERE post_id = ? AND author_identity = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (int(post["id"]), viewer.identity),
+    ).fetchone()
+    last_mode = str(last["author_display_mode"] or "") if last else ""
+    return {"forced_mode": "", "forced_label": "", "modes": modes,
+            "default_mode": last_mode if last_mode in modes else persona.MODE_REAL}
+
+
+def reply_context(conn, user: dict, comment_id: int) -> dict[str, Any]:
+    """What a message-center card needs to reply in place (plan §7.5)."""
+    viewer = _Viewer(conn, user)
+    row = conn.execute(f"SELECT {_COLUMNS} FROM blog_comments c WHERE c.id = ?", (int(comment_id),)).fetchone()
+    unavailable = {"can_reply": False, "comment": None, "quote": "", "post": None}
+    if row is None or not _visible(dict(row), viewer):
+        return {**unavailable, "reason": "这条评论已不存在"}
+    try:
+        post = _load_post(conn, user, int(row["post_id"]))
+    except (ValueError, PermissionError):
+        # Same answer as a missing comment: ids must not reveal hidden posts.
+        return {**unavailable, "reason": "这条评论已不存在"}
+    comment = get_comment_view(conn, user, int(comment_id))
+    quote, quote_is_mine = "", False
+    target = comment.get("reply_to_comment_id")
+    if target and int(target) != int(comment_id):
+        parent = conn.execute(f"SELECT {_COLUMNS} FROM blog_comments c WHERE c.id = ?", (int(target),)).fetchone()
+        if parent is not None and _visible(dict(parent), viewer):
+            quote = _quote(parent["content_md"])
+            quote_is_mine = str(parent["author_identity"] or "") == viewer.identity
+    reason = "" if bool(post.get("allow_comments")) else "帖子已关闭评论"
+    return {
+        "can_reply": not reason,
+        "reason": reason,
+        "comment": comment,
+        "quote": quote,
+        "quote_is_mine": quote_is_mine,
+        "post": {"id": int(post["id"]), "title": str(post.get("title") or "")},
+        **_reply_faces(conn, viewer, post),
+    }

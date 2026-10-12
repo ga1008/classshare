@@ -217,6 +217,13 @@ _OUTCOME_TITLES = {
 }
 
 
+_OUTCOME_EVENTS = {
+    "passed": "blog.review_passed",
+    "appeal_accepted": "blog.appeal_result",
+    "appeal_rejected": "blog.appeal_result",
+}
+
+
 def notify_author_of_outcome(conn, *, target_type: str, target: dict, outcome: str,
                              reason_code: str = "", note: str = "") -> bool:
     noun = "你的帖子" if target_type == "post" else "你的评论"
@@ -235,6 +242,7 @@ def notify_author_of_outcome(conn, *, target_type: str, target: dict, outcome: s
         conn, recipient_role=target.get("author_role"), recipient_pk=target.get("author_user_pk"),
         post_id=int(target.get("post_id") or target["id"]), title=_OUTCOME_TITLES[outcome].format(noun=noun),
         body="".join(parts), comment_id=int(target["id"]) if target_type == "comment" else None,
+        event=_OUTCOME_EVENTS.get(outcome, "blog.moderation"),
     )
 
 
@@ -270,6 +278,9 @@ def settle_reports(conn, user_identity: str, target_type: str, target: dict, *, 
             title="你的反馈已处理",
             body="经核查，相关内容已处理。感谢你的反馈。" if actioned else "经核查，暂未发现违规。感谢你的反馈。",
             comment_id=int(target["id"]) if target_type == "comment" else None,
+            event="blog.report_result",
+            # Handled content is no longer visible: the card has nowhere to go.
+            link_to_content=not actioned,
         )
     return len(reports)
 
@@ -305,7 +316,12 @@ def _write_state(conn, target_type: str, target: dict, state: str, by: str, reas
         "moderation_reason_code = ?, moderation_note = ? WHERE id = ? AND COALESCE(moderation_state, 'none') = ?",
         (state, by, _now(), reason_code, str(note or "")[:MAX_NOTE_LENGTH], int(target["id"]), expected),
     )
-    return int(cursor.rowcount or 0) == 1
+    if int(cursor.rowcount or 0) != 1:
+        return False
+    from .blog_notifications import best_effort, sync_target_state
+
+    best_effort(conn, sync_target_state, conn, target_type, int(target["id"]), state)
+    return True
 
 
 def _require_live(target_type: str, target: dict) -> None:
