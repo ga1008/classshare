@@ -5,6 +5,7 @@ against duplicate replies. Scheduler retries recover interrupted generation.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -15,13 +16,31 @@ from .scheduled_task_service import schedule_task
 
 
 BLOG_MENTION_TASK_KIND = "blog_mention_reply"
+_SANCTIONED_STATES = ("limited", "removed", "appeal_pending")
+
+
+def housekeeper_daily_limit() -> int:
+    try:
+        return max(int(os.getenv("BLOG_HOUSEKEEPER_DAILY_LIMIT", "20")), 0)
+    except ValueError:
+        return 20
+
+
+def housekeeper_quota_exhausted(conn, identity: str) -> bool:
+    """Plan §5.3: each person may call @管家 a limited number of times a day."""
+    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    row = conn.execute(
+        "SELECT COUNT(*) AS total FROM blog_ai_reply_jobs WHERE trigger_author_identity = ? AND created_at >= ?",
+        (identity, start),
+    ).fetchone()
+    return int((row["total"] if row else 0) or 0) >= housekeeper_daily_limit()
 
 
 def _trigger_snapshot(conn, trigger_type: str, trigger_id: int) -> dict[str, Any] | None:
     if trigger_type == "post":
-        row = conn.execute("SELECT id, id AS post_id, author_identity, author_role, author_user_pk, title, content_md FROM blog_posts WHERE id=? AND status='published'", (int(trigger_id),)).fetchone()
+        row = conn.execute("SELECT id, id AS post_id, author_identity, author_role, author_user_pk, title, content_md, moderation_state FROM blog_posts WHERE id=? AND status='published'", (int(trigger_id),)).fetchone()
     elif trigger_type == "comment":
-        row = conn.execute("SELECT c.id,c.post_id,c.author_identity,c.author_role,c.author_user_pk,'' AS title,c.content_md FROM blog_comments c JOIN blog_posts p ON p.id=c.post_id WHERE c.id=? AND c.status='active' AND p.status='published'", (int(trigger_id),)).fetchone()
+        row = conn.execute("SELECT c.id,c.post_id,c.author_identity,c.author_role,c.author_user_pk,'' AS title,c.content_md,CASE WHEN COALESCE(p.moderation_state,'none') IN ('limited','removed','appeal_pending') THEN p.moderation_state ELSE c.moderation_state END AS moderation_state FROM blog_comments c JOIN blog_posts p ON p.id=c.post_id WHERE c.id=? AND c.status='active' AND p.status='published'", (int(trigger_id),)).fetchone()
     else:
         raise ValueError("Invalid blog mention trigger")
     return dict(row) if row else None
@@ -37,6 +56,8 @@ def enqueue_blog_mention(conn, user: dict, *, trigger_type: str, trigger_id: int
         return None
     row = conn.execute("SELECT status,assistant_comment_id,updated_at FROM blog_ai_reply_jobs WHERE trigger_type=? AND trigger_id=?", (trigger_type, int(trigger_id))).fetchone()
     if row and (row["status"] == "done" or row["assistant_comment_id"]):
+        return None
+    if row is None and housekeeper_quota_exhausted(conn, identity):
         return None
     rearmable_statuses = ("failed", "cancelled")
     if row and row["status"] == BLOG_AI_JOB_ABANDONED:
@@ -70,6 +91,12 @@ async def handle_blog_mention_reply(task: dict[str, Any]) -> str:
     trigger_type, trigger_id = str(payload.get("trigger_type") or ""), int(payload.get("trigger_id") or 0)
     with get_db_connection() as conn:
         source = _trigger_snapshot(conn, trigger_type, trigger_id)
+        state = str((source or {}).get("moderation_state") or "none")
+        if state == "pending":
+            # Reply only once the trigger is public; the scheduler retries with backoff.
+            raise RuntimeError("Blog mention waits for the content review")
+        if state in _SANCTIONED_STATES:
+            source = None
         if not source or not contains_blog_housekeeper_mention(str(source.get("title") or "") + "\n" + str(source.get("content_md") or "")):
             conn.execute("UPDATE blog_ai_reply_jobs SET status='failed',error_message='原发言已删除、隐藏或取消提及',updated_at=? WHERE trigger_type=? AND trigger_id=? AND status='pending' AND assistant_comment_id IS NULL", (datetime.now().isoformat(), trigger_type, trigger_id))
             conn.commit()

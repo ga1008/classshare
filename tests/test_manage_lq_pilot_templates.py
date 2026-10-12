@@ -151,8 +151,10 @@ class ManageLqPilotTemplateTests(unittest.TestCase):
         self.assertTrue(PILOTS.issubset(explicit))
         # 39 S4-F callers. manage/course_schedule_editor.html (课表编辑模式) dropped its page_head on
         # 2026-09-27: the toolbar is the page's header, so it is not a page_head caller.
-        self.assertEqual(39, count)
-        self.assertEqual(39, len(explicit))
+        # +1 on 2026-10-12: manage/system/blog_review.html (博客审核台, blog closed-loop P3),
+        # gated like every other manage page.
+        self.assertEqual(40, count)
+        self.assertEqual(40, len(explicit))
 
     def test_shell_switch_has_exactly_one_controller_and_each_header_node(self):
         old, pilot = self.render_shell(), self.render_shell(True)

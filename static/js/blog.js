@@ -2,6 +2,7 @@ import { createEmojiPicker } from '/static/js/emoji_picker.js';
 import { escapeHtml, showToast } from '/static/js/ui.js';
 import { getLayerSystem } from '/static/js/lq/layer.js';
 import { getLQ } from '/static/js/lq/index.js';
+import { appealDialog, bannerMarkup, confirmPrivacy, moderationDialog, revealDialog } from '/static/js/blog_moderation_ui.js';
 
 const LQ = getLQ();
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -788,6 +789,31 @@ class BlogCenter {
             return;
         }
 
+        const appealButton = event.target.closest('[data-blog-appeal]');
+        if (appealButton) {
+            this.submitAppeal();
+            return;
+        }
+        const moderatePostButton = event.target.closest('[data-blog-moderate-post]');
+        if (moderatePostButton) {
+            this.moderateTarget('post', Number(moderatePostButton.dataset.blogModeratePost), moderatePostButton.dataset.state);
+            return;
+        }
+        const moderateCommentButton = event.target.closest('[data-blog-moderate-comment]');
+        if (moderateCommentButton) {
+            this.moderateTarget('comment', Number(moderateCommentButton.dataset.blogModerateComment), moderateCommentButton.dataset.state);
+            return;
+        }
+        const revealButton = event.target.closest('[data-blog-reveal]');
+        if (revealButton) {
+            this.revealAuthor(revealButton.dataset.targetType, Number(revealButton.dataset.blogReveal));
+            return;
+        }
+        const reportCommentButton = event.target.closest('[data-blog-report-comment]');
+        if (reportCommentButton) {
+            this.openReport('comment', Number(reportCommentButton.dataset.blogReportComment));
+            return;
+        }
         const reportPostButton = event.target.closest('[data-blog-report-post]');
         if (reportPostButton) {
             this.openReport('post', Number(reportPostButton.dataset.blogReportPost));
@@ -1838,10 +1864,106 @@ class BlogCenter {
             this.initCommentComposer();
             this.buildDetailToc();
             this.startReadingSession(postId);
+            this.renderModerationBanner(post);
+            this.scheduleModerationPoll(post);
         } catch (error) {
             if (error?.name === 'AbortError') return;
             this.state.detailPost = null;
             container.innerHTML = this.emptyHtml(error.message || '帖子详情加载失败');
+        }
+    }
+
+    /** LQ alert for the author (and moderators) when the post is not plainly public. */
+    async renderModerationBanner(post) {
+        const slot = $('[data-blog-moderation-banner]', this.shell);
+        if (!slot) return;
+        const markup = await bannerMarkup(post.moderation, { isAuthor: Boolean(post.is_author) });
+        if (Number(this.state.detailPost?.id) !== Number(post.id)) return;
+        slot.innerHTML = markup;
+        slot.hidden = !markup;
+    }
+
+    /** Plan §5.2: while the author's post is being checked, poll its state (5s, at most 3 minutes). */
+    scheduleModerationPoll(post) {
+        window.clearTimeout(this.moderationPollTimer);
+        // A resubmitted post waits for a person, not the automatic check: no polling.
+        if (!post?.is_author || post.moderation?.state !== 'pending' || post.moderation?.resubmitted) return;
+        const startedAt = Date.now();
+        const tick = async () => {
+            if (Number(this.state.detailPostId) !== Number(post.id) || this.state.currentView !== 'detail') return;
+            if (Date.now() - startedAt > 180000) {
+                showToast('检查用时较长，稍后刷新即可看到结果', 'info');
+                return;
+            }
+            try {
+                const data = await api.get(`/api/blog/posts/${post.id}/moderation`);
+                const state = data.moderation?.state;
+                if (state && state !== 'pending') {
+                    await this.showDetail(post.id, { historyMode: 'none', scrollToTop: false });
+                    if (data.moderation.is_public) showToast('内容检查已通过，大家都能看到了', 'success');
+                    return;
+                }
+            } catch {
+                // A failed poll is retried on the next tick.
+            }
+            this.moderationPollTimer = window.setTimeout(tick, 5000);
+        };
+        this.moderationPollTimer = window.setTimeout(tick, 5000);
+    }
+
+    async moderateTarget(targetType, targetId, state) {
+        if (!targetId) return;
+        const post = this.state.detailPost || {};
+        const values = await moderationDialog({
+            moderator: Boolean(post.permissions?.can_moderate),
+            state: state || 'none',
+            subject: targetType === 'post' ? '这篇帖子' : '这条评论',
+        });
+        if (!values) return;
+        try {
+            const result = await api.post(`/api/blog/moderation/${targetType}/${targetId}`, values);
+            showToast(result.emergency ? '已限制可见，博客管理员会复核' : '已处理，结果已通知作者', 'success');
+            if (result.emergency && targetType === 'post') {
+                // A limited post is no longer visible to a non-moderator: leave it.
+                this.backToList();
+                this.refreshCurrentList();
+            } else if (this.state.detailPostId) {
+                await this.showDetail(this.state.detailPostId, { historyMode: 'none', scrollToTop: false });
+            }
+        } catch (error) {
+            showToast(error.message || '处理失败', 'error');
+        }
+    }
+
+    async submitAppeal() {
+        const postId = this.state.detailPostId;
+        if (!postId) return;
+        const reason = await appealDialog();
+        if (!reason) return;
+        try {
+            await api.post(`/api/blog/posts/${postId}/appeal`, { reason });
+            showToast('申诉已提交，处理结果会通过消息通知你', 'success');
+            await this.showDetail(postId, { historyMode: 'none', scrollToTop: false });
+        } catch (error) {
+            showToast(error.message || '申诉提交失败', 'error');
+        }
+    }
+
+    async revealAuthor(targetType, targetId) {
+        if (!targetId) return;
+        const values = await revealDialog();
+        if (!values) return;
+        try {
+            const data = await api.post(`/api/blog/review/reveal/${targetType}/${targetId}`, values);
+            const detail = [data.class_name, data.student_number].filter(Boolean).join(' · ');
+            await LQ.confirm({
+                title: '真实作者（已记录审计）',
+                message: `${data.name || '未知'}${detail ? `（${detail}）` : ''}`,
+                confirmLabel: '知道了',
+                cancelLabel: '关闭',
+            });
+        } catch (error) {
+            showToast(error.message || '查看失败', 'error');
         }
     }
 
@@ -2331,6 +2453,8 @@ class BlogCenter {
 
         const editingPostId = this.state.editingPostId;
         const previousStatus = this.state.editingStatus;
+        const goingPublic = status === 'published' || (status === null && previousStatus === 'published');
+        if (goingPublic && !isRetry && !(await confirmPrivacy([title, content].join(' ')))) return false;
         try {
             if (editingPostId) {
                 if (this.state.editingRevision) {
@@ -2338,14 +2462,17 @@ class BlogCenter {
                 } else if (this.state.editingUpdatedAt) {
                     payload.expected_updated_at = this.state.editingUpdatedAt;
                 }
-                await api.put(`/api/blog/posts/${editingPostId}`, payload);
+                const result = await api.put(`/api/blog/posts/${editingPostId}`, payload);
                 let message = '帖子已更新';
                 if (status === 'draft') message = previousStatus === 'published' ? '已撤回为草稿' : '草稿已保存';
                 if (status === 'published' && previousStatus === 'draft') message = '帖子已发布';
+                if (result?.moderation_state === 'pending') message = '已提交，正在进行内容检查，通常 1 分钟内完成';
                 showToast(message, 'success');
             } else {
-                await api.post('/api/blog/posts', payload);
-                showToast(status === 'draft' ? '草稿已保存' : '帖子已发布', 'success');
+                const result = await api.post('/api/blog/posts', payload);
+                const pending = result?.moderation_state === 'pending';
+                showToast(status === 'draft' ? '草稿已保存' : pending ? '已提交，正在进行内容检查，通常 1 分钟内完成' : '帖子已发布', 'success');
+                if (result?.housekeeper_limited) showToast('今天 @管家 的次数已用完，明天再试吧', 'info');
             }
 
             this.clearComposerRecovery(editingPostId);
@@ -2627,6 +2754,7 @@ class BlogCenter {
             return;
         }
         if (this.commentSubmitInFlight) return;
+        if (!(await confirmPrivacy(content))) return;
         this.commentSubmitInFlight = true;
         const submitButton = $('[data-blog-submit-comment]', this.shell);
         if (submitButton) {
@@ -2635,7 +2763,7 @@ class BlogCenter {
         }
 
         try {
-            await api.post(`/api/blog/posts/${this.state.detailPostId}/comments`, {
+            const result = await api.post(`/api/blog/posts/${this.state.detailPostId}/comments`, {
                 content_md: content,
                 parent_comment_id: this.commentDraft.replyTo,
                 author_display_mode: this.commentPersonaMode(),
@@ -2648,7 +2776,11 @@ class BlogCenter {
                     name: item.name || '自定义表情',
                 }))),
             });
-            showToast('评论已发布', 'success');
+            showToast(
+                result?.moderation_state === 'pending' ? '评论已提交，检查通过后大家就能看到' : '评论已发布',
+                'success',
+            );
+            if (result?.housekeeper_limited) showToast('今天 @管家 的次数已用完，明天再试吧', 'info');
             this.resetCommentDraft({ keepPicker: false });
             input.value = '';
             this.autoSizeCommentInput(input);
@@ -3233,18 +3365,17 @@ class BlogCenter {
                             <span class="blog-card-action__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
                         </button>
                     </div>
-                    ${ownView ? `<div class="blog-post-card__footnote">状态：${escapeHtml(this.statusLabel(post.status))}</div>` : ''}
+                    ${ownView ? `<div class="blog-post-card__footnote">状态：${escapeHtml(this.statusLabel(post))}</div>` : ''}
                 </div>
                 ${cover}
             </article>
         `;
     }
 
-    statusLabel(status) {
-        if (status === 'draft') return '草稿';
-        if (status === 'moderated') return '私密';
-        if (status === 'hidden') return '隐藏';
-        return '已发布';
+    statusLabel(post = {}) {
+        if (post.status === 'draft') return '草稿';
+        const labels = { pending: '审核中', limited: '仅自己可见', removed: '已移除', appeal_pending: '申诉中' };
+        return labels[post.moderation_state] || '已发布';
     }
 
     detailHtml(post) {
@@ -3255,7 +3386,9 @@ class BlogCenter {
         if (post.is_pinned) metaBadges.push('<span class="blog-badge blog-badge--pin">置顶</span>');
         if (post.is_featured) metaBadges.push('<span class="blog-badge blog-badge--feature">精华</span>');
         if (post.status === 'draft') metaBadges.push('<span class="blog-badge blog-badge--draft">草稿</span>');
-        if (post.status === 'moderated') metaBadges.push('<span class="blog-badge blog-badge--moderated">私密</span>');
+        if (post.moderation && !post.moderation.is_public && post.moderation.label) {
+            metaBadges.push(LQ.html.chip({ label: post.moderation.label, tone: post.moderation.state === 'removed' ? 'danger' : 'warning', size: 'sm', attrs: { 'data-blog-moderation-chip': '' } }));
+        }
         if (post.visibility !== 'public') metaBadges.push(`<span class="blog-badge blog-badge--visibility">${escapeHtml(post.visibility_label || '权限可见')}</span>`);
 
         const actionButtons = [
@@ -3263,9 +3396,10 @@ class BlogCenter {
             permissions.can_toggle_comments ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-toggle-comments="${post.id}">${post.allow_comments ? '关闭评论' : '开启评论'}</button>` : '',
             permissions.can_pin ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-pin-post="${post.id}">${post.is_pinned ? '取消置顶' : '置顶'}</button>` : '',
             permissions.can_feature ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-feature-post="${post.id}">${post.is_featured ? '取消精华' : '设为精华'}</button>` : '',
-            permissions.can_hide ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-hide-post="${post.id}">${post.status === 'moderated' ? '恢复可见' : '转为私密'}</button>` : '',
+            permissions.can_moderate || permissions.can_emergency_limit ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--warning" data-blog-moderate-post="${post.id}" data-state="${escapeHtml(post.moderation?.state || post.moderation_state || 'none')}">${permissions.can_moderate ? '处理' : '紧急限制'}</button>` : '',
+            permissions.can_reveal ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-blog-reveal="${post.id}" data-target-type="post">查看作者</button>` : '',
             permissions.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn blog-action-btn--danger" data-delete-post="${post.id}">删除</button>` : '',
-            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-blog-report-post="${post.id}">反馈问题</button>`,
+            permissions.can_report === false ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-action-btn" data-blog-report-post="${post.id}">反馈问题</button>`,
         ].filter(Boolean).join('');
 
         const tags = (post.tags || []).map((tag) => (
@@ -3278,6 +3412,7 @@ class BlogCenter {
         return `
             <article class="blog-detail" data-lq-material="content">
                 ${metaBadges.length ? `<div class="blog-detail__badges">${metaBadges.join('')}</div>` : ''}
+                <div class="blog-detail__moderation" data-blog-moderation-banner hidden></div>
                 <h1 class="blog-detail__title">${escapeHtml(post.title || '')}</h1>
                 <div class="blog-detail__reading-meta">
                     <span>${post.reading_minutes || 1} 分钟读完</span>
@@ -3426,6 +3561,17 @@ class BlogCenter {
     }
 
     commentHtml(comment) {
+        if (comment.withheld) {
+            // Keeps the thread readable when visible replies hang on a handled comment.
+            return `
+            <article class="blog-comment blog-comment--withheld" data-blog-comment-withheld>
+                <div class="blog-comment__body">
+                    <p class="blog-comment__withheld">该评论已被处理</p>
+                    ${(comment.replies || []).length ? `<div class="blog-comment__replies">${comment.replies.map((reply) => this.commentHtml(reply)).join('')}</div>` : ''}
+                </div>
+            </article>`;
+        }
+        const moderation = comment.moderation;
         const actions = [
             `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action${comment.is_liked ? ' blog-comment-action--liked' : ''}" data-like-comment="${comment.id}">
                 ${comment.is_liked ? SVG.heartFill : SVG.heart}
@@ -3433,6 +3579,8 @@ class BlogCenter {
             </button>`,
             comment.can_reply ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-reply-to="${comment.id}" data-reply-name="${escapeHtml(comment.author?.display_name || '')}">回复</button>` : '',
             comment.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action blog-comment-action--delete" data-delete-comment="${comment.id}">删除</button>` : '',
+            comment.can_report ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-blog-report-comment="${comment.id}">举报</button>` : '',
+            comment.can_moderate ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-blog-moderate-comment="${comment.id}" data-state="${escapeHtml(moderation?.state || 'none')}">处理</button>` : '',
         ].filter(Boolean).join('');
 
         return `
@@ -3445,7 +3593,9 @@ class BlogCenter {
                         ${this.authorCultivationBadgeHtml(comment.author, 'blog-author-cultivation--comment')}
                         ${ROLE_LABELS[comment.author?.role] ? `<span class="blog-comment__author-role">${escapeHtml(ROLE_LABELS[comment.author.role])}</span>` : ''}
                         <span class="blog-comment__time">${escapeHtml(timeAgo(comment.created_at))}</span>
+                        ${moderation ? LQ.html.chip({ label: moderation.label || '已处理', tone: moderation.state === 'removed' ? 'danger' : 'warning', size: 'sm', attrs: { 'data-blog-comment-moderation': moderation.state } }) : ''}
                     </div>
+                    ${moderation && (moderation.reason_label || moderation.note) ? `<p class="blog-comment__moderation-note">${escapeHtml([moderation.reason_label ? `原因：${moderation.reason_label}` : '', moderation.note].filter(Boolean).join('。'))}</p>` : ''}
                     ${comment.content_md ? `<div class="blog-comment__content">${renderMarkdownHtml(comment.content_md)}</div>` : ''}
                     ${this.commentCustomEmojiHtml(comment.custom_emojis)}
                     ${this.commentAttachmentsHtml(comment.attachments)}

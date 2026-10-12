@@ -8,7 +8,8 @@ from .blog_section_service import resolve_blog_section_key
 
 FOLLOW_TARGET_TYPES = {"section", "author", "tag"}
 REPORT_TARGET_TYPES = {"post", "comment", "opportunity"}
-REPORT_REASONS = {"false_information", "spam", "abuse", "job_scam", "privacy", "other"}
+# "privacy_identity" = "暴露了我的身份或个人信息": pinned first on the review desk.
+REPORT_REASONS = {"false_information", "spam", "abuse", "job_scam", "privacy", "privacy_identity", "other"}
 
 
 def _normalize_follow_target(conn, target_type: Any, target_key: Any) -> tuple[str, str]:
@@ -147,7 +148,14 @@ def create_report(
         post = blog_service._get_post_raw(conn, normalized_id)
     else:
         table = "blog_comments" if normalized_type == "comment" else "blog_opportunities"
-        target = conn.execute(f"SELECT post_id FROM {table} WHERE id = ? LIMIT 1", (normalized_id,)).fetchone()
+        visible = (
+            " AND status = 'active' AND (COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged') "
+            "OR author_identity = ?)" if normalized_type == "comment" else ""
+        )
+        target = conn.execute(
+            f"SELECT post_id FROM {table} WHERE id = ?{visible} LIMIT 1",
+            (normalized_id, identity) if normalized_type == "comment" else (normalized_id,),
+        ).fetchone()
         post = blog_service._get_post_raw(conn, int(target["post_id"])) if target else None
     if not post or not blog_service._can_view_post(conn, user, post):
         raise ValueError("举报对象不存在或不可访问")
@@ -174,7 +182,13 @@ def create_report(
         """,
         (normalized_type, normalized_id, identity),
     ).fetchone()
-    return dict(row)
+    result = dict(row)
+    if normalized_type in {"post", "comment"}:
+        from .blog_moderation_service import apply_report_threshold
+
+        # N different reporters limit the content until a moderator decides.
+        result["auto_limited"] = apply_report_threshold(conn, normalized_type, normalized_id)
+    return result
 
 
 def list_pending_reports(conn, *, limit: int = 100) -> list[dict[str, Any]]:

@@ -64,8 +64,8 @@ class BackfillTests(BlogP0Fixture):
         draft = self.legacy_post("draft", "草稿")
         backfill_blog_closed_loop_data(self.conn, apply=True)
         row = self.row(hidden)
-        self.assertEqual(("moderated", "limited", "other"),
-                         (row["status"], row["moderation_state"], row["moderation_reason_code"]))
+        self.assertEqual(("published", "limited", "other"),
+                         (row["status"], row["moderation_state"], row["moderation_reason_code"]))  # status converged in P3
         self.assertIn("系统升级前", row["moderation_note"])
         self.assertEqual("passed", self.row(published)["moderation_state"])
         self.assertEqual(self.row(published)["created_at"], self.row(published)["published_at"])
@@ -131,7 +131,8 @@ class DualWriteTests(BlogP0Fixture):
         save("published")
         first = self.row(draft_id)["published_at"]
         self.assertIsNotNone(first)
-        self.assertEqual("passed", self.row(draft_id)["moderation_state"])
+        # A student's first publication waits for the content review (P3, D1).
+        self.assertEqual("pending", self.row(draft_id)["moderation_state"])
         save("draft")
         save("published")
         self.assertEqual(first, self.row(draft_id)["published_at"])
@@ -142,6 +143,7 @@ class DualWriteTests(BlogP0Fixture):
         self.conn.execute("UPDATE blog_posts SET created_at='2020-01-01T00:00:00' WHERE id=?", (old_draft,))
         revision = self.row(old_draft)["content_revision"]
         blog_service.update_post(self.conn, AUTHOR, old_draft, status="published", expected_revision=revision)
+        self.conn.execute("UPDATE blog_posts SET moderation_state='passed' WHERE id=?", (old_draft,))
         titles = [item["title"] for item in blog_service.list_posts(self.conn, CLASSMATE)["posts"]]
         self.assertEqual("早写晚发", titles[0])
 
@@ -150,7 +152,7 @@ class DualWriteTests(BlogP0Fixture):
         blog_service.hide_post(self.conn, TEACHER, post_id, reason="含有个人信息")
         row = self.row(post_id)
         self.assertEqual(
-            ("moderated", "limited", "other", "含有个人信息", "teacher:7"),
+            ("published", "limited", "other", "含有个人信息", "teacher:7"),
             (row["status"], row["moderation_state"], row["moderation_reason_code"], row["moderation_note"], row["moderated_by"]),
         )
         blog_service.hide_post(self.conn, TEACHER, post_id)
@@ -161,7 +163,7 @@ class DualWriteTests(BlogP0Fixture):
             (post_id,),
         ).fetchall()
         self.assertEqual(
-            [("hide", "post", post_id, "other", "含有个人信息"), ("restore", "post", post_id, "", "")],
+            [("limit", "post", post_id, "other", "含有个人信息"), ("restore", "post", post_id, "", "恢复可见")],
             [tuple(log) for log in logs],
         )
 

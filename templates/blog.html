@@ -3,6 +3,7 @@
 {% block css %}
 {{ super() }}
 <link rel="stylesheet" href="{{ asset_url('css/blog-paper.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/blog_moderation.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper{% endblock %}
@@ -33,6 +34,9 @@
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="following" type="button">关注</button>
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="my-posts" type="button">我的</button>
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="bookmarks" type="button">收藏</button>
+                {% if can_review_blog %}
+                <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" href="/manage/system/blog-review" data-blog-review-entry>审核台</a>
+                {% endif %}
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key blog-nav-key--compose" data-blog-action="compose" type="button">写帖子</button>
             </div>
         </div>
@@ -204,8 +208,9 @@
         <div class="blog-sort-bar">
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab is-active" data-blog-myposts-filter="all">全部</button>
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="published">已发布</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="reviewing">审核中</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="limited">受限</button>
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="moderated">已隐藏</button>
         </div>
         <div class="blog-feed" data-lq-material="content" data-blog-my-feed></div>
         <div class="blog-load-more" data-blog-my-load-more hidden>
@@ -378,7 +383,8 @@
                     <option value="job_scam">疑似招聘诈骗</option>
                     <option value="spam">广告或垃圾内容</option>
                     <option value="abuse">攻击、骚扰或不友善</option>
-                    <option value="privacy">泄露个人隐私</option>
+                    <option value="privacy_identity">暴露了我的身份或个人信息</option>
+                    <option value="privacy">泄露他人隐私</option>
                     <option value="other">其他问题</option>
                 </select>
             </label>

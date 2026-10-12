@@ -665,6 +665,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         required_flag="super_admin",
     ),
     ManageNavItem(
+        key="system_blog_review",
+        domain=MANAGE_ADMIN_DOMAIN,
+        group="平台管理",
+        label="博客审核",
+        icon="lock",
+        href="/manage/system/blog-review",
+        search_text="博客审核 审核台 举报 申诉 内容安全 blog review moderation",
+        ai_hint="博客审核：博客管理员处理 AI 审核、本地规则、举报、紧急限制与申诉，查看处置审计。",
+        required_flag="super_admin",
+    ),
+    ManageNavItem(
         key="system_ai_usage",
         domain=MANAGE_ADMIN_DOMAIN,
         group="平台管理",

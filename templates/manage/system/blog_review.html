@@ -1,0 +1,31 @@
+{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/navigation.html" import lq_tabs %}
+
+{% block title %}博客审核{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/blog_moderation.css') }}">
+{% endblock %}
+
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+{{ page_head('博客审核', description='处理 AI 审核、本地规则、举报、紧急限制与申诉。每次处置都会通知作者，并写入审计记录。', lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+
+<div class="br-shell" data-blog-review data-super-admin="{{ 'true' if is_super_admin else 'false' }}">
+    {% call(key) lq_tabs('blog-review-tabs', '审核分组', review_tab_items, activation='manual') %}
+        {% if key == 'audit' %}
+        <div class="br-list" data-review-audit aria-live="polite"></div>
+        {% elif key == 'moderators' %}
+        <div class="br-list" data-review-moderators aria-live="polite"></div>
+        {% else %}
+        <div class="br-list" data-review-list="{{ key }}" aria-live="polite"></div>
+        {% endif %}
+    {% endcall %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_blog_review.js') }}"></script>
+{% endblock %}

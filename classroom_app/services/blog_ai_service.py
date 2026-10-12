@@ -20,6 +20,7 @@ from .blog_service import (
     POST_STATUS_PUBLISHED, MAX_COMMENT_ATTACHMENTS, add_comment,
     _extract_blog_image_hashes, _load_user_owned_media_assets,
 )
+from .ai_gateway_service import ai_gateway_post
 from .edge_image_input_service import prepare_edge_image_inputs
 from .prompt_utils import build_time_context_text
 from .blog_persona_service import load_profiles
@@ -106,6 +107,7 @@ def _build_recent_comments_context(conn, post_id: int, *, limit: int = 10, maske
         SELECT author_identity, author_display_name, content_md, attachments_json, emoji_payload_json, created_at
         FROM blog_comments
         WHERE post_id = ? AND status = 'active'
+          AND COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged')
         ORDER BY created_at DESC, id DESC
         LIMIT ?
         """,
@@ -146,6 +148,17 @@ def _shield_reply(reply_text: str, names: list[str], public_name: str) -> str:
             shielded = shielded.replace(name, public_name)
             print("[BLOG_AI] persona_leak_blocked")
     return shielded
+
+
+def _screen_housekeeper_reply(reply_text: str) -> None:
+    """Local rules on the housekeeper's output: a hit is discarded, never published."""
+    from .blog_safety_service import check_text
+
+    with get_db_connection() as conn:
+        verdict = check_text(conn, reply_text)
+    if verdict.level != "clean":
+        print(f"[BLOG_AI] housekeeper reply discarded by local rules: {verdict.categories}")
+        raise ValueError("管家这次的回复没有通过内容检查，已丢弃")
 
 
 def _abandon_reply_job(conn, trigger_type: str, trigger_id: int, error_message: str) -> bool:
@@ -201,6 +214,7 @@ def _build_blog_overview(conn) -> str:
             SUM(CASE WHEN is_featured = 1 THEN 1 ELSE 0 END) AS featured_posts
         FROM blog_posts
         WHERE status = ?
+          AND COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged')
         """,
         (today_iso, POST_STATUS_PUBLISHED),
     ).fetchone()
@@ -210,6 +224,7 @@ def _build_blog_overview(conn) -> str:
         SELECT title, like_count, comment_count, view_count
         FROM blog_posts
         WHERE status = ?
+          AND COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged')
         ORDER BY is_pinned DESC,
                  is_featured DESC,
                  (like_count * 3 + comment_count * 2 + view_count) DESC,
@@ -419,9 +434,10 @@ async def _generate_housekeeper_reply(
             current_assets, source_feature="blog", max_images=MAX_COMMENT_ATTACHMENTS,
             max_bytes=10 * 1024 * 1024,
         )
-        response = await ai_client.post(
+        response = await ai_gateway_post(
+            ai_client,
             "/api/ai/chat",
-            json={
+            json_payload={
                 "system_prompt": system_prompt,
                 "messages": [],
                 "new_message": f"[触发方式] {trigger_label}\n[呼叫者] {caller_display_name or '平台用户'}\n[本次请求]\n{request_text}",
@@ -435,6 +451,9 @@ async def _generate_housekeeper_reply(
                 "web_search_enabled": False,
             },
             timeout=90.0,
+            task_type="blog_housekeeper_reply",
+            priority="P2",
+            source_ref=f"blog:{trigger_type}:{trigger_id}",
         )
         response.raise_for_status()
         data = response.json()
@@ -496,10 +515,15 @@ def _publish_blog_ai_reply(conn, *, trigger_type: str, trigger_id: int, post_id:
     if current_text != source_text:
         _mark_reply_job_failed(conn, trigger_type, trigger_id, "原发言已变更或删除，请重新 @管家")
         return False
+    allow = conn.execute("SELECT allow_comments FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
+    if not allow or not int(allow["allow_comments"] or 0):
+        # Closed comments are closed for the housekeeper too (plan §5.3).
+        _mark_reply_job_failed(conn, trigger_type, trigger_id, "帖子已关闭评论，管家不再回复")
+        return False
     result = add_comment(
         conn, BLOG_AI_ASSISTANT_USER, post_id, content_md=reply_text,
         parent_comment_id=trigger_id if trigger_type == BLOG_AI_TRIGGER_COMMENT else None,
-        author_display_name=BLOG_AI_ASSISTANT_NAME, bypass_comment_lock=True,
+        author_display_name=BLOG_AI_ASSISTANT_NAME,
         notify_callback=notify_new_comment, hot_notify_callback=notify_post_hot,
     )
     _mark_reply_job_done(conn, trigger_type, trigger_id, int(result["id"]))
@@ -592,6 +616,7 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
             trigger_type=BLOG_AI_TRIGGER_POST, trigger_id=post_id, current_assets=current_assets,
         )
         reply_text = _shield_reply(reply_text, shield_names, caller_display_name)
+        _screen_housekeeper_reply(reply_text)
     except (ValueError, RuntimeError) as exc:
         # Failures are told to the caller privately, never posted publicly.
         _abandon_and_notify(
@@ -730,6 +755,7 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
             trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, current_assets=current_assets,
         )
         reply_text = _shield_reply(reply_text, shield_names, caller_display_name)
+        _screen_housekeeper_reply(reply_text)
     except (ValueError, RuntimeError) as exc:
         _abandon_and_notify(
             trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, post_id=int(comment["post_id"]),

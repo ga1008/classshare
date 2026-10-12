@@ -230,3 +230,43 @@ def _resolve_notifiable_user(role: Any, user_pk: Any) -> Optional[tuple[str, int
     if normalized_role not in {"student", "teacher"} or normalized_pk is None:
         return None
     return normalized_role, normalized_pk
+
+
+MESSAGE_CATEGORY_BLOG_MODERATION = "blog_moderation"
+
+
+def notify_blog_moderation(
+    conn,
+    *,
+    recipient_role: Any,
+    recipient_pk: Any,
+    post_id: int,
+    title: str,
+    body: str,
+    comment_id: Optional[int] = None,
+) -> bool:
+    """A review/moderation outcome for one person (author, reporter).
+
+    The actor is always "博客中心": moderators act for the platform, and a
+    reporter must never learn who handled their report (plan §5.4).
+    """
+    recipient = _resolve_notifiable_user(recipient_role, recipient_pk)
+    if recipient is None:
+        return False
+    role, user_pk = recipient
+    anchor = f"&comment={int(comment_id)}" if comment_id else ""
+    payload = _build_notification_payload(
+        recipient_role=role,
+        recipient_user_pk=user_pk,
+        category=MESSAGE_CATEGORY_BLOG_MODERATION,
+        title=str(title or "")[:80],
+        body_preview=str(body or "")[:160],
+        actor_role="",
+        actor_user_pk=None,
+        actor_display_name="博客中心",
+        link_url=f"/blog?post={int(post_id)}{anchor}",
+        ref_type="blog_comment" if comment_id else "blog_post",
+        ref_id=str(int(comment_id or post_id)),
+    )
+    _insert_notification(conn, payload)
+    return True

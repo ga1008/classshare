@@ -30,6 +30,11 @@ BLOG_CLOSED_LOOP_COLUMNS: dict[str, dict[str, str]] = {
         "edited_at": "TEXT",
         "deleted_at": "TEXT",
         "deleted_by_role": "TEXT NOT NULL DEFAULT ''",
+        # P3: a comment's moderation verdict, with the same meaning as on posts.
+        "moderation_reason_code": "TEXT NOT NULL DEFAULT ''",
+        "moderation_note": "TEXT NOT NULL DEFAULT ''",
+        "moderated_by": "TEXT NOT NULL DEFAULT ''",
+        "moderated_at": "TEXT",
     },
     "blog_follows": {
         "target_mode": "TEXT NOT NULL DEFAULT 'real_name'",

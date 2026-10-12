@@ -103,7 +103,7 @@ from .routers import lessondoc_editor as lessondoc_editor_router
 from .routers import mp as mp_router
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
-from .routers import blog, feedback
+from .routers import blog, blog_moderation, feedback
 from .routers import career_path
 from .routers import calendar_feed
 from .routers import wrong_book
@@ -722,6 +722,7 @@ app.include_router(signatures.router)
 app.include_router(approval_workflow_router.router)
 app.include_router(manage_router.router)
 app.include_router(blog.router)
+app.include_router(blog_moderation.router)
 app.include_router(feedback.router)
 
 app.include_router(session_router.router)

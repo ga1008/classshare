@@ -1265,6 +1265,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/moderation/reasons",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_moderation_reasons",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/moderation/{target_type}/{target_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_moderate",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/my-posts",
     "methods": [
       "GET"
@@ -1329,6 +1345,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/posts/{post_id}/appeal",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_create_appeal",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/posts/{post_id}/bookmark",
     "methods": [
       "POST"
@@ -1385,6 +1409,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/posts/{post_id}/moderation",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_post_moderation_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/posts/{post_id}/pin",
     "methods": [
       "POST"
@@ -1422,6 +1454,70 @@
       "POST"
     ],
     "name": "api_resolve_blog_report",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/appeals/{appeal_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_review_appeal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/audit",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_review_audit",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/moderators",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_review_moderators",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/moderators/{teacher_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_review_set_moderator",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/queue",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_review_queue",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/reports/{target_type}/{target_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_review_reports",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/reveal/{target_type}/{target_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_review_reveal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/review/teachers",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_review_search_teachers",
     "include_in_schema": true
   },
   {
@@ -7334,6 +7430,14 @@
       "GET"
     ],
     "name": "get_manage_system_blog_crawler_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/blog-review",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_blog_review_page",
     "include_in_schema": true
   },
   {

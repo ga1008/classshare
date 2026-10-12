@@ -144,8 +144,9 @@ class CommentFaceTests(PersonaFixture):
     def test_post_author_can_close_anonymous_comments(self):
         result = blog_service.create_post(self.conn, AUTHOR, title="t", content_md="c",
                                           status="published", allow_anonymous_comments=False)
-        self.conn.commit()
         post_id = int(result["id"])
+        self.conn.execute("UPDATE blog_posts SET moderation_state='passed' WHERE id=?", (post_id,))
+        self.conn.commit()
         self.assertFalse(self.detail(post_id)["allow_anonymous_comments"])
         with self.assertRaisesRegex(ValueError, "匿名评论"):
             self.comment(post_id, CLASSMATE, mode="anonymous")

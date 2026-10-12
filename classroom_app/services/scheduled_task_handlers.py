@@ -515,6 +515,16 @@ register_task_handler(AGENT_TASK_DISPATCH_KIND, handle_agent_task_dispatch)
 from .blog_effects_service import BLOG_MENTION_TASK_KIND, handle_blog_mention_reply
 
 register_task_handler(BLOG_MENTION_TASK_KIND, handle_blog_mention_reply)
+
+# 博客内容安全 L2：AI 审核（绑定修订号）+ 待审帖子 10 分钟超时兜底。
+from .blog_safety_review import (  # noqa: E402
+    handle_blog_content_review,
+    handle_blog_content_review_timeout,
+)
+from .blog_safety_service import REVIEW_TASK_KIND, REVIEW_TIMEOUT_TASK_KIND  # noqa: E402
+
+register_task_handler(REVIEW_TASK_KIND, handle_blog_content_review)
+register_task_handler(REVIEW_TIMEOUT_TASK_KIND, handle_blog_content_review_timeout)
 from .session_material_generation_jobs import SESSION_GENERATION_TASK_KIND, handle_session_material_generation
 
 register_task_handler(SESSION_GENERATION_TASK_KIND, handle_session_material_generation)

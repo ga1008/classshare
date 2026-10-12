@@ -161,6 +161,7 @@ def _search_blog(conn: Any, pattern: str) -> list[dict[str, Any]]:
         SELECT id, title, author_display_name
         FROM blog_posts
         WHERE status = 'published'
+          AND COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged')
           AND visibility = 'public'
           AND (LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(summary, '')) LIKE ? ESCAPE '\\')
         ORDER BY created_at DESC

@@ -2723,3 +2723,21 @@ body.blog-composer-open {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* P3 moderation: author banner, handled comments (layout + presentation only). */
+.blog-detail__moderation {
+    margin-bottom: var(--spacing-md);
+}
+
+.blog-comment__withheld {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-style: italic;
+    color: var(--blog-ink-soft);
+}
+
+.blog-comment__moderation-note {
+    margin: 4px 0 0;
+    font-size: var(--text-2xs);
+    color: var(--blog-ink-soft);
+}

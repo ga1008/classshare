@@ -1,0 +1,177 @@
+/*
+ * Blog moderation: form dialogs (blog page + review desk) and the review desk
+ * layout. Layout and data presentation only — surfaces, buttons, chips, tabs
+ * and alerts are LQ components (contract: docs/lq-component-contract-2026-09-27.md).
+ * Text on glass reads the material ink tokens (docs/lq-scene-ink-2026-09-26.md).
+ */
+
+/* --- form dialog ------------------------------------------------------------ */
+.blog-mod-form {
+    display: grid;
+    gap: var(--ls-s-3, 12px);
+    min-width: min(420px, 100%);
+}
+
+.blog-mod-form__lead,
+.blog-mod-form__hint {
+    margin: 0;
+    font-size: var(--text-sm, 0.875rem);
+    line-height: 1.6;
+    color: hsl(var(--lq-material-muted));
+}
+
+.blog-mod-form__field {
+    display: grid;
+    gap: 6px;
+}
+
+.blog-mod-form__label {
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    color: hsl(var(--lq-material-ink));
+}
+
+.blog-mod-form__field .lq-select,
+.blog-mod-form__field .lq-textarea {
+    width: 100%;
+}
+
+.blog-mod-form__error {
+    margin: 0;
+    font-size: var(--text-sm, 0.875rem);
+    color: hsl(var(--ls-tone-danger-ink, var(--lq-material-ink)));
+}
+
+.blog-mod-form__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--ls-s-2, 8px);
+}
+
+/* --- review desk -------------------------------------------------------------- */
+.br-shell {
+    display: grid;
+    gap: var(--ls-s-4, 16px);
+}
+
+.br-list {
+    display: grid;
+    gap: var(--ls-s-3, 12px);
+    padding-block: var(--ls-s-3, 12px);
+}
+
+.br-card {
+    display: grid;
+    gap: var(--ls-s-2, 8px);
+    padding: var(--ls-s-4, 16px);
+    min-width: 0;
+}
+
+.br-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2, 8px);
+}
+
+.br-card__title {
+    margin: 0;
+    font-size: var(--text-base, 1rem);
+    font-weight: 600;
+    color: hsl(var(--lq-material-ink));
+    overflow-wrap: anywhere;
+}
+
+.br-card__title a {
+    color: inherit;
+}
+
+.br-card__excerpt {
+    margin: 0;
+    line-height: 1.7;
+    color: hsl(var(--lq-material-ink));
+    overflow-wrap: anywhere;
+}
+
+.br-card__meta,
+.br-card__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px var(--ls-s-3, 12px);
+    margin: 0;
+    font-size: var(--text-sm, 0.875rem);
+    color: hsl(var(--lq-material-muted));
+}
+
+.br-card__facts dt {
+    font-weight: 600;
+}
+
+.br-card__facts div {
+    display: flex;
+    gap: 6px;
+}
+
+.br-card__facts dd {
+    margin: 0;
+}
+
+.br-card__quote {
+    margin: 0;
+    padding-inline-start: var(--ls-s-3, 12px);
+    border-inline-start: 2px solid hsl(var(--ls-line-strong) / 0.6);
+    font-size: var(--text-sm, 0.875rem);
+    color: hsl(var(--lq-material-ink));
+    overflow-wrap: anywhere;
+}
+
+.br-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-2, 8px);
+    padding-top: var(--ls-s-1, 4px);
+}
+
+/* Six columns do not fit a phone: the log scrolls sideways instead of
+   breaking every cell into single characters. */
+.br-audit {
+    overflow-x: auto;
+}
+
+.br-audit-table {
+    width: 100%;
+    min-width: 640px;
+    font-size: var(--text-sm, 0.875rem);
+}
+
+.br-audit-table td:first-child {
+    white-space: nowrap;
+}
+
+.br-audit-table td,
+.br-audit-table th {
+    padding: 6px 8px;
+    text-align: start;
+    vertical-align: top;
+    color: hsl(var(--lq-material-ink));
+}
+
+.br-moderator-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2, 8px);
+}
+
+.br-empty {
+    margin: 0;
+    padding: var(--ls-s-5, 24px) 0;
+    text-align: center;
+    color: hsl(var(--lq-material-muted));
+}
+
+@media (max-width: 640px) {
+    .br-card {
+        padding: var(--ls-s-3, 12px);
+    }
+}

@@ -179,6 +179,21 @@ def ensure_blog_closed_loop_schema(conn: Any, *, engine: str | None = None) -> N
         """
     )
 
+    # P3: teachers granted blog moderation (plan D7); super admins always are.
+    # Revoking keeps the row (revoked_at/revoked_by) as the grant's audit trail.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS blog_moderators (
+            {id_column},
+            teacher_id INTEGER NOT NULL UNIQUE,
+            granted_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            revoked_by TEXT NOT NULL DEFAULT '',
+            revoked_at TEXT
+        )
+        """
+    )
+
     # P2: an anonymous commenter's code within one post ("匿名同学·青柚").
     # The two UNIQUE constraints make the code stable per person and distinct
     # per post even when two first comments race; deleting comments never
@@ -284,6 +299,22 @@ def backfill_blog_closed_loop_data(conn: Any, *, apply: bool = True, now: str = 
         "published_at = created_at", (), apply, "blog_posts",
     )
 
+    # P3: reads use moderation_state, so the legacy hide statuses converge to
+    # "published" (their limited state was mirrored above, in the same pass).
+    _guarded_update(
+        conn, report, "posts_status_converged",
+        "status IN ('moderated', 'hidden') "
+        "AND COALESCE(moderation_state, 'none') IN ('limited', 'removed', 'appeal_pending')",
+        "status = 'published', published_at = COALESCE(published_at, created_at)",
+        (), apply, "blog_posts",
+    )
+    _guarded_update(
+        conn, report, "comments_status_converged",
+        "status = 'hidden'",
+        "status = 'active', moderation_state = 'limited', "
+        "moderation_reason_code = CASE WHEN COALESCE(moderation_reason_code, '') = '' THEN 'other' ELSE moderation_reason_code END",
+        (), apply, "blog_comments",
+    )
     # P2: a class tag identifies a pen-name/anonymous author; such posts never
     # show system tags, so the stored copy is dropped (it is derivable anyway).
     _guarded_update(

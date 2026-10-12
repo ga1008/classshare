@@ -426,6 +426,13 @@ class CoreBrokerReadTests(PlatformWriteFixture):
 
 
 class BlogOutboxTests(PlatformWriteFixture):
+    def setUp(self):
+        super().setUp()
+        # The outbox contract, not content review: posts are public at once.
+        guard = patch.dict("os.environ", {"BLOG_SAFETY_AI_ENABLED": "false"})
+        guard.start()
+        self.addCleanup(guard.stop)
+
     def test_web_create_update_and_comment_enqueue_inside_commit_without_inline_model(self):
         background = BackgroundTasks()
         with patch.object(blog, "get_db_connection", self.connection):

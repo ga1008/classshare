@@ -164,6 +164,7 @@ def find_related_posts(
         FROM blog_posts p
         LEFT JOIN blog_post_editorial_metadata m ON m.post_id = p.id
         WHERE p.status = 'published' AND p.author_role = 'assistant'
+          AND COALESCE(p.moderation_state, 'none') IN ('none', 'passed', 'flagged')
         ORDER BY p.created_at DESC, p.id DESC
         LIMIT ?
         """,
@@ -205,7 +206,8 @@ def find_related_posts(
         f"""
         SELECT post_id, author_display_name, content_md, like_count, created_at
         FROM blog_comments
-        WHERE status = 'active' AND post_id IN ({placeholders})
+        WHERE status = 'active' AND COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged')
+          AND post_id IN ({placeholders})
         ORDER BY created_at ASC, id ASC
         """,
         tuple(selected_ids),

@@ -22,11 +22,13 @@ class BlogEditorialMemoryTests(unittest.TestCase):
             CREATE TABLE blog_posts (
                 id INTEGER PRIMARY KEY, section_key TEXT, title TEXT, content_md TEXT,
                 status TEXT, author_role TEXT, view_count INTEGER, like_count INTEGER,
-                comment_count INTEGER, bookmark_count INTEGER, created_at TEXT
+                comment_count INTEGER, bookmark_count INTEGER, created_at TEXT,
+                moderation_state TEXT DEFAULT 'none'
             );
             CREATE TABLE blog_comments (
                 id INTEGER PRIMARY KEY, post_id INTEGER, author_display_name TEXT,
-                content_md TEXT, status TEXT, like_count INTEGER, created_at TEXT
+                content_md TEXT, status TEXT, like_count INTEGER, created_at TEXT,
+                moderation_state TEXT DEFAULT 'none'
             );
             CREATE TABLE blog_post_editorial_metadata (
                 post_id INTEGER PRIMARY KEY, topic TEXT NOT NULL DEFAULT '',
@@ -47,7 +49,7 @@ class BlogEditorialMemoryTests(unittest.TestCase):
     def _insert_post(self, post_id: int, title: str, content: str, section: str = "ai") -> None:
         self.conn.execute(
             """
-            INSERT INTO blog_posts VALUES (?, ?, ?, ?, 'published', 'assistant', 20, 3, 1, 2, ?)
+            INSERT INTO blog_posts VALUES (?, ?, ?, ?, 'published', 'assistant', 20, 3, 1, 2, ?, 'passed')
             """,
             (post_id, section, title, content, f"2026-07-{post_id:02d}"),
         )
@@ -55,7 +57,7 @@ class BlogEditorialMemoryTests(unittest.TestCase):
     def test_related_memory_contains_full_article_source_interactions_comments_and_link(self):
         self._insert_post(1, "Gemini 走进安卓系统", "这是需要完整保留的历史正文，讨论 AI 助手的能力与边界。")
         self.conn.execute(
-            "INSERT INTO blog_comments VALUES (1, 1, '小林', '隐私权限也值得注意', 'active', 4, '2026-07-10')"
+            "INSERT INTO blog_comments VALUES (1, 1, '小林', '隐私权限也值得注意', 'active', 4, '2026-07-10', 'none')"
         )
         with patch(
             "classroom_app.services.blog_editorial_memory_service.get_configured_db_engine",

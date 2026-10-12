@@ -51,7 +51,7 @@ class AgentPlatformBrokerTests(unittest.TestCase):
             CREATE TABLE assignments(id INTEGER PRIMARY KEY,title TEXT,course_id INTEGER,class_offering_id INTEGER,status TEXT,exam_paper_id INTEGER,
                 assessment_kind TEXT,assessment_kind_version INTEGER,assessment_kind_source TEXT,created_at TEXT);
             CREATE TABLE learning_stage_exam_attempts(assignment_id INTEGER);
-            CREATE TABLE blog_posts(id INTEGER PRIMARY KEY,title TEXT,author_display_name TEXT,summary TEXT,status TEXT,visibility TEXT,created_at TEXT);
+            CREATE TABLE blog_posts(id INTEGER PRIMARY KEY,title TEXT,author_display_name TEXT,summary TEXT,status TEXT,visibility TEXT,created_at TEXT,moderation_state TEXT DEFAULT 'none');
             CREATE TABLE message_center_notifications(id INTEGER PRIMARY KEY,recipient_identity TEXT,recipient_role TEXT,recipient_user_pk INTEGER,
                 category TEXT,severity TEXT,actor_identity TEXT,actor_role TEXT,actor_user_pk INTEGER,actor_display_name TEXT,
                 title TEXT,body_preview TEXT,link_url TEXT,class_offering_id INTEGER,ref_type TEXT,ref_id TEXT,

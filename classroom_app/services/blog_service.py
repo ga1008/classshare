@@ -9,7 +9,9 @@ from urllib.parse import quote
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.schema_blog_closed_loop import comment_media_rows, insert_comment_media
+from . import blog_moderation_states as mod_states
 from . import blog_persona_service as persona_service
+from . import blog_safety_service as safety
 from .academic_service import china_today
 from .blog_image_policy import is_suitable_news_cover_dimensions
 from .blog_section_service import (
@@ -24,6 +26,7 @@ POST_STATUS_DRAFT = "draft"
 POST_STATUS_PUBLISHED = "published"
 POST_STATUS_HIDDEN = "hidden"
 POST_STATUS_MODERATED = "moderated"
+POST_STATUS_DELETED = "deleted"
 
 AUTHOR_DISPLAY_REAL = "real_name"
 AUTHOR_DISPLAY_NICKNAME = "nickname"
@@ -75,13 +78,16 @@ class BlogModerationLocked(PermissionError):
     """A moderator-owned state that the author cannot change by editing."""
 
 
+# Legacy hide statuses: P3 converges them to "published" + moderation_state
+# (startup backfill); still recognised so an unconverged row stays locked.
 MODERATED_POST_STATUSES = frozenset({POST_STATUS_HIDDEN, POST_STATUS_MODERATED})
 
-# moderation_state (plan §4). P1 only mirrors the legacy hide toggle into it;
-# reads switch to it in P3.
-MODERATION_STATE_NONE = "none"
-MODERATION_STATE_PASSED = "passed"
-MODERATION_STATE_LIMITED = "limited"
+# moderation_state (plan §4) decides visibility since P3.
+MODERATION_STATE_NONE = mod_states.STATE_NONE
+MODERATION_STATE_PASSED = mod_states.STATE_PASSED
+MODERATION_STATE_LIMITED = mod_states.STATE_LIMITED
+# The author sees their own post in feeds while it waits for review.
+_OWN_FEED_STATES = (*mod_states.PUBLIC_STATES, mod_states.STATE_PENDING)
 
 
 def _post_for_mutation(
@@ -436,18 +442,25 @@ def _build_post_visibility_sql(
     table_alias: str = "",
 ) -> tuple[str, list[Any]]:
     prefix = f"{table_alias}." if table_alias else ""
-    if _can_override_post_visibility(user):
-        return (
-            f"{prefix}status IN ('{POST_STATUS_PUBLISHED}', '{POST_STATUS_HIDDEN}', '{POST_STATUS_MODERATED}')",
-            [],
-        )
+    role = str(user.get("role") or "").strip().lower()
+    if role == "assistant":
+        # Internal pipelines (housekeeper, crawler) read every published post.
+        return f"{prefix}status = '{POST_STATUS_PUBLISHED}'", []
+    public_state = mod_states.public_state_sql(table_alias)
+    own_states = ", ".join(f"'{state}'" for state in _OWN_FEED_STATES)
+    own = f"({prefix}author_identity = ? AND COALESCE({prefix}moderation_state, 'none') IN ({own_states}))"
+    if role == "teacher":
+        # Teachers see every audience, but sanctioned or unreviewed posts of
+        # others only on the review desk (plan §4.1).
+        return f"{prefix}status = '{POST_STATUS_PUBLISHED}' AND ({public_state} OR {own})", [viewer_identity]
 
     return (
         f"""
         {prefix}status = '{POST_STATUS_PUBLISHED}'
         AND (
+            {own}
+            OR ({public_state} AND (
             {prefix}visibility = '{VISIBILITY_PUBLIC}'
-            OR {prefix}author_identity = ?
             OR (
                 {prefix}visibility = '{VISIBILITY_CLASS}'
                 AND (
@@ -469,6 +482,7 @@ def _build_post_visibility_sql(
                 {prefix}visibility = '{VISIBILITY_SELECTED}'
                 AND {prefix}visible_user_identities_json LIKE ?
             )
+            ))
         )
         """.strip(),
         [viewer_identity, viewer_user_pk, viewer_user_pk, f'%"{viewer_identity}"%'],
@@ -978,6 +992,12 @@ def create_post(
             "deduplicated": True,
         }
 
+    if role != "assistant":
+        safety.enforce_post_rate_limit(conn, identity)
+    review_plan = _plan_post_review(
+        conn, role, normalized_status, normalized_title, normalized_content, " ".join(normalized_tags),
+    )
+
     now = _now_iso()
     is_published = normalized_status == POST_STATUS_PUBLISHED
     post_id = execute_insert_returning_id(
@@ -989,8 +1009,8 @@ def create_post(
             section_key, title, content_md, summary, cover_image_hash,
             status, visibility, visible_class_id, visible_class_offering_id, visible_user_identities_json,
             allow_comments, system_tags_json, tags_json, created_at, updated_at,
-            moderation_state, published_at, content_revision, allow_anonymous_comments
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            moderation_state, moderated_by, published_at, content_revision, allow_anonymous_comments
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
         """,
         (
             author_snapshot["identity"],
@@ -1015,14 +1035,39 @@ def create_post(
             json.dumps(normalized_tags, ensure_ascii=False),
             now,
             now,
-            # No automated review yet (P3): a published post is passed as-is.
-            MODERATION_STATE_PASSED if is_published else MODERATION_STATE_NONE,
+            review_plan.state if review_plan else MODERATION_STATE_NONE,
+            review_plan.moderated_by if review_plan else "",
             now if is_published else None,
             1 if allow_anonymous_comments else 0,
         ),
     )
     _sync_post_attachments(conn, post_id, media_assets)
-    return {"id": post_id, "status": normalized_status, "created_at": now, "content_revision": 1}
+    moderation_state = _queue_post_review(conn, post_id, 1, review_plan)
+    return {
+        "id": post_id, "status": normalized_status, "created_at": now, "content_revision": 1,
+        "moderation_state": moderation_state,
+    }
+
+
+def _plan_post_review(conn, role: str, status: str, *texts: Any, already_public: bool = False):
+    """L1 + initial moderation state for a post that is (or becomes) published."""
+    if status != POST_STATUS_PUBLISHED:
+        return None
+    verdict = safety.check_text(conn, *texts)
+    if verdict.level == safety.LEVEL_BLOCK:
+        if role != "assistant":
+            raise safety.BlogSafetyBlocked(verdict.categories)
+        # Platform pipelines are never refused mid-run; a person reviews instead.
+        verdict = safety.LocalVerdict(safety.LEVEL_FLAG, verdict.categories)
+    return safety.plan_review(target_type="post", role=role, verdict=verdict, already_public=already_public)
+
+
+def _queue_post_review(conn, post_id: int, revision: int, plan) -> str:
+    if plan is None:
+        return MODERATION_STATE_NONE
+    if safety.enqueue_review(conn, target_type="post", target_id=post_id, revision=revision, plan=plan) == "quota":
+        return mod_states.STATE_FLAGGED if plan.state == mod_states.STATE_PENDING else plan.state
+    return plan.state
 
 
 def update_post(
@@ -1144,19 +1189,36 @@ def update_post(
         params.append(json.dumps(_normalize_tags(tags), ensure_ascii=False))
 
     current_status = str(post.get("status") or "")
+    current_state = str(post.get("moderation_state") or MODERATION_STATE_NONE)
+    sanctioned = current_status in MODERATED_POST_STATUSES or current_state in mod_states.SANCTIONED_STATES
+    next_status = current_status
     if status is not None and status in {POST_STATUS_DRAFT, POST_STATUS_PUBLISHED} and status != current_status:
-        # Only the moderator can lift a hide; editing must never republish it.
-        if current_status in MODERATED_POST_STATUSES:
-            raise BlogModerationLocked("该帖子已被管理员隐藏，暂不能自行发布或撤回")
+        # Only a moderator lifts a sanction; publishing or withdrawing never does.
+        if sanctioned:
+            raise BlogModerationLocked("该帖子正在处理中，暂不能自行发布或撤回")
+        next_status = status
         updates.append("status = ?")
         params.append(status)
         if status == POST_STATUS_PUBLISHED:
             # First publication stamps the feed time; republishing keeps it.
             updates.append("published_at = COALESCE(published_at, ?)")
             params.append(now)
-            if str(post.get("moderation_state") or MODERATION_STATE_NONE) == MODERATION_STATE_NONE:
-                updates.append("moderation_state = ?")
-                params.append(MODERATION_STATE_PASSED)
+
+    review_plan = None
+    text_changed = any(value is not None for value in (title, content_md, tags))
+    if next_status == POST_STATUS_PUBLISHED and (text_changed or next_status != current_status):
+        review_plan = _plan_post_review(
+            conn, role, next_status, *_merged_review_text(post, title, content_md, tags),
+            already_public=current_status == POST_STATUS_PUBLISHED and mod_states.is_public_state(current_state),
+        )
+        if sanctioned:
+            # Only a person lifts a sanction (plan §4.1): the corrected text is
+            # re-checked by AI for the moderator's information, but nothing
+            # automatic (verdict, timeout, quota, failure) may publish it.
+            review_plan = safety.ReviewPlan(mod_states.STATE_PENDING, mod_states.BY_RESUBMIT, review_plan.needs_ai)
+    if review_plan is not None:
+        updates.extend(["moderation_state = ?", "moderated_by = ?", "moderation_reason_code = ?", "moderation_note = ?"])
+        params.extend([review_plan.state, review_plan.moderated_by, "", ""])
 
     if not updates:
         return {"id": post_id, "updated": False}
@@ -1165,6 +1227,14 @@ def update_post(
     updates.extend(["edited_at = ?", "updated_at = ?", "content_revision = ?"])
     params.extend([now, now, next_revision, post_id])
     conn.execute(f"UPDATE blog_posts SET {', '.join(updates)} WHERE id = ?", params)
+
+    moderation_state = current_state
+    if review_plan is not None:
+        if sanctioned:
+            from .blog_moderation_service import withdraw_open_appeal_on_edit
+
+            withdraw_open_appeal_on_edit(conn, post_id, identity)
+        moderation_state = _queue_post_review(conn, post_id, next_revision, review_plan)
 
     if attachments_need_sync and media_assets is not None:
         _sync_post_attachments(conn, post_id, media_assets)
@@ -1180,12 +1250,38 @@ def update_post(
             ),
         )
 
-    return {"id": post_id, "updated": True, "edited_at": now, "updated_at": now, "content_revision": next_revision}
+    return {
+        "id": post_id, "updated": True, "edited_at": now, "updated_at": now, "content_revision": next_revision,
+        "moderation_state": moderation_state,
+    }
+
+
+def _merged_review_text(post: dict, title: Optional[str], content_md: Optional[str], tags) -> tuple[str, str, str]:
+    """The post's text after this edit: what L1 and the AI must look at."""
+    merged_tags = tags if tags is not None else _safe_json_loads(post.get("tags_json"), [])
+    return (
+        str(title if title is not None else post.get("title") or ""),
+        str(content_md if content_md is not None else post.get("content_md") or ""),
+        " ".join(str(tag) for tag in (merged_tags or [])),
+    )
 
 
 def delete_post(conn, user: dict, post_id: int, *, expected_updated_at: Optional[str] = None) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     _post_for_mutation(conn, user, post_id, expected_updated_at)
+    audited = conn.execute("SELECT 1 FROM blog_moderation_logs WHERE post_id = ? LIMIT 1", (post_id,)).fetchone()
+    if audited is not None:
+        # Moderation logs (incl. identity reveals) cascade with the post row,
+        # so a moderated post is only hidden from everyone (plan §4.1 soft delete).
+        from .blog_moderation_service import withdraw_open_appeal_on_edit
+
+        now = _now_iso()
+        withdraw_open_appeal_on_edit(conn, post_id, identity)
+        conn.execute(
+            "UPDATE blog_posts SET status = ?, deleted_at = ?, updated_at = ?, is_pinned = 0, is_featured = 0 WHERE id = ?",
+            (POST_STATUS_DELETED, now, now, post_id),
+        )
+        return {"id": post_id, "deleted": True}
 
     conn.execute("DELETE FROM blog_likes WHERE target_type = ? AND target_id = ?", (TARGET_TYPE_POST, post_id))
     conn.execute(
@@ -1287,6 +1383,7 @@ def list_posts(
                author_avatar_hash, author_avatar_mime,
                section_key, title, summary, cover_image_hash,
                status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
+               moderation_state, moderation_reason_code, moderation_note, content_revision, published_at,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
                LENGTH(content_md) AS content_length,
@@ -1334,15 +1431,11 @@ def get_blog_topbar_summary(conn, user: dict, *, section_key: Optional[str] = No
     today_iso = china_today().isoformat()
     normalized_section_key = _resolve_optional_blog_section(conn, section_key)
 
-    if _can_override_post_visibility(user):
-        visibility_sql = "status = ?"
-        params: list[Any] = [POST_STATUS_PUBLISHED]
-    else:
-        visibility_sql, params = _build_post_visibility_sql(
-            user,
-            viewer_identity=identity,
-            viewer_user_pk=user_pk,
-        )
+    visibility_sql, params = _build_post_visibility_sql(
+        user,
+        viewer_identity=identity,
+        viewer_user_pk=user_pk,
+    )
 
     section_sql = " AND section_key = ?" if normalized_section_key else ""
     query_params = [*params]
@@ -1398,6 +1491,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
         author_avatar_hash, author_avatar_mime,
         section_key, title, summary, cover_image_hash,
         status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
+        moderation_state, moderation_reason_code, moderation_note, content_revision, published_at,
         view_count, like_count, comment_count, bookmark_count,
         system_tags_json, tags_json, created_at, edited_at, updated_at,
         LENGTH(content_md) AS content_length,
@@ -1575,7 +1669,7 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
         post_row["view_count"] = int(post_row.get("view_count") or 0) + 1
 
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, [post_row])
-    return _serialize_post_detail(
+    result = _serialize_post_detail(
         post_row,
         user=user,
         viewer_identity=identity,
@@ -1583,6 +1677,71 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
         is_bookmarked=_is_bookmarked(conn, identity, post_id),
         cultivation_badge_map=cultivation_badge_map,
     )
+    _attach_moderation_view(conn, user, post_row, result)
+    return result
+
+
+def get_post_moderation_status(conn, user: dict, post_id: int) -> dict:
+    """Light poll for the author's "审核中" banner (plan §5.2): state only."""
+    post = _get_post_raw(conn, post_id)
+    if post is None:
+        raise ValueError("帖子不存在")
+    if not _can_view_post(conn, user, post):
+        raise PermissionError("没有权限查看此帖子")
+    view: dict[str, Any] = {"permissions": {}, "is_author": str(post.get("author_identity") or "") == _ensure_identity(user)[2]}
+    _attach_moderation_view(conn, user, post, view)
+    return {"post_id": int(post_id), "content_revision": _safe_int(post.get("content_revision")) or 1,
+            "moderation": view.get("moderation")}
+
+
+def _moderation_view(conn, row: dict, *, moderator: bool, with_appeal: bool) -> dict[str, Any]:
+    from . import blog_moderation_service as moderation
+
+    state = str(row.get("moderation_state") or MODERATION_STATE_NONE)
+    if state == mod_states.STATE_FLAGGED and not moderator:
+        # "flagged" is a queue marker; the author is not told (plan §5.1).
+        state = MODERATION_STATE_PASSED
+    code = str(row.get("moderation_reason_code") or "")
+    view = {
+        "state": state,
+        "label": mod_states.STATE_LABELS.get(state, ""),
+        "is_public": mod_states.is_public_state(state),
+        "reason_code": code if state in mod_states.SANCTIONED_STATES or moderator else "",
+        "reason_label": mod_states.reason_label(code) if state in mod_states.SANCTIONED_STATES or moderator else "",
+        "note": str(row.get("moderation_note") or "") if state in mod_states.SANCTIONED_STATES or moderator else "",
+    }
+    view["resubmitted"] = str(row.get("moderated_by") or "") == mod_states.BY_RESUBMIT
+    if moderator:
+        view["moderated_by"] = str(row.get("moderated_by") or "")
+    if with_appeal:
+        view["appeal"] = moderation.appeal_status(conn, row)
+    return view
+
+
+def _attach_moderation_view(conn, user: dict, post_row: dict, result: dict) -> None:
+    from . import blog_moderation_service as moderation
+
+    role = str(user.get("role") or "").strip().lower()
+    moderator = moderation.is_blog_moderator(conn, user)
+    is_author = bool(result.get("is_author"))
+    state = str(post_row.get("moderation_state") or MODERATION_STATE_NONE)
+    live = str(post_row.get("status") or "") == POST_STATUS_PUBLISHED
+    permissions = result.setdefault("permissions", {})
+    permissions.update({
+        "can_moderate": moderator and live,
+        # Any teacher may limit published content at once; a moderator reviews it.
+        "can_emergency_limit": role == "teacher" and not moderator and live and mod_states.is_public_state(state),
+        "can_reveal": moderator and str(post_row.get("author_display_mode") or "") in {AUTHOR_DISPLAY_NICKNAME, AUTHOR_DISPLAY_ANONYMOUS},
+        "can_report": not is_author and role != "assistant",
+        # The legacy private/visible toggle is replaced by the moderation menu.
+        "can_hide": False,
+    })
+    if (is_author or moderator) and live:
+        result["moderation"] = _moderation_view(conn, post_row, moderator=moderator, with_appeal=is_author)
+    else:
+        result["moderation"] = None
+    if not moderator and result.get("moderation_state") == mod_states.STATE_FLAGGED:
+        result["moderation_state"] = MODERATION_STATE_PASSED
 
 
 def update_post_reading_progress(
@@ -1650,12 +1809,21 @@ def get_my_posts(
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     offset = max(page - 1, 0) * limit
-    conditions = ["author_identity = ?"]
+    conditions = ["author_identity = ?", f"status <> '{POST_STATUS_DELETED}'"]
     params: list[Any] = [identity]
 
-    if status_filter in {POST_STATUS_DRAFT, POST_STATUS_PUBLISHED, POST_STATUS_HIDDEN, POST_STATUS_MODERATED}:
+    if status_filter == POST_STATUS_DRAFT:
         conditions.append("status = ?")
-        params.append(status_filter)
+        params.append(POST_STATUS_DRAFT)
+    elif status_filter == POST_STATUS_PUBLISHED:
+        conditions.append(mod_states.public_post_sql())
+    elif status_filter == "reviewing":
+        conditions.append(
+            f"status = '{POST_STATUS_PUBLISHED}' AND moderation_state IN "
+            f"('{mod_states.STATE_PENDING}', '{mod_states.STATE_APPEAL_PENDING}')"
+        )
+    elif status_filter in {"limited", POST_STATUS_HIDDEN, POST_STATUS_MODERATED}:
+        conditions.append(f"moderation_state IN ('{mod_states.STATE_LIMITED}', '{mod_states.STATE_REMOVED}')")
 
     where_clause = " AND ".join(conditions)
     total = int(
@@ -1667,6 +1835,7 @@ def get_my_posts(
                author_avatar_hash, author_avatar_mime,
                section_key, title, summary, cover_image_hash,
                status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
+               moderation_state, moderation_reason_code, moderation_note, content_revision, published_at,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
                LENGTH(content_md) AS content_length,
@@ -1804,13 +1973,15 @@ def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int =
                author_identity, author_role, author_user_pk, author_display_name,
                author_display_mode, author_display_snapshot,
                content_md, emoji_payload_json, attachments_json,
-               status, like_count, created_at, updated_at
+               status, like_count, created_at, updated_at,
+               moderation_state, moderation_reason_code, moderation_note, moderated_by
         FROM blog_comments
         WHERE post_id = ? AND status = 'active'
         ORDER BY created_at ASC, id ASC
         """,
         (post_id,),
     ).fetchall()
+    rows = _withhold_comments(conn, user, identity, [dict(row) for row in rows])
 
     comments = _build_comment_tree(
         conn,
@@ -1818,11 +1989,76 @@ def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int =
         viewer_identity=identity,
         post_author_identity=str(post["author_identity"] or ""),
         post_display_mode=str(post.get("author_display_mode") or AUTHOR_DISPLAY_REAL),
-        rows=[dict(row) for row in rows],
+        rows=rows,
         page=page,
         limit=limit,
     )
     return {"comments": comments, "post_id": post_id}
+
+
+def _withhold_comments(conn, user: dict, identity: str, rows: list[dict]) -> list[dict]:
+    """Drop comments others may not see; keep a placeholder where replies hang on one.
+
+    A pending (L1-flagged), limited or removed comment is shown to its author
+    and to blog moderators only. Everyone else sees nothing, or — when visible
+    replies hang below it — an empty "已处理" placeholder keeping the thread.
+    """
+    from .blog_moderation_service import is_blog_moderator
+
+    moderator = is_blog_moderator(conn, user)
+    for row in rows:
+        row["_viewer_moderator"] = moderator
+    if moderator:
+        return rows
+
+    def visible(row: dict) -> bool:
+        return str(row.get("author_identity") or "") == identity or mod_states.is_public_state(row.get("moderation_state"))
+
+    by_id = {int(row["id"]): row for row in rows}
+    needed: set[int] = set()
+    for row in rows:
+        if not visible(row):
+            continue
+        parent_id = _safe_int(row.get("parent_comment_id"))
+        while parent_id is not None and parent_id in by_id and parent_id not in needed:
+            needed.add(parent_id)
+            parent_id = _safe_int(by_id[parent_id].get("parent_comment_id"))
+    kept = []
+    for row in rows:
+        if visible(row):
+            kept.append(row)
+        elif int(row["id"]) in needed:
+            kept.append({**row, "_withheld": True, "content_md": "", "attachments_json": "[]", "emoji_payload_json": ""})
+    return kept
+
+
+def notify_released_comment(conn, comment_id: int) -> None:
+    """A comment held for review (L1 flag) notifies nobody when written; once
+    it becomes visible, the post author / replied-to person get the usual notice."""
+    from .blog_notifications import notify_new_comment
+
+    row = conn.execute(
+        "SELECT id, post_id, parent_comment_id, author_identity, author_role, author_user_pk, author_display_name, "
+        "author_display_mode, content_md, attachments_json, emoji_payload_json FROM blog_comments WHERE id = ?",
+        (int(comment_id),),
+    ).fetchone()
+    post = _get_post_raw(conn, int(row["post_id"])) if row else None
+    if row is None or post is None:
+        return
+    item = dict(row)
+    public_face = str(item.get("author_display_mode") or AUTHOR_DISPLAY_REAL) == AUTHOR_DISPLAY_REAL
+    notify_new_comment(
+        conn, post, int(item["id"]), _safe_int(item.get("parent_comment_id")),
+        str(item.get("author_identity") or ""),
+        str(item.get("author_role") or "") if public_face else "",
+        item.get("author_user_pk") if public_face else None,
+        str(item.get("author_display_name") or ""),
+        _build_comment_preview(
+            str(item.get("content_md") or ""),
+            _safe_json_loads(item.get("attachments_json"), []),
+            _safe_json_loads(item.get("emoji_payload_json"), []),
+        ),
+    )
 
 
 def _resolve_comment_face(
@@ -1941,6 +2177,14 @@ def add_comment(
             "deduplicated": True,
         }
 
+    if role == "assistant":
+        # Housekeeper output is checked by blog_ai_service before it gets here.
+        comment_plan = safety.ReviewPlan(MODERATION_STATE_NONE, "", False)
+    else:
+        safety.enforce_comment_rate_limit(conn, identity)
+        verdict = safety.enforce_local_rules(conn, normalized_content)
+        comment_plan = safety.plan_review(target_type="comment", role=role, verdict=verdict)
+
     now = _now_iso()
     comment_mode, display_name, snapshot = _resolve_comment_face(
         conn, user, post, role=role, identity=identity, user_pk=user_pk,
@@ -1954,8 +2198,9 @@ def add_comment(
             author_identity, author_role, author_user_pk, author_display_name,
             content_md, emoji_payload_json, attachments_json,
             status, created_at, updated_at,
-            root_comment_id, reply_to_comment_id, author_display_mode, author_display_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
+            root_comment_id, reply_to_comment_id, author_display_mode, author_display_snapshot,
+            moderation_state, moderated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             post_id,
@@ -1973,6 +2218,8 @@ def add_comment(
             parent_comment_id,
             comment_mode,
             snapshot,
+            comment_plan.state,
+            comment_plan.moderated_by,
         ),
     )
     if root_comment_id is None:
@@ -1988,8 +2235,14 @@ def add_comment(
         "UPDATE blog_posts SET comment_count = comment_count + 1, updated_at = ? WHERE id = ?",
         (now, post_id),
     )
+    if safety.enqueue_review(conn, target_type="comment", target_id=comment_id, revision=1, plan=comment_plan) == "quota":
+        comment_plan = safety.ReviewPlan(
+            mod_states.STATE_FLAGGED if comment_plan.state == mod_states.STATE_PENDING else comment_plan.state,
+            mod_states.BY_QUOTA, False,
+        )
 
-    if notify_callback:
+    # A comment held for review (L1 flag) notifies nobody until it is visible.
+    if notify_callback and mod_states.is_public_state(comment_plan.state):
         # The identity is still passed for self-notification suppression, but a
         # pen-name/anonymous commenter must not become a contactable actor.
         public_face = comment_mode == AUTHOR_DISPLAY_REAL
@@ -2006,7 +2259,7 @@ def add_comment(
         )
 
     _maybe_notify_post_hot(conn, post_id, notify_callback=hot_notify_callback)
-    return {"id": comment_id, "post_id": post_id, "created_at": now}
+    return {"id": comment_id, "post_id": post_id, "created_at": now, "moderation_state": comment_plan.state}
 
 
 def delete_comment(conn, user: dict, comment_id: int) -> dict:
@@ -2218,8 +2471,8 @@ def pin_post(conn, user: dict, post_id: int) -> dict:
         raise PermissionError("仅教师可置顶帖子")
 
     post = _get_published_post_for_editorial(conn, post_id)
-    if str(post.get("status") or "") != POST_STATUS_PUBLISHED and not bool(post.get("is_pinned")):
-        raise BlogModerationLocked("隐藏中的帖子不能置顶")
+    if not mod_states.is_public_state(post.get("moderation_state")) and not bool(post.get("is_pinned")):
+        raise BlogModerationLocked("审核中或受限的帖子不能置顶")
 
     new_value = 0 if bool(post.get("is_pinned")) else 1
     now = _now_iso()
@@ -2237,8 +2490,8 @@ def feature_post(conn, user: dict, post_id: int, *, notify_callback=None) -> dic
         raise PermissionError("仅教师可设置精华")
 
     post = _get_published_post_for_editorial(conn, post_id)
-    if str(post.get("status") or "") != POST_STATUS_PUBLISHED and not bool(post.get("is_featured")):
-        raise BlogModerationLocked("隐藏中的帖子不能设为精华")
+    if not mod_states.is_public_state(post.get("moderation_state")) and not bool(post.get("is_featured")):
+        raise BlogModerationLocked("审核中或受限的帖子不能设为精华")
 
     new_value = 0 if bool(post.get("is_featured")) else 1
     # Toggling feature off and on again must not notify the author twice.
@@ -2255,52 +2508,22 @@ def feature_post(conn, user: dict, post_id: int, *, notify_callback=None) -> dic
 
 
 def hide_post(conn, user: dict, post_id: int, reason: str = "") -> dict:
-    user_pk, role, identity = _ensure_identity(user)
-    if not _can_override_post_visibility(user):
-        raise PermissionError("仅教师或 AI 助教可调整帖子可见性")
+    """Legacy "转为私密 / 恢复可见" toggle, now a moderation action (plan §4.1).
+
+    Limiting needs any teacher (emergency limit when not a blog moderator);
+    restoring needs a blog moderator. Reason code "other" with the given note.
+    """
+    from . import blog_moderation_service as moderation
 
     post = _get_published_post_for_editorial(conn, post_id)
-
-    next_status = (
-        POST_STATUS_PUBLISHED
-        if str(post.get("status") or "") in MODERATED_POST_STATUSES
-        else POST_STATUS_MODERATED
-    )
-    now = _now_iso()
-    hiding = next_status == POST_STATUS_MODERATED
-    note = str(reason or "").strip()[:500]
-    # Dual-write: the legacy status still drives visibility until P3 switches
-    # reads to moderation_state; both must always agree.
-    conn.execute(
-        """
-        UPDATE blog_posts
-        SET status = ?, updated_at = ?,
-            moderation_state = ?, moderation_reason_code = ?, moderation_note = ?,
-            moderated_by = ?, moderated_at = ?
-        WHERE id = ?
-        """,
-        (
-            next_status,
-            now,
-            MODERATION_STATE_LIMITED if hiding else MODERATION_STATE_PASSED,
-            "other" if hiding else "",
-            note if hiding else "",
-            identity,
-            now,
-            post_id,
-        ),
-    )
-    _log_moderation(
-        conn,
-        post_id,
-        identity,
-        role,
-        user_pk,
-        "hide" if hiding else "restore",
-        note,
-        reason_code="other" if hiding else "",
-    )
-    return {"id": post_id, "status": next_status, "is_private": hiding}
+    note = str(reason or "").strip()[:300]
+    if mod_states.is_public_state(post.get("moderation_state")):
+        result = moderation.moderate(conn, user, "post", post_id, action="limit", reason_code="other", note=note)
+    else:
+        result = moderation.moderate(conn, user, "post", post_id, action="restore", note=note or "恢复可见")
+    hidden = result["moderation_state"] in mod_states.SANCTIONED_STATES
+    return {"id": post_id, "status": POST_STATUS_PUBLISHED, "is_private": hidden,
+            "moderation_state": result["moderation_state"]}
 
 
 def toggle_comments(conn, user: dict, post_id: int) -> dict:
@@ -2405,16 +2628,17 @@ def get_media_asset_for_user(conn, user: dict, file_hash: str) -> Optional[dict]
             }
 
     comment_rows = conn.execute(
-        """
+        f"""
         SELECT c.attachments_json, c.emoji_payload_json, p.*
         FROM blog_comments c
         JOIN blog_posts p ON p.id = c.post_id
         WHERE c.status = 'active'
+          AND ({mod_states.public_state_sql('c')} OR c.author_identity = ?)
           AND (c.attachments_json LIKE ? OR c.emoji_payload_json LIKE ?)
         ORDER BY c.id DESC
         LIMIT 80
         """,
-        (f"%{normalized_hash}%", f"%{normalized_hash}%"),
+        (identity, f"%{normalized_hash}%", f"%{normalized_hash}%"),
     ).fetchall()
     for row in comment_rows:
         payload = dict(row)
@@ -2607,13 +2831,27 @@ def _can_view_post(conn, user: dict, post: dict) -> bool:
     if not post:
         return False
     user_pk, role, identity = _ensure_identity(user)
+    status = str(post.get("status") or "")
+    if status == POST_STATUS_DELETED:
+        # Soft-deleted: gone for everyone, kept only for the moderation record.
+        from .blog_moderation_service import is_blog_moderator
+
+        return is_blog_moderator(conn, user)
     if str(post.get("author_identity") or "") == identity:
         return True
-    status = str(post.get("status") or "")
-    if _can_override_post_visibility(user):
-        # Moderators see everything that was ever made public, never drafts.
+    if role == "assistant":
         return status != POST_STATUS_DRAFT
-    if status != POST_STATUS_PUBLISHED:
+    if status not in {POST_STATUS_PUBLISHED, *MODERATED_POST_STATUSES}:
+        # Never someone else's draft, not even for moderators (plan §4.1).
+        return False
+    public = status == POST_STATUS_PUBLISHED and mod_states.is_public_state(post.get("moderation_state"))
+    if role == "teacher":
+        if public:
+            return True
+        from .blog_moderation_service import is_blog_moderator
+
+        return is_blog_moderator(conn, user)
+    if not public:
         return False
 
     visibility = str(post.get("visibility") or VISIBILITY_PUBLIC)
@@ -2738,6 +2976,7 @@ def _build_comment_tree(
         [row for row in rows if not masked_identity or str(row.get("author_identity") or "") != masked_identity],
     )
     can_moderate = _can_override_post_visibility(user)
+    viewer_role = str(user.get("role") or "").strip().lower()
     by_parent: dict[Optional[int], list[dict]] = defaultdict(list)
 
     for row in rows:
@@ -2753,6 +2992,10 @@ def _build_comment_tree(
                 or post_author_identity == viewer_identity
                 or can_moderate
             ),
+        )
+        serialized["can_moderate"] = viewer_role == "teacher" and not serialized["withheld"]
+        serialized["can_report"] = (
+            viewer_role != "assistant" and not serialized["is_mine"] and not serialized["withheld"]
         )
         by_parent[_safe_int(row.get("parent_comment_id"))].append(serialized)
 
@@ -2981,7 +3224,13 @@ def _serialize_post_summary(
         "edited_at": str(row.get("edited_at") or "") or None,
         "updated_at": str(row.get("updated_at") or ""),
         "content_revision": _safe_int(row.get("content_revision")) or 1,
-        "moderation_state": str(row.get("moderation_state") or MODERATION_STATE_NONE),
+        # "flagged" is a review-desk marker, invisible to authors and readers.
+        "moderation_state": (
+            MODERATION_STATE_PASSED
+            if str(row.get("moderation_state") or "") == mod_states.STATE_FLAGGED
+            else str(row.get("moderation_state") or MODERATION_STATE_NONE)
+        ),
+        "moderation_label": mod_states.STATE_LABELS.get(str(row.get("moderation_state") or ""), "") if is_author else "",
         "is_author": is_author,
     }
 
@@ -3058,19 +3307,37 @@ def _serialize_comment(
         post_display_mode=post_display_mode,
         is_comment=True,
     )
+    withheld = bool(row.get("_withheld"))
+    is_mine = bool(author_identity) and author_identity == viewer_identity
+    moderator = bool(row.get("_viewer_moderator"))
+    if withheld:
+        # A thread anchor only: no author, no content, no actions.
+        author = persona_service._persona(kind="withheld", display_name="", avatar_kind="anon")
+    state = str(row.get("moderation_state") or MODERATION_STATE_NONE)
+    shown_state = MODERATION_STATE_PASSED if state == mod_states.STATE_FLAGGED and not moderator else state
+    moderation = None
+    if (is_mine or moderator) and not withheld and shown_state not in {MODERATION_STATE_NONE, MODERATION_STATE_PASSED}:
+        moderation = {
+            "state": shown_state,
+            "label": mod_states.STATE_LABELS.get(shown_state, ""),
+            "reason_label": mod_states.reason_label(row.get("moderation_reason_code")),
+            "note": str(row.get("moderation_note") or ""),
+        }
     return {
         "id": int(row["id"]),
         "post_id": int(row["post_id"]),
         "parent_comment_id": _safe_int(row.get("parent_comment_id")),
         "author": author,
-        "is_mine": bool(author_identity) and author_identity == viewer_identity,
-        "content_md": str(row.get("content_md") or ""),
-        "custom_emojis": emojis if isinstance(emojis, list) else [],
-        "attachments": attachments if isinstance(attachments, list) else [],
-        "like_count": int(row.get("like_count") or 0),
-        "is_liked": bool(is_liked),
-        "created_at": str(row.get("created_at") or ""),
-        "updated_at": str(row.get("updated_at") or ""),
-        "can_delete": bool(can_delete),
-        "can_reply": True,
+        "is_mine": is_mine and not withheld,
+        "content_md": "" if withheld else str(row.get("content_md") or ""),
+        "custom_emojis": emojis if isinstance(emojis, list) and not withheld else [],
+        "attachments": attachments if isinstance(attachments, list) and not withheld else [],
+        "like_count": 0 if withheld else int(row.get("like_count") or 0),
+        "is_liked": bool(is_liked) and not withheld,
+        "created_at": "" if withheld else str(row.get("created_at") or ""),
+        "updated_at": "" if withheld else str(row.get("updated_at") or ""),
+        "can_delete": bool(can_delete) and not withheld,
+        "can_reply": not withheld,
+        "withheld": withheld,
+        "moderation": moderation,
     }

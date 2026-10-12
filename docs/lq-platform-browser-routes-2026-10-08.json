@@ -155,7 +155,7 @@
         "get_current_user"
       ],
       "source": "classroom_app/routers/blog.py",
-      "line": 133,
+      "line": 136,
       "provenance": "source-registry",
       "roles": [
         "student",
@@ -1302,6 +1302,27 @@
       ],
       "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
       "line": 192,
+      "provenance": "source-registry",
+      "roles": [
+        "superTeacher"
+      ],
+      "rolesStatus": "candidate-verify-server-authorization",
+      "scope": "page",
+      "status": "pending",
+      "parameters": [],
+      "execution": "synthetic-get"
+    },
+    {
+      "method": "GET",
+      "path": "/manage/system/blog-review",
+      "templates": [
+        "templates/manage/system/blog_review.html"
+      ],
+      "dependencies": [
+        "get_current_teacher"
+      ],
+      "source": "classroom_app/routers/blog_moderation.py",
+      "line": 147,
       "provenance": "source-registry",
       "roles": [
         "superTeacher"

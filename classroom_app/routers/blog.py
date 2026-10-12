@@ -12,7 +12,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_user
-from ..services.blog_effects_service import enqueue_blog_mention
+from ..services.blog_effects_service import enqueue_blog_mention, housekeeper_quota_exhausted
+from ..services.blog_ai_service import contains_blog_housekeeper_mention
+from ..services.blog_safety_service import BlogSafetyBlocked
+from ..services.rate_limit_service import RateLimitExceededError
 from ..services.blog_community_service import (
     create_report,
     list_following_posts,
@@ -134,6 +137,9 @@ async def blog_page(request: Request, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         user_info = _build_blog_user_info(conn, user)
         blog_sections = get_blog_sections(conn, user)
+        from ..services.blog_moderation_service import is_blog_moderator
+
+        can_review = is_blog_moderator(conn, user)
         conn.commit()
     return templates.TemplateResponse(
         request,
@@ -142,6 +148,7 @@ async def blog_page(request: Request, user: dict = Depends(get_current_user)):
             "request": request,
             "user_info": user_info,
             "blog_sections": blog_sections,
+            "can_review_blog": can_review,
         },
     )
 
@@ -361,13 +368,30 @@ async def api_create_post(
                 status=str(data.get("status") or POST_STATUS_PUBLISHED),
                 allow_anonymous_comments=bool(data.get("allow_anonymous_comments", True)),
             )
-            enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=int(result["id"]))
+            queued = enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=int(result["id"]))
+            hint = _housekeeper_hint(conn, user, queued, title + " " + content_md)
             conn.commit()
-            return {"status": "success", **result}
+            return {"status": "success", **result, **hint}
+        except BlogSafetyBlocked as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RateLimitExceededError as exc:
+            raise _rate_limited(exc) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+def _rate_limited(exc: RateLimitExceededError) -> HTTPException:
+    return HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": str(exc.retry_after_seconds)})
+
+
+def _housekeeper_hint(conn, user: dict, queued, text: str) -> dict:
+    """Plan §5.3: over the daily @管家 limit, only the caller is told (no public reply)."""
+    if queued is not None or not contains_blog_housekeeper_mention(text):
+        return {}
+    identity = f"{user.get('role')}:{user.get('id')}"
+    return {"housekeeper_limited": True} if housekeeper_quota_exhausted(conn, identity) else {}
 
 
 @router.put("/api/blog/posts/{post_id}", response_class=JSONResponse)
@@ -527,9 +551,14 @@ async def api_add_comment(
                 hot_notify_callback=notify_post_hot,
                 author_display_mode=str(data.get("author_display_mode") or "real_name"),
             )
-            enqueue_blog_mention(conn, user, trigger_type="comment", trigger_id=int(result["id"]))
+            queued = enqueue_blog_mention(conn, user, trigger_type="comment", trigger_id=int(result["id"]))
+            hint = _housekeeper_hint(conn, user, queued, str(data.get("content_md") or ""))
             conn.commit()
-            return {"status": "success", **result}
+            return {"status": "success", **result, **hint}
+        except BlogSafetyBlocked as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RateLimitExceededError as exc:
+            raise _rate_limited(exc) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:

@@ -11,6 +11,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 from PIL import Image
 
+from classroom_app.db import schema_scheduler
 from classroom_app.db.migrations import _ensure_organization_catalog_schema
 from classroom_app.db.schema_classroom_activity import ensure_classroom_activity_schema
 from classroom_app.db.schema_foundation import ensure_foundation_schema
@@ -48,21 +49,29 @@ class BlogP0Fixture(unittest.TestCase):
             "classroom_app.services.organization_scope_service.get_configured_db_engine",
             "classroom_app.services.blog_section_service.get_configured_db_engine",
             "classroom_app.services.blog_service.get_configured_db_engine",
+            "classroom_app.db.schema_scheduler.get_configured_db_engine",
         ):
             guard = patch(target, return_value="sqlite")
             guard.start()
             self.addCleanup(guard.stop)
+        # P3 queues reviews in scheduled_tasks; each in-memory DB needs the table.
+        guard = patch.object(schema_scheduler, "_SCHEMA_READY", False)
+        guard.start()
+        self.addCleanup(guard.stop)
         ensure_foundation_schema(self.conn)
         _ensure_organization_catalog_schema(self.conn)
         ensure_classroom_activity_schema(self.conn)
         ensure_offering_class_links_schema(self.conn, force=True)
         ensure_learning_blog_signature_schema(self.conn)
         blog_section_service.ensure_default_blog_sections(self.conn)
+        schema_scheduler.ensure_scheduler_schema(self.conn)
         for pk, name in ((7, "王老师"), (8, "李老师")):
             self.conn.execute(
                 "INSERT INTO teachers(id,name,email,hashed_password,is_active) VALUES(?,?,?,'x',1)",
                 (pk, name, f"t{pk}@example.test"),
             )
+        # Teacher 7 is a blog moderator (P3, plan D7); teacher 8 is an ordinary teacher.
+        self.conn.execute("INSERT INTO blog_moderators(teacher_id, granted_by, created_at) VALUES(7, 'test', '2026')")
         self.conn.execute("INSERT INTO classes(id,name,created_by_teacher_id) VALUES(30,'软件一班',7)")
         self.conn.execute("INSERT INTO classes(id,name,created_by_teacher_id) VALUES(31,'软件二班',8)")
         self.conn.execute("INSERT INTO courses(id,name,created_by_teacher_id) VALUES(20,'程序设计',7)")
@@ -78,10 +87,16 @@ class BlogP0Fixture(unittest.TestCase):
             )
         self.conn.commit()
 
-    def post(self, user=AUTHOR, *, title="标题", content="正文", mode="real_name", status="published"):
+    def post(self, user=AUTHOR, *, title="标题", content="正文", mode="real_name", status="published", reviewed=True):
         result = blog_service.create_post(
             self.conn, user, title=title, content_md=content, author_display_mode=mode, status=status,
         )
+        if reviewed:
+            # Stand-in for a passed AI review (P3): student posts start pending.
+            self.conn.execute(
+                "UPDATE blog_posts SET moderation_state='passed' WHERE id=? AND moderation_state='pending'",
+                (int(result["id"]),),
+            )
         self.conn.commit()
         return int(result["id"])
 
@@ -90,13 +105,14 @@ class BlogP0Fixture(unittest.TestCase):
 
 
 class ModerationAndVisibilityTests(BlogP0Fixture):
-    def test_author_cannot_republish_a_hidden_post(self):
+    def test_author_cannot_withdraw_or_republish_a_hidden_post(self):
         post_id = self.post()
         blog_service.hide_post(self.conn, TEACHER, post_id)
         version = self.row(post_id)["updated_at"]
+        # P3: the sanction lives in moderation_state; status changes stay locked.
         with self.assertRaises(blog_service.BlogModerationLocked):
-            blog_service.update_post(self.conn, AUTHOR, post_id, status="published", expected_updated_at=version)
-        self.assertEqual("moderated", self.row(post_id)["status"])
+            blog_service.update_post(self.conn, AUTHOR, post_id, status="draft", expected_updated_at=version)
+        self.assertEqual(("published", "limited"), (self.row(post_id)["status"], self.row(post_id)["moderation_state"]))
 
     def test_author_may_still_edit_text_of_a_hidden_post(self):
         post_id = self.post()
@@ -105,7 +121,8 @@ class ModerationAndVisibilityTests(BlogP0Fixture):
         blog_service.update_post(self.conn, AUTHOR, post_id, content_md="改正后的正文", expected_updated_at=version)
         row = self.row(post_id)
         self.assertEqual("改正后的正文", row["content_md"])
-        self.assertEqual("moderated", row["status"])
+        # The corrected text goes back to review instead of staying hidden.
+        self.assertEqual(("published", "pending"), (row["status"], row["moderation_state"]))
 
     def test_resending_the_current_status_is_not_a_status_change(self):
         post_id = self.post()
@@ -122,10 +139,11 @@ class ModerationAndVisibilityTests(BlogP0Fixture):
         self.assertFalse(blog_service._can_view_post(self.conn, TEACHER, self.row(draft_id)))
         self.assertTrue(blog_service._can_view_post(self.conn, AUTHOR, self.row(draft_id)))
 
-    def test_moderator_still_sees_hidden_posts(self):
+    def test_only_blog_moderators_see_hidden_posts(self):
         post_id = self.post()
         blog_service.hide_post(self.conn, TEACHER, post_id)
-        self.assertTrue(blog_service._can_view_post(self.conn, OTHER_TEACHER, self.row(post_id)))
+        self.assertTrue(blog_service._can_view_post(self.conn, TEACHER, self.row(post_id)))
+        self.assertFalse(blog_service._can_view_post(self.conn, OTHER_TEACHER, self.row(post_id)))
         self.assertFalse(blog_service._can_view_post(self.conn, CLASSMATE, self.row(post_id)))
 
     def test_editorial_actions_refuse_drafts(self):
@@ -137,8 +155,9 @@ class ModerationAndVisibilityTests(BlogP0Fixture):
 
     def test_hide_then_restore_round_trips_a_published_post(self):
         post_id = self.post()
-        self.assertEqual("moderated", blog_service.hide_post(self.conn, TEACHER, post_id)["status"])
-        self.assertEqual("published", blog_service.hide_post(self.conn, TEACHER, post_id)["status"])
+        self.assertEqual("limited", blog_service.hide_post(self.conn, TEACHER, post_id)["moderation_state"])
+        self.assertEqual("passed", blog_service.hide_post(self.conn, TEACHER, post_id)["moderation_state"])
+        self.assertEqual("published", self.row(post_id)["status"])
 
     def test_feature_notifies_once_and_never_the_featuring_teacher(self):
         calls = []
@@ -174,7 +193,7 @@ class UpdateRouteStatusCodeTests(BlogP0Fixture):
         post_id = self.post()
         blog_service.hide_post(self.conn, TEACHER, post_id)
         version = self.row(post_id)["updated_at"]
-        self.assertEqual(403, self.put(post_id, {"status": "published", "expected_updated_at": version}))
+        self.assertEqual(403, self.put(post_id, {"status": "draft", "expected_updated_at": version}))
 
     def test_stale_version_is_conflict(self):
         post_id = self.post()

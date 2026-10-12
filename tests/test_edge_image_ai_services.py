@@ -207,9 +207,9 @@ class BlogImageReplyTests(unittest.TestCase):
           CREATE TABLE blog_ai_reply_jobs(id INTEGER PRIMARY KEY,trigger_type TEXT,trigger_id INTEGER,
             post_id INTEGER,trigger_author_identity TEXT,status TEXT,assistant_comment_id INTEGER,
             error_message TEXT,created_at TEXT,updated_at TEXT,UNIQUE(trigger_type,trigger_id));
-          CREATE TABLE blog_posts(id INTEGER PRIMARY KEY,title TEXT,content_md TEXT,status TEXT);
+          CREATE TABLE blog_posts(id INTEGER PRIMARY KEY,title TEXT,content_md TEXT,status TEXT,allow_comments INTEGER DEFAULT 1);
           CREATE TABLE blog_comments(id INTEGER PRIMARY KEY,post_id INTEGER,content_md TEXT,status TEXT);
-          INSERT INTO blog_posts VALUES(10,'帖子','@管家 题目','published');
+          INSERT INTO blog_posts VALUES(10,'帖子','@管家 题目','published',1);
           INSERT INTO blog_comments VALUES(20,10,'@管家 本图','active');
         """)
         for pk, value, identity in ((1, "a", "student:1"), (2, "b", "student:2"), (3, "c", "student:1")):
@@ -271,13 +271,15 @@ class BlogImageReplyTests(unittest.TestCase):
         response = Mock()
         response.json.return_value = {"status": "success", "response_text": "回答"}
         for visual in (True, False):
+            # Plan §5.3: the housekeeper goes through the AI gateway (P2, usage accounted).
             with patch.object(blog, "prepare_edge_image_inputs", AsyncMock(return_value=[{"url": "data:image/jpeg;base64,YQ=="}] if visual else [])), patch.object(
-                blog.ai_client, "post", AsyncMock(return_value=response)
+                blog, "ai_gateway_post", AsyncMock(return_value=response)
             ) as client:
                 asyncio.run(blog._generate_housekeeper_reply(caller_display_name="同学", caller_profile_prompt="",
                     semester_context="", post_context="", recent_comments_context="", blog_overview_context="",
                     request_text="题目", trigger_label="评论", trigger_type="comment", trigger_id=20, current_assets=[]))
-            payload = client.call_args.kwargs["json"]
+            payload = client.call_args.kwargs["json_payload"]
+            self.assertEqual("P2", client.call_args.kwargs["priority"])
             self.assertEqual(payload["model_capability"], "vision" if visual else "standard")
             self.assertEqual(payload["business_context"], {"operation": "chat", "source_feature": "blog", "logical_call_id": "blog:comment:20"})
 

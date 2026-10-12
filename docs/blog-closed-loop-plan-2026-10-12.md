@@ -1,6 +1,6 @@
 # 博客中心闭环改进计划（2026-10-12）
 
-> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0、P1 已发布**（P0 `c113b74b`，P1 `cadcd263`）；**P2 已实现并在隔离环境验收，未提交、未发布**（见 §3 实施记录）；P3–P7 未动工。
+> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0、P1、P2 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，release `20261012-174254-47e518103636`）；**P3 已实现并在隔离环境验收，未提交、未发布**（见 §5 实施记录）；P4–P7 未动工。
 > 范围：博客中心（`/blog`）全部前后端，以及它与消息中心、个人中心、头像服务、AI 网关、调度器、作品集、Agent 平台的接口。
 > 前置阅读：[液态玻璃组件开发合同](lq-component-contract-2026-09-27.md)、[组件 API](lq-components.md)、[场景前景色契约](lq-scene-ink-2026-09-26.md)、[AI 与 Agent 工程规范](ai-and-agent-engineering-standard.md)、[通知邮件降噪](notification-email-policy-2026-09-18.md)、[博客重设计（2026-08）](blog-redesign-2026-08.md)。
 > 证据来源：2026-10-12 的两路代码审查（后端、前端）、三路专题调查（身份/头像、审核/通知、创作中心/回复），以及隔离 P03 运行环境中以学生和教师身份的实测。文中 `file:line` 均指当日 `dev`（`dbbf1e57`）。
@@ -166,7 +166,7 @@
 
 本节是改进项 1、2、6 的共同地基。
 
-> **P2 实施记录（2026-10-12，未部署）**。真源 `classroom_app/services/blog_persona_service.py`，所有序列化（卡片、详情、评论、活跃作者、作者筛选、通知回调）只问它。与下文原方案的差异（均为有意调整）：
+> **P2 实施记录（2026-10-12，已发布 `8f083307`）**。真源 `classroom_app/services/blog_persona_service.py`，所有序列化（卡片、详情、评论、活跃作者、作者筛选、通知回调）只问它。与下文原方案的差异（均为有意调整）：
 > - **匿名代号不用 HMAC 密钥**：改为随机抽词并落表 `blog_anonymous_codes`（`UNIQUE(post_id, author_identity)` + `UNIQUE(post_id, code)`，SAVEPOINT 内抢占、冲突重试）。效果同 R-P2（同帖同人恒定、跨帖不可关联、同帖不重复），且无需管理与轮换 `BLOG_PERSONA_SECRET`；删除评论不释放代号。评论行同时存 `author_display_snapshot=代号`、`author_display_name=匿名同学·代号`，任何旧读取路径拿到的都是公开面孔。
 > - **笔名存储值仍为 `nickname`**（不改名为 `pen`，免迁移、免 Agent/API 兼容层）；对外 `kind="pen"`。
 > - **笔名 v1 收紧**：只显示笔名与首字头像（不显示上传照片，否则同一照片会把笔名与真人连起来）；不可点开、不可关注、不可私信。笔名主页与“关注笔名”（`blog_follows.target_mode`）推迟到 P6。
@@ -364,6 +364,22 @@ persona = {
 ---
 
 ## 5. 内容安全闭环（改进项 3）
+
+> **P3 实施记录（2026-10-12，未部署）**。代码：`blog_moderation_states.py`（状态与公开 SQL 片段，所有跨用户读取都用它）、`blog_safety_service.py`（L1、限流、初始状态、入队）、`blog_safety_review.py`（L2 调度任务与超时兜底）、`blog_moderation_service.py`（处置、举报、申诉、揭示、审计）、`blog_review_queue_service.py`（审核台）、`routers/blog_moderation.py`；前端 `blog_moderation_ui.js`（LQ 表单弹层、横幅、隐私预检）、`manage_blog_review.js` + `templates/manage/system/blog_review.html`（管理中心“平台管理 → 博客审核”）。与下文原方案的差异（均为有意调整）：
+> - **`status` 已收敛**：读取全部改用 `moderation_state`；启动回填把旧 `moderated/hidden` 帖子改为 `published` + 原审核态，旧 `hidden` 评论改为 `active` + `limited`。`deleted` 只用于软删（见下）。
+> - **L2 路由**：复用现有 `fast_text_response` / `vision_interactive`（`source_feature=blog` 自动走边缘视觉档），经 `ai_gateway_post` 计量，用量标签 `blog_content_safety`，未新增 `TASK_POLICIES` 条目。回执表 `blog_content_reviews` 按修订号绑定；迟到/旧修订结果丢弃；3 次失败或 10 分钟超时 → `flagged` 可见并进审核台；日额度 `BLOG_SAFETY_DAILY_LIMIT`（默认 2000）用尽 → 待审帖直接 `flagged`；`BLOG_SAFETY_AI_ENABLED=false` 时只按 L1 决定。
+> - **已公开帖子的修改**不再隐藏：状态回到 `none` 可见并重新检查；首次发布才先审后发（D1）。
+> - **被处置帖子的修改**（评审 H2）：进入 `pending` + `system:resubmit`，AI 结论只作参考，超时/额度/失败兜底都不会放行，只能由博客管理员在审核台“修改待复核”中恢复或再处置；作者横幅显示“修改已提交，等待博客管理员复核”。
+> - **博客管理员** = 超管 + `blog_moderators` 授权教师（撤销保留行 `revoked_at/revoked_by` 作记录）；普通教师只有“紧急限制”，且只能作用于公开内容（评审 H1）。管理中心导航项仅超管可见，被授权教师从博客页“审核台”入口进入。
+> - **“确认”** 只用于已定论的 `flagged/limited/removed`，`pending/appeal_pending` 必须明确恢复或处置（评审 M1）。超时/额度放行的 `flagged` 仍可被迟到的 AI 结论处理（评审 M2）。
+> - **软删**（评审 H3）：有处置记录的帖子删除时改为 `status='deleted'`，审计日志（含身份揭示）不随帖子级联删除；无处置记录的帖子仍物理删除。30 天物理清理留待 P4/P7。
+> - **评论**：L1 flag 的评论先隐藏（作者可见“审核中”），通过后补发原本跳过的新评论通知；被处置但下有可见回复的评论显示为无作者、无内容的占位；其图片不再对他人开放（评审 M3）。评论不支持申诉（D6）。
+> - **举报**：新增“暴露了我的身份或个人信息”（审核台置顶）；≥3 个不同举报人自动暂限（`BLOG_REPORT_AUTO_LIMIT`）；处理即处置并通知每位举报人；同一举报人再次举报不再撞唯一约束。
+> - **管家**：经网关 P2；每人每日 @管家 上限 `BLOG_HOUSEKEEPER_DAILY_LIMIT`（默认 20，超限只回给本人提示）；关闭评论的帖子不再回复；输出过 L1，命中即丢弃并私信说明；触发帖仍在审核时等待（调度重试），被处置则放弃。
+> - **通知**：新增消息类别 `blog_moderation`（博客审核）；发起人一律显示“博客中心”，举报人不会得知处理人。
+> - **身份揭示**仅限已发布内容，写 `identity_reveal` 日志；审计页（超管）把学生执行人显示为“作者”，避免绕过揭示审计。
+> - **未在 P3 做**：评论编辑/软删（P4）、通知聚合与偏好（P5）、审核台的词表管理界面（目前直接维护 `blog_safety_terms` 表）、外链图片“点击加载”（P7）、资讯采集帖图片 L2（采集帖只过 L1）。
+> - 测试：`tests/test_blog_p3_moderation.py`（43 项，含安全评审 10 项回归）；P0–P2 测试按新语义更新（学生帖先审、`status` 收敛、教师 7 为博客管理员）。
 
 ### 5.1 流水线
 
