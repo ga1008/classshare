@@ -16,6 +16,8 @@ from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_P
 from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
+from .schema_classroom_activity import MESSAGE_CENTER_NOTIFICATION_LOOP_COLUMNS
+from .schema_learning_blog import BLOG_CLOSED_LOOP_COLUMNS
 
 
 POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -382,7 +384,12 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "blog_posts": {
         "visible_class_offering_id": "INTEGER",
         "section_key": "TEXT NOT NULL DEFAULT 'general'",
+        **BLOG_CLOSED_LOOP_COLUMNS["blog_posts"],
     },
+    "blog_comments": dict(BLOG_CLOSED_LOOP_COLUMNS["blog_comments"]),
+    "blog_follows": dict(BLOG_CLOSED_LOOP_COLUMNS["blog_follows"]),
+    "blog_moderation_logs": dict(BLOG_CLOSED_LOOP_COLUMNS["blog_moderation_logs"]),
+    "message_center_notifications": dict(MESSAGE_CENTER_NOTIFICATION_LOOP_COLUMNS),
     "blog_news_crawler_items": {
         "section_key": "TEXT NOT NULL DEFAULT 'general'",
     },

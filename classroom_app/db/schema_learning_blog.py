@@ -3,6 +3,47 @@ import sqlite3
 from .migrations import _ensure_resource_scope_schema, _sync_organization_catalog_from_existing
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
 
+# Columns added to existing blog tables by the closed-loop data model.
+# Lifecycle `status` stays separate from `moderation_state` (plan §4); legacy
+# status values are only rewritten once every read path uses the new state.
+BLOG_CLOSED_LOOP_COLUMNS: dict[str, dict[str, str]] = {
+    "blog_posts": {
+        "moderation_state": "TEXT NOT NULL DEFAULT 'none'",
+        "moderation_reason_code": "TEXT NOT NULL DEFAULT ''",
+        "moderation_note": "TEXT NOT NULL DEFAULT ''",
+        "moderated_by": "TEXT NOT NULL DEFAULT ''",
+        "moderated_at": "TEXT",
+        # Optimistic-lock token: only content edits advance it, never comments
+        # or editorial actions (which still touch updated_at).
+        "content_revision": "INTEGER NOT NULL DEFAULT 1",
+        "published_at": "TEXT",
+        "deleted_at": "TEXT",
+        "allow_anonymous_comments": "INTEGER NOT NULL DEFAULT 1",
+    },
+    "blog_comments": {
+        "moderation_state": "TEXT NOT NULL DEFAULT 'none'",
+        "author_display_mode": "TEXT NOT NULL DEFAULT 'real_name'",
+        "author_display_snapshot": "TEXT NOT NULL DEFAULT ''",
+        "root_comment_id": "INTEGER",
+        "reply_to_comment_id": "INTEGER",
+        "content_revision": "INTEGER NOT NULL DEFAULT 1",
+        "edited_at": "TEXT",
+        "deleted_at": "TEXT",
+        "deleted_by_role": "TEXT NOT NULL DEFAULT ''",
+    },
+    "blog_follows": {
+        "target_mode": "TEXT NOT NULL DEFAULT 'real_name'",
+    },
+    "blog_moderation_logs": {
+        "target_type": "TEXT NOT NULL DEFAULT 'post'",
+        "target_id": "INTEGER",
+        "reason_code": "TEXT NOT NULL DEFAULT ''",
+        "note": "TEXT NOT NULL DEFAULT ''",
+        "target_persona_kind": "TEXT NOT NULL DEFAULT ''",
+        "extra_json": "TEXT NOT NULL DEFAULT '{}'",
+    },
+}
+
 
 def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
     ensure_cultivation_progress_schema(conn, engine="sqlite")
@@ -574,6 +615,30 @@ def ensure_learning_blog_signature_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (assistant_comment_id) REFERENCES blog_comments (id) ON DELETE SET NULL
         )
     ''')
+
+    # Blog closed loop (docs/blog-closed-loop-plan-2026-10-12.md §8). Runs after
+    # every blog table exists so a fresh database gets all columns on first
+    # boot; the same map drives POSTGRES_RUNTIME_COLUMN_DEFINITIONS.
+    for table, columns in BLOG_CLOSED_LOOP_COLUMNS.items():
+        for column_name, column_def in columns.items():
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_def}")
+            except sqlite3.OperationalError:
+                pass
+    # Blog writes depend on these tables (e.g. comment media), so any SQLite
+    # blog schema — including the in-memory copy the PostgreSQL index
+    # harvester builds — must have them. Explicitly SQLite DDL.
+    from .schema_blog_closed_loop import ensure_blog_closed_loop_schema
+
+    ensure_blog_closed_loop_schema(conn, engine="sqlite")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_posts_moderation_published "
+        "ON blog_posts (status, moderation_state, published_at DESC, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_blog_comments_root "
+        "ON blog_comments (post_id, root_comment_id, created_at ASC, id ASC)"
+    )
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_blog_posts_author "

@@ -1,5 +1,15 @@
 import sqlite3
 
+# Notification columns for aggregation ("N 人赞了你"), read-by-content and
+# stale-target marking (docs/blog-closed-loop-plan-2026-10-12.md §6). Shared
+# with POSTGRES_RUNTIME_COLUMN_DEFINITIONS so both engines agree.
+MESSAGE_CENTER_NOTIFICATION_LOOP_COLUMNS: dict[str, str] = {
+    "aggregate_key": "TEXT NOT NULL DEFAULT ''",
+    "aggregate_count": "INTEGER NOT NULL DEFAULT 1",
+    "ref_post_id": "INTEGER",
+    "target_state": "TEXT NOT NULL DEFAULT ''",
+}
+
 
 def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
     conn.execute('''
@@ -1257,11 +1267,20 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
         "email_job_id": "INTEGER",
         "email_queued_at": "TEXT",
         "email_sent_at": "TEXT",
+        **MESSAGE_CENTER_NOTIFICATION_LOOP_COLUMNS,
     }.items():
         try:
             conn.execute(f"ALTER TABLE message_center_notifications ADD COLUMN {column_name} {column_def}")
         except sqlite3.OperationalError:
             pass
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mc_notifications_ref_post "
+        "ON message_center_notifications (recipient_identity, ref_post_id, read_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mc_notifications_aggregate "
+        "ON message_center_notifications (recipient_identity, aggregate_key, read_at)"
+    )
     conn.execute(
         """
         UPDATE message_center_notifications

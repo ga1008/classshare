@@ -8,6 +8,7 @@ from typing import Any, Optional
 from urllib.parse import quote
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.schema_blog_closed_loop import comment_media_rows, insert_comment_media
 from .academic_service import china_today
 from .blog_image_policy import is_suitable_news_cover_dimensions
 from .blog_section_service import (
@@ -75,8 +76,20 @@ class BlogModerationLocked(PermissionError):
 
 MODERATED_POST_STATUSES = frozenset({POST_STATUS_HIDDEN, POST_STATUS_MODERATED})
 
+# moderation_state (plan §4). P1 only mirrors the legacy hide toggle into it;
+# reads switch to it in P3.
+MODERATION_STATE_NONE = "none"
+MODERATION_STATE_PASSED = "passed"
+MODERATION_STATE_LIMITED = "limited"
 
-def _post_for_mutation(conn, user: dict, post_id: int, expected_updated_at: Optional[str]) -> dict:
+
+def _post_for_mutation(
+    conn,
+    user: dict,
+    post_id: int,
+    expected_updated_at: Optional[str],
+    expected_revision: Optional[int] = None,
+) -> dict:
     # All editing routes share this lock, including old Web callers without a
     # revision. It also orders attachment metadata and post deletion on Pg.
     suffix = " FOR UPDATE" if get_configured_db_engine() == "postgres" else ""
@@ -86,8 +99,14 @@ def _post_for_mutation(conn, user: dict, post_id: int, expected_updated_at: Opti
     post = dict(row)
     if post["author_identity"] != _ensure_identity(user)[2]:
         raise PermissionError("没有权限修改此帖子")
-    if expected_updated_at is not None and (not isinstance(expected_updated_at, str) or expected_updated_at != str(post.get("updated_at") or "")):
-        raise BlogRevisionConflict("帖子已被更新，请重新读取并核对后再操作；当前输入不会覆盖新内容。")
+    conflict = BlogRevisionConflict("帖子已被更新，请重新读取并核对后再操作；当前输入不会覆盖新内容。")
+    if expected_revision is not None:
+        # The content revision only moves on content edits, so a comment or a
+        # pin while the author is editing no longer turns into a conflict.
+        if _safe_int(expected_revision) != _safe_int(post.get("content_revision") or 1):
+            raise conflict
+    elif expected_updated_at is not None and (not isinstance(expected_updated_at, str) or expected_updated_at != str(post.get("updated_at") or "")):
+        raise conflict
     return post
 
 
@@ -936,6 +955,7 @@ def create_post(
         }
 
     now = _now_iso()
+    is_published = normalized_status == POST_STATUS_PUBLISHED
     post_id = execute_insert_returning_id(
         conn,
         """
@@ -944,8 +964,9 @@ def create_post(
             author_avatar_hash, author_avatar_mime,
             section_key, title, content_md, summary, cover_image_hash,
             status, visibility, visible_class_id, visible_class_offering_id, visible_user_identities_json,
-            allow_comments, system_tags_json, tags_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            allow_comments, system_tags_json, tags_json, created_at, updated_at,
+            moderation_state, published_at, content_revision
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         """,
         (
             author_snapshot["identity"],
@@ -970,10 +991,13 @@ def create_post(
             json.dumps(normalized_tags, ensure_ascii=False),
             now,
             now,
+            # No automated review yet (P3): a published post is passed as-is.
+            MODERATION_STATE_PASSED if is_published else MODERATION_STATE_NONE,
+            now if is_published else None,
         ),
     )
     _sync_post_attachments(conn, post_id, media_assets)
-    return {"id": post_id, "status": normalized_status, "created_at": now}
+    return {"id": post_id, "status": normalized_status, "created_at": now, "content_revision": 1}
 
 
 def update_post(
@@ -992,9 +1016,10 @@ def update_post(
     tags: Optional[list[str]] = None,
     status: Optional[str] = None,
     expected_updated_at: Optional[str] = None,
+    expected_revision: Optional[int] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
-    post = _post_for_mutation(conn, user, post_id, expected_updated_at)
+    post = _post_for_mutation(conn, user, post_id, expected_updated_at, expected_revision)
 
     updates: list[str] = []
     params: list[Any] = []
@@ -1095,12 +1120,20 @@ def update_post(
             raise BlogModerationLocked("该帖子已被管理员隐藏，暂不能自行发布或撤回")
         updates.append("status = ?")
         params.append(status)
+        if status == POST_STATUS_PUBLISHED:
+            # First publication stamps the feed time; republishing keeps it.
+            updates.append("published_at = COALESCE(published_at, ?)")
+            params.append(now)
+            if str(post.get("moderation_state") or MODERATION_STATE_NONE) == MODERATION_STATE_NONE:
+                updates.append("moderation_state = ?")
+                params.append(MODERATION_STATE_PASSED)
 
     if not updates:
         return {"id": post_id, "updated": False}
 
-    updates.extend(["edited_at = ?", "updated_at = ?"])
-    params.extend([now, now, post_id])
+    next_revision = (_safe_int(post.get("content_revision")) or 1) + 1
+    updates.extend(["edited_at = ?", "updated_at = ?", "content_revision = ?"])
+    params.extend([now, now, next_revision, post_id])
     conn.execute(f"UPDATE blog_posts SET {', '.join(updates)} WHERE id = ?", params)
 
     if attachments_need_sync and media_assets is not None:
@@ -1117,7 +1150,7 @@ def update_post(
             ),
         )
 
-    return {"id": post_id, "updated": True, "edited_at": now, "updated_at": now}
+    return {"id": post_id, "updated": True, "edited_at": now, "updated_at": now, "content_revision": next_revision}
 
 
 def delete_post(conn, user: dict, post_id: int, *, expected_updated_at: Optional[str] = None) -> dict:
@@ -1206,7 +1239,9 @@ def list_posts(
     elif sort == "featured":
         order_clause = "is_featured DESC, featured_at DESC, created_at DESC, id DESC"
     else:
-        order_clause = "is_pinned DESC, is_featured DESC, created_at DESC, id DESC"
+        # A draft published later is "new" when it is published, not when it
+        # was first saved; legacy rows were backfilled with published_at = created_at.
+        order_clause = "is_pinned DESC, is_featured DESC, COALESCE(published_at, created_at) DESC, id DESC"
 
     total = int(
         conn.execute(f"SELECT COUNT(*) AS total FROM blog_posts WHERE {where_clause}", params).fetchone()["total"]
@@ -1782,10 +1817,11 @@ def add_comment(
     if not normalized_content and not normalized_emojis and not normalized_attachments:
         raise ValueError("评论内容不能为空")
 
+    root_comment_id: Optional[int] = None
     if parent_comment_id is not None:
         parent = conn.execute(
             """
-            SELECT id, post_id, author_identity
+            SELECT id, post_id, author_identity, root_comment_id
             FROM blog_comments
             WHERE id = ? AND post_id = ? AND status = 'active'
             LIMIT 1
@@ -1794,6 +1830,8 @@ def add_comment(
         ).fetchone()
         if parent is None:
             raise ValueError("回复的评论不存在")
+        # Every reply belongs to the floor (top-level comment) of its parent.
+        root_comment_id = _safe_int(parent["root_comment_id"]) or int(parent["id"])
 
     serialized_emojis = json.dumps(normalized_emojis, ensure_ascii=False) if normalized_emojis else ""
     serialized_attachments = json.dumps(normalized_attachments, ensure_ascii=False) if normalized_attachments else "[]"
@@ -1836,8 +1874,9 @@ def add_comment(
             post_id, parent_comment_id,
             author_identity, author_role, author_user_pk, author_display_name,
             content_md, emoji_payload_json, attachments_json,
-            status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            status, created_at, updated_at,
+            root_comment_id, reply_to_comment_id, author_display_mode, author_display_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
         """,
         (
             post_id,
@@ -1851,8 +1890,21 @@ def add_comment(
             serialized_attachments,
             now,
             now,
+            root_comment_id,
+            parent_comment_id,
+            AUTHOR_DISPLAY_REAL,
+            display_name,
         ),
     )
+    if root_comment_id is None:
+        # A top-level comment is its own floor.
+        conn.execute("UPDATE blog_comments SET root_comment_id = id WHERE id = ?", (comment_id,))
+    for file_hash, media_kind in sorted(
+        comment_media_rows(
+            {"content_md": normalized_content, "attachments_json": serialized_attachments, "emoji_payload_json": serialized_emojis}
+        )
+    ):
+        insert_comment_media(conn, comment_id, post_id, file_hash, media_kind, now)
     conn.execute(
         "UPDATE blog_posts SET comment_count = comment_count + 1, updated_at = ? WHERE id = ?",
         (now, post_id),
@@ -1907,6 +1959,8 @@ def delete_comment(conn, user: dict, comment_id: int) -> dict:
         f"DELETE FROM blog_likes WHERE target_type = ? AND target_id IN ({placeholders})",
         [TARGET_TYPE_COMMENT, *subtree_ids],
     )
+    # No FK cascade on SQLite without PRAGMA foreign_keys: drop media refs explicitly.
+    conn.execute(f"DELETE FROM blog_comment_media WHERE comment_id IN ({placeholders})", subtree_ids)
     conn.execute(f"DELETE FROM blog_comments WHERE id IN ({placeholders})", subtree_ids)
     conn.execute(
         """
@@ -2131,9 +2185,28 @@ def hide_post(conn, user: dict, post_id: int, reason: str = "") -> dict:
         else POST_STATUS_MODERATED
     )
     now = _now_iso()
+    hiding = next_status == POST_STATUS_MODERATED
+    note = str(reason or "").strip()[:500]
+    # Dual-write: the legacy status still drives visibility until P3 switches
+    # reads to moderation_state; both must always agree.
     conn.execute(
-        "UPDATE blog_posts SET status = ?, updated_at = ? WHERE id = ?",
-        (next_status, now, post_id),
+        """
+        UPDATE blog_posts
+        SET status = ?, updated_at = ?,
+            moderation_state = ?, moderation_reason_code = ?, moderation_note = ?,
+            moderated_by = ?, moderated_at = ?
+        WHERE id = ?
+        """,
+        (
+            next_status,
+            now,
+            MODERATION_STATE_LIMITED if hiding else MODERATION_STATE_PASSED,
+            "other" if hiding else "",
+            note if hiding else "",
+            identity,
+            now,
+            post_id,
+        ),
     )
     _log_moderation(
         conn,
@@ -2141,10 +2214,11 @@ def hide_post(conn, user: dict, post_id: int, reason: str = "") -> dict:
         identity,
         role,
         user_pk,
-        "restore" if next_status == POST_STATUS_PUBLISHED else "hide",
-        str(reason or ""),
+        "hide" if hiding else "restore",
+        note,
+        reason_code="other" if hiding else "",
     )
-    return {"id": post_id, "status": next_status, "is_private": next_status == POST_STATUS_MODERATED}
+    return {"id": post_id, "status": next_status, "is_private": hiding}
 
 
 def toggle_comments(conn, user: dict, post_id: int) -> dict:
@@ -2753,13 +2827,39 @@ def _sync_post_attachments(conn, post_id: int, assets: list[dict]) -> None:
         )
 
 
-def _log_moderation(conn, post_id: int, moderator_identity: str, moderator_role: str, moderator_pk: int, action: str, reason: str = ""):
+def _log_moderation(
+    conn,
+    post_id: int,
+    moderator_identity: str,
+    moderator_role: str,
+    moderator_pk: int,
+    action: str,
+    reason: str = "",
+    *,
+    target_type: str = TARGET_TYPE_POST,
+    target_id: Optional[int] = None,
+    reason_code: str = "",
+):
     conn.execute(
         """
-        INSERT INTO blog_moderation_logs (post_id, moderator_identity, moderator_role, moderator_user_pk, action, reason)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO blog_moderation_logs (
+            post_id, moderator_identity, moderator_role, moderator_user_pk, action, reason,
+            target_type, target_id, reason_code, note
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (post_id, moderator_identity, moderator_role, moderator_pk, action, str(reason or "")),
+        (
+            post_id,
+            moderator_identity,
+            moderator_role,
+            moderator_pk,
+            action,
+            str(reason or ""),
+            target_type,
+            target_id if target_id is not None else post_id,
+            str(reason_code or ""),
+            str(reason or ""),
+        ),
     )
 
 
@@ -2827,8 +2927,11 @@ def _serialize_post_summary(
         "custom_tags": _normalize_tags(custom_tags),
         "tags": tags,
         "created_at": str(row.get("created_at") or ""),
+        "published_at": str(row.get("published_at") or "") or None,
         "edited_at": str(row.get("edited_at") or "") or None,
         "updated_at": str(row.get("updated_at") or ""),
+        "content_revision": _safe_int(row.get("content_revision")) or 1,
+        "moderation_state": str(row.get("moderation_state") or MODERATION_STATE_NONE),
         "is_author": is_author,
     }
 

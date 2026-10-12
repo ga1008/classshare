@@ -76,6 +76,21 @@ def _escape_like(value: str) -> str:
     return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _optional_revision(value) -> Optional[int]:
+    # Absent means "no content-revision lock" (Agents still send expected_updated_at).
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise HTTPException(status_code=400, detail="expected_revision 必须是整数")
+    try:
+        revision = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="expected_revision 必须是整数") from exc
+    if revision < 1:
+        raise HTTPException(status_code=400, detail="expected_revision 必须是正整数")
+    return revision
+
+
 def _value_error_to_http(exc: ValueError) -> HTTPException:
     # "不存在" is a missing resource; every other ValueError is bad input.
     message = str(exc)
@@ -378,6 +393,7 @@ async def api_update_post(
                 tags=data.get("tags"),
                 status=data.get("status"),
                 expected_updated_at=data.get("expected_updated_at"),
+                expected_revision=_optional_revision(data.get("expected_revision")),
             )
             enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=post_id)
             conn.commit()

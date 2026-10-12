@@ -232,6 +232,7 @@ class BlogCenter {
             editingPostId: null,
             editingStatus: null,
             editingBase: null,
+            editingRevision: null,
             uploadedImages: [],
             selectedUsers: [],
             myPostsFilter: null,
@@ -1938,6 +1939,11 @@ class BlogCenter {
         const recovered = this.loadComposerRecovery(this.state.editingPostId);
         const source = recovered ? { ...(post || {}), ...recovered } : (post || {});
         this.state.editingUpdatedAt = recovered?.expected_updated_at || post?.updated_at || null;
+        // Lock on the content revision: comments and pins no longer move it.
+        // A local draft saved before revisions existed falls back to updated_at.
+        this.state.editingRevision = recovered
+            ? (recovered.expected_revision ?? null)
+            : (post?.content_revision ?? null);
         // The server content this edit started from; a 409 caused only by
         // comments/pins (content unchanged) can then be retried silently.
         this.state.editingBase = recovered?.base || (post ? { title: post.title || '', content_md: post.content_md || '' } : null);
@@ -1997,6 +2003,7 @@ class BlogCenter {
             this.composerReturnFocus = null;
             this.state.editingStatus = null;
             this.state.editingBase = null;
+            this.state.editingRevision = null;
         };
         this.composerLayer = getLayerSystem(document).open(modal, {
             type: 'modal', surface: $('.blog-modal', modal), trigger: this.composerReturnFocus,
@@ -2029,6 +2036,7 @@ class BlogCenter {
     composerSnapshot() {
         return {
             expected_updated_at: this.state.editingUpdatedAt || null,
+            expected_revision: this.state.editingRevision ?? null,
             base: this.state.editingBase || null,
             title: $('[data-blog-compose-title]', this.shell)?.value || '',
             content_md: $('[data-blog-compose-content]', this.shell)?.value || '',
@@ -2214,6 +2222,7 @@ class BlogCenter {
             && base.title === (latest.title || '') && base.content_md === (latest.content_md || '');
         if (contentUnchanged) {
             this.state.editingUpdatedAt = latest.updated_at;
+            this.state.editingRevision = latest.content_revision ?? null;
             this.state.editingStatus = latest.status;
             return true;
         }
@@ -2229,6 +2238,7 @@ class BlogCenter {
         if (result?.status !== 'chosen') return false;
         if (result.value === 'mine') {
             this.state.editingUpdatedAt = latest.updated_at;
+            this.state.editingRevision = latest.content_revision ?? null;
             this.state.editingStatus = latest.status;
             this.state.editingBase = { title: latest.title || '', content_md: latest.content_md || '' };
             this.saveComposerRecovery();
@@ -2315,7 +2325,11 @@ class BlogCenter {
         const previousStatus = this.state.editingStatus;
         try {
             if (editingPostId) {
-                if (this.state.editingUpdatedAt) payload.expected_updated_at = this.state.editingUpdatedAt;
+                if (this.state.editingRevision) {
+                    payload.expected_revision = this.state.editingRevision;
+                } else if (this.state.editingUpdatedAt) {
+                    payload.expected_updated_at = this.state.editingUpdatedAt;
+                }
                 await api.put(`/api/blog/posts/${editingPostId}`, payload);
                 let message = '帖子已更新';
                 if (status === 'draft') message = previousStatus === 'published' ? '已撤回为草稿' : '草稿已保存';

@@ -558,6 +558,15 @@ persona = {
 
 ## 8. 数据模型与迁移（P1 一次完成）
 
+> **P1 实施记录（2026-10-12）**，与下文原方案的差异（均为有意调整）：
+> - **不改写旧 `status`**：下文 8.2 把 `moderated/hidden` 映射为 `published + limited`，但 P1 时所有可见性判断仍读 `status`，提前改写会让已隐藏帖子在 P3 上线前变成公开。因此 P1 只**新增列 + 回填 + 双写**：隐藏帖 `moderation_state='limited'`（原因码 `other`、说明为“系统升级前被处理”），`status` 保持原值；P3 切换读路径后再收敛 `status`。
+> - **`nickname`→`pen` 改名推迟到 P2**（与 persona 一起做；P1 不改存储值，评论的 `author_display_mode` 沿用帖子的取值 `real_name/nickname/anonymous`）。
+> - **通知表**已有 `metadata_json` 与 `read_at`，故不新增 `payload_json`；只新增 `aggregate_key / aggregate_count / ref_post_id / target_state`。
+> - **`content_revision` 已在 P1 生效为编辑锁**（只有作者保存会推进；评论、置顶、加精不再触发 409），彻底消除 C1；`expected_updated_at` 仍兼容 Agent 等旧调用方。
+> - **`published_at` 已在 P1 生效**：首次发布写入，“最新”排序改用 `COALESCE(published_at, created_at)`（修复 C3 的排序部分）。
+> - **新表**在运行时模块 `classroom_app/db/schema_blog_closed_loop.py`（engine-aware，两套启动路径均调用；SQLite 博客 schema 也会显式以 SQLite 方言建表，保证 PostgreSQL 索引采集的内存库一致）。PostgreSQL 端必须**先建表再采集索引**——首次演练正因顺序相反而失败，已修正。
+> - **回填** `backfill_blog_closed_loop_data` 每次启动幂等执行；`tools/db/migrate_blog_closed_loop.py` 提供 dry-run / apply 报告。`blog_author_daily_stats` 与通知 `ref_post_id` 属派生数据，分别由 P6 / P5 回填。
+
 ### 8.1 变更清单
 
 > 改动 `classroom_app/db/*.py` 会触发原生 PostgreSQL 演练门禁，必须重做演练再发布（参见部署流程记录）。新表按引擎无关的运行时 schema 写入对应模块；运行时建表的模块加入 `RUNTIME_ENSURED_SCHEMA_MODULES` 豁免。

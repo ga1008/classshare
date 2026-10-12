@@ -58,6 +58,7 @@ class BlogSectionTests(unittest.TestCase):
                 is_featured INTEGER NOT NULL DEFAULT 0,
                 pinned_at TEXT,
                 featured_at TEXT,
+                published_at TEXT,
                 hot_notified_at TEXT,
                 view_count INTEGER NOT NULL DEFAULT 0,
                 like_count INTEGER NOT NULL DEFAULT 0,

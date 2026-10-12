@@ -35,6 +35,7 @@ from .schema_academic_evaluations import ensure_academic_evaluation_schema
 from .schema_offering_class_links import ensure_offering_class_links_schema
 from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
+from .schema_blog_closed_loop import backfill_blog_closed_loop_data, ensure_blog_closed_loop_schema
 from .schema_material_whiteboards import ensure_material_whiteboard_schema
 from .schema_course_doc_packs import ensure_course_doc_pack_schema
 from .schema_lessondoc_editor import ensure_lessondoc_editor_schema, mark_schema_ready_after_commit
@@ -44,6 +45,31 @@ from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
 from .seeds import init_default_exam_paper
+
+
+def _ensure_blog_closed_loop(*, label: str) -> None:
+    """Ensure the blog closed-loop tables and backfill derived columns.
+
+    Isolated connection and transaction: a failure is logged and retried on
+    the next startup, never blocking the application from booting.
+    """
+    from datetime import datetime
+
+    try:
+        blog_conn = get_db_connection()
+        try:
+            ensure_blog_closed_loop_schema(blog_conn)
+            report = backfill_blog_closed_loop_data(blog_conn, apply=True, now=datetime.now().isoformat())
+            blog_conn.commit()
+        except Exception:
+            blog_conn.rollback()
+            raise
+        finally:
+            blog_conn.close()
+        changed = {key: value for key, value in report.items() if value}
+        print(f"[DB] {label} blog closed-loop schema ensured; backfill {changed or 'up to date'}")
+    except Exception as exc:
+        print(f"[DB] {label} blog closed-loop step skipped: {exc}")
 
 
 def init_database():
@@ -81,6 +107,10 @@ def init_database():
             raise
         finally:
             conn.close()
+        # Blog closed-loop tables + idempotent backfill of the new blog columns
+        # (added above by ensure_postgres_runtime_columns). Must precede the
+        # index harvest below, which also ports these tables' indexes.
+        _ensure_blog_closed_loop(label="PostgreSQL")
         # Port the SQLite performance indexes onto PostgreSQL. This is isolated
         # in its own connection/transaction and tolerant of individual failures
         # so a missing column or lock never blocks startup.
@@ -372,6 +402,7 @@ def init_database():
             ensure_user_ui_preferences_schema(conn)
             ensure_academic_final_material_schema(conn)
             ensure_academic_evaluation_schema(conn)
+            ensure_blog_closed_loop_schema(conn)
             conn.commit()
             mark_schema_ready_after_commit()
         except Exception:
@@ -380,6 +411,7 @@ def init_database():
         finally:
             conn.close()
         print("[DB] V4.0 数据库架构初始化/验证完成。")
+        _ensure_blog_closed_loop(label="SQLite")
 
         # 初始化默认试卷（MID.html 期中测试）
         init_default_exam_paper()
