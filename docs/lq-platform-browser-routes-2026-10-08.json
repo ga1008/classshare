@@ -155,7 +155,7 @@
         "get_current_user"
       ],
       "source": "classroom_app/routers/blog.py",
-      "line": 136,
+      "line": 149,
       "provenance": "source-registry",
       "roles": [
         "student",
@@ -1322,7 +1322,7 @@
         "get_current_teacher"
       ],
       "source": "classroom_app/routers/blog_moderation.py",
-      "line": 147,
+      "line": 141,
       "provenance": "source-registry",
       "roles": [
         "superTeacher"

@@ -70,8 +70,7 @@ def api_list_floor_replies(
 
 
 @router.put("/api/blog/comments/{comment_id}", response_class=JSONResponse)
-async def api_edit_comment(comment_id: int, request: Request, user: dict = Depends(get_current_user)):
-    data = await _json(request)
+def api_edit_comment(comment_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
             comment = comments.edit_comment(conn, user, comment_id, content_md=data.get("content_md"),
@@ -84,8 +83,7 @@ async def api_edit_comment(comment_id: int, request: Request, user: dict = Depen
 
 
 @router.post("/api/blog/comments/{comment_id}/delete", response_class=JSONResponse)
-async def api_soft_delete_comment(comment_id: int, request: Request, user: dict = Depends(get_current_user)):
-    data = await _json(request)
+def api_soft_delete_comment(comment_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
             result = comments.delete_comment(conn, user, comment_id, reason=data.get("reason"))

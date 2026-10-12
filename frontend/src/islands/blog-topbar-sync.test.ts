@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   blogAriaLabel,
@@ -8,11 +8,15 @@ import {
   blogTitle,
   normalizeBlogTopbarResponse,
   normalizeBlogTopbarSummary,
+  publishBlogSummary,
+  BLOG_SUMMARY_EVENT,
 } from '@/lib/blog-topbar';
 
 const today = (todayNewCount: number) => ({ todayNewCount, followingUnreadCount: 0 });
 
 describe('blog-topbar helpers', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
   it('formats the blog topbar count and labels', () => {
     expect(blogCountText(today(0))).toBe('+0');
     expect(blogCountText(today(4))).toBe('+4');
@@ -35,6 +39,18 @@ describe('blog-topbar helpers', () => {
     expect(blogAriaLabel(summary)).toBe('打开博客，关注更新 3 篇');
     expect(blogTitle({ todayNewCount: 0, followingUnreadCount: 120 })).toBe('博客：关注更新 120 篇');
     expect(blogCaption({ todayNewCount: 0, followingUnreadCount: 120 })).toBe('关注更新 99+');
+  });
+
+  it('publishes one summary for every consumer on the page', () => {
+    vi.stubGlobal('window', new EventTarget());
+    const received: unknown[] = [];
+    const listener = (event: Event) => received.push((event as CustomEvent).detail);
+    window.addEventListener(BLOG_SUMMARY_EVENT, listener);
+    publishBlogSummary({ todayNewCount: 2, followingUnreadCount: 5 }, 1234);
+    window.removeEventListener(BLOG_SUMMARY_EVENT, listener);
+    const expected = { todayNewCount: 2, followingUnreadCount: 5, requestedAt: 1234 };
+    expect(received).toEqual([expected]);
+    expect(window.__lanshareBlogSummary).toEqual(expected);
   });
 
   it('normalizes blog summary payloads defensively', () => {

@@ -52,7 +52,6 @@ from ..services.blog_service import (
     get_media_asset_for_user,
     get_my_posts,
     get_post_detail,
-    hide_post,
     list_attachments,
     list_available_custom_emojis,
     list_comments,
@@ -134,8 +133,20 @@ def _build_blog_user_info(conn, user: dict) -> dict:
     }
 
 
+async def _json_body(request: Request) -> dict:
+    """Read the JSON body on the event loop so the handler itself can be a plain
+    ``def`` (FastAPI runs those in the threadpool, off the event loop)."""
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="请求内容不是有效的 JSON") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="请求内容格式无效")
+    return data
+
+
 @router.get("/blog")
-async def blog_page(request: Request, user: dict = Depends(get_current_user)):
+def blog_page(request: Request, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         user_info = _build_blog_user_info(conn, user)
         blog_sections = get_blog_sections(conn, user)
@@ -205,8 +216,7 @@ def api_manage_blog_sections(user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/blog/sections", response_class=JSONResponse)
-async def api_create_blog_section(request: Request, user: dict = Depends(get_current_user)):
-    data = await request.json()
+def api_create_blog_section(data: dict = Depends(_json_body), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         _require_blog_super_admin(conn, user)
         try:
@@ -218,8 +228,9 @@ async def api_create_blog_section(request: Request, user: dict = Depends(get_cur
 
 
 @router.put("/api/blog/sections/{section_key}", response_class=JSONResponse)
-async def api_update_blog_section(section_key: str, request: Request, user: dict = Depends(get_current_user)):
-    data = await request.json()
+def api_update_blog_section(
+    section_key: str, data: dict = Depends(_json_body), user: dict = Depends(get_current_user)
+):
     with get_db_connection() as conn:
         _require_blog_super_admin(conn, user)
         try:
@@ -266,12 +277,11 @@ def api_get_post(post_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/blog/posts/{post_id}/reading-progress", response_class=JSONResponse)
-async def api_update_blog_reading_progress(
+def api_update_blog_reading_progress(
     post_id: int,
-    request: Request,
+    data: dict = Depends(_json_body),
     user: dict = Depends(get_current_user),
 ):
-    data = await request.json()
     with get_db_connection() as conn:
         try:
             result = update_post_reading_progress(
@@ -322,12 +332,11 @@ def api_list_opportunities(
 
 
 @router.post("/api/blog/opportunities/{opportunity_id}/state", response_class=JSONResponse)
-async def api_set_opportunity_state(
+def api_set_opportunity_state(
     opportunity_id: int,
-    request: Request,
+    data: dict = Depends(_json_body),
     user: dict = Depends(get_current_user),
 ):
-    data = await request.json()
     with get_db_connection() as conn:
         try:
             result = set_opportunity_user_state(
@@ -345,12 +354,11 @@ async def api_set_opportunity_state(
 
 
 @router.post("/api/blog/posts", response_class=JSONResponse)
-async def api_create_post(
-    request: Request,
+def api_create_post(
     background_tasks: BackgroundTasks,
+    data: dict = Depends(_json_body),
     user: dict = Depends(get_current_user),
 ):
-    data = await request.json()
     title = str(data.get("title") or "").strip()
     content_md = str(data.get("content_md") or "").strip()
     if not title or not content_md:
@@ -488,22 +496,6 @@ def api_feature_post(post_id: int, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
-@router.post("/api/blog/posts/{post_id}/hide", response_class=JSONResponse)
-async def api_hide_post(post_id: int, request: Request, user: dict = Depends(get_current_user)):
-    data = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    with get_db_connection() as conn:
-        try:
-            result = hide_post(conn, user, post_id, reason=str(data.get("reason") or ""))
-            conn.commit()
-            return {"status": "success", **result}
-        except BlogModerationLocked as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-
 @router.post("/api/blog/posts/{post_id}/comments-toggle", response_class=JSONResponse)
 def api_toggle_comments(post_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
@@ -535,13 +527,12 @@ def api_list_comments(
 
 
 @router.post("/api/blog/posts/{post_id}/comments", response_class=JSONResponse)
-async def api_add_comment(
+def api_add_comment(
     post_id: int,
-    request: Request,
     background_tasks: BackgroundTasks,
+    data: dict = Depends(_json_body),
     user: dict = Depends(get_current_user),
 ):
-    data = await request.json()
     with get_db_connection() as conn:
         try:
             result = add_comment(
@@ -678,6 +669,22 @@ def _inspect_blog_image(raw: bytes) -> tuple[bytes, str, int, int]:
     return raw, mime_type, int(width), int(height)
 
 
+def _register_upload(user: dict, save_result: dict, filename: str, mime_type: str, width: int, height: int) -> dict:
+    with get_db_connection() as conn:
+        asset = register_media_asset(
+            conn,
+            user,
+            file_hash=str(save_result["hash"]),
+            filename=filename,
+            mime_type=mime_type,
+            file_size=int(save_result["size"] or 0),
+            image_width=width,
+            image_height=height,
+        )
+        conn.commit()
+    return asset
+
+
 @router.post("/api/blog/upload-image", response_class=JSONResponse)
 async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     content_type = str(file.content_type or "").lower()
@@ -701,18 +708,9 @@ async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(ge
     if not save_result:
         raise HTTPException(status_code=500, detail="图片保存失败")
 
-    with get_db_connection() as conn:
-        asset = register_media_asset(
-            conn,
-            user,
-            file_hash=str(save_result["hash"]),
-            filename=str(file.filename or save_result["hash"]),
-            mime_type=mime_type,
-            file_size=int(save_result["size"] or 0),
-            image_width=width,
-            image_height=height,
-        )
-        conn.commit()
+    asset = await asyncio.to_thread(
+        _register_upload, user, save_result, str(file.filename or save_result["hash"]), mime_type, width, height,
+    )
 
     return {
         "status": "success",
@@ -765,7 +763,7 @@ def api_get_blog_avatar(file_hash: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/blog/image/{file_hash}")
-async def api_get_blog_image(file_hash: str, user: dict = Depends(get_current_user)):
+def api_get_blog_image(file_hash: str, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         asset = get_media_asset_for_user(conn, user, file_hash)
     if asset is None:

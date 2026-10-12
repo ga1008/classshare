@@ -28221,11 +28221,6 @@ body.has-chat-image-preview-open {
     color: hsl(var(--ls-ink-3));
 }
 
-.blog-badge--moderated {
-    background: var(--danger-light);
-    color: var(--danger-color);
-}
-
 .blog-badge--visibility {
     background: hsl(var(--ls-info) / 0.12);
     color: hsl(var(--ls-info-strong));
@@ -28761,13 +28756,6 @@ body.has-chat-image-preview-open {
 
 .blog-comment-action__count {
     font-size: inherit;
-}
-
-.blog-comment__replies {
-    margin-top: var(--spacing-sm);
-    margin-left: var(--spacing-lg);
-    border-left: 2px solid var(--border-color);
-    padding-left: var(--spacing-md);
 }
 
 
@@ -30459,76 +30447,6 @@ body.page-wrapper:has(.blog-shell) {
     color: var(--success-dark);
 }
 
-.blog-report-dialog {
-    width: min(480px, calc(100vw - 28px));
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: var(--radius-xl);
-    background: hsl(var(--lq-page-raised));
-    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
-}
-
-.blog-report-dialog::backdrop {
-    background: rgba(15, 23, 42, 0.48);
-    backdrop-filter: blur(5px);
-}
-
-.blog-report-dialog form {
-    display: grid;
-    gap: 15px;
-    padding: 20px;
-}
-
-.blog-report-dialog__header,
-.blog-report-dialog__actions {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.blog-report-dialog__header h3,
-.blog-report-dialog__header p {
-    margin: 0;
-}
-
-.blog-report-dialog__header p {
-    margin-top: 4px;
-    color: hsl(var(--ls-ink-3));
-    font-size: var(--text-xs);
-}
-
-.blog-report-dialog__header > button {
-    border: 0;
-    background: transparent;
-    color: hsl(var(--ls-ink-3));
-    cursor: pointer;
-    font-size: 1.4rem;
-}
-
-.blog-report-dialog label {
-    display: grid;
-    gap: 6px;
-    color: hsl(var(--ls-ink-2));
-    font-size: var(--text-sm);
-    font-weight: 700;
-}
-
-.blog-report-dialog :is(select, textarea) {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--gray-300);
-    border-radius: var(--radius-md);
-    background: var(--gray-50);
-    color: hsl(var(--ls-ink));
-    font: inherit;
-}
-
-.blog-report-dialog__actions {
-    justify-content: flex-end;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .blog-shell *,
     .blog-modal,
@@ -30603,11 +30521,6 @@ body.page-wrapper:has(.blog-shell) {
     .blog-comment-emoji-anchor {
         left: 0;
         right: auto;
-    }
-
-    .blog-comment__replies {
-        margin-left: var(--spacing-sm);
-        padding-left: var(--spacing-sm);
     }
 
     .blog-composer__footer {

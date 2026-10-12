@@ -9,7 +9,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from classroom_app.db.schema_blog_closed_loop import backfill_blog_closed_loop_data
+from classroom_app.db.schema_blog_closed_loop import backfill_blog_closed_loop_data, insert_comment_media
 from classroom_app.services import (
     blog_ai_service,
     blog_community_service,
@@ -465,6 +465,8 @@ class SecurityReviewRegressionTests(ModerationFixture):
             (post_id, json.dumps([{"file_hash": image, "name": "a.png"}])),
         )
         comment_id = self.conn.execute("SELECT MAX(id) FROM blog_comments").fetchone()[0]
+        # Every comment write keeps blog_comment_media in step; the read path joins it.
+        insert_comment_media(self.conn, comment_id, post_id, image, "attachment", "2026")
         self.assertIsNone(blog_service.get_media_asset_for_user(self.conn, OUTSIDER, image))
         self.assertIsNotNone(blog_service.get_media_asset_for_user(self.conn, CLASSMATE, image))
         with self.assertRaises(ValueError):

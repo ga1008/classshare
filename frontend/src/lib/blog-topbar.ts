@@ -53,6 +53,22 @@ export function normalizeBlogTopbarResponse(value: unknown): BlogTopbarResponse 
   };
 }
 
+export const BLOG_SUMMARY_EVENT = 'blog:summary';
+
+export type BlogSummaryDetail = BlogTopbarSummary & {
+  // When the request started: a consumer drops answers older than its own
+  // last state change (e.g. the following feed was just marked seen).
+  requestedAt: number;
+};
+
+/** One summary fetch feeds the topbar and the blog page (plan §9.3 P7). */
+export function publishBlogSummary(summary: BlogTopbarSummary, requestedAt: number): BlogSummaryDetail {
+  const detail = { ...summary, requestedAt };
+  window.__lanshareBlogSummary = detail;
+  window.dispatchEvent(new CustomEvent(BLOG_SUMMARY_EVENT, { detail }));
+  return detail;
+}
+
 export function normalizeBlogTopbarSummary(value: unknown): BlogTopbarSummary {
   const summary = asRecord(value);
   return {

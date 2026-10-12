@@ -243,9 +243,19 @@ async function refreshBlogTopbar() {
         return;
     }
 
+    const requestedAt = Date.now();
     try {
         const response = await apiFetch('/api/blog/summary', { silent: true });
-        updateBlogTopbar(response?.summary || {});
+        const summary = response?.summary || {};
+        updateBlogTopbar(summary);
+        // Same contract as frontend/src/lib/blog-topbar.ts publishBlogSummary.
+        const detail = {
+            todayNewCount: Math.max(0, Number(summary.today_new_count || 0)),
+            followingUnreadCount: Math.max(0, Number(summary.following_unread_count || 0)),
+            requestedAt,
+        };
+        window.__lanshareBlogSummary = detail;
+        window.dispatchEvent(new CustomEvent('blog:summary', { detail }));
     } catch {
         // Ignore transient polling failures.
     }
@@ -288,7 +298,9 @@ if (bellShells.length > 0) {
 }
 
 if (blogEntries.length > 0 || blogCountNodes.length > 0) {
-    refreshBlogTopbar();
+    // The blog-topbar-sync island normally claims these nodes right after load;
+    // waiting a moment avoids a second /api/blog/summary request (plan P7).
+    window.setTimeout(refreshBlogTopbar, 1500);
 
     window.setInterval(() => {
         if (!document.hidden) {
@@ -304,4 +316,5 @@ if (blogEntries.length > 0 || blogCountNodes.length > 0) {
 }
 
 window.refreshMessageCenterBell = refreshBell;
-window.refreshBlogTopbar = refreshBlogTopbar;
+// The island installs its own refresher; never overwrite it with the legacy one.
+if (typeof window.refreshBlogTopbar !== 'function') window.refreshBlogTopbar = refreshBlogTopbar;

@@ -388,8 +388,13 @@ def list_opportunities(
         params.append(deadline_limit)
     normalized_query = str(query or "").strip()
     if normalized_query:
-        like_query = f"%{normalized_query}%"
-        conditions.append("(p.title LIKE ? OR o.employer_name LIKE ? OR o.positions_text LIKE ? OR o.majors_json LIKE ?)")
+        # Same rules as the main search: case-insensitive on SQLite and PostgreSQL alike,
+        # and "%" / "_" typed by the user are literal characters.
+        like_query = f"%{blog_service._escape_like_pattern(normalized_query)}%"
+        conditions.append(
+            "(LOWER(p.title) LIKE LOWER(?) ESCAPE '\\' OR LOWER(o.employer_name) LIKE LOWER(?) ESCAPE '\\'"
+            " OR LOWER(o.positions_text) LIKE LOWER(?) ESCAPE '\\' OR LOWER(o.majors_json) LIKE LOWER(?) ESCAPE '\\')"
+        )
         params.extend((like_query, like_query, like_query, like_query))
     if user_state in OPPORTUNITY_STATES:
         conditions.append(

@@ -436,18 +436,18 @@ class BlogOutboxTests(PlatformWriteFixture):
     def test_web_create_update_and_comment_enqueue_inside_commit_without_inline_model(self):
         background = BackgroundTasks()
         with patch.object(blog, "get_db_connection", self.connection):
-            post = asyncio.run(blog.api_create_post(Request({"title": "Draft", "content_md": "@管家 请点评", "status": "draft"}), background, self.student))
+            post = blog.api_create_post(background, {"title": "Draft", "content_md": "@管家 请点评", "status": "draft"}, self.student)
             self.assertEqual(0, self.count("scheduled_tasks"))
             asyncio.run(blog.api_update_post(post["id"], Request({"status": "published"}), background, self.student))
             self.assertEqual(1, self.count("scheduled_tasks"))
-            comment = asyncio.run(blog.api_add_comment(post["id"], Request({"content_md": "@管家 我再补充"}), background, self.teacher))
+            comment = blog.api_add_comment(post["id"], background, {"content_md": "@管家 我再补充"}, self.teacher)
         self.assertEqual(2, self.count("scheduled_tasks"))
         self.assertEqual([], background.tasks)
         self.assertIsNotNone(self.conn.execute("SELECT id FROM message_center_notifications WHERE ref_type='blog_comment' AND ref_id=?", (str(comment["id"]),)).fetchone())
 
     def test_outbox_failure_rolls_back_normal_web_post(self):
         with patch.object(blog, "get_db_connection", self.connection), patch.object(blog, "enqueue_blog_mention", side_effect=RuntimeError("outbox unavailable")), self.assertRaises(RuntimeError):
-            asyncio.run(blog.api_create_post(Request({"title": "Review", "content_md": "@管家 请点评"}), BackgroundTasks(), self.student))
+            blog.api_create_post(BackgroundTasks(), {"title": "Review", "content_md": "@管家 请点评"}, self.student)
         self.assertEqual(0, self.count("blog_posts"))
 
     def mention(self):

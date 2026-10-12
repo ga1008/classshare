@@ -190,10 +190,14 @@ def _following_where(conn, user: dict) -> tuple[str, list[Any]] | None:
             follow_clauses.append("(p.author_identity = ? AND p.author_display_mode = ?)")
             follow_params.extend((target_key, "real_name" if target_type == "author" else "nickname"))
         elif target_type == "tag":
+            # Escaped like the tag filter in blog_service.list_posts: a followed tag
+            # containing "%" or "_" matches only itself.
+            pattern = f'%"{blog_service._escape_like_pattern(target_key)}"%'
             follow_clauses.append(
-                "(p.tags_json LIKE ? OR (p.author_display_mode = 'real_name' AND p.system_tags_json LIKE ?))"
+                "(p.tags_json LIKE ? ESCAPE '\\'"
+                " OR (p.author_display_mode = 'real_name' AND p.system_tags_json LIKE ? ESCAPE '\\'))"
             )
-            follow_params.extend((f'%"{target_key}"%', f'%"{target_key}"%'))
+            follow_params.extend((pattern, pattern))
     if not follow_clauses:
         return None
     where_sql = f"({visibility_sql}) AND p.status = ? AND ({' OR '.join(follow_clauses)})"

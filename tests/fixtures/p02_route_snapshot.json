@@ -1457,14 +1457,6 @@
     "include_in_schema": true
   },
   {
-    "path": "/api/blog/posts/{post_id}/hide",
-    "methods": [
-      "POST"
-    ],
-    "name": "api_hide_post",
-    "include_in_schema": true
-  },
-  {
     "path": "/api/blog/posts/{post_id}/like",
     "methods": [
       "POST"

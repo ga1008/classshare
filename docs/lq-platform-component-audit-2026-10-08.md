@@ -2,18 +2,18 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 526 个作者源码文件，覆盖 202 个 HTML 模板，发现 5369 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 526 个作者源码文件，覆盖 202 个 HTML 模板，发现 5361 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2210 |
-| field | 738 |
-| select | 297 |
+| button | 2207 |
+| field | 737 |
+| select | 296 |
 | surface | 690 |
-| menu | 36 |
+| menu | 35 |
 | dialog | 21 |
 | tab | 32 |
-| choice | 166 |
+| choice | 167 |
 | toolbar | 133 |
 | layer | 139 |
 | content-slot | 45 |
@@ -21,16 +21,16 @@
 | chip | 12 |
 | domain | 18 |
 | status | 44 |
-| unknown | 787 |
+| unknown | 784 |
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3716 |
+| component-declared | 3709 |
 | external-icon-content-slot | 34 |
-| factory-ownership-unknown | 42 |
-| legacy-or-native | 90 |
+| factory-ownership-unknown | 43 |
+| legacy-or-native | 91 |
 | lq-marked-native | 104 |
-| runtime-output-unknown | 654 |
+| runtime-output-unknown | 651 |
 | shared-adapter-call-candidate | 81 |
 | shared-component-call | 594 |
 | shared-definition | 54 |
@@ -46,7 +46,7 @@
 | unknown 语法 | 数量 |
 | --- | ---: |
 | `create-element` | 34 |
-| `dynamic-html-sink` | 654 |
+| `dynamic-html-sink` | 651 |
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
@@ -98,9 +98,9 @@
 | `templates/assignment_detail_teacher.html` | 172 |
 | `static/js/materials_manage.js` | 117 |
 | `templates/exam_editor.html` | 108 |
-| `static/js/blog.js` | 107 |
+| `static/js/blog.js` | 105 |
 | `static/js/collaboration.js` | 102 |
-| `templates/blog.html` | 71 |
+| `templates/blog.html` | 65 |
 | `templates/manage/signatures.html` | 67 |
 | `static/js/teacher_onboarding.js` | 67 |
 | `templates/manage/courses.html` | 61 |
@@ -145,3 +145,5 @@
 本次后续增量（2026-10-12，博客 P5 通知闭环）：新增 `static/js/message_center_blog.js`，消息中心博客卡片只用共享 Chip（“内容已不可见”“已回复”）、AvatarStack（聚合卡最近的人）、Prose（被回复原文引用与对方评论）、Composer（内联回复）、nativeSelect（回复身份）、Switch 与 Dialog（通知设置）；博客页“关注”数用共享 Badge，评论深链失效用共享 status Alert，关注页空态用共享 Empty。领域 CSS（`static/css/lq/pages/message-center.css`、`blog-paper.css`）只加布局，无新增私有材质。
 
 本次后续增量（2026-10-12，博客 P6 创作中心）：新增 `static/js/blog_studio.js`，创作中心五个子视图用共享 Segment，数据用 Insight（meter/bars，null 为未知），作品/草稿/互动/粉丝用 List/Row，状态用 Chip，处置说明用 status Alert，空态用 Empty，作者主页用 Avatar/Chip/Button；编辑器版本冲突改用共享 Conflict（`statusMarkup('conflict')` + Dialog），删除帖子由原生 `window.confirm` 改为 `LQ.confirm`；移除旧“我的”视图的筛选按钮与卡片状态脚注。新增 21 条 `factory-ownership-unknown` 为 `LQ.button/chip/avatar` 工厂调用。领域 CSS（`blog-paper.css`）只加布局，无新增私有材质。
+
+本次后续增量（2026-10-13，博客 P7 收敛）：举报框由页面级原生 `<dialog>` 改为共享表单 Dialog（`openFormDialog`），作者浮窗由手工定位的私有浮层改为 LQ Dialog `popover`（锚定、Esc/外部点击/滚动重定位与焦点归还由 `LQ.layer` 负责），关闭编辑器的原生 `window.confirm` 改为 `LQ.confirm`（经 layer `beforeClose`），“撤回为草稿”移入共享 Menu（“更多”），加载失败改用共享 Empty（reason=error + 重试）；删除死代码“转为私密”及其 `/hide` 路由。`blog-paper.css` 删除全部私有材质、私有阴影/模糊/悬浮上浮/入场与 shimmer 动画及固定 z-index（改用 `--lq-*`/`--ls-z-*`），正文与评论取 `--lq-material-ink`；LQ 守卫对该文件的非阻断发现 15→0，文件 2927→约 2290 行；`ui-system.src.css` 中博客旧举报框/私密徽章/旧回复缩进规则一并删除。候选入口 5369→5361（`blog.js` 107→105，`blog.html` 71→65）。

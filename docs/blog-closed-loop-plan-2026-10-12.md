@@ -1,6 +1,6 @@
 # 博客中心闭环改进计划（2026-10-12）
 
-> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0–P5 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，P3 `04ad5f49` release `20261012-201621-2f01d431bdfc`，P4 `1fb52483` release `20261012-213055-9d68ecbcbe05`，P5 `43f8755c` release `20261012-224057-f6e285ae2228`）；**P6 实施中**；P7 未动工。
+> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0–P6 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，P3 `04ad5f49` release `20261012-201621-2f01d431bdfc`，P4 `1fb52483` release `20261012-213055-9d68ecbcbe05`，P5 `43f8755c` release `20261012-224057-f6e285ae2228`，P6 `d92fb482` release `20261013-003813-3872fa19d7b4`）；**P7 已实现、未提交未发布**（记录见 §9.3 末）。
 > 范围：博客中心（`/blog`）全部前后端，以及它与消息中心、个人中心、头像服务、AI 网关、调度器、作品集、Agent 平台的接口。
 > 前置阅读：[液态玻璃组件开发合同](lq-component-contract-2026-09-27.md)、[组件 API](lq-components.md)、[场景前景色契约](lq-scene-ink-2026-09-26.md)、[AI 与 Agent 工程规范](ai-and-agent-engineering-standard.md)、[通知邮件降噪](notification-email-policy-2026-09-18.md)、[博客重设计（2026-08）](blog-redesign-2026-08.md)。
 > 证据来源：2026-10-12 的两路代码审查（后端、前端）、三路专题调查（身份/头像、审核/通知、创作中心/回复），以及隔离 P03 运行环境中以学生和教师身份的实测。文中 `file:line` 均指当日 `dev`（`dbbf1e57`）。
@@ -744,9 +744,24 @@ P1 数据模型（一次迁移 + 原生 PG 门禁）
 | P6 | 创作中心聚合接口、每日统计汇总任务、粉丝/关注列表、作者主页、笔名简介 | 创作中心全部视图、作者主页、编辑器改进 | 第 10.5 节 |
 | P7 | 徽章批量缓存、`async def` 改 `def`、summary 合并为一次、移除兼容字段 | `blog-paper.css` 材质收敛、原生 confirm/dialog 替换、可访问性、正文墨色、移动端 | LQ 源码审计无新增私有材质；浏览器矩阵通过 |
 
+> **P7 实施记录（2026-10-13，已实现，未提交未发布）**。
+> - **P1 徽章**：`_load_public_cultivation_badge` 加进程内 120 秒 TTL 缓存（无徽章也缓存、失败不缓存、返回副本、4000 条上限整体清空）；列表页每位作者只在缓存过期时重算。多 worker 下最多 120 秒不一致，可接受。
+> - **P2 事件循环**：15 个博客写路由与 2 个消息中心 P5 路由由 `async def` 改为 `def`（请求体由异步依赖 `_json_body`/`_json`/`_optional_json` 在事件循环上读取，处理函数在线程池执行；`blog.py` 的 `_json_body` 对非法 JSON/非对象体返回 400，原来是 500）；上传图片的登记改 `asyncio.to_thread`。**Agent 已登记（源码摘要固定）的 11 个博客处理函数保持逐字不变**（`api_update_post`、`api_set_blog_follow`、`api_create_blog_report`、`api_resolve_blog_report` 仍是 `async def`），改它们需重新审核摘要，留待单独一轮。
+> - **P3 评论图片鉴权**：`get_media_asset_for_user` 改为按 `blog_comment_media(file_hash)` 索引联表，不再对评论正文 `LIKE '%hash%'`；授权条件不变（评论 active、公开状态或本人、`_can_view_post`）。上线前核验：生产库无“有附件/表情却缺索引行”的评论（0 条）。
+> - **P4 遗留**：就业机会搜索改为 `LOWER() LIKE LOWER() ESCAPE` + 通配符转义；关注标签条件同样转义。
+> - **P6 summary**：顶栏岛（或旧顶栏脚本）每次取到 `/api/blog/summary` 后发布 `blog:summary` 事件（带请求时间），博客页“关注”角标消费事件、不再自取；岛内并发刷新合并为一次请求；旧脚本首轮延后 1.5 秒以免与岛重复。实测打开博客页 summary 请求 3→1。
+> - **移除兼容**：`/api/blog/posts/{id}/hide` 路由与前端死代码 `toggleVisibility`、“私密”徽章删除（`hide_post` 服务函数保留为审核动作的薄封装，测试仍用）。`legacy_status` 字段实际从未上线，无需删除。
+> - **F2**：收藏“加载更多”进行中忽略重复点击；从详情返回列表改为重载 1..N 页后再恢复滚动（与浏览器后退同一实现 `reloadListPages`）。
+> - **F3/F6**：举报改共享表单 Dialog（失败时带原输入重开；429 不重开）；作者浮窗改 LQ Dialog `popover`（锚定触发点，Esc/外部点击/滚动重定位/焦点归还由 `LQ.layer` 负责；连续点击只打开最后一个）；关闭编辑器的确认改 `LQ.confirm`（layer `beforeClose`，检查窗口 30 秒，超时后确认仍会关闭）；板块标签重绘后焦点留在当前标签。原方案写的 `createDomainPopoverSystem` 是旧领域浮层的兼容外壳，新代码改用 layer 管理的标准 popover。
+> - **F4**：信息流、收藏、详情加载失败改共享 Empty（reason=error）并带“重试”。
+> - **F5**：只保留页头一个 `h1`（详情标题改 `h2`）；去掉嵌套 `main`；发帖字段 `label for`/`radiogroup`；赞/收藏/评论赞初始即带 `aria-pressed`；目录当前项 `aria-current`。
+> - **F7/F8/F10**：`blog-paper.css` 删除私有材质、阴影、模糊、悬浮上浮、私有入场/闪烁动画与固定 z-index，统一 `--lq-*`/`--ls-z-*`，骨架复用共享 `lq-skeleton-shimmer`；正文、评论正文取 `--lq-material-ink`；≤767px 详情返回条只显示“返回”（目标文字与“博客列表”按钮隐藏，按钮无障碍名仍为“返回上一阅读位置”）。LQ 守卫对该文件 15→0，2927→2286 行。精选卡（LQ 按钮）补 `align-items: stretch`，修复窄屏下卡片正文居中缩窄。
+> - **编辑器**：“撤回为草稿”移入编辑器底部“更多”菜单（共享 Menu，父层为编辑器 layer，编辑器关闭即销毁）。**编辑器外壳迁移 `EditorShell` 不做**：`EditorShell` 是整页编辑器骨架（自带 `h1`、侧栏与 `main`），与弹层式发帖编辑器不匹配，且平台尚无整页消费者；如以后把发帖改为整页编辑再迁移。
+> - **测试与验证**：新增 `tests/test_blog_p7_performance.py`（13 项：徽章缓存、媒体索引读路径与删除、搜索转义、同步处理函数、Agent 摘要不变、`/hide` 已移除、非法 JSON 400）；`test_agent_platform_writes` 改为直接调用同步处理函数；路由快照去掉 `/hide`；前端 `blog-topbar-sync.test.ts` 增事件发布用例。全量单测与基线失败集合一致。隔离合成运行环境浏览器验证：1440/768/375 无横向溢出、单 `h1`/单 `main`、summary 1 次、浮窗/举报/编辑器关闭确认/更多菜单/错误重试/标签焦点/亮色场景正文墨色均通过。
+
 ### 9.4 个人创作中心（改进项 5，P6 详细设计）
 
-> **P6 实施记录（2026-10-12，未提交、未发布）**。代码：统计 `classroom_app/services/blog_author_stats.py`（按“身份面孔”= 账号 + 署名模式汇总，调度任务 `blog.author_daily_stats` 每天 02:00、缺的天自动补近 30 天，当天实时算）；创作中心与作者主页 `classroom_app/services/blog_studio_service.py` + `classroom_app/routers/blog_studio.py`（`GET /api/blog/studio/overview|comments|fans`、`PUT /api/blog/studio/profile`、`GET /api/blog/authors/{ref}`）；前端 `static/js/blog_studio.js`（LQ Segment 五个子视图、Insight、List/Row、Chip、Alert、Empty），`blog.js` 接入；个人中心概览“我的创作”卡。与原方案的差异与补充：
+> **P6 实施记录（2026-10-12，已发布 `d92fb482` / release `20261013-003813-3872fa19d7b4`）**。代码：统计 `classroom_app/services/blog_author_stats.py`（按“身份面孔”= 账号 + 署名模式汇总，调度任务 `blog.author_daily_stats` 每天 02:00、缺的天自动补近 30 天，当天实时算）；创作中心与作者主页 `classroom_app/services/blog_studio_service.py` + `classroom_app/routers/blog_studio.py`（`GET /api/blog/studio/overview|comments|fans`、`PUT /api/blog/studio/profile`、`GET /api/blog/authors/{ref}`）；前端 `static/js/blog_studio.js`（LQ Segment 五个子视图、Insight、List/Row、Chip、Alert、Empty），`blog.js` 接入；个人中心概览“我的创作”卡。与原方案的差异与补充：
 > - **不透明面孔引用**：作者主页、关注、作者浮窗一律用 `ref`（`blog_persona_service.face_ref` = 服务端密钥 HMAC(账号|模式) 前 20 位），实名与笔名的 ref 互不相同，前端永远拿不到笔名背后的账号。`blog_author_refs` 只做服务端缓存（未命中时重算全部账号的 ref 一次）。路由 `?view=author&ref=…`，未按方案的 `ref={opaque}` 另起编码。
 > - **笔名可被关注**：新增关注类型 `pen`（存账号、只以 ref 示人）；关注流按面孔分开（关注实名不显示笔名帖，反之亦然）；不能关注自己；“关注了你的笔名”单独聚合卡。笔名粉丝列表不提供“回关”（回关是实名行为，会暴露笔名作者）。
 > - **统计口径**：阅读 = `blog_post_views` 按“读者×小时”去重的会话，作者本人的打开/编辑/阅读进度不再计入阅读数（也不再写入阅读记录）；完读率为近 30 天完读/阅读，无阅读时为未知（Insight 的 null）；粉丝为该面孔当前关注数；匿名面孔不可关注。累计阅读/获赞/评论取该面孔已发布帖子的计数。

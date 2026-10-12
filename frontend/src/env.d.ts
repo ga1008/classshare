@@ -26,6 +26,7 @@ interface Window {
   };
   refreshMessageCenterBell?: (options?: { allowPopup?: boolean }) => void | Promise<void>;
   refreshBlogTopbar?: () => void | Promise<void>;
+  __lanshareBlogSummary?: { todayNewCount: number; followingUnreadCount: number; requestedAt: number };
   refreshSubmissions?: () => void | Promise<void>;
   setFilter?: (filter: string, button?: HTMLElement | null) => void;
   aiGradeAll?: () => void | Promise<void>;

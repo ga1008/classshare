@@ -10,6 +10,8 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const POSTS_PAGE_SIZE = 20;
 // Back navigation reloads at most this many feed pages to restore position.
 const MAX_RESTORED_FEED_PAGES = 10;
+// The topbar polls /api/blog/summary every 60 s; a newer answer is reused, not refetched.
+const SUMMARY_FRESH_MS = 60_000;
 
 // Shared LQ Avatar sizes per placement; layout hooks use data-blog-avatar.
 const AVATAR_SIZES = { card: 24, rail: 32, detail: 40, comment: 32, composer: 32 };
@@ -24,6 +26,17 @@ const ROLE_LABELS = {
     student: '学生',
     assistant: 'AI助教',
 };
+
+// Report reasons (same codes as blog_community_service.REPORT_REASONS).
+const REPORT_REASON_OPTIONS = [
+    ['false_information', '信息不实或已失效'],
+    ['job_scam', '疑似招聘诈骗'],
+    ['spam', '广告或垃圾内容'],
+    ['abuse', '攻击、骚扰或不友善'],
+    ['privacy_identity', '暴露了我的身份或个人信息'],
+    ['privacy', '泄露他人隐私'],
+    ['other', '其他问题'],
+];
 
 const OPPORTUNITY_TYPE_LABELS = {
     campus_recruitment: '校园招聘',
@@ -346,22 +359,7 @@ class BlogCenter {
         this.state.detailPost = null;
         this.restoreListSnapshot(snapshot);
         this.showCurrentListView();
-        if (this.state.currentNav === 'studio' || this.state.currentNav === 'author') {
-            await this.openOwnView({ pushUrl: false });
-        } else if (this.state.currentNav === 'bookmarks') {
-            await this.loadBookmarks();
-        } else {
-            // The list had N pages when the reader left; reload 1..N so the
-            // saved scroll position lands on the same post, not on page N alone.
-            const targetPage = Math.min(this.state.page, MAX_RESTORED_FEED_PAGES);
-            this.state.page = 1;
-            await this.loadFeed();
-            while (this.state.page < targetPage && this.state.hasMore) {
-                const before = this.state.page;
-                await this.loadFeed({ append: true });
-                if (this.state.page === before) break;
-            }
-        }
+        await this.reloadListPages();
         this.loadDiscovery();
         window.requestAnimationFrame(() => window.scrollTo({ top: Number(snapshot.scrollY || 0), behavior: 'auto' }));
     }
@@ -454,7 +452,6 @@ class BlogCenter {
         }, { passive: true });
         window.addEventListener('pagehide', () => this.stopReadingSession({ useBeacon: true }));
         document.addEventListener('visibilitychange', () => this.handleReadingVisibility());
-        $('[data-blog-report-form]', this.shell)?.addEventListener('submit', (event) => this.submitReport(event));
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 if (!this.composerLayer) this.closeComposer();
@@ -465,13 +462,8 @@ class BlogCenter {
             const toolbar = event.target.closest('[data-blog-comment-toolbar]');
             const customPanel = event.target.closest('[data-blog-comment-custom-emoji-panel]');
             const emojiPicker = event.target.closest('.emoji-picker');
-            const userPopover = event.target.closest('[data-blog-user-popover]');
-            const userTrigger = event.target.closest('[data-blog-user-menu]');
             if (!toolbar && !customPanel && !emojiPicker) {
                 this.closeCommentPanels();
-            }
-            if (!userPopover && !userTrigger) {
-                this.closeUserPopover();
             }
         });
     }
@@ -480,6 +472,12 @@ class BlogCenter {
         const modal = $('[data-blog-composer-modal]', this.shell);
         if (modal && !modal.hidden && event.target === modal) {
             if (!this.composerLayer) this.closeComposer();
+            return;
+        }
+
+        const composerMore = event.target.closest('[data-blog-composer-more]');
+        if (composerMore) {
+            void this.openComposerMenu(composerMore);
             return;
         }
 
@@ -564,6 +562,7 @@ class BlogCenter {
 
         const loadMoreBookmarks = event.target.closest('[data-blog-bookmarks-load-more]');
         if (loadMoreBookmarks) {
+            if (this.bookmarkAppendInFlight) return;
             this.state.bmPage += 1;
             this.loadBookmarks({ append: true });
             return;
@@ -629,12 +628,6 @@ class BlogCenter {
         const featurePostButton = event.target.closest('[data-feature-post]');
         if (featurePostButton) {
             this.toggleFeature(Number(featurePostButton.dataset.featurePost));
-            return;
-        }
-
-        const hidePostButton = event.target.closest('[data-hide-post]');
-        if (hidePostButton) {
-            this.toggleVisibility(Number(hidePostButton.dataset.hidePost));
             return;
         }
 
@@ -852,12 +845,6 @@ class BlogCenter {
             return;
         }
 
-        if (event.target.closest('[data-blog-report-cancel]')) {
-            $('[data-blog-report-dialog]', this.shell)?.close();
-            this.reportTarget = null;
-            return;
-        }
-
         const postCard = event.target.closest('[data-blog-post-id]');
         if (postCard && !event.target.closest('button, a, input, textarea, select')) {
             this.showDetail(Number(postCard.dataset.blogPostId));
@@ -965,9 +952,6 @@ class BlogCenter {
             // Editing an already public (or moderator-hidden) post updates its
             // content only; the status stays where it is.
             this.savePost(this.isEditingPublicPost() ? null : 'published');
-            break;
-        case 'withdraw-draft':
-            this.withdrawToDraft();
             break;
         default:
             break;
@@ -1102,7 +1086,7 @@ class BlogCenter {
         );
     }
 
-    backToList() {
+    async backToList() {
         const snapshot = this.lastListSnapshot || this.buildListSnapshot();
         this.detailHasListHistory = false;
         this.detailPreviousIsPost = false;
@@ -1110,10 +1094,32 @@ class BlogCenter {
         this.state.detailPost = null;
         this.restoreListSnapshot(snapshot);
         this.showCurrentListView();
-        this.refreshCurrentList();
-        this.loadDiscovery();
         this.updateListUrl();
+        this.loadDiscovery();
+        await this.reloadListPages();
         window.requestAnimationFrame(() => window.scrollTo({ top: Number(snapshot.scrollY || 0), behavior: 'auto' }));
+    }
+
+    /** Reload the list as the reader left it, so the saved scroll lands on the same post. */
+    async reloadListPages() {
+        if (this.state.currentNav === 'studio' || this.state.currentNav === 'author') {
+            await this.openOwnView({ pushUrl: false });
+            return;
+        }
+        if (this.state.currentNav === 'bookmarks') {
+            this.state.bmPage = 1;
+            await this.loadBookmarks();
+            return;
+        }
+        // The list had N pages; reload 1..N rather than page N alone.
+        const targetPage = Math.min(this.state.page, MAX_RESTORED_FEED_PAGES);
+        this.state.page = 1;
+        await this.loadFeed();
+        while (this.state.page < targetPage && this.state.hasMore) {
+            const before = this.state.page;
+            await this.loadFeed({ append: true });
+            if (this.state.page === before) break;
+        }
     }
 
     backFromDetail() {
@@ -1170,7 +1176,10 @@ class BlogCenter {
                 `;
             }),
         ];
+        // Re-rendering must not drop keyboard focus from the tab list (F3).
+        const hadFocus = container.contains(document.activeElement);
         container.innerHTML = tabs.join('');
+        if (hadFocus) $('[role="tab"][aria-selected="true"]', container)?.focus();
     }
 
     renderSectionIntro() {
@@ -1242,7 +1251,7 @@ class BlogCenter {
             });
             if (data.following) this.followKeys.add(key);
             else this.followKeys.delete(key);
-            $$(`[data-blog-follow-type="${targetType}"]`, this.shell)
+            $$(`[data-blog-follow-type="${targetType}"]`, document)
                 .filter((button) => button.dataset.blogFollowKey === targetKey)
                 .forEach((button) => {
                 button.classList.toggle('is-following', Boolean(data.following));
@@ -1364,7 +1373,13 @@ class BlogCenter {
         if (titleNode) titleNode.textContent = post?.title || '文章详情';
         const backContext = $('[data-blog-detail-back-context]', this.shell);
         const backLabel = $('[data-blog-detail-back-label]', this.shell);
-        if (backLabel) backLabel.textContent = this.detailPreviousIsPost ? '返回上一篇文章' : '返回博客列表';
+        if (backLabel) {
+            // Phones show only "返回" (plan §9.5); the target is hidden below 768px.
+            const target = document.createElement('span');
+            target.className = 'blog-detail-topbar__back-target';
+            target.textContent = this.detailPreviousIsPost ? '上一篇文章' : '博客列表';
+            backLabel.replaceChildren('返回', target);
+        }
         if (backContext) {
             backContext.textContent = this.detailPreviousIsPost
                 ? '回到刚才读到的文章'
@@ -1490,13 +1505,10 @@ class BlogCenter {
     }
 
     closeUserPopover() {
-        const popover = $('[data-blog-user-popover]', this.shell);
-        if (!popover) return;
-        popover.hidden = true;
-        popover.innerHTML = '';
+        if (this.userPopoverHandle) void LQ.layer.close(this.userPopoverHandle, 'button');
     }
 
-    openUserPopover(trigger, user) {
+    async openUserPopover(trigger, user) {
         const identity = String(user?.identity || '').trim();
         const ref = String(user?.ref || '').trim();
         const name = String(user?.name || '').trim() || '该用户';
@@ -1504,8 +1516,6 @@ class BlogCenter {
         const isPen = user?.kind === 'pen';
         if ((!identity && !ref) || role === 'assistant') return;
 
-        const popover = $('[data-blog-user-popover]', this.shell);
-        if (!popover) return;
         // A pen name carries no identity, so "is it me" is unknowable here; the
         // server refuses a self-follow instead.
         const isSelf = Boolean(identity) && identity === this.userIdentity;
@@ -1514,29 +1524,29 @@ class BlogCenter {
         const isFollowing = this.followKeys.has(`${followType}:${followKey}`)
             || (!isPen && Boolean(identity) && this.followKeys.has(`author:${identity}`));
         const followLabel = isPen ? '关注笔名' : '关注作者';
-        popover.innerHTML = `
-            <div class="blog-user-popover__name">${escapeHtml(name)}</div>
-            <div class="blog-user-popover__actions">
+        const actions = document.createElement('div');
+        actions.className = 'blog-user-popover__actions';
+        actions.innerHTML = `
                 ${ref ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-page="${escapeHtml(ref)}">作者主页</button>` : ''}
                 ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="${followType}" data-blog-follow-key="${escapeHtml(followKey)}">${isFollowing ? '已关注' : followLabel}</button>`}
                 ${identity ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>` : ''}
-            </div>
         `;
-        popover.hidden = false;
-
-        const rect = trigger.getBoundingClientRect();
-        const popoverRect = popover.getBoundingClientRect();
-        const gap = 8;
-        const nextLeft = Math.min(
-            Math.max(rect.left, gap),
-            Math.max(window.innerWidth - popoverRect.width - gap, gap),
-        );
-        const nextTop = Math.min(
-            rect.bottom + gap,
-            Math.max(window.innerHeight - popoverRect.height - gap, gap),
-        );
-        popover.style.left = `${nextLeft}px`;
-        popover.style.top = `${nextTop}px`;
+        // The popover lives in the LQ layer portal, outside this.shell.
+        actions.addEventListener('click', (event) => this.handleClick(event));
+        // Two quick clicks on different authors: only the latest call may open.
+        const sequence = (this.userPopoverSequence || 0) + 1;
+        this.userPopoverSequence = sequence;
+        const previous = this.userPopoverHandle;
+        if (previous) await LQ.layer.close(previous, 'button');
+        const dialogs = await LQ.load('dialogs');
+        if (sequence !== this.userPopoverSequence || !trigger.isConnected) return;
+        const root = dialogs.createDialog({ type: 'popover', title: name, body: actions });
+        root.querySelector('.lq-dialog__surface')?.classList.add('blog-user-popover');
+        const done = () => { if (this.userPopoverHandle === handle) this.userPopoverHandle = null; };
+        const handle = dialogs.openDialog(root, {
+            anchor: trigger, trigger, owner: this.shell, onClose: done, onDestroy: done,
+        });
+        this.userPopoverHandle = handle;
     }
 
     async loadDiscovery() {
@@ -1781,7 +1791,7 @@ class BlogCenter {
             if (append) {
                 showToast(error.message || '博客列表加载失败', 'error');
             } else {
-                container.innerHTML = this.emptyHtml(error.message || '博客列表加载失败');
+                void this.renderLoadError(container, error.message || '博客列表加载失败', () => this.loadFeed());
             }
         } finally {
             if (append) this.feedAppendInFlight = false;
@@ -1799,6 +1809,7 @@ class BlogCenter {
         const url = new URL('/api/blog/bookmarks', window.location.origin);
         url.searchParams.set('page', String(this.state.bmPage));
         url.searchParams.set('limit', String(POSTS_PAGE_SIZE));
+        if (append) this.bookmarkAppendInFlight = true;
 
         try {
             const data = await api.get(`${url.pathname}${url.search}`);
@@ -1818,8 +1829,10 @@ class BlogCenter {
                 if (this.state.bmPage > 1) this.state.bmPage -= 1;
                 showToast(error.message || '收藏列表加载失败', 'error');
             } else {
-                container.innerHTML = this.emptyHtml(error.message || '收藏列表加载失败');
+                void this.renderLoadError(container, error.message || '收藏列表加载失败', () => this.loadBookmarks());
             }
+        } finally {
+            if (append) this.bookmarkAppendInFlight = false;
         }
         $('[data-blog-bookmarks-load-more]', this.shell)?.toggleAttribute('hidden', !this.state.bmHasMore);
     }
@@ -1884,7 +1897,9 @@ class BlogCenter {
         } catch (error) {
             if (error?.name === 'AbortError') return;
             this.state.detailPost = null;
-            container.innerHTML = this.emptyHtml(error.message || '帖子详情加载失败');
+            void this.renderLoadError(container, error.message || '帖子详情加载失败', () => this.showDetail(postId, {
+                historyMode: 'none', scrollToTop: false,
+            }));
         }
     }
 
@@ -2135,6 +2150,12 @@ class BlogCenter {
         const finish = () => {
             this.composerLayer = null;
             this.composerCloseApproved = false;
+            if (this.composerMenu) {
+                // The "更多" menu belongs to this composer session's layer.
+                this.composerMenu.binding.destroy();
+                this.composerMenu.root.remove();
+                this.composerMenu = null;
+            }
             document.body.classList.remove('blog-composer-open');
             window.clearTimeout(this.composeAutosaveTimer);
             this.state.editingPostId = null;
@@ -2152,8 +2173,9 @@ class BlogCenter {
         this.composerLayer = getLayerSystem(document).open(modal, {
             type: 'modal', surface: $('.blog-modal', modal), trigger: this.composerReturnFocus,
             initialFocus: $('[data-blog-compose-title]', modal),
-            beforeClose: () => this.composerCloseApproved || !this.isComposerDirty()
-                || window.confirm('还有未发布的修改，确定关闭编辑器吗？内容会保存在此设备。'),
+            beforeClose: (reason, layer) => this.composerCloseApproved || !this.isComposerDirty()
+                || this.confirmComposerClose(layer),
+            checkTimeoutMs: 30000,
             onCloseRequested: () => {
                 if (this.isComposerDirty()) this.saveComposerRecovery();
                 window.clearTimeout(this.composeAutosaveTimer);
@@ -2162,15 +2184,26 @@ class BlogCenter {
         });
     }
 
+    /** Unsaved changes are asked about in the layer's beforeClose (confirmComposerClose). */
     closeComposer({ force = false } = {}) {
         const modal = $('[data-blog-composer-modal]', this.shell);
-        if (!modal || modal.hidden) return true;
-        if (!force && this.isComposerDirty() && !window.confirm('还有未发布的修改，确定关闭编辑器吗？内容会保存在此设备。')) {
-            return false;
+        if (!modal || modal.hidden || !this.composerLayer) return;
+        if (force) this.composerCloseApproved = true;
+        void getLayerSystem(document).close(this.composerLayer, force ? 'saved' : 'button');
+    }
+
+    async confirmComposerClose(layer) {
+        const approved = await LQ.confirm({
+            title: '关闭编辑器？',
+            message: '还有未发布的修改。关闭后内容会保存在此设备，下次打开编辑器可以恢复。',
+            confirmLabel: '关闭', cancelLabel: '继续编辑',
+        }, { parentLayer: layer, trigger: layer?.trigger });
+        if (approved) {
+            this.composerCloseApproved = true;
+            // Answered after the layer's check window ran out: close it now.
+            if (layer?.state === 'open') void getLayerSystem(document).close(layer, 'button');
         }
-        this.composerCloseApproved = true;
-        if (this.composerLayer) void getLayerSystem(document).close(this.composerLayer, force ? 'saved' : 'button');
-        return true;
+        return approved;
     }
 
     composerRecoveryKey(editingPostId = this.state.editingPostId) {
@@ -2323,14 +2356,15 @@ class BlogCenter {
         const isPublic = this.isEditingPublicPost();
         const draftButton = $('[data-blog-action="save-draft"]', this.shell);
         const publishButton = $('[data-blog-action="publish"]', this.shell);
-        const withdrawButton = $('[data-blog-action="withdraw-draft"]', this.shell);
+        const moreButton = $('[data-blog-composer-more]', this.shell);
         if (draftButton) draftButton.hidden = isPublic;
-        if (withdrawButton) withdrawButton.hidden = status !== 'published';
+        // Withdrawing is rare and consequential: it lives in "更多", not next to "更新".
+        if (moreButton) moreButton.hidden = status !== 'published';
         if (publishButton) publishButton.textContent = isPublic ? '更新' : '发布';
     }
 
     setComposerBusy(busy) {
-        $$('[data-blog-action="save-draft"], [data-blog-action="publish"], [data-blog-action="withdraw-draft"]', this.shell)
+        $$('[data-blog-action="save-draft"], [data-blog-action="publish"], [data-blog-composer-more]', this.shell)
             .forEach((button) => {
                 button.disabled = busy;
                 button.toggleAttribute('aria-busy', busy);
@@ -2356,13 +2390,41 @@ class BlogCenter {
         }
     }
 
+    /** The menu is a child of the current composer layer, so it is rebuilt per composer session. */
+    async openComposerMenu(trigger) {
+        if (this.composerMenuLoading || !this.composerLayer) return;
+        if (this.composerMenu && this.composerMenu.layer !== this.composerLayer) {
+            this.composerMenu.binding.destroy();
+            this.composerMenu.root.remove();
+            this.composerMenu = null;
+        }
+        if (!this.composerMenu) {
+            this.composerMenuLoading = true;
+            try {
+                const menus = await LQ.load('menus');
+                const root = menus.createMenu({
+                    label: '更多操作', items: [{ id: 'withdraw', label: '撤回为草稿', danger: true }],
+                });
+                trigger.after(root);
+                const binding = menus.bindMenu(trigger, root, {
+                    parentLayer: this.composerLayer,
+                    onAction: (action) => { if (action === 'withdraw') void this.withdrawToDraft(); },
+                });
+                this.composerMenu = { binding, root, layer: this.composerLayer };
+            } finally {
+                this.composerMenuLoading = false;
+            }
+        }
+        this.composerMenu.binding.open();
+    }
+
     async withdrawToDraft() {
         const confirmed = await LQ.confirm({
             title: '撤回为草稿',
             message: '撤回后其他人将看不到这篇帖子，你可以继续修改后再发布。',
             confirmLabel: '撤回',
             danger: true,
-        });
+        }, { parentLayer: this.composerLayer });
         if (confirmed) await this.savePost('draft');
     }
 
@@ -2777,35 +2839,40 @@ class BlogCenter {
         }
     }
 
-    openReport(targetType, targetId) {
-        const dialog = $('[data-blog-report-dialog]', this.shell);
-        if (!dialog || !targetId) return;
-        this.reportTarget = { targetType, targetId };
-        const details = $('[data-blog-report-details]', dialog);
-        if (details) details.value = '';
-        if (typeof dialog.showModal === 'function') dialog.showModal();
-    }
-
-    async submitReport(event) {
-        event.preventDefault();
-        if (!this.reportTarget) return;
-        const dialog = $('[data-blog-report-dialog]', this.shell);
-        const submit = event.currentTarget?.querySelector('button[type="submit"]');
-        if (submit) submit.disabled = true;
+    /** Report form in an LQ dialog; a failed submit reopens it with what was typed. */
+    async openReport(targetType, targetId, previous = {}) {
+        if (!targetId || this.reportOpen) return;
+        this.reportOpen = true;
+        let values;
+        try {
+            values = await openFormDialog({
+                title: '反馈内容问题',
+                description: '你的反馈只对内容管理人员可见。',
+                confirmLabel: '提交反馈',
+                fields: [
+                    {
+                        name: 'reason_code', label: '问题类型', type: 'select', required: true,
+                        options: REPORT_REASON_OPTIONS, value: previous.reason_code || REPORT_REASON_OPTIONS[0][0],
+                    },
+                    {
+                        name: 'details', label: '补充说明', rows: 4, maxlength: 2000,
+                        placeholder: '请说明具体位置或需要核验的信息', value: previous.details || '',
+                    },
+                ],
+            });
+        } finally {
+            this.reportOpen = false;
+        }
+        if (!values) return;
         try {
             await api.post('/api/blog/reports', {
-                target_type: this.reportTarget.targetType,
-                target_id: this.reportTarget.targetId,
-                reason_code: $('[data-blog-report-reason]', dialog)?.value || 'other',
-                details: $('[data-blog-report-details]', dialog)?.value || '',
+                target_type: targetType, target_id: targetId,
+                reason_code: values.reason_code || 'other', details: values.details || '',
             });
-            dialog?.close();
-            this.reportTarget = null;
             showToast('反馈已提交，内容管理人员会进行核验', 'success');
         } catch (error) {
             showToast(error.message || '反馈提交失败', 'error');
-        } finally {
-            if (submit) submit.disabled = false;
+            if (Number(error.status) !== 429) void this.openReport(targetType, targetId, values);
         }
     }
 
@@ -2828,19 +2895,6 @@ class BlogCenter {
             this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '精华操作失败', 'error');
-        }
-    }
-
-    async toggleVisibility(postId) {
-        if (!window.confirm('确定调整这篇帖子的可见状态？')) return;
-
-        try {
-            const data = await api.post(`/api/blog/posts/${postId}/hide`, { reason: '' });
-            showToast(data.status === 'moderated' ? '帖子已转为私密' : '帖子已恢复可见', 'success');
-            await this.refreshAfterDetailMutation(postId);
-            this.loadDiscovery();
-        } catch (error) {
-            showToast(error.message || '可见性操作失败', 'error');
         }
     }
 
@@ -3448,7 +3502,10 @@ class BlogCenter {
             entries.forEach((entry) => {
                 if (!entry.isIntersecting) return;
                 $$('[data-blog-toc-target]', list).forEach((link) => {
-                    link.classList.toggle('is-active', link.dataset.blogTocTarget === entry.target.id);
+                    const current = link.dataset.blogTocTarget === entry.target.id;
+                    link.classList.toggle('is-active', current);
+                    if (current) link.setAttribute('aria-current', 'location');
+                    else link.removeAttribute('aria-current');
                 });
             });
         }, { rootMargin: '-15% 0px -65% 0px' });
@@ -3552,7 +3609,6 @@ class BlogCenter {
         if (post.is_pinned) badges.push('<span class="blog-badge blog-badge--pin">置顶</span>');
         if (post.is_featured) badges.push('<span class="blog-badge blog-badge--feature">精华</span>');
         if (post.status === 'draft') badges.push('<span class="blog-badge blog-badge--draft">草稿</span>');
-        if (post.status === 'moderated') badges.push('<span class="blog-badge blog-badge--moderated">私密</span>');
         if (post.visibility !== 'public') badges.push(`<span class="blog-badge blog-badge--visibility">${escapeHtml(post.visibility_label || '权限可见')}</span>`);
 
         const tags = (post.tags || []).map((tag) => (
@@ -3592,12 +3648,12 @@ class BlogCenter {
                         </div>
                     </div>
                     <div class="blog-post-card__actions">
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${likedClass}" data-like-post="${post.id}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${likedClass}" data-like-post="${post.id}" aria-pressed="${post.is_liked ? 'true' : 'false'}">
                             ${post.is_liked ? SVG.heartFill : SVG.heart}
                             <span>点赞</span>
                             <span class="blog-card-action__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
                         </button>
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${bookmarkedClass}" data-bookmark-post="${post.id}">
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-card-action${bookmarkedClass}" data-bookmark-post="${post.id}" aria-pressed="${post.is_bookmarked ? 'true' : 'false'}">
                             ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
                             <span>收藏</span>
                             <span class="blog-card-action__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
@@ -3644,7 +3700,7 @@ class BlogCenter {
             <article class="blog-detail" data-lq-material="content">
                 ${metaBadges.length ? `<div class="blog-detail__badges">${metaBadges.join('')}</div>` : ''}
                 <div class="blog-detail__moderation" data-blog-moderation-banner hidden></div>
-                <h1 class="blog-detail__title">${escapeHtml(post.title || '')}</h1>
+                <h2 class="blog-detail__title">${escapeHtml(post.title || '')}</h2>
                 <div class="blog-detail__reading-meta">
                     <span>${post.reading_minutes || 1} 分钟读完</span>
                     <span>${formatCompactNumber(post.hot_score)} 热度</span>
@@ -3673,12 +3729,12 @@ class BlogCenter {
                 ${editorialCover}
                 <div class="blog-detail__body">${renderMarkdownHtml(post.content_md || '')}</div>
                 <div class="blog-detail__interactions">
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_liked ? ' is-active--like' : ''}" data-like-post="${post.id}" aria-pressed="${post.is_liked ? 'true' : 'false'}">
                         ${post.is_liked ? SVG.heartFill : SVG.heart}
                         <span class="blog-interact-btn__label">点赞</span>
                         <span class="blog-interact-btn__count" data-blog-like-count="${post.id}">${formatCompactNumber(post.like_count)}</span>
                     </button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_bookmarked ? ' is-active--bookmark' : ''}" data-bookmark-post="${post.id}">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-interact-btn${post.is_bookmarked ? ' is-active--bookmark' : ''}" data-bookmark-post="${post.id}" aria-pressed="${post.is_bookmarked ? 'true' : 'false'}">
                         ${post.is_bookmarked ? SVG.bookmarkFill : SVG.bookmark}
                         <span class="blog-interact-btn__label">收藏</span>
                         <span class="blog-interact-btn__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
@@ -3916,17 +3972,38 @@ class BlogCenter {
             .catch(() => { /* Ambient: the cards simply stay unread. */ });
     }
 
-    /** Plan §6.4: "关注" carries the count of followed posts since the feed was last opened. */
+    /**
+     * Plan §6.4: "关注" carries the count of followed posts since the feed was
+     * last opened. The topbar poller owns the /api/blog/summary request and
+     * publishes each answer as `blog:summary` (P7: one request, not three).
+     */
     async refreshFollowingBadge() {
-        // A count fetched before the feed was opened must not bring the badge back.
-        const seenVersion = this.followingSeenVersion || 0;
-        let count = 0;
+        if (!this.summaryListener) {
+            this.summaryListener = (event) => this.applySummary(event.detail || {});
+            window.addEventListener('blog:summary', this.summaryListener);
+        }
+        const latest = window.__lanshareBlogSummary;
+        if (latest && Date.now() - Number(latest.requestedAt || 0) < SUMMARY_FRESH_MS) {
+            this.applySummary(latest);
+            return;
+        }
+        if (typeof window.refreshBlogTopbar === 'function') {
+            void window.refreshBlogTopbar();  // answers through the event
+            return;
+        }
+        const requestedAt = Date.now();
         try {
             const data = await api.get('/api/blog/summary');
-            count = Math.max(0, Number(data?.summary?.following_unread_count || 0));
+            this.applySummary({
+                followingUnreadCount: Number(data?.summary?.following_unread_count || 0), requestedAt,
+            });
         } catch { /* Ambient: no badge. */ }
-        if (seenVersion !== (this.followingSeenVersion || 0)) return;
-        this.state.followingUnread = count;
+    }
+
+    applySummary(detail) {
+        // A count requested before the feed was opened must not bring the badge back.
+        if (Number(detail.requestedAt || 0) < (this.followingSeenAt || 0)) return;
+        this.state.followingUnread = Math.max(0, Number(detail.followingUnreadCount || 0));
         this.renderFollowingBadge();
     }
 
@@ -3944,7 +4021,7 @@ class BlogCenter {
     }
 
     async markFollowingSeen() {
-        this.followingSeenVersion = (this.followingSeenVersion || 0) + 1;
+        this.followingSeenAt = Date.now();
         this.state.followingUnread = 0;
         this.renderFollowingBadge();
         try {
@@ -4074,7 +4151,7 @@ class BlogCenter {
         }
         const moderation = comment.moderation;
         const actions = [
-            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action${comment.is_liked ? ' blog-comment-action--liked' : ''}" data-like-comment="${comment.id}">
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action${comment.is_liked ? ' blog-comment-action--liked' : ''}" data-like-comment="${comment.id}" aria-pressed="${comment.is_liked ? 'true' : 'false'}">
                 ${comment.is_liked ? SVG.heartFill : SVG.heart}
                 <span class="blog-comment-action__count">${comment.like_count || 0}</span>
             </button>`,
@@ -4152,6 +4229,18 @@ class BlogCenter {
                 : '在作者卡片或板块标题旁点“关注”，他们的新帖子会出现在这里。',
             actions: [{ label: '去发现', variant: 'soft', attrs: { 'data-blog-nav': 'feed' } }],
         });
+    }
+
+    /** F4: a failed load says so and offers a retry (LQ Empty, reason "error"). */
+    async renderLoadError(container, message, retry) {
+        const content = await LQ.load('content');
+        if (!container.isConnected) return;
+        const node = content.createContent('empty', {
+            reason: 'error', variant: 'card', title: '加载失败', description: message || '请检查网络后重试',
+            actions: [{ label: '重试', icon: 'refresh-cw', attrs: { 'data-blog-retry': '' } }],
+        });
+        $('[data-blog-retry]', node)?.addEventListener('click', () => { void retry(); }, { once: true });
+        container.replaceChildren(node);
     }
 
     emptyHtml(title) {

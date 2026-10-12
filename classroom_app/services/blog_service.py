@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -662,15 +663,33 @@ def _merge_post_tags(system_tags: Any, custom_tags: Any) -> list[str]:
     return merged
 
 
+# Badges change slowly (cultivation points), but every list page used to
+# rebuild one per author. A short per-process TTL keeps pages at O(new authors).
+BADGE_CACHE_TTL_SECONDS = 120
+_BADGE_CACHE_LIMIT = 4000
+_BADGE_CACHE: dict[int, tuple[float, dict[str, Any] | None]] = {}
+
+
+def clear_badge_cache() -> None:
+    _BADGE_CACHE.clear()
+
+
 def _load_public_cultivation_badge(conn, student_id: Any) -> dict[str, Any] | None:
     normalized_id = _safe_int(student_id)
     if normalized_id is None:
         return None
+    cached = _BADGE_CACHE.get(normalized_id)
+    if cached is not None and cached[0] > time.monotonic():
+        return dict(cached[1]) if cached[1] else None
     try:
-        return build_student_public_cultivation_badge(conn, normalized_id)
+        badge = build_student_public_cultivation_badge(conn, normalized_id)
     except Exception as exc:
         print(f"[BLOG] 公开修为称号加载失败 student_id={normalized_id}: {exc}")
-        return None
+        return None  # failures are not cached
+    if len(_BADGE_CACHE) >= _BADGE_CACHE_LIMIT:
+        _BADGE_CACHE.clear()
+    _BADGE_CACHE[normalized_id] = (time.monotonic() + BADGE_CACHE_TTL_SECONDS, dict(badge) if badge else None)
+    return dict(badge) if badge else None
 
 
 class AuthorContext(dict):
@@ -2581,18 +2600,21 @@ def get_media_asset_for_user(conn, user: dict, file_hash: str) -> Optional[dict]
                 "image_height": _safe_int(payload.get("image_height")),
             }
 
+    # Indexed join on blog_comment_media (kept in step with every comment
+    # write, edit and delete) instead of a LIKE scan over all comment bodies.
     comment_rows = conn.execute(
         f"""
         SELECT c.attachments_json, c.emoji_payload_json, p.*
-        FROM blog_comments c
+        FROM blog_comment_media m
+        JOIN blog_comments c ON c.id = m.comment_id
         JOIN blog_posts p ON p.id = c.post_id
-        WHERE c.status = 'active'
+        WHERE m.file_hash = ? AND m.media_kind IN ('attachment', 'emoji')
+          AND c.status = 'active'
           AND ({mod_states.public_state_sql('c')} OR c.author_identity = ?)
-          AND (c.attachments_json LIKE ? OR c.emoji_payload_json LIKE ?)
         ORDER BY c.id DESC
         LIMIT 80
         """,
-        (identity, f"%{normalized_hash}%", f"%{normalized_hash}%"),
+        (normalized_hash, identity),
     ).fetchall()
     for row in comment_rows:
         payload = dict(row)

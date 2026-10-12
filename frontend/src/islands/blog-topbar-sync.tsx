@@ -7,6 +7,7 @@ import {
   blogHasBadge,
   blogTitle,
   normalizeBlogTopbarResponse,
+  publishBlogSummary,
   type BlogTopbarSummary,
 } from '@/lib/blog-topbar';
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
@@ -62,12 +63,23 @@ function useBlogTopbarSync() {
       node.dataset.blogTopbarManaged = 'react';
     }
 
-    const refreshBlogTopbar = async () => {
-      try {
-        updateBlogTopbar(entries, countNodes, captionNodes, await fetchBlogTopbarSummary());
-      } catch {
-        // Blog badges are ambient status; keep navigation usable if polling fails.
-      }
+    // Callers asking while a request is in flight share it (one /api/blog/summary, plan P7).
+    let inFlight: Promise<void> | null = null;
+    const refreshBlogTopbar = () => {
+      if (inFlight) return inFlight;
+      const requestedAt = Date.now();
+      inFlight = (async () => {
+        try {
+          const summary = await fetchBlogTopbarSummary();
+          updateBlogTopbar(entries, countNodes, captionNodes, summary);
+          publishBlogSummary(summary, requestedAt);
+        } catch {
+          // Blog badges are ambient status; keep navigation usable if polling fails.
+        } finally {
+          inFlight = null;
+        }
+      })();
+      return inFlight;
     };
     const handleVisibilityChange = () => {
       if (!document.hidden) {

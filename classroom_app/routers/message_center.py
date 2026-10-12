@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -231,15 +231,19 @@ async def api_message_center_mark_read(request: Request, user: dict = Depends(ge
     }
 
 
+async def _optional_json(request: Request) -> Any:
+    """Body read on the event loop; the sync handler then runs in the threadpool."""
+    try:
+        return await request.json()
+    except ValueError:
+        return None
+
+
 @router.post("/api/message-center/read-by-ref", response_class=JSONResponse)
-async def api_message_center_read_by_ref(request: Request, user: dict = Depends(get_current_user)):
+def api_message_center_read_by_ref(data: Any = Depends(_optional_json), user: dict = Depends(get_current_user)):
     """Opening a blog post settles every unread notification about it (plan §6.3)."""
     from ..services.blog_notifications import mark_post_read
 
-    try:
-        data = await request.json()
-    except ValueError:
-        data = None
     if not isinstance(data, dict) or str(data.get("source") or "") != "blog":
         raise HTTPException(status_code=400, detail="请求格式不正确")
     try:
@@ -268,14 +272,10 @@ def api_message_center_preferences(user: dict = Depends(get_current_user)):
 
 
 @router.put("/api/message-center/preferences", response_class=JSONResponse)
-async def api_set_message_center_preference(request: Request, user: dict = Depends(get_current_user)):
+def api_set_message_center_preference(data: Any = Depends(_optional_json), user: dict = Depends(get_current_user)):
     from ..services.blog_notifications import preferences_view, set_preference
 
     identity = _preference_identity(user)
-    try:
-        data = await request.json()
-    except ValueError:
-        data = None
     if not isinstance(data, dict) or not isinstance(data.get("enabled"), bool):
         raise HTTPException(status_code=400, detail="请求格式不正确")
     with get_db_connection() as conn:

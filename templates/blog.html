@@ -71,7 +71,7 @@
                 <span class="blog-detail-topbar__back-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
                 </span>
-                <span><strong data-blog-detail-back-label>返回博客列表</strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
+                <span><strong data-blog-detail-back-label>返回<span class="blog-detail-topbar__back-target">博客列表</span></strong><small data-blog-detail-back-context>继续浏览刚才的板块</small></span>
             </button>
             <div class="blog-detail-topbar__context">
                 <span data-blog-detail-section>博客中心</span>
@@ -84,7 +84,7 @@
     <!-- Feed View -->
     <div id="blog-feed-panel" data-blog-view="feed" role="tabpanel" aria-label="博客文章列表">
         <div class="blog-layout">
-            <main class="blog-stream">
+            <div class="blog-stream">
                 <section class="blog-spotlight" data-blog-spotlight aria-label="精选导读"></section>
 
                 <!-- Sort bar -->
@@ -163,7 +163,7 @@
                 <div class="blog-load-more" data-blog-load-more hidden>
                     <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加载更多</button>
                 </div>
-            </main>
+            </div>
 
             <aside class="blog-rail" aria-label="博客探索">
                 <section data-lq-component="surface" class="lq-surface blog-rail-card" data-blog-trending-card>
@@ -269,8 +269,8 @@
                     {% if user_info.role == "student" %}
                     <div class="blog-composer__options blog-composer__options--author">
                         <div class="blog-composer__option blog-composer__option--stack">
-                            <label>署名方式</label>
-                            <div class="blog-author-mode-picker" data-blog-compose-author-mode-group>
+                            <label id="blog-compose-author-mode-label">署名方式</label>
+                            <div class="blog-author-mode-picker" data-blog-compose-author-mode-group role="radiogroup" aria-labelledby="blog-compose-author-mode-label">
                                 <label class="blog-author-mode-option">
                                     <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="real_name" data-blog-compose-author-mode checked>
                                     <span>真实名字</span>
@@ -294,24 +294,24 @@
                     <!-- Options -->
                     <div class="blog-composer__options">
                         <div class="blog-composer__option blog-composer__option--section">
-                            <label>发布到板块</label>
-                            <select aria-label="发布到板块" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select blog-section-select" data-blog-compose-section>
+                            <label for="blog-compose-section">发布到板块</label>
+                            <select id="blog-compose-section" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select blog-section-select" data-blog-compose-section>
                                 {% for section in blog_sections if section.allow_user_posts %}
                                 <option value="{{ section.section_key }}">{{ section.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="blog-composer__option">
-                            <label>可见范围</label>
-                            <select aria-label="可见范围" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select" data-blog-compose-visibility>
+                            <label for="blog-compose-visibility">可见范围</label>
+                            <select id="blog-compose-visibility" data-lq-dropdown data-lq-component="select" class="lq-select blog-visibility-select" data-blog-compose-visibility>
                                 <option value="public">全部可见</option>
                                 <option value="class_visible">同班可见</option>
                                 <option value="selected_users">指定用户可见</option>
                             </select>
                         </div>
                         <div class="blog-composer__option" data-blog-compose-class-wrap hidden>
-                            <label>选择班级</label>
-                            <select aria-label="选择班级" data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-compose-class></select>
+                            <label for="blog-compose-class">选择班级</label>
+                            <select id="blog-compose-class" data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-compose-class></select>
                         </div>
                         <p class="lq-field__error blog-composer__field-error" id="blog-compose-visibility-error" data-blog-compose-visibility-error role="alert" hidden></p>
                         <div class="blog-composer__option">
@@ -330,8 +330,8 @@
 
                     <!-- Selected users (for selected_users visibility) -->
                     <div class="blog-visibility-config" data-blog-compose-users-config hidden>
-                        <div>指定可见用户</div>
-                        <input data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="搜索用户..." data-blog-compose-user-search style="margin-top: var(--spacing-sm);">
+                        <label for="blog-compose-user-search">指定可见用户</label>
+                        <input id="blog-compose-user-search" data-lq-component="input" class="lq-input blog-composer__input" type="search" placeholder="搜索用户..." data-blog-compose-user-search style="margin-top: var(--spacing-sm);">
                         <div class="blog-user-picker" data-blog-compose-selected-users></div>
                         <div data-blog-compose-user-results style="margin-top: var(--spacing-sm);"></div>
                     </div>
@@ -339,8 +339,8 @@
                     <!-- Tags -->
                     <div class="blog-composer__options">
                         <div class="blog-composer__option">
-                            <label>标签（逗号分隔）</label>
-                            <input data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="如: 技术, 分享" data-blog-compose-tags style="width: 260px;">
+                            <label for="blog-compose-tags">标签（逗号分隔）</label>
+                            <input id="blog-compose-tags" data-lq-component="input" class="lq-input blog-composer__input" type="text" placeholder="如: 技术, 分享" data-blog-compose-tags style="width: 260px;">
                         </div>
                     </div>
 
@@ -354,7 +354,7 @@
                             <input data-lq-component="file" class="lq-native-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-blog-compose-file-input hidden multiple>
                         </div>
                         <div class="flex items-center gap-2">
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-blog-action="withdraw-draft" type="button" hidden>撤回为草稿</button>
+                            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-blog-composer-more type="button" aria-haspopup="menu" hidden>更多</button>
                             <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-action="save-draft" type="button">保存草稿</button>
                             <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-blog-action="publish" type="button">发布</button>
                         </div>
@@ -364,37 +364,7 @@
         </div>
     </div>
 
-    <dialog data-lq-component="surface" class="lq-surface lq-domain-raised lq-domain-region blog-report-dialog" data-lq-material="raised" data-blog-report-dialog aria-labelledby="blog-report-title">
-        <form method="dialog" data-blog-report-form>
-            <div class="blog-report-dialog__header">
-                <div>
-                    <h3 id="blog-report-title">反馈内容问题</h3>
-                    <p>你的反馈只对内容管理人员可见。</p>
-                </div>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-blog-report-cancel aria-label="关闭">×</button>
-            </div>
-            <label>问题类型
-                <select data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-report-reason required>
-                    <option value="false_information">信息不实或已失效</option>
-                    <option value="job_scam">疑似招聘诈骗</option>
-                    <option value="spam">广告或垃圾内容</option>
-                    <option value="abuse">攻击、骚扰或不友善</option>
-                    <option value="privacy_identity">暴露了我的身份或个人信息</option>
-                    <option value="privacy">泄露他人隐私</option>
-                    <option value="other">其他问题</option>
-                </select>
-            </label>
-            <label>补充说明
-                <textarea data-lq-component="textarea" class="lq-textarea" data-blog-report-details rows="4" maxlength="2000" placeholder="请说明具体位置或需要核验的信息"></textarea>
-            </label>
-            <div class="blog-report-dialog__actions">
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-blog-report-cancel>取消</button>
-                <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">提交反馈</button>
-            </div>
-        </form>
-    </dialog>
 
-    <div data-lq-component="menu" class="lq-domain-region blog-user-popover" data-lq-material="raised" data-blog-user-popover hidden></div>
 </div>
 
 {% endblock %}

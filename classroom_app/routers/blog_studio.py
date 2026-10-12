@@ -69,8 +69,7 @@ def api_studio_fans(user: dict = Depends(get_current_user)):
 
 
 @router.put("/api/blog/studio/profile", response_class=JSONResponse)
-async def api_studio_profile(request: Request, user: dict = Depends(get_current_user)):
-    data = await _json(request)
+def api_studio_profile(data: dict = Depends(_json), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         try:
             bios = studio.set_bios(conn, user, real_bio=data.get("real_bio"), pen_bio=data.get("pen_bio"))

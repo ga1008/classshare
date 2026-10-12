@@ -65,16 +65,14 @@ def api_post_moderation_status(post_id: int, user: dict = Depends(get_current_us
 
 
 @router.post("/api/blog/posts/{post_id}/appeal", response_class=JSONResponse)
-async def api_create_appeal(post_id: int, request: Request, user: dict = Depends(get_current_user)):
-    data = await _json(request)
+def api_create_appeal(post_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_user)):
     return _run(moderation.create_appeal, user, post_id, reason=data.get("reason"))
 
 
 # --- moderation actions ----------------------------------------------------------
 
 @router.post("/api/blog/moderation/{target_type}/{target_id}", response_class=JSONResponse)
-async def api_moderate(target_type: str, target_id: int, request: Request, user: dict = Depends(get_current_teacher)):
-    data = await _json(request)
+def api_moderate(target_type: str, target_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_teacher)):
     return _run(moderation.moderate, user, target_type, target_id, action=str(data.get("action") or ""),
                 reason_code=data.get("reason_code"), note=data.get("note"))
 
@@ -96,21 +94,18 @@ def api_review_queue(tab: str = Query("machine"), user: dict = Depends(get_curre
 
 
 @router.post("/api/blog/review/reports/{target_type}/{target_id}", response_class=JSONResponse)
-async def api_review_reports(target_type: str, target_id: int, request: Request, user: dict = Depends(get_current_teacher)):
-    data = await _json(request)
+def api_review_reports(target_type: str, target_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_teacher)):
     return _run(moderation.resolve_reports, user, target_type, target_id, decision=str(data.get("decision") or ""),
                 reason_code=data.get("reason_code"), note=data.get("note"))
 
 
 @router.post("/api/blog/review/appeals/{appeal_id}", response_class=JSONResponse)
-async def api_review_appeal(appeal_id: int, request: Request, user: dict = Depends(get_current_teacher)):
-    data = await _json(request)
+def api_review_appeal(appeal_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_teacher)):
     return _run(moderation.decide_appeal, user, appeal_id, decision=str(data.get("decision") or ""), note=data.get("note"))
 
 
 @router.post("/api/blog/review/reveal/{target_type}/{target_id}", response_class=JSONResponse)
-async def api_review_reveal(target_type: str, target_id: int, request: Request, user: dict = Depends(get_current_teacher)):
-    data = await _json(request)
+def api_review_reveal(target_type: str, target_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_teacher)):
     return _run(moderation.reveal_identity, user, target_type, target_id,
                 reason_kind=data.get("reason_kind"), note=data.get("note"))
 
@@ -138,8 +133,7 @@ def api_review_moderators(user: dict = Depends(get_current_teacher)):
 
 
 @router.post("/api/blog/review/moderators/{teacher_id}", response_class=JSONResponse)
-async def api_review_set_moderator(teacher_id: int, request: Request, user: dict = Depends(get_current_teacher)):
-    data = await _json(request)
+def api_review_set_moderator(teacher_id: int, data: dict = Depends(_json), user: dict = Depends(get_current_teacher)):
     return _run(moderation.set_moderator, user, teacher_id, granted=bool(data.get("granted", True)))
 
 
