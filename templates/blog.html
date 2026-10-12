@@ -32,7 +32,7 @@
             <div class="blog-header__actions" role="group" aria-label="内容入口">
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key is-active" data-blog-nav="feed" type="button">全部</button>
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="following" type="button">关注</button>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="my-posts" type="button">我的</button>
+                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="studio" type="button">创作中心</button>
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" data-blog-nav="bookmarks" type="button">收藏</button>
                 {% if can_review_blog %}
                 <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-nav-key" href="/manage/system/blog-review" data-blog-review-entry>审核台</a>
@@ -203,19 +203,14 @@
         <div class="blog-detail-host" data-blog-detail-content></div>
     </div>
 
-    <!-- My Posts View -->
-    <div data-blog-view="my-posts" hidden>
-        <div class="blog-sort-bar">
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab is-active" data-blog-myposts-filter="all">全部</button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="published">已发布</button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="reviewing">审核中</button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="limited">受限</button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-sort-tab" data-blog-myposts-filter="draft">草稿</button>
-        </div>
-        <div class="blog-feed" data-lq-material="content" data-blog-my-feed></div>
-        <div class="blog-load-more" data-blog-my-load-more hidden>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">加载更多</button>
-        </div>
+    <!-- Creator studio (plan §9.4): tabs and panels are built by blog_studio.js -->
+    <div data-blog-view="studio" hidden>
+        <div class="blog-studio" data-lq-material="content" data-blog-studio-root></div>
+    </div>
+
+    <!-- Author page: one face (real name or pen name), addressed by an opaque ref -->
+    <div data-blog-view="author" hidden>
+        <div class="blog-author-page" data-blog-author-root></div>
     </div>
 
     <!-- Bookmarks View -->
@@ -318,6 +313,7 @@
                             <label>选择班级</label>
                             <select aria-label="选择班级" data-lq-dropdown data-lq-component="select" class="lq-select" data-blog-compose-class></select>
                         </div>
+                        <p class="lq-field__error blog-composer__field-error" id="blog-compose-visibility-error" data-blog-compose-visibility-error role="alert" hidden></p>
                         <div class="blog-composer__option">
                             <label>
                                 <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-blog-compose-comments checked>

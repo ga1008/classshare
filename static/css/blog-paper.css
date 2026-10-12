@@ -876,10 +876,6 @@
     color: hsl(var(--ls-warning));
 }
 
-.blog-post-card__footnote {
-    font-size: var(--text-xs);
-    color: var(--blog-ink-soft);
-}
 
 /* 徽标 */
 .blog-badge {
@@ -2821,4 +2817,111 @@ body.blog-composer-open {
 
 [data-blog-nav="following"] [data-blog-following-badge] {
     margin-inline-start: var(--ls-s-1);
+}
+
+/* Creator studio and author pages (blog plan §9.4, P6). Layout only: every
+   surface, chip, meter, row and alert is an LQ component with its own
+   material; these rules only place them. */
+.blog-studio {
+    display: grid;
+    gap: var(--ls-s-4);
+}
+
+.blog-studio__panel {
+    display: grid;
+    gap: var(--ls-s-4);
+    padding-top: var(--ls-s-3);
+}
+
+.blog-studio__chips,
+.blog-studio__toolbar,
+.blog-studio__row-actions,
+.blog-studio__tag-form,
+.blog-author-page__meta,
+.blog-author-page__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2);
+}
+
+.blog-studio__toolbar {
+    justify-content: space-between;
+}
+
+.blog-studio__metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--ls-s-3);
+}
+
+.blog-studio__heading {
+    margin: 0 0 var(--ls-s-2);
+    font-size: var(--ls-t-body);
+    font-weight: 600;
+}
+
+.blog-studio__hint,
+.blog-studio__status {
+    margin: 0;
+    color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
+    font-size: var(--ls-t-sub);
+}
+
+.blog-studio__profile-form {
+    display: grid;
+    gap: var(--ls-s-3);
+    max-width: 40rem;
+}
+
+.blog-studio__tag-form .lq-input {
+    flex: 1 1 12rem;
+    max-width: 20rem;
+}
+
+.blog-studio__alert {
+    margin-top: var(--ls-s-2);
+}
+
+.blog-author-page {
+    display: grid;
+    gap: var(--ls-s-4);
+}
+
+.blog-author-page__head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
+    gap: var(--ls-s-4);
+}
+
+.blog-author-page__copy {
+    display: grid;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+.blog-author-page__name {
+    margin: 0;
+    font-size: var(--ls-t-title);
+}
+
+.blog-author-page__bio {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.blog-composer__field-error:not([hidden]) {
+    display: block;
+    margin: var(--ls-s-1) 0 0;
+}
+
+@media (max-width: 640px) {
+    .blog-author-page__head {
+        grid-template-columns: auto 1fr;
+    }
+
+    .blog-author-page__actions {
+        grid-column: 1 / -1;
+    }
 }

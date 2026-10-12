@@ -436,8 +436,12 @@ def notify_like(conn, *, target_type: str, target_id: int, liker_identity: str) 
         aggregate_member=str(liker_identity))
 
 
-def notify_follow(conn, *, follower: dict, target_identity: str) -> int:
-    """Following is real-named (D10): the card names the latest follower."""
+def notify_follow(conn, *, follower: dict, target_identity: str, pen: bool = False) -> int:
+    """Following is real-named (D10): the card names the latest follower.
+
+    Pen-name follows get their own card ("关注了你的笔名"), never merged with
+    real-name ones, so the counts stay per face.
+    """
     role, _, raw_pk = str(target_identity or "").partition(":")
     recipient = _resolve_notifiable_user(role, raw_pk)
     follower_role = str(follower.get("role") or "").strip().lower()
@@ -449,13 +453,14 @@ def notify_follow(conn, *, follower: dict, target_identity: str) -> int:
         return 0
     profile = persona_service.load_profiles(conn, [follower_identity]).get(follower_identity) or {}
     name = str(profile.get("name") or follower.get("name") or "有人")
-    template = "{count} 人关注了你"
+    template = "{count} 人关注了你的笔名" if pen else "{count} 人关注了你"
+    face = "pen" if pen else "real"
     return _send(conn, _build_notification_payload(
         recipient_role=recipient[0], recipient_user_pk=recipient[1], category=MESSAGE_CATEGORY_BLOG_FOLLOW,
-        title=template, body_preview=f"最近关注你的是 {name}", actor_role=follower_role, actor_user_pk=follower_pk,
-        actor_display_name=name, link_url="/blog?view=my-posts", ref_type="blog_follow",
-        ref_id=follower_identity, metadata={"event": EVENT_FOLLOW, "title_template": template},
-    ), event=EVENT_FOLLOW, aggregate_key=f"{EVENT_FOLLOW}:{date.today().isoformat()}",
+        title=template, body_preview=f"最近关注的是 {name}", actor_role=follower_role, actor_user_pk=follower_pk,
+        actor_display_name=name, link_url="/blog?view=studio&tab=fans", ref_type="blog_follow",
+        ref_id=f"{face}:{follower_identity}", metadata={"event": EVENT_FOLLOW, "title_template": template},
+    ), event=EVENT_FOLLOW, aggregate_key=f"{EVENT_FOLLOW}:{face}:{date.today().isoformat()}",
         aggregate_member=follower_identity, aggregate_recent=follower_identity)
 
 

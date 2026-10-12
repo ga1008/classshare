@@ -66,7 +66,8 @@ class BlogRequestTests(PlatformWriteFixture):
     def test_detail_update_cas_and_original_visibility_match_normal_web(self):
         detail=self.restored_parity('student','http.blog.post.detail',path_params={'post_id':self.post})
         self.assertEqual(200,detail['result']['http_status'])
-        self.assertEqual(1,len(self.sql('SELECT id FROM blog_post_views WHERE post_id=?',(self.post,))))
+        # P6: the author opening their own post is not a reader view.
+        self.assertEqual(0,len(self.sql('SELECT id FROM blog_post_views WHERE post_id=?',(self.post,))))
         version=self.revision(self.post)
         edited=self.restored_parity('student','http.blog.post.update',path_params={'post_id':self.post},body={'expected_updated_at':version,'title':'Edited title','content_md':'Updated content','tags':['reflection']})
         self.assertEqual(200,edited['result']['http_status'])

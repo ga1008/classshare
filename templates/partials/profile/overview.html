@@ -109,6 +109,22 @@
                             <div class="profile-summary-row"><span>个人主页</span><strong>{% if profile.homepage_url %}<a href="{{ profile.homepage_url }}" target="_blank" rel="noopener noreferrer">打开</a>{% else %}未填写{% endif %}</strong></div>
                         </div>
                     </section>
+                    {% if overview.creator %}
+                    <section class="profile-band profile-reveal" data-profile-creator-card>
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>我的创作</h3>
+                            </div>
+                        </div>
+                        <div class="profile-summary-list">
+                            <div class="profile-summary-row"><span>已发布</span><strong>{{ overview.creator.published }} 篇</strong></div>
+                            <div class="profile-summary-row"><span>草稿</span><strong>{{ overview.creator.drafts }} 篇</strong></div>
+                            <div class="profile-summary-row"><span>粉丝</span><strong>{{ overview.creator.followers }}</strong></div>
+                            {% if overview.creator.needs_attention %}<div class="profile-summary-row"><span>待处理</span><strong>{{ overview.creator.needs_attention }} 项</strong></div>{% endif %}
+                        </div>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--soft" href="{{ overview.creator.href }}">进入创作中心</a>
+                    </section>
+                    {% endif %}
                     {% if security_summary %}
                     <section class="profile-band profile-reveal">
                         <div class="profile-band__head">

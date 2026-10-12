@@ -71,6 +71,13 @@ const SVG = {
     smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01"/><path d="M15 9h.01"/></svg>',
 };
 
+/** "my-posts" is the studio's old name; unknown views fall back to the feed. */
+function normalizeNav(value) {
+    const nav = String(value || 'feed').trim().toLowerCase();
+    if (nav === 'my-posts') return 'studio';
+    return ['feed', 'following', 'studio', 'bookmarks', 'author'].includes(nav) ? nav : 'feed';
+}
+
 const api = {
     async request(url, options = {}) {
         const response = await fetch(url, options);
@@ -221,14 +228,11 @@ class BlogCenter {
             detailPostId: null,
             detailPost: null,
             posts: [],
-            myPosts: [],
             bookmarkPosts: [],
             discovery: null,
             page: 1,
-            myPage: 1,
             bmPage: 1,
             hasMore: false,
-            myHasMore: false,
             bmHasMore: false,
             editingPostId: null,
             editingStatus: null,
@@ -236,7 +240,6 @@ class BlogCenter {
             editingRevision: null,
             uploadedImages: [],
             selectedUsers: [],
-            myPostsFilter: null,
             authorFilter: null,
             tagFilter: null,
             composeClassesLoaded: false,
@@ -272,6 +275,9 @@ class BlogCenter {
             author: this.state.authorFilter || null,
             careerFilters: normalizeCareerFilters(this.state.careerFilters),
             page: this.state.page || 1,
+            // Back/forward between author pages and studio tabs restores the right one.
+            studioTab: this.studioTab || 'overview',
+            authorRef: this.authorRef || '',
             scrollY: Math.max(0, Math.round(window.scrollY || 0)),
         };
     }
@@ -291,7 +297,9 @@ class BlogCenter {
     restoreListSnapshot(snapshot = {}) {
         this.state.currentSection = String(snapshot.section || '').trim().toLowerCase();
         this.state.currentSort = snapshot.sort || 'latest';
-        this.state.currentNav = snapshot.nav || 'feed';
+        this.state.currentNav = normalizeNav(snapshot.nav);
+        if (snapshot.studioTab) this.studioTab = snapshot.studioTab;
+        if (snapshot.authorRef) this.authorRef = snapshot.authorRef;
         this.state.tagFilter = snapshot.tag || null;
         this.state.authorFilter = snapshot.author || null;
         this.state.careerFilters = normalizeCareerFilters(snapshot.careerFilters);
@@ -322,6 +330,8 @@ class BlogCenter {
             sort: url.searchParams.get('sort') || 'latest',
             query: url.searchParams.get('q') || '',
             nav: url.searchParams.get('view') || 'feed',
+            studioTab: url.searchParams.get('tab') || 'overview',
+            authorRef: url.searchParams.get('ref') || '',
             careerFilters: {
                 region: url.searchParams.get('region') || '',
                 opportunityType: url.searchParams.get('type') || '',
@@ -336,8 +346,8 @@ class BlogCenter {
         this.state.detailPost = null;
         this.restoreListSnapshot(snapshot);
         this.showCurrentListView();
-        if (this.state.currentNav === 'my-posts') {
-            await this.loadMyPosts();
+        if (this.state.currentNav === 'studio' || this.state.currentNav === 'author') {
+            await this.openOwnView({ pushUrl: false });
         } else if (this.state.currentNav === 'bookmarks') {
             await this.loadBookmarks();
         } else {
@@ -398,10 +408,10 @@ class BlogCenter {
         const url = new URL(window.location.href);
         this.state.currentSection = (url.searchParams.get('section') || this.initialSection || '').trim().toLowerCase();
         this.state.currentSort = url.searchParams.get('sort') || 'latest';
-        const requestedNav = (url.searchParams.get('view') || 'feed').trim().toLowerCase();
-        this.state.currentNav = ['feed', 'following', 'my-posts', 'bookmarks'].includes(requestedNav)
-            ? requestedNav
-            : 'feed';
+        const requestedNav = normalizeNav(url.searchParams.get('view'));
+        this.state.currentNav = requestedNav === 'author' && !url.searchParams.get('ref') ? 'feed' : requestedNav;
+        this.studioTab = url.searchParams.get('tab') || 'overview';
+        this.authorRef = url.searchParams.get('ref') || '';
         this.state.careerFilters = normalizeCareerFilters({
             region: url.searchParams.get('region') || '',
             opportunityType: url.searchParams.get('type') || '',
@@ -503,12 +513,6 @@ class BlogCenter {
             return;
         }
 
-        const myFilterButton = event.target.closest('[data-blog-myposts-filter]');
-        if (myFilterButton) {
-            this.setMyPostsFilter(myFilterButton.dataset.blogMypostsFilter || 'all');
-            return;
-        }
-
         const loadMore = event.target.closest('[data-blog-load-more]');
         if (loadMore) {
             if (!this.feedAppendInFlight) this.loadFeed({ append: true });
@@ -530,6 +534,8 @@ class BlogCenter {
         const userMenuButton = event.target.closest('[data-blog-user-menu]');
         if (userMenuButton) {
             this.openUserPopover(userMenuButton, {
+                ref: userMenuButton.dataset.userRef || '',
+                kind: userMenuButton.dataset.userKind || '',
                 identity: userMenuButton.dataset.userIdentity || '',
                 name: userMenuButton.dataset.userName || '',
                 role: userMenuButton.dataset.userRole || '',
@@ -549,10 +555,10 @@ class BlogCenter {
             return;
         }
 
-        const loadMoreMine = event.target.closest('[data-blog-my-load-more]');
-        if (loadMoreMine) {
-            this.state.myPage += 1;
-            this.loadMyPosts({ append: true });
+        const authorPageButton = event.target.closest('[data-blog-author-page]');
+        if (authorPageButton) {
+            this.closeUserPopover();
+            this.openAuthorPage(authorPageButton.dataset.blogAuthorPage || '');
             return;
         }
 
@@ -884,6 +890,7 @@ class BlogCenter {
             return;
         }
         if (event.target.matches('[data-blog-compose-visibility]')) {
+            this.setVisibilityError('');
             this.updateVisibilityOptions(event.target.value);
             this.scheduleComposerRecovery();
             return;
@@ -898,6 +905,7 @@ class BlogCenter {
             return;
         }
         if (event.target.matches('[data-blog-compose-visibility], [data-blog-compose-section], [data-blog-compose-class], [data-blog-compose-comments], [data-blog-compose-anon-comments]')) {
+            if (event.target.matches('[data-blog-compose-class]') && event.target.value) this.setVisibilityError('');
             this.scheduleComposerRecovery();
         }
     }
@@ -1001,10 +1009,8 @@ class BlogCenter {
             this.loadFeed();
             return;
         }
-        if (nav === 'my-posts') {
-            this.showView('my-posts');
-            this.state.myPage = 1;
-            this.loadMyPosts();
+        if (nav === 'studio' || nav === 'author') {
+            this.openOwnView({ pushUrl: false });
             return;
         }
         if (nav === 'bookmarks') {
@@ -1073,6 +1079,10 @@ class BlogCenter {
             url.searchParams.set('section', this.state.currentSection);
         }
         if (this.state.currentNav !== 'feed') url.searchParams.set('view', this.state.currentNav);
+        if (this.state.currentNav === 'studio' && this.studioTab && this.studioTab !== 'overview') {
+            url.searchParams.set('tab', this.studioTab);
+        }
+        if (this.state.currentNav === 'author' && this.authorRef) url.searchParams.set('ref', this.authorRef);
         if (this.state.currentSort !== 'latest') url.searchParams.set('sort', this.state.currentSort);
         const query = $('[data-blog-search]', this.shell)?.value?.trim() || '';
         if (query) url.searchParams.set('q', query);
@@ -1210,7 +1220,11 @@ class BlogCenter {
     async loadFollows() {
         try {
             const data = await api.get('/api/blog/follows');
-            this.followKeys = new Set((data.follows || []).map((item) => `${item.target_type}:${item.target_key}`));
+            // A real-name follow is known both by identity (legacy) and by face ref.
+            this.followKeys = new Set((data.follows || []).flatMap((item) => [
+                `${item.target_type}:${item.target_key}`,
+                ...(item.ref ? [`${item.target_type}:${item.ref}`] : []),
+            ]));
             this.renderSectionIntro();
         } catch (error) {
             this.followKeys = new Set();
@@ -1232,7 +1246,10 @@ class BlogCenter {
                 .filter((button) => button.dataset.blogFollowKey === targetKey)
                 .forEach((button) => {
                 button.classList.toggle('is-following', Boolean(data.following));
-                button.textContent = data.following ? (targetType === 'section' ? '已关注' : '已关注作者') : (targetType === 'section' ? '关注板块' : '关注作者');
+                let idleLabel = '关注作者';
+                if (targetType === 'section') idleLabel = '关注板块';
+                else if (targetType === 'pen') idleLabel = '关注笔名';
+                button.textContent = data.following ? '已关注' : idleLabel;
             });
             showToast(data.following ? '关注成功，新内容会进入“我的关注”' : '已取消关注', 'success');
             if (this.state.currentNav === 'following' && !data.following) this.loadFeed();
@@ -1355,15 +1372,6 @@ class BlogCenter {
         }
     }
 
-    setMyPostsFilter(filterValue) {
-        this.state.myPostsFilter = filterValue === 'all' ? null : filterValue;
-        $$('[data-blog-myposts-filter]', this.shell).forEach((button) => {
-            button.classList.toggle('is-active', button.dataset.blogMypostsFilter === filterValue);
-        });
-        this.state.myPage = 1;
-        this.loadMyPosts();
-    }
-
     showView(viewName) {
         if (this.state.currentView === 'detail' && viewName !== 'detail') {
             this.stopReadingSession();
@@ -1381,8 +1389,8 @@ class BlogCenter {
     }
 
     showCurrentListView() {
-        if (this.state.currentNav === 'my-posts') {
-            this.showView('my-posts');
+        if (this.state.currentNav === 'studio' || this.state.currentNav === 'author') {
+            this.showView(this.state.currentNav);
             return;
         }
         if (this.state.currentNav === 'bookmarks') {
@@ -1490,20 +1498,28 @@ class BlogCenter {
 
     openUserPopover(trigger, user) {
         const identity = String(user?.identity || '').trim();
+        const ref = String(user?.ref || '').trim();
         const name = String(user?.name || '').trim() || '该用户';
         const role = String(user?.role || '').trim().toLowerCase();
-        if (!identity || role === 'assistant') return;
+        const isPen = user?.kind === 'pen';
+        if ((!identity && !ref) || role === 'assistant') return;
 
         const popover = $('[data-blog-user-popover]', this.shell);
         if (!popover) return;
-        const isSelf = identity === this.userIdentity;
-        const isFollowing = this.followKeys.has(`author:${identity}`);
+        // A pen name carries no identity, so "is it me" is unknowable here; the
+        // server refuses a self-follow instead.
+        const isSelf = Boolean(identity) && identity === this.userIdentity;
+        const followType = isPen ? 'pen' : 'author';
+        const followKey = ref || identity;
+        const isFollowing = this.followKeys.has(`${followType}:${followKey}`)
+            || (!isPen && Boolean(identity) && this.followKeys.has(`author:${identity}`));
+        const followLabel = isPen ? '关注笔名' : '关注作者';
         popover.innerHTML = `
             <div class="blog-user-popover__name">${escapeHtml(name)}</div>
             <div class="blog-user-popover__actions">
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-posts="${escapeHtml(identity)}" data-author-name="${escapeHtml(name)}">ta的帖子</button>
-                ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="author" data-blog-follow-key="${escapeHtml(identity)}">${isFollowing ? '已关注作者' : '关注作者'}</button>`}
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>
+                ${ref ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-page="${escapeHtml(ref)}">作者主页</button>` : ''}
+                ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="${followType}" data-blog-follow-key="${escapeHtml(followKey)}">${isFollowing ? '已关注' : followLabel}</button>`}
+                ${identity ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>` : ''}
             </div>
         `;
         popover.hidden = false;
@@ -1771,44 +1787,6 @@ class BlogCenter {
             if (append) this.feedAppendInFlight = false;
         }
         $('[data-blog-load-more]', this.shell)?.toggleAttribute('hidden', !this.state.hasMore);
-    }
-
-    async loadMyPosts({ append = false } = {}) {
-        const container = $('[data-blog-my-feed]', this.shell);
-        if (!container) return;
-        if (!append) {
-            container.innerHTML = this.skeletonHtml(2);
-        }
-
-        const url = new URL('/api/blog/my-posts', window.location.origin);
-        url.searchParams.set('page', String(this.state.myPage));
-        url.searchParams.set('limit', String(POSTS_PAGE_SIZE));
-        if (this.state.myPostsFilter) {
-            url.searchParams.set('status', this.state.myPostsFilter);
-        }
-
-        try {
-            const data = await api.get(`${url.pathname}${url.search}`);
-            const nextPosts = data.posts || [];
-            this.state.myHasMore = Boolean(data.has_more);
-            this.state.myPosts = append ? [...this.state.myPosts, ...nextPosts] : nextPosts;
-            if (append) {
-                container.insertAdjacentHTML('beforeend', nextPosts.map((post) => this.postCardHtml(post, { ownView: true })).join(''));
-            } else {
-                container.innerHTML = this.state.myPosts.length
-                    ? this.state.myPosts.map((post) => this.postCardHtml(post, { ownView: true })).join('')
-                    : this.emptyHtml('你还没有发布过帖子');
-            }
-            if (append && !nextPosts.length && this.state.myPage > 1) this.state.myPage -= 1;
-        } catch (error) {
-            if (append) {
-                if (this.state.myPage > 1) this.state.myPage -= 1;
-                showToast(error.message || '我的帖子加载失败', 'error');
-            } else {
-                container.innerHTML = this.emptyHtml(error.message || '我的帖子加载失败');
-            }
-        }
-        $('[data-blog-my-load-more]', this.shell)?.toggleAttribute('hidden', !this.state.myHasMore);
     }
 
     async loadBookmarks({ append = false } = {}) {
@@ -2097,6 +2075,7 @@ class BlogCenter {
         if (!modal) return;
 
         this.composerReturnFocus = document.activeElement;
+        this.setVisibilityError('');
         this.state.editingPostId = post?.id || null;
         this.state.editingStatus = post?.status || null;
         const recovered = this.loadComposerRecovery(this.state.editingPostId);
@@ -2358,6 +2337,25 @@ class BlogCenter {
             });
     }
 
+    /** C7: an incomplete audience is explained next to the field, not in a toast. */
+    setVisibilityError(message) {
+        const error = $('[data-blog-compose-visibility-error]', this.shell);
+        const select = $('[data-blog-compose-visibility]', this.shell);
+        if (error) {
+            error.textContent = message;
+            error.hidden = !message;
+        }
+        if (!select) return;
+        if (message) {
+            select.setAttribute('aria-invalid', 'true');
+            select.setAttribute('aria-describedby', 'blog-compose-visibility-error');
+            select.focus();
+        } else {
+            select.removeAttribute('aria-invalid');
+            select.removeAttribute('aria-describedby');
+        }
+    }
+
     async withdrawToDraft() {
         const confirmed = await LQ.confirm({
             title: '撤回为草稿',
@@ -2459,15 +2457,12 @@ class BlogCenter {
             return false;
         }
         // An incomplete audience must not silently fall back to another scope.
-        if (visibility === 'class_visible' && !classIdValue) {
-            showToast('请选择可见的班级', 'warning');
-            return false;
-        }
         const selectedIdentities = this.state.selectedUsers.map((item) => item.identity).filter(Boolean);
-        if (visibility === 'selected_users' && !selectedIdentities.length) {
-            showToast('请至少选择一位可见的同学或老师', 'warning');
-            return false;
-        }
+        let visibilityError = '';
+        if (visibility === 'class_visible' && !classIdValue) visibilityError = '请选择可见的班级';
+        if (visibility === 'selected_users' && !selectedIdentities.length) visibilityError = '请至少选择一位可见的同学或老师';
+        this.setVisibilityError(visibilityError);
+        if (visibilityError) return false;
 
         const payload = {
             title,
@@ -2492,6 +2487,7 @@ class BlogCenter {
         const previousStatus = this.state.editingStatus;
         const goingPublic = status === 'published' || (status === null && previousStatus === 'published');
         if (goingPublic && !isRetry && !(await confirmPrivacy([title, content].join(' ')))) return false;
+        let pendingPostId = null;
         try {
             if (editingPostId) {
                 if (this.state.editingRevision) {
@@ -2500,6 +2496,7 @@ class BlogCenter {
                     payload.expected_updated_at = this.state.editingUpdatedAt;
                 }
                 const result = await api.put(`/api/blog/posts/${editingPostId}`, payload);
+                if (result?.moderation_state === 'pending') pendingPostId = editingPostId;
                 let message = '帖子已更新';
                 if (status === 'draft') message = previousStatus === 'published' ? '已撤回为草稿' : '草稿已保存';
                 if (status === 'published' && previousStatus === 'draft') message = '帖子已发布';
@@ -2508,6 +2505,7 @@ class BlogCenter {
             } else {
                 const result = await api.post('/api/blog/posts', payload);
                 const pending = result?.moderation_state === 'pending';
+                if (pending && result?.id) pendingPostId = Number(result.id);
                 showToast(status === 'draft' ? '草稿已保存' : pending ? '已提交，正在进行内容检查，通常 1 分钟内完成' : '帖子已发布', 'success');
                 if (result?.housekeeper_limited) showToast('今天 @管家 的次数已用完，明天再试吧', 'info');
             }
@@ -2515,7 +2513,10 @@ class BlogCenter {
             this.clearComposerRecovery(editingPostId);
             this.composeBaseline = this.composerFingerprint();
             this.closeComposer({ force: true });
-            if (this.state.currentView === 'detail' && this.state.detailPostId) {
+            if (pendingPostId) {
+                // Publishing into review opens the post, where the banner explains it.
+                await this.showDetail(pendingPostId);
+            } else if (this.state.currentView === 'detail' && this.state.detailPostId) {
                 await this.showDetail(this.state.detailPostId);
             } else {
                 this.refreshCurrentList();
@@ -2535,10 +2536,127 @@ class BlogCenter {
     async editPost(postId) {
         try {
             const data = await api.get(`/api/blog/posts/${postId}`);
-            this.openComposer(data.post);
+            if (await this.reconcileLocalDraft(data.post)) this.openComposer(data.post);
         } catch (error) {
             showToast(error.message || '帖子加载失败', 'error');
         }
+    }
+
+    /**
+     * Plan §9.4: when this device holds unsent edits made against an older
+     * revision, show both versions (LQ Conflict) and let the author choose.
+     * Keeping the local text rebases it on the current revision, so the next
+     * save no longer answers 409. Resolves false when the author cancels.
+     */
+    async reconcileLocalDraft(post) {
+        const local = this.loadComposerRecovery(post.id);
+        const serverRevision = Number(post.content_revision || 0);
+        if (!local || local.expected_revision == null || Number(local.expected_revision) === serverRevision) return true;
+        const [dialogs, status] = await Promise.all([LQ.load('dialogs'), LQ.load('status')]);
+        const excerpt = (value) => String(value || '').trim().slice(0, 160) || '（空）';
+        const body = status.createStatus('conflict', {
+            title: '这篇帖子在别处改过',
+            body: '这台设备上有你未提交的修改，但服务器上的版本已经更新。请选择要继续编辑的版本。',
+            local: `${local.title || ''}：${excerpt(local.content_md)}`,
+            server: `${post.title || ''}：${excerpt(post.content_md)}`,
+            // The conflict's own action takes the server copy; the footer keeps the local one.
+            action: { label: '使用服务器版本', variant: 'soft' },
+        });
+        const choice = await new Promise((resolve) => {
+            const footer = document.createElement('div');
+            footer.className = 'blog-mod-form__actions';
+            let handle = null;
+            let picked = null;
+            const pick = (value) => { picked = value; void LQ.layer.close(handle, 'button'); };
+            body.querySelector('[data-lq-status-action]')?.addEventListener('click', () => pick('server'));
+            const keepLocal = LQ.button({ label: '继续本机修改', variant: 'prominent', size: 'sm' });
+            keepLocal.addEventListener('click', () => pick('local'));
+            footer.append(keepLocal);
+            const root = dialogs.createDialog({ title: '选择要编辑的版本', body, footer, size: 'md' });
+            handle = dialogs.openDialog(root, { onClose: () => resolve(picked), onDestroy: () => resolve(picked) });
+        });
+        if (choice === 'server') {
+            this.clearComposerRecovery(post.id);
+            return true;
+        }
+        if (choice !== 'local') return false;
+        try {
+            window.localStorage.setItem(this.composerRecoveryKey(post.id), JSON.stringify({
+                ...local,
+                expected_revision: serverRevision,
+                expected_updated_at: post.updated_at || null,
+                base: { title: post.title || '', content_md: post.content_md || '' },
+            }));
+        } catch (error) {
+            // Storage unavailable: the composer still opens with the server copy.
+        }
+        return true;
+    }
+
+    /** Unsent composer drafts on this device (the studio's "仅本机" rows). */
+    listLocalDrafts() {
+        const prefix = `lanshare:blog-composer:${this.userIdentity || 'unknown'}:`;
+        const drafts = [];
+        try {
+            for (let index = 0; index < window.localStorage.length; index += 1) {
+                const key = window.localStorage.key(index) || '';
+                if (!key.startsWith(prefix)) continue;
+                const suffix = key.slice(prefix.length);
+                const postId = suffix === 'new' ? null : Number(suffix);
+                if (postId !== null && !Number.isSafeInteger(postId)) continue;
+                const draft = this.loadComposerRecovery(postId);
+                if (draft) drafts.push({ postId, title: draft.title || '', savedAt: draft.saved_at || '' });
+            }
+        } catch (error) {
+            return [];
+        }
+        return drafts.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+    }
+
+    /** Studio (?view=studio&tab=) or author page (?view=author&ref=). */
+    async openOwnView({ pushUrl = true } = {}) {
+        const nav = this.state.currentNav;
+        this.showView(nav);
+        if (pushUrl) this.updateListUrl();
+        else if (new URL(window.location.href).searchParams.get('view') === 'my-posts') {
+            // An old "我的" link: show the studio's own address from now on.
+            window.history.replaceState(window.history.state, '', '/blog?view=studio');
+        }
+        let studioModule;
+        try {
+            studioModule = await import('/static/js/blog_studio.js');
+        } catch (error) {
+            showToast('创作中心加载失败，请刷新页面重试', 'error');
+            return;
+        }
+        const { BlogStudio, AuthorPage } = studioModule;
+        if (nav === 'studio') {
+            if (!this.studio) this.studio = new BlogStudio(this, api, $('[data-blog-studio-root]', this.shell));
+            await this.studio.open(this.studioTab);
+        } else if (nav === 'author') {
+            if (!this.authorPage) this.authorPage = new AuthorPage(this, api, $('[data-blog-author-root]', this.shell));
+            await this.authorPage.open(this.authorRef);
+        }
+    }
+
+    onStudioTab(tab) {
+        this.studioTab = tab;
+        this.updateListUrl();
+    }
+
+    openAuthorPage(ref) {
+        if (!ref) return;
+        this.authorRef = ref;
+        if (this.state.currentView === 'detail') {
+            this.state.detailPostId = null;
+            this.state.detailPost = null;
+        }
+        this.state.currentNav = 'author';
+        this.updateNavTabs();
+        window.history.pushState(this.buildHistoryState('list'), '', '/blog');
+        this.updateListUrl();
+        void this.openOwnView({ pushUrl: false });
+        window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
     async toggleLike(targetType, id) {
@@ -2589,7 +2707,6 @@ class BlogCenter {
         const id = Number(postId);
         const patch = (post) => (Number(post?.id) === id ? { ...post, ...fields } : post);
         this.state.posts = this.state.posts.map(patch);
-        this.state.myPosts = this.state.myPosts.map(patch);
         this.state.bookmarkPosts = this.state.bookmarkPosts.map(patch);
         if (this.state.detailPost) this.state.detailPost = patch(this.state.detailPost);
     }
@@ -2738,7 +2855,11 @@ class BlogCenter {
     }
 
     async deletePost(postId) {
-        if (!window.confirm('确定删除这篇帖子？此操作不可撤销。')) return;
+        const confirmed = await LQ.confirm({
+            title: '删除帖子', message: '删除后其他人将无法再看到这篇帖子，此操作不可撤销。',
+            confirmLabel: '删除', danger: true,
+        });
+        if (!confirmed) return false;
         try {
             await api.del(`/api/blog/posts/${postId}`);
             showToast('帖子已删除', 'success');
@@ -2747,8 +2868,10 @@ class BlogCenter {
             this.refreshCurrentList();
             this.loadDiscovery();
             this.updateListUrl();
+            return true;
         } catch (error) {
             showToast(error.message || '删除失败', 'error');
+            return false;
         }
     }
 
@@ -3119,6 +3242,7 @@ class BlogCenter {
     }
 
     renderSelectedUsers() {
+        if (this.state.selectedUsers.length) this.setVisibilityError('');
         const container = $('[data-blog-compose-selected-users]', this.shell);
         if (!container) return;
         container.innerHTML = this.state.selectedUsers.map((user, index) => `
@@ -3333,9 +3457,13 @@ class BlogCenter {
     }
 
     refreshCurrentList() {
-        if (this.state.currentNav === 'my-posts') {
-            this.state.myPage = 1;
-            this.loadMyPosts();
+        if (this.state.currentNav === 'studio' && this.studio) {
+            this.studio.refresh();
+            return;
+        }
+        if (this.state.currentNav === 'studio' || this.state.currentNav === 'author') {
+            // First visit (or an author page): mount / reload the view.
+            void this.openOwnView({ pushUrl: false });
             return;
         }
         if (this.state.currentNav === 'bookmarks') {
@@ -3359,13 +3487,16 @@ class BlogCenter {
         if (!author || author.is_anonymous) return false;
         const role = String(author.role || '').trim().toLowerCase();
         const identity = String(author.identity || '').trim();
-        return Boolean(identity && role && role !== 'assistant');
+        // Real names and pen names (by their opaque ref) have a page and can be followed.
+        return Boolean((identity || author.ref) && role && role !== 'assistant');
     }
 
     userMenuAttrs(author = {}) {
         if (!this.canOpenUserPopover(author)) return '';
         return [
             'data-blog-user-menu',
+            `data-user-ref="${escapeHtml(author.ref || '')}"`,
+            `data-user-kind="${escapeHtml(author.kind || '')}"`,
             `data-user-identity="${escapeHtml(author.identity || '')}"`,
             `data-user-role="${escapeHtml(author.role || '')}"`,
             `data-user-name="${escapeHtml(author.display_name || '')}"`,
@@ -3414,7 +3545,7 @@ class BlogCenter {
         return `<span class="blog-author-cultivation ${escapeHtml(className)}" data-theme="${escapeHtml(theme)}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
     }
 
-    postCardHtml(post, { ownView = false } = {}) {
+    postCardHtml(post) {
         const badges = [];
         const sectionBadge = this.sectionBadgeHtml(post.section_key, 'blog-section-badge--card');
         if (sectionBadge) badges.push(sectionBadge);
@@ -3472,17 +3603,10 @@ class BlogCenter {
                             <span class="blog-card-action__count" data-blog-bookmark-count="${post.id}">${formatCompactNumber(post.bookmark_count)}</span>
                         </button>
                     </div>
-                    ${ownView ? `<div class="blog-post-card__footnote">状态：${escapeHtml(this.statusLabel(post))}</div>` : ''}
                 </div>
                 ${cover}
             </article>
         `;
-    }
-
-    statusLabel(post = {}) {
-        if (post.status === 'draft') return '草稿';
-        const labels = { pending: '审核中', limited: '仅自己可见', removed: '已移除', appeal_pending: '申诉中' };
-        return labels[post.moderation_state] || '已发布';
     }
 
     detailHtml(post) {

@@ -18,6 +18,8 @@ Kinds
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import random
 from datetime import datetime
 from typing import Any, Iterable, Optional
@@ -119,6 +121,18 @@ def load_profiles(conn, identities: Iterable[str]) -> dict[str, dict[str, str]]:
     return profiles
 
 
+def face_ref(identity: Any, mode: Any) -> str:
+    """Opaque, stable reference to one author face (author page, follows).
+
+    Keyed with the server secret and bound to the mode, so the real-name ref
+    and the pen-name ref of one person share nothing a reader could compare.
+    """
+    from ..config import SECRET_KEY
+
+    message = f"blog-face|{identity}|{mode}".encode("utf-8")
+    return hmac.new(str(SECRET_KEY).encode("utf-8"), message, hashlib.sha256).hexdigest()[:20]
+
+
 def avatar_url_for_hash(avatar_hash: str) -> str:
     """Content-addressed avatar URL: carries no user id (see /api/blog/avatar)."""
     avatar_hash = str(avatar_hash or "").strip().lower()
@@ -141,6 +155,7 @@ def _persona(**fields: Any) -> dict[str, Any]:
         "cultivation_badge": None,
         "can_follow": False,
         "can_message": False,
+        "ref": "",
     }
     persona.update(fields)
     return persona
@@ -190,8 +205,10 @@ def resolve(
     if mode == MODE_PEN:
         # Live pen name; the snapshot covers a pen name cleared later.
         name = profile.get("nickname") or snapshot_name or "笔名作者"
+        followable = role in {"teacher", "student"} and bool(identity)
         return _persona(kind=KIND_PEN, role=role, role_label=ROLE_LABELS.get(role, ""),
-                        display_name=name, display_mode=MODE_PEN, is_op=is_op)
+                        display_name=name, display_mode=MODE_PEN, is_op=is_op,
+                        ref=face_ref(identity, MODE_PEN) if followable else "", can_follow=followable)
 
     user_pk = str(actor_user_pk if actor_user_pk is not None else "")
     return _persona(
@@ -204,6 +221,7 @@ def resolve(
         is_op=is_op,
         avatar_url=avatar_url_for_hash(profile.get("avatar_hash", "")),
         cultivation_badge=badge if role == "student" else None,
+        ref=face_ref(identity, MODE_REAL) if role in {"teacher", "student"} and identity else "",
         can_follow=role in {"teacher", "student"},
         can_message=role in {"teacher", "student"},
     )

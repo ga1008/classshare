@@ -62,7 +62,12 @@ class PersonaResolveTests(unittest.TestCase):
         self.assertEqual(("pen", "青山"), (persona["kind"], persona["display_name"]))
         self.assertEqual(("", None, "", None), (persona["identity"], persona["user_pk"],
                                                 persona["avatar_url"], persona["cultivation_badge"]))
-        self.assertFalse(persona["can_follow"] or persona["can_message"])
+        self.assertFalse(persona["can_message"])
+        # P6: a pen name can be followed, but only through its own opaque ref.
+        self.assertTrue(persona["can_follow"])
+        real_ref = self.resolve()["ref"]
+        self.assertTrue(persona["ref"] and persona["ref"] != real_ref)
+        self.assertNotIn("student", persona["ref"])
 
     def test_teachers_cannot_hide_behind_a_face(self):
         persona = self.resolve(actor_identity="teacher:7", actor_role="teacher", actor_user_pk=7,

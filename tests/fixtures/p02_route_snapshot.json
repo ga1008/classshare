@@ -1185,6 +1185,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/authors/{ref}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_author_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/avatar/{file_hash}",
     "methods": [
       "GET"
@@ -1598,6 +1606,38 @@
       "PUT"
     ],
     "name": "api_update_blog_section",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/studio/comments",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_studio_comments",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/studio/fans",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_studio_fans",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/studio/overview",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_studio_overview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/studio/profile",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_studio_profile",
     "include_in_schema": true
   },
   {

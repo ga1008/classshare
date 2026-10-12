@@ -103,7 +103,7 @@ from .routers import lessondoc_editor as lessondoc_editor_router
 from .routers import mp as mp_router
 from .routers import manage as manage_router  # 避免命名冲突
 from .routers import session as session_router
-from .routers import blog, blog_comments, blog_moderation, feedback
+from .routers import blog, blog_comments, blog_moderation, blog_studio, feedback
 from .routers import career_path
 from .routers import calendar_feed
 from .routers import wrong_book
@@ -255,6 +255,9 @@ async def startup_event():
             from .services.national_holiday_service import ensure_national_holiday_refresh_task
 
             ensure_national_holiday_refresh_task(align_conn)
+            from .services.blog_author_stats import ensure_rollup_task as ensure_blog_author_stats_task
+
+            ensure_blog_author_stats_task(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
@@ -724,6 +727,7 @@ app.include_router(manage_router.router)
 app.include_router(blog.router)
 app.include_router(blog_moderation.router)
 app.include_router(blog_comments.router)
+app.include_router(blog_studio.router)
 app.include_router(feedback.router)
 
 app.include_router(session_router.router)

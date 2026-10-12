@@ -1333,6 +1333,7 @@ def list_posts(
     query: Optional[str] = None,
     visibility_filter: Optional[str] = None,
     section_key: Optional[str] = None,
+    author_display_mode: Optional[str] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     offset = max(page - 1, 0) * limit
@@ -1351,7 +1352,11 @@ def list_posts(
         normalized_author_identity = str(author_identity).strip().lower()
         conditions.append("author_identity = ?")
         params.append(normalized_author_identity)
-        if normalized_author_identity != identity:
+        if author_display_mode in {AUTHOR_DISPLAY_REAL, AUTHOR_DISPLAY_NICKNAME}:
+            # An author page (P6) lists exactly one face, resolved from its ref.
+            conditions.append("author_display_mode = ?")
+            params.append(author_display_mode)
+        elif normalized_author_identity != identity:
             # "ta的帖子" lists the real-name face only: pen-name and anonymous
             # posts must never be linkable to the person behind them.
             conditions.append("author_display_mode = ?")
@@ -1690,7 +1695,9 @@ def get_post_detail(conn, user: dict, post_id: int) -> dict:
 
     _hydrate_cover_media_metadata(conn, [post_row])
 
-    if _record_post_view(conn, post_id, identity):
+    # An author opening (or editing) their own post is not a reader (P6 stats).
+    is_own_post = str(post_row.get("author_identity") or "") == identity
+    if not is_own_post and _record_post_view(conn, post_id, identity):
         post_row["view_count"] = int(post_row.get("view_count") or 0) + 1
 
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, [post_row])
@@ -1792,6 +1799,10 @@ def update_post_reading_progress(
     except (TypeError, ValueError):
         normalized_ratio = 0.0
     now = _now_iso()
+    if str(post.get("author_identity") or "") == identity:
+        # The author's own reading is not a view (P6 stats); nothing to store.
+        return {"post_id": post_id, "dwell_seconds": normalized_dwell,
+                "max_scroll_ratio": normalized_ratio, "completed": False}
     _record_post_view(conn, post_id, identity, viewed_at=now)
     bucket = now[:13]
     completed = 1 if normalized_ratio >= 0.9 else 0
@@ -1831,7 +1842,10 @@ def get_my_posts(
     page: int = 1,
     limit: int = POSTS_PER_PAGE,
     status_filter: Optional[str] = None,
+    sort: str = "latest",
 ) -> dict:
+    """The author's own works (creator studio, plan §9.4): every state, with the
+    moderation reason, note and appeal status of sanctioned rows."""
     user_pk, role, identity = _ensure_identity(user)
     offset = max(page - 1, 0) * limit
     conditions = ["author_identity = ?", f"status <> '{POST_STATUS_DELETED}'"]
@@ -1849,6 +1863,17 @@ def get_my_posts(
         )
     elif status_filter in {"limited", POST_STATUS_HIDDEN, POST_STATUS_MODERATED}:
         conditions.append(f"moderation_state IN ('{mod_states.STATE_LIMITED}', '{mod_states.STATE_REMOVED}')")
+    elif status_filter == "attention":
+        # "需要关注": anything waiting on review, sanctioned or under appeal.
+        conditions.append(
+            f"status = '{POST_STATUS_PUBLISHED}' AND moderation_state IN "
+            f"('{mod_states.STATE_PENDING}', '{mod_states.STATE_APPEAL_PENDING}', "
+            f"'{mod_states.STATE_LIMITED}', '{mod_states.STATE_REMOVED}')"
+        )
+    order_by = {
+        "views": "view_count DESC, created_at DESC, id DESC",
+        "engagement": "(like_count + comment_count) DESC, created_at DESC, id DESC",
+    }.get(str(sort or ""), "created_at DESC, id DESC")
 
     where_clause = " AND ".join(conditions)
     total = int(
@@ -1860,7 +1885,8 @@ def get_my_posts(
                author_avatar_hash, author_avatar_mime,
                section_key, title, summary, cover_image_hash,
                status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
-               moderation_state, moderation_reason_code, moderation_note, content_revision, published_at,
+               moderation_state, moderation_reason_code, moderation_note, moderated_by, moderated_at,
+               content_revision, published_at,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
                LENGTH(content_md) AS content_length,
@@ -1877,7 +1903,7 @@ def get_my_posts(
                ) AS is_bookmarked
         FROM blog_posts
         WHERE {where_clause}
-        ORDER BY created_at DESC, id DESC
+        ORDER BY {order_by}
         LIMIT ? OFFSET ?
         """,
         [identity, identity, *params, limit, offset],
@@ -1885,14 +1911,13 @@ def get_my_posts(
     row_items = [dict(row) for row in rows]
     _hydrate_cover_media_metadata(conn, row_items)
     cultivation_badge_map = _build_author_cultivation_badge_map(conn, row_items)
-    posts = [
-        _serialize_post_summary(
-            row,
-            viewer_identity=identity,
-            cultivation_badge_map=cultivation_badge_map,
-        )
-        for row in row_items
-    ]
+    posts = []
+    for row in row_items:
+        item = _serialize_post_summary(row, viewer_identity=identity, cultivation_badge_map=cultivation_badge_map)
+        live = str(row.get("status") or "") == POST_STATUS_PUBLISHED
+        item["moderation"] = _moderation_view(conn, row, moderator=False, with_appeal=True) if live else None
+        item["moderated_at"] = str(row.get("moderated_at") or "") if live else ""
+        posts.append(item)
     return {"posts": posts, "total": total, "page": page, "limit": limit, "has_more": offset + limit < total}
 
 

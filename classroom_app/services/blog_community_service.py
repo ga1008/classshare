@@ -9,7 +9,8 @@ from . import notification_delivery as delivery
 from .blog_section_service import resolve_blog_section_key
 
 
-FOLLOW_TARGET_TYPES = {"section", "author", "tag"}
+# "pen" follows a pen name: stored by identity, but only ever shown as its ref.
+FOLLOW_TARGET_TYPES = {"section", "author", "pen", "tag"}
 # "关注更新 N" counts followed posts since the feed was last opened (plan §6.4).
 FOLLOWING_SEEN_KEY = "blog.following"
 FOLLOWING_FIRST_LOOK_DAYS = 7
@@ -31,6 +32,21 @@ def _normalize_follow_target(conn, target_type: Any, target_key: Any) -> tuple[s
         raise ValueError("关注对象不正确")
     if normalized_type == "section":
         normalized_key = resolve_blog_section_key(conn, normalized_key, fallback=None) or ""
+    elif normalized_type in {"author", "pen"} and ":" not in normalized_key:
+        # A face ref (P6): resolves to the real-name or the pen-name face.
+        from .blog_studio_service import resolve_ref
+
+        face = resolve_ref(conn, normalized_key)
+        if face is None:
+            raise ValueError("作者不存在")
+        identity, mode = face
+        if mode == "nickname":
+            from .blog_studio_service import pen_face_available
+
+            if not pen_face_available(conn, identity):
+                raise ValueError("作者不存在")  # A cleared pen name cannot be followed.
+            return "pen", identity
+        return "author", identity
     elif normalized_type == "author":
         if not blog_service.IDENTITY_PATTERN.fullmatch(normalized_key):
             raise ValueError("作者标识不正确")
@@ -39,9 +55,22 @@ def _normalize_follow_target(conn, target_type: Any, target_key: Any) -> tuple[s
         # Following someone notifies them: only real accounts can be followed.
         if table is None or conn.execute(f"SELECT 1 FROM {table} WHERE id = ? LIMIT 1", (int(raw_pk),)).fetchone() is None:
             raise ValueError("作者不存在")
+    elif normalized_type == "pen":
+        raise ValueError("作者标识不正确")  # Pen names are only addressed by ref.
     else:
         normalized_key = normalized_key[:40]
     return normalized_type, normalized_key
+
+
+def _public_follow(target_type: str, target_key: str) -> dict[str, Any]:
+    """How a follow is shown to its owner: a pen-name identity never leaves the server."""
+    from .blog_persona_service import MODE_PEN, MODE_REAL, face_ref
+
+    if target_type == "pen":
+        return {"target_type": "pen", "target_key": face_ref(target_key, MODE_PEN)}
+    if target_type == "author":
+        return {"target_type": "author", "target_key": target_key, "ref": face_ref(target_key, MODE_REAL)}
+    return {"target_type": target_type, "target_key": target_key}
 
 
 def list_follows(conn, user: dict) -> list[dict[str, Any]]:
@@ -55,12 +84,17 @@ def list_follows(conn, user: dict) -> list[dict[str, Any]]:
         """,
         (identity,),
     ).fetchall()
-    return [dict(row) for row in rows]
+    return [
+        {**_public_follow(str(row["target_type"]), str(row["target_key"])), "created_at": row["created_at"]}
+        for row in rows
+    ]
 
 
 def set_follow(conn, user: dict, *, target_type: Any, target_key: Any, following: bool | None = None) -> dict[str, Any]:
     user_pk, role, identity = blog_service._ensure_identity(user)
     normalized_type, normalized_key = _normalize_follow_target(conn, target_type, target_key)
+    if normalized_type in {"author", "pen"} and normalized_key == identity:
+        raise ValueError("不能关注自己")
     existing = conn.execute(
         "SELECT id FROM blog_follows WHERE user_identity = ? AND target_type = ? AND target_key = ? LIMIT 1",
         (identity, normalized_type, normalized_key),
@@ -72,20 +106,23 @@ def set_follow(conn, user: dict, *, target_type: Any, target_key: Any, following
             raise ValueError(f"最多关注 {MAX_FOLLOWS} 个作者、板块或标签")
         conn.execute(
             """
-            INSERT INTO blog_follows (user_identity, user_role, user_pk, target_type, target_key)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO blog_follows (user_identity, user_role, user_pk, target_type, target_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_identity, target_type, target_key) DO NOTHING
             """,
-            (identity, role, user_pk, normalized_type, normalized_key),
+            # Explicit local ISO time: the column default is UTC on SQLite and
+            # depends on the server time zone on PostgreSQL (daily stats).
+            (identity, role, user_pk, normalized_type, normalized_key, datetime.now().isoformat(timespec="seconds")),
         )
         _forget_following_count(identity)
     elif not next_following and existing is not None:
         conn.execute("DELETE FROM blog_follows WHERE id = ?", (int(existing["id"]),))
-    if next_following and existing is None and normalized_type == "author":
+    if next_following and existing is None and normalized_type in {"author", "pen"}:
         from .blog_notifications import best_effort, notify_follow
 
-        best_effort(conn, notify_follow, conn, follower=user, target_identity=normalized_key)
-    return {"target_type": normalized_type, "target_key": normalized_key, "following": next_following}
+        best_effort(conn, notify_follow, conn, follower=user, target_identity=normalized_key,
+                    pen=normalized_type == "pen")
+    return {**_public_follow(normalized_type, normalized_key), "following": next_following}
 
 
 def list_following_posts(
@@ -127,7 +164,10 @@ def list_following_posts(
 def _following_where(conn, user: dict) -> tuple[str, list[Any]] | None:
     """SQL for "posts from what I follow" (alias ``p``); None when following nothing."""
     user_pk, _role, identity = blog_service._ensure_identity(user)
-    follows = list_follows(conn, user)
+    # Stored keys (identities), not the refs list_follows shows to the owner.
+    follows = conn.execute(
+        "SELECT target_type, target_key FROM blog_follows WHERE user_identity = ?", (identity,),
+    ).fetchall()
     if not follows:
         return None
     visibility_sql, visibility_params = blog_service._build_post_visibility_sql(
@@ -144,11 +184,11 @@ def _following_where(conn, user: dict) -> tuple[str, list[Any]] | None:
         if target_type == "section":
             follow_clauses.append("p.section_key = ?")
             follow_params.append(target_key)
-        elif target_type == "author":
-            # Following a person follows their real-name face only; pen-name
-            # posts would otherwise reveal who the pen name is.
-            follow_clauses.append("(p.author_identity = ? AND p.author_display_mode = 'real_name')")
-            follow_params.append(target_key)
+        elif target_type in {"author", "pen"}:
+            # A follow is per face: real-name posts for "author", pen-name posts
+            # for "pen"; following one face never shows the other.
+            follow_clauses.append("(p.author_identity = ? AND p.author_display_mode = ?)")
+            follow_params.extend((target_key, "real_name" if target_type == "author" else "nickname"))
         elif target_type == "tag":
             follow_clauses.append(
                 "(p.tags_json LIKE ? OR (p.author_display_mode = 'real_name' AND p.system_tags_json LIKE ?))"

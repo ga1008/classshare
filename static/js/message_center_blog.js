@@ -72,15 +72,26 @@ export function decorateBlogRow(row, item, { onRead } = {}) {
         panel.id = panelId;
         panel.setAttribute('aria-label', '在通知中回复');
         row.querySelector('.lq-row__main')?.append(panel);
-        void fillReplyPanel(panel, item, { onRead, toggle });
+        void openInlineReply(panel, item.blog.comment_id, {
+            key: item.id,
+            afterReply: async () => {
+                await markRepliedRead(item, onRead);
+                toggle.remove();
+            },
+        });
     });
 }
 
-async function fillReplyPanel(panel, item, { onRead, toggle }) {
+/**
+ * Fill ``panel`` with the reply context of one comment (quote, the comment,
+ * the face picker and a Composer). Shared by message-center cards and the
+ * creator studio. ``afterReply(result)`` runs once the reply is posted.
+ */
+export async function openInlineReply(panel, commentId, { key = commentId, afterReply = null } = {}) {
     panel.replaceChildren(element('p', 'mc-blog-reply__status', '正在加载…'));
     let context;
     try {
-        context = await apiFetch(`/api/blog/comments/${Number(item.blog.comment_id)}/reply-context`, { silent: true });
+        context = await apiFetch(`/api/blog/comments/${Number(commentId)}/reply-context`, { silent: true });
     } catch (error) {
         panel.replaceChildren(element('p', 'mc-blog-reply__status', error.message || '加载失败，请稍后重试。'));
         return;
@@ -100,11 +111,11 @@ async function fillReplyPanel(panel, item, { onRead, toggle }) {
     }
     if (!context.can_reply) {
         parts.push(element('p', 'mc-blog-reply__status', context.reason || '现在不能回复'));
-        if (context.post) parts.push(goToPost(context.post.id, item.blog.comment_id));
+        if (context.post) parts.push(goToPost(context.post.id, commentId));
         panel.replaceChildren(...parts);
         return;
     }
-    const form = replyForm(panel, item, context, { onRead, toggle });
+    const form = replyForm(panel, key, context, afterReply);
     panel.replaceChildren(...parts, form);
     form.querySelector('[data-lq-composer-input]')?.focus();
 }
@@ -113,23 +124,23 @@ function goToPost(postId, commentId) {
     return createComponent('button', { label: '去帖子查看', variant: 'link', size: 'sm', href: postHref(postId, commentId) });
 }
 
-function faceControl(item, context) {
+function faceControl(key, context) {
     if (context.forced_mode) {
         return element('p', 'mc-blog-reply__hint', `你是这篇匿名帖的作者，将以“${context.forced_label || '楼主'}”身份回复。`);
     }
     const modes = Array.isArray(context.modes) ? context.modes : ['real_name'];
     if (modes.length < 2) return null;
     return nativeSelect({
-        id: `mc-blog-mode-${Number(item.id)}`, label: '回复身份', name: 'author_display_mode', size: 'sm',
+        id: `mc-blog-mode-${Number(key)}`, label: '回复身份', name: 'author_display_mode', size: 'sm',
         value: modes.includes(context.default_mode) ? context.default_mode : modes[0],
         options: modes.map((mode) => ({ value: mode, label: MODE_LABELS[mode] || mode })),
     });
 }
 
-function replyForm(panel, item, context, { onRead, toggle }) {
+function replyForm(panel, key, context, afterReply) {
     const form = element('form', 'mc-blog-reply__form');
     form.noValidate = true;
-    const face = faceControl(item, context);
+    const face = faceControl(key, context);
     if (face) form.append(face);
     const composer = createComposer('composer', {
         label: '回复内容', name: 'content_md', placeholder: '写下你的回复…', maxlength: MAX_REPLY_LENGTH,
@@ -157,7 +168,7 @@ function replyForm(panel, item, context, { onRead, toggle }) {
                 },
                 silent: true,
             });
-            await markRepliedRead(item, onRead);
+            await afterReply?.(result);
             const done = [createComponent('chip', { label: '已回复', tone: 'success', size: 'sm' })];
             if (result.moderation_state === 'pending') {
                 done.push(element('p', 'mc-blog-reply__hint', '回复正在检查，通过后对方就能看到。'));
@@ -165,7 +176,6 @@ function replyForm(panel, item, context, { onRead, toggle }) {
             done.push(goToPost(context.post.id, result.id));
             handle?.destroy();
             panel.replaceChildren(...done);
-            toggle.remove();
         } catch (error) {
             sending = false;
             handle?.set({ busy: false });

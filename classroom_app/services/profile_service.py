@@ -681,8 +681,22 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
 
 def build_profile_overview(conn, profile: dict[str, Any], user: dict) -> dict[str, Any]:
     if profile["role"] == "teacher":
-        return _build_teacher_overview(conn, profile, user)
-    return _build_student_overview(conn, profile, user)
+        overview = _build_teacher_overview(conn, profile, user)
+    else:
+        overview = _build_student_overview(conn, profile, user)
+    return {**overview, "creator": _load_creator_summary(conn, user)}
+
+
+def _load_creator_summary(conn, user: dict) -> dict[str, Any] | None:
+    """Blog creator-studio entry (plan §9.4). An optional card: it runs in a
+    savepoint, so a failure is logged and never aborts the profile page's
+    transaction (PostgreSQL)."""
+    from .blog_notifications import best_effort
+    from .blog_studio_service import creator_summary
+
+    if str(user.get("role") or "").strip().lower() not in {"student", "teacher"}:
+        return None
+    return best_effort(conn, creator_summary, conn, user)
 
 
 def build_profile_page_context(conn, user: dict, section: Any, *, include_appearance: bool = False) -> dict[str, Any]:

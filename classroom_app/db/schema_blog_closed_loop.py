@@ -212,6 +212,44 @@ def ensure_blog_closed_loop_schema(conn: Any, *, engine: str | None = None) -> N
         """
     )
 
+    # P6: a short public bio per author face (real name / pen name), shown on
+    # the author page. Kept apart from students/teachers so a pen bio can never
+    # be joined to the real profile by a reader.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS blog_author_profiles (
+            {id_column},
+            identity TEXT NOT NULL UNIQUE,
+            real_bio TEXT NOT NULL DEFAULT '',
+            pen_bio TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
+    # P6: opaque author-page / follow references, one per author face. The ref
+    # is a keyed hash; the row maps it back to the identity on the server only.
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS blog_author_refs (
+            {id_column},
+            ref TEXT NOT NULL UNIQUE,
+            identity TEXT NOT NULL,
+            display_mode TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (identity, display_mode)
+        )
+        """
+    )
+
+    # P6 read paths: "我发出的评论", follower lists and the nightly stats rollup.
+    for index_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_blog_comments_author_created ON blog_comments (author_identity, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_blog_follows_target ON blog_follows (target_type, target_key, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_blog_post_views_first_viewed ON blog_post_views (first_viewed_at)",
+    ):
+        conn.execute(index_sql)
+
 
 def comment_media_rows(comment: dict[str, Any]) -> set[tuple[str, str]]:
     """(file_hash, media_kind) pairs a comment references: attachments,

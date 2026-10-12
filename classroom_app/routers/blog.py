@@ -798,10 +798,11 @@ def api_my_posts(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=50),
     status: Optional[str] = Query(default=None),
+    sort: str = Query(default="latest"),
     user: dict = Depends(get_current_user),
 ):
     with get_db_connection() as conn:
-        result = get_my_posts(conn, user, page=page, limit=limit, status_filter=status)
+        result = get_my_posts(conn, user, page=page, limit=limit, status_filter=status, sort=sort)
         return {"status": "success", **result}
 
 
@@ -1029,6 +1030,8 @@ def list_posts_attachments(conn, post_id: int) -> list[dict]:
     return [
         {
             "id": int(item["id"]),
+            # The editor re-submits attachments by hash when a post is edited (C10).
+            "file_hash": str(item["file_hash"] or ""),
             "url": f"/api/blog/image/{item['file_hash']}",
             "filename": str(item["original_filename"] or ""),
             "mime_type": str(item["mime_type"] or "application/octet-stream"),

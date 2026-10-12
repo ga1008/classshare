@@ -525,6 +525,11 @@ from .blog_safety_service import REVIEW_TASK_KIND, REVIEW_TIMEOUT_TASK_KIND  # n
 
 register_task_handler(REVIEW_TASK_KIND, handle_blog_content_review)
 register_task_handler(REVIEW_TIMEOUT_TASK_KIND, handle_blog_content_review_timeout)
+
+# 博客创作中心：每天 02:00 汇总作者各身份的阅读/点赞/评论/粉丝（缺的天自动补齐 30 天）。
+from .blog_author_stats import TASK_KIND as BLOG_AUTHOR_STATS_TASK_KIND, handle_rollup_task  # noqa: E402
+
+register_task_handler(BLOG_AUTHOR_STATS_TASK_KIND, handle_rollup_task)
 from .session_material_generation_jobs import SESSION_GENERATION_TASK_KIND, handle_session_material_generation
 
 register_task_handler(SESSION_GENERATION_TASK_KIND, handle_session_material_generation)
