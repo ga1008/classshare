@@ -88,10 +88,14 @@ def list_following_posts(
             follow_clauses.append("p.section_key = ?")
             follow_params.append(target_key)
         elif target_type == "author":
-            follow_clauses.append("p.author_identity = ? AND p.author_display_mode != 'anonymous'")
+            # Following a person follows their real-name face only; pen-name
+            # posts would otherwise reveal who the pen name is.
+            follow_clauses.append("(p.author_identity = ? AND p.author_display_mode = 'real_name')")
             follow_params.append(target_key)
         elif target_type == "tag":
-            follow_clauses.append("(p.tags_json LIKE ? OR p.system_tags_json LIKE ?)")
+            follow_clauses.append(
+                "(p.tags_json LIKE ? OR (p.author_display_mode = 'real_name' AND p.system_tags_json LIKE ?))"
+            )
             follow_params.extend((f'%"{target_key}"%', f'%"{target_key}"%'))
     if not follow_clauses:
         return {"posts": [], "total": 0, "page": page, "limit": limit, "has_more": False}

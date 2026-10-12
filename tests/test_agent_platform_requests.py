@@ -54,7 +54,7 @@ class PlatformRequestFixture(unittest.TestCase):
           INSERT INTO courses VALUES(1,'Course A'),(2,'Course B');
           INSERT INTO class_offerings VALUES(1,7,30,1),(2,8,31,2);
           CREATE TABLE blog_posts(id INTEGER PRIMARY KEY,author_identity TEXT,status TEXT,visibility TEXT,
-              visible_class_id INTEGER,visible_class_offering_id INTEGER,visible_user_identities_json TEXT,bookmark_count INTEGER DEFAULT 0);
+              visible_class_id INTEGER,visible_class_offering_id INTEGER,visible_user_identities_json TEXT,bookmark_count INTEGER DEFAULT 0,author_display_mode TEXT DEFAULT 'real_name');
           INSERT INTO blog_posts(id,author_identity,status,visibility) VALUES(1,'teacher:8','published','public'),(2,'teacher:8','draft','private');
           CREATE TABLE blog_bookmarks(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id INTEGER,user_identity TEXT,user_role TEXT,user_pk INTEGER,created_at TEXT);
           CREATE TABLE blog_follows(id INTEGER PRIMARY KEY AUTOINCREMENT,user_identity TEXT,user_role TEXT,user_pk INTEGER,

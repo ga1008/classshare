@@ -155,7 +155,7 @@
         "get_current_user"
       ],
       "source": "classroom_app/routers/blog.py",
-      "line": 117,
+      "line": 133,
       "provenance": "source-registry",
       "roles": [
         "student",

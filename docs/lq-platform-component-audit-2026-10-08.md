@@ -2,7 +2,7 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5311 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5315 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
@@ -13,7 +13,7 @@
 | menu | 36 |
 | dialog | 21 |
 | tab | 31 |
-| choice | 163 |
+| choice | 166 |
 | toolbar | 133 |
 | layer | 139 |
 | content-slot | 45 |
@@ -21,16 +21,16 @@
 | chip | 10 |
 | domain | 18 |
 | status | 44 |
-| unknown | 763 |
+| unknown | 764 |
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3714 |
+| component-declared | 3716 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
-| legacy-or-native | 86 |
+| legacy-or-native | 87 |
 | lq-marked-native | 104 |
-| runtime-output-unknown | 633 |
+| runtime-output-unknown | 634 |
 | shared-adapter-call-candidate | 81 |
 | shared-component-call | 585 |
 | shared-definition | 54 |
@@ -45,8 +45,8 @@
 
 | unknown 语法 | 数量 |
 | --- | ---: |
-| `create-element` | 30 |
-| `dynamic-html-sink` | 633 |
+| `create-element` | 31 |
+| `dynamic-html-sink` | 634 |
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
@@ -97,24 +97,24 @@
 | `templates/classroom_main_v4.html` | 222 |
 | `templates/assignment_detail_teacher.html` | 172 |
 | `static/js/materials_manage.js` | 117 |
-| `templates/exam_editor.html` | 109 |
+| `templates/exam_editor.html` | 108 |
 | `static/js/collaboration.js` | 102 |
-| `static/js/blog.js` | 97 |
-| `templates/blog.html` | 73 |
+| `static/js/blog.js` | 100 |
+| `templates/blog.html` | 75 |
 | `templates/manage/signatures.html` | 67 |
 | `static/js/teacher_onboarding.js` | 67 |
 | `templates/manage/courses.html` | 61 |
 | `templates/manage/system/blog_crawler.html` | 61 |
 | `templates/partials/materials/modals_generate.html` | 61 |
 | `static/js/attendance_reports.js` | 61 |
-| `static/js/course_schedule_editor.js` | 58 |
+| `static/js/course_schedule_editor.js` | 59 |
 | `templates/dashboard_teacher.html` | 56 |
 | `templates/manage/classes.html` | 56 |
 | `static/js/career_path_app.js` | 55 |
 | `templates/dashboard.html` | 54 |
 | `templates/manage/system/users.html` | 53 |
 | `static/js/manage_lesson_plans.js` | 49 |
-| `static/js/message_center.js` | 49 |
+| `static/js/message_center.js` | 50 |
 | `templates/dev/lq_interactions.html` | 47 |
 | `templates/manage/attendance_reports.html` | 46 |
 | `templates/submission_detail.html` | 46 |

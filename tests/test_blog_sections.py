@@ -54,6 +54,7 @@ class BlogSectionTests(unittest.TestCase):
                 visible_class_id INTEGER,
                 visible_user_identities_json TEXT DEFAULT '[]',
                 allow_comments INTEGER NOT NULL DEFAULT 1,
+                allow_anonymous_comments INTEGER NOT NULL DEFAULT 1,
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 is_featured INTEGER NOT NULL DEFAULT 0,
                 pinned_at TEXT,

@@ -179,6 +179,24 @@ def ensure_blog_closed_loop_schema(conn: Any, *, engine: str | None = None) -> N
         """
     )
 
+    # P2: an anonymous commenter's code within one post ("匿名同学·青柚").
+    # The two UNIQUE constraints make the code stable per person and distinct
+    # per post even when two first comments race; deleting comments never
+    # releases a code (it would let a later voice inherit someone's history).
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS blog_anonymous_codes (
+            {id_column},
+            post_id INTEGER NOT NULL,
+            author_identity TEXT NOT NULL,
+            code TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (post_id, author_identity),
+            UNIQUE (post_id, code)
+        )
+        """
+    )
+
 
 def comment_media_rows(comment: dict[str, Any]) -> set[tuple[str, str]]:
     """(file_hash, media_kind) pairs a comment references: attachments,
@@ -264,6 +282,25 @@ def backfill_blog_closed_loop_data(conn: Any, *, apply: bool = True, now: str = 
         conn, report, "posts_published_at",
         "published_at IS NULL AND status <> 'draft'",
         "published_at = created_at", (), apply, "blog_posts",
+    )
+
+    # P2: a class tag identifies a pen-name/anonymous author; such posts never
+    # show system tags, so the stored copy is dropped (it is derivable anyway).
+    _guarded_update(
+        conn, report, "posts_shielded_system_tags",
+        "COALESCE(author_display_mode, 'real_name') <> 'real_name' "
+        "AND COALESCE(system_tags_json, '') NOT IN ('', '[]')",
+        "system_tags_json = '[]'", (), apply, "blog_posts",
+    )
+    # P2: before personas, the anonymous post's author commented under their
+    # stored name. Every stored copy of such a comment's face becomes "楼主".
+    _guarded_update(
+        conn, report, "comments_anonymous_op",
+        "COALESCE(author_display_snapshot, '') <> '楼主' AND EXISTS ("
+        " SELECT 1 FROM blog_posts p WHERE p.id = blog_comments.post_id"
+        " AND p.author_display_mode = 'anonymous' AND p.author_identity = blog_comments.author_identity)",
+        "author_display_mode = 'anonymous', author_display_name = '楼主', author_display_snapshot = '楼主'",
+        (), apply, "blog_comments",
     )
 
     _guarded_update(

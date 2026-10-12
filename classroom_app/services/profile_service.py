@@ -718,8 +718,17 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
     table_name = "teachers" if role == "teacher" else "students"
     description_value = data["description"]
     if role == "student":
-        existing = conn.execute(f"SELECT description FROM {table_name} WHERE id = ?", (user_id,)).fetchone()
+        existing = conn.execute(
+            f"SELECT description, nickname FROM {table_name} WHERE id = ?", (user_id,)
+        ).fetchone()
         description_value = str(existing["description"] or "") if existing else ""
+        # The nickname is the student's blog pen name; only a *changed* one is
+        # checked so an older pen name never blocks saving other fields.
+        if existing is None or data["nickname"] != str(existing["nickname"] or "").strip():
+            from .blog_persona_service import pen_name_problem
+            problem = pen_name_problem(conn, data["nickname"], self_role=role, self_pk=user_id)
+            if problem:
+                raise ValueError(f"{problem}。")
     conn.execute(
         f"""
         UPDATE {table_name}

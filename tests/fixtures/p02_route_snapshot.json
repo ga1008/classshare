@@ -1185,6 +1185,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/avatar/{file_hash}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_blog_avatar",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/bookmarks",
     "methods": [
       "GET"

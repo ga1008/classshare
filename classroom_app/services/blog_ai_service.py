@@ -22,6 +22,7 @@ from .blog_service import (
 )
 from .edge_image_input_service import prepare_edge_image_inputs
 from .prompt_utils import build_time_context_text
+from .blog_persona_service import load_profiles
 from .psych_profile_service import build_explicit_user_profile_prompt, load_explicit_user_profile
 
 BLOG_AI_ASSISTANT_NAME = "管家"
@@ -127,6 +128,24 @@ def _anonymous_post_author_identity(post: dict) -> str:
     if str(post.get("author_display_mode") or "") == "anonymous":
         return str(post.get("author_identity") or "")
     return ""
+
+
+def _shielded_names(conn, identity: str) -> list[str]:
+    """Real name and pen name of a caller who appears under another face."""
+    profile = load_profiles(conn, [identity]).get(identity) or {}
+    names = {str(profile.get("name") or "").strip(), str(profile.get("nickname") or "").strip()}
+    # Longest first so a name never survives as a fragment of a longer one.
+    return sorted((name for name in names if len(name) >= 2), key=len, reverse=True)
+
+
+def _shield_reply(reply_text: str, names: list[str], public_name: str) -> str:
+    """Last line of defence: the model must not echo who is behind a face."""
+    shielded = str(reply_text or "")
+    for name in names:
+        if name and name != public_name and name in shielded:
+            shielded = shielded.replace(name, public_name)
+            print("[BLOG_AI] persona_leak_blocked")
+    return shielded
 
 
 def _abandon_reply_job(conn, trigger_type: str, trigger_id: int, error_message: str) -> bool:
@@ -285,13 +304,16 @@ def _build_semester_context(conn, user_pk: int, user_role: str) -> str:
 
 
 def _build_post_context(post: dict[str, Any]) -> str:
+    # A pen-name/anonymous post's stored class tag would identify its author.
+    shielded = str(post.get("author_display_mode") or "") in PROFILE_SHIELDED_DISPLAY_MODES
+    system_tags = [] if shielded else _safe_json_loads(post.get("system_tags_json"), [])
     return "\n".join(
         [
             "当前帖子：",
             f"- 标题：{str(post.get('title') or '未命名帖子').strip()}",
             f"- 作者展示名：{str(post.get('author_display_name') or '未知作者').strip()}",
             f"- 发布时间：{str(post.get('created_at') or '').strip() or '未知'}",
-            f"- 标签：{', '.join(_safe_json_loads(post.get('system_tags_json'), []) + _safe_json_loads(post.get('tags_json'), [])) or '无'}",
+            f"- 标签：{', '.join(system_tags + _safe_json_loads(post.get('tags_json'), [])) or '无'}",
             f"- 正文摘要：{_truncate_text(str(post.get('content_md') or '').strip(), limit=480)}",
         ]
     )
@@ -532,8 +554,10 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
         anonymous_author = _anonymous_post_author_identity(post)
         if anonymous_author:
             caller_display_name = ANONYMOUS_OP_NAME
+        shield_names: list[str] = []
         if str(post.get("author_display_mode") or "") in PROFILE_SHIELDED_DISPLAY_MODES:
             caller_profile_prompt, semester_context = "", ""
+            shield_names = _shielded_names(conn, str(post.get("author_identity") or ""))
         else:
             caller_profile_prompt = build_explicit_user_profile_prompt(
                 load_explicit_user_profile(conn, caller_user_pk, caller_role),
@@ -567,6 +591,7 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
             trigger_label="帖子内 @管家",
             trigger_type=BLOG_AI_TRIGGER_POST, trigger_id=post_id, current_assets=current_assets,
         )
+        reply_text = _shield_reply(reply_text, shield_names, caller_display_name)
     except (ValueError, RuntimeError) as exc:
         # Failures are told to the caller privately, never posted publicly.
         _abandon_and_notify(
@@ -600,6 +625,7 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
                    c.author_role,
                    c.author_user_pk,
                    c.author_display_name,
+                   c.author_display_mode,
                    c.content_md,
                    c.attachments_json,
                    c.emoji_payload_json,
@@ -651,10 +677,15 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
                 "author_identity": comment.get("post_author_identity"),
             }
         )
-        if anonymous_author and anonymous_author == str(comment.get("author_identity") or ""):
-            # The anonymous author replying in their own thread stays "楼主".
-            caller_display_name = ANONYMOUS_OP_NAME
+        shield_names: list[str] = []
+        is_anonymous_op = bool(anonymous_author) and anonymous_author == str(comment.get("author_identity") or "")
+        if is_anonymous_op or str(comment.get("author_display_mode") or "") in PROFILE_SHIELDED_DISPLAY_MODES:
+            # "楼主", pen-name and anonymous commenters keep their face: no
+            # profile, no semester context, and their names are scrubbed below.
+            if is_anonymous_op:
+                caller_display_name = ANONYMOUS_OP_NAME
             caller_profile_prompt, semester_context = "", ""
+            shield_names = _shielded_names(conn, str(comment.get("author_identity") or ""))
         else:
             caller_profile_prompt = build_explicit_user_profile_prompt(
                 load_explicit_user_profile(conn, caller_user_pk, caller_role),
@@ -667,6 +698,7 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
                 "content_md": comment.get("post_content_md"),
                 "author_display_name": comment.get("post_author_display_name"),
                 "system_tags_json": comment.get("system_tags_json"),
+                "author_display_mode": comment.get("post_author_display_mode"),
                 "tags_json": comment.get("tags_json"),
                 "created_at": comment.get("post_created_at"),
             }
@@ -697,6 +729,7 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
             trigger_label="评论内 @管家",
             trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, current_assets=current_assets,
         )
+        reply_text = _shield_reply(reply_text, shield_names, caller_display_name)
     except (ValueError, RuntimeError) as exc:
         _abandon_and_notify(
             trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, post_id=int(comment["post_id"]),

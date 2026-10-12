@@ -315,6 +315,7 @@ def _load_blog_candidate(conn: sqlite3.Connection, student_id: int, source_id: A
         WHERE id = ?
           AND author_role = 'student'
           AND author_user_pk = ?
+          AND COALESCE(author_display_mode, 'real_name') <> 'anonymous'
           AND status IN ('published', 'draft')
         LIMIT 1
         """,
@@ -445,6 +446,7 @@ def list_portfolio_candidates(
         FROM blog_posts
         WHERE author_role = 'student'
           AND author_user_pk = ?
+          AND COALESCE(author_display_mode, 'real_name') <> 'anonymous'
           AND status = 'published'
         ORDER BY updated_at DESC, id DESC
         LIMIT 12
@@ -864,6 +866,7 @@ def _load_blog_events(conn: sqlite3.Connection, student_id: int, limit: int = 8)
         FROM blog_posts
         WHERE author_role = 'student'
           AND author_user_pk = ?
+          AND COALESCE(author_display_mode, 'real_name') <> 'anonymous'
           AND status = 'published'
         ORDER BY created_at DESC, id DESC
         LIMIT ?
@@ -970,6 +973,7 @@ def build_ability_summary(
             SELECT COUNT(*)
             FROM blog_posts
             WHERE author_role = 'student' AND author_user_pk = ? AND status = 'published'
+              AND COALESCE(author_display_mode, 'real_name') <> 'anonymous'
             """,
             (int(student_id),),
         ).fetchone()[0]

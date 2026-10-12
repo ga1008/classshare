@@ -60,6 +60,7 @@ from ..services.blog_service import (
     update_post,
     update_post_reading_progress,
 )
+from ..services.emoji_service import get_custom_emoji_path
 from ..services.file_service import resolve_global_file_path, store_file_object_globally
 
 router = APIRouter()
@@ -358,6 +359,7 @@ async def api_create_post(
                 allow_comments=bool(data.get("allow_comments", True)),
                 tags=data.get("tags"),
                 status=str(data.get("status") or POST_STATUS_PUBLISHED),
+                allow_anonymous_comments=bool(data.get("allow_anonymous_comments", True)),
             )
             enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=int(result["id"]))
             conn.commit()
@@ -394,6 +396,10 @@ async def api_update_post(
                 status=data.get("status"),
                 expected_updated_at=data.get("expected_updated_at"),
                 expected_revision=_optional_revision(data.get("expected_revision")),
+                allow_anonymous_comments=(
+                    None if data.get("allow_anonymous_comments") is None
+                    else bool(data.get("allow_anonymous_comments"))
+                ),
             )
             enqueue_blog_mention(conn, user, trigger_type="post", trigger_id=post_id)
             conn.commit()
@@ -519,6 +525,7 @@ async def api_add_comment(
                 attachments_json=str(data.get("attachments_json") or "[]"),
                 notify_callback=notify_new_comment,
                 hot_notify_callback=notify_post_hot,
+                author_display_mode=str(data.get("author_display_mode") or "real_name"),
             )
             enqueue_blog_mention(conn, user, trigger_type="comment", trigger_id=int(result["id"]))
             conn.commit()
@@ -686,6 +693,39 @@ async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(ge
             "url": f"/api/blog/image/{asset['file_hash']}",
         },
     }
+
+
+AVATAR_HASH_LENGTH = 64
+
+
+@router.get("/api/blog/avatar/{file_hash}")
+def api_get_blog_avatar(file_hash: str, user: dict = Depends(get_current_user)):
+    """Real-name authors' avatars by content hash: the URL carries no user id.
+
+    Only a hash that is some teacher's or student's *current* avatar is served,
+    so this cannot be used to read arbitrary stored files. The URL changes when
+    the avatar changes, so the response is immutable for the browser cache.
+    """
+    normalized = str(file_hash or "").strip().lower()
+    if len(normalized) != AVATAR_HASH_LENGTH or any(char not in "0123456789abcdef" for char in normalized):
+        raise HTTPException(status_code=404, detail="头像不存在")
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT avatar_mime_type FROM students WHERE avatar_file_hash = ? LIMIT 1", (normalized,)
+        ).fetchone() or conn.execute(
+            "SELECT avatar_mime_type FROM teachers WHERE avatar_file_hash = ? LIMIT 1", (normalized,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="头像不存在")
+    try:
+        path = get_custom_emoji_path(normalized)
+    except HTTPException as exc:
+        raise HTTPException(status_code=404, detail="头像不存在") from exc
+    return FileResponse(
+        str(path),
+        media_type=str(row["avatar_mime_type"] or "application/octet-stream"),
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/api/blog/image/{file_hash}")

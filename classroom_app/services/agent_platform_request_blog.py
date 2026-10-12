@@ -12,7 +12,7 @@ def build_capabilities(RequestCapability, spec, ID):
         RequestCapability('http.blog.post.detail', '阅读可见帖子及其当前版本', 'GET', '/api/blog/posts/{post_id}',
             'blog', 'api_get_post', '4770e54538f4f57fa2c8857c4ae5c60fbdebbed2b022f4a237873d15bafa8e3e', {'path': {'post_id': ID}}),
         RequestCapability('http.blog.post.update', '按当前版本修改自己的帖子或草稿', 'PUT', '/api/blog/posts/{post_id}',
-            'blog', 'api_update_post', 'f0e27ce4cb6f964d52680609115838b7a10b2db80791be9613b2eeca3d2b75ba', {'path': {'post_id': ID}, 'body': {
+            'blog', 'api_update_post', '288a8b3bc3f5ed9888e666747e2dbdc2036ae1b4731e444b73b6e756a233c4b7', {'path': {'post_id': ID}, 'body': {
                 'expected_updated_at': revision,
                 'title': spec('string', maxLength=200),
                 'content_md': spec('string', maxLength=50000, allowNewlines=True),

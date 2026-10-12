@@ -836,12 +836,16 @@ class BlogCenter {
             this.scheduleComposerRecovery();
             return;
         }
+        if (event.target.matches('[data-blog-comment-persona]')) {
+            this.updateCommentPersona();
+            return;
+        }
         if (event.target.matches('[data-blog-compose-author-mode]')) {
             this.updateAuthorModeHint(event.target.value);
             this.scheduleComposerRecovery();
             return;
         }
-        if (event.target.matches('[data-blog-compose-visibility], [data-blog-compose-section], [data-blog-compose-class], [data-blog-compose-comments]')) {
+        if (event.target.matches('[data-blog-compose-visibility], [data-blog-compose-section], [data-blog-compose-class], [data-blog-compose-comments], [data-blog-compose-anon-comments]')) {
             this.scheduleComposerRecovery();
         }
     }
@@ -1954,6 +1958,8 @@ class BlogCenter {
         const sourceTags = source.custom_tags || source.tags || [];
         $('[data-blog-compose-tags]', this.shell).value = Array.isArray(sourceTags) ? sourceTags.join(', ') : String(sourceTags || '');
         $('[data-blog-compose-comments]', this.shell).checked = source.allow_comments ?? true;
+        const anonCommentsToggle = $('[data-blog-compose-anon-comments]', this.shell);
+        if (anonCommentsToggle) anonCommentsToggle.checked = source.allow_anonymous_comments ?? true;
         this.setSelectedAuthorMode(source.author_display_mode || source.author?.display_mode || 'real_name');
 
         const visibility = source.visibility || 'public';
@@ -2045,6 +2051,7 @@ class BlogCenter {
             visibility: $('[data-blog-compose-visibility]', this.shell)?.value || 'public',
             visible_class_id: $('[data-blog-compose-class]', this.shell)?.value || null,
             allow_comments: Boolean($('[data-blog-compose-comments]', this.shell)?.checked),
+            allow_anonymous_comments: Boolean($('[data-blog-compose-anon-comments]', this.shell)?.checked ?? true),
             author_display_mode: this.getSelectedAuthorMode(),
             selected_users: this.state.selectedUsers,
             uploaded_images: this.state.uploadedImages,
@@ -2151,15 +2158,15 @@ class BlogCenter {
         if (!hint) return;
         if (mode === 'nickname') {
             hint.textContent = this.userNickname
-                ? `将以昵称“${this.userNickname}”发帖，并自动附带班级标签和最高宗门修为。`
-                : '当前还没有设置昵称，无法使用昵称发帖。';
+                ? `将以笔名“${this.userNickname}”发帖：只显示笔名，不显示班级、修为和头像照片，他人也无法从帖子进入你的主页。`
+                : '当前还没有设置笔名，请先到个人中心设置昵称。';
             return;
         }
         if (mode === 'anonymous') {
-            hint.textContent = '将以匿名身份发帖，帖子不会自动附带班级或修为标签，头像也会隐藏为默认样式。';
+            hint.textContent = '将以匿名身份发帖：你在本帖评论区会显示为“楼主”，不会出现在你的公开主页；老师审核时仍可追溯。';
             return;
         }
-        hint.textContent = '默认使用真实名字发布；使用真实名字或昵称时会自动带上班级标签和最高宗门修为。';
+        hint.textContent = '默认实名发布，会显示班级标签、最高宗门修为和头像。';
     }
 
     /** True when the composer edits a post that is already out of draft. */
@@ -2309,6 +2316,7 @@ class BlogCenter {
             section_key: sectionKey,
             visibility,
             allow_comments: allowComments,
+            allow_anonymous_comments: Boolean($('[data-blog-compose-anon-comments]', this.shell)?.checked ?? true),
             author_display_mode: authorDisplayMode,
             tags,
         };
@@ -2630,6 +2638,7 @@ class BlogCenter {
             await api.post(`/api/blog/posts/${this.state.detailPostId}/comments`, {
                 content_md: content,
                 parent_comment_id: this.commentDraft.replyTo,
+                author_display_mode: this.commentPersonaMode(),
                 attachments_json: JSON.stringify(attachments.map((item) => ({
                     file_hash: normalizeFileHash(item),
                     name: item.name || item.filename || '图片',
@@ -3134,7 +3143,9 @@ class BlogCenter {
      */
     avatarMarkup(author = {}, placement = 'card') {
         const kind = ['anon', 'assistant'].includes(author.avatar_kind) ? author.avatar_kind : 'person';
-        const name = String(author.display_name || '').trim() || AVATAR_FALLBACK_NAMES[kind];
+        let name = String(author.display_name || '').trim() || AVATAR_FALLBACK_NAMES[kind];
+        // "匿名同学·青柚" shows 青, so two anonymous voices in a thread differ.
+        if (kind === 'anon' && name.includes('·')) name = name.split('·').pop() || name;
         return LQ.html.avatar({
             name,
             src: kind === 'person' ? (author.avatar_url || null) : null,
@@ -3312,6 +3323,60 @@ class BlogCenter {
         `;
     }
 
+    /** The anonymous post's author always speaks as "楼主" in their own thread. */
+    isAnonymousOp(post = {}) {
+        return Boolean(post.permissions?.can_edit) && post.author_display_mode === 'anonymous';
+    }
+
+    /** Persona the next comment is sent with; the server re-validates it. */
+    commentPersonaMode() {
+        if (this.userRole !== 'student') return 'real_name';
+        const checked = $('[data-blog-comment-persona]:checked', this.shell);
+        return checked?.value || 'real_name';
+    }
+
+    commentFaceAvatar(post = {}, mode = 'real_name') {
+        if (this.isAnonymousOp(post)) return this.avatarMarkup({ display_name: '楼主', avatar_kind: 'anon' }, 'composer');
+        if (mode === 'anonymous') return this.avatarMarkup({ display_name: '匿', avatar_kind: 'anon' }, 'composer');
+        if (mode === 'nickname') return this.avatarMarkup({ display_name: this.userNickname }, 'composer');
+        return this.avatarMarkup({ display_name: this.userName, avatar_url: this.currentAvatarUrl }, 'composer');
+    }
+
+    commentPersonaPickerHtml(post = {}) {
+        if (this.userRole !== 'student') return '';
+        if (this.isAnonymousOp(post)) {
+            return '<div class="blog-comment-persona blog-comment-persona--note" data-blog-comment-persona-note>你是匿名楼主，在本帖的回复会显示为“楼主”。</div>';
+        }
+        const allowAnon = post.allow_anonymous_comments !== false;
+        const options = [
+            { value: 'real_name', label: '实名', disabled: false },
+            { value: 'nickname', label: this.userNickname ? `笔名 · ${this.userNickname}` : '笔名未设置', disabled: !this.userNickname },
+            { value: 'anonymous', label: allowAnon ? '匿名' : '作者未开放匿名', disabled: !allowAnon },
+        ];
+        // Keep the last choice across re-renders (reply, refresh) when still allowed.
+        const selected = this.initialCommentPersona(post);
+        const radios = options.map((option) => `
+            <label class="blog-author-mode-option${option.disabled ? ' is-disabled' : ''}">
+                <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-comment-persona" value="${option.value}" data-blog-comment-persona ${option.value === selected ? 'checked' : ''} ${option.disabled ? 'disabled' : ''}>
+                <span>${escapeHtml(option.label)}</span>
+            </label>`).join('');
+        return `<div class="blog-author-mode-picker blog-comment-persona" role="radiogroup" aria-label="评论身份">${radios}</div>`;
+    }
+
+    initialCommentPersona(post = {}) {
+        const mode = this.lastCommentPersona || 'real_name';
+        if (this.userRole !== 'student') return 'real_name';
+        if (mode === 'nickname' && !this.userNickname) return 'real_name';
+        if (mode === 'anonymous' && post.allow_anonymous_comments === false) return 'real_name';
+        return mode;
+    }
+
+    updateCommentPersona() {
+        const face = $('[data-blog-comment-face]', this.shell);
+        this.lastCommentPersona = this.commentPersonaMode();
+        if (face) face.innerHTML = this.commentFaceAvatar(this.state.detailPost || {}, this.lastCommentPersona);
+    }
+
     commentSectionHtml(post) {
         if (!post.allow_comments) {
             return '<section class="blog-comments"><div class="blog-empty"><div class="blog-empty__title">作者已关闭评论</div></div></section>';
@@ -3326,8 +3391,9 @@ class BlogCenter {
                     ${(post._comments || []).length ? (post._comments || []).map((comment) => this.commentHtml(comment)).join('') : '<div class="blog-empty blog-empty--compact"><div class="blog-empty__title">还没有评论，来抢沙发</div></div>'}
                 </div>
                 <div class="blog-comment-composer" data-blog-comment-composer>
-                    ${this.avatarMarkup({ display_name: this.userName, avatar_url: this.currentAvatarUrl }, 'composer')}
+                    <span class="blog-comment-composer__face" data-blog-comment-face>${this.commentFaceAvatar(post, this.initialCommentPersona(post))}</span>
                     <div data-lq-component="surface" class="lq-surface blog-comment-composer__panel">
+                        ${this.commentPersonaPickerHtml(post)}
                         <div class="blog-comment-replying" data-blog-replying hidden></div>
                         <textarea data-lq-component="textarea" class="lq-textarea blog-comment-composer__input" data-blog-comment-input rows="3" placeholder="写下你的观点或补充说明。输入 @管家 可邀请 AI 回复并查看本条评论的图片（最多 4 张）。"></textarea>
                         <div class="blog-comment-media-strip" data-blog-comment-custom-emoji-preview hidden></div>

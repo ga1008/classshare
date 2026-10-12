@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from ..db.connection import execute_insert_returning_id, get_configured_db_engine
 from ..db.schema_blog_closed_loop import comment_media_rows, insert_comment_media
+from . import blog_persona_service as persona_service
 from .academic_service import china_today
 from .blog_image_policy import is_suitable_news_cover_dimensions
 from .blog_section_service import (
@@ -658,13 +659,31 @@ def _load_public_cultivation_badge(conn, student_id: Any) -> dict[str, Any] | No
         return None
 
 
-def _build_author_cultivation_badge_map(conn, rows: list[dict]) -> dict[str, dict]:
+class AuthorContext(dict):
+    """identity -> cultivation badge, plus the batch-loaded live author profiles.
+
+    Every list path already builds one of these per page and hands it to the
+    serializer, so personas resolve with one profile query per role instead of
+    one per post.
+    """
+
+    def __init__(self, badges: dict[str, dict], profiles: dict[str, dict[str, str]]):
+        super().__init__(badges)
+        self.profiles = profiles
+
+
+def _build_author_cultivation_badge_map(conn, rows: list[dict]) -> AuthorContext:
     student_ids: set[int] = set()
+    face_identities: set[str] = set()
     for row in rows:
         role = str(row.get("author_role") or "").strip().lower()
         display_mode = str(row.get("author_display_mode") or "").strip().lower()
         user_pk = _safe_int(row.get("author_user_pk"))
-        if role == "student" and display_mode != AUTHOR_DISPLAY_ANONYMOUS and user_pk is not None:
+        if display_mode != AUTHOR_DISPLAY_ANONYMOUS:
+            face_identities.add(str(row.get("author_identity") or ""))
+        # Badges belong to the real-name face only; a pen name must not carry
+        # the student's cultivation rank (it would help unmask them).
+        if role == "student" and persona_service.is_public_identity_mode(role, display_mode) and user_pk is not None:
             student_ids.add(user_pk)
 
     badge_map: dict[str, dict] = {}
@@ -672,7 +691,7 @@ def _build_author_cultivation_badge_map(conn, rows: list[dict]) -> dict[str, dic
         badge = _load_public_cultivation_badge(conn, student_id)
         if badge:
             badge_map[_build_identity("student", student_id)] = badge
-    return badge_map
+    return AuthorContext(badge_map, persona_service.load_profiles(conn, face_identities))
 
 
 def _build_post_author_snapshot(conn, user: dict, *, author_display_mode: Any = None) -> dict[str, Any]:
@@ -685,7 +704,10 @@ def _build_post_author_snapshot(conn, user: dict, *, author_display_mode: Any = 
 
     if role == "student" and display_mode == AUTHOR_DISPLAY_NICKNAME:
         if not nickname:
-            raise ValueError("请先在个人中心设置昵称后再使用昵称发帖")
+            raise ValueError("请先在个人中心设置笔名（昵称）后再用笔名发帖")
+        problem = persona_service.pen_name_problem(conn, nickname, self_role=role, self_pk=user_pk)
+        if problem:
+            raise ValueError(f"{problem}，请到个人中心修改后再用笔名发帖")
         display_name = nickname
     elif role == "student" and display_mode == AUTHOR_DISPLAY_ANONYMOUS:
         display_name = "匿名同学"
@@ -695,7 +717,8 @@ def _build_post_author_snapshot(conn, user: dict, *, author_display_mode: Any = 
         display_name = real_name or nickname or str(user.get("name") or "").strip()
 
     is_anonymous = role == "student" and display_mode == AUTHOR_DISPLAY_ANONYMOUS
-    system_tags = [class_name] if role == "student" and not is_anonymous and class_name else []
+    # The class tag identifies a student; only the real-name face carries it.
+    system_tags = [class_name] if role == "student" and display_mode == AUTHOR_DISPLAY_REAL and class_name else []
     return {
         "identity": identity,
         "role": role,
@@ -902,6 +925,7 @@ def create_post(
     allow_comments: bool = True,
     tags: Optional[list[str]] = None,
     status: str = POST_STATUS_PUBLISHED,
+    allow_anonymous_comments: bool = True,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     normalized_title = str(title or "").strip()[:MAX_TITLE_LENGTH]
@@ -965,8 +989,8 @@ def create_post(
             section_key, title, content_md, summary, cover_image_hash,
             status, visibility, visible_class_id, visible_class_offering_id, visible_user_identities_json,
             allow_comments, system_tags_json, tags_json, created_at, updated_at,
-            moderation_state, published_at, content_revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            moderation_state, published_at, content_revision, allow_anonymous_comments
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
         """,
         (
             author_snapshot["identity"],
@@ -994,6 +1018,7 @@ def create_post(
             # No automated review yet (P3): a published post is passed as-is.
             MODERATION_STATE_PASSED if is_published else MODERATION_STATE_NONE,
             now if is_published else None,
+            1 if allow_anonymous_comments else 0,
         ),
     )
     _sync_post_attachments(conn, post_id, media_assets)
@@ -1016,6 +1041,7 @@ def update_post(
     tags: Optional[list[str]] = None,
     status: Optional[str] = None,
     expected_updated_at: Optional[str] = None,
+    allow_anonymous_comments: Optional[bool] = None,
     expected_revision: Optional[int] = None,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
@@ -1109,6 +1135,10 @@ def update_post(
         updates.append("allow_comments = ?")
         params.append(1 if allow_comments else 0)
 
+    if allow_anonymous_comments is not None:
+        updates.append("allow_anonymous_comments = ?")
+        params.append(1 if allow_anonymous_comments else 0)
+
     if tags is not None:
         updates.append("tags_json = ?")
         params.append(json.dumps(_normalize_tags(tags), ensure_ascii=False))
@@ -1201,11 +1231,16 @@ def list_posts(
         conditions.append("author_identity = ?")
         params.append(normalized_author_identity)
         if normalized_author_identity != identity:
-            conditions.append("author_display_mode != ?")
-            params.append(AUTHOR_DISPLAY_ANONYMOUS)
+            # "ta的帖子" lists the real-name face only: pen-name and anonymous
+            # posts must never be linkable to the person behind them.
+            conditions.append("author_display_mode = ?")
+            params.append(AUTHOR_DISPLAY_REAL)
     if tag:
         normalized_tag = _escape_like_pattern(str(tag or "").strip())
-        conditions.append("(tags_json LIKE ? ESCAPE '\\' OR system_tags_json LIKE ? ESCAPE '\\')")
+        conditions.append(
+            "(tags_json LIKE ? ESCAPE '\\'"
+            " OR (author_display_mode = 'real_name' AND system_tags_json LIKE ? ESCAPE '\\'))"
+        )
         params.extend([f'%"{normalized_tag}"%', f'%"{normalized_tag}"%'])
     if query:
         normalized_query = str(query or "").strip()
@@ -1219,7 +1254,7 @@ def list_posts(
                     OR LOWER(summary) LIKE LOWER(?) ESCAPE '\\'
                     OR LOWER(content_md) LIKE LOWER(?) ESCAPE '\\'
                     OR LOWER(tags_json) LIKE LOWER(?) ESCAPE '\\'
-                    OR LOWER(system_tags_json) LIKE LOWER(?) ESCAPE '\\'
+                    OR (author_display_mode = 'real_name' AND LOWER(system_tags_json) LIKE LOWER(?) ESCAPE '\\')
                 )
                 """.strip()
             )
@@ -1251,7 +1286,7 @@ def list_posts(
         SELECT id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
                author_avatar_hash, author_avatar_mime,
                section_key, title, summary, cover_image_hash,
-               status, visibility, allow_comments, is_pinned, is_featured,
+               status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
                LENGTH(content_md) AS content_length,
@@ -1362,7 +1397,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
         id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
         author_avatar_hash, author_avatar_mime,
         section_key, title, summary, cover_image_hash,
-        status, visibility, allow_comments, is_pinned, is_featured,
+        status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
         view_count, like_count, comment_count, bookmark_count,
         system_tags_json, tags_json, created_at, edited_at, updated_at,
         LENGTH(content_md) AS content_length,
@@ -1442,7 +1477,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
 
     tag_rows = conn.execute(
         f"""
-        SELECT system_tags_json, tags_json, like_count, comment_count, view_count
+        SELECT system_tags_json, tags_json, author_display_mode, like_count, comment_count, view_count
         FROM blog_posts
         WHERE {published_where}
         ORDER BY created_at DESC, id DESC
@@ -1454,7 +1489,9 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
     for row in tag_rows:
         row_dict = dict(row)
         heat = 1 + _calculate_hot_score(row_dict)
-        for tag in _merge_post_tags(row_dict.get("system_tags_json"), row_dict.get("tags_json")):
+        is_real = str(row_dict.get("author_display_mode") or AUTHOR_DISPLAY_REAL) == AUTHOR_DISPLAY_REAL
+        system_tags = row_dict.get("system_tags_json") if is_real else "[]"
+        for tag in _merge_post_tags(system_tags, row_dict.get("tags_json")):
             bucket = tag_map.setdefault(tag, {"name": tag, "count": 0, "heat": 0})
             bucket["count"] += 1
             bucket["heat"] += heat
@@ -1466,43 +1503,42 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
 
     author_rows = conn.execute(
         f"""
-        SELECT author_identity, author_role, author_user_pk, author_display_name,
-               author_display_mode, author_avatar_hash,
+        SELECT author_identity, author_role, author_user_pk,
+               MAX(author_display_name) AS author_display_name,
+               MAX(author_display_mode) AS author_display_mode,
                COUNT(*) AS post_count,
                COALESCE(SUM(like_count * 3 + comment_count * 2 + view_count), 0) AS hot_score,
                MAX(created_at) AS latest_at
         FROM blog_posts
         WHERE {published_where}
-          AND author_display_mode != ?
-        GROUP BY author_identity, author_role, author_user_pk, author_display_name, author_display_mode, author_avatar_hash
+          AND author_display_mode = ?
+        GROUP BY author_identity, author_role, author_user_pk
         ORDER BY hot_score DESC, post_count DESC, latest_at DESC
         LIMIT 6
         """,
-        [*published_params, AUTHOR_DISPLAY_ANONYMOUS],
+        [*published_params, AUTHOR_DISPLAY_REAL],
     ).fetchall()
-    author_badge_map = _build_author_cultivation_badge_map(conn, [dict(row) for row in author_rows])
+    # Real-name faces only, one entry per person (pen names / anonymity would
+    # otherwise be linked to the person through this rail).
+    author_context = _build_author_cultivation_badge_map(conn, [dict(row) for row in author_rows])
     active_authors = []
     for row in author_rows:
         row_dict = dict(row)
-        role = str(row_dict.get("author_role") or "")
-        user_pk = _safe_int(row_dict.get("author_user_pk"))
         author_identity = str(row_dict.get("author_identity") or "")
+        persona = persona_service.resolve(
+            actor_identity=author_identity,
+            actor_role=str(row_dict.get("author_role") or ""),
+            actor_user_pk=row_dict.get("author_user_pk"),
+            display_mode=AUTHOR_DISPLAY_REAL,
+            snapshot_name=str(row_dict.get("author_display_name") or ""),
+            profiles=author_context.profiles,
+            badge=author_context.get(author_identity),
+        )
         active_authors.append(
             {
-                "identity": author_identity,
-                "display_name": str(row_dict.get("author_display_name") or ""),
-                "role": role,
-                "role_label": "教师" if role == "teacher" else ("AI助教" if role == "assistant" else "学生"),
-                "avatar_url": _build_post_author_avatar_url(
-                    role,
-                    user_pk,
-                    str(row_dict.get("author_avatar_hash") or ""),
-                    str(row_dict.get("author_display_mode") or ""),
-                ),
-                "avatar_kind": _avatar_kind(role, row_dict.get("author_display_mode")),
+                **persona,
                 "post_count": int(row_dict.get("post_count") or 0),
                 "hot_score": int(row_dict.get("hot_score") or 0),
-                "cultivation_badge": author_badge_map.get(author_identity),
             }
         )
 
@@ -1630,7 +1666,7 @@ def get_my_posts(
         SELECT id, author_identity, author_role, author_user_pk, author_display_name, author_display_mode,
                author_avatar_hash, author_avatar_mime,
                section_key, title, summary, cover_image_hash,
-               status, visibility, allow_comments, is_pinned, is_featured,
+               status, visibility, allow_comments, allow_anonymous_comments, is_pinned, is_featured,
                view_count, like_count, comment_count, bookmark_count,
                system_tags_json, tags_json, created_at, edited_at, updated_at,
                LENGTH(content_md) AS content_length,
@@ -1766,6 +1802,7 @@ def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int =
         """
         SELECT id, post_id, parent_comment_id,
                author_identity, author_role, author_user_pk, author_display_name,
+               author_display_mode, author_display_snapshot,
                content_md, emoji_payload_json, attachments_json,
                status, like_count, created_at, updated_at
         FROM blog_comments
@@ -1780,12 +1817,52 @@ def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int =
         user,
         viewer_identity=identity,
         post_author_identity=str(post["author_identity"] or ""),
-        post_is_anonymous=str(post.get("author_display_mode") or "") == AUTHOR_DISPLAY_ANONYMOUS,
+        post_display_mode=str(post.get("author_display_mode") or AUTHOR_DISPLAY_REAL),
         rows=[dict(row) for row in rows],
         page=page,
         limit=limit,
     )
     return {"comments": comments, "post_id": post_id}
+
+
+def _resolve_comment_face(
+    conn,
+    user: dict,
+    post: dict,
+    *,
+    role: str,
+    identity: str,
+    user_pk: int,
+    requested_mode: Any,
+    fallback_name: str,
+) -> tuple[str, str, str]:
+    """(stored mode, stored display name, snapshot) for a new comment.
+
+    The stored display name is already the public face, so every legacy reader
+    of ``author_display_name`` (AI context, agent reads, search) is safe too.
+    """
+    if role == "assistant":
+        name = str(fallback_name or user.get("name") or "").strip() or "管家"
+        return AUTHOR_DISPLAY_REAL, name, name
+    mode = persona_service.normalize_mode(role, requested_mode)
+    if is_anonymous_post_author(post, identity):
+        # The anonymous post's author always speaks as "楼主" in their thread.
+        return AUTHOR_DISPLAY_ANONYMOUS, OP_ANON_DISPLAY_NAME, OP_ANON_DISPLAY_NAME
+    if mode == AUTHOR_DISPLAY_ANONYMOUS:
+        if not bool(post.get("allow_anonymous_comments", 1)):
+            raise ValueError("这篇帖子的作者没有开放匿名评论")
+        code = persona_service.assign_anonymous_code(conn, int(post["id"]), identity)
+        return AUTHOR_DISPLAY_ANONYMOUS, f"{persona_service.ANON_PREFIX}{code}", code
+    if mode == AUTHOR_DISPLAY_NICKNAME:
+        nickname = str(_load_user_profile_snapshot(conn, role, user_pk).get("nickname") or "").strip()
+        if not nickname:
+            raise ValueError("请先在个人中心设置笔名（昵称）后再用笔名评论")
+        problem = persona_service.pen_name_problem(conn, nickname, self_role=role, self_pk=user_pk)
+        if problem:
+            raise ValueError(f"{problem}，请到个人中心修改后再用笔名评论")
+        return AUTHOR_DISPLAY_NICKNAME, nickname, nickname
+    name = str(fallback_name or user.get("name") or "").strip()
+    return AUTHOR_DISPLAY_REAL, name, name
 
 
 def add_comment(
@@ -1801,6 +1878,7 @@ def add_comment(
     bypass_comment_lock: bool = False,
     notify_callback=None,
     hot_notify_callback=None,
+    author_display_mode: str = AUTHOR_DISPLAY_REAL,
 ) -> dict:
     user_pk, role, identity = _ensure_identity(user)
     post = _get_post_raw(conn, post_id)
@@ -1864,9 +1942,10 @@ def add_comment(
         }
 
     now = _now_iso()
-    display_name = str(author_display_name or user.get("name") or "").strip()
-    if not display_name and role == "assistant":
-        display_name = "管家"
+    comment_mode, display_name, snapshot = _resolve_comment_face(
+        conn, user, post, role=role, identity=identity, user_pk=user_pk,
+        requested_mode=author_display_mode, fallback_name=author_display_name,
+    )
     comment_id = execute_insert_returning_id(
         conn,
         """
@@ -1892,8 +1971,8 @@ def add_comment(
             now,
             root_comment_id,
             parent_comment_id,
-            AUTHOR_DISPLAY_REAL,
-            display_name,
+            comment_mode,
+            snapshot,
         ),
     )
     if root_comment_id is None:
@@ -1911,14 +1990,17 @@ def add_comment(
     )
 
     if notify_callback:
+        # The identity is still passed for self-notification suppression, but a
+        # pen-name/anonymous commenter must not become a contactable actor.
+        public_face = comment_mode == AUTHOR_DISPLAY_REAL
         notify_callback(
             conn,
             post,
             comment_id,
             parent_comment_id,
             identity,
-            role,
-            user_pk,
+            role if public_face else "",
+            user_pk if public_face else None,
             display_name,
             _build_comment_preview(normalized_content, normalized_attachments, normalized_emojis),
         )
@@ -2630,7 +2712,7 @@ def _build_comment_tree(
     rows: list[dict],
     page: int,
     limit: int,
-    post_is_anonymous: bool = False,
+    post_display_mode: str = AUTHOR_DISPLAY_REAL,
 ) -> list[dict]:
     comment_ids = [int(item["id"]) for item in rows]
     liked_ids: set[int] = set()
@@ -2648,9 +2730,9 @@ def _build_comment_tree(
         ).fetchall()
         liked_ids = {int(row["target_id"]) for row in liked_rows}
 
-    # The anonymous author's own comments are masked, so never even load their
-    # avatar or cultivation badge (the badge lookup is also the costly part).
-    masked_identity = post_author_identity if post_is_anonymous else ""
+    # Only real-name commenters get a profile/badge lookup; the anonymous
+    # post's own author ("楼主") is masked whatever mode they commented in.
+    masked_identity = post_author_identity if post_display_mode == AUTHOR_DISPLAY_ANONYMOUS else ""
     avatar_map = _load_comment_avatar_map(
         conn,
         [row for row in rows if not masked_identity or str(row.get("author_identity") or "") != masked_identity],
@@ -2663,7 +2745,7 @@ def _build_comment_tree(
             row,
             viewer_identity=viewer_identity,
             post_author_identity=post_author_identity,
-            post_is_anonymous=post_is_anonymous,
+            post_display_mode=post_display_mode,
             is_liked=int(row["id"]) in liked_ids,
             avatar_map=avatar_map,
             can_delete=(
@@ -2688,48 +2770,9 @@ def _build_comment_tree(
     return attach_replies(visible_roots)
 
 
-def _load_comment_avatar_map(conn, rows: list[dict]) -> dict[str, dict]:
-    teacher_ids: set[int] = set()
-    student_ids: set[int] = set()
-    for row in rows:
-        role = str(row.get("author_role") or "").strip().lower()
-        user_pk = _safe_int(row.get("author_user_pk"))
-        if user_pk is None:
-            continue
-        if role == "teacher":
-            teacher_ids.add(user_pk)
-        elif role == "student":
-            student_ids.add(user_pk)
-
-    result: dict[str, dict] = {}
-    if teacher_ids:
-        placeholders = ", ".join("?" for _ in teacher_ids)
-        teacher_rows = conn.execute(
-            f"SELECT id, avatar_file_hash FROM teachers WHERE id IN ({placeholders})",
-            list(teacher_ids),
-        ).fetchall()
-        for row in teacher_rows:
-            key = _build_identity("teacher", int(row["id"]))
-            avatar_hash = str(row["avatar_file_hash"] or "")
-            result[key] = {
-                "avatar_hash": avatar_hash,
-                "avatar_url": _build_avatar_url("teacher", row["id"], avatar_hash),
-            }
-    if student_ids:
-        placeholders = ", ".join("?" for _ in student_ids)
-        student_rows = conn.execute(
-            f"SELECT id, avatar_file_hash FROM students WHERE id IN ({placeholders})",
-            list(student_ids),
-        ).fetchall()
-        for row in student_rows:
-            key = _build_identity("student", int(row["id"]))
-            avatar_hash = str(row["avatar_file_hash"] or "")
-            result[key] = {
-                "avatar_hash": avatar_hash,
-                "avatar_url": _build_avatar_url("student", row["id"], avatar_hash),
-                "cultivation_badge": _load_public_cultivation_badge(conn, int(row["id"])),
-            }
-    return result
+def _load_comment_avatar_map(conn, rows: list[dict]) -> AuthorContext:
+    """Persona context for a comment page: same shape as the post-list context."""
+    return _build_author_cultivation_badge_map(conn, rows)
 
 
 def _collect_comment_subtree_ids(conn, comment_id: int) -> list[int]:
@@ -2869,38 +2912,44 @@ def _serialize_post_summary(
     viewer_identity: str,
     cultivation_badge_map: dict[str, dict] | None = None,
 ) -> dict:
-    system_tags = _safe_json_loads(row.get("system_tags_json"), [])
-    custom_tags = _safe_json_loads(row.get("tags_json"), [])
-    tags = _merge_post_tags(system_tags, custom_tags)
     author_role = str(row.get("author_role") or "")
-    author_user_pk = _safe_int(row.get("author_user_pk"))
-    avatar_hash = str(row.get("author_avatar_hash") or "")
     author_display_mode = str(row.get("author_display_mode") or AUTHOR_DISPLAY_REAL)
     author_identity = str(row.get("author_identity") or "")
-    is_anonymous = author_display_mode == AUTHOR_DISPLAY_ANONYMOUS
     is_author = author_identity == viewer_identity
-    cultivation_badge = None
-    if not is_anonymous:
-        cultivation_badge = (cultivation_badge_map or {}).get(author_identity)
+    # Older pen-name/anonymous rows stored a class tag; it identifies the
+    # student, so only real-name posts expose system tags.
+    system_tags = (
+        _safe_json_loads(row.get("system_tags_json"), [])
+        if persona_service.is_public_identity_mode(author_role, author_display_mode)
+        else []
+    )
+    custom_tags = _safe_json_loads(row.get("tags_json"), [])
+    tags = _merge_post_tags(system_tags, custom_tags)
+    badges = cultivation_badge_map or {}
+    profiles = getattr(badges, "profiles", {}) or {}
+    if author_identity not in profiles:
+        # Callers without a batch context still get the stored snapshot
+        # (a one-entry map, so the shared batch map is never copied or mutated).
+        profiles = {
+            author_identity: {
+                "name": str(row.get("author_display_name") or ""),
+                "nickname": "",
+                "avatar_hash": str(row.get("author_avatar_hash") or ""),
+            }
+        }
+    author = persona_service.resolve(
+        actor_identity=author_identity,
+        actor_role=author_role,
+        actor_user_pk=row.get("author_user_pk"),
+        display_mode=author_display_mode,
+        snapshot_name=str(row.get("author_display_name") or ""),
+        profiles=profiles,
+        badge=badges.get(author_identity),
+    )
     presentation_cover = _presentation_cover(row)
     return {
         "id": int(row["id"]),
-        "author": {
-            "identity": "" if is_anonymous else author_identity,
-            "role": author_role,
-            "user_pk": None if is_anonymous else author_user_pk,
-            "display_name": str(row.get("author_display_name") or ""),
-            "display_mode": author_display_mode,
-            "is_anonymous": is_anonymous,
-            "cultivation_badge": cultivation_badge,
-            "avatar_url": _build_post_author_avatar_url(
-                author_role,
-                author_user_pk,
-                avatar_hash,
-                author_display_mode,
-            ),
-            "avatar_kind": _avatar_kind(author_role, author_display_mode),
-        },
+        "author": author,
         "title": str(row.get("title") or ""),
         "section_key": str(row.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
         "summary": str(row.get("summary") or ""),
@@ -2912,6 +2961,7 @@ def _serialize_post_summary(
         "visibility": str(row.get("visibility") or VISIBILITY_PUBLIC),
         "visibility_label": _visibility_label(str(row.get("visibility") or VISIBILITY_PUBLIC)),
         "allow_comments": bool(row.get("allow_comments")),
+        "allow_anonymous_comments": bool(row.get("allow_anonymous_comments", 1)),
         "is_pinned": bool(row.get("is_pinned")),
         "is_featured": bool(row.get("is_featured")),
         "view_count": int(row.get("view_count") or 0),
@@ -2985,41 +3035,29 @@ def _serialize_comment(
     avatar_map: dict[str, dict],
     can_delete: bool,
     post_author_identity: str = "",
-    post_is_anonymous: bool = False,
+    post_display_mode: str = AUTHOR_DISPLAY_REAL,
 ) -> dict:
     author_identity = str(row.get("author_identity") or "")
     attachments = _safe_json_loads(row.get("attachments_json"), [])
     emojis = _safe_json_loads(row.get("emoji_payload_json"), [])
-    author_role = str(row.get("author_role") or "")
-    author_user_pk = _safe_int(row.get("author_user_pk"))
-    is_op = bool(author_identity) and author_identity == post_author_identity
-    if is_op and post_is_anonymous:
-        author = {
-            "identity": "",
-            "role": "",
-            "user_pk": None,
-            "display_name": OP_ANON_DISPLAY_NAME,
-            "display_mode": AUTHOR_DISPLAY_ANONYMOUS,
-            "is_anonymous": True,
-            "is_op": True,
-            "avatar_url": "",
-            "avatar_kind": AVATAR_KIND_ANON,
-            "cultivation_badge": None,
-        }
-    else:
-        avatar_entry = avatar_map.get(author_identity, {})
-        author = {
-            "identity": author_identity,
-            "role": author_role,
-            "user_pk": author_user_pk,
-            "display_name": str(row.get("author_display_name") or ""),
-            "display_mode": AUTHOR_DISPLAY_REAL,
-            "is_anonymous": False,
-            "is_op": is_op,
-            "avatar_url": avatar_entry.get("avatar_url") or _build_avatar_url(author_role, author_user_pk),
-            "avatar_kind": _avatar_kind(author_role),
-            "cultivation_badge": avatar_entry.get("cultivation_badge") if author_role == "student" else None,
-        }
+    profiles = getattr(avatar_map, "profiles", {}) or {}
+    author_mode = str(row.get("author_display_mode") or AUTHOR_DISPLAY_REAL)
+    author = persona_service.resolve(
+        actor_identity=author_identity,
+        actor_role=str(row.get("author_role") or ""),
+        actor_user_pk=row.get("author_user_pk"),
+        display_mode=author_mode,
+        snapshot_name=str(
+            (row.get("author_display_snapshot") if author_mode == AUTHOR_DISPLAY_ANONYMOUS else None)
+            or row.get("author_display_name")
+            or ""
+        ),
+        profiles=profiles,
+        badge=avatar_map.get(author_identity),
+        post_author_identity=post_author_identity,
+        post_display_mode=post_display_mode,
+        is_comment=True,
+    )
     return {
         "id": int(row["id"]),
         "post_id": int(row["post_id"]),

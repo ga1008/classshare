@@ -1702,6 +1702,30 @@
 }
 
 
+/* P2: who the next comment speaks as (layout only; picker look is shared). */
+.blog-comment-composer__face {
+    display: inline-flex;
+    flex: none;
+    align-self: flex-start;
+}
+
+.blog-comment-persona {
+    display: inline-flex;
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-xs, 6px);
+}
+
+.blog-comment-persona--note {
+    display: block;
+    font-size: var(--text-2xs);
+    color: var(--blog-ink-soft);
+}
+
+.blog-author-mode-option input:focus-visible + span {
+    outline: 2px solid hsl(var(--ls-ring) / 0.6);
+    outline-offset: 1px;
+}
+
 .blog-comment-composer__panel {
     flex: 1;
     min-width: 0;

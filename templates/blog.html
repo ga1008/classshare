@@ -277,7 +277,7 @@
                                 </label>
                                 <label class="blog-author-mode-option{% if not user_info.nickname %} is-disabled{% endif %}">
                                     <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="nickname" data-blog-compose-author-mode {% if not user_info.nickname %}disabled{% endif %}>
-                                    <span>{% if user_info.nickname %}昵称{% else %}昵称未设置{% endif %}</span>
+                                    <span>{% if user_info.nickname %}笔名{% else %}笔名未设置{% endif %}</span>
                                 </label>
                                 <label class="blog-author-mode-option">
                                     <input data-lq-component="radio" class="lq-radio" type="radio" name="blog-author-mode" value="anonymous" data-blog-compose-author-mode>
@@ -285,7 +285,7 @@
                                 </label>
                             </div>
                             <div class="blog-composer__option-hint" data-blog-compose-author-mode-hint>
-                                默认使用真实名字发布；使用真实名字或昵称时会自动带上班级标签和最高宗门修为。
+                                默认实名发布，会显示班级标签、最高宗门修为和头像。
                             </div>
                         </div>
                     </div>
@@ -317,6 +317,12 @@
                             <label>
                                 <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-blog-compose-comments checked>
                                 允许评论
+                            </label>
+                        </div>
+                        <div class="blog-composer__option">
+                            <label>
+                                <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-blog-compose-anon-comments checked>
+                                允许匿名评论
                             </label>
                         </div>
                     </div>
