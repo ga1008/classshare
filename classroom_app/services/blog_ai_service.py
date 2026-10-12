@@ -15,7 +15,7 @@ from .academic_service import (
     parse_date_input,
     serialize_semester_row,
 )
-from .blog_notifications import notify_new_comment, notify_post_hot
+from .blog_notifications import notify_housekeeper_failed, notify_new_comment, notify_post_hot
 from .blog_service import (
     POST_STATUS_PUBLISHED, MAX_COMMENT_ATTACHMENTS, add_comment,
     _extract_blog_image_hashes, _load_user_owned_media_assets,
@@ -34,6 +34,11 @@ BLOG_AI_ASSISTANT_USER = {
 BLOG_AI_REPLY_FALLBACK = "我在，这条我先接住了。你要是想继续往下聊，可以直接补一句最想展开的点。"
 BLOG_AI_TRIGGER_POST = "post"
 BLOG_AI_TRIGGER_COMMENT = "comment"
+BLOG_AI_JOB_ABANDONED = "failed_final"
+ANONYMOUS_OP_NAME = "楼主"
+# Pen-name and anonymous authors must not have their real profile or
+# semester context fed to a model whose reply is published publicly.
+PROFILE_SHIELDED_DISPLAY_MODES = frozenset({"anonymous", "nickname"})
 
 _MENTION_PATTERN = re.compile(r"@管家")
 
@@ -94,10 +99,10 @@ def _build_comment_summary(row: dict[str, Any]) -> str:
     return f"{row.get('author_display_name') or '课堂成员'}：{content or '仅发送了图片或表情'}{suffix}"
 
 
-def _build_recent_comments_context(conn, post_id: int, *, limit: int = 10) -> str:
+def _build_recent_comments_context(conn, post_id: int, *, limit: int = 10, masked_author_identity: str = "") -> str:
     rows = conn.execute(
         """
-        SELECT author_display_name, content_md, attachments_json, emoji_payload_json, created_at
+        SELECT author_identity, author_display_name, content_md, attachments_json, emoji_payload_json, created_at
         FROM blog_comments
         WHERE post_id = ? AND status = 'active'
         ORDER BY created_at DESC, id DESC
@@ -110,8 +115,61 @@ def _build_recent_comments_context(conn, post_id: int, *, limit: int = 10) -> st
 
     lines = ["最近评论："]
     for row in reversed(rows):
-        lines.append(f"- {_build_comment_summary(dict(row))}")
+        item = dict(row)
+        # The model must never see (and so never echo) an anonymous author's name.
+        if masked_author_identity and str(item.get("author_identity") or "") == masked_author_identity:
+            item["author_display_name"] = ANONYMOUS_OP_NAME
+        lines.append(f"- {_build_comment_summary(item)}")
     return "\n".join(lines)
+
+
+def _anonymous_post_author_identity(post: dict) -> str:
+    if str(post.get("author_display_mode") or "") == "anonymous":
+        return str(post.get("author_identity") or "")
+    return ""
+
+
+def _abandon_reply_job(conn, trigger_type: str, trigger_id: int, error_message: str) -> bool:
+    """Terminal failure: no public error comment and no paid scheduler retry.
+
+    A new authenticated edit (enqueue_blog_mention) re-arms the job; a crashed
+    worker is still recovered by the scheduler's stale-pending path.
+    """
+    cursor = conn.execute(
+        """
+        UPDATE blog_ai_reply_jobs
+        SET status = ?, error_message = ?, updated_at = ?
+        WHERE trigger_type = ? AND trigger_id = ? AND status = 'pending' AND assistant_comment_id IS NULL
+        """,
+        (BLOG_AI_JOB_ABANDONED, _truncate_text(error_message, limit=500), _now_iso(), trigger_type, trigger_id),
+    )
+    return int(cursor.rowcount or 0) == 1
+
+
+def _abandon_and_notify(
+    *, trigger_type: str, trigger_id: int, post_id: int, recipient_role: Any, recipient_pk: Any, reason: str
+) -> None:
+    with get_db_connection() as conn:
+        # Two transactions on purpose: the terminal job state must stick even
+        # if the courtesy notification fails, or the scheduler would re-run a
+        # paid generation after the stale window.
+        try:
+            abandoned = _abandon_reply_job(conn, trigger_type, trigger_id, reason)
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            print(f"[BLOG_AI] 管家失败回执写入失败: {exc}")
+            return
+        if not abandoned:
+            return
+        try:
+            notify_housekeeper_failed(
+                conn, recipient_role=recipient_role, recipient_pk=recipient_pk, post_id=post_id, reason=reason,
+            )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            print(f"[BLOG_AI] 管家失败通知写入失败: {exc}")
 
 
 def _build_blog_overview(conn) -> str:
@@ -471,13 +529,21 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
         caller_role = str(post.get("author_role") or trigger_user.get("role") or "").strip().lower()
         caller_user_pk = int(post.get("author_user_pk") or trigger_user.get("id") or 0)
         caller_display_name = str(post.get("author_display_name") or trigger_user.get("name") or "").strip()
-        caller_profile_prompt = build_explicit_user_profile_prompt(
-            load_explicit_user_profile(conn, caller_user_pk, caller_role),
-            heading="【发帖人显式资料】",
-        )
-        semester_context = _build_semester_context(conn, caller_user_pk, caller_role)
+        anonymous_author = _anonymous_post_author_identity(post)
+        if anonymous_author:
+            caller_display_name = ANONYMOUS_OP_NAME
+        if str(post.get("author_display_mode") or "") in PROFILE_SHIELDED_DISPLAY_MODES:
+            caller_profile_prompt, semester_context = "", ""
+        else:
+            caller_profile_prompt = build_explicit_user_profile_prompt(
+                load_explicit_user_profile(conn, caller_user_pk, caller_role),
+                heading="【发帖人显式资料】",
+            )
+            semester_context = _build_semester_context(conn, caller_user_pk, caller_role)
         post_context = _build_post_context(post)
-        recent_comments_context = _build_recent_comments_context(conn, post_id)
+        recent_comments_context = _build_recent_comments_context(
+            conn, post_id, masked_author_identity=anonymous_author,
+        )
         blog_overview_context = _build_blog_overview(conn)
         asset_error = ""
         try:
@@ -487,7 +553,6 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
         conn.commit()
 
     request_text = strip_blog_housekeeper_mention(combined_text)
-    error_message = asset_error
     try:
         if asset_error:
             raise ValueError(asset_error)
@@ -503,14 +568,18 @@ async def maybe_reply_to_post_mention(post_id: int, trigger_user: dict[str, Any]
             trigger_type=BLOG_AI_TRIGGER_POST, trigger_id=post_id, current_assets=current_assets,
         )
     except (ValueError, RuntimeError) as exc:
-        error_message = str(exc)
-        reply_text = f"这次未能完成识别或回复：{error_message}"
+        # Failures are told to the caller privately, never posted publicly.
+        _abandon_and_notify(
+            trigger_type=BLOG_AI_TRIGGER_POST, trigger_id=post_id, post_id=post_id,
+            recipient_role=caller_role, recipient_pk=caller_user_pk, reason=str(exc),
+        )
+        return
 
     with get_db_connection() as conn:
         try:
             _publish_blog_ai_reply(
                 conn, trigger_type=BLOG_AI_TRIGGER_POST, trigger_id=post_id, post_id=post_id,
-                source_text=combined_text, reply_text=reply_text, error_message=error_message,
+                source_text=combined_text, reply_text=reply_text,
             )
             conn.commit()
         except Exception as exc:
@@ -540,7 +609,9 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
                    p.system_tags_json,
                    p.tags_json,
                    p.created_at AS post_created_at,
-                   p.author_display_name AS post_author_display_name
+                   p.author_display_name AS post_author_display_name,
+                   p.author_identity AS post_author_identity,
+                   p.author_display_mode AS post_author_display_mode
             FROM blog_comments c
             JOIN blog_posts p ON p.id = c.post_id
             WHERE c.id = ? AND c.status = 'active'
@@ -574,11 +645,22 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
         caller_role = str(comment.get("author_role") or trigger_user.get("role") or "").strip().lower()
         caller_user_pk = int(comment.get("author_user_pk") or trigger_user.get("id") or 0)
         caller_display_name = str(comment.get("author_display_name") or trigger_user.get("name") or "").strip()
-        caller_profile_prompt = build_explicit_user_profile_prompt(
-            load_explicit_user_profile(conn, caller_user_pk, caller_role),
-            heading="【评论人显式资料】",
+        anonymous_author = _anonymous_post_author_identity(
+            {
+                "author_display_mode": comment.get("post_author_display_mode"),
+                "author_identity": comment.get("post_author_identity"),
+            }
         )
-        semester_context = _build_semester_context(conn, caller_user_pk, caller_role)
+        if anonymous_author and anonymous_author == str(comment.get("author_identity") or ""):
+            # The anonymous author replying in their own thread stays "楼主".
+            caller_display_name = ANONYMOUS_OP_NAME
+            caller_profile_prompt, semester_context = "", ""
+        else:
+            caller_profile_prompt = build_explicit_user_profile_prompt(
+                load_explicit_user_profile(conn, caller_user_pk, caller_role),
+                heading="【评论人显式资料】",
+            )
+            semester_context = _build_semester_context(conn, caller_user_pk, caller_role)
         post_context = _build_post_context(
             {
                 "title": comment.get("title"),
@@ -589,7 +671,9 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
                 "created_at": comment.get("post_created_at"),
             }
         )
-        recent_comments_context = _build_recent_comments_context(conn, int(comment["post_id"]))
+        recent_comments_context = _build_recent_comments_context(
+            conn, int(comment["post_id"]), masked_author_identity=anonymous_author,
+        )
         blog_overview_context = _build_blog_overview(conn)
         asset_error = ""
         try:
@@ -599,7 +683,6 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
         conn.commit()
 
     request_text = strip_blog_housekeeper_mention(str(comment.get("content_md") or ""))
-    error_message = asset_error
     try:
         if asset_error:
             raise ValueError(asset_error)
@@ -615,15 +698,18 @@ async def maybe_reply_to_comment_mention(comment_id: int, trigger_user: dict[str
             trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, current_assets=current_assets,
         )
     except (ValueError, RuntimeError) as exc:
-        error_message = str(exc)
-        reply_text = f"这次未能完成识别或回复：{error_message}"
+        _abandon_and_notify(
+            trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id, post_id=int(comment["post_id"]),
+            recipient_role=caller_role, recipient_pk=caller_user_pk, reason=str(exc),
+        )
+        return
 
     with get_db_connection() as conn:
         try:
             _publish_blog_ai_reply(
                 conn, trigger_type=BLOG_AI_TRIGGER_COMMENT, trigger_id=comment_id,
                 post_id=int(comment["post_id"]), source_text=str(comment.get("content_md") or ""),
-                reply_text=reply_text, error_message=error_message,
+                reply_text=reply_text,
             )
             conn.commit()
         except Exception as exc:

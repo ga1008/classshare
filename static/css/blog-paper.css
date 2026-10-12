@@ -807,13 +807,6 @@
     color: var(--blog-ink-soft);
 }
 
-.blog-post-card__avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    box-shadow: 0 0 0 2px var(--blog-paper), var(--blog-shadow-sm);
-}
 
 .blog-post-card__author-name {
     font-weight: 600;
@@ -1201,13 +1194,6 @@
     background: hsl(var(--ls-muted) / 0.5);
 }
 
-.blog-author-rank__item img {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    object-fit: cover;
-    box-shadow: 0 0 0 2px var(--blog-paper), var(--blog-shadow-sm);
-}
 
 .blog-author-rank__body {
     min-width: 0;
@@ -1299,13 +1285,6 @@
     min-width: 0;
 }
 
-.blog-detail__avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    object-fit: cover;
-    box-shadow: 0 0 0 2px var(--blog-paper), var(--blog-shadow-sm);
-}
 
 .blog-detail__author-name {
     font-weight: 600;
@@ -1636,14 +1615,6 @@
     padding: var(--spacing-sm) 0;
 }
 
-.blog-comment__avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-    box-shadow: 0 0 0 2px var(--blog-paper), var(--blog-shadow-sm);
-}
 
 .blog-comment__body {
     flex: 1;
@@ -1730,14 +1701,6 @@
     margin-top: var(--spacing-md);
 }
 
-.blog-comment-composer__avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-    box-shadow: 0 0 0 2px var(--blog-paper), var(--blog-shadow-sm);
-}
 
 .blog-comment-composer__panel {
     flex: 1;
@@ -2607,6 +2570,23 @@ body.blog-composer-open {
     cursor: pointer;
     color: inherit;
     font: inherit;
+}
+
+/* Geometry only: an avatar trigger hugs its LQ Avatar instead of stretching
+   to the height of the comment/card row it sits in. */
+.blog-user-link--avatar {
+    --lq-btn-pad: 0;
+    --lq-btn-height: 0px;
+    align-self: flex-start;
+    flex: 0 0 auto;
+}
+
+/* Text buttons keep a 64px minimum; an avatar trigger is its own size. Touch
+   screens keep the shared 44px target from button.css. */
+@media (pointer: fine) {
+    .blog-user-link--avatar {
+        min-width: 0;
+    }
 }
 
 /* ── 响应式 ───────────────────────────────────────────────────── */

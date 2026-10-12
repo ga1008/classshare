@@ -29,6 +29,14 @@
     const SAFE_TARGETS = new Set(['_blank', '_self', '_parent', '_top']);
     const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
     const SAFE_DATA_IMAGE_PATTERN = /^data:image\/(?:png|gif|jpe?g|webp|bmp);base64,[a-z0-9+/=\s]+$/i;
+    // User-authored content (blog posts/comments) is "untrusted": an <img> fires
+    // a request for every reader without a click, so a same-origin path such as
+    // "/logout" must never be reachable through it. Only stored media and static
+    // assets are allowed on our origin; ids/classes cannot spoof site UI either.
+    const UNTRUSTED_SAME_ORIGIN_IMAGE_PATTERN = /^\/(?:api\/blog\/image\/[a-f0-9]{64}|static\/)[^\s]*$/i;
+    const UNTRUSTED_CODE_CLASS_PATTERN = /^language-[a-z0-9_+-]{1,40}$/i;
+    const DEFAULT_POLICY = Object.freeze({ untrusted: false });
+    let activePolicy = DEFAULT_POLICY;
 
     function normalizeContent(value) {
         if (value == null) {
@@ -68,9 +76,58 @@
         return globalObject.marked;
     }
 
+    function isSafeUntrustedImageSource(value) {
+        // Browsers resolve "..", "%2e" and "\" path segments, so "/static/../logout"
+        // would still reach /logout; refuse any such form outright.
+        if (/\.\.|%2e|\\/i.test(value)) {
+            return false;
+        }
+        if (UNTRUSTED_SAME_ORIGIN_IMAGE_PATTERN.test(value)) {
+            return true;
+        }
+        const compactValue = value.replace(/[\u0000-\u001f\u007f\s]+/g, '');
+        if (SAFE_DATA_IMAGE_PATTERN.test(compactValue)) {
+            return true;
+        }
+        // Only absolute external images; every other relative form ("logout",
+        // "./x", "?y", "//host") would resolve against our own origin.
+        if (!/^https?:\/\/[^/\s]/i.test(compactValue)) {
+            return false;
+        }
+        // An absolute URL naming our own host gets the same allow-list as a
+        // relative one, otherwise "https://<site>/logout" slips through.
+        const sameOrigin = resolveSameOriginPath(compactValue);
+        return sameOrigin === null || UNTRUSTED_SAME_ORIGIN_IMAGE_PATTERN.test(sameOrigin);
+    }
+
+    /** Path+query when `value` resolves to the current origin, else null. */
+    function resolveSameOriginPath(value) {
+        if (typeof location === 'undefined' || typeof URL !== 'function') {
+            return null;
+        }
+        try {
+            const resolved = new URL(value, location.href);
+            return resolved.origin === location.origin ? `${resolved.pathname}${resolved.search}` : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function isUntrustedLogoutLink(value) {
+        const path = resolveSameOriginPath(value);
+        return path !== null && /^\/logout(?:[/?#]|$)/i.test(path);
+    }
+
     function isSafeUrl(rawValue, tagName, attributeName) {
         const normalizedValue = normalizeContent(rawValue).trim();
         if (!normalizedValue) {
+            return false;
+        }
+        if (activePolicy.untrusted && tagName === 'img' && attributeName === 'src') {
+            return isSafeUntrustedImageSource(normalizedValue);
+        }
+        if (activePolicy.untrusted && attributeName === 'href' && isUntrustedLogoutLink(normalizedValue)) {
+            // A disguised "sign out" link in someone else's post is never wanted.
             return false;
         }
         if (
@@ -145,6 +202,16 @@
         if (!normalizedValue && !['checked', 'disabled', 'open', 'reversed'].includes(attributeName)) {
             element.removeAttribute(attribute.name);
             return;
+        }
+
+        if (activePolicy.untrusted && (attributeName === 'id' || attributeName === 'class')) {
+            // Keep only the highlighter class marked emits on code blocks.
+            const keepCodeLanguage = attributeName === 'class' && tagName === 'code'
+                && UNTRUSTED_CODE_CLASS_PATTERN.test(normalizedValue);
+            if (!keepCodeLanguage) {
+                element.removeAttribute(attribute.name);
+                return;
+            }
         }
 
         if (attributeName === 'href' || attributeName === 'src') {
@@ -263,7 +330,12 @@
         }
     }
 
-    function sanitizeHtml(html) {
+    /**
+     * @param {string} html
+     * @param {{untrusted?: boolean}} [options] untrusted: user-authored content
+     *   (no same-origin image side effects, no id/class from the author).
+     */
+    function sanitizeHtml(html, options) {
         const normalizedHtml = normalizeContent(html);
         if (!normalizedHtml || typeof document === 'undefined') {
             return normalizedHtml;
@@ -271,7 +343,13 @@
 
         const template = document.createElement('template');
         template.innerHTML = normalizedHtml;
-        sanitizeNode(template.content);
+        // Sanitizing is synchronous, so a scoped policy cannot leak to other calls.
+        activePolicy = options && options.untrusted ? { untrusted: true } : DEFAULT_POLICY;
+        try {
+            sanitizeNode(template.content);
+        } finally {
+            activePolicy = DEFAULT_POLICY;
+        }
         return template.innerHTML;
     }
 
@@ -299,7 +377,7 @@
                 // 聊天/AI 流式输出以单换行表达换行意图。
                 markedOptions.breaks = true;
             }
-            return sanitizeHtml(markedRuntime.parse(normalized, markedOptions));
+            return sanitizeHtml(markedRuntime.parse(normalized, markedOptions), { untrusted: Boolean(config.untrusted) });
         } catch (error) {
             if (!config.silent) {
                 console.error('Markdown render failed:', error);

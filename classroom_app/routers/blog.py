@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import io
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from ..core import templates
 from ..database import get_db_connection
@@ -28,6 +30,7 @@ from ..services.blog_opportunity_service import (
 from ..services.blog_section_service import list_blog_sections, save_blog_section
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.blog_service import (
+    BlogModerationLocked,
     BlogRevisionConflict,
     POST_STATUS_DRAFT,
     POST_STATUS_PUBLISHED,
@@ -57,13 +60,26 @@ from ..services.blog_service import (
     update_post,
     update_post_reading_progress,
 )
-from ..services.file_service import resolve_global_file_path, save_file_globally
+from ..services.file_service import resolve_global_file_path, store_file_object_globally
 
 router = APIRouter()
 
 ALLOWED_BLOG_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 ALLOWED_BLOG_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 MAX_BLOG_IMAGE_BYTES = 10 * 1024 * 1024
+# ~40 MP fully decoded is already ~160 MB RGBA on a 4 GB host; refuse beyond it.
+MAX_BLOG_IMAGE_PIXELS = 40_000_000
+BLOG_IMAGE_FORMAT_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif", "WEBP": "image/webp"}
+
+
+def _escape_like(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _value_error_to_http(exc: ValueError) -> HTTPException:
+    # "不存在" is a missing resource; every other ValueError is bad input.
+    message = str(exc)
+    return HTTPException(status_code=404 if "不存在" in message else 400, detail=message)
 
 
 def _require_blog_super_admin(conn, user: dict) -> None:
@@ -369,8 +385,10 @@ async def api_update_post(
         except BlogRevisionConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise _value_error_to_http(exc) from exc
         except PermissionError as exc:
+            # Includes BlogModerationLocked: 409 is reserved for revision
+            # conflicts so the editor never mistakes a lock for one.
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
@@ -396,6 +414,8 @@ def api_pin_post(post_id: int, user: dict = Depends(get_current_user)):
             result = pin_post(conn, user, post_id)
             conn.commit()
             return {"status": "success", **result}
+        except BlogModerationLocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -409,6 +429,8 @@ def api_feature_post(post_id: int, user: dict = Depends(get_current_user)):
             result = feature_post(conn, user, post_id, notify_callback=notify_post_featured)
             conn.commit()
             return {"status": "success", **result}
+        except BlogModerationLocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -423,6 +445,8 @@ async def api_hide_post(post_id: int, request: Request, user: dict = Depends(get
             result = hide_post(conn, user, post_id, reason=str(data.get("reason") or ""))
             conn.commit()
             return {"status": "success", **result}
+        except BlogModerationLocked as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -541,6 +565,60 @@ def api_bookmark_post(post_id: int, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+METADATA_STRIPPED_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+
+def _carries_photo_metadata(image) -> bool:
+    # EXIF may hold GPS coordinates; XMP may hold them too (JPEG/PNG/WebP).
+    info = image.info
+    return bool(info.get("exif") or info.get("xmp") or info.get("XML:com.adobe.xmp") or image.getexif())
+
+
+def _reencode_without_metadata(image, image_format: str) -> tuple[bytes, int, int]:
+    """Re-save upright with no EXIF/XMP; Pillow only writes metadata when asked."""
+    upright = ImageOps.exif_transpose(image)
+    buffer = io.BytesIO()
+    if image_format == "JPEG":
+        if upright.mode not in {"RGB", "L"}:
+            upright = upright.convert("RGB")
+        upright.save(buffer, format="JPEG", quality=92, optimize=True)
+    elif image_format == "PNG":
+        upright.save(buffer, format="PNG", optimize=True)
+    else:
+        upright.save(buffer, format="WEBP", quality=92)
+    width, height = upright.size
+    return buffer.getvalue(), int(width), int(height)
+
+
+def _inspect_blog_image(raw: bytes) -> tuple[bytes, str, int, int]:
+    """Validate an upload entirely in memory; nothing reaches disk unless valid.
+
+    The header is read first so a small file declaring a huge canvas is
+    rejected before decoding. JPEG is re-encoded without EXIF (location data),
+    with its orientation applied so the picture still displays upright.
+    """
+    try:
+        with Image.open(io.BytesIO(raw)) as probe:
+            width, height = probe.size
+            image_format = str(probe.format or "").upper()
+        if width <= 0 or height <= 0 or width * height > MAX_BLOG_IMAGE_PIXELS:
+            raise HTTPException(status_code=400, detail="图片尺寸过大，请压缩后再上传")
+        mime_type = BLOG_IMAGE_FORMAT_MIME.get(image_format)
+        if mime_type is None:
+            raise HTTPException(status_code=400, detail="仅支持 PNG、JPG、GIF 或 WebP 图片")
+        with Image.open(io.BytesIO(raw)) as verifier:
+            verifier.verify()
+        if image_format in METADATA_STRIPPED_FORMATS:
+            with Image.open(io.BytesIO(raw)) as source:
+                if _carries_photo_metadata(source) and not getattr(source, "is_animated", False):
+                    raw, width, height = _reencode_without_metadata(source, image_format)
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=400, detail="上传文件不是有效图片") from exc
+    return raw, mime_type, int(width), int(height)
+
+
 @router.post("/api/blog/upload-image", response_class=JSONResponse)
 async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     content_type = str(file.content_type or "").lower()
@@ -548,26 +626,21 @@ async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(ge
     if content_type not in ALLOWED_BLOG_IMAGE_TYPES and suffix not in ALLOWED_BLOG_IMAGE_EXTS:
         raise HTTPException(status_code=400, detail="仅支持 PNG、JPG、GIF 或 WebP 图片")
 
-    await file.seek(0)
-    file.file.seek(0, 2)
-    file_size = int(file.file.tell())
-    await file.seek(0)
-    if file_size <= 0:
+    raw = await file.read(MAX_BLOG_IMAGE_BYTES + 1)
+    if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
-    if file_size > MAX_BLOG_IMAGE_BYTES:
+    if len(raw) > MAX_BLOG_IMAGE_BYTES:
         raise HTTPException(status_code=400, detail="图片大小不能超过 10MB")
 
-    save_result = await save_file_globally(file)
+    # Decoding is CPU-bound; keep it off the event loop.
+    clean_bytes, mime_type, width, height = await asyncio.to_thread(_inspect_blog_image, raw)
+    try:
+        save_result = await asyncio.to_thread(store_file_object_globally, io.BytesIO(clean_bytes))
+    except Exception as exc:
+        print(f"[BLOG] 图片保存失败: {exc}")
+        save_result = None
     if not save_result:
         raise HTTPException(status_code=500, detail="图片保存失败")
-
-    saved_path = Path(save_result["path"])
-    try:
-        with Image.open(saved_path) as image:
-            image.load()
-            width, height = image.size
-    except (UnidentifiedImageError, OSError) as exc:
-        raise HTTPException(status_code=400, detail="上传文件不是有效图片") from exc
 
     with get_db_connection() as conn:
         asset = register_media_asset(
@@ -575,10 +648,10 @@ async def api_upload_image(file: UploadFile = File(...), user: dict = Depends(ge
             user,
             file_hash=str(save_result["hash"]),
             filename=str(file.filename or save_result["hash"]),
-            mime_type=content_type if content_type in ALLOWED_BLOG_IMAGE_TYPES else "application/octet-stream",
+            mime_type=mime_type,
             file_size=int(save_result["size"] or 0),
-            image_width=int(width or 0),
-            image_height=int(height or 0),
+            image_width=width,
+            image_height=height,
         )
         conn.commit()
 
@@ -768,30 +841,64 @@ def api_users_search(
     class_id: Optional[int] = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
-    like_q = f"%{q.strip()}%"
+    keyword = q.strip()
+    caller_role = str(user.get("role") or "").strip().lower()
+    caller_is_student = caller_role == "student"
+    # Students only reach their own class and its teachers, and must type a
+    # real fragment of a name: no school-wide enumeration, no student-ID
+    # probing, and no nickname→real-name mapping (nicknames are pen names).
+    if caller_is_student and len(keyword) < 2:
+        return {"status": "success", "users": []}
+    like_q = f"%{_escape_like(keyword)}%"
     with get_db_connection() as conn:
+        student_filters = ["(s.name LIKE ? ESCAPE '\\')"]
+        student_params: list = [like_q]
+        if not caller_is_student:
+            student_filters = ["(s.name LIKE ? ESCAPE '\\' OR s.nickname LIKE ? ESCAPE '\\')"]
+            student_params = [like_q, like_q]
+        if caller_is_student:
+            student_filters.append("s.class_id = (SELECT own.class_id FROM students own WHERE own.id = ?)")
+            student_params.append(user.get("id"))
+        elif class_id is not None:
+            student_filters.append("s.class_id = ?")
+            student_params.append(class_id)
         students = conn.execute(
-            """
+            f"""
             SELECT s.id, s.name, s.nickname, 'student' AS role, c.name AS class_name
             FROM students s
             JOIN classes c ON c.id = s.class_id
-            WHERE (s.name LIKE ? OR s.nickname LIKE ? OR s.student_id_number LIKE ?)
-              AND (? IS NULL OR s.class_id = ?)
+            WHERE {' AND '.join(student_filters)}
             ORDER BY s.name
             LIMIT 20
             """,
-            (like_q, like_q, like_q, class_id, class_id),
+            student_params,
         ).fetchall()
-        teachers = conn.execute(
-            """
-            SELECT t.id, t.name, t.nickname, 'teacher' AS role, '' AS class_name
-            FROM teachers t
-            WHERE (t.name LIKE ? OR t.nickname LIKE ?)
-            ORDER BY t.name
-            LIMIT 10
-            """,
-            (like_q, like_q),
-        ).fetchall()
+        if caller_is_student:
+            teachers = conn.execute(
+                """
+                SELECT DISTINCT t.id, t.name, t.nickname, 'teacher' AS role, '' AS class_name
+                FROM teachers t
+                JOIN class_offerings o ON o.teacher_id = t.id
+                LEFT JOIN class_offering_class_links l ON l.offering_id = o.id
+                JOIN students own ON own.id = ?
+                WHERE (o.class_id = own.class_id OR l.class_id = own.class_id)
+                  AND t.name LIKE ? ESCAPE '\\'
+                ORDER BY t.name
+                LIMIT 10
+                """,
+                (user.get("id"), like_q),
+            ).fetchall()
+        else:
+            teachers = conn.execute(
+                """
+                SELECT t.id, t.name, t.nickname, 'teacher' AS role, '' AS class_name
+                FROM teachers t
+                WHERE (t.name LIKE ? ESCAPE '\\' OR t.nickname LIKE ? ESCAPE '\\')
+                ORDER BY t.name
+                LIMIT 10
+                """,
+                (like_q, like_q),
+            ).fetchall()
 
     users = []
     for row in [*students, *teachers]:
@@ -802,7 +909,7 @@ def api_users_search(
             {
                 "identity": identity,
                 "name": str(row["name"] or ""),
-                "nickname": str(row["nickname"] or ""),
+                "nickname": "" if caller_is_student else str(row["nickname"] or ""),
                 "role": str(row["role"] or ""),
                 "role_label": "教师" if row["role"] == "teacher" else "学生",
                 "class_name": str(row["class_name"] or ""),

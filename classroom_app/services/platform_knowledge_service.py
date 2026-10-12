@@ -193,7 +193,7 @@ def build_student_knowledge_block(conn, student_id: int) -> str:
     submission_count = _safe_scalar(conn, "SELECT COUNT(*) FROM submissions WHERE student_id = ?", (student_id,))
     blog_count = _safe_scalar(
         conn,
-        "SELECT COUNT(*) FROM blog_posts WHERE author_role = 'student' AND author_id = ?",
+        "SELECT COUNT(*) FROM blog_posts WHERE author_role = 'student' AND author_user_pk = ?",
         (student_id,),
     )
     lines.append(f"学习概况：累计提交作业/考试 {submission_count} 次，发表博客 {blog_count} 篇。")

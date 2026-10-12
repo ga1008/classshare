@@ -1,4 +1,5 @@
 from .common import *
+from fastapi import Response
 from fastapi.routing import APIRoute
 from starlette.datastructures import MutableHeaders
 from ...services.student_auth_service import build_password_reset_class_hint, matches_password_reset_class
@@ -623,9 +624,28 @@ def handle_teacher_login(
     return response
 
 
+def _is_deliberate_logout_navigation(request: Request) -> bool:
+    """Only a top-level, same-site navigation may end the session.
+
+    Browsers label every request: an <img>/<iframe> embedding "/logout" in user
+    Markdown arrives as Sec-Fetch-Dest image/iframe, and a page on another site
+    arrives as Sec-Fetch-Site cross-site. Neither is the user choosing to sign
+    out. Older browsers without these headers keep the previous behaviour.
+    """
+    fetch_dest = str(request.headers.get("sec-fetch-dest") or "").strip().lower()
+    fetch_site = str(request.headers.get("sec-fetch-site") or "").strip().lower()
+    if fetch_dest and fetch_dest != "document":
+        return False
+    return fetch_site != "cross-site"
+
+
 @router.get("/logout")
 def logout(request: Request):
     from ...dependencies import get_active_user_from_request
+
+    if not _is_deliberate_logout_navigation(request):
+        # Ignore silently: the session stays valid and nothing is redirected.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # 获取当前用户并使其会话失效
     user = get_active_user_from_request(request)

@@ -133,7 +133,7 @@
         "get_current_user_optional"
       ],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 198,
+      "line": 199,
       "provenance": "source-registry",
       "roles": [
         "student",
@@ -155,7 +155,7 @@
         "get_current_user"
       ],
       "source": "classroom_app/routers/blog.py",
-      "line": 101,
+      "line": 117,
       "provenance": "source-registry",
       "roles": [
         "student",
@@ -1898,7 +1898,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 163,
+      "line": 164,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -1917,7 +1917,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 65,
+      "line": 66,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -1936,7 +1936,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 120,
+      "line": 121,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2002,7 +2002,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 173,
+      "line": 174,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2021,7 +2021,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 182,
+      "line": 183,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2062,7 +2062,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 505,
+      "line": 506,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2081,7 +2081,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 70,
+      "line": 71,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2100,7 +2100,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 125,
+      "line": 126,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2119,7 +2119,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 94,
+      "line": 95,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2139,7 +2139,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 568,
+      "line": 569,
       "provenance": "source-registry",
       "roles": [
         "anonymous"
@@ -2158,7 +2158,7 @@
       ],
       "dependencies": [],
       "source": "classroom_app/routers/ui_parts/auth.py",
-      "line": 552,
+      "line": 553,
       "provenance": "source-registry",
       "roles": [
         "anonymous"

@@ -2,11 +2,11 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5310 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 521 个作者源码文件，覆盖 201 个 HTML 模板，发现 5311 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2210 |
+| button | 2211 |
 | field | 736 |
 | select | 297 |
 | surface | 663 |
@@ -25,7 +25,7 @@
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3713 |
+| component-declared | 3714 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
 | legacy-or-native | 86 |
@@ -139,3 +139,5 @@
 - Pair the source inventory with the isolated runtime route/DOM/state matrix; all pending and unknown records need an owner, contract, and scenario or an explicit reviewed exception.
 
 本次后续增量（2026-10-11）覆盖试卷编辑器本站材料选择列表：结果按材料根目录分组、组内自然排序，行改用既有 `lq-domain-choice` 的 `data-lq-shape="surface"` 几何与共享选中态，无新增私有材质。
+
+本次后续增量（2026-10-12，博客 P0）：作者头像统一改用共享 `LQ.html.avatar`（含匿名/管家首字回退与破图回退），删除博客私有头像材质；评论“作者”标记使用共享 Chip；编辑器新增“撤回为草稿”使用共享 Button 与 `LQ.confirm`，版本冲突使用 `LQ.choose`；无新增私有材质。

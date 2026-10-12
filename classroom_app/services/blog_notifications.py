@@ -25,6 +25,17 @@ def notify_new_comment(
     post_title = post.get("title", "")
     link_url = f"/blog?post={post_id}"
 
+    # An anonymous post's author speaks as "楼主" in their own thread. The
+    # notification must not carry their real name or a contactable actor.
+    if (
+        str(post.get("author_display_mode") or "") == "anonymous"
+        and commenter_identity
+        and str(post.get("author_identity") or "") == commenter_identity
+    ):
+        commenter_name = "楼主"
+        commenter_role = ""
+        commenter_pk = None
+
     if parent_comment_id is None:
         recipient = _resolve_notifiable_user(post.get("author_role"), post.get("author_user_pk"))
         post_author_identity = str(post.get("author_identity") or "")
@@ -113,6 +124,36 @@ def notify_post_featured(
         link_url=f"/blog?post={post_id}",
         ref_type="blog_post",
         ref_id=str(post_id),
+    )
+    _insert_notification(conn, payload)
+
+
+def notify_housekeeper_failed(
+    conn,
+    *,
+    recipient_role: Any,
+    recipient_pk: Any,
+    post_id: int,
+    reason: str,
+) -> None:
+    """Tell only the caller that @管家 could not reply (never a public comment)."""
+    recipient = _resolve_notifiable_user(recipient_role, recipient_pk)
+    if recipient is None:
+        return
+    role, user_pk = recipient
+    detail = str(reason or "").strip().rstrip("。") or "管家暂时无法回复"
+    payload = _build_notification_payload(
+        recipient_role=role,
+        recipient_user_pk=user_pk,
+        category=MESSAGE_CATEGORY_BLOG_COMMENT,
+        title="管家这次没能回复",
+        body_preview=f"{detail}。可以稍后重新 @管家。"[:120],
+        actor_role="",
+        actor_user_pk=None,
+        actor_display_name="管家",
+        link_url=f"/blog?post={int(post_id)}",
+        ref_type="blog_post",
+        ref_id=str(int(post_id)),
     )
     _insert_notification(conn, payload)
 

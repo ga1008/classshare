@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from .blog_ai_service import contains_blog_housekeeper_mention
+from .blog_ai_service import BLOG_AI_JOB_ABANDONED, contains_blog_housekeeper_mention
 from .scheduled_task_service import schedule_task
 
 
@@ -35,16 +35,28 @@ def enqueue_blog_mention(conn, user: dict, *, trigger_type: str, trigger_id: int
         return None
     if not contains_blog_housekeeper_mention(str(source.get("title") or "") + "\n" + str(source.get("content_md") or "")):
         return None
-    row = conn.execute("SELECT status,assistant_comment_id FROM blog_ai_reply_jobs WHERE trigger_type=? AND trigger_id=?", (trigger_type, int(trigger_id))).fetchone()
+    row = conn.execute("SELECT status,assistant_comment_id,updated_at FROM blog_ai_reply_jobs WHERE trigger_type=? AND trigger_id=?", (trigger_type, int(trigger_id))).fetchone()
     if row and (row["status"] == "done" or row["assistant_comment_id"]):
         return None
+    rearmable_statuses = ("failed", "cancelled")
+    if row and row["status"] == BLOG_AI_JOB_ABANDONED:
+        # A reported failure is only retried after the author re-saves the post;
+        # comments are immutable, so a new comment is their retry path.
+        edited = conn.execute("SELECT edited_at FROM blog_posts WHERE id=?", (int(trigger_id),)).fetchone() if trigger_type == "post" else None
+        if not edited or str(edited["edited_at"] or "") <= str(row["updated_at"] or ""):
+            return None
+        conn.execute("UPDATE blog_ai_reply_jobs SET status='failed',updated_at=? WHERE trigger_type=? AND trigger_id=? AND status=?", (datetime.now().isoformat(), trigger_type, int(trigger_id), BLOG_AI_JOB_ABANDONED))
+        # The abandoned attempt finished its scheduler task as "done"; that
+        # task must run again, or the re-armed job would wait forever.
+        rearmable_statuses = ("failed", "cancelled", "done")
     scheduled_id = schedule_task(conn, task_kind=BLOG_MENTION_TASK_KIND, run_at=datetime.now(),
                          payload={"trigger_type": trigger_type, "trigger_id": int(trigger_id), "actor_role": str(user["role"]), "actor_id": int(user["id"])},
                          dedupe_key=f"blog-mention:{trigger_type}:{int(trigger_id)}", owner_role=str(user["role"]), owner_user_pk=int(user["id"]),
                          title="博客 @管家 回复", priority=90, max_attempts=8, replace=False)
     # A new, authenticated edit may explicitly retry an exhausted effect, but
     # must never reset a live worker's claim or an existing published receipt.
-    conn.execute("UPDATE scheduled_tasks SET status='pending',attempt_count=0,last_error='',next_attempt_at=NULL,locked_at=NULL,locked_by='',finished_at=NULL,run_at=?,updated_at=? WHERE id=? AND status IN ('failed','cancelled')", (datetime.now().isoformat(), datetime.now().isoformat(), scheduled_id))
+    placeholders = ", ".join("?" for _ in rearmable_statuses)
+    conn.execute(f"UPDATE scheduled_tasks SET status='pending',attempt_count=0,last_error='',next_attempt_at=NULL,locked_at=NULL,locked_by='',finished_at=NULL,run_at=?,updated_at=? WHERE id=? AND status IN ({placeholders})", (datetime.now().isoformat(), datetime.now().isoformat(), scheduled_id, *rearmable_statuses))
     return scheduled_id
 
 
@@ -73,6 +85,8 @@ async def handle_blog_mention_reply(task: dict[str, Any]) -> str:
         job = conn.execute("SELECT * FROM blog_ai_reply_jobs WHERE trigger_type=? AND trigger_id=?", (trigger_type, trigger_id)).fetchone()
         if job and (job["status"] == "done" or job["assistant_comment_id"]):
             return "done: existing blog reply receipt"
+        if job and job["status"] == BLOG_AI_JOB_ABANDONED:
+            return "abandoned: caller was notified privately"
         if job and job["status"] == "pending":
             cutoff = (datetime.now() - timedelta(minutes=SCHEDULER_STALE_MINUTES)).isoformat()
             cursor = conn.execute("UPDATE blog_ai_reply_jobs SET status='failed',error_message='回复任务中断，正在重试',updated_at=? WHERE id=? AND status='pending' AND assistant_comment_id IS NULL AND updated_at<=?", (datetime.now().isoformat(), job["id"], cutoff))
@@ -87,4 +101,6 @@ async def handle_blog_mention_reply(task: dict[str, Any]) -> str:
         job = conn.execute("SELECT status,assistant_comment_id FROM blog_ai_reply_jobs WHERE trigger_type=? AND trigger_id=?", (trigger_type, trigger_id)).fetchone()
     if job and (job["status"] == "done" or job["assistant_comment_id"]):
         return "done: blog reply published"
+    if job and job["status"] == BLOG_AI_JOB_ABANDONED:
+        return "abandoned: caller was notified privately"
     raise RuntimeError("Blog mention reply has no completed publication receipt")

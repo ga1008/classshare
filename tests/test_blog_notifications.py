@@ -105,6 +105,8 @@ class BlogNotificationTests(unittest.TestCase):
 
     def test_add_comment_to_assistant_post_completes_primary_write(self):
         conn = MagicMock()
+        # No recent identical comment exists, so the duplicate guard lets it through.
+        conn.execute.return_value.fetchone.return_value = None
         post = {
             "id": 12,
             "title": "AI 编辑部文章",

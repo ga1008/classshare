@@ -69,6 +69,13 @@ class BlogRevisionConflict(ValueError):
     """The caller must reload/reconcile its edit; never silently overwrite."""
 
 
+class BlogModerationLocked(PermissionError):
+    """A moderator-owned state that the author cannot change by editing."""
+
+
+MODERATED_POST_STATUSES = frozenset({POST_STATUS_HIDDEN, POST_STATUS_MODERATED})
+
+
 def _post_for_mutation(conn, user: dict, post_id: int, expected_updated_at: Optional[str]) -> dict:
     # All editing routes share this lock, including old Web callers without a
     # revision. It also orders attachment metadata and post deletion on Pg.
@@ -82,6 +89,40 @@ def _post_for_mutation(conn, user: dict, post_id: int, expected_updated_at: Opti
     if expected_updated_at is not None and (not isinstance(expected_updated_at, str) or expected_updated_at != str(post.get("updated_at") or "")):
         raise BlogRevisionConflict("帖子已被更新，请重新读取并核对后再操作；当前输入不会覆盖新内容。")
     return post
+
+
+DUPLICATE_SUBMIT_WINDOW_SECONDS = 10
+
+
+def _recent_duplicate_cutoff() -> str:
+    return (datetime.now() - timedelta(seconds=DUPLICATE_SUBMIT_WINDOW_SECONDS)).isoformat()
+
+
+def _is_integrity_error(exc: BaseException) -> bool:
+    # sqlite3.IntegrityError and psycopg's IntegrityError/UniqueViolation are
+    # not wrapped by the DB layer; match them by class without importing drivers.
+    return any(cls.__name__ in {"IntegrityError", "UniqueViolation"} for cls in type(exc).__mro__)
+
+
+def _insert_once(conn, sql: str, params) -> bool:
+    """Run an ``INSERT … WHERE NOT EXISTS``; return whether a row was added.
+
+    Only for toggles whose transaction has written nothing yet: when a
+    concurrent duplicate wins the race on a UNIQUE constraint, the whole
+    transaction is rolled back (PostgreSQL would otherwise stay aborted) and
+    the caller reports the settled state instead of a 500.
+    """
+    try:
+        return bool(conn.execute(sql, params).rowcount)
+    except Exception as exc:
+        if not _is_integrity_error(exc):
+            raise
+        conn.rollback()
+        return False
+
+
+def _escape_like_pattern(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _next_post_revision(previous: str) -> str:
@@ -210,11 +251,18 @@ def _can_editorialize_posts(user: dict) -> bool:
     return _is_teacher(user)
 
 
+AVATAR_KIND_PERSON = "person"
+AVATAR_KIND_ANON = "anon"
+AVATAR_KIND_ASSISTANT = "assistant"
+
+
 def _build_avatar_url(role: str, user_pk: Any, avatar_hash: str = "") -> str:
     normalized_role = str(role or "").strip().lower()
     normalized_user_pk = _safe_int(user_pk)
     if normalized_role not in {"teacher", "student"} or normalized_user_pk is None:
-        return "/api/profile/avatar"
+        # Never fall back to the parameterless endpoint: it serves the *viewer's*
+        # own avatar. The client renders anon/assistant/initials from avatar_kind.
+        return ""
     revision = quote(str(avatar_hash or "default"), safe="")
     return (
         f"/api/profile/avatar?role={quote(normalized_role, safe='')}"
@@ -643,8 +691,32 @@ def _build_post_author_snapshot(conn, user: dict, *, author_display_mode: Any = 
 
 def _build_post_author_avatar_url(role: str, user_pk: Any, avatar_hash: str = "", display_mode: str = "") -> str:
     if str(display_mode or "").strip().lower() == AUTHOR_DISPLAY_ANONYMOUS:
-        return "/api/profile/avatar"
+        return ""
     return _build_avatar_url(role, user_pk, avatar_hash)
+
+
+def _avatar_kind(role: Any, display_mode: Any = "") -> str:
+    if str(display_mode or "").strip().lower() == AUTHOR_DISPLAY_ANONYMOUS:
+        return AVATAR_KIND_ANON
+    if str(role or "").strip().lower() == "assistant":
+        return AVATAR_KIND_ASSISTANT
+    return AVATAR_KIND_PERSON
+
+
+# Transitional "楼主" mask (P0). The P2 persona service replaces this with a
+# single resolver, but until then every comment of an anonymous post's author
+# must be rendered without identity, avatar, badge or real name.
+OP_ANON_DISPLAY_NAME = "楼主"
+
+
+def is_anonymous_post_author(post: dict | None, actor_identity: Any) -> bool:
+    if not post:
+        return False
+    return (
+        str(post.get("author_display_mode") or "") == AUTHOR_DISPLAY_ANONYMOUS
+        and str(post.get("author_identity") or "") == str(actor_identity or "")
+        and bool(str(actor_identity or ""))
+    )
 
 
 def _load_user_owned_media_assets(
@@ -846,6 +918,23 @@ def create_post(
     )
     author_snapshot = _build_post_author_snapshot(conn, user, author_display_mode=author_display_mode)
 
+    # A double-clicked "发布" (or a retried request) must not create two posts.
+    duplicate = conn.execute(
+        """
+        SELECT id, status, created_at FROM blog_posts
+        WHERE author_identity = ? AND title = ? AND content_md = ? AND created_at >= ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (identity, normalized_title, normalized_content, _recent_duplicate_cutoff()),
+    ).fetchone()
+    if duplicate is not None:
+        return {
+            "id": int(duplicate["id"]),
+            "status": str(duplicate["status"] or normalized_status),
+            "created_at": str(duplicate["created_at"] or ""),
+            "deduplicated": True,
+        }
+
     now = _now_iso()
     post_id = execute_insert_returning_id(
         conn,
@@ -999,10 +1088,13 @@ def update_post(
         updates.append("tags_json = ?")
         params.append(json.dumps(_normalize_tags(tags), ensure_ascii=False))
 
-    if status is not None and status in {POST_STATUS_DRAFT, POST_STATUS_PUBLISHED}:
-        if post["author_identity"] == identity or _is_teacher(user):
-            updates.append("status = ?")
-            params.append(status)
+    current_status = str(post.get("status") or "")
+    if status is not None and status in {POST_STATUS_DRAFT, POST_STATUS_PUBLISHED} and status != current_status:
+        # Only the moderator can lift a hide; editing must never republish it.
+        if current_status in MODERATED_POST_STATUSES:
+            raise BlogModerationLocked("该帖子已被管理员隐藏，暂不能自行发布或撤回")
+        updates.append("status = ?")
+        params.append(status)
 
     if not updates:
         return {"id": post_id, "updated": False}
@@ -1079,21 +1171,22 @@ def list_posts(
             conditions.append("author_display_mode != ?")
             params.append(AUTHOR_DISPLAY_ANONYMOUS)
     if tag:
-        normalized_tag = str(tag or "").strip()
-        conditions.append("(tags_json LIKE ? OR system_tags_json LIKE ?)")
+        normalized_tag = _escape_like_pattern(str(tag or "").strip())
+        conditions.append("(tags_json LIKE ? ESCAPE '\\' OR system_tags_json LIKE ? ESCAPE '\\')")
         params.extend([f'%"{normalized_tag}"%', f'%"{normalized_tag}"%'])
     if query:
         normalized_query = str(query or "").strip()
         if normalized_query:
-            like_query = f"%{normalized_query}%"
+            # LOWER on both sides keeps SQLite and PostgreSQL case-insensitive alike.
+            like_query = f"%{_escape_like_pattern(normalized_query)}%"
             conditions.append(
                 """
                 (
-                    title LIKE ?
-                    OR summary LIKE ?
-                    OR content_md LIKE ?
-                    OR tags_json LIKE ?
-                    OR system_tags_json LIKE ?
+                    LOWER(title) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(summary) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(content_md) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(tags_json) LIKE LOWER(?) ESCAPE '\\'
+                    OR LOWER(system_tags_json) LIKE LOWER(?) ESCAPE '\\'
                 )
                 """.strip()
             )
@@ -1371,6 +1464,7 @@ def get_blog_discovery(conn, user: dict, *, section_key: Optional[str] = None) -
                     str(row_dict.get("author_avatar_hash") or ""),
                     str(row_dict.get("author_display_mode") or ""),
                 ),
+                "avatar_kind": _avatar_kind(role, row_dict.get("author_display_mode")),
                 "post_count": int(row_dict.get("post_count") or 0),
                 "hot_score": int(row_dict.get("hot_score") or 0),
                 "cultivation_badge": author_badge_map.get(author_identity),
@@ -1651,6 +1745,7 @@ def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int =
         user,
         viewer_identity=identity,
         post_author_identity=str(post["author_identity"] or ""),
+        post_is_anonymous=str(post.get("author_display_mode") or "") == AUTHOR_DISPLAY_ANONYMOUS,
         rows=[dict(row) for row in rows],
         page=page,
         limit=limit,
@@ -1700,6 +1795,36 @@ def add_comment(
         if parent is None:
             raise ValueError("回复的评论不存在")
 
+    serialized_emojis = json.dumps(normalized_emojis, ensure_ascii=False) if normalized_emojis else ""
+    serialized_attachments = json.dumps(normalized_attachments, ensure_ascii=False) if normalized_attachments else "[]"
+    # Double-clicked "发送评论" must not post (or notify) twice.
+    duplicate = conn.execute(
+        """
+        SELECT id, created_at FROM blog_comments
+        WHERE post_id = ? AND author_identity = ? AND content_md = ?
+          AND COALESCE(emoji_payload_json, '') = ? AND COALESCE(attachments_json, '[]') = ?
+          AND COALESCE(parent_comment_id, 0) = ?
+          AND status = 'active' AND created_at >= ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (
+            post_id,
+            identity,
+            normalized_content,
+            serialized_emojis,
+            serialized_attachments,
+            int(parent_comment_id or 0),
+            _recent_duplicate_cutoff(),
+        ),
+    ).fetchone()
+    if duplicate is not None:
+        return {
+            "id": int(duplicate["id"]),
+            "post_id": post_id,
+            "created_at": str(duplicate["created_at"] or ""),
+            "deduplicated": True,
+        }
+
     now = _now_iso()
     display_name = str(author_display_name or user.get("name") or "").strip()
     if not display_name and role == "assistant":
@@ -1722,8 +1847,8 @@ def add_comment(
             user_pk,
             display_name,
             normalized_content,
-            json.dumps(normalized_emojis, ensure_ascii=False) if normalized_emojis else "",
-            json.dumps(normalized_attachments, ensure_ascii=False) if normalized_attachments else "[]",
+            serialized_emojis,
+            serialized_attachments,
             now,
             now,
         ),
@@ -1858,16 +1983,23 @@ def toggle_like(conn, user: dict, target_type: str, target_id: int, *, hot_notif
             "like_count": int(row["like_count"] or 0) if row else 0,
         }
 
-    conn.execute(
+    # A concurrent duplicate request (double click) must settle as "liked",
+    # not as a unique-constraint 500 and not as a second count increment.
+    inserted = _insert_once(
+        conn,
         """
         INSERT INTO blog_likes (target_type, target_id, user_identity, user_role, user_pk, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        SELECT ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+            SELECT 1 FROM blog_likes WHERE target_type = ? AND target_id = ? AND user_identity = ?
+        )
         """,
-        (target_type, target_id, identity, role, user_pk, _now_iso()),
+        (target_type, target_id, identity, role, user_pk, _now_iso(), target_type, target_id, identity),
     )
-    conn.execute(f"UPDATE {count_table} SET like_count = like_count + 1 WHERE id = ?", (target_id,))
+    if inserted:
+        conn.execute(f"UPDATE {count_table} SET like_count = like_count + 1 WHERE id = ?", (target_id,))
     row = conn.execute(f"SELECT like_count FROM {count_table} WHERE id = ?", (target_id,)).fetchone()
-    if target_type == TARGET_TYPE_POST:
+    if inserted and target_type == TARGET_TYPE_POST:
         _maybe_notify_post_hot(conn, target_id, notify_callback=hot_notify_callback)
     return {
         "liked": True,
@@ -1910,16 +2042,38 @@ def toggle_bookmark(conn, user: dict, post_id: int) -> dict:
         row = conn.execute("SELECT bookmark_count FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
         return {"bookmarked": False, "post_id": post_id, "bookmark_count": int(row["bookmark_count"] or 0) if row else 0}
 
-    conn.execute(
+    inserted = _insert_once(
+        conn,
         """
         INSERT INTO blog_bookmarks (post_id, user_identity, user_role, user_pk, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        SELECT ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM blog_bookmarks WHERE post_id = ? AND user_identity = ?)
         """,
-        (post_id, identity, role, user_pk, _now_iso()),
+        (post_id, identity, role, user_pk, _now_iso(), post_id, identity),
     )
-    conn.execute("UPDATE blog_posts SET bookmark_count = bookmark_count + 1 WHERE id = ?", (post_id,))
+    if inserted:
+        conn.execute("UPDATE blog_posts SET bookmark_count = bookmark_count + 1 WHERE id = ?", (post_id,))
     row = conn.execute("SELECT bookmark_count FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
     return {"bookmarked": True, "post_id": post_id, "bookmark_count": int(row["bookmark_count"] or 1) if row else 1}
+
+
+def _get_published_post_for_editorial(conn, post_id: int) -> dict:
+    post = _get_post_raw(conn, post_id)
+    if post is None:
+        raise ValueError("帖子不存在")
+    # Drafts belong to their author; editorial actions only apply to posts
+    # that have been published (and, for hide/restore, moderated ones).
+    if str(post.get("status") or "") == POST_STATUS_DRAFT:
+        raise BlogModerationLocked("草稿尚未发布，不能执行此操作")
+    return post
+
+
+def _was_featured_before(conn, post_id: int) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM blog_moderation_logs WHERE post_id = ? AND action = 'feature' LIMIT 1",
+        (post_id,),
+    ).fetchone()
+    return row is not None
 
 
 def pin_post(conn, user: dict, post_id: int) -> dict:
@@ -1927,9 +2081,9 @@ def pin_post(conn, user: dict, post_id: int) -> dict:
     if not _can_editorialize_posts(user):
         raise PermissionError("仅教师可置顶帖子")
 
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
+    post = _get_published_post_for_editorial(conn, post_id)
+    if str(post.get("status") or "") != POST_STATUS_PUBLISHED and not bool(post.get("is_pinned")):
+        raise BlogModerationLocked("隐藏中的帖子不能置顶")
 
     new_value = 0 if bool(post.get("is_pinned")) else 1
     now = _now_iso()
@@ -1946,18 +2100,20 @@ def feature_post(conn, user: dict, post_id: int, *, notify_callback=None) -> dic
     if not _can_editorialize_posts(user):
         raise PermissionError("仅教师可设置精华")
 
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
+    post = _get_published_post_for_editorial(conn, post_id)
+    if str(post.get("status") or "") != POST_STATUS_PUBLISHED and not bool(post.get("is_featured")):
+        raise BlogModerationLocked("隐藏中的帖子不能设为精华")
 
     new_value = 0 if bool(post.get("is_featured")) else 1
+    # Toggling feature off and on again must not notify the author twice.
+    should_notify = bool(new_value) and not _was_featured_before(conn, post_id)
     now = _now_iso()
     conn.execute(
         "UPDATE blog_posts SET is_featured = ?, featured_at = ?, updated_at = ? WHERE id = ?",
         (new_value, now if new_value else None, now, post_id),
     )
     _log_moderation(conn, post_id, identity, role, user_pk, "feature" if new_value else "unfeature")
-    if new_value and notify_callback:
+    if should_notify and notify_callback and str(post.get("author_identity") or "") != identity:
         notify_callback(conn, post, identity, role, user_pk)
     return {"id": post_id, "is_featured": bool(new_value)}
 
@@ -1967,11 +2123,13 @@ def hide_post(conn, user: dict, post_id: int, reason: str = "") -> dict:
     if not _can_override_post_visibility(user):
         raise PermissionError("仅教师或 AI 助教可调整帖子可见性")
 
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
+    post = _get_published_post_for_editorial(conn, post_id)
 
-    next_status = POST_STATUS_PUBLISHED if post.get("status") == POST_STATUS_MODERATED else POST_STATUS_MODERATED
+    next_status = (
+        POST_STATUS_PUBLISHED
+        if str(post.get("status") or "") in MODERATED_POST_STATUSES
+        else POST_STATUS_MODERATED
+    )
     now = _now_iso()
     conn.execute(
         "UPDATE blog_posts SET status = ?, updated_at = ? WHERE id = ?",
@@ -2293,11 +2451,13 @@ def _can_view_post(conn, user: dict, post: dict) -> bool:
     if not post:
         return False
     user_pk, role, identity = _ensure_identity(user)
-    if _can_override_post_visibility(user):
-        return True
     if str(post.get("author_identity") or "") == identity:
         return True
-    if str(post.get("status") or "") != POST_STATUS_PUBLISHED:
+    status = str(post.get("status") or "")
+    if _can_override_post_visibility(user):
+        # Moderators see everything that was ever made public, never drafts.
+        return status != POST_STATUS_DRAFT
+    if status != POST_STATUS_PUBLISHED:
         return False
 
     visibility = str(post.get("visibility") or VISIBILITY_PUBLIC)
@@ -2396,6 +2556,7 @@ def _build_comment_tree(
     rows: list[dict],
     page: int,
     limit: int,
+    post_is_anonymous: bool = False,
 ) -> list[dict]:
     comment_ids = [int(item["id"]) for item in rows]
     liked_ids: set[int] = set()
@@ -2413,7 +2574,13 @@ def _build_comment_tree(
         ).fetchall()
         liked_ids = {int(row["target_id"]) for row in liked_rows}
 
-    avatar_map = _load_comment_avatar_map(conn, rows)
+    # The anonymous author's own comments are masked, so never even load their
+    # avatar or cultivation badge (the badge lookup is also the costly part).
+    masked_identity = post_author_identity if post_is_anonymous else ""
+    avatar_map = _load_comment_avatar_map(
+        conn,
+        [row for row in rows if not masked_identity or str(row.get("author_identity") or "") != masked_identity],
+    )
     can_moderate = _can_override_post_visibility(user)
     by_parent: dict[Optional[int], list[dict]] = defaultdict(list)
 
@@ -2421,6 +2588,8 @@ def _build_comment_tree(
         serialized = _serialize_comment(
             row,
             viewer_identity=viewer_identity,
+            post_author_identity=post_author_identity,
+            post_is_anonymous=post_is_anonymous,
             is_liked=int(row["id"]) in liked_ids,
             avatar_map=avatar_map,
             can_delete=(
@@ -2630,6 +2799,7 @@ def _serialize_post_summary(
                 avatar_hash,
                 author_display_mode,
             ),
+            "avatar_kind": _avatar_kind(author_role, author_display_mode),
         },
         "title": str(row.get("title") or ""),
         "section_key": str(row.get("section_key") or DEFAULT_BLOG_SECTION_KEY),
@@ -2711,25 +2881,48 @@ def _serialize_comment(
     is_liked: bool,
     avatar_map: dict[str, dict],
     can_delete: bool,
+    post_author_identity: str = "",
+    post_is_anonymous: bool = False,
 ) -> dict:
     author_identity = str(row.get("author_identity") or "")
-    avatar_entry = avatar_map.get(author_identity, {})
     attachments = _safe_json_loads(row.get("attachments_json"), [])
     emojis = _safe_json_loads(row.get("emoji_payload_json"), [])
     author_role = str(row.get("author_role") or "")
     author_user_pk = _safe_int(row.get("author_user_pk"))
-    return {
-        "id": int(row["id"]),
-        "post_id": int(row["post_id"]),
-        "parent_comment_id": _safe_int(row.get("parent_comment_id")),
-        "author": {
+    is_op = bool(author_identity) and author_identity == post_author_identity
+    if is_op and post_is_anonymous:
+        author = {
+            "identity": "",
+            "role": "",
+            "user_pk": None,
+            "display_name": OP_ANON_DISPLAY_NAME,
+            "display_mode": AUTHOR_DISPLAY_ANONYMOUS,
+            "is_anonymous": True,
+            "is_op": True,
+            "avatar_url": "",
+            "avatar_kind": AVATAR_KIND_ANON,
+            "cultivation_badge": None,
+        }
+    else:
+        avatar_entry = avatar_map.get(author_identity, {})
+        author = {
             "identity": author_identity,
             "role": author_role,
             "user_pk": author_user_pk,
             "display_name": str(row.get("author_display_name") or ""),
+            "display_mode": AUTHOR_DISPLAY_REAL,
+            "is_anonymous": False,
+            "is_op": is_op,
             "avatar_url": avatar_entry.get("avatar_url") or _build_avatar_url(author_role, author_user_pk),
+            "avatar_kind": _avatar_kind(author_role),
             "cultivation_badge": avatar_entry.get("cultivation_badge") if author_role == "student" else None,
-        },
+        }
+    return {
+        "id": int(row["id"]),
+        "post_id": int(row["post_id"]),
+        "parent_comment_id": _safe_int(row.get("parent_comment_id")),
+        "author": author,
+        "is_mine": bool(author_identity) and author_identity == viewer_identity,
         "content_md": str(row.get("content_md") or ""),
         "custom_emojis": emojis if isinstance(emojis, list) else [],
         "attachments": attachments if isinstance(attachments, list) else [],
