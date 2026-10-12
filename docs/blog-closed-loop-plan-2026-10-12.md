@@ -1,6 +1,6 @@
 # 博客中心闭环改进计划（2026-10-12）
 
-> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0、P1、P2 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，release `20261012-174254-47e518103636`）；**P3 已实现并在隔离环境验收，未提交、未发布**（见 §5 实施记录）；P4–P7 未动工。
+> 状态（2026-10-12）：第 11 节待决事项已按推荐确认。**P0–P3 已发布**（P0 `c113b74b`，P1 `cadcd263`，P2 `8f083307`，P3 `04ad5f49` release `20261012-201621-2f01d431bdfc`）；**P4 已实现并在隔离环境验收，未提交、未发布**（见 §7 实施记录）；P5–P7 未动工。
 > 范围：博客中心（`/blog`）全部前后端，以及它与消息中心、个人中心、头像服务、AI 网关、调度器、作品集、Agent 平台的接口。
 > 前置阅读：[液态玻璃组件开发合同](lq-component-contract-2026-09-27.md)、[组件 API](lq-components.md)、[场景前景色契约](lq-scene-ink-2026-09-26.md)、[AI 与 Agent 工程规范](ai-and-agent-engineering-standard.md)、[通知邮件降噪](notification-email-policy-2026-09-18.md)、[博客重设计（2026-08）](blog-redesign-2026-08.md)。
 > 证据来源：2026-10-12 的两路代码审查（后端、前端）、三路专题调查（身份/头像、审核/通知、创作中心/回复），以及隔离 P03 运行环境中以学生和教师身份的实测。文中 `file:line` 均指当日 `dev`（`dbbf1e57`）。
@@ -365,7 +365,7 @@ persona = {
 
 ## 5. 内容安全闭环（改进项 3）
 
-> **P3 实施记录（2026-10-12，未部署）**。代码：`blog_moderation_states.py`（状态与公开 SQL 片段，所有跨用户读取都用它）、`blog_safety_service.py`（L1、限流、初始状态、入队）、`blog_safety_review.py`（L2 调度任务与超时兜底）、`blog_moderation_service.py`（处置、举报、申诉、揭示、审计）、`blog_review_queue_service.py`（审核台）、`routers/blog_moderation.py`；前端 `blog_moderation_ui.js`（LQ 表单弹层、横幅、隐私预检）、`manage_blog_review.js` + `templates/manage/system/blog_review.html`（管理中心“平台管理 → 博客审核”）。与下文原方案的差异（均为有意调整）：
+> **P3 实施记录（2026-10-12，已发布 `04ad5f49`）**。代码：`blog_moderation_states.py`（状态与公开 SQL 片段，所有跨用户读取都用它）、`blog_safety_service.py`（L1、限流、初始状态、入队）、`blog_safety_review.py`（L2 调度任务与超时兜底）、`blog_moderation_service.py`（处置、举报、申诉、揭示、审计）、`blog_review_queue_service.py`（审核台）、`routers/blog_moderation.py`；前端 `blog_moderation_ui.js`（LQ 表单弹层、横幅、隐私预检）、`manage_blog_review.js` + `templates/manage/system/blog_review.html`（管理中心“平台管理 → 博客审核”）。与下文原方案的差异（均为有意调整）：
 > - **`status` 已收敛**：读取全部改用 `moderation_state`；启动回填把旧 `moderated/hidden` 帖子改为 `published` + 原审核态，旧 `hidden` 评论改为 `active` + `limited`。`deleted` 只用于软删（见下）。
 > - **L2 路由**：复用现有 `fast_text_response` / `vision_interactive`（`source_feature=blog` 自动走边缘视觉档），经 `ai_gateway_post` 计量，用量标签 `blog_content_safety`，未新增 `TASK_POLICIES` 条目。回执表 `blog_content_reviews` 按修订号绑定；迟到/旧修订结果丢弃；3 次失败或 10 分钟超时 → `flagged` 可见并进审核台；日额度 `BLOG_SAFETY_DAILY_LIMIT`（默认 2000）用尽 → 待审帖直接 `flagged`；`BLOG_SAFETY_AI_ENABLED=false` 时只按 L1 决定。
 > - **已公开帖子的修改**不再隐藏：状态回到 `none` 可见并重新检查；首次发布才先审后发（D1）。
@@ -536,6 +536,17 @@ persona = {
 ---
 
 ## 7. 评论、回复与消息中心闭环（改进项 6）
+
+> **P4 实施记录（2026-10-12，未部署）**。代码：`classroom_app/services/blog_comment_service.py`（楼层、回复分页、编辑、软删、单条视图）、`classroom_app/routers/blog_comments.py`（`GET /api/blog/posts/{id}/floors?page&around`、`GET .../floors/{root}/replies?offset`、`PUT /api/blog/comments/{id}`、`POST /api/blog/comments/{id}/delete`、`GET /api/blog/comments/{id}`）；前端 `static/js/blog.js`。与下文原方案的差异与补充：
+> - **楼层在 SQL 中分页**（每页 20，按时间升序）；每层用 `ROW_NUMBER` 窗口预载前 3 条回复，其余“展开 N 条回复”每次 20 条。被删除/被处置的楼层只在下面仍有可见回复时显示为无作者、无内容的占位（文案区分作者删除/帖子作者删除/管理员移除）。合成 1000 条评论的楼层接口 P95 < 300ms（单测实测）。
+> - **深链** `?comment=` → `around` 计算所在页并把目标回复一并载入；落在后面页时显示“加载更早的评论”。看不到的评论（被处置、他人待审）深链回到第一页，`GET /api/blog/comments/{id}` 对其返回 404，也不能被回复。
+> - **“回复 @X”**：X 是被回复评论的公开面孔；回复楼层本身不加标签；被回复的评论已不可见时写“回复 一条已处理的评论”。
+> - **编辑**：作者 15 分钟内可改正文（图片与表情不变），`content_revision` 乐观锁；重新过 L1 并按新修订号排 AI 复审，清空上一次的处置原因与说明；被处置的评论不能编辑。编辑会让尚未执行的 @管家 回复因原文变化而放弃（已知行为）。
+> - **软删**：`status='deleted'` + `deleted_by_role`，回复保留；删除他人评论（帖子作者 / 博客管理员）必须写原因并通知评论者，管理员删除写审计日志。旧 `DELETE /api/blog/comments/{id}`（Agent 能力，源码已钉住未改）不能携带原因，因此只能删自己的评论；能力说明已更新为“软删、回复保留”。软删不清点赞（`like_count` 保留）。
+> - **旧读取接口**（`GET /api/blog/posts/{id}/comments`、帖子详情 `_comments`）改为同一楼层模型，但保留整层回复（最多 100 层、每层 200 条），避免 Agent 读取丢回复；网页改用 `/floors`。
+> - **前端**：评论只保留“赞”“回复”两个直达按钮，其余（复制链接、编辑、举报、处理、删除）在 LQ Menu 里；回复框就地移入该楼层，发送/取消后归位；新评论按服务端返回的对象就地插入（不重拉详情，重复提交不重复插入，未载入的后续页加载时插到本地新楼层之前）；删除就地变占位或移除；评论区加载用请求令牌，切换帖子不会卡在“正在加载评论”。
+> - **未在 P4 做**：消息中心内联回复（§7.5，归 P5）、联系人卡学号隐藏（§7.6）、评论按热度排序、软删 30 天物理清理。
+> - 测试：`tests/test_blog_p4_comments.py`（16 项，含 1000 条性能与评审回归）；Agent 删除能力测试按软删语义更新。
 
 ### 7.1 楼层结构（R1、R2、R3）
 

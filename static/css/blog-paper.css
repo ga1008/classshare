@@ -2741,3 +2741,74 @@ body.blog-composer-open {
     font-size: var(--text-2xs);
     color: var(--blog-ink-soft);
 }
+
+/* P4 floors: replies flat inside a floor (layout only; LQ owns controls). */
+.blog-floor {
+    border-bottom: 1px solid var(--blog-line);
+    padding-bottom: var(--spacing-xs, 6px);
+}
+
+.blog-floor__replies {
+    margin-left: 42px;
+}
+
+.blog-floor__replies:empty {
+    display: none;
+}
+
+.blog-floor__more {
+    margin-left: 42px;
+}
+
+.blog-floor__composer:empty {
+    display: none;
+}
+
+.blog-floor__composer {
+    margin-left: 42px;
+}
+
+.blog-comment-list__status {
+    margin: 0;
+    padding: var(--spacing-md) 0;
+    text-align: center;
+    color: var(--blog-ink-soft);
+}
+
+.blog-comments__more {
+    display: flex;
+    justify-content: center;
+    padding-top: var(--spacing-sm);
+}
+
+.blog-comment__reply-to {
+    margin: 2px 0 0;
+    font-size: var(--text-xs);
+    color: var(--blog-ink-soft);
+}
+
+.blog-comment__editor {
+    display: grid;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.blog-comment__editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.blog-comment.is-focused {
+    outline: 2px solid hsl(var(--ls-ring) / 0.6);
+    outline-offset: 4px;
+    border-radius: var(--radius-md, 10px);
+}
+
+@media (max-width: 640px) {
+    .blog-floor__replies,
+    .blog-floor__more,
+    .blog-floor__composer {
+        margin-left: 20px;
+    }
+}

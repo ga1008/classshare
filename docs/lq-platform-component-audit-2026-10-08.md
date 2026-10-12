@@ -2,12 +2,12 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 524 个作者源码文件，覆盖 202 个 HTML 模板，发现 5337 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 524 个作者源码文件，覆盖 202 个 HTML 模板，发现 5340 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2218 |
-| field | 737 |
+| button | 2211 |
+| field | 738 |
 | select | 297 |
 | surface | 666 |
 | menu | 36 |
@@ -21,16 +21,16 @@
 | chip | 10 |
 | domain | 18 |
 | status | 44 |
-| unknown | 774 |
+| unknown | 783 |
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3727 |
+| component-declared | 3721 |
 | external-icon-content-slot | 34 |
 | factory-ownership-unknown | 20 |
 | legacy-or-native | 88 |
 | lq-marked-native | 104 |
-| runtime-output-unknown | 643 |
+| runtime-output-unknown | 652 |
 | shared-adapter-call-candidate | 81 |
 | shared-component-call | 586 |
 | shared-definition | 54 |
@@ -46,7 +46,7 @@
 | unknown 语法 | 数量 |
 | --- | ---: |
 | `create-element` | 32 |
-| `dynamic-html-sink` | 643 |
+| `dynamic-html-sink` | 652 |
 | `jinja-component-call` | 43 |
 | `jinja-html` | 14 |
 | `react-jsx` | 42 |
@@ -99,7 +99,7 @@
 | `static/js/materials_manage.js` | 117 |
 | `templates/exam_editor.html` | 108 |
 | `static/js/collaboration.js` | 102 |
-| `static/js/blog.js` | 104 |
+| `static/js/blog.js` | 107 |
 | `templates/blog.html` | 77 |
 | `templates/manage/signatures.html` | 67 |
 | `static/js/teacher_onboarding.js` | 67 |

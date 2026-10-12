@@ -27,7 +27,7 @@ def build_capabilities(RequestCapability, spec, ID):
             }}, max_body_bytes=220000),
         RequestCapability('http.blog.post.delete', '按已核对版本删除自己的帖子', 'DELETE', '/api/blog/posts/{post_id}',
             'blog', 'api_delete_post', 'ff0a8e0d86b794d307d43080b4b9b1bd3a000cb1920aa6e4cd35de3a2fb155e8', {'path': {'post_id': ID}, 'query': {'expected_updated_at': revision}}),
-        RequestCapability('http.blog.comment.delete', '按本人、帖子作者或管理员权限删除评论及回复', 'DELETE', '/api/blog/comments/{comment_id}',
+        RequestCapability('http.blog.comment.delete', '按本人、帖子作者或博客管理员权限软删评论（回复保留；删他人评论须写原因）', 'DELETE', '/api/blog/comments/{comment_id}',
             'blog', 'api_delete_comment', '53599e0710d51a9d79a6ad46a60db01452da02865f7cb86ba497842e1ed41ea1', {'path': {'comment_id': ID}}),
         RequestCapability('http.blog.post.like', '切换自己对可见帖子的点赞', 'POST', '/api/blog/posts/{post_id}/like',
             'blog', 'api_like_post', '6b2215eb1b92d473510bb93aa49dc92533f92ef2a2b3fdb9196f558549784464', {'path': {'post_id': ID}}),

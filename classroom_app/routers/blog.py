@@ -554,7 +554,9 @@ async def api_add_comment(
             queued = enqueue_blog_mention(conn, user, trigger_type="comment", trigger_id=int(result["id"]))
             hint = _housekeeper_hint(conn, user, queued, str(data.get("content_md") or ""))
             conn.commit()
-            return {"status": "success", **result, **hint}
+            from ..services.blog_comment_service import get_comment_view
+
+            return {"status": "success", **result, **hint, "comment": get_comment_view(conn, user, int(result["id"]))}
         except BlogSafetyBlocked as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RateLimitExceededError as exc:

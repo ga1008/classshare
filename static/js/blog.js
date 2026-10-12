@@ -2,7 +2,7 @@ import { createEmojiPicker } from '/static/js/emoji_picker.js';
 import { escapeHtml, showToast } from '/static/js/ui.js';
 import { getLayerSystem } from '/static/js/lq/layer.js';
 import { getLQ } from '/static/js/lq/index.js';
-import { appealDialog, bannerMarkup, confirmPrivacy, moderationDialog, revealDialog } from '/static/js/blog_moderation_ui.js';
+import { appealDialog, bannerMarkup, confirmPrivacy, moderationDialog, openFormDialog, revealDialog } from '/static/js/blog_moderation_ui.js';
 
 const LQ = getLQ();
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -638,15 +638,40 @@ class BlogCenter {
             return;
         }
 
-        const deleteCommentButton = event.target.closest('[data-delete-comment]');
-        if (deleteCommentButton) {
-            this.deleteComment(Number(deleteCommentButton.dataset.deleteComment));
-            return;
-        }
 
         const replyButton = event.target.closest('[data-reply-to]');
         if (replyButton) {
-            this.startReply(Number(replyButton.dataset.replyTo), replyButton.dataset.replyName || '');
+            this.startReply(Number(replyButton.dataset.replyTo), replyButton.dataset.replyName || '', Number(replyButton.dataset.floor || 0));
+            return;
+        }
+        const moreRepliesButton = event.target.closest('[data-blog-floor-more]');
+        if (moreRepliesButton) {
+            this.loadFloorReplies(Number(moreRepliesButton.dataset.blogFloorMore), moreRepliesButton);
+            return;
+        }
+        const moreFloorsButton = event.target.closest('[data-blog-floors-more]');
+        if (moreFloorsButton) {
+            this.loadFloors({ append: true });
+            return;
+        }
+        const earlierFloorsButton = event.target.closest('[data-blog-floors-earlier]');
+        if (earlierFloorsButton) {
+            this.loadFloors({ earlier: true });
+            return;
+        }
+        const commentMenuButton = event.target.closest('[data-blog-comment-more]');
+        if (commentMenuButton) {
+            this.openCommentMenu(commentMenuButton);
+            return;
+        }
+        const editSaveButton = event.target.closest('[data-blog-comment-edit-save]');
+        if (editSaveButton) {
+            this.saveCommentEdit(Number(editSaveButton.dataset.blogCommentEditSave));
+            return;
+        }
+        const editCancelButton = event.target.closest('[data-blog-comment-edit-cancel]');
+        if (editCancelButton) {
+            this.cancelCommentEdit(Number(editCancelButton.dataset.blogCommentEditCancel));
             return;
         }
 
@@ -660,6 +685,7 @@ class BlogCenter {
         if (cancelReplyButton) {
             this.resetCommentDraft({ keepPicker: true });
             this.renderCommentDraftState();
+            this.returnComposerHome();
             return;
         }
 
@@ -1866,6 +1892,8 @@ class BlogCenter {
             this.startReadingSession(postId);
             this.renderModerationBanner(post);
             this.scheduleModerationPoll(post);
+            const focusComment = Number(new URL(window.location.href).searchParams.get('comment') || 0);
+            this.loadFloors({ around: focusComment || null });
         } catch (error) {
             if (error?.name === 'AbortError') return;
             this.state.detailPost = null;
@@ -2715,30 +2743,76 @@ class BlogCenter {
         }
     }
 
-    async deleteComment(commentId) {
-        if (!window.confirm('确定删除这条评论？')) return;
+    async deleteComment(commentId, isMine = true) {
+        let reason = '';
+        if (isMine) {
+            const confirmed = await LQ.confirm({ title: '删除评论', message: '删除后其他人看不到这条评论；楼层里的回复会保留。', confirmLabel: '删除', danger: true });
+            if (!confirmed) return;
+        } else {
+            const values = await openFormDialog({
+                title: '删除这条评论',
+                description: '评论者会收到通知和你填写的原因。',
+                fields: [{ name: 'reason', label: '删除原因', type: 'textarea', maxlength: 200, required: true }],
+                confirmLabel: '删除',
+                danger: true,
+            });
+            if (!values) return;
+            reason = values.reason;
+        }
         try {
-            await api.del(`/api/blog/comments/${commentId}`);
+            const result = await api.post(`/api/blog/comments/${commentId}/delete`, { reason });
             showToast('评论已删除', 'success');
-            if (this.state.detailPostId) {
-                await this.showDetail(this.state.detailPostId);
-            }
+            this.removeCommentNode(commentId, result?.deleted_by);
             this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '删除评论失败', 'error');
         }
     }
 
-    startReply(commentId, authorName) {
+    removeCommentNode(commentId, deletedBy = 'author') {
+        const article = $(`[data-comment-id="${commentId}"]`, this.shell);
+        const floor = article?.closest('[data-blog-floor]');
+        const composer = $('[data-blog-comment-composer]', this.shell);
+        if (composer && (floor || article)?.contains(composer)) {
+            // Never delete the composer with the floor it is replying in.
+            this.resetCommentDraft({ keepPicker: true });
+            this.renderCommentDraftState();
+            this.returnComposerHome();
+        }
+        this.setCommentTotal(-1);
+        if (floor && Number(floor.dataset.blogFloor) === Number(commentId)) {
+            if ($('[data-blog-floor-replies] [data-comment-id]', floor)) {
+                // The floor stays as a placeholder so its replies keep their context.
+                const text = { author: '该评论已被作者删除', post_author: '该评论已被帖子作者删除', moderator: '该评论已被管理员移除' }[deletedBy];
+                this.replaceCommentNode(article, { id: commentId, withheld: true, placeholder_text: text || '该评论已被删除' });
+            } else {
+                floor.remove();
+            }
+            return;
+        }
+        article?.remove();
+    }
+
+    startReply(commentId, authorName, floorId = 0) {
+        const composer = $('[data-blog-comment-composer]', this.shell);
         const input = $('[data-blog-comment-input]', this.shell);
-        if (!input) return;
+        if (!composer || !input) return;
         this.closeCommentPanels();
+        const slot = floorId ? $(`[data-blog-floor-composer="${floorId}"]`, this.shell) : null;
+        if (slot && composer.parentElement !== slot) slot.append(composer);
         this.commentDraft.replyTo = commentId;
         this.commentDraft.replyName = authorName;
         input.focus();
         input.scrollIntoView({ behavior: 'smooth', block: 'center' });
         this.autoSizeCommentInput(input);
         this.renderCommentDraftState();
+    }
+
+    /** The composer goes back below the list (cancel, send, or leaving the reply). */
+    returnComposerHome() {
+        const composer = $('[data-blog-comment-composer]', this.shell);
+        const home = $('[data-blog-comment-composer-home]', this.shell);
+        if (composer && home && composer.parentElement !== home) home.append(composer);
     }
 
     async submitComment() {
@@ -2780,12 +2854,14 @@ class BlogCenter {
                 result?.moderation_state === 'pending' ? '评论已提交，检查通过后大家就能看到' : '评论已发布',
                 'success',
             );
+            const inserted = this.insertComment(result?.comment);
             if (result?.housekeeper_limited) showToast('今天 @管家 的次数已用完，明天再试吧', 'info');
             this.resetCommentDraft({ keepPicker: false });
             input.value = '';
             this.autoSizeCommentInput(input);
             this.closeCommentPanels();
-            await this.showDetail(this.state.detailPostId);
+            this.returnComposerHome();
+            if (!inserted) await this.loadFloors();
             this.loadDiscovery();
         } catch (error) {
             showToast(error.message || '评论失败', 'error');
@@ -2798,6 +2874,28 @@ class BlogCenter {
                 currentButton.removeAttribute('aria-busy');
             }
         }
+    }
+
+    /** Plan §7.4: show the new comment where it belongs, without reloading the post. */
+    insertComment(comment) {
+        if (!comment) return false;
+        if ($(`[data-comment-id="${comment.id}"]`, this.shell)) {
+            // A deduplicated resend: the comment is already on the page.
+            this.focusComment(comment.id);
+            return true;
+        }
+        const node = comment.is_floor
+            ? this.floorHtml({ ...comment, replies: [], reply_count: 0 }).replace('<section class="blog-floor"', '<section class="blog-floor" data-local-floor')
+            : this.commentHtml(comment);
+        const target = comment.is_floor
+            ? $('[data-blog-comment-list]', this.shell)
+            : $(`[data-blog-floor-replies="${comment.root_comment_id}"]`, this.shell);
+        if (!target) return false;
+        $('[data-blog-comments-empty]', this.shell)?.remove();
+        target.insertAdjacentHTML('beforeend', node);
+        this.setCommentTotal(1);
+        this.focusComment(comment.id);
+        return true;
     }
 
     async handleImageUpload(fileList, { context }) {
@@ -3520,11 +3618,18 @@ class BlogCenter {
         return `
             <section class="blog-comments" data-blog-comments-section>
                 <div class="blog-comments__header">
-                    <h3 class="blog-comments__title">评论 ${post.comment_count || 0}</h3>
+                    <h3 class="blog-comments__title">评论 <span data-blog-comment-total>${post.comment_count || 0}</span></h3>
                 </div>
-                <div class="blog-comment-list">
-                    ${(post._comments || []).length ? (post._comments || []).map((comment) => this.commentHtml(comment)).join('') : '<div class="blog-empty blog-empty--compact"><div class="blog-empty__title">还没有评论，来抢沙发</div></div>'}
+                <div class="blog-comments__more" data-blog-floors-earlier-wrap hidden>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-blog-floors-earlier>加载更早的评论</button>
                 </div>
+                <div class="blog-comment-list" data-blog-comment-list aria-busy="true">
+                    <p class="blog-comment-list__status">正在加载评论…</p>
+                </div>
+                <div class="blog-comments__more" data-blog-floors-more-wrap hidden>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-blog-floors-more>加载更多评论</button>
+                </div>
+                <div data-blog-comment-composer-home>
                 <div class="blog-comment-composer" data-blog-comment-composer>
                     <span class="blog-comment-composer__face" data-blog-comment-face>${this.commentFaceAvatar(post, this.initialCommentPersona(post))}</span>
                     <div data-lq-component="surface" class="lq-surface blog-comment-composer__panel">
@@ -3556,18 +3661,218 @@ class BlogCenter {
                         </div>
                     </div>
                 </div>
+                </div>
             </section>
         `;
     }
 
+    floorHtml(floor) {
+        const replies = (floor.replies || []).map((reply) => this.commentHtml(reply)).join('');
+        const remaining = Math.max(0, Number(floor.reply_count || 0) - (floor.replies || []).length);
+        return `
+            <section class="blog-floor" data-blog-floor="${floor.id}">
+                ${this.commentHtml(floor)}
+                <div class="blog-floor__replies" data-blog-floor-replies="${floor.id}">${replies}</div>
+                ${remaining ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost blog-floor__more" data-blog-floor-more="${floor.id}" data-offset="${(floor.replies || []).length}">展开 ${remaining} 条回复</button>` : ''}
+                <div class="blog-floor__composer" data-blog-floor-composer="${floor.id}"></div>
+            </section>`;
+    }
+
+    /** Plan §7.1: floors are paged; each brings its first replies, the rest load on demand. */
+    async loadFloors({ append = false, earlier = false, around = null } = {}) {
+        const postId = this.state.detailPostId;
+        const list = $('[data-blog-comment-list]', this.shell);
+        if (!postId || !list) return;
+        if ((append || earlier) && this.floorsPaging) return;
+        // A token, not a flag: opening another post mid-load must still load it.
+        const token = (this.floorsToken || 0) + 1;
+        this.floorsToken = token;
+        this.floorsPaging = append || earlier;
+        let page = 1;
+        if (append) page = (this.floorLastPage || 1) + 1;
+        if (earlier) page = Math.max(1, (this.floorFirstPage || 1) - 1);
+        list.setAttribute('aria-busy', 'true');
+        try {
+            const params = new URLSearchParams({ page: String(page) });
+            if (around) params.set('around', String(around));
+            const data = await api.get(`/api/blog/posts/${postId}/floors?${params}`);
+            if (token !== this.floorsToken || Number(this.state.detailPostId) !== Number(postId)) return;
+            const known = new Set($$('[data-blog-floor]', list).map((node) => Number(node.dataset.blogFloor)));
+            const html = data.comments.filter((floor) => !known.has(floor.id)).map((floor) => this.floorHtml(floor)).join('');
+            if (earlier) {
+                list.insertAdjacentHTML('afterbegin', html);
+                this.floorFirstPage = data.page;
+            } else if (append) {
+                // Floors posted here before this page was loaded belong after it.
+                const local = $('[data-blog-floor][data-local-floor]', list);
+                if (local) local.insertAdjacentHTML('beforebegin', html);
+                else list.insertAdjacentHTML('beforeend', html);
+                this.floorLastPage = data.page;
+            } else {
+                list.innerHTML = html || '<div class="blog-empty blog-empty--compact" data-blog-comments-empty><div class="blog-empty__title">还没有评论，来抢沙发</div></div>';
+                this.floorFirstPage = data.page;
+                this.floorLastPage = data.page;
+            }
+            if (!earlier) {
+                const more = $('[data-blog-floors-more-wrap]', this.shell);
+                if (more) more.hidden = !data.has_more;
+            }
+            const before = $('[data-blog-floors-earlier-wrap]', this.shell);
+            if (before) before.hidden = (this.floorFirstPage || 1) <= 1;
+            if (data.focus_comment_id) this.focusComment(data.focus_comment_id, { instant: true });
+        } catch (error) {
+            if (token !== this.floorsToken) return;
+            if (!append && !earlier) list.innerHTML = `<p class="blog-comment-list__status">${escapeHtml(error.message || '评论加载失败')}</p>`;
+            else showToast(error.message || '评论加载失败', 'error');
+        } finally {
+            if (token === this.floorsToken) {
+                this.floorsPaging = false;
+                list.removeAttribute('aria-busy');
+            }
+        }
+    }
+
+    async loadFloorReplies(floorId, button) {
+        const postId = this.state.detailPostId;
+        const container = $(`[data-blog-floor-replies="${floorId}"]`, this.shell);
+        if (!postId || !container || button.disabled) return;
+        button.disabled = true;
+        try {
+            const offset = Number(button.dataset.offset || 0);
+            const data = await api.get(`/api/blog/posts/${postId}/floors/${floorId}/replies?offset=${offset}&limit=20`);
+            const known = new Set($$('[data-comment-id]', container).map((node) => Number(node.dataset.commentId)));
+            container.insertAdjacentHTML('beforeend', data.replies.filter((reply) => !known.has(reply.id)).map((reply) => this.commentHtml(reply)).join(''));
+            const next = offset + data.replies.length;
+            const remaining = Math.max(0, data.total - next);
+            if (data.has_more && remaining) {
+                button.dataset.offset = String(next);
+                button.textContent = `展开 ${remaining} 条回复`;
+                button.disabled = false;
+            } else {
+                button.remove();
+            }
+        } catch (error) {
+            button.disabled = false;
+            showToast(error.message || '回复加载失败', 'error');
+        }
+    }
+
+    focusComment(commentId, { instant = false } = {}) {
+        const node = $(`[data-comment-id="${commentId}"]`, this.shell);
+        if (!node) return;
+        node.classList.add('is-focused');
+        // A deep link lands at once; a just-posted comment glides into view.
+        node.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'center' });
+        window.setTimeout(() => node.classList.remove('is-focused'), 2400);
+    }
+
+    setCommentTotal(delta) {
+        const total = $('[data-blog-comment-total]', this.shell);
+        if (total) total.textContent = String(Math.max(0, Number(total.textContent || 0) + delta));
+    }
+
+    /** Plan §7.3: reply and like stay direct; the rest sits in an LQ menu. */
+    async openCommentMenu(trigger) {
+        if (trigger.blogMenuLoading) return;
+        if (!trigger.blogMenuBinding) {
+            trigger.blogMenuLoading = true;
+            const flags = trigger.dataset;
+            const items = [{ id: 'link', label: '复制链接' }];
+            if (flags.canEdit === 'true') items.push({ id: 'edit', label: '编辑' });
+            if (flags.canReport === 'true') items.push({ id: 'report', label: '举报', group: 'safety' });
+            if (flags.canModerate === 'true') items.push({ id: 'moderate', label: '处理', group: 'safety' });
+            if (flags.canDelete === 'true') items.push({ id: 'delete', label: '删除', danger: true });
+            const menus = await LQ.load('menus');
+            const menu = menus.createMenu({ label: '评论操作', items });
+            trigger.after(menu);
+            trigger.blogMenuBinding = menus.bindMenu(trigger, menu, {
+                onAction: (action) => this.handleCommentMenu(action, Number(flags.blogCommentMore), flags),
+            });
+            trigger.blogMenuLoading = false;
+        }
+        trigger.blogMenuBinding.open();
+    }
+
+    async handleCommentMenu(action, commentId, flags) {
+        if (action === 'link') {
+            const url = new URL('/blog', window.location.origin);
+            url.searchParams.set('post', String(this.state.detailPostId));
+            url.searchParams.set('comment', String(commentId));
+            try {
+                await navigator.clipboard.writeText(url.href);
+                showToast('评论链接已复制', 'success');
+            } catch {
+                showToast(url.href, 'info');
+            }
+        } else if (action === 'edit') {
+            this.startCommentEdit(commentId);
+        } else if (action === 'report') {
+            this.openReport('comment', commentId);
+        } else if (action === 'moderate') {
+            this.moderateTarget('comment', commentId, flags.state);
+        } else if (action === 'delete') {
+            this.deleteComment(commentId, flags.isMine === 'true');
+        }
+    }
+
+    startCommentEdit(commentId) {
+        const article = $(`[data-comment-id="${commentId}"]`, this.shell);
+        if (!article || article.querySelector('[data-blog-comment-editor]')) return;
+        const content = $('.blog-comment__content', article);
+        const editor = document.createElement('div');
+        editor.className = 'blog-comment__editor';
+        editor.dataset.blogCommentEditor = '';
+        editor.innerHTML = `
+            <textarea data-lq-component="textarea" class="lq-textarea" rows="3" maxlength="5000" aria-label="编辑评论"></textarea>
+            <div class="blog-comment__editor-actions">
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-blog-comment-edit-cancel="${commentId}">取消</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--prominent" data-blog-comment-edit-save="${commentId}">保存</button>
+            </div>`;
+        $('textarea', editor).value = article.dataset.source || '';
+        if (content) content.hidden = true;
+        $('.blog-comment__actions', article)?.before(editor);
+        $('textarea', editor).focus();
+    }
+
+    cancelCommentEdit(commentId) {
+        const article = $(`[data-comment-id="${commentId}"]`, this.shell);
+        if (!article) return;
+        $('[data-blog-comment-editor]', article)?.remove();
+        const content = $('.blog-comment__content', article);
+        if (content) content.hidden = false;
+    }
+
+    async saveCommentEdit(commentId) {
+        const article = $(`[data-comment-id="${commentId}"]`, this.shell);
+        const textarea = article && $('[data-blog-comment-editor] textarea', article);
+        if (!textarea) return;
+        const content = textarea.value.trim();
+        if (!(await confirmPrivacy(content))) return;
+        try {
+            const data = await api.put(`/api/blog/comments/${commentId}`, {
+                content_md: content,
+                expected_revision: Number(article.dataset.revision || 0) || null,
+            });
+            this.replaceCommentNode(article, data.comment);
+            showToast(data.comment?.moderation?.state === 'pending' ? '已保存，检查通过后大家就能看到' : '评论已更新', 'success');
+        } catch (error) {
+            showToast(error.message || '评论保存失败', 'error');
+        }
+    }
+
+    replaceCommentNode(article, comment) {
+        const holder = document.createElement('div');
+        holder.innerHTML = this.commentHtml(comment).trim();
+        article.replaceWith(holder.firstElementChild);
+    }
+
     commentHtml(comment) {
         if (comment.withheld) {
-            // Keeps the thread readable when visible replies hang on a handled comment.
+            // A floor whose comment is gone but whose replies stay readable.
             return `
-            <article class="blog-comment blog-comment--withheld" data-blog-comment-withheld>
+            <article class="blog-comment blog-comment--withheld" data-blog-comment-withheld data-comment-id="${comment.id}">
                 <div class="blog-comment__body">
-                    <p class="blog-comment__withheld">该评论已被处理</p>
-                    ${(comment.replies || []).length ? `<div class="blog-comment__replies">${comment.replies.map((reply) => this.commentHtml(reply)).join('')}</div>` : ''}
+                    <p class="blog-comment__withheld">${escapeHtml(comment.placeholder_text || '该评论已被处理')}</p>
                 </div>
             </article>`;
         }
@@ -3577,14 +3882,18 @@ class BlogCenter {
                 ${comment.is_liked ? SVG.heartFill : SVG.heart}
                 <span class="blog-comment-action__count">${comment.like_count || 0}</span>
             </button>`,
-            comment.can_reply ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-reply-to="${comment.id}" data-reply-name="${escapeHtml(comment.author?.display_name || '')}">回复</button>` : '',
-            comment.can_delete ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action blog-comment-action--delete" data-delete-comment="${comment.id}">删除</button>` : '',
-            comment.can_report ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-blog-report-comment="${comment.id}">举报</button>` : '',
-            comment.can_moderate ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-blog-moderate-comment="${comment.id}" data-state="${escapeHtml(moderation?.state || 'none')}">处理</button>` : '',
+            comment.can_reply ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action" data-reply-to="${comment.id}" data-floor="${comment.root_comment_id || comment.id}" data-reply-name="${escapeHtml(comment.author?.display_name || '')}">回复</button>` : '',
+            `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-comment-action blog-comment-action--more" aria-label="更多操作" aria-haspopup="menu"
+                data-blog-comment-more="${comment.id}" data-is-mine="${comment.is_mine ? 'true' : 'false'}" data-state="${escapeHtml(moderation?.state || 'none')}"
+                data-can-edit="${comment.can_edit ? 'true' : 'false'}" data-can-delete="${comment.can_delete ? 'true' : 'false'}"
+                data-can-report="${comment.can_report ? 'true' : 'false'}" data-can-moderate="${comment.can_moderate ? 'true' : 'false'}">···</button>`,
         ].filter(Boolean).join('');
+        const replyTo = comment.reply_to
+            ? `<p class="blog-comment__reply-to">回复 ${comment.reply_to.hidden ? '一条已处理的评论' : `<strong>@${escapeHtml(comment.reply_to.display_name)}</strong>`}</p>`
+            : '';
 
         return `
-            <article class="blog-comment">
+            <article class="blog-comment${comment.is_floor === false ? ' blog-comment--reply' : ''}" data-comment-id="${comment.id}" data-revision="${comment.content_revision || 1}" data-source="${escapeHtml(comment.content_md || '')}">
                 ${this.authorAvatarHtml(comment.author, 'comment')}
                 <div class="blog-comment__body">
                     <div class="blog-comment__author">
@@ -3592,15 +3901,15 @@ class BlogCenter {
                         ${comment.author?.is_op && !comment.author?.is_anonymous ? LQ.html.chip({ label: '作者', tone: 'primary', size: 'sm', attrs: { 'data-blog-op-badge': '' } }) : ''}
                         ${this.authorCultivationBadgeHtml(comment.author, 'blog-author-cultivation--comment')}
                         ${ROLE_LABELS[comment.author?.role] ? `<span class="blog-comment__author-role">${escapeHtml(ROLE_LABELS[comment.author.role])}</span>` : ''}
-                        <span class="blog-comment__time">${escapeHtml(timeAgo(comment.created_at))}</span>
+                        <span class="blog-comment__time">${escapeHtml(timeAgo(comment.created_at))}${comment.edited ? ' · 已编辑' : ''}</span>
                         ${moderation ? LQ.html.chip({ label: moderation.label || '已处理', tone: moderation.state === 'removed' ? 'danger' : 'warning', size: 'sm', attrs: { 'data-blog-comment-moderation': moderation.state } }) : ''}
                     </div>
                     ${moderation && (moderation.reason_label || moderation.note) ? `<p class="blog-comment__moderation-note">${escapeHtml([moderation.reason_label ? `原因：${moderation.reason_label}` : '', moderation.note].filter(Boolean).join('。'))}</p>` : ''}
+                    ${replyTo}
                     ${comment.content_md ? `<div class="blog-comment__content">${renderMarkdownHtml(comment.content_md)}</div>` : ''}
                     ${this.commentCustomEmojiHtml(comment.custom_emojis)}
                     ${this.commentAttachmentsHtml(comment.attachments)}
                     <div class="blog-comment__actions">${actions}</div>
-                    ${(comment.replies || []).length ? `<div class="blog-comment__replies">${comment.replies.map((reply) => this.commentHtml(reply)).join('')}</div>` : ''}
                 </div>
             </article>
         `;

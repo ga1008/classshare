@@ -1209,6 +1209,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/blog/comments/{comment_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_comment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/comments/{comment_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_edit_comment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/comments/{comment_id}/delete",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_soft_delete_comment",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/blog/comments/{comment_id}/like",
     "methods": [
       "POST"
@@ -1390,6 +1414,22 @@
       "POST"
     ],
     "name": "api_feature_post",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/floors",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_floors",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/blog/posts/{post_id}/floors/{root_id}/replies",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_floor_replies",
     "include_in_schema": true
   },
   {

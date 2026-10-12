@@ -1960,76 +1960,12 @@ def _is_bookmarked(conn, user_identity: str, post_id: int) -> bool:
 
 
 def list_comments(conn, user: dict, post_id: int, *, page: int = 1, limit: int = COMMENTS_PER_PAGE) -> dict:
-    post = _get_post_raw(conn, post_id)
-    if post is None:
-        raise ValueError("帖子不存在")
-    if not _can_view_post(conn, user, post):
-        raise PermissionError("没有权限查看此帖子")
+    """Floors with their first replies (plan §7.1); see blog_comment_service."""
+    from .blog_comment_service import list_floors
 
-    user_pk, role, identity = _ensure_identity(user)
-    rows = conn.execute(
-        """
-        SELECT id, post_id, parent_comment_id,
-               author_identity, author_role, author_user_pk, author_display_name,
-               author_display_mode, author_display_snapshot,
-               content_md, emoji_payload_json, attachments_json,
-               status, like_count, created_at, updated_at,
-               moderation_state, moderation_reason_code, moderation_note, moderated_by
-        FROM blog_comments
-        WHERE post_id = ? AND status = 'active'
-        ORDER BY created_at ASC, id ASC
-        """,
-        (post_id,),
-    ).fetchall()
-    rows = _withhold_comments(conn, user, identity, [dict(row) for row in rows])
-
-    comments = _build_comment_tree(
-        conn,
-        user,
-        viewer_identity=identity,
-        post_author_identity=str(post["author_identity"] or ""),
-        post_display_mode=str(post.get("author_display_mode") or AUTHOR_DISPLAY_REAL),
-        rows=rows,
-        page=page,
-        limit=limit,
-    )
-    return {"comments": comments, "post_id": post_id}
-
-
-def _withhold_comments(conn, user: dict, identity: str, rows: list[dict]) -> list[dict]:
-    """Drop comments others may not see; keep a placeholder where replies hang on one.
-
-    A pending (L1-flagged), limited or removed comment is shown to its author
-    and to blog moderators only. Everyone else sees nothing, or — when visible
-    replies hang below it — an empty "已处理" placeholder keeping the thread.
-    """
-    from .blog_moderation_service import is_blog_moderator
-
-    moderator = is_blog_moderator(conn, user)
-    for row in rows:
-        row["_viewer_moderator"] = moderator
-    if moderator:
-        return rows
-
-    def visible(row: dict) -> bool:
-        return str(row.get("author_identity") or "") == identity or mod_states.is_public_state(row.get("moderation_state"))
-
-    by_id = {int(row["id"]): row for row in rows}
-    needed: set[int] = set()
-    for row in rows:
-        if not visible(row):
-            continue
-        parent_id = _safe_int(row.get("parent_comment_id"))
-        while parent_id is not None and parent_id in by_id and parent_id not in needed:
-            needed.add(parent_id)
-            parent_id = _safe_int(by_id[parent_id].get("parent_comment_id"))
-    kept = []
-    for row in rows:
-        if visible(row):
-            kept.append(row)
-        elif int(row["id"]) in needed:
-            kept.append({**row, "_withheld": True, "content_md": "", "attachments_json": "[]", "emoji_payload_json": ""})
-    return kept
+    # The legacy read (agent capability, api_get_post) keeps whole floors: up
+    # to 100 floors and their replies, as the old tree did.
+    return list_floors(conn, user, post_id, page=page, limit=limit, reply_preview=200, max_limit=100)
 
 
 def notify_released_comment(conn, comment_id: int) -> None:
@@ -2138,9 +2074,10 @@ def add_comment(
             SELECT id, post_id, author_identity, root_comment_id
             FROM blog_comments
             WHERE id = ? AND post_id = ? AND status = 'active'
+              AND (COALESCE(moderation_state, 'none') IN ('none', 'passed', 'flagged') OR author_identity = ?)
             LIMIT 1
             """,
-            (parent_comment_id, post_id),
+            (parent_comment_id, post_id, identity),
         ).fetchone()
         if parent is None:
             raise ValueError("回复的评论不存在")
@@ -2262,54 +2199,11 @@ def add_comment(
     return {"id": comment_id, "post_id": post_id, "created_at": now, "moderation_state": comment_plan.state}
 
 
-def delete_comment(conn, user: dict, comment_id: int) -> dict:
-    user_pk, role, identity = _ensure_identity(user)
-    comment = conn.execute(
-        """
-        SELECT c.*, p.author_identity AS post_author_identity, p.id AS post_id
-        FROM blog_comments c
-        JOIN blog_posts p ON p.id = c.post_id
-        WHERE c.id = ?
-        LIMIT 1
-        """,
-        (comment_id,),
-    ).fetchone()
-    if comment is None:
-        raise ValueError("评论不存在")
+def delete_comment(conn, user: dict, comment_id: int, *, reason: str = "") -> dict:
+    """Soft delete (plan §4.2, §7.3); replies stay under a placeholder."""
+    from .blog_comment_service import delete_comment as soft_delete
 
-    can_delete = (
-        comment["author_identity"] == identity
-        or comment["post_author_identity"] == identity
-        or _can_override_post_visibility(user)
-    )
-    if not can_delete:
-        raise PermissionError("没有权限删除此评论")
-
-    subtree_ids = _collect_comment_subtree_ids(conn, comment_id)
-    if not subtree_ids:
-        raise ValueError("评论不存在")
-
-    placeholders = ", ".join("?" for _ in subtree_ids)
-    conn.execute(
-        f"DELETE FROM blog_likes WHERE target_type = ? AND target_id IN ({placeholders})",
-        [TARGET_TYPE_COMMENT, *subtree_ids],
-    )
-    # No FK cascade on SQLite without PRAGMA foreign_keys: drop media refs explicitly.
-    conn.execute(f"DELETE FROM blog_comment_media WHERE comment_id IN ({placeholders})", subtree_ids)
-    conn.execute(f"DELETE FROM blog_comments WHERE id IN ({placeholders})", subtree_ids)
-    conn.execute(
-        """
-        UPDATE blog_posts
-        SET comment_count = CASE
-                WHEN COALESCE(comment_count, 0) <= ? THEN 0
-                ELSE comment_count - ?
-            END,
-            updated_at = ?
-        WHERE id = ?
-        """,
-        (len(subtree_ids), len(subtree_ids), _now_iso(), int(comment["post_id"])),
-    )
-    return {"id": comment_id, "deleted": True, "deleted_count": len(subtree_ids)}
+    return soft_delete(conn, user, comment_id, reason=reason)
 
 
 def toggle_like(conn, user: dict, target_type: str, target_id: int, *, hot_notify_callback=None) -> dict:
@@ -2941,98 +2835,9 @@ def _resolve_post_media_assets(
     return resolved
 
 
-def _build_comment_tree(
-    conn,
-    user: dict,
-    *,
-    viewer_identity: str,
-    post_author_identity: str,
-    rows: list[dict],
-    page: int,
-    limit: int,
-    post_display_mode: str = AUTHOR_DISPLAY_REAL,
-) -> list[dict]:
-    comment_ids = [int(item["id"]) for item in rows]
-    liked_ids: set[int] = set()
-    if comment_ids:
-        placeholders = ", ".join("?" for _ in comment_ids)
-        liked_rows = conn.execute(
-            f"""
-            SELECT target_id
-            FROM blog_likes
-            WHERE target_type = ?
-              AND user_identity = ?
-              AND target_id IN ({placeholders})
-            """,
-            [TARGET_TYPE_COMMENT, viewer_identity, *comment_ids],
-        ).fetchall()
-        liked_ids = {int(row["target_id"]) for row in liked_rows}
-
-    # Only real-name commenters get a profile/badge lookup; the anonymous
-    # post's own author ("楼主") is masked whatever mode they commented in.
-    masked_identity = post_author_identity if post_display_mode == AUTHOR_DISPLAY_ANONYMOUS else ""
-    avatar_map = _load_comment_avatar_map(
-        conn,
-        [row for row in rows if not masked_identity or str(row.get("author_identity") or "") != masked_identity],
-    )
-    can_moderate = _can_override_post_visibility(user)
-    viewer_role = str(user.get("role") or "").strip().lower()
-    by_parent: dict[Optional[int], list[dict]] = defaultdict(list)
-
-    for row in rows:
-        serialized = _serialize_comment(
-            row,
-            viewer_identity=viewer_identity,
-            post_author_identity=post_author_identity,
-            post_display_mode=post_display_mode,
-            is_liked=int(row["id"]) in liked_ids,
-            avatar_map=avatar_map,
-            can_delete=(
-                str(row.get("author_identity") or "") == viewer_identity
-                or post_author_identity == viewer_identity
-                or can_moderate
-            ),
-        )
-        serialized["can_moderate"] = viewer_role == "teacher" and not serialized["withheld"]
-        serialized["can_report"] = (
-            viewer_role != "assistant" and not serialized["is_mine"] and not serialized["withheld"]
-        )
-        by_parent[_safe_int(row.get("parent_comment_id"))].append(serialized)
-
-    root_comments = by_parent.get(None, [])
-    offset = max(page - 1, 0) * limit
-    visible_roots = root_comments[offset: offset + limit]
-
-    def attach_replies(items: list[dict]) -> list[dict]:
-        result: list[dict] = []
-        for item in items:
-            item["replies"] = attach_replies(by_parent.get(int(item["id"]), []))
-            result.append(item)
-        return result
-
-    return attach_replies(visible_roots)
-
-
 def _load_comment_avatar_map(conn, rows: list[dict]) -> AuthorContext:
     """Persona context for a comment page: same shape as the post-list context."""
     return _build_author_cultivation_badge_map(conn, rows)
-
-
-def _collect_comment_subtree_ids(conn, comment_id: int) -> list[int]:
-    rows = conn.execute(
-        """
-        WITH RECURSIVE subtree(id) AS (
-            SELECT id FROM blog_comments WHERE id = ?
-            UNION ALL
-            SELECT child.id
-            FROM blog_comments child
-            JOIN subtree parent ON child.parent_comment_id = parent.id
-        )
-        SELECT id FROM subtree
-        """,
-        (comment_id,),
-    ).fetchall()
-    return [int(row["id"]) for row in rows]
 
 
 def _sync_post_attachments(conn, post_id: int, assets: list[dict]) -> None:

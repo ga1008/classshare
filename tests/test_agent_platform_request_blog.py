@@ -80,9 +80,14 @@ class BlogRequestTests(PlatformWriteFixture):
     def test_post_delete_cas_and_comment_subtree_cleanup_use_normal_policy(self):
         denied=self.restored_parity('teacher','http.blog.post.delete',path_params={'post_id':self.post},query_params={'expected_updated_at':self.revision(self.post)})
         self.assertEqual(403,denied['result']['http_status'])
-        deleted=self.restored_parity('student','http.blog.comment.delete',path_params={'comment_id':self.comment})
-        self.assertEqual(200,deleted['result']['http_status']);self.assertEqual(2,deleted['result']['data']['deleted_count'])
-        self.assertEqual(0,self.sql('SELECT comment_count FROM blog_posts WHERE id=?',(self.post,))[0][0])
+        # P4: deleting someone else's comment needs a reason, which this route cannot carry.
+        refused=self.dispatch('student','http.blog.comment.delete',path_params={'comment_id':self.comment})
+        self.assertNotEqual(200,refused['result']['http_status'])
+        deleted=self.restored_parity('student','http.blog.comment.delete',path_params={'comment_id':self.reply})
+        self.assertEqual(200,deleted['result']['http_status']);self.assertEqual(1,deleted['result']['data']['deleted_count'])
+        # P4 soft delete: the row stays (status deleted) and only it leaves the count.
+        self.assertEqual(1,self.sql('SELECT comment_count FROM blog_posts WHERE id=?',(self.post,))[0][0])
+        self.assertEqual('deleted',self.sql('SELECT status FROM blog_comments WHERE id=?',(self.reply,))[0][0])
         version=self.revision(self.post)
         stale=self.dispatch('student','http.blog.post.delete',path_params={'post_id':self.post},query_params={'expected_updated_at':'old'})
         self.assertEqual(409,stale['result']['http_status'])
