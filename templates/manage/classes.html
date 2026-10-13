@@ -53,14 +53,15 @@
 
     <section data-lq-component="surface" class="lq-surface class-control-panel" aria-label="班级筛选与搜索">
         <div class="class-control-main">
-            <label class="academic-search class-search" for="classSearchInput">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <label class="academic-search class-search lq-search" for="classSearchInput">
                 <input data-lq-component="input" id="classSearchInput" type="search" class="lq-input form-control" placeholder="搜索班级、学生姓名、学号或邮箱">
             </label>
-            <div class="class-filter-fields">
+            {# With LQ chip rows the chips are the visible control; the real selects stay
+               as their value carriers (courses.html / material_hub.html precedent). #}
+            <div class="class-filter-fields{% if _classes_lq_enabled %} filter-proxy-select{% endif %}">
                 <label class="academic-filter-field" for="classDepartmentFilter">
                     <span>系别</span>
-                    <select data-lq-dropdown data-lq-component="select" id="classDepartmentFilter" class="lq-select form-control">
+                    <select {% if _classes_lq_enabled %}data-lq-selection-owner="filter-chips" aria-hidden="true" tabindex="-1"{% else %}data-lq-dropdown{% endif %} data-lq-component="select" id="classDepartmentFilter" class="lq-select form-control">
                         <option value="all">全部系别</option>
                         {% for department in department_options %}
                         <option value="{{ department }}">{{ department }}</option>
@@ -70,7 +71,7 @@
                 </label>
                 <label class="academic-filter-field" for="classHealthFilter">
                     <span>名单状态</span>
-                    <select data-lq-dropdown data-lq-component="select" id="classHealthFilter" class="lq-select form-control">
+                    <select {% if _classes_lq_enabled %}data-lq-selection-owner="filter-chips" aria-hidden="true" tabindex="-1"{% else %}data-lq-dropdown{% endif %} data-lq-component="select" id="classHealthFilter" class="lq-select form-control">
                         <option value="all">全部状态</option>
                         <option value="missing-email">有学生缺邮箱</option>
                         <option value="complete-email">邮箱完整</option>
@@ -83,11 +84,11 @@
                 </label>
                 <label class="academic-filter-field" for="classSortSelect">
                     <span>排序</span>
-                    <select data-lq-dropdown data-lq-component="select" id="classSortSelect" class="lq-select form-control">
+                    <select {% if _classes_lq_enabled %}data-lq-selection-owner="filter-chips" aria-hidden="true" tabindex="-1"{% else %}data-lq-dropdown{% endif %} data-lq-component="select" id="classSortSelect" class="lq-select form-control">
+                        <option value="recent-desc" selected>最近导入/编辑优先</option>
                         <option value="department">按系别与名称</option>
                         <option value="students-desc">学生数从多到少</option>
                         <option value="missing-desc">缺邮箱优先</option>
-                        <option value="recent-desc">最近导入优先</option>
                     </select>
                 </label>
             </div>
@@ -120,10 +121,10 @@
         </div>
         <div class="class-department-chips" id="classSortChips" data-filter-chips data-filter-target="#classSortSelect">
             {{ lq_chip_row('classSortChipRow', '排序方式', [
-                {'label': '按系别与名称', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'department'}},
+                {'label': '最近导入/编辑优先', 'kind': 'filter', 'pressed': true, 'attrs': {'data-value': 'recent-desc'}},
+                {'label': '按系别与名称', 'kind': 'filter', 'attrs': {'data-value': 'department'}},
                 {'label': '学生数从多到少', 'kind': 'filter', 'attrs': {'data-value': 'students-desc'}},
-                {'label': '缺邮箱优先', 'kind': 'filter', 'attrs': {'data-value': 'missing-desc'}},
-                {'label': '最近导入优先', 'kind': 'filter', 'attrs': {'data-value': 'recent-desc'}}
+                {'label': '缺邮箱优先', 'kind': 'filter', 'attrs': {'data-value': 'missing-desc'}}
             ]) }}
         </div>
         {% else %}
@@ -153,7 +154,7 @@
 
             <div class="class-card-list" id="classList">
                 {% for class_item in my_classes %}
-                {% set latest_time = class_item.latest_student_created_at or class_item.created_at or '' %}
+                {% set latest_time = class_item.recent_activity_at or '' %}
                 <article data-lq-component="surface"
                     class="lq-surface class-manage-card"
                     data-class-card

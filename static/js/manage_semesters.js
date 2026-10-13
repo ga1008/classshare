@@ -172,12 +172,13 @@ function renderSemesterList() {
             const temporal = temporalMeta(semester);
             const isSyncing = semester.calendar_sync_active === true;
             return `
-        <div
-            class="academic-list-item academic-list-item-selectable${semester.id === state.activeSemesterId ? ' is-active' : ''}"
+        <div data-lq-component="surface"
+            class="lq-surface academic-list-item academic-list-item-selectable${semester.id === state.activeSemesterId ? ' is-active' : ''}"
+            data-lq-selected="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
             data-semester-id="${semester.id}"
             aria-busy="${isSyncing ? 'true' : 'false'}"
         >
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass academic-list-main semester-select" data-action="select" data-semester-id="${semester.id}"
+            <button data-lq-component="choice" data-lq-shape="surface" type="button" class="lq-btn lq-btn--sm lq-btn--ghost lq-domain-choice academic-list-main semester-select" data-action="select" data-semester-id="${semester.id}"
                 aria-pressed="${semester.id === state.activeSemesterId ? 'true' : 'false'}"
                 aria-label="切换当前焦点到 ${escapeHtml(semester.name || '该学期')}">
                 <strong>${escapeHtml(semester.name || '未命名学期')}</strong>

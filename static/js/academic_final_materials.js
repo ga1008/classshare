@@ -1,6 +1,6 @@
 import { apiFetch } from './api.js';
 import { finishNativeDialogClose } from './lq/native-presence.js';
-import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-1';
+import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-2';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';
 import { SignaturePointControl } from './signature_point_workflow.js?v=material-workflows-20260908';
 

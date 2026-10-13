@@ -500,3 +500,15 @@ Popup 复用 LQ.layer 的 portal、父子关系、焦点、关闭及反向打开
 `.lq-page-head` 的 aside 槽含 `.manage-pagehead__insights` 或 `[data-page-head-wide]` 时在所有壳下整行换行（规则位于 `content.css`，不再依赖 `.lq-manage-pilot`）。Bubble 统一为玻璃内容材质：`--incoming/--outgoing` 各保留一个尾角并与 ink 配对，新增 `.lq-bubble--assistant`；课堂研讨室、课堂一对一、消息中心私信三处消费者改用同一 DOM（作者 `lq-bubble__author`、时间 `lq-bubble__time`、正文 `lq-bubble__content`，领域内容槽并存）。Composer 外壳承担 `:focus-within` 环，`__content` 槽只在有可见子项时占位，`__actions` 右侧可放一个 `lq-status` 说明禁用原因；课堂两个表单采用该 DOM 合同，行为仍由领域控制器独占（含 IME 守卫），粗指针保持 44px。
 
 3D 课表：`scheduleChangeBadge(lesson)` 产出一枚共享 status Chip（草稿 / 审核中 / 已批准 / 计划位置 / 已换教室），deck 只负责定位与缩放；`planned_changes` 载体新增 `phase='draft'`（教师未提交草稿，仅标原卡，学生不可见）与 `phase='approved' kind='room'`（已生效换教室）两类读层关系，`projectScheduleChanges` 按 phase 分别校验。放大浮窗使用共享 scrim，网格卡片用稠密填充代替实时模糊，课次放大卡使用 raised 填充。来源、测试与限制见 [讨论气泡与课表阶段标识记录](lq-chat-schedule-refresh-2026-10-09.md)。
+
+### 模板增补：通知、选择卡、搜索、表单自适应、筛选栏、展开浮层（2026-10-13）
+
+来源、扫描结果与证据见 [界面模板收敛与全站扫描](lq-ui-template-sweep-2026-10-13.md)。
+
+- **Toast**：raised 填充 + thick 实时模糊，栈上限 3 使采样宿主有界；`:root:has(.lq-topbar)` 时下移到顶栏下方（`--lq-toast-top-offset`）。图标为 32px tone 小胶囊（soft 填充 + fg 前景成对）。`lq-s8-ovl` 断言改为 toast 采样。
+- **选择卡**（`static/css/lq/components/declarative.css`）：承载标题/说明/徽标的整块可点内容用 `data-lq-component="choice" data-lq-shape="surface"` + `lq-domain-choice`，不再被 capsule 几何包裹；选中（aria-pressed/selected/current、`.is-active`）与按下为 soft primary + 主色描边。`lq-btn--ghost` 选择卡是 `data-lq-selected` Surface 的可点主体，自身各态透明，选中由 Surface 表达。
+- **搜索**（新文件 `components/search.css`）：任何 `.lq-input[type="search"]` 自带放大镜，作为共享控件底色 `--lq-control-background` 的首层，亮/暗与 `data-lq-tone` 成对；粗指针保持 44px。`.lq-search` 包装只清除包装层底色并提供 `.lq-search__end` 尾部槽（清空等），非 search 类型也可用。页面不得再自画搜索图标或外框。
+- **表单自适应**（`forms.css`）：载体内 form/fieldset 隐式列 `minmax(0,1fr)`、直接子项可收缩，零特异性，作者声明的 min-width 仍优先。
+- **FilterBar**（`content.css`）：字段行为 auto-fit 网格（多行时搜索与首行顶对齐、操作贴底）；直接放在背景上的 FilterBar 自带 content 材质与成对前景，在载体内保持扁平。
+- **展开浮层**（`declarative.css`）：`details.lq-disclosure-popover` 贴合触发器，`data-lq-align="end"` 右对齐、`data-lq-placement="top"` 向上；raised 面板在内容载体中仍采样；含打开浮层的载体临时抬升层级，避免被后续面板覆盖。原生 details 的开合、键盘与焦点不变。
+- **页面材质别名**：旧页面面板使用 `--lq-page-content/control/raised`（`pages/page-material.css`），不得再写 `--surface-color`、白色十六进制或私有 `backdrop-filter`。

@@ -7,6 +7,8 @@ import { createDomainModal } from './lq/domain-modal.js';
 const data = window.MANAGE_CLASSES_DATA || {};
 const classes = Array.isArray(data.classes) ? data.classes : [];
 const classMap = new Map(classes.map((item) => [Number(item.id), item]));
+// Newest work first: a class rises when students are imported or it is edited.
+const DEFAULT_SORT = 'recent-desc';
 
 const elements = {
     form: document.getElementById('classCreateForm'),
@@ -171,7 +173,7 @@ function setActiveDepartmentChip(value) {
 }
 
 function compareCards(a, b) {
-    const sortValue = elements.sortSelect?.value || 'department';
+    const sortValue = elements.sortSelect?.value || DEFAULT_SORT;
     const classA = classMap.get(numberValue(a.dataset.classId)) || {};
     const classB = classMap.get(numberValue(b.dataset.classId)) || {};
     if (sortValue === 'students-desc') {
@@ -236,7 +238,7 @@ function resetFilters() {
     if (elements.searchInput) elements.searchInput.value = '';
     if (elements.departmentFilter) elements.departmentFilter.value = 'all';
     if (elements.healthFilter) elements.healthFilter.value = 'all';
-    if (elements.sortSelect) elements.sortSelect.value = 'department';
+    if (elements.sortSelect) elements.sortSelect.value = DEFAULT_SORT;
     // Proxy chip rows (manage_filter_chips.js) mirror the select value and only
     // resync on `change`, so announce the reset before re-filtering.
     [elements.departmentFilter, elements.healthFilter, elements.sortSelect].forEach((select) => {

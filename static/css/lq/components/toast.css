@@ -1,6 +1,9 @@
-/* Notifications are thick glass like dialogs: the stack is capped at three, so
-   the blur cost is bounded, and a plain .78 tint is unreadable on bright photo
-   backdrops (2026-09-27). Ink pairs with the material, never the page theme. */
+/* Notifications are raised glass, the same substance as menus and dialogs:
+   strong fill plus a live thick blur (layers.css owns the blur, the stack is
+   capped at three). The 2026-09-27 note asked for this; a later boundary
+   rule removed the blur and left a .58 tint that was unreadable over text.
+   Ink pairs with the material, never the page theme. The stack starts below
+   a shell topbar so a notice never sits on top of the page's own actions. */
 .lq-toasts {
     position: fixed;
     z-index: var(--ls-z-toast);
@@ -9,12 +12,14 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: min(400px, calc(100vw - 32px));
-    max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    width: min(380px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--lq-toast-top-offset, 0px));
     overflow: auto;
     pointer-events: none;
     overscroll-behavior: contain;
 }
+:root:has(.lq-topbar:not([hidden])) .lq-toasts { --lq-toast-top-offset: calc(var(--ls-s-12) + var(--ls-s-4)); }
+.lq-toasts > .lq-toast { flex: none; }
 .lq-toast {
     display: flex;
     align-items: flex-start;
@@ -22,8 +27,8 @@
     position: relative;
     isolation: isolate;
     min-width: 0;
-    min-height: 48px;
-    padding: 10px 10px 10px 14px;
+    min-height: 56px;
+    padding: 12px 8px 12px 12px;
     border-radius: var(--ls-r-lg);
     pointer-events: auto;
     color: hsl(var(--lq-material-ink, var(--ls-ink)));
@@ -45,28 +50,39 @@
 }
 .lq-toast[hidden] { display: none; }
 .lq-toast[data-ui-overlay-state="closed"] { opacity: 0; transform: translateY(calc(var(--lq-motion-overlay-distance, 24px) / -3)); }
+/* The icon is a small tinted capsule: tone fill and tone ink change as a
+   pair, so the state reads without relying on a coloured glyph on glass. */
 .lq-toast__icon {
+    --lq-toast-tone-soft: var(--ls-tone-info-soft);
+    --lq-toast-tone-fg: var(--ls-tone-info-fg);
     display: inline-flex;
     flex: none;
-    margin-top: 11px;
-    color: hsl(var(--ls-tone-info-fg));
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--ls-r-capsule);
+    background: hsl(var(--lq-toast-tone-soft));
+    color: hsl(var(--lq-toast-tone-fg));
 }
-.lq-toast__icon > .lq-icon { width: 20px; height: 20px; }
-.lq-toast[data-tone="primary"] > .lq-toast__icon { color: hsl(var(--ls-primary)); }
-.lq-toast[data-tone="success"] > .lq-toast__icon { color: hsl(var(--ls-tone-success-fg)); }
-.lq-toast[data-tone="warning"] > .lq-toast__icon { color: hsl(var(--ls-tone-warning-fg)); }
-.lq-toast[data-tone="danger"] > .lq-toast__icon { color: hsl(var(--ls-tone-danger-fg)); }
-.lq-toast[data-tone="neutral"] > .lq-toast__icon { color: hsl(var(--ls-tone-neutral-fg)); }
-.lq-toast__content { flex: 1; min-width: 0; padding-block: 10px; }
-.lq-toast__message { font-size: 14px; line-height: 1.5; font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lq-toast__icon > .lq-icon { width: 18px; height: 18px; }
+.lq-toast[data-tone="primary"] > .lq-toast__icon { --lq-toast-tone-soft: var(--ls-primary-soft); --lq-toast-tone-fg: var(--ls-on-primary-soft); }
+.lq-toast[data-tone="success"] > .lq-toast__icon { --lq-toast-tone-soft: var(--ls-tone-success-soft); --lq-toast-tone-fg: var(--ls-tone-success-fg); }
+.lq-toast[data-tone="warning"] > .lq-toast__icon { --lq-toast-tone-soft: var(--ls-tone-warning-soft); --lq-toast-tone-fg: var(--ls-tone-warning-fg); }
+.lq-toast[data-tone="danger"] > .lq-toast__icon { --lq-toast-tone-soft: var(--ls-tone-danger-soft); --lq-toast-tone-fg: var(--ls-tone-danger-fg); }
+.lq-toast[data-tone="neutral"] > .lq-toast__icon { --lq-toast-tone-soft: var(--ls-tone-neutral-soft); --lq-toast-tone-fg: var(--ls-tone-neutral-fg); }
+.lq-toast__content { flex: 1; min-width: 0; padding-block: 5px; align-self: center; }
+.lq-toast__message { color: hsl(var(--lq-material-ink, var(--ls-ink))); font-size: 14px; line-height: 1.55; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lq-toast__content > .lq-btn { margin-top: 4px; min-height: 32px; max-width: 100%; white-space: normal; }
-.lq-toast__close { flex: none; min-width: 44px; min-height: 44px; }
+.lq-toast__close.lq-btn { --lq-btn-height: 32px; flex: none; align-self: flex-start; min-width: 32px; }
 .lq-toast-fallback { position: fixed; inset: 16px 16px auto auto; z-index: var(--ls-z-toast); max-width: min(400px, calc(100vw - 32px)); padding: 16px; background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); overflow-wrap: anywhere; }
 .lq-toast-fallback > button { display: block; min-height: 44px; margin-block-start: 8px; }
 @media (max-width: 640px) {
     .lq-toasts { inset-inline: 12px; width: auto; }
+    :root:has(.lq-topbar:not([hidden])) .lq-toasts { --lq-toast-top-offset: var(--ls-s-12); }
     .lq-toast__content > .lq-btn { min-height: 44px; }
 }
+@media (pointer: coarse) { .lq-toast__close.lq-btn { min-width: 44px; min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .lq-toast { transition: none; } }
 /* The opt-outs materials.css spells out for .lq-glass, restated for this
    .lq-surface host so a toast goes opaque with everything else. */

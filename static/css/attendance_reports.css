@@ -3,3 +3,25 @@
 @media(max-width:640px){.att-filters{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px;gap:10px}.att-list-head{align-items:flex-start}.att-list-head p{font-size:13px}.att-sort{max-width:145px;flex-direction:column;align-items:stretch!important}.att-card,.att-source-box{padding:16px}.att-detail-title{font-size:20px}.att-pagination{justify-content:center;gap:8px}.att-list-table thead{display:none}.att-list-table,.att-list-table tbody,.att-list-table tr,.att-list-table td{display:block;width:100%}.att-list-table tr{padding:14px;border-bottom:1px solid var(--att-line)}.att-list-table td{border:0;padding:5px 0}.att-list-table td[data-label]::before{content:attr(data-label) ' · ';color:var(--att-muted);font-size:12px}.att-dialog{width:100vw;max-width:100vw;max-height:100dvh;height:100dvh;margin:0;border-radius:0;padding:16px}.att-dialog--small{width:min(440px,94vw);max-width:94vw;height:auto;margin:auto;border-radius:15px}.att-evidence-layout{grid-template-columns:1fr}.att-evidence-preview iframe{height:42dvh}.att-matrix :is(th,td):first-child{min-width:130px;max-width:165px}.att-table :is(th,td){padding:10px}.att-source-form{grid-template-columns:1fr}.att-source-form .att-wide{grid-column:auto}.att-toolbar{gap:9px}.att-metric{padding:14px}.att-metric strong{font-size:23px}}
 @media(prefers-reduced-motion:reduce){.att *,.att-classroom *{scroll-behavior:auto!important}}
 .att .att-btn--text{border:0;background:transparent;padding:4px 0;min-height:28px;color:var(--att-accent);font-size:12px;box-shadow:none}.att [data-att-identity-review-fields]{display:grid;gap:12px}.att [data-att-cell-review-fields]{display:grid;gap:12px}
+
+/* LQ adapter (2026-10-13). Panels (filters, tables, cards, metrics, empty and
+   source boxes) are Surface components in markup and take the shared glass
+   paint; this page CSS keeps only layout. The hard-coded light hex pairs below
+   are remapped to the shared tone fill/ink pairs so states stay readable in
+   both appearances and on glass. */
+.att :is(input,select,textarea),.att-classroom :is(input,select,textarea){background:hsl(var(--lq-control-fill,var(--ls-glass-fill-control)))}
+.att-btn--danger{color:hsl(var(--ls-tone-danger-fg))}
+.att-chip,.att-badge,.att-badge--muted{background:hsl(var(--ls-tone-neutral-soft));color:hsl(var(--ls-tone-neutral-fg))}
+.att-badge--good{background:hsl(var(--ls-tone-success-soft));color:hsl(var(--ls-tone-success-fg))}
+.att-badge--warn{background:hsl(var(--ls-tone-warning-soft));color:hsl(var(--ls-tone-warning-fg))}
+.att-badge--error{background:hsl(var(--ls-tone-danger-soft));color:hsl(var(--ls-tone-danger-fg))}
+.att-notice[data-kind=error]{background:hsl(var(--ls-tone-danger-soft));border-color:hsl(var(--ls-tone-danger-fg)/.4);color:hsl(var(--ls-tone-danger-fg))}
+.att-tabs{background:hsl(var(--ls-glass-fill-inset))}
+.att-table th,.att-matrix th:first-child{background:hsl(var(--ls-surface-2))}
+.att-matrix :is(th,td):first-child{background:hsl(var(--ls-surface-1))}
+.att-status-CHECKED{color:hsl(var(--ls-tone-success-fg));background:hsl(var(--ls-tone-success-soft))}
+.att-status-UNCHECKED{color:hsl(var(--ls-tone-danger-fg));background:hsl(var(--ls-tone-danger-soft))}
+.att-status-SICK_LEAVE,.att-status-PERSONAL_LEAVE{color:hsl(var(--ls-tone-warning-fg));background:hsl(var(--ls-tone-warning-soft))}
+.att-status-UNKNOWN,.att-quality-conflict{color:hsl(var(--ls-tone-warning-fg));background:hsl(var(--ls-tone-warning-soft));border-color:hsl(var(--ls-tone-warning-fg)/.6)}
+.att-status-LATE_OR_EARLY{color:hsl(var(--ls-tone-info-fg));background:hsl(var(--ls-tone-info-soft))}
+.att-source-box{border-color:hsl(var(--ls-glass-line))}

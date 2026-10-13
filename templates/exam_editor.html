@@ -826,8 +826,8 @@
                 const stateKey = scoringQuestionState(q);
                 const isActive = idx === activeScoringIndex;
                 return `
-                    <button data-lq-component="button" type="button"
-                            class="lq-btn lq-btn--sm lq-btn--glass scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                    <button data-lq-component="choice" data-lq-shape="surface" type="button"
+                            class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}"
                             data-action="select-scoring-question"
                             data-scoring-index="${idx}"
                             aria-current="${isActive ? 'true' : 'false'}"

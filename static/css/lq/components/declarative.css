@@ -52,6 +52,45 @@
     outline: 2px solid hsl(var(--ls-ring));
     outline-offset: 2px;
 }
+/* Disclosure popover template (2026-10-13). A native <details> whose panel
+ * floats is anchored to its own summary: the details shrinks to the trigger
+ * and the panel aligns with the trigger's start edge, or its end edge with
+ * data-lq-align="end"; data-lq-placement="top" opens upward. Before this a
+ * full-width details pinned the panel to the far edge of the row, away from
+ * the button that opened it. The browser keeps open state, keyboard and focus.
+ * The panel is a raised layer that is not portalled, so it keeps its own
+ * sampling even inside a content carrier; otherwise page text bleeds through. */
+:root details.lq-disclosure-popover { position: relative; display: inline-block; width: fit-content; max-width: 100%; vertical-align: top; }
+:root details.lq-disclosure-popover[open] { z-index: var(--ls-z-popover); }
+:root details.lq-disclosure-popover > :not(summary) {
+    position: absolute;
+    z-index: var(--ls-z-popover);
+    top: calc(100% + var(--ls-s-2));
+    bottom: auto;
+    inset-inline: 0 auto;
+    max-width: min(360px, calc(100vw - 32px));
+}
+:root details.lq-disclosure-popover[data-lq-align="end"] > :not(summary) { inset-inline: auto 0; }
+:root details.lq-disclosure-popover[data-lq-placement="top"] > :not(summary) { top: auto; bottom: calc(100% + var(--ls-s-2)); }
+/* Carriers isolate their own stacking context, so a later sibling panel would
+   paint over the open panel. Lift only the carriers that hold an open one. */
+:root :is(.lq-surface, .lq-glass, [data-lq-material], [data-lq-component="surface"]):has(details.lq-disclosure-popover[open]) {
+    position: relative;
+    z-index: var(--ls-z-raised);
+}
+/* Panel copy follows the raised material's ink pair, not legacy greys. */
+:root details.lq-disclosure-popover > [data-lq-material="raised"] { color: hsl(var(--lq-material-ink)); }
+:root details.lq-disclosure-popover > [data-lq-material="raised"] :where(small, p) { color: hsl(var(--lq-material-muted)); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"]) details.lq-disclosure-popover[open] > [data-lq-material="raised"] {
+        -webkit-backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate)) !important;
+        backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate)) !important;
+    }
+}
+@media (max-width: 640px) {
+    :root details.lq-disclosure-popover { width: 100%; }
+    :root details.lq-disclosure-popover > :not(summary) { inset-inline: 0; width: auto; max-width: none; }
+}
 /* Compound controls keep their content-driven geometry. This is a named
  * variant of Button, not a button-shaped card with a second material. */
 .lq-domain-choice {
@@ -61,6 +100,28 @@
     white-space: normal;
     border-radius: var(--ls-r-md);
 }
+/* Choice card template (2026-10-13). A choice that carries a title, meta and
+ * badges is a block: it declares data-lq-shape="surface" so the capsule
+ * geometry never wraps multi-line content, and its selected/pressed state is
+ * the soft primary pair with a primary edge -- the same pair as a selected
+ * Surface -- instead of a solid primary slab. Layout stays with the consumer
+ * (several are registered grids). A ghost choice is the clickable
+ * body of a selectable Surface (data-lq-selected); that Surface paints the
+ * selection, so the choice itself stays clear in every state. */
+:root .lq-domain-choice:is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], .is-active, :active):not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    --lq-control-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--ls-on-primary-soft));
+    --lq-control-border: hsl(var(--ls-primary));
+}
+:root .lq-domain-choice.lq-btn--ghost:is(*, [aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], .is-active, :active):not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    --lq-control-background: transparent;
+    --lq-control-border: transparent;
+    --lq-control-color: currentColor;
+    --lq-ctrl-rim: 0 0 transparent;
+    --lq-ctrl-glow: 0 0 transparent;
+    --lq-ctrl-elev: 0 0 transparent;
+}
+:root [data-lq-selected="true"] > .lq-domain-choice.lq-btn--ghost { color: hsl(var(--ls-on-primary-soft)); }
 [data-lq-component="surface"].lq-surface:not([data-lq-material="raised"], [data-lq-visual="category"]) {
     /* A selected parent must not tint an unselected nested surface. */
     --lq-surface-background: hsl(var(--lq-material-fill));

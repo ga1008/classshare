@@ -214,7 +214,8 @@ test.describe('LQ S8 overlay material', () => {
     expect(seen.tooltip.border).toEqual(seen.menu.border);
     expect(seen.tooltip.shadow).not.toEqual(seen.menu.shadow);
     expect(seen.tooltip.blurred).toBe(false);
-    expect(seen.toast.blurred).toBe(false);
+    // Toasts sample like menus: a capped stack of three raised hosts.
+    expect(seen.toast.blurred).toBe(true);
     // Fill: every layer lands on the same raised colour.
     expect(seen.menu.background).toEqual(seen.modal.background);
     expect(seen.toast.background).toEqual(seen.modal.background);

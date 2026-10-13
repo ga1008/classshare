@@ -1,0 +1,85 @@
+/* Search field template (2026-10-13).
+ *
+ * One search box everywhere. The native search input is the single capsule:
+ * it owns the fill, rim, focus ring, value and -- as the first layer of its
+ * shared control paint -- the magnifier. Every `.lq-input[type="search"]`
+ * therefore looks the same whether it comes from a Jinja macro, lq_field,
+ * lq_filter_bar, a legacy template or a JS-rendered list, with no wrapper
+ * required. Before this there were nine hand-made variants: wrappers drawing
+ * a second box around the shared capsule, icons the placeholder ran under,
+ * and searches with no icon at all.
+ *
+ * Optional wrapper for a trailing action (clear, scope) or a non-search type:
+ *
+ *   <label class="lq-search" for="q">
+ *     <input data-lq-component="input" class="lq-input" type="search" id="q">
+ *     <button class="lq-btn lq-btn--sm lq-btn--ghost lq-search__end">清空</button>
+ *   </label>
+ *
+ * The wrapper paints nothing. Legacy wrapper classes may stay as layout hooks
+ * (flex basis, width); the paint resets are !important because those page
+ * rules load after LQ. Pages must not add their own search icon.
+ */
+:root :is(.lq-input[type="search"], .lq-search > input.lq-input) {
+    --lq-search-icon-size: 18px;
+    --lq-search-inset: var(--ls-s-4);
+    --lq-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23596579' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7.5'/%3E%3Cpath d='m20.5 20.5-4.2-4.2'/%3E%3C/svg%3E");
+    --lq-control-background: var(--lq-search-glyph) left var(--lq-search-inset) center / var(--lq-search-icon-size) var(--lq-search-icon-size) no-repeat,
+        hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    background: var(--lq-control-background);
+    min-width: 0;
+    min-height: calc(var(--ls-s-10) + var(--ls-s-1) / 2);
+    padding-inline-start: calc(var(--lq-search-inset) + var(--lq-search-icon-size) + var(--ls-s-2));
+    border-radius: var(--ls-r-capsule);
+}
+/* The glyph is an image, so its ink is paired per appearance/tone here. */
+:root[data-appearance="dark"] :is(.lq-input[type="search"], .lq-search > input.lq-input),
+[data-lq-tone="dark"] :is(.lq-input[type="search"], .lq-search > input.lq-input) {
+    --lq-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aab4c4' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7.5'/%3E%3Cpath d='m20.5 20.5-4.2-4.2'/%3E%3C/svg%3E");
+}
+[data-lq-tone="light"] :is(.lq-input[type="search"], .lq-search > input.lq-input) {
+    --lq-search-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23596579' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7.5'/%3E%3Cpath d='m20.5 20.5-4.2-4.2'/%3E%3C/svg%3E");
+}
+:root .lq-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: var(--ls-r-capsule);
+    background: none !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root .lq-search > input.lq-input {
+    flex: 1 1 auto;
+    width: 100%;
+    margin: 0;
+}
+/* Optional trailing action. It sits inside the capsule end and the input
+   reserves its width only while the action is shown. */
+:root .lq-search > :is(.lq-search__end, .lq-btn) {
+    position: absolute;
+    z-index: 1;
+    inset-inline-end: var(--ls-s-1);
+    top: 50%;
+    min-height: 0;
+    /* translate composes with the shared hover/press transform. */
+    translate: 0 -50%;
+}
+:root .lq-search:has(> :is(.lq-search__end, .lq-btn):not([hidden], [style*="display: none"], [style*="display:none"])) > input.lq-input {
+    padding-inline-end: calc(var(--ls-s-16) + var(--ls-s-2));
+}
+/* Touch keeps the shared 44px target floor. */
+@media (pointer: coarse) {
+    :root :is(.lq-input[type="search"], .lq-search > input.lq-input) { min-height: 44px; }
+}
+@media (forced-colors: active) {
+    :root :is(.lq-input[type="search"], .lq-search > input.lq-input) { --lq-search-glyph: none; padding-inline-start: var(--ls-s-3); }
+}
+@media print {
+    :root :is(.lq-input[type="search"], .lq-search > input.lq-input) { --lq-search-glyph: none; }
+}

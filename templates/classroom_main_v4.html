@@ -210,7 +210,7 @@
                     <div class="teaching-session-modal-body">
                         <p class="cw-session-detail-meta" id="cw-session-detail-meta"></p>
                         <div class="teaching-session-modal-summary md-content" id="teachingSessionModalSummary"></div>
-                        {% if user_info.role == 'teacher' %}<details class="cw-session-management"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
+                        {% if user_info.role == 'teacher' %}<details class="cw-session-management lq-disclosure-popover" data-lq-align="end"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
                                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="teachingTimelineSelectHomeMaterialBtn" data-cw-external-modal>
                                             添加首页材料
                                         </button>

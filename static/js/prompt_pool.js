@@ -168,10 +168,10 @@ function renderPanel(panel, items, { loading = false, query = '', activeIndex = 
                 const optionId = `${panel.id}-option-${index}`;
                 const prompt = normalizePrompt(item.prompt);
                 return `
-                    <button data-lq-component="button"
+                    <button data-lq-component="choice" data-lq-shape="surface"
                         type="button"
                         id="${optionId}"
-                        class="lq-btn lq-btn--sm lq-btn--glass prompt-pool-item${isActive ? ' is-active' : ''}"
+                        class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice prompt-pool-item${isActive ? ' is-active' : ''}"
                         data-prompt-pool-use-index="${index}"
                         role="option"
                         aria-selected="${isActive ? 'true' : 'false'}"

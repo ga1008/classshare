@@ -140,7 +140,7 @@
         <div class="ls-empty"><h3>{{ dashboard_empty_state.title }}</h3><p>{{ dashboard_empty_state.description }}</p><a data-lq-component="button" href="{{ dashboard_empty_state.action_href }}" class="lq-btn lq-btn--sm ls-button ls-button-primary lq-btn--prominent">{{ dashboard_empty_state.action_label }}</a>{% if dashboard_empty_state.steps %}<details class="ls-empty-help"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">如何开始</summary>{% for step in dashboard_empty_state.steps %}<p>{{ step.description }}{% if step.href and step.label %}<a href="{{ step.href }}">{{ step.label }}</a>{% endif %}</p>{% endfor %}</details>{% endif %}</div>
         {% endif %}
         {% set evaluation_sync = dashboard_academic_evaluation_sync|default({}) %}
-        <details data-lq-component="region" class="lq-domain-region dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
+        <details data-lq-component="region" class="lq-domain-region lq-disclosure-popover dashboard-evaluation-menu{% if evaluation_sync.is_running %} is-syncing{% endif %}" data-academic-evaluation-sync-panel>
             <summary data-lq-component="disclosure" class="lq-disclosure-trigger dashboard-evaluation-menu__trigger" aria-label="教学评价同步与设置">
                 <span class="dashboard-evaluation-menu__icon" aria-hidden="true"><i></i><i></i><i></i></span>
                 <span data-academic-evaluation-sync-trigger-label>评价</span>

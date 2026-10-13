@@ -247,10 +247,11 @@ test('S4 F classes: lq-chip-row proxies the three real selects and resets with t
   // "清除筛选" sets the select values directly; the chips must follow.
   await page.locator('#classFilterResetBtn').click();
   await expect(page.locator('#classHealthFilter')).toHaveValue('all');
-  await expect(page.locator('#classSortSelect')).toHaveValue('department');
+  // Default sort is newest imported/edited first (2026-10-13).
+  await expect(page.locator('#classSortSelect')).toHaveValue('recent-desc');
   await expect(page.locator('#classDepartmentFilter')).toHaveValue('all');
   await expect(page.locator('#classHealthChips button.lq-chip--filter[data-value="all"]')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#classSortChips button.lq-chip--filter[data-value="department"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#classSortChips button.lq-chip--filter[data-value="recent-desc"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#classDepartmentChips button.lq-chip--filter[data-value="all"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(deptChip).toHaveAttribute('aria-pressed', 'false');
 });

@@ -179,10 +179,13 @@
 /* 这是个真的浮层，按 raised 走，和 lq-menu 同级。 */
 [data-lq-dashboard] .dashboard-evaluation-menu__popover {
     border-radius: var(--ls-r-lg);
-    border: 1px solid hsl(var(--ls-line));
+    border: 1px solid hsl(var(--ls-glass-line));
     background: hsl(var(--lq-page-raised));
-    box-shadow: var(--ls-shadow-3);
+    box-shadow: var(--ls-glass-shadow-strong);
 }
+/* Copy pairs with the raised fill (legacy gray-400/500 failed on glass). */
+:root .dashboard-evaluation-menu__popover strong { color: hsl(var(--lq-material-ink, var(--ls-ink))); }
+:root .dashboard-evaluation-menu__popover :is(small, p) { color: hsl(var(--lq-material-muted, var(--ls-ink-2))); border-top-color: hsl(var(--ls-glass-line)); }
 
 /* -- 课堂工具行: frozen `filter_bar` component ---------------------------
    The <form> is now the component root (.lq-filter-bar), so the legacy

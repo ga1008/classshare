@@ -52,11 +52,13 @@ adoptDomainControl(existingInput, { kind: 'input' });
 
 平台选择列表声明 `data-lq-dropdown`，由共享 Dropdown 呈现；原生 select 继续独占值、表单与校验。已有 Selection 或筛选代理的作者入口标记 `data-lq-selection-owner`，React 等显式生命周期标记 `data-lq-dropdown-manual`，同一 select 只能有一个呈现所有者；动态领域 owner 调用 `enhanceDropdowns(root)`，不自行实现第二套下拉。
 
-复合选择卡使用 `kind='choice'` 和作者内容槽；原 `aria-pressed/selected` 与领域选择状态保持一致。颜色样本使用 `data-lq-visual='color'`，其颜色是用户数据，不能被普通玻璃 fill 覆盖。普通动态标签按钮应由当前子文本命名，不能把初次标签永久写入 aria-label；纯图标按钮必须提供稳定而准确的名称。
+复合选择卡使用 `kind='choice'` 和作者内容槽，并声明 `data-lq-shape="surface"`，不得用胶囊包裹多行内容；原 `aria-pressed/selected` 与领域选择状态保持一致。颜色样本使用 `data-lq-visual='color'`，其颜色是用户数据，不能被普通玻璃 fill 覆盖。普通动态标签按钮应由当前子文本命名，不能把初次标签永久写入 aria-label；纯图标按钮必须提供稳定而准确的名称。
 
 领域已有选中状态的 Surface 用 `data-lq-selected="true"` 选择共享填充、配对前景和边界，取消选择时移除此属性。业务控制器仍负责真实选择状态，组件不额外绑定点击或键盘事件；旧 `is-active` 类保留并不自动证明选中态仍可辨认。透明关闭时保留不透明背景，通过边界与文字继续区分选择。
 
 浮动操作入口复用 `.lq-fab` 的定位与 slot 合同。底部 dock 的实际占用高度由共享 `enhanceDock` 测量；FAB 在其他 DOM 分支时通过 `floatingRoot` 发布同一高度令牌，销毁时还原。禁止另做一个 resize/scroll 测量循环，也不能以固定 bottom 覆盖 dock 避让；无 dock 页面及阅读器的既有安全边距通过共享定位变量表达。
+
+搜索输入一律使用 `type="search"` 的共享 Input（图标由组件绘制），包装层只用 `.lq-search` 提供尾部槽；浮动的原生 details 面板使用 `lq-disclosure-popover` 贴合触发器。见 [2026-10-13 模板增补](lq-ui-template-sweep-2026-10-13.md)。
 
 原生文件/颜色对话框由浏览器/系统管理；不得伪装输入值或为统一外观破坏键盘、表单和操作系统能力。原生 details/summary 保留浏览器的展开、焦点和键盘行为。
 

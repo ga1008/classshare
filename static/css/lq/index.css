@@ -9,6 +9,7 @@
 @import "./components/skeleton.css";
 @import "./components/layers.css";
 @import "./components/forms.css";
+@import "./components/search.css";
 @import "./components/navigation.css";
 @import "./components/dialogs.css";
 @import "./components/collapsible.css";

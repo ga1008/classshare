@@ -1412,7 +1412,7 @@
           },
           {
             "path": "templates/dashboard.html",
-            "sha256": "eef595e3ca4a8747c94010397820dfe925558d58211587d927bca0d39761a31e",
+            "sha256": "a9d388c2e8864cbe76fce2304a546b17a24af50b2aa64aeeefdfac5ffcdd8221",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted. 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted. Reviewed final outer content Surface fallback md inset; existing responsive Collapsible family and content slots unchanged.",
             "tests": [
               "tests/test_lq_navbar_shell.py",
@@ -7201,7 +7201,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/classes.html",
-            "sha256": "584f2ffb13d7205881082f3a590fc31237ad994b321a30d8f60a56ad2077efa4",
+            "sha256": "37491248f353ee7cefb09a9a2aaf08f168f511eaace9b69b40f339cb25c07236",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -7669,7 +7669,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/courses.html",
-            "sha256": "f5dae1dfb587994eb9ead792fb597e57a05f7123861d73e907a0833f45e5de3b",
+            "sha256": "8cc5c5abbd039355e9244fbb554d2a95f39b35ceea5eacec4b1e8361ef9e4651",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -8158,7 +8158,7 @@
           },
           {
             "path": "templates/dashboard_teacher.html",
-            "sha256": "de2e9b9d7ee87a043d74cbc368e09ced608890ede2720d895e0a328b66f75276",
+            "sha256": "a4f3cf71ab8b91bb1d7fada47fce3d3c5d0b3b930134d4e0354916eaefc57e51",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：仅新增共享呈现声明，保留 Jinja 角色权限、URL、表单字段、disclosure 原生节点与事件钩子；navbar SSR 11 项及 report-card SSR 5 项通过。本轮不据源码声明升级整页验收状态。 2026-09-27 dashboard declaration review: class/data-lq attributes only; Jinja control flow, IDs, URLs, hooks and child nodes unchanged. Navbar SSR 11, manage SSR 11 and source/partial guards 16 passed. Evidence: docs/lq-dashboard-source-review-2026-09-27.json. No acceptance status promoted. 2026-10-08 source and SSR re-review: shared NavMenu replaces the private details menu owner; role permissions, native actions and all unrelated business hooks retained. Evidence: docs/lq-interface-source-review-2026-10-08.json. No acceptance status promoted. 2026-10-08: reviewed shared Surface/Button adoption in both existing feature states; native links, filters, role branches and business owners retained. Reviewed final outer content Surface fallback md inset; existing responsive Collapsible family and content slots unchanged.",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -10305,7 +10305,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/offering_hub.html",
-            "sha256": "056c53caba378bbfefbc8d5a6c2f95466f8abef3c376ed475cc1cfec5e61fd02",
+            "sha256": "f3a1c1fd1afc150f0cdbddd3ff2a6cd7d785383ba4efe3edeef6c5428e5fd423",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -11190,7 +11190,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/semesters.html",
-            "sha256": "ce2f77a9295c07de0f4374a49552e02cfe23db6503cdc1c41ec9f925c429c3c0",
+            "sha256": "a058902d0093b40885ffd76972547b6be49643cde299625a878c2dcba3e57d75",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -13184,7 +13184,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/textbooks.html",
-            "sha256": "d64417b9f3ba2711319647bddfa263b3b19e6ce2e94ce0471c46210636eaefa1",
+            "sha256": "7ba65db3902fdc67919d62fbd964491eac2860d64553a320d18a32a92d9a2748",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",

@@ -12,11 +12,11 @@
     <div class="att-notice" data-att-notice role="status" aria-live="polite" hidden></div>
     <div data-att-list-view>
         <div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar">
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn att-btn--primary" type="button" data-att-action="open-source">从智慧课堂导出</button>
+            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--prominent att-btn att-btn--primary" type="button" data-att-action="open-source">从智慧课堂导出</button>
             <span class="att-muted">后台处理，离开页面后继续运行</span>
         </div>
     {% if _attendance_reports_lq_enabled %}
-        <form class="att-filters" data-att-filters role="search">
+        <form data-lq-component="surface" class="lq-surface att-filters" data-att-filters role="search">
             {{ lq_field('attFilterYear', '学年', control='select', name='year', options=[{'value': '', 'label': '全部学年'}]) }}
             {{ lq_field('attFilterTerm', '学期', control='select', name='term', options=[{'value': '', 'label': '全部学期'}, {'value': '1', 'label': '第一学期'}, {'value': '2', 'label': '第二学期'}]) }}
             {{ lq_field('attFilterCourse', '课程', control='select', name='course', options=[{'value': '', 'label': '全部课程'}]) }}
@@ -30,7 +30,7 @@
             <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="reset">重置</button>
         </form>
     {% else %}
-        <form class="att-filters" data-att-filters role="search">
+        <form data-lq-component="surface" class="lq-surface att-filters" data-att-filters role="search">
             <label>学年<select data-lq-dropdown data-lq-component="select" class="lq-select" name="year" aria-label="学年"><option value="">全部学年</option></select></label>
             <label>学期<select data-lq-dropdown data-lq-component="select" class="lq-select" name="term" aria-label="学期"><option value="">全部学期</option><option value="1">第一学期</option><option value="2">第二学期</option></select></label>
             <label>课程<select data-lq-dropdown data-lq-component="select" class="lq-select" name="course" aria-label="课程"><option value="">全部课程</option></select></label>
@@ -76,7 +76,7 @@
         </div>
         <div id="att-review" role="tabpanel" aria-labelledby="att-tab-review" data-att-panel="review" hidden><div data-att-review-content></div></div>
     </div>
-    <section class="att-source-box" data-att-source-box hidden aria-label="从智慧课堂导出"><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><h3>选择点名来源</h3><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="button" data-att-action="close-source">收起</button></div><div data-att-source-content></div></section>
+    <section data-lq-component="surface" class="lq-surface att-source-box" data-att-source-box hidden aria-label="从智慧课堂导出"><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><h3>选择点名来源</h3><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="button" data-att-action="close-source">收起</button></div><div data-att-source-content></div></section>
     <dialog data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised att-dialog" data-att-evidence-dialog aria-labelledby="att-evidence-title">
         <header data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><div><h3 id="att-evidence-title">原件与核对</h3><p class="att-muted" data-att-evidence-label></p></div><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="button" data-att-action="close-evidence" aria-label="关闭原件核对">关闭</button></header>
         <div class="att-evidence-layout"><div class="att-evidence-preview"><a data-att-evidence-link target="_blank" rel="noopener">在新窗口查看原件</a><iframe title="签到原始 PDF 对应页" data-att-evidence-frame loading="lazy"></iframe></div><form class="att-review-form" data-att-review-form>
@@ -85,10 +85,10 @@
             <label data-att-applicability hidden>不适用证据<textarea data-lq-component="textarea" class="lq-textarea" name="applicability_evidence" rows="3" maxlength="1200" placeholder="说明名册、转入时间或其他适用范围证据"></textarea></label></div>
             <div data-att-identity-review-fields hidden></div>
             <label>核对说明<textarea data-lq-component="textarea" class="lq-textarea" name="reason" rows="4" maxlength="1200" placeholder="说明原件对应文字、差异原因或适用性证据" required></textarea></label>
-            <div class="att-notice" data-att-review-message role="status" hidden></div><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn att-btn--primary" type="submit" data-att-save-review>保存核对</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="button" data-att-action="cancel-review">取消修改</button></div>
+            <div class="att-notice" data-att-review-message role="status" hidden></div><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--prominent att-btn att-btn--primary" type="submit" data-att-save-review>保存核对</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" type="button" data-att-action="cancel-review">取消修改</button></div>
         </form></div>
     </dialog>
-    <dialog data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised att-dialog att-dialog--small" data-att-confirm-dialog aria-labelledby="att-confirm-title"><form method="dialog"><h3 id="att-confirm-title">确认操作</h3><p data-att-confirm-copy></p><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn att-btn--primary" value="confirm">确认</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" value="cancel">取消</button></div></form></dialog>
+    <dialog data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised att-dialog att-dialog--small" data-att-confirm-dialog aria-labelledby="att-confirm-title"><form method="dialog"><h3 id="att-confirm-title">确认操作</h3><p data-att-confirm-copy></p><div data-lq-component="toolbar" class="lq-domain-toolbar att-toolbar"><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--prominent att-btn att-btn--primary" value="confirm">确认</button><button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass att-btn" value="cancel">取消</button></div></form></dialog>
 </section>
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/attendance_reports.js') }}"></script>{% endblock %}

@@ -249,9 +249,9 @@ if (modal) {
             `<span class="onboarding-badge ${escapeHtml(badge.className || '')}">${escapeHtml(badge.label || badge)}</span>`
         )).join('');
         return `
-            <button data-lq-component="button"
+            <button data-lq-component="choice" data-lq-shape="surface"
                 type="button"
-                class="lq-btn lq-btn--sm lq-btn--glass onboarding-option-card${selected ? ' is-selected' : ''}${muted ? ' is-muted' : ''}${extraClass ? ` ${escapeHtml(extraClass)}` : ''}"
+                class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice onboarding-option-card${selected ? ' is-selected' : ''}${muted ? ' is-muted' : ''}${extraClass ? ` ${escapeHtml(extraClass)}` : ''}"
                 data-select-id="${escapeHtml(id)}"
             >
                 <strong>${escapeHtml(title)}</strong>
@@ -873,8 +873,8 @@ if (modal) {
             const stateKey = lessonCompletionState(lesson);
             const isActive = index === activeLessonIndex;
             return `
-                <button data-lq-component="button" type="button"
-                        class="lq-btn lq-btn--sm lq-btn--glass onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}"
+                <button data-lq-component="choice" data-lq-shape="surface" type="button"
+                        class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice onboarding-lesson-tab is-${stateKey}${isActive ? ' is-active' : ''}"
                         data-action="select-lesson"
                         data-lesson-index="${index}"
                         aria-current="${isActive ? 'true' : 'false'}">

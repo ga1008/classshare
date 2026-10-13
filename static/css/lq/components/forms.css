@@ -4,6 +4,13 @@
    tests/test_lq_tokens.py::GlassMaterialContrastTests guarantees at 4.5:1 on
    --ls-glass-fill-control over both extremes of the page backdrop. */
 .lq-field { display: grid; gap: var(--ls-s-1); min-width: 0; width: 100%; --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color); font-family: var(--ls-font-sans); }
+/* Form auto-fit (2026-10-13). Inside a card a form column is never wider than
+   the card: implicit grid tracks are minmax(0,1fr) and direct children may
+   shrink, so a long selected option, a textarea or a row of actions wraps or
+   truncates instead of widening the column and being clipped at the edge.
+   Zero specificity: any authored min-width (buttons, chips) still wins. */
+:where(.lq-surface, .lq-card, [data-lq-material]) :where(form, fieldset) { min-width: 0; max-width: 100%; grid-auto-columns: minmax(0, 1fr); }
+:where(.lq-surface, .lq-card, [data-lq-material]) :where(form, fieldset) > :where(*) { min-width: 0; }
 .lq-field__label { color: hsl(var(--lq-control-ink, var(--ls-ink-2))); font-size: var(--ls-t-sub); line-height: var(--ls-leading-sub); font-weight: var(--ls-weight-title3); overflow-wrap: anywhere; }
 .lq-field__required { color: hsl(var(--ls-tone-danger-fg)); }
 .lq-field__control { display: flex; align-items: center; gap: var(--ls-s-2); min-width: 0; }

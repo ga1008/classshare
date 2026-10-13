@@ -187,7 +187,7 @@ function initTeacherExamRoster(config = window.APP_CONFIG || {}) {
             return;
         }
         placeResultsEl.innerHTML = items.map((place) => `
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass learning-exam-place-option" data-place-key="${escapeHtml(place.place_key || '')}" data-place-id="${escapeHtml(place.place_id || '')}" data-place-label="${escapeHtml(place.display_name || '')}">
+            <button data-lq-component="choice" data-lq-shape="surface" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice learning-exam-place-option" data-place-key="${escapeHtml(place.place_key || '')}" data-place-id="${escapeHtml(place.place_id || '')}" data-place-label="${escapeHtml(place.display_name || '')}">
                 <strong>${escapeHtml(place.display_name || place.room_name || place.room_code || '')}</strong>
                 <span>${escapeHtml(formatPlaceMeta(place))}</span>
             </button>

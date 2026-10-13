@@ -53,7 +53,6 @@ function buildOverlay() {
     </style>
     <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised global-search-panel" role="dialog" aria-modal="true" aria-label="全局搜索">
       <div class="global-search-input-row">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input data-lq-component="input" class="lq-input" type="search" placeholder="搜索课堂、材料、作业考试、博客…" data-global-search-input autocomplete="off">
         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost global-search-close" data-global-search-close>Esc 关闭</button>
       </div>

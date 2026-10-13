@@ -6,9 +6,9 @@
 <ul class="wrong-answer-list">
     {% for wrong in item.top_wrong_answers %}
     <li>
-        <button data-lq-component="button"
+        <button data-lq-component="choice" data-lq-shape="surface"
             type="button"
-            class="lq-btn lq-btn--sm lq-btn--glass wrong-answer-item"
+            class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice wrong-answer-item"
             data-wrong-answer-group
             data-detail-title="{{ wrong.label }}"
             data-detail-count="{{ wrong.count }}"
@@ -1681,9 +1681,9 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <button data-lq-component="button"
+                                <button data-lq-component="choice" data-lq-shape="surface"
                                     type="button"
-                                    class="lq-btn lq-btn--sm lq-btn--glass wrong-option-stat is-{{ option.tone }}"
+                                    class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice wrong-option-stat is-{{ option.tone }}"
                                     style="--option-percent: {{ option.percent }}%;"
                                     data-wrong-answer-group
                                     data-detail-title="{{ option.label }}"
@@ -1817,9 +1817,9 @@
                             {% if item.option_bars %}
                             <div class="wrong-option-stat-list" aria-label="选项选择统计">
                                 {% for option in item.option_bars %}
-                                <button data-lq-component="button"
+                                <button data-lq-component="choice" data-lq-shape="surface"
                                     type="button"
-                                    class="lq-btn lq-btn--sm lq-btn--glass wrong-option-stat is-{{ option.tone }}"
+                                    class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice wrong-option-stat is-{{ option.tone }}"
                                     style="--option-percent: {{ option.percent }}%;"
                                     data-wrong-answer-group
                                     data-detail-title="{{ option.label }}"

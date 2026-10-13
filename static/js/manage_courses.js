@@ -230,8 +230,8 @@ function syncLessonWorkbench() {
         const state = lessonCompletionState(row);
         const isActive = index === activeLessonIndex;
         return `
-            <button data-lq-component="button" type="button"
-                    class="lq-btn lq-btn--sm lq-btn--glass course-lesson-nav-item is-${state}${isActive ? ' is-active' : ''}"
+            <button data-lq-component="choice" data-lq-shape="surface" type="button"
+                    class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice course-lesson-nav-item is-${state}${isActive ? ' is-active' : ''}"
                     data-action="select-lesson"
                     data-lesson-index="${index}"
                     aria-current="${isActive ? 'true' : 'false'}">

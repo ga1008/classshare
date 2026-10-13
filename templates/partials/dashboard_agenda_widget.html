@@ -80,9 +80,9 @@
         {% if _scrollable %}tabindex="0" aria-label="待办列表，按时间从近到远排列，可上下滚动查看全部 {{ _reminders|length }} 项"{% endif %}>
         {% for ev in _reminders %}
         <div class="agenda-reminder__entry" role="listitem">
-        <button data-lq-component="button"
+        <button data-lq-component="choice" data-lq-shape="surface"
             type="button"
-            class="lq-btn lq-btn--sm lq-btn--glass agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
+            class="lq-btn lq-btn--sm lq-btn--glass lq-domain-choice agenda-reminder__item is-{{ ev.status }} kind-{{ ev.kind }}{% if loop.first %} is-next{% endif %}"
             aria-haspopup="dialog"
             data-agenda-item
             data-kind="{{ ev.kind }}"

@@ -14,13 +14,7 @@
 
         <div class="materials-library-controls">
             <div data-lq-component="toolbar" class="lq-domain-toolbar materials-filter-toolbar">
-                <label class="materials-search-box" for="materials-search-input">
-                    <span class="materials-search-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="7"></circle>
-                            <path d="m20 20-3.5-3.5"></path>
-                        </svg>
-                    </span>
+                <label class="materials-search-box lq-search" for="materials-search-input">
                     <input data-lq-component="input"
                         type="search"
                         id="materials-search-input"
@@ -29,7 +23,7 @@
                         placeholder="按名称或路径模糊搜索当前范围内的材料"
                         autocomplete="off"
                     >
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="materials-search-clear-btn" hidden>清空</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm lq-search__end" id="materials-search-clear-btn" hidden>清空</button>
                 </label>
                 <button data-lq-component="button"
                     type="button"

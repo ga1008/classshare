@@ -56,7 +56,7 @@
         </div>
 
         <div class="app-topbar-actions app-topbar-actions--utility assignment-topbar-actions assignment-topbar-actions--management" aria-label="作业管理操作">
-            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+            <details data-lq-component="menu" class="lq-domain-region lq-disclosure-popover assignment-more-dropdown" data-lq-align="end">
                 <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-blue" title="筛选提交列表" aria-label="打开筛选菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('file-plus') }}</span>
                     <span class="app-topbar-action__text">
@@ -88,7 +88,7 @@
             </a>
             {% endif %}
 
-            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+            <details data-lq-component="menu" class="lq-domain-region lq-disclosure-popover assignment-more-dropdown" data-lq-align="end">
                 <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-teal" title="批改处理" aria-label="打开批改处理菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('robot') }}</span>
                     <span class="app-topbar-action__text">
@@ -144,7 +144,7 @@
                     <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" type="button" onclick="openCloseAssignmentFromStatus()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 已截止（含缺交记分）</button>
                 </div>
             </div>
-            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+            <details data-lq-component="menu" class="lq-domain-region lq-disclosure-popover assignment-more-dropdown" data-lq-align="end">
                 <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-slate" title="管理作业" aria-label="打开管理作业菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
                     <span class="app-topbar-action__text">
@@ -167,7 +167,7 @@
                 </div>
             </details>
 
-            <details data-lq-component="menu" class="lq-domain-region assignment-more-dropdown">
+            <details data-lq-component="menu" class="lq-domain-region lq-disclosure-popover assignment-more-dropdown" data-lq-align="end">
                 <summary data-lq-component="disclosure" class="lq-disclosure-trigger app-topbar-action app-topbar-action--tone-cyan" title="个人入口" aria-label="打开个人入口菜单">
                     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('message') }}</span>
                     <span class="app-topbar-action__text">

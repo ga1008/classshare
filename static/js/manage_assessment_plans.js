@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-1';
+import { MaterialSelectionPanel } from './material_selection_panel.js?v=material-workflows-2';
 import { showToast, escapeHtml, formatDate } from './ui.js';
 import { openTreeSelectFormModal } from './tree_select_form_modal.js';
 import { enhancePromptPoolInput, recordPromptForInput } from './prompt_pool.js';

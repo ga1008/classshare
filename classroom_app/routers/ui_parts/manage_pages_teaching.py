@@ -9,6 +9,21 @@ from ...services.profile_service import build_profile_page_context
 from .manage_pages_shared import _table_has_column, _password_reset_login_summary_sql, _academic_event_label
 
 
+def _class_recent_activity_at(class_item: dict) -> str:
+    """Latest of student import, class edit and class creation, as a sortable
+    'YYYY-MM-DD HH:MM:SS' string (DB drivers may return ISO 'T' text or datetimes)."""
+    stamps = [
+        str(value).strip().replace("T", " ")[:19]
+        for value in (
+            class_item.get("latest_student_created_at"),
+            class_item.get("updated_at"),
+            class_item.get("created_at"),
+        )
+        if value
+    ]
+    return max(stamps) if stamps else ""
+
+
 router = APIRouter()
 
 
@@ -170,6 +185,10 @@ async def get_manage_classes_page(request: Request, user: dict = Depends(get_cur
                 if class_item["student_count"]
                 else 0
             )
+            class_item["recent_activity_at"] = _class_recent_activity_at(class_item)
+        # Default order: most recently imported or edited first (the page's
+        # default sort; manage_classes.js re-sorts with the same key).
+        my_classes.sort(key=lambda item: item["recent_activity_at"], reverse=True)
         students_by_class = _load_teacher_class_student_rows(
             conn,
             int(user["id"]),

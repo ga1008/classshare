@@ -54,10 +54,11 @@
 }
 
 /* Blur ownership. A layer is a material boundary, so the panels that own the
-   screen host the thick blur. Toasts stack without bound and a tooltip is
-   control-sized, so neither earns a compositing layer: they take the raised
-   fill and stop there (see components/toast.css and components/tooltips.css). */
+   screen host the thick blur. The toast stack is capped at three and sits over
+   arbitrary page text, so it samples too; a tooltip is control-sized and does
+   not earn a compositing layer (see components/tooltips.css). */
 .lq-dialog__surface,
-.lq-menu {
+.lq-menu,
+.lq-toast {
     --lq-material-blur: var(--ls-blur-thick);
 }

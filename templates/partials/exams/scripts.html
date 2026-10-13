@@ -266,7 +266,7 @@
     function onSearchInput(el) {
         searchQuery = el.value.trim().toLowerCase();
         const clear = document.getElementById('searchClear');
-        if (clear) clear.style.display = searchQuery ? 'block' : 'none';
+        if (clear) clear.style.display = searchQuery ? 'inline-flex' : 'none';
         applyFilters();
     }
 

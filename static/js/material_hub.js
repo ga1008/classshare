@@ -119,7 +119,7 @@ function renderResults(data) {
     }
 
     resultsBox.innerHTML = groups.map((group) => `
-        <section class="mh-group">
+        <section data-lq-component="surface" class="lq-surface mh-group">
             <div class="mh-group-head">
                 <strong>${escapeHtml(group.label)}</strong>
                 <span class="mh-group-count">${group.truncated ? `显示 ${group.items.length} / ${Number(group.total)}` : group.items.length}</span>

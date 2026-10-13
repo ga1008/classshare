@@ -4,10 +4,12 @@
  * Controls: inherit the containing frost, avoiding a filter per button/row.
  * Keep this after page adapters so their background shorthands cannot erase it.
  */
-/* Canonical content and passive feedback cannot inherit a legacy .card blur
+/* Canonical content and passive hints cannot inherit a legacy .card blur
    or rejoin sampling merely because they also carry .lq-glass. The number of
-   rows/toasts must never determine the number of live filter layers. */
-:root :is(.lq-toast, .lq-tooltip, [data-lq-material="content"], [data-lq-material="control"],
+   rows must never determine the number of live filter layers. Toasts are
+   the exception that samples: the stack is capped at three, and a raised
+   tint without blur is unreadable over busy pages (2026-10-13). */
+:root :is(.lq-tooltip, [data-lq-material="content"], [data-lq-material="control"],
     .lq-surface:not(.lq-glass, [data-lq-material="raised"], [data-lq-material="chrome"], [data-lq-material="clear"])) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
@@ -26,7 +28,7 @@
        accessibility media feature; explicit opt-outs below win with important. */
     @media screen {
         :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"])
-        :is(.lq-glass:not(.lq-tooltip, .lq-toast), [data-lq-material="chrome"], [data-lq-material="raised"], [data-lq-material="clear"]) {
+        :is(.lq-glass:not(.lq-tooltip), [data-lq-material="chrome"], [data-lq-material="raised"], [data-lq-material="clear"]) {
             background-color: hsl(var(--lq-material-fill, var(--ls-glass-fill)));
             background-image: var(--ls-glass-sheen);
             background-attachment: scroll;
