@@ -57,7 +57,7 @@ export function insightProps(kind, p = {}) {
         ]);
     }
     const shared = [...common, 'title', 'caption', 'tone', 'zero'];
-    mapping(p, [...shared, ...(kind === 'insight_ring' ? ['value', 'total', 'value_label', 'data_key'] : kind === 'insight_meter' ? ['value', 'percent', 'unit', 'delta', 'data_key'] : ['items', 'limit'])]);
+    mapping(p, [...shared, ...(kind === 'insight_ring' ? ['value', 'total', 'value_label', 'data_key'] : kind === 'insight_meter' ? ['value', 'percent', 'unit', 'delta', 'data_key'] : ['items', 'limit', 'layout'])]);
     const title = text(p.title, true), description = text(option(p, 'caption', '')), tint = tone(option(p, 'tone', 'indigo'));
     const zero = choice(option(p, 'zero', 'empty'), ['empty', 'value']);
     const root = attrs(p, { class: 'lq-insight', 'data-lq-insight': kind, 'data-tone': tint });
@@ -83,6 +83,8 @@ export function insightProps(kind, p = {}) {
             ...(delta ? [block('lq-meter__delta', [delta], {}, 'span')] : [])]), ...(value > 0 && ratio !== null && ratio > 0 ? [graphic('lq-meter__track', Math.min(100, ratio))] : [])]));
         else children.push(empty(state));
     } else {
+        // rows: labelled horizontal bars; columns: a compact vertical series (e.g. daily trend).
+        const layout = choice(option(p, 'layout', 'rows'), ['rows', 'columns']);
         const limit = option(p, 'limit', 6); if (!Number.isSafeInteger(limit) || limit < 0) throw new TypeError('LQ bar limit must be a nonnegative integer');
         const rows = array(p.items).map(item => {
             mapping(item, ['label', 'value', 'tone', 'zero']);
@@ -91,7 +93,7 @@ export function insightProps(kind, p = {}) {
         const shown = rows.filter(item => item.value !== 0 || item.zero === 'value');
         const maximum = Math.max(0, ...rows.map(item => item.value ?? 0));
         state = !rows.length || !shown.length ? 'empty' : shown.every(item => item.value === null) ? 'missing' : 'value';
-        if (state === 'value') children.push(node('ul', { class: 'lq-bars', role: 'list' }, shown.map(item => block('lq-bars__row', [
+        if (state === 'value') children.push(node('ul', { class: `lq-bars${layout === 'columns' ? ' lq-bars--columns' : ''}`, role: 'list' }, shown.map(item => block('lq-bars__row', [
             node('span', { class: 'lq-bars__label' }, [item.label]), node('span', { class: 'lq-bars__value' }, [item.value === null ? '未提供' : String(item.value)]),
             ...(item.value > 0 ? [graphic('lq-bars__track', percent(item.value, maximum))] : []),
         ], { 'data-tone': item.tone }, 'li'))));

@@ -99,7 +99,7 @@ def lq_insight_props(kind, **props):
         return _node("span", _root(props, {"class": f"lq-avatar-stack lq-avatar-stack--{size}" + ("" if members else " is-empty"),
                      "data-lq-insight": kind, "role": "img", "aria-label": summary}), [_block("lq-avatar-stack__visual", visual, {"aria-hidden": "true"}, "span")])
     shared = common + ["title", "caption", "tone", "zero"]
-    _mapping(props, shared + (["value", "total", "value_label", "data_key"] if kind == "insight_ring" else ["value", "percent", "unit", "delta", "data_key"] if kind == "insight_meter" else ["items", "limit"]))
+    _mapping(props, shared + (["value", "total", "value_label", "data_key"] if kind == "insight_ring" else ["value", "percent", "unit", "delta", "data_key"] if kind == "insight_meter" else ["items", "limit", "layout"]))
     title, description, tone = _text(props.get("title"), True), _text(props.get("caption", "")), _tone(props.get("tone", "indigo"))
     zero = _choice(props.get("zero", "empty"), ("empty", "value"))
     root = _root(props, {"class": "lq-insight", "data-lq-insight": kind, "data-tone": tone})
@@ -138,6 +138,8 @@ def lq_insight_props(kind, **props):
             children.append(_empty(state))
     else:
         limit = props.get("limit", 6)
+        # rows: labelled horizontal bars; columns: a compact vertical series (e.g. daily trend).
+        layout = _choice(props.get("layout", "rows"), ("rows", "columns"))
         if isinstance(limit, bool) or not isinstance(limit, (float, int)) or not 0 <= limit <= 9007199254740991 or int(limit) != limit:
             raise ValueError("LQ bar limit must be a nonnegative integer")
         rows = []
@@ -151,7 +153,7 @@ def lq_insight_props(kind, **props):
         maximum = max([0] + [item["value"] or 0 for item in rows])
         state = "empty" if not rows or not shown else "missing" if all(item["value"] is None for item in shown) else "value"
         if state == "value":
-            children.append(_node("ul", {"class": "lq-bars", "role": "list"}, [_block("lq-bars__row", [
+            children.append(_node("ul", {"class": "lq-bars" + (" lq-bars--columns" if layout == "columns" else ""), "role": "list"}, [_block("lq-bars__row", [
                 _node("span", {"class": "lq-bars__label"}, [item["label"]]), _node("span", {"class": "lq-bars__value"}, ["未提供" if item["value"] is None else _numeric_text(item["value"])])]
                 + ([_graphic("lq-bars__track", _percent(item["value"], maximum))] if item["value"] is not None and item["value"] > 0 else []), {"data-tone": item["tone"]}, "li") for item in shown]))
         else:

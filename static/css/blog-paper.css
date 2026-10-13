@@ -2208,19 +2208,21 @@ body.blog-composer-open {
     justify-content: space-between;
 }
 
-.blog-studio__metrics {
+/* Overview and fans compose the shared Board/Card/Stat-strip templates
+   (lq/components/content.css); only page-specific detail lives here. */
+.blog-studio__trend {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--ls-s-3);
 }
 
-.blog-studio__heading {
-    margin: 0 0 var(--ls-s-2);
-    font-size: var(--ls-t-body);
-    font-weight: 600;
+.blog-studio__trend > .lq-insight {
+    height: 100%;
 }
 
-.blog-studio__hint,
+.blog-studio__todo .lq-empty,
+.blog-studio__fans .lq-empty {
+    padding-inline: 0;
+}
+
 .blog-studio__status {
     margin: 0;
     color: hsl(var(--lq-material-muted, var(--ls-glass-muted)));
@@ -2228,9 +2230,26 @@ body.blog-composer-open {
 }
 
 .blog-studio__profile-form {
-    display: grid;
-    gap: var(--ls-s-3);
-    max-width: 40rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ls-s-3) var(--ls-s-4);
+}
+
+/* One bio fills the row; real and pen-name bios sit side by side. */
+.blog-studio__profile-form > .lq-field {
+    flex: 1 1 18rem;
+}
+
+.blog-studio__profile-form > .blog-studio__row-actions {
+    flex-basis: 100%;
+}
+
+.blog-studio__profile-form .lq-textarea {
+    min-height: 5.5rem;
+}
+
+.blog-studio__fans .blog-studio__tag-form {
+    margin-bottom: var(--ls-s-3);
 }
 
 .blog-studio__tag-form .lq-input {

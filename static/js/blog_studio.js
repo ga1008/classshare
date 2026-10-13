@@ -139,6 +139,22 @@ export class BlogStudio {
         void this.load(tab);
     }
 
+    /** Board template (lq-board): children carry data-lq-span. */
+    board(children) {
+        const node = el('div', 'lq-board blog-studio__board');
+        node.append(...children);
+        return node;
+    }
+
+    /** A titled section is an LQ Card on the board (title, meta, body slot). */
+    section(title, { meta = '', span = '12', stretch = false, className = '', body = [] } = {}) {
+        const card = this.content.createContent('card', { title, meta, variant: 'flat' }, { body });
+        card.dataset.lqSpan = span;
+        if (stretch) card.dataset.lqStretch = '';
+        if (className) card.classList.add(...className.split(' '));
+        return card;
+    }
+
     alert(tone, title, body) {
         const node = el('div', 'blog-studio__alert');
         node.innerHTML = this.status.statusMarkup('alert', { tone, title, body: body || title });
@@ -156,16 +172,19 @@ export class BlogStudio {
         this.mode = stats.mode;
         const parts = [];
         if ((data.faces || []).length > 1) {
-            parts.push(chipRow(data.faces.map((face) => [face.mode, `${face.label}身份`]), stats.mode, (mode) => {
+            const faces = chipRow(data.faces.map((face) => [face.mode, `${face.label}身份`]), stats.mode, (mode) => {
                 this.mode = mode;
                 this.reload('overview');
-            }, '按身份查看数据'));
+            }, '按身份查看数据');
+            faces.dataset.lqSpan = '12';
+            parts.push(faces);
         }
         // LQ Insight contract: null is "unknown"; percent draws the meter track.
         const meter = (title, value, unit = '', caption = '', percent = null) => insights.createInsight('insight_meter', {
             title, value: value ?? null, unit, caption, zero: 'value', percent,
         });
-        const grid = el('div', 'blog-studio__metrics');
+        const grid = el('div', 'lq-stat-strip blog-studio__metrics');
+        grid.dataset.lqSpan = '12';
         grid.append(
             meter('累计阅读', stats.total_views),
             meter('近 7 天阅读', stats.views_7d),
@@ -176,16 +195,22 @@ export class BlogStudio {
             meter('粉丝', stats.followers, '', stats.followers === null ? '匿名身份不能被关注' : ''),
         );
         parts.push(grid, this.trend(insights, stats.trend || []), this.todo(data.todo || {}), this.profileForm(data));
-        panel.replaceChildren(...parts);
+        panel.replaceChildren(this.board(parts));
     }
 
     trend(insights, series) {
         const box = el('section', 'blog-studio__trend');
+        box.dataset.lqSpan = '8';
+        box.dataset.lqStretch = '';
+        const recent = series.slice(-TREND_BARS);
+        const total = recent.reduce((sum, day) => sum + (Number(day.views) || 0), 0);
         box.append(insights.createInsight('insight_bars', {
-            title: `近 ${TREND_BARS} 天阅读`,
+            title: `近 ${TREND_BARS} 天阅读趋势`,
+            caption: `合计 ${total} 次阅读`,
             limit: TREND_BARS,
             zero: 'value',
-            items: series.slice(-TREND_BARS).map((day) => ({ label: day.date.slice(5), value: day.views })),
+            layout: 'columns',
+            items: recent.map((day) => ({ label: day.date.slice(5), value: day.views })),
         }));
         // The full 30-day series as an accessible table (the bars are a summary).
         const table = el('table', 'sr-only');
@@ -206,11 +231,12 @@ export class BlogStudio {
         if (todo.sanctioned) items.push({ title: `${todo.sanctioned} 篇作品被处理或在申诉中`, tab: 'works', filter: 'attention' });
         if (todo.reviewing) items.push({ title: `${todo.reviewing} 篇作品正在审核`, tab: 'works', filter: 'attention' });
         if (todo.unreplied_comments) items.push({ title: `${todo.unreplied_comments} 条评论还没回复`, tab: 'interactions' });
-        const section = el('section', 'blog-studio__todo');
-        section.append(el('h3', 'blog-studio__heading', '待处理'));
+        const todoSection = (body) => this.section('待处理', {
+            meta: items.length ? `${items.length} 项需要你处理` : '审核、申诉和评论回复会出现在这里',
+            span: '4', stretch: true, className: 'blog-studio__todo', body,
+        });
         if (!items.length) {
-            section.append(this.content.createContent('empty', { title: '没有待处理的事', variant: 'inline' }));
-            return section;
+            return todoSection([this.content.createContent('empty', { title: '一切就绪，没有待处理的事', variant: 'inline' })]);
         }
         const rows = items.map((item) => {
             const row = this.content.createContent('row', {
@@ -225,15 +251,15 @@ export class BlogStudio {
             });
             return row;
         });
-        section.append(this.content.createContent('list', { label: '待处理' }, { items: rows }));
-        return section;
+        return todoSection([this.content.createContent('list', { label: '待处理' }, { items: rows })]);
     }
 
     profileForm(data) {
-        const section = el('section', 'blog-studio__profile');
-        section.append(el('h3', 'blog-studio__heading', '作者简介'));
-        section.append(el('p', 'blog-studio__hint', '显示在你的作者主页上，最多 60 字。笔名简介只在笔名主页出现。'));
         const form = el('form', 'blog-studio__profile-form');
+        const section = this.section('作者简介', {
+            meta: '显示在你的作者主页上，最多 60 字。笔名简介只在笔名主页出现。',
+            className: 'blog-studio__profile', body: [form],
+        });
         const field = (name, label, value) => {
             const wrap = el('label', 'lq-field');
             wrap.append(el('span', 'lq-field__label', label));
@@ -264,7 +290,6 @@ export class BlogStudio {
                 showToast(error.message || '保存失败', 'error');
             }
         });
-        section.append(form);
         return section;
     }
 
@@ -522,22 +547,21 @@ export class BlogStudio {
         const data = await this.api.get('/api/blog/studio/fans');
         if (!live()) return;
         const followers = data.followers || {};
+        const hasPen = (followers.pen || []).length > 0;
         const parts = [this.followerSection('关注我的人', followers.real || [], { followBack: true, total: followers.real_total })];
         // No "回关" for pen-name followers: following back is real-named and
         // would tell them who writes under the pen name.
-        if ((followers.pen || []).length) {
+        if (hasPen) {
             parts.push(this.followerSection('关注我笔名的人', followers.pen, { followBack: false, total: followers.pen_total }));
         }
-        parts.push(this.followingSection(data.following || []));
-        panel.replaceChildren(...parts);
+        parts.push(this.followingSection(data.following || [], hasPen ? '12' : '6'));
+        panel.replaceChildren(this.board(parts));
     }
 
     followerSection(title, people, { followBack, total }) {
-        const section = el('section', 'blog-studio__fans');
-        section.append(el('h3', 'blog-studio__heading', `${title}（${total ?? people.length}）`));
+        const card = (body) => this.section(`${title}（${total ?? people.length}）`, { span: '6', stretch: true, className: 'blog-studio__fans', body });
         if (!people.length) {
-            section.append(this.content.createContent('empty', { title: '还没有人关注', variant: 'inline' }));
-            return section;
+            return card([this.content.createContent('empty', { title: '还没有人关注', variant: 'inline' })]);
         }
         const rows = people.map((person) => {
             const row = this.content.createContent('row', {
@@ -553,13 +577,10 @@ export class BlogStudio {
             });
             return row;
         });
-        section.append(this.content.createContent('list', { label: title }, { items: rows }));
-        return section;
+        return card([this.content.createContent('list', { label: title }, { items: rows })]);
     }
 
-    followingSection(items) {
-        const section = el('section', 'blog-studio__fans');
-        section.append(el('h3', 'blog-studio__heading', `我的关注（${items.length}）`));
+    followingSection(items, span = '6') {
         const form = el('form', 'blog-studio__tag-form');
         const input = el('input', 'lq-input');
         Object.assign(input, { name: 'tag', maxLength: 40, placeholder: '输入标签，例如 Python', type: 'text' });
@@ -571,10 +592,11 @@ export class BlogStudio {
             const tag = input.value.trim().replace(/^#/, '');
             if (tag && await this.setFollow('tag', tag, true)) this.reload('fans');
         });
-        section.append(form);
+        const card = (body) => this.section(`我的关注（${items.length}）`, {
+            meta: '作者、板块或标签', span, stretch: true, className: 'blog-studio__fans', body: [form, ...body],
+        });
         if (!items.length) {
-            section.append(this.content.createContent('empty', { title: '还没有关注任何作者、板块或标签', variant: 'inline' }));
-            return section;
+            return card([this.content.createContent('empty', { title: '还没有关注任何作者、板块或标签', variant: 'inline' })]);
         }
         const rows = items.map((item) => {
             const row = this.content.createContent('row', {
@@ -592,8 +614,7 @@ export class BlogStudio {
             });
             return row;
         });
-        section.append(this.content.createContent('list', { label: '我的关注' }, { items: rows }));
-        return section;
+        return card([this.content.createContent('list', { label: '我的关注' }, { items: rows })]);
     }
 
     async setFollow(targetType, targetKey, following) {

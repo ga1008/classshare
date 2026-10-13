@@ -287,5 +287,22 @@ class LqComponentMacroTests(unittest.TestCase):
             lq_props("modal")
 
 
+
+class InsightBarsLayoutTests(unittest.TestCase):
+    """2026-10-13: insight_bars layout rows (default, unchanged) | columns."""
+
+    def _list_class(self, **props):
+        from classroom_app.lq_insights import lq_insight_props
+        tree = lq_insight_props("insight_bars", title="阅读", items=[{"label": "10-08", "value": 3}], **props)
+        return next(child for child in tree["children"] if isinstance(child, dict) and child.get("tag") == "ul")["attrs"]["class"]
+
+    def test_rows_default_and_columns_variant(self):
+        self.assertEqual("lq-bars", self._list_class())
+        self.assertEqual("lq-bars lq-bars--columns", self._list_class(layout="columns"))
+
+    def test_unknown_layout_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self._list_class(layout="grid")
+
 if __name__ == "__main__":
     unittest.main()

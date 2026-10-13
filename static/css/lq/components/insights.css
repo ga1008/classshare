@@ -7,7 +7,10 @@
 .lq-avatar-stack__visual > :not(:first-child) { margin-inline-start: -8px; }
 .lq-avatar-stack__more { display: inline-flex; align-items: center; justify-content: center; min-width: var(--lq-stack-size); height: var(--lq-stack-size); padding-inline: 3px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-surface-2)); color: hsl(var(--ls-ink-2)); font: 600 12px/1 var(--ls-font-sans); font-variant-numeric: tabular-nums; }
 .lq-avatar-stack.is-empty { color: hsl(var(--ls-ink-2)); font: 13px/1.5 var(--ls-font-sans); }
-.lq-insight { min-width: 0; max-width: 100%; padding: 16px; border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); font: 14px/1.5 var(--ls-font-sans); overflow-wrap: anywhere; --lq-insight-color: var(--ls-primary); }
+/* An Insight is a tile inside a carrier (page head, card, board): it takes the
+   nested glass tint and rim, never an opaque white slab (2026-10-13). The
+   transparency/contrast opt-outs map --ls-glass-fill-inset to an opaque surface. */
+.lq-insight { min-width: 0; max-width: 100%; padding: 16px; border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-lg); background: hsl(var(--ls-glass-fill-inset)); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)); color: hsl(var(--ls-ink)); font: 14px/1.5 var(--ls-font-sans); overflow-wrap: anywhere; --lq-insight-color: var(--ls-primary); }
 .lq-insight[data-tone="success"], .lq-insight[data-tone="teal"], .lq-insight[data-tone="emerald"], .lq-bars__row:is([data-tone="success"],[data-tone="teal"],[data-tone="emerald"]) { --lq-insight-color: var(--ls-tone-success-fg); }
 .lq-insight[data-tone="warning"], .lq-insight[data-tone="amber"], .lq-bars__row:is([data-tone="warning"],[data-tone="amber"]) { --lq-insight-color: var(--ls-tone-warning-fg); }
 .lq-insight[data-tone="danger"], .lq-insight[data-tone="rose"], .lq-bars__row:is([data-tone="danger"],[data-tone="rose"]) { --lq-insight-color: var(--ls-tone-danger-fg); }
@@ -38,6 +41,17 @@
 .lq-bars__track { grid-column: 1 / -1; }
 .lq-meter__track { margin-top: 10px; }
 .lq-bars__track > i, .lq-meter__track > i { display: block; height: 100%; width: calc(var(--lq-insight-percent) * 1%); border-radius: inherit; background: hsl(var(--lq-insight-color)); }
+.lq-insight__caption, .lq-insight__empty { color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+/* Columns layout: a compact vertical series such as a daily trend. Same DOM as
+   rows; bar on a shared baseline, then value and label beneath it like axis
+   ticks. A zero day keeps a baseline stub so the time axis stays continuous. */
+.lq-bars--columns { --lq-bars-height: 120px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: var(--ls-s-2); }
+.lq-bars--columns > .lq-bars__row { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--lq-bars-height) auto auto; grid-template-areas: "bar" "value" "label"; justify-items: center; gap: 2px; }
+.lq-bars--columns .lq-bars__value { grid-area: value; margin-top: var(--ls-s-1); font-size: 13px; font-weight: 650; color: hsl(var(--ls-ink)); }
+.lq-bars--columns .lq-bars__label { grid-area: label; font-size: 12px; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); white-space: nowrap; }
+.lq-bars--columns .lq-bars__track { grid-area: bar; grid-column: auto; display: flex; align-items: flex-end; width: min(100%, 32px); height: 100%; background: transparent; border-radius: var(--ls-r-sm); overflow: visible; }
+.lq-bars--columns .lq-bars__track > i { width: 100%; height: max(4px, calc(var(--lq-insight-percent) * 1%)); border-radius: var(--ls-r-sm) var(--ls-r-sm) 2px 2px; background: linear-gradient(hsl(var(--lq-insight-color)), hsl(var(--lq-insight-color) / .55)); }
+.lq-bars--columns > .lq-bars__row:not(:has(> .lq-bars__track))::before { content: ""; grid-area: bar; align-self: end; width: min(100%, 32px); height: 3px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-line)); }
 @media (forced-colors: active) {
     .lq-insight { background: Canvas; color: CanvasText; border-color: CanvasText; }
     .lq-insight__caption, .lq-insight__empty, .lq-meter__delta, .lq-avatar-stack__more { color: CanvasText; }
@@ -47,4 +61,5 @@
     .lq-ring__fill { stroke: Highlight; forced-color-adjust: none; }
     .lq-bars__track, .lq-meter__track { background: Canvas; outline: 1px solid CanvasText; }
     .lq-bars__track > i, .lq-meter__track > i { background: Highlight; forced-color-adjust: none; }
+    .lq-bars--columns > .lq-bars__row:not(:has(> .lq-bars__track))::before { background: GrayText; }
 }

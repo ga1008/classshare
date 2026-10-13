@@ -20,6 +20,15 @@ describe('LQ optional insight semantics', () => {
         expect(() => insightProps('avatar_stack', Object.create({ items: [] }))).toThrow();
         expect(() => insightProps('avatar_stack', { items: Array(2) })).toThrow();
     });
+    it('bars accept an explicit rows/columns layout with rows as the unchanged default', () => {
+        const items = [{ label: '10-07', value: 0 }, { label: '10-08', value: 3 }];
+        const rows = insightMarkup('insight_bars', { title: '阅读', items, zero: 'value' });
+        expect(rows).toContain('class="lq-bars"');
+        const columns = insightMarkup('insight_bars', { title: '阅读', items, zero: 'value', layout: 'columns' });
+        expect(columns).toContain('class="lq-bars lq-bars--columns"');
+        expect(columns.replace(' lq-bars--columns', '')).toBe(rows);
+        expect(() => insightProps('insight_bars', { title: '阅读', items, layout: 'grid' })).toThrow();
+    });
     it('limits avatar images without omitting hidden member names or validating only the visible four', () => {
         const items = Array.from({ length: 6 }, (_, i) => ({ name: `成员${i}`, detail: `职责${i}`, src: '/avatar.png' }));
         const tree = insightProps('avatar_stack', { items });

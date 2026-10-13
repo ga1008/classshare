@@ -512,3 +512,13 @@ Popup 复用 LQ.layer 的 portal、父子关系、焦点、关闭及反向打开
 - **FilterBar**（`content.css`）：字段行为 auto-fit 网格（多行时搜索与首行顶对齐、操作贴底）；直接放在背景上的 FilterBar 自带 content 材质与成对前景，在载体内保持扁平。
 - **展开浮层**（`declarative.css`）：`details.lq-disclosure-popover` 贴合触发器，`data-lq-align="end"` 右对齐、`data-lq-placement="top"` 向上；raised 面板在内容载体中仍采样；含打开浮层的载体临时抬升层级，避免被后续面板覆盖。原生 details 的开合、键盘与焦点不变。
 - **页面材质别名**：旧页面面板使用 `--lq-page-content/control/raised`（`pages/page-material.css`），不得再写 `--surface-color`、白色十六进制或私有 `backdrop-filter`。
+
+### 模板增补：Board、Stat strip、Insight 玻璃化与柱列布局（2026-10-13，创作中心重排）
+
+- **Insight 材质**（`insights.css`）：`.lq-insight` 由不透明 `surface-1` 改为嵌套玻璃（`--ls-glass-fill-inset` + 玻璃描边/边光），所有消费者（管理页统计、创作中心）同时生效；透明度/对比度偏好下回到不透明。
+- **Insight bars `layout`**（JS `insights.js` 与 Python `lq_insights.py` 同步）：`rows`（默认，输出不变）| `columns`（紧凑竖向序列，柱共用基线，数值与日期在下方；零值保留基线短条）。未知值报错。测试：`tests/lq/insights.test.mjs`、`test_lq_component_macros.InsightBarsLayoutTests`。
+- **Board**（`content.css`）：`.lq-board` 12 列仪表板组合；子项用 `data-lq-span="3|4|5|6|7|8|12"`（默认 12）、`data-lq-stretch` 等高，<960px 单列。Board 内的 Card 即“分区”：标题/说明（meta）/操作/正文槽，与 Insight 共用一种嵌套色调。
+- **Stat strip**（`content.css`）：`.lq-stat-strip` 等宽紧凑 Insight 指标条，手机保持两列；无值显示“—”（完整“暂无数据”仍是可访问文本）。
+- **Surface 内边距**：`data-lq-padding` 同样适用于 `[data-lq-material]` 载体。
+- 首个组合消费者：博客创作中心（`static/js/blog_studio.js` 的 `board()` / `section()`），概览 = 身份切换 + 指标条 + 趋势（8）/ 待处理（4）+ 作者简介；粉丝与关注 = 两张卡片。
+

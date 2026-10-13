@@ -1,12 +1,13 @@
 /* Presentation only: no request controller, inherited glass or self-built blur. */
 /* Opt-in Surface geometry. A material declaration alone deliberately cannot
    guess whether its consumer is a padded section or an edge-to-edge table.
-   All renderers/adapters use the same density names and spacing tokens. */
-:is(.lq-surface, .lq-card)[data-lq-padding="none"] { --lq-content-inset: 0px; }
-:is(.lq-surface, .lq-card)[data-lq-padding="sm"] { --lq-content-inset: var(--ls-s-3); }
-:is(.lq-surface, .lq-card)[data-lq-padding="md"] { --lq-content-inset: var(--ls-s-4); }
-:is(.lq-surface, .lq-card)[data-lq-padding="lg"] { --lq-content-inset: clamp(var(--ls-s-4), 3vw, var(--ls-s-6)); }
-:root :is(.lq-surface, .lq-card):is([data-lq-padding="none"], [data-lq-padding="sm"], [data-lq-padding="md"], [data-lq-padding="lg"]) {
+   All renderers/adapters use the same density names and spacing tokens;
+   a material carrier ([data-lq-material]) opts in the same way. */
+:is(.lq-surface, .lq-card, [data-lq-material])[data-lq-padding="none"] { --lq-content-inset: 0px; }
+:is(.lq-surface, .lq-card, [data-lq-material])[data-lq-padding="sm"] { --lq-content-inset: var(--ls-s-3); }
+:is(.lq-surface, .lq-card, [data-lq-material])[data-lq-padding="md"] { --lq-content-inset: var(--ls-s-4); }
+:is(.lq-surface, .lq-card, [data-lq-material])[data-lq-padding="lg"] { --lq-content-inset: clamp(var(--ls-s-4), 3vw, var(--ls-s-6)); }
+:root :is(.lq-surface, .lq-card, [data-lq-material]):is([data-lq-padding="none"], [data-lq-padding="sm"], [data-lq-padding="md"], [data-lq-padding="lg"]) {
     box-sizing: border-box;
     min-width: 0;
     padding: var(--lq-content-inset);
@@ -115,6 +116,37 @@
     color: hsl(var(--ls-ink));
     box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)), var(--ls-glass-shadow);
 }
+/* Board template (2026-10-13): a dashboard composition of Cards, Insights and
+   Lists on a 12-column grid. Children declare data-lq-span="3|4|5|6|7|8|12"
+   (default 12) and collapse to one column below 960px. A Card inside a board
+   is a section: title row, optional meta and actions, body slot. */
+.lq-board { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--ls-s-4); align-items: start; }
+.lq-board > * { grid-column: span 12; min-width: 0; }
+.lq-board > [data-lq-span="3"] { grid-column: span 3; }
+.lq-board > [data-lq-span="4"] { grid-column: span 4; }
+.lq-board > [data-lq-span="5"] { grid-column: span 5; }
+.lq-board > [data-lq-span="6"] { grid-column: span 6; }
+.lq-board > [data-lq-span="7"] { grid-column: span 7; }
+.lq-board > [data-lq-span="8"] { grid-column: span 8; }
+.lq-board > [data-lq-stretch] { align-self: stretch; }
+/* Board tiles share one tint: a Card section matches the Insight tiles beside it. */
+.lq-board > .lq-card { --lq-material-fill: var(--ls-glass-fill-inset); border-color: hsl(var(--ls-glass-line)); padding: var(--ls-s-5); box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)), inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)); }
+.lq-board > .lq-card .lq-card__meta { margin: var(--ls-s-1) 0 0; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: var(--ls-t-sub); }
+@media (max-width: 960px) { .lq-board > [data-lq-span] { grid-column: span 12; } }
+/* Stat strip: equal compact Insight tiles that wrap; the value is the focus. */
+/* Phones keep two tiles per row: the minimum never exceeds half the strip. */
+.lq-stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, calc(50% - var(--ls-s-3) / 2)), 1fr)); gap: var(--ls-s-3); }
+.lq-stat-strip > .lq-insight { padding: var(--ls-s-3) var(--ls-s-4); }
+.lq-stat-strip > .lq-insight .lq-insight__title { margin-bottom: var(--ls-s-1); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: var(--ls-t-sub); font-weight: 600; }
+.lq-stat-strip > .lq-insight .lq-meter__value { font-size: 26px; line-height: 1.2; }
+.lq-stat-strip > .lq-insight .lq-insight__caption { margin-top: var(--ls-s-1); font-size: 12px; }
+.lq-stat-strip > .lq-insight .lq-meter__track { margin-top: var(--ls-s-2); }
+/* A tile without a value stays a tile and shows a dash; the full "no data"
+   sentence remains the accessible text, the caption explains why. */
+.lq-stat-strip > .lq-insight.is-empty { padding: var(--ls-s-3) var(--ls-s-4); border-color: hsl(var(--ls-glass-line)); background: hsl(var(--ls-glass-fill-inset)); }
+.lq-stat-strip > .lq-insight.is-empty .lq-insight__title { margin-bottom: var(--ls-s-1); }
+.lq-stat-strip > .lq-insight .lq-insight__empty { margin: 0; font-size: 0; line-height: 0; }
+.lq-stat-strip > .lq-insight .lq-insight__empty::before { content: "—"; display: block; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: 26px; font-weight: 650; line-height: 1.2; }
 .lq-prose { font-size: var(--ls-t-body); line-height: 1.7; overflow-wrap: anywhere; }
 .lq-prose :where(p, ul, ol, pre, blockquote, table) { margin-block: var(--ls-s-3); }
 .lq-prose :where(ul, ol) { padding-inline-start: var(--ls-s-6); }
