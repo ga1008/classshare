@@ -1,5 +1,7 @@
 from .common import *
 
+from starlette.concurrency import run_in_threadpool
+
 from ...services.assignment_lifecycle_service import ASSIGNMENT_STATUS_CLOSED
 from ...services.classroom_closeout_service import (
     apply_absence_scores,
@@ -8,6 +10,7 @@ from ...services.classroom_closeout_service import (
     refresh_learning_state,
 )
 from ...services.submission_grading_service import grade_submission_record
+from ...services.assessment_appeal_service import submission_grading_hold
 
 
 router = APIRouter()
@@ -67,6 +70,11 @@ async def zero_unsubmitted_scores(
     本身的状态——要连同截止请用 ``/assignments/{id}/close``。
     """
     payload = await _optional_json_body(request)
+    # DB work runs in the threadpool so a busy pool never blocks the event loop (audit B1).
+    return await run_in_threadpool(_zero_unsubmitted_scores_sync, assignment_id, payload, user)
+
+
+def _zero_unsubmitted_scores_sync(assignment_id: str, payload: dict, user: dict):
     score = normalize_absence_score(payload.get("score", payload.get("default_score")))
 
     with get_db_connection() as conn:
@@ -154,6 +162,10 @@ async def close_assignment_now(
     全员已提交且已批改时补分环节自然什么都不做，效果就是“直接截止”。
     """
     payload = await _optional_json_body(request)
+    return await run_in_threadpool(_close_assignment_now_sync, assignment_id, payload, user)
+
+
+def _close_assignment_now_sync(assignment_id: str, payload: dict, user: dict):
     score = normalize_absence_score(payload.get("default_score", payload.get("score")))
     apply_absence = payload.get("apply_absence", True) is not False
     include_ungraded = bool(payload.get("include_ungraded"))
@@ -221,10 +233,14 @@ async def close_assignment_now(
 )
 async def grade_submission(submission_id: int, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
-    with get_db_connection() as conn:
-        grade_submission_record(conn, submission_id=submission_id, teacher_id=int(user["id"]),
-                                data=data, actor_display_name=str(user.get("name") or ""))
-        conn.commit()
+
+    def _grade() -> None:
+        with get_db_connection() as conn:
+            grade_submission_record(conn, submission_id=submission_id, teacher_id=int(user["id"]),
+                                    data=data, actor_display_name=str(user.get("name") or ""))
+            conn.commit()
+
+    await run_in_threadpool(_grade)
     return {"status": "success", "graded_submission_id": submission_id}
 
 
@@ -266,16 +282,24 @@ async def batch_grade_submissions(assignment_id: str, request: Request, user: di
                 """,
                 (assignment_id,),
             ).fetchall()
+        # Answers under a pending 错误提交 appeal are held: the student said
+        # the content is wrong, so grading it would only waste a model call.
+        held_ids = {int(row["id"]) for row in rows if submission_grading_hold(conn, int(row["id"]))}
         conn.commit()
 
-    targets = [dict(row) for row in rows]
+    held_count = len(held_ids)
+    targets = [dict(row) for row in rows if int(row["id"]) not in held_ids]
     if not targets:
         return {
             "status": "success",
             "queued_count": 0,
-            "skipped_count": 0,
+            "skipped_count": held_count,
+            "held_count": held_count,
             "failed_count": 0,
-            "message": "没有可批改的提交（可能已全部批改完毕或正在批改中）。",
+            "message": (
+                f"没有可批改的提交；{held_count} 份因学生申请退回修改暂不批改。" if held_count
+                else "没有可批改的提交（可能已全部批改完毕或正在批改中）。"
+            ),
         }
 
     # 最多同时提交 5 个，避免压垮 AI 服务
@@ -313,6 +337,7 @@ async def batch_grade_submissions(assignment_id: str, request: Request, user: di
         "status": "success",
         "total_targets": len(targets),
         "queued_count": queued,
-        "skipped_count": skipped,
+        "skipped_count": skipped + held_count,
+        "held_count": held_count,
         "failed_count": failed,
     }

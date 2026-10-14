@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assignment_teacher.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper teacher-assignment-page{% endblock %}
@@ -74,6 +75,9 @@
                     </button>
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-topbar-filter="unsubmitted" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('unsubmitted')" title="只看未提交学生" aria-label="只看未提交学生" aria-pressed="false" role="menuitem">
                         {{ app_topbar_icon('users') }} 未交学生
+                    </button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass dropdown-item" data-topbar-filter="appeal" onclick="this.closest('details')?.removeAttribute('open'); quickFilterSubmissions('appeal')" title="只看有待处理申诉或补交通道的学生" aria-label="只看有待处理申诉或补交通道的学生" aria-pressed="false" role="menuitem">
+                        {{ app_topbar_icon('file-plus') }} 申诉与补交
                     </button>
                 </div>
             </details>
@@ -835,6 +839,7 @@
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
     import { mountPanel as mountApprovalPanel } from '{{ asset_url("js/approval_workflow.js") }}';
+    import { rememberGradingQueue } from '{{ asset_url("js/grading_queue.js") }}';
     import { createDomainPopoverSystem } from '{{ asset_url("js/lq/domain-controls.js") }}';
 
     window.openEditModal = () => openModal('edit-modal');
@@ -1402,6 +1407,9 @@
         if (currentFilter === 'returned') {
             return Number(entry.resubmission_allowed || 0) === 1;
         }
+        if (currentFilter === 'appeal') {
+            return Boolean(entry.pending_appeal) || Boolean(entry.late_window_due_at);
+        }
         return entry.status === currentFilter;
     }
 
@@ -1525,7 +1533,13 @@
                 : absenceScore
                     ? `<span class="badge badge-outline ml-1">缺交记0</span>`
                 : '';
-            const channelBadge = `${baseChannelBadge}${lateSubmission ? '<span class="badge badge-warning ml-1">补交</span>' : ''}`;
+            const appealBadge = sub.pending_appeal
+                ? `<span class="badge badge-warning ml-1" title="待处理申诉，可在“申诉与申请”中处理">申诉·${escapeHtml(sub.pending_appeal.label || '')}</span>`
+                : '';
+            const windowBadge = sub.late_window_due_at
+                ? `<span class="badge badge-outline ml-1">补交通道至 ${escapeHtml(fmtDate(sub.late_window_due_at))}</span>`
+                : '';
+            const channelBadge = `${baseChannelBadge}${lateSubmission ? '<span class="badge badge-warning ml-1">补交</span>' : ''}${appealBadge}${windowBadge}`;
 
             // Score display with color and grade label
             const scoreInfo = getScoreInfo(sub.score, sub.status);
@@ -1616,6 +1630,12 @@
 
     // ==================== Navigation ====================
     window.goDetail = function(subId) {
+        // The answer card offers 上一份/下一份 in the order currently listed here.
+        rememberGradingQueue({
+            teacherId: {{ user_info.id | tojson }},
+            assignmentId: currentAssignmentId,
+            ids: [...document.querySelectorAll('tr[data-submission-id]')].map((row) => row.dataset.submissionId),
+        });
         window.location.href = `/submission/${subId}`;
     };
 
@@ -2715,14 +2735,33 @@
     });
 
     // ==================== Delete ====================
-    window.confirmDelete = async function() {
+    window.confirmDelete = async function(confirmedCount = null) {
         try {
-            const response = await fetch(`/api/assignments/${currentAssignmentId}`, { method: 'DELETE' });
+            const query = confirmedCount ? `?confirm_submissions=${encodeURIComponent(confirmedCount)}` : '';
+            const response = await fetch(`/api/assignments/${currentAssignmentId}${query}`, { method: 'DELETE' });
             if (response.ok) {
                 showToast('删除成功', 'success');
                 setTimeout(() => window.location.href = '/dashboard', 1000);
-            } else { throw new Error('删除失败'); }
-        } catch (error) { showToast('删除失败', 'error'); closeDeleteModal(); }
+                return;
+            }
+            const data = await response.json().catch(() => ({}));
+            const detail = (data && typeof data.detail === 'object' && data.detail) || {};
+            if (response.status === 409 && detail.submission_count && !confirmedCount) {
+                // Real student work exists: make the cost explicit before destroying it.
+                closeDeleteModal();
+                const { confirm: lqConfirm } = await import('{{ asset_url("js/lq/dialogs.js") }}');
+                const ok = await lqConfirm({
+                    title: '确认删除含学生提交的作业？',
+                    message: `${detail.message || ''}\n此操作不可恢复，建议先导出成绩与附件。`,
+                    confirmLabel: `删除作业及 ${detail.submission_count} 份提交`,
+                    cancelLabel: '取消',
+                    danger: true,
+                });
+                if (ok) await window.confirmDelete(detail.submission_count);
+                return;
+            }
+            throw new Error(typeof data.detail === 'string' ? data.detail : (detail.message || '删除失败'));
+        } catch (error) { showToast(error.message || '删除失败', 'error'); closeDeleteModal(); }
     };
 
     // ==================== Utilities ====================

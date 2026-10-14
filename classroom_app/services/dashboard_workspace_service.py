@@ -661,6 +661,18 @@ def _inbox_source(name: str, producer):
         return []
 
 
+def _waited_label(created_at: Any, now: datetime) -> str:
+    created = local_datetime(created_at)
+    if created is None:
+        return ""
+    minutes = max(0, int((now - created).total_seconds() // 60))
+    if minutes >= 1440:
+        return f"{minutes // 1440} 天"
+    if minutes >= 60:
+        return f"{minutes // 60} 小时"
+    return f"{max(minutes, 1)} 分钟"
+
+
 def iter_teacher_inbox_sources(conn, *, user: dict[str, Any], offering_ids: list[int], labels: dict[int, str], now: datetime):
     """审批申请 / 签名申请 / 课堂配置缺口 / 用户反馈（超管）。只做 scoped SELECT。"""
     teacher_id = _integer(user.get("id"))
@@ -668,19 +680,31 @@ def iter_teacher_inbox_sources(conn, *, user: dict[str, Any], offering_ids: list
         return
 
     def approvals():
-        from .approval_workflow_service import list_requests
+        from .approval_workflow_service import _REGISTRY, list_requests
+        from .assessment_appeal_service import APPEAL_TYPES
+
         for req in list_requests(conn, user, scope="incoming", status="pending", limit=30):
             offering_id = _integer(req.get("class_offering_id"))
             if offering_id not in labels:
                 offering_id = 0
             assignment_id = req.get("assignment_id")
-            href = f"/assignment/{assignment_id}?approval={req['id']}" if assignment_id else "/manage/me/inbox"
+            is_appeal = req.get("request_type") in APPEAL_TYPES
+            spec = _REGISTRY.get(str(req.get("request_type") or ""))
+            # Each type knows its landing page (批改有误 → the answer card in appeal mode);
+            # otherwise the assignment page auto-opens the dialog for ?approval_request=.
+            href = (spec.inbox_link({**req, "payload_json": json.dumps(req.get("payload") or {})}, "teacher")
+                    if spec and spec.inbox_link else "")
+            href = href or (f"/assignment/{assignment_id}?approval_request={req['id']}" if assignment_id else "/manage/me/inbox")
+            waited = _waited_label(req.get("created_at"), now)
+            context = str(req.get("title") or labels.get(offering_id, ""))
             yield {
-                "source_type": "approval", "source_id": req["id"], "kind": "teacher_work", "type_label": "审批",
+                "source_type": "approval", "source_id": req["id"], "kind": "teacher_work",
+                "type_label": "申诉" if is_appeal else "审批",
                 "class_offering_id": offering_id, "priority": "high", "is_actionable": True,
-                "title": f"{req.get('applicant_name') or '学生'} 申请{req.get('request_type_label') or '审批'}",
-                "subtitle": str(req.get("title") or labels.get(offering_id, "")), "due_at": req.get("expires_at"),
-                "href": href, "action_label": "去审批",
+                "title": (f"{req.get('applicant_name') or '学生'} 申诉：{req.get('request_type_label') or ''}" if is_appeal
+                          else f"{req.get('applicant_name') or '学生'} 申请{req.get('request_type_label') or '审批'}"),
+                "subtitle": f"{context} · 已等待 {waited}" if waited else context, "due_at": req.get("expires_at"),
+                "href": href, "action_label": "去处理" if is_appeal else "去审批",
             }
 
     def signature_requests():

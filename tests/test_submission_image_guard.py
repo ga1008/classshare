@@ -134,6 +134,13 @@ class ConflictRuleTests(unittest.TestCase):
         ])
         self.assertEqual(claims[0].student_name, "张三")
 
+    def test_claims_can_be_limited_to_the_hashes_being_checked(self):
+        _seed_submission(self.conn, student=1, assignment="hw", files=[("exam_question_files/q1/a.png", "image/png", HASH_A)])
+        _seed_draft(self.conn, student=2, assignment="hw", files=[("q2", "exam_question_files/q2/c.png", "image/png", HASH_C)])
+        only_c = load_assignment_hash_claims(self.conn, "hw", file_hashes=[HASH_C.upper()])
+        self.assertEqual([(c.file_hash, c.source) for c in only_c], [(HASH_C, "draft")])
+        self.assertEqual(load_assignment_hash_claims(self.conn, "hw", file_hashes=["not-a-hash"]), [])
+
     def test_other_students_screenshot_is_refused_with_owner_name_and_question(self):
         _seed_submission(self.conn, student=1, assignment="hw", files=[
             ("exam_question_files/q1/shot.png", "image/png", HASH_A),

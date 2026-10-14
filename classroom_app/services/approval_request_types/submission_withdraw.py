@@ -66,6 +66,12 @@ def _reviewers_for(context: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def prepare(conn, applicant: Mapping[str, Any], subject_id: str, reason: str, payload: dict[str, Any]) -> PreparedRequest:
+    # Superseded by the 错误提交 appeal (submission_correction). Existing
+    # requests stay decidable and keep counting toward its limit.
+    raise ApprovalWorkflowError(410, "“撤回重做”已升级为“申诉 → 错误提交”，请在作业页点击“申诉”发起。")
+
+
+def _legacy_prepare(conn, applicant: Mapping[str, Any], subject_id: str, reason: str, payload: dict[str, Any]) -> PreparedRequest:
     try:
         submission_id = int(subject_id)
     except (TypeError, ValueError) as exc:
@@ -130,6 +136,9 @@ def on_approve(conn, request: Mapping[str, Any], reviewer: Mapping[str, Any], de
     except ValueError as exc:
         raise ApprovalWorkflowError(400, str(exc)) from exc
     reason = "学生申请撤回重做（教师已批准）" + (f"：{note}" if note else "")
+    from ..resubmission_expiry_service import schedule_resubmission_expiry, snapshot_before_return
+
+    previous = snapshot_before_return(submission)
     return_submissions_for_resubmission(
         conn,
         assignment=assignment,
@@ -139,6 +148,8 @@ def on_approve(conn, request: Mapping[str, Any], reviewer: Mapping[str, Any], de
         reason=reason,
         begin_transaction=False,  # decide_request already holds the write transaction
     )
+    schedule_resubmission_expiry(conn, submission_id=int(submission["id"]), due_at=due_at,
+                                 previous=previous, origin=REQUEST_TYPE_KEY)
     return {"resubmission_due_at": due_at, "notification_suffix": f"请在 {due_at.replace('T', ' ')} 前重新提交。"}
 
 

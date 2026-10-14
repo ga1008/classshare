@@ -16,6 +16,7 @@ from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from .ai_gateway_service import ai_gateway_post
 from .ai_durable_job_service import cancel_ai_jobs_for_source, create_ai_job
+from .assessment_appeal_service import submission_grading_hold
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
 from .psych_profile_service import load_latest_hidden_profile
@@ -527,6 +528,45 @@ def _resume_status_after_grading_interrupt(submission: dict[str, Any]) -> str:
     return "graded" if submission.get("score") is not None else "submitted"
 
 
+def interrupt_submission_ai_grading_with_connection(
+    conn,
+    submission: dict[str, Any],
+    *,
+    reason: str,
+) -> str | None:
+    """Stop an in-flight AI grading attempt inside the caller's transaction.
+
+    Cancels the durable job (which also voids its lease, so a worker already
+    inside a provider call can neither persist nor apply a late result) and
+    returns the submission to its pre-grading state. Returns the resumed
+    status, or ``None`` when the submission was not being graded.
+    """
+    if str(submission.get("status") or "") != "grading":
+        return None
+    submission_id = int(submission["id"])
+    resume_status = _resume_status_after_grading_interrupt(submission)
+    cursor = conn.execute(
+        """
+        UPDATE submissions
+        SET status = ?,
+            grading_started_at = NULL,
+            grading_attempt_fingerprint = NULL,
+            grading_job_id = NULL
+        WHERE id = ? AND status = 'grading'
+        """,
+        (resume_status, submission_id),
+    )
+    if cursor.rowcount != 1:
+        raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
+    cancel_ai_jobs_for_source(
+        conn,
+        task_type="ai_grading",
+        source_ref=f"submission:{submission_id}",
+        reason=reason,
+    )
+    return resume_status
+
+
 def _mark_submission_grading_with_connection(
     conn,
     *,
@@ -668,19 +708,9 @@ def stop_submission_ai_grading(
                 "submission_id": submission_id,
                 "submission_status": submission["status"],
             }
-        resume_status = _resume_status_after_grading_interrupt(submission)
-        cursor = conn.execute(
-            """
-            UPDATE submissions
-            SET status = ?,
-                grading_started_at = NULL,
-                grading_attempt_fingerprint = NULL
-            WHERE id = ? AND status = 'grading'
-            """,
-            (resume_status, submission_id),
+        resume_status = interrupt_submission_ai_grading_with_connection(
+            conn, submission, reason="stopped_by_teacher",
         )
-        if cursor.rowcount != 1:
-            raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
         _release_stage_exam_grading_attempts(conn, submission, STOPPED_GRADING_MESSAGE)
         conn.commit()
         return {
@@ -700,25 +730,74 @@ async def force_submit_submission_for_ai_grading(
         if int(submission.get("resubmission_allowed") or 0):
             raise AIGradingQueueError(400, "该提交已撤回并等待重交，不能批改旧版本")
         if submission["status"] == "grading":
-            resume_status = _resume_status_after_grading_interrupt(submission)
-            cursor = conn.execute(
-                """
-                UPDATE submissions
-                SET status = ?,
-                    grading_started_at = NULL,
-                    grading_attempt_fingerprint = NULL
-                WHERE id = ? AND status = 'grading'
-                """,
-                (resume_status, submission_id),
-            )
-            if cursor.rowcount != 1:
-                raise AIGradingQueueError(409, "该提交状态刚刚发生变化，请刷新后重试")
+            # The superseded attempt must stop spending provider calls.
+            interrupt_submission_ai_grading_with_connection(conn, submission, reason="superseded_by_force_regrade")
             conn.commit()
     return await submit_submission_for_ai_grading(
         submission_id,
         teacher_id=teacher_id,
         allow_graded=True,
     )
+
+
+
+def build_grading_job_data(
+    *,
+    submission: dict[str, Any],
+    current: dict[str, Any],
+    rubric_md: str,
+    resolved_files: list[dict[str, Any]],
+    has_files: bool,
+    has_answers: bool,
+    student_profile_context: Any,
+    attempt_token: str,
+    content_fingerprint: str,
+) -> dict[str, Any]:
+    """The durable grading payload; shared by normal grading and appeal re-grades."""
+    submission_id = int(current["id"])
+    job_data = {
+        "submission_id": submission_id,
+        "business_context": {
+            "operation": "grading",
+            "source_feature": current.get("source_feature") or "classroom_assignment",
+            "assessment_kind": current.get("assessment_kind"),
+            "classification_source": current.get("classification_source") or "legacy_unknown",
+            "assessment_kind_version": current.get("assessment_kind_version") or 0,
+            "classification_status": current.get("classification_status") or "legacy_unknown",
+            "assignment_id": str(current["assignment_id"]),
+            "class_offering_id": current.get("class_offering_id"),
+            "logical_call_id": attempt_token,
+            "policy_version": AI_EXECUTION_POLICY_VERSION,
+        },
+        "rubric_md": rubric_md,
+        "requirements_md": submission["requirements_md"] or "",
+        "allowed_file_types_json": submission["allowed_file_types_json"],
+        "files": [
+            {
+                "stored_path": item["resolved_path"],
+                "original_filename": item.get("original_filename"),
+                "relative_path": item.get("relative_path") or item.get("original_filename"),
+                "mime_type": item.get("mime_type"),
+                "file_size": item.get("file_size"),
+                "file_ext": item.get("file_ext"),
+                "file_hash": item.get("file_hash"),
+            }
+            for item in resolved_files
+        ] if has_files else [],
+        "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
+        "answers_json": submission["answers_json"] if has_answers else None,
+        "exam_scoring_json": (
+            submission.get("exam_questions_json")
+            if submission.get("exam_paper_id")
+            else None
+        ),
+        "student_profile_context": student_profile_context,
+        "submitted_at": submission.get("submitted_at"),
+        "submission_fingerprint": attempt_token,
+        "grading_revision_hash": content_fingerprint,
+        "grading_contract_version": "2026-07-durable-v1",
+    }
+    return job_data
 
 
 async def submit_submission_for_ai_grading(
@@ -735,6 +814,9 @@ async def submit_submission_for_ai_grading(
             return {"status": "already_grading"}
         if not allow_graded and submission["status"] == "graded":
             return {"status": "already_graded"}
+        hold_reason = submission_grading_hold(conn, submission_id)
+        if hold_reason:
+            raise AIGradingQueueError(409, hold_reason)
 
         submission_files = _load_submission_files_for_grading(conn, submission_id)
         rubric_md = _resolve_grading_rubric(submission)
@@ -769,48 +851,17 @@ async def submit_submission_for_ai_grading(
 
         attempt_token = _build_grading_attempt_token(content_fingerprint)
         student_profile_context = _build_hidden_student_profile_context(conn, current)
-        job_data = {
-            "submission_id": submission_id,
-            "business_context": {
-                "operation": "grading",
-                "source_feature": current.get("source_feature") or "classroom_assignment",
-                "assessment_kind": current.get("assessment_kind"),
-                "classification_source": current.get("classification_source") or "legacy_unknown",
-                "assessment_kind_version": current.get("assessment_kind_version") or 0,
-                "classification_status": current.get("classification_status") or "legacy_unknown",
-                "assignment_id": str(current["assignment_id"]),
-                "class_offering_id": current.get("class_offering_id"),
-                "logical_call_id": attempt_token,
-                "policy_version": AI_EXECUTION_POLICY_VERSION,
-            },
-            "rubric_md": rubric_md,
-            "requirements_md": submission["requirements_md"] or "",
-            "allowed_file_types_json": submission["allowed_file_types_json"],
-            "files": [
-                {
-                    "stored_path": item["resolved_path"],
-                    "original_filename": item.get("original_filename"),
-                    "relative_path": item.get("relative_path") or item.get("original_filename"),
-                    "mime_type": item.get("mime_type"),
-                    "file_size": item.get("file_size"),
-                    "file_ext": item.get("file_ext"),
-                    "file_hash": item.get("file_hash"),
-                }
-                for item in resolved_files
-            ] if has_files else [],
-            "file_paths": [item["resolved_path"] for item in resolved_files] if has_files else [],
-            "answers_json": submission["answers_json"] if has_answers else None,
-            "exam_scoring_json": (
-                submission.get("exam_questions_json")
-                if submission.get("exam_paper_id")
-                else None
-            ),
-            "student_profile_context": student_profile_context,
-            "submitted_at": submission.get("submitted_at"),
-            "submission_fingerprint": attempt_token,
-            "grading_revision_hash": content_fingerprint,
-            "grading_contract_version": "2026-07-durable-v1",
-        }
+        job_data = build_grading_job_data(
+            submission=submission,
+            current=current,
+            rubric_md=rubric_md,
+            resolved_files=resolved_files,
+            has_files=has_files,
+            has_answers=has_answers,
+            student_profile_context=student_profile_context,
+            attempt_token=attempt_token,
+            content_fingerprint=content_fingerprint,
+        )
         marked_grading = _mark_submission_grading_with_connection(
             conn,
             submission_id=submission_id,

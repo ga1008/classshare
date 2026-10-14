@@ -285,6 +285,8 @@ class AIDurableGradingEnqueueTests(unittest.IsolatedAsyncioTestCase):
             patch.object(service, "_resolve_grading_rubric", return_value="rubric"),
             patch.object(service, "_build_hidden_student_profile_context", return_value=""),
             patch.object(service, "_mark_submission_grading_with_connection", return_value=True),
+            # Appeal holds are covered by tests/test_assessment_appeal_correction.py.
+            patch.object(service, "submission_grading_hold", return_value=None),
             patch.object(
                 service,
                 "create_ai_job",
@@ -326,8 +328,17 @@ class AIGradingPostgresSQLTests(unittest.TestCase):
 
 
 class _FakeRequest:
+    """A callback request signed exactly like the AI worker signs it."""
+
     def __init__(self, payload):
+        from classroom_app.services.internal_callback_auth import signed_callback_request
+
         self._payload = payload
+        self._body, headers = signed_callback_request(payload)
+        self.headers = {key.lower(): value for key, value in headers.items()}
+
+    async def body(self):
+        return self._body
 
     async def json(self):
         return dict(self._payload)

@@ -3,6 +3,8 @@ from .common import *
 
 router = APIRouter()
 
+_LIST_OMITTED_FIELDS = frozenset({"answers_json", "feedback_md"})
+
 
 @router.get(
     "/assignments/{assignment_id}/submissions",
@@ -10,7 +12,7 @@ router = APIRouter()
     response_model=AssignmentSubmissionsResponse,
     response_model_exclude_unset=True,
 )
-async def get_submissions_for_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
+def get_submissions_for_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         close_overdue_assignments(conn)
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
@@ -84,6 +86,13 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
                     )
                 roster = [dict(row) for row in students_cursor]
                 total_students = len(roster)
+        appeal_marks: dict = {}
+        try:
+            from ...services.assessment_appeal_service import load_submission_appeal_marks
+
+            appeal_marks = load_submission_appeal_marks(conn, assignment_id)
+        except Exception as exc:  # noqa: BLE001 - badges are advisory; the list must still load
+            print(f"[APPEAL] 提交列表申诉标记失败: {exc}")
         conn.commit()
 
     files_by_submission: dict[int, list[dict[str, Any]]] = {}
@@ -149,6 +158,10 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         all_entries = submissions
         total_students = len(submissions)
 
+    from ...services.assessment_appeal_service import apply_submission_appeal_marks
+
+    pending_appeal_count = apply_submission_appeal_marks(all_entries, appeal_marks)
+
     # 计算统计数据
     submitted_entries = [e for e in all_entries if e['status'] != 'unsubmitted']
     absence_zero_entries = [
@@ -180,6 +193,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         "grading_review_count": len([s for s in submitted_entries if s['status'] == 'grading_review']),
         "returned_count": len(returned_entries),
         "late_submission_count": len([s for s in submitted_entries if int(s.get("is_late_submission") or 0)]),
+        "pending_appeal_count": pending_appeal_count,
         "average_score": round(sum(scores) / len(scores), 1) if scores else 0,
         "max_score": max(scores) if scores else 0,
         "min_score": min(scores) if scores else 0,
@@ -194,10 +208,14 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
         }
     }
 
+    # The list never renders answers or feedback (the answer card loads them);
+    # dropping them keeps this frequently refreshed payload small (audit B8).
+    list_entries = [{key: value for key, value in entry.items() if key not in _LIST_OMITTED_FIELDS}
+                    for entry in all_entries]
     return {
         "status": "success",
         "stats": stats,
-        "submissions": all_entries,
+        "submissions": list_entries,
         "assignment": enrich_assignment_runtime_view(assignment),
     }
 
@@ -208,7 +226,7 @@ async def get_submissions_for_assignment(assignment_id: str, user: dict = Depend
     response_model=SubmissionMutationResponse,
     response_model_exclude_unset=True,
 )
-async def return_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
+def return_submission(submission_id: int, user: dict = Depends(get_current_teacher)):
     retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
         submission = _get_submission_for_teacher(conn, submission_id, int(user["id"]))
@@ -418,7 +436,7 @@ async def add_submission_files(
 
 
 @router.delete("/submission-files/{file_id}", response_class=JSONResponse)
-async def delete_submission_file(file_id: int, user: dict = Depends(get_current_teacher)):
+def delete_submission_file(file_id: int, user: dict = Depends(get_current_teacher)):
     """教师删除单个学生提交附件；已批改记录必须先撤回。"""
     retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:
@@ -519,13 +537,13 @@ async def submit_assignment(assignment_id: str,
         if existing_submission:
             is_absence_score = int(existing_submission.get("is_absence_score") or 0) == 1
             if is_absence_score:
-                _ensure_accepting_submission(assignment)
+                _ensure_accepting_submission(assignment, conn=conn, student_pk_id=int(user["id"]))
             elif not submission_resubmission_accepts(existing_submission):
                 if int(existing_submission.get("resubmission_allowed") or 0):
                     raise HTTPException(400, "重交时间已截止，请联系教师重新开放")
                 raise HTTPException(400, "您已经提交过此作业")
         else:
-            _ensure_accepting_submission(assignment)
+            _ensure_accepting_submission(assignment, conn=conn, student_pk_id=int(user["id"]))
 
         result = await _save_submission_payload(
             conn,
@@ -675,6 +693,9 @@ async def teacher_withdraw_submissions(
             }
 
         reason = str(data.get("reason") or "").strip() or None
+        from ...services.resubmission_expiry_service import schedule_resubmission_expiry, snapshot_before_return
+
+        previous_by_id = {int(row["id"]): snapshot_before_return(row) for row in targets}
         target_ids = return_submissions_for_resubmission(
             conn,
             assignment=assignment,
@@ -683,6 +704,11 @@ async def teacher_withdraw_submissions(
             resubmission_due_at=resubmission_due_at,
             reason=reason,
         )
+        # An unused window must not leave the answer returned forever: when it
+        # lapses the original submission (or absence placeholder) stands again.
+        for target_id in target_ids:
+            schedule_resubmission_expiry(conn, submission_id=int(target_id), due_at=resubmission_due_at,
+                                         previous=previous_by_id.get(int(target_id), {}), origin="teacher_return")
         conn.execute("SELECT 1")
         conn.commit()
 
@@ -795,7 +821,7 @@ async def teacher_offline_submit_assignment(
 
 
 @router.delete("/assignments/{assignment_id}/withdraw", response_class=JSONResponse)
-async def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_student)):
+def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_student)):
     """学生撤回已提交的作业（仅限未批改的提交）"""
     retired_paths: list[tuple[Path, Path]] = []
     with get_db_connection() as conn:

@@ -782,6 +782,15 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_submission_files_submission "
         "ON submission_files (submission_id, id)"
     )
+    # The screenshot guard looks up only the hashes being uploaded (audit B3).
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_submission_files_file_hash "
+        "ON submission_files (file_hash)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_submission_draft_files_file_hash "
+        "ON submission_draft_files (file_hash)"
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_assignments_exam_offering "
         "ON assignments (exam_paper_id, class_offering_id)"

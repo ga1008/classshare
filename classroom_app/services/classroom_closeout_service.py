@@ -485,12 +485,20 @@ def apply_absence_scores(
     students = _active_student_rows(conn, roster_class_ids)
     by_student = _pick_primary_submission(_submission_rows(conn, assignment_id))
     affected: set[int] = set()
+    from .assignment_student_window_service import active_window_student_ids
+
+    # An approved 超时补交 window is still open: the student is not absent yet.
+    windowed = active_window_student_ids(conn, assignment_id)
+    result["window_open_student_ids"] = sorted(windowed)
 
     for student in students:
         student_pk_id = _safe_int(student.get("id"))
         if student_pk_id is None:
             continue
         if only_student_ids is not None and student_pk_id not in only_student_ids:
+            continue
+        if student_pk_id in windowed:
+            result["skipped_count"] += 1
             continue
         student_score = (score_overrides or {}).get(student_pk_id, score)
         normalized = normalize_absence_score(student_score)

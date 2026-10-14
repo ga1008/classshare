@@ -4,6 +4,7 @@
 
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/submission_detail.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper submission-detail-page{% endblock %}
@@ -305,7 +306,12 @@
     {% else %}
     <div data-lq-material="content" class="grading-section" id="submission-grading-card">
         <div class="grading-header">
-            批改作业
+            <span>批改作业</span>
+            <nav class="grading-queue" id="grading-queue-nav" aria-label="批阅队列" hidden>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-queue-go="prev" title="上一份（Alt+←）">上一份</button>
+                <span class="grading-queue__pos" data-queue-pos></span>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-queue-go="next" title="下一份（Alt+→）">下一份</button>
+            </nav>
         </div>
         <div class="grading-body">
             <div class="grading-score-group">
@@ -331,7 +337,8 @@
             </div>
             <div class="grading-actions">
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="grade-cancel">取消</button>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="grade-save" data-testid="p03-submit-manual-grade">保存评分</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="grade-save" data-testid="p03-submit-manual-grade" title="保存评分（Ctrl+Enter）">保存评分</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" id="grade-save-next" hidden>保存并下一份</button>
                 {% if submission.status != 'grading' %}
                 <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass text-warning" data-testid="p03-ai-regrade-detail" onclick="aiRegrade()">AI 辅助批改</button>
                 {% endif %}
@@ -343,6 +350,9 @@
     {% endif %}
 </div>
 </main>
+{% if user_info.role == 'teacher' %}
+<div id="approval-panel-root" data-assignment-id="{{ assignment.id }}" data-auto-open="{{ appeal_request_id or "" }}"></div>
+{% endif %}
 
 {% include "partials/markdown_assets.html" %}
 {% endblock %}
@@ -1105,5 +1115,24 @@
         initTeacherAttachmentManager();
     });
 </script>
+{% if user_info.role == 'teacher' %}
+<script type="module">
+    import { mountPanel } from '{{ asset_url("js/approval_workflow.js") }}';
+    const approvalRoot = document.getElementById('approval-panel-root');
+    if (approvalRoot) {
+        const autoOpen = approvalRoot.dataset.autoOpen ? Number(approvalRoot.dataset.autoOpen) : null;
+        mountPanel(approvalRoot, {
+            assignmentId: approvalRoot.dataset.assignmentId,
+            autoOpenId: autoOpen,
+            // A decided appeal rewrites this answer card's grade; show the fresh one.
+            onDecided: () => window.setTimeout(() => {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('appeal');
+                window.location.replace(url.toString());
+            }, 900),
+        });
+    }
+</script>
+{% endif %}
 {{ vite_entry_tags('frontend/src/islands/submission-jump-nav.tsx') }}
 {% endblock %}

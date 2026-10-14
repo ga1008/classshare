@@ -242,6 +242,9 @@ async def startup_event():
             cultivation_alert_task_id = ensure_cultivation_alert_task(align_conn)
             signature_reminder_task_id = ensure_signature_reminder_task(align_conn)
             ensure_approval_reminder_task(align_conn)
+            from .services.assignment_lifecycle_service import ensure_assignment_close_sweep_task
+
+            ensure_assignment_close_sweep_task(align_conn)
             from .services.material_workflow_storage_service import ensure_material_workflow_cleanup_task
 
             ensure_material_workflow_cleanup_task(align_conn)

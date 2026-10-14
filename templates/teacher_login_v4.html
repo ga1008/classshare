@@ -40,4 +40,9 @@
 {% block scripts %}
 {{ super() }}
 <script type="module" src="{{ asset_url('js/teacher_login.js') }}"></script>
+<script type="module">
+    // Nobody is signed in here: drop answer drafts left on this (possibly shared) device.
+    import { purgeForeignLocalDrafts } from '{{ asset_url("js/local_draft_scope.js") }}';
+    purgeForeignLocalDrafts(window.localStorage, null);
+</script>
 {% endblock %}

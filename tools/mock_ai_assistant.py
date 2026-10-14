@@ -200,9 +200,26 @@ async def submit_grading_job(request: Request) -> JSONResponse:
             "submission_fingerprint": fingerprint,
             "submitted_at": payload.get("submitted_at"),
         }
+        if payload.get("appeal_request_id"):
+            # Appeal re-grade: echo the appeal identity like ai_assistant does.
+            callback_payload.update({
+                "appeal_request_id": payload["appeal_request_id"],
+                "appeal_regrade_token": fingerprint,
+                "prior_issues": ["P03 mock: 前次批改漏看了学生的补充说明"],
+                "appeal_response": "P03 mock: 申诉部分成立，已按复核结果调整。",
+                "changed": True,
+            })
         try:
+            # The main app only accepts HMAC-signed grading callbacks.
+            import sys
+            from pathlib import Path
+
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from classroom_app.services.internal_callback_auth import signed_callback_request
+
+            body, headers = signed_callback_request(callback_payload)
             async with httpx.AsyncClient(timeout=10.0) as client:
-                await client.post(callback_url, json=callback_payload)
+                await client.post(callback_url, content=body, headers=headers)
         except Exception as exc:  # pragma: no cover - mock service diagnostic only
             print(f"[MOCK_AI] grading callback failed for submission {submission_id}: {exc}")
 

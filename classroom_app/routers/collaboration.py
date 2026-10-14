@@ -45,6 +45,11 @@ from ..services.collaboration_service import (
     upsert_group_submission,
 )
 from ..services.file_service import save_file_globally
+from ..services.submission_file_safety import (
+    SAFE_INLINE_IMAGE_MIME_TYPES,
+    trusted_submission_mime_type,
+    untrusted_file_headers,
+)
 
 
 router = APIRouter(prefix="/api/collaboration")
@@ -186,7 +191,8 @@ async def upload_group_chat_attachments(
                 user,
                 file_hash=str(storage["hash"]),
                 original_filename=str(file.filename),
-                mime_type=str(file.content_type or ""),
+                # Never trust the browser-declared type for files served on our origin.
+                mime_type=trusted_submission_mime_type(str(file.filename or "")),
                 file_size=int(storage.get("size") or size),
             )
             conn.commit()
@@ -218,13 +224,18 @@ async def download_group_chat_attachment(
 ):
     with get_db_connection() as conn:
         payload = resolve_group_chat_attachment_download(conn, attachment_id, user)
-    disposition = "attachment" if (download or payload["kind"] != "image") else "inline"
+    # Type comes from the file name (stored types may be client-declared on
+    # older rows); only raster images may render inline on our origin.
+    media_type = trusted_submission_mime_type(str(payload["filename"] or ""))
+    inline_ok = not download and media_type in SAFE_INLINE_IMAGE_MIME_TYPES
+    disposition = "inline" if inline_ok else "attachment"
     return FileResponse(
         payload["path"],
-        media_type=payload["mime_type"],
+        media_type=media_type,
         filename=payload["filename"],
         headers={
-            "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(payload['filename'])}"
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(payload['filename'])}",
+            **untrusted_file_headers(),
         },
     )
 

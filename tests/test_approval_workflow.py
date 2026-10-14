@@ -42,6 +42,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
                 status TEXT DEFAULT 'published', auto_close INTEGER DEFAULT 1, availability_mode TEXT DEFAULT 'deadline');
             CREATE TABLE submissions (id INTEGER PRIMARY KEY, assignment_id TEXT, student_pk_id INTEGER, student_name TEXT,
                 status TEXT, score INTEGER, feedback_md TEXT, submitted_at TEXT, is_absence_score INTEGER DEFAULT 0,
+                absence_scored_at TEXT, absence_scored_by_teacher_id INTEGER, submission_channel TEXT,
                 resubmission_allowed INTEGER DEFAULT 0, resubmission_due_at TEXT, returned_at TEXT, returned_by_teacher_id INTEGER,
                 returned_reason TEXT, grading_started_at TEXT, grading_attempt_fingerprint TEXT, grading_revision_hash TEXT,
                 grading_job_id INTEGER, active_grade_revision_id INTEGER, score_before_late_penalty REAL,
@@ -66,6 +67,12 @@ class ApprovalWorkflowTests(unittest.TestCase):
         schema_approval_workflow._SCHEMA_READY = False
         schema_approval_workflow.ensure_approval_workflow_schema(self.conn)
         self.conn.commit()
+        # Approving a return schedules the window-lapse task in this in-memory DB.
+        from classroom_app.db import schema_scheduler
+
+        scheduler_flag = mock.patch.object(schema_scheduler, "_SCHEMA_READY", False)
+        scheduler_flag.start()
+        self.addCleanup(scheduler_flag.stop)
         self.notifications = []
         self.notify_patch = mock.patch.object(workflow, "_notify", side_effect=self._capture_notify)
         self.notify_patch.start()
@@ -73,6 +80,15 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.group_patch = mock.patch.object(returns, "invalidate_member_work_score", return_value=[])
         self.group_patch.start()
         self.addCleanup(self.group_patch.stop)
+        # The legacy withdraw type no longer accepts new requests in production
+        # (superseded by the 错误提交 appeal); these framework tests re-enable
+        # its original prepare to exercise the generic workflow mechanics.
+        import dataclasses
+        from classroom_app.services.approval_request_types import submission_withdraw as legacy
+
+        original = workflow.get_request_type("submission_withdraw")
+        workflow.register_request_type(dataclasses.replace(original, prepare=legacy._legacy_prepare))
+        self.addCleanup(workflow.register_request_type, original)
 
     def _capture_notify(self, conn, **kwargs):
         self.notifications.append(kwargs)
@@ -238,6 +254,38 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertIn("教师已直接撤回", row["decision_note"])
         events = [r["event_type"] for r in self.conn.execute("SELECT event_type FROM approval_request_events WHERE request_id = ? ORDER BY id", (second["id"],))]
         self.assertEqual(["created", "auto_cancelled"], events)
+
+    def test_legacy_withdraw_no_longer_accepts_new_requests_in_production(self):
+        from classroom_app.services.approval_request_types import submission_withdraw as legacy
+
+        with self.assertRaises(ApprovalWorkflowError) as ctx:
+            legacy.prepare(self.conn, STUDENT, "1", "理由", {})
+        self.assertEqual(410, ctx.exception.status_code)
+
+    def test_teacher_return_of_absence_placeholder_reopens_window(self):
+        # Closeout wrote a 0-score placeholder for a student who never submitted.
+        self.conn.execute(
+            "INSERT INTO submissions (id, assignment_id, student_pk_id, student_name, status, score, is_absence_score, "
+            "absence_scored_at, absence_scored_by_teacher_id, submission_channel) "
+            "VALUES (3, 'hw1', 21, '小红', 'unsubmitted', 0, 1, '2026-10-01T10:00:00', 7, 'absence_zero')"
+        )
+        self.conn.commit()
+        assignment = dict(self.conn.execute("SELECT * FROM assignments WHERE id = 'hw1'").fetchone())
+        placeholder = dict(self.conn.execute("SELECT * FROM submissions WHERE id = 3").fetchone())
+        due = returns.resolve_resubmission_due_at(assignment)
+        returns.return_submissions_for_resubmission(self.conn, assignment=assignment, targets=[placeholder], teacher_id=7,
+                                                    resubmission_due_at=due, reason="开放补交")
+        self.conn.commit()
+        row = dict(self.conn.execute("SELECT * FROM submissions WHERE id = 3").fetchone())
+        self.assertEqual(0, row["is_absence_score"])
+        self.assertIsNone(row["absence_scored_at"])
+        self.assertIsNone(row["score"])
+        self.assertEqual(1, row["resubmission_allowed"])
+        self.assertEqual("submitted", row["status"])
+        # The origin stays recognisable so an unused window can restore the placeholder.
+        self.assertEqual("absence_zero", row["submission_channel"])
+        from classroom_app.services.assignment_lifecycle_service import submission_resubmission_accepts
+        self.assertTrue(submission_resubmission_accepts(row))
 
     def test_reminder_sweep_reminds_once_then_expires(self):
         item = self._create()

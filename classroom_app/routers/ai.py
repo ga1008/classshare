@@ -68,6 +68,11 @@ from ..services.ai_durable_job_service import (
 )
 from ..services.grading_feedback_service import normalize_grading_result, sanitize_student_feedback_text
 from ..services.grading_revision_service import activate_submission_grade_revision
+from ..services.internal_callback_auth import (
+    SIGNATURE_HEADER as CALLBACK_SIGNATURE_HEADER,
+    TIMESTAMP_HEADER as CALLBACK_TIMESTAMP_HEADER,
+    verify_signed_callback,
+)
 from ..services.group_assignment_service import lock_group_grading_for_submission
 from ..services.late_submission_policy import append_late_policy_feedback, apply_late_policy_to_score
 from ..services.learning_progress_service import (
@@ -393,10 +398,27 @@ def _activate_submission_grade_revision(
 
 @router.post("/internal/grading-complete", response_class=JSONResponse, include_in_schema=False)
 async def handle_ai_grading_callback(request: Request):
-    """(内部接口) 接收来自 AI 助手的批改结果"""
+    """(内部接口) 接收来自 AI 助手的批改结果；只接受 HMAC 签名的请求。"""
+    body = await request.body()
     try:
-        data = await request.json()
+        verify_signed_callback(
+            body,
+            request.headers.get(CALLBACK_TIMESTAMP_HEADER.lower()),
+            request.headers.get(CALLBACK_SIGNATURE_HEADER.lower()),
+        )
+    except HTTPException as exc:
+        print(f"[SECURITY] 拒绝未通过签名校验的批改回调: {exc.detail}")
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    try:
+        data = json.loads(body)
         submission_id = data['submission_id']
+        if data.get("appeal_request_id"):
+            # Appeal re-grades never touch the live grade: they land as a candidate revision.
+            from ..services.grading_appeal_ai_service import handle_appeal_regrade_callback
+            with get_db_connection() as conn:
+                result = handle_appeal_regrade_callback(conn, data)
+                conn.commit()
+            return result
         with get_db_connection() as conn:
             lock_group_grading_for_submission(conn, submission_id)
             submission = conn.execute(
@@ -486,6 +508,8 @@ async def handle_ai_grading_callback(request: Request):
                 )
                 score = normalized.get("score")
                 feedback_md = normalized.get("feedback_md")
+                # Keep the structured per-question grades with the revision.
+                data = {**data, "questions": normalized.get("questions") or data.get("questions") or []}
                 if score is None:
                     status = "grading_failed"
                     feedback_md = "AI 批改返回的分数无效，已保留提交内容，请教师手动复核。"

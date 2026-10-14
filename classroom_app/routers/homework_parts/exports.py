@@ -1,11 +1,54 @@
+import os
+import threading
+
 from .common import *
 
 
 router = APIRouter()
 
+# Formats that are already compressed: storing them saves CPU and changes nothing in size.
+_ZIP_STORED_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".mp4", ".mov", ".mp3", ".m4a",
+    ".zip", ".rar", ".7z", ".gz", ".tgz", ".bz2", ".xz", ".pdf", ".docx", ".xlsx", ".pptx",
+})
+
+
+def _safe_archive_relative_path(raw: str) -> str:
+    """Archive member path without absolute roots or ``..`` (no zip-slip on extraction)."""
+    parts = [part for part in str(raw or "").replace("\\", "/").split("/") if part not in ("", ".", "..")]
+    return "/".join(parts) or "file"
+
+
+_EXPORT_SLOTS = threading.BoundedSemaphore(2)
+_EXPORT_STALE_SECONDS = 3600
+
+
+def _export_temp_dir() -> Path:
+    """Dedicated scratch dir; files a crash or disconnect left behind are swept."""
+    import tempfile
+    import time
+
+    directory = Path(tempfile.gettempdir()) / "lanshare-exports"
+    directory.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - _EXPORT_STALE_SECONDS
+    for stale in directory.glob("lanshare-export-*.zip"):
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass
+    return directory
+
+
+def _remove_quietly(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
 
 @router.get("/assignments/{assignment_id}/export-attachments/{class_offering_id}")
-async def export_submission_attachments(
+def export_submission_attachments(
     assignment_id: str,
     class_offering_id: int,
     user: dict = Depends(get_current_teacher),
@@ -66,13 +109,43 @@ async def export_submission_attachments(
     if not rows:
         raise HTTPException(404, "当前没有已提交附件可供导出")
 
-    # Build zip in memory
+    # Build the zip in a temporary file, not in memory: a class of large
+    # submissions would otherwise hold hundreds of MB per request (audit B2).
     assignment_title = str(assignment.get("title") or "").strip()
     # Sanitize folder names for cross-platform compatibility
     root_folder = _sanitize_zip_path(f"{class_name}-{assignment_title}")
-    zip_buffer = io.BytesIO()
+    import tempfile
 
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    from starlette.background import BackgroundTask
+
+    # At most two zips are built at once: each holds a threadpool worker and disk.
+    if not _EXPORT_SLOTS.acquire(blocking=False):
+        raise HTTPException(429, "附件打包任务较多，请稍后再试")
+    try:
+        handle = tempfile.NamedTemporaryFile(prefix="lanshare-export-", suffix=".zip", delete=False,
+                                             dir=_export_temp_dir())
+        zip_path = handle.name
+        handle.close()
+        try:
+            _write_attachment_zip(zip_path, rows, root_folder=root_folder, multi_class=len(class_ids) > 1)
+        except Exception:
+            _remove_quietly(zip_path)
+            raise
+    finally:
+        _EXPORT_SLOTS.release()
+
+    zip_filename = f"{root_folder}.zip"
+    encoded_filename = quote(zip_filename)
+    return FileResponse(
+        zip_path,
+        media_type="application/x-zip-compressed",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+        background=BackgroundTask(_remove_quietly, zip_path),
+    )
+
+
+def _write_attachment_zip(zip_path: str, rows, *, root_folder: str, multi_class: bool) -> None:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         # Map student_pk_id -> unique folder name (handles duplicate names)
         student_folder_map: dict[int, str] = {}
         used_folder_names: set[str] = set()
@@ -82,6 +155,8 @@ async def export_submission_attachments(
             if not resolved_path:
                 continue
             stored_path = Path(resolved_path)
+            if not stored_path.is_file():
+                continue  # a missing file must not fail the whole class export
 
             student_pk_id = int(row["student_pk_id"])
 
@@ -90,7 +165,7 @@ async def export_submission_attachments(
                 student_name = str(row["student_name"] or "").strip() or "未知"
                 student_id_number = str(row["student_id_number"] or "").strip() or "无学号"
                 folder = _sanitize_zip_path(f"{student_name}-{student_id_number}")
-                if len(class_ids) > 1:
+                if multi_class:
                     class_folder = _sanitize_zip_path(
                         str(row["student_class_name"] or "").strip() or "未分班"
                     )
@@ -108,19 +183,11 @@ async def export_submission_attachments(
             student_folder = student_folder_map[student_pk_id]
 
             # Use relative_path to preserve sub-directory structure if any
-            relative_path = str(row["relative_path"] or row["original_filename"] or "file")
+            relative_path = _safe_archive_relative_path(row["relative_path"] or row["original_filename"] or "file")
             arc_path = f"{root_folder}/{student_folder}/{relative_path}"
-
-            zf.write(stored_path, arc_path)
-
-    zip_buffer.seek(0)
-    zip_filename = f"{root_folder}.zip"
-    encoded_filename = quote(zip_filename)
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/x-zip-compressed",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
-    )
+            compression = (zipfile.ZIP_STORED if stored_path.suffix.lower() in _ZIP_STORED_EXTENSIONS
+                           else zipfile.ZIP_DEFLATED)
+            zf.write(stored_path, arc_path, compress_type=compression)
 
 
 def _rows_as_value_tuples(cursor) -> list[tuple]:
@@ -134,7 +201,7 @@ def _rows_as_value_tuples(cursor) -> list[tuple]:
 
 
 @router.get("/assignments/{assignment_id}/export/{class_offering_id}", response_class=FileResponse)
-async def export_grades_for_class(assignment_id: str, class_offering_id: int, user: dict = Depends(get_current_teacher)):
+def export_grades_for_class(assignment_id: str, class_offering_id: int, user: dict = Depends(get_current_teacher)):
     """V4.0: 导出此作业在指定班级课堂的成绩"""
     with get_db_connection() as conn:
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
@@ -206,19 +273,42 @@ async def export_grades_for_class(assignment_id: str, class_offering_id: int, us
     export_class_label = str(class_info['name'] or '').strip()
     if len(class_ids) > 1 and "combined_class_names" in offering.keys() and str(offering["combined_class_names"] or "").strip():
         export_class_label = str(offering["combined_class_names"]).strip()
-    export_filename = f"成绩_{export_class_label}_{assignment['title']}.xlsx"
-    # 确保作业目录存在
-    assignment_dir = _build_assignment_storage_dir(assignment['course_id'], assignment['id'])
-    assignment_dir.mkdir(parents=True, exist_ok=True)
-    export_path = assignment_dir / export_filename
+    return build_grades_export_response(
+        final_df,
+        class_label=export_class_label,
+        assignment_title=str(assignment['title'] or ''),
+    )
 
-    final_df.to_excel(export_path, index=False)
-    return FileResponse(export_path, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        filename=export_filename)
+
+XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+def build_grades_export_response(final_df, *, class_label: str, assignment_title: str) -> StreamingResponse:
+    """Stream the grade workbook from memory.
+
+    The title is teacher-entered text: it must never become a filesystem path
+    (``/`` or ``..`` used to escape the assignment directory or 500), and
+    concurrent exports must not overwrite a shared file left on disk.
+    """
+    import re
+
+    stem = re.sub(r"\.{2,}", ".", _sanitize_zip_path(f"成绩_{class_label}_{assignment_title}")).strip(". ")
+    export_filename = f"{stem or '成绩'}.xlsx"
+    buffer = io.BytesIO()
+    final_df.to_excel(buffer, index=False)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(export_filename)}",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.get("/assignments/{assignment_id}/export-review-docx")
-async def export_student_assignment_review_docx(
+def export_student_assignment_review_docx(
     assignment_id: str,
     user: dict = Depends(get_current_student),
 ):

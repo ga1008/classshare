@@ -229,6 +229,8 @@ DEEPSEEK_VISION_MODELS = frozenset({DEEPSEEK_FLASH_MODEL})
 STANDARD_GRADING_PROFILE = "vision_grading_flash"
 TEXT_ASSESSMENT_PROFILE = "text_assessment_high"
 IMPORTANT_ASSESSMENT_KINDS = frozenset({"midterm", "final"})
+# Trusted business fact set server-side when a teacher re-grades a student appeal.
+APPEAL_SOURCE_FEATURE = "assessment_appeal"
 # Profiles that earlier policy revisions could have frozen into a durable job.
 LEGACY_SNAPSHOT_PROFILES = frozenset({"vision_pro_low", "vision_assessment_high", "text_deep"})
 ASSESSMENT_KINDS = frozenset({"homework", "midterm", "final", "legacy_unknown"})
@@ -357,9 +359,10 @@ def _standard_grading_plan(task: str, operation: str, env: Mapping[str, str]) ->
         quality_floor="grading", allowed_fallbacks=("volcengine",))
 
 
-def _text_plan(task: str, operation: str, kind: str | None, env: Mapping[str, str]) -> AIExecutionPlan:
+def _text_plan(task: str, operation: str, kind: str | None, env: Mapping[str, str],
+               *, appeal: bool = False) -> AIExecutionPlan:
     deep = task == AI_TASK_DEEP_TEXT
-    important = deep and operation == "grading" and kind in IMPORTANT_ASSESSMENT_KINDS
+    important = deep and operation == "grading" and (kind in IMPORTANT_ASSESSMENT_KINDS or appeal)
     if important and str(env.get("AI_TEXT_ASSESSMENT_PROVIDER") or "volcengine").strip().lower() == "volcengine":
         return AIExecutionPlan(TEXT_ASSESSMENT_PROFILE, "volcengine", _vision_model_from_env(env, edge=False), "thinking", task,
             operation, "enabled", "high", 16384, quality_floor="assessment")
@@ -377,7 +380,9 @@ def _vision_plan(task: str, operation: str, context: AIBusinessContext, kind: st
     edge = operation in {"chat", "ocr"} or context.source_feature in EDGE_FEATURES
     if edge and operation in {"grading", "adjudication"}:
         raise ValueError("An edge feature cannot perform authoritative grading")
-    important = kind in IMPORTANT_ASSESSMENT_KINDS
+    # A student appeal re-grade is teacher-initiated and must use the strongest
+    # authoritative tier regardless of the assessment kind.
+    important = kind in IMPORTANT_ASSESSMENT_KINDS or context.source_feature == APPEAL_SOURCE_FEATURE
     if edge:
         return AIExecutionPlan("vision_edge_low", "volcengine", _vision_model_from_env(env, edge=True), "vision", task,
             operation, "enabled", "low", 4096)
@@ -442,7 +447,7 @@ def resolve_execution_plan(
     if task in MULTIMODAL_TASK_TYPES:
         plan = _vision_plan(task, operation, context, kind, env)
     else:
-        plan = _text_plan(task, operation, kind, env)
+        plan = _text_plan(task, operation, kind, env, appeal=context.source_feature == APPEAL_SOURCE_FEATURE)
     limit_name = "AI_PROFILE_" + plan.profile_id.upper() + "_MAX_OUTPUT_TOKENS"
     raw_limit = env.get(limit_name)
     if raw_limit:

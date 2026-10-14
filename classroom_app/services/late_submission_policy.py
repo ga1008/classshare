@@ -9,6 +9,8 @@ from typing import Any
 LATE_PENALTY_FIXED = "fixed"
 LATE_PENALTY_GRADIENT = "gradient"
 LATE_PENALTY_STRATEGIES = {LATE_PENALTY_FIXED, LATE_PENALTY_GRADIENT}
+# Only personal-window snapshots use "none"; assignment rules stay fixed/gradient.
+LATE_PENALTY_NONE = "none"
 
 
 def utc_like_now() -> datetime:
@@ -227,6 +229,26 @@ def assignment_should_auto_close(assignment: dict[str, Any], now_dt: datetime | 
     return until_dt is not None and until_dt <= now_dt
 
 
+def inherited_late_state(existing_submission: dict[str, Any] | None) -> tuple[int, int, str | None] | None:
+    """Late state a resubmission inherits from the returned original.
+
+    A return (teacher withdraw, approved 错误提交 appeal) is a correction, not a
+    new late act: a student who first submitted on time must not be penalised
+    for resubmitting inside the window the teacher granted. Returns
+    ``(is_late, late_by_seconds, snapshot_json)`` or ``None`` when there is no
+    real original to inherit from (absence placeholder, first submission).
+    """
+    if not existing_submission or not _is_truthy(existing_submission.get("resubmission_allowed"), False):
+        return None
+    if str(existing_submission.get("submission_channel") or "") == "absence_zero":
+        return None
+    if not existing_submission.get("submitted_at"):
+        return None
+    if not _is_truthy(existing_submission.get("is_late_submission"), False):
+        return 0, 0, None
+    return 1, int(existing_submission.get("late_by_seconds") or 0), existing_submission.get("late_policy_snapshot_json")
+
+
 def build_late_submission_snapshot(
     assignment: dict[str, Any],
     submitted_at: Any,
@@ -321,20 +343,36 @@ def apply_late_policy_to_score(
             "message": "",
         }
 
+    late_by_seconds = int(submission.get("late_by_seconds") or snapshot.get("late_by_seconds") or 0)
+    if str(snapshot.get("late_penalty_strategy") or "").strip().lower() == LATE_PENALTY_NONE:
+        # A personal window granted "no penalty": late for statistics only.
+        return {
+            "applied": False,
+            "original_score": _normalize_score_value(original_score),
+            "final_score": _normalize_score_value(original_score),
+            "penalty_points": 0,
+            "late_by_seconds": late_by_seconds,
+            "score_cap_applied": False,
+            "message": "",
+        }
     strategy = _normalize_strategy(snapshot.get("late_penalty_strategy"))
     points = _nonnegative_float(snapshot.get("late_penalty_points"), 0)
     interval_hours = _positive_float(snapshot.get("late_penalty_interval_hours"), 1)
     min_score = _bounded_score(snapshot.get("late_penalty_min_score"), 0) or 0
     cap = _bounded_score(snapshot.get("late_score_cap"), None)
-    late_by_seconds = int(submission.get("late_by_seconds") or snapshot.get("late_by_seconds") or 0)
+    max_penalty = _parse_float(snapshot.get("late_penalty_max_points"), None)
 
     if strategy == LATE_PENALTY_GRADIENT:
-        interval_seconds = max(1, int(interval_hours * 3600))
+        # Window snapshots carry exact seconds ("每 n 秒扣 x 分"); older ones hours.
+        interval_seconds = max(1, int(_parse_float(snapshot.get("late_penalty_interval_seconds"), None)
+                                      or interval_hours * 3600))
         steps = max(1, math.ceil(max(late_by_seconds, 1) / interval_seconds))
         penalty = points * steps
     else:
         steps = 1
         penalty = points
+    if max_penalty is not None and max_penalty >= 0:
+        penalty = min(penalty, max_penalty)
 
     floor_for_this_score = min(original_score, min_score)
     after_penalty = max(original_score - penalty, floor_for_this_score)

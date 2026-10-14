@@ -17,7 +17,8 @@ const isOwner = generation => ownerActive && generation === ownerGeneration;
 
 function datasetFingerprint(el) {
     return JSON.stringify(['assignmentId', 'serverNow', 'startsAt', 'countdownAt', 'personalResubmission', 'resubmissionDueAt',
-        'canResubmit', 'lateUntil', 'deadlinePhase', 'accepting', 'lateOpen', 'latePolicyLabel'].map(key => el.dataset[key]));
+        'canResubmit', 'lateUntil', 'deadlinePhase', 'accepting', 'lateOpen', 'latePolicyLabel',
+        'personalWindow', 'personalWindowDueAt', 'personalWindowLabel'].map(key => el.dataset[key]));
 }
 
 function parseDateMs(value) {
@@ -27,6 +28,15 @@ function parseDateMs(value) {
     const normalized = text.includes('T') ? text : text.replace(' ', 'T');
     const parsed = Date.parse(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized) ? normalized : `${normalized}+08:00`);
     return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Second-level countdown for personal windows: "2 天 03:04:05" / "03:04:05".
+export function formatCountdown(totalSeconds) {
+    const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+    const days = Math.floor(seconds / 86400);
+    const pad = (value) => String(value).padStart(2, '0');
+    const clock = `${pad(Math.floor((seconds % 86400) / 3600))}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+    return days > 0 ? `${days} 天 ${clock}` : clock;
 }
 
 export function formatDuration(totalSeconds) {
@@ -64,6 +74,9 @@ function readClockState(el) {
         accepting: el.dataset.accepting === '1' || el.dataset.accepting === 'true',
         lateOpen: el.dataset.lateOpen === '1' || el.dataset.lateOpen === 'true',
         latePolicyLabel: el.dataset.latePolicyLabel || '',
+        personalWindow: el.dataset.personalWindow === '1',
+        personalWindowDueAtMs: parseDateMs(el.dataset.personalWindowDueAt),
+        personalWindowLabel: el.dataset.personalWindowLabel || '',
     };
 }
 
@@ -120,6 +133,10 @@ function renderClock(state) {
     state.localLateOpen = lateOpen;
     state.localCountdownAt = countdownAtMs;
 
+    if (state.personalWindow) {
+        renderPersonalWindow(state, serverMs);
+        return;
+    }
     if (state.personalResubmission) {
         const personalOpen = state.canResubmit && (state.resubmissionDueAtMs === null || serverMs < state.resubmissionDueAtMs);
         state.el.classList.toggle('is-expired', !personalOpen);
@@ -173,6 +190,26 @@ function renderClock(state) {
         }
     }
     state.presentation = presentation(state, phase, isUrgent, countdownAtMs, serverMs);
+}
+
+// Approved 超时补交 window: only this student's deadline counts, to the second.
+function renderPersonalWindow(state, serverMs) {
+    const dueMs = state.personalWindowDueAtMs;
+    const remaining = dueMs === null ? null : Math.floor((dueMs - serverMs) / SECOND_MS);
+    const open = remaining === null || remaining > 0;
+    const urgent = open && remaining !== null && remaining <= 3600;
+    state.localAccepting = open;
+    state.localDeadlinePhase = open ? 'regular' : 'closed';
+    state.el.classList.toggle('is-late', open);
+    state.el.classList.toggle('is-urgent', urgent);
+    state.el.classList.toggle('is-expired', !open);
+    if (state.labelEl) state.labelEl.textContent = open ? '补交通道剩余' : '补交通道已关闭';
+    if (state.detailEl) state.detailEl.textContent = open ? (state.personalWindowLabel ? `扣分规则：${state.personalWindowLabel}` : '') : '当前不再接收提交';
+    if (state.valueEl) {
+        const label = !open ? '已截止' : remaining === null ? '开放中' : formatCountdown(remaining);
+        if (state.valueEl.textContent !== label) state.valueEl.textContent = label;
+    }
+    state.presentation = presentation(state, open ? 'regular' : 'closed', urgent, dueMs, serverMs);
 }
 
 function presentation(state, phase, urgent, deadlineAtMs, serverMs) {

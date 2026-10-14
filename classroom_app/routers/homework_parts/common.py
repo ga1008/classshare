@@ -32,6 +32,8 @@ from ...config import (
 )
 from ...database import get_db_connection
 from ...db.connection import begin_immediate_transaction, execute_insert_returning_id
+from ...db.errors import is_retryable_conflict, is_unique_violation
+from ...db.savepoint import best_effort
 from ...services.submission_write_guard import lock_submission_writer, verify_submission_write, draft_matches_submission_round
 from ...dependencies import get_current_user, get_current_student, get_current_teacher
 from ...schemas.homework_contracts import (
@@ -72,9 +74,13 @@ from ...services.late_submission_policy import (
     append_late_policy_feedback,
     apply_late_policy_to_score,
     build_late_submission_snapshot,
+    inherited_late_state,
+    parse_iso_like_datetime,
     serialize_assignment_time_state,
     utc_like_now,
 )
+from ...services.assessment_appeal_service import resubmission_late_mode
+from ...services.assignment_student_window_service import active_window, mark_window_used, window_late_snapshot
 from ...services.exam_json_service import (
     build_exam_rubric_md,
     EXAM_JSON_MAX_BYTES,
@@ -325,9 +331,14 @@ def _dropped_files_response_fields(dropped_files: list[dict[str, Any]], *, actio
 
 
 
-def _ensure_accepting_submission(assignment: dict[str, Any]) -> None:
+def _ensure_accepting_submission(assignment: dict[str, Any], *, conn=None, student_pk_id: Any = None) -> None:
+    """Raise unless the assignment accepts work now, or this student holds an open
+    personal window (approved 超时补交), which overrides the assignment's state."""
     if assignment_accepts_submissions(assignment):
         return
+    if conn is not None and student_pk_id is not None and str(assignment.get("status") or "") in {"published", "closed"}:
+        if active_window(conn, assignment["id"], student_pk_id):
+            return
     status = str(assignment.get("status") or "").strip().lower()
     # 倒计时模式：实时检查 due_at 是否已过期，避免前端倒计时结束后仍可 API 提交
     if status == "published":
@@ -996,6 +1007,30 @@ def _copy_submission_draft_files_to_staging(
     return copied_files, dropped_files
 
 
+def _personal_window_for_save(conn, assignment: dict[str, Any], student_pk_id: int,
+                              existing_submission: dict[str, Any] | None, actor_role: str,
+                              submitted_at: Any = None) -> dict[str, Any] | None:
+    """The approved 超时补交 window this save goes through, if any (call under the writer lock).
+
+    Only a student's own first real submission uses it, and only while the
+    assignment itself would refuse the work. "In time" is judged at the moment
+    the submit started, so a long upload begun inside the window still counts
+    (and is penalised by the window rule); one begun after it closed is refused
+    here rather than slipping through with no late penalty.
+    """
+    if actor_role != "student":
+        return None
+    if existing_submission and not int(existing_submission.get("is_absence_score") or 0):
+        return None
+    started = parse_iso_like_datetime(submitted_at) if submitted_at else None
+    if assignment_accepts_submissions(assignment, now_dt=started):
+        return None
+    window = active_window(conn, assignment["id"], student_pk_id, now=started)
+    if window is None:
+        raise HTTPException(400, "补交通道已关闭，当前不能提交")
+    return window
+
+
 def _ensure_student_can_save_assignment_draft(
     conn,
     *,
@@ -1011,12 +1046,12 @@ def _ensure_student_can_save_assignment_draft(
     existing_submission = dict(submission) if submission else None
     if existing_submission:
         if int(existing_submission.get("is_absence_score") or 0):
-            _ensure_accepting_submission(assignment)
+            _ensure_accepting_submission(assignment, conn=conn, student_pk_id=student_id)
             return existing_submission
         if submission_resubmission_accepts(existing_submission):
             return existing_submission
         raise HTTPException(409, "您已经提交过此作业，当前不能继续保存草稿")
-    _ensure_accepting_submission(assignment)
+    _ensure_accepting_submission(assignment, conn=conn, student_pk_id=student_id)
     return None
 
 
@@ -1298,6 +1333,12 @@ async def _save_submission_payload(
     is_late_submission = 1 if late_snapshot.get("is_late_submission") else 0
     late_by_seconds = int(late_snapshot.get("late_by_seconds") or 0)
     late_snapshot_json = json.dumps(late_snapshot, ensure_ascii=False) if is_late_submission else None
+    # A resubmission after a return keeps the original's late state unless the
+    # approving teacher explicitly chose to recompute it (plan §5.5).
+    if resubmission_late_mode(conn, existing_submission) == "inherit":
+        inherited = inherited_late_state(existing_submission)
+        if inherited is not None:
+            is_late_submission, late_by_seconds, late_snapshot_json = inherited
     started_at_normalized = _normalize_submission_started_at(started_at, submitted_at)
     answers_payload = _parse_answers_payload(answers_json)
     has_answer_content_before_storage = answers_have_content(answers_payload)
@@ -1393,6 +1434,15 @@ async def _save_submission_payload(
         ).fetchone()
         verify_submission_write(current_submission, existing_submission, actor_role=actor_role,
                                 client_version=expected_submission_version)
+        personal_window = _personal_window_for_save(conn, assignment, student_pk_id, existing_submission, actor_role,
+                                                    submitted_at=submitted_at)
+        if personal_window is not None:
+            # Submitted through an approved 超时补交 window: its own late rule
+            # applies, read under the same writer lock that marks it used.
+            late_snapshot = window_late_snapshot(assignment, personal_window, submitted_at)
+            is_late_submission = 1
+            late_by_seconds = int(late_snapshot["late_by_seconds"])
+            late_snapshot_json = json.dumps(late_snapshot, ensure_ascii=False)
         if use_server_draft_files:
             existing_paths = {file_info.relative_path.lower() for file_info in storage_result.stored_files}
             draft_files, draft_dropped_files = _copy_submission_draft_files_to_staging(
@@ -1562,6 +1612,12 @@ async def _save_submission_payload(
                 ),
             )
 
+        if actor_role == "student" and not (existing_submission and not int(existing_submission.get("is_absence_score") or 0)):
+            # Any window still open is spent by the student's first real
+            # submission, even one accepted by a deadline the teacher reopened.
+            open_window_row = personal_window or active_window(conn, assignment["id"], student_pk_id)
+            if open_window_row is not None:
+                mark_window_used(conn, int(open_window_row["id"]), int(submission_id))
         for file_info in storage_result.stored_files:
             cursor.execute(
                 """
@@ -1583,10 +1639,8 @@ async def _save_submission_payload(
             )
 
         if notify_teacher:
-            try:
+            with best_effort(conn, "submission_notify", log_prefix="[MESSAGE_CENTER]"):
                 create_submission_notification(conn, submission_id)
-            except Exception as exc:
-                print(f"[MESSAGE_CENTER] submission notify failed: {exc}")
         if use_server_draft_files:
             cursor.execute(
                 "DELETE FROM submission_drafts WHERE assignment_id = ? AND student_pk_id = ?",
@@ -1596,29 +1650,17 @@ async def _save_submission_payload(
                 str(_build_submission_draft_storage_dir(assignment["course_id"], assignment["id"], student_pk_id)),
             ])
         if assignment.get("class_offering_id"):
-            try:
+            with best_effort(conn, "submission_learning_refresh", log_prefix="[LEARNING_PROGRESS]"):
                 refresh_student_learning_state(
                     conn,
                     int(assignment["class_offering_id"]),
                     int(student_pk_id),
                     event_source_ref=f"submission:{submission_id}",
                 )
-            except Exception as exc:
-                print(f"[LEARNING_PROGRESS] submission snapshot refresh failed: {exc}")
         # A best-effort hook may have caught a SQL error. PostgreSQL would turn
         # COMMIT in an aborted transaction into ROLLBACK without raising.
         conn.execute("SELECT 1")
         conn.commit()
-    except sqlite3.IntegrityError:
-        _restore_submission_dir(
-            submission_dir,
-            backup_dir,
-            remove_current=staging_moved_to_final or backup_dir is not None,
-        )
-        _restore_quarantined_submission_paths(retired_draft_paths)
-        conn.rollback()
-        delete_storage_tree(staging_dir)
-        raise HTTPException(400, "该学生已经提交过此作业")
     except HTTPException:
         _restore_submission_dir(
             submission_dir,
@@ -1638,8 +1680,14 @@ async def _save_submission_payload(
         _restore_quarantined_submission_paths(retired_draft_paths)
         conn.rollback()
         delete_storage_tree(staging_dir)
-        print(f"[ERROR] Submission failed: {e}")
-        raise HTTPException(500, f"数据库错误: {e}")
+        if is_unique_violation(e):
+            # Same conflict on SQLite and PostgreSQL: a concurrent first submission won.
+            raise HTTPException(409, "该学生已经提交过此作业，请刷新确认")
+        if is_retryable_conflict(e):
+            raise HTTPException(503, "提交人数较多，保存暂时排队失败，请稍后重新提交（答案已保留在本页）")
+        print(f"[ERROR] Submission failed: {e!r}")
+        # Never echo driver/SQL details to the browser (audit B11).
+        raise HTTPException(500, "提交保存失败，请稍后重试；如多次失败请联系教师")
 
     # Successful commit must never enter a rollback path because cleanup failed.
     _discard_quarantined_submission_paths(retired_draft_paths)

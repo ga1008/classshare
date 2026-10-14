@@ -700,6 +700,17 @@
     font-weight: 600;
     font-size: 1rem;
 }
+/* Grading header carries the queue navigation (layout only; buttons are LQ). */
+.grading-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm, 8px);
+}
+.grading-queue { display: inline-flex; align-items: center; gap: var(--spacing-sm, 8px); }
+.grading-queue[hidden] { display: none; }
+.grading-queue__pos { font-weight: 500; font-variant-numeric: tabular-nums; }
 .grading-body {
     padding: var(--spacing-lg);
     display: flex;

@@ -179,6 +179,21 @@ def init_database():
             print("[DB] PostgreSQL poll tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL poll schema step skipped: {exc}")
+        # Per-student late-submission windows are read on every student
+        # assignment page and submit; create them at startup, committed, so a
+        # read-only request never owns (and rolls back) the lazy DDL.
+        try:
+            from ..services.assignment_student_window_service import ensure_student_window_schema
+
+            window_conn = get_db_connection()
+            try:
+                ensure_student_window_schema(window_conn)
+                window_conn.commit()
+            finally:
+                window_conn.close()
+            print("[DB] PostgreSQL student window tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL student window schema step skipped: {exc}")
         # Material whiteboards (材料白板) follow the same runtime-managed,
         # engine-aware pattern.
         try:
@@ -365,6 +380,9 @@ def init_database():
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
+            from ..services.assignment_student_window_service import ensure_student_window_schema
+
+            ensure_student_window_schema(conn)
             ensure_material_whiteboard_schema(conn)
             ensure_course_doc_pack_schema(conn)
             ensure_lessondoc_editor_schema(conn)

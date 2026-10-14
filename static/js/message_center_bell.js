@@ -10,6 +10,7 @@ const lqToastShells = bellShells.filter((shell) => shell.dataset.lqToast === 'tr
 // toast for shells that duplicate the bell markup outside that partial.
 const lqToastModulePromise = lqToastShells.length > 0 ? import('./lq/toast.js') : null;
 const LQ_BELL_TOAST_KEY = 'message-center-bell';
+const APPEAL_REQUEST_TYPES = new Set(['grading_appeal', 'submission_correction', 'late_submission']);
 const blogEntries = Array.from(document.querySelectorAll('[data-blog-topbar-entry]'));
 const blogCountNodes = Array.from(document.querySelectorAll('[data-blog-today-count]'));
 const blogCaptionNodes = Array.from(document.querySelectorAll('[data-blog-topbar-caption]'));
@@ -144,11 +145,22 @@ async function showLqBellToast(notification) {
     // A stable key means a second notification while the toast is still
     // open updates it in place instead of stacking a duplicate; combined
     // with the latestUnreadId gate in syncBellState this is the de-dup.
+    // Open the notification itself (marks it read, then follows its own deep
+    // link) instead of the generic inbox. Pending student appeals stay on
+    // screen until dismissed: they wait on this teacher's decision.
+    const notificationId = Number(notification.id || 0);
+    const href = notificationId > 0
+        ? `/message-center/notifications/${notificationId}/open`
+        : '/profile?section=notifications#profile-message-center';
+    const requestType = String(notification.metadata?.request_type || '');
+    const needsAction = APPEAL_REQUEST_TYPES.has(requestType)
+        && String(notification.severity || '') === 'important'
+        && String(notification.metadata?.status || '') === 'pending';
     bellState.lqToastHandle = toast(`${body}\u3002${meta}`, {
-        tone: 'info',
+        tone: needsAction ? 'warning' : 'info',
         key: LQ_BELL_TOAST_KEY,
-        duration: 5000,
-        action: { label: '\u67e5\u770b', href: '/profile?section=notifications#profile-message-center' },
+        duration: needsAction ? 0 : 5000,
+        action: { label: needsAction ? '\u53bb\u5904\u7406' : '\u67e5\u770b', href },
     });
 }
 

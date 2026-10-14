@@ -201,20 +201,34 @@ def lock_assignment_image_guard(conn, assignment_id: str) -> None:
     )
 
 
-def load_assignment_hash_claims(conn, assignment_id: str) -> list[HashClaim]:
-    """Every guarded image hash currently held by any student for this assignment."""
+def _hash_filter(column: str, file_hashes: Iterable[str] | None) -> tuple[str, tuple[str, ...]]:
+    if file_hashes is None:
+        return "", ()
+    hashes = tuple(sorted({h for h in (normalize_file_hash(value) for value in file_hashes) if h}))
+    if not hashes:
+        return " AND 1 = 0", ()
+    return f" AND {column} IN ({','.join('?' for _ in hashes)})", hashes
+
+
+def load_assignment_hash_claims(conn, assignment_id: str, *, file_hashes: Iterable[str] | None = None) -> list[HashClaim]:
+    """Guarded image hashes held by any student for this assignment.
+
+    With ``file_hashes`` only those hashes are loaded (an indexed lookup), which
+    is all a conflict check needs; without it, every claim (audit view).
+    """
     claims: list[HashClaim] = []
+    hash_sql, hash_params = _hash_filter("sf.file_hash", file_hashes)
     submission_rows = conn.execute(
-        """
+        f"""
         SELECT sf.id AS row_id, sf.file_hash, sf.relative_path, sf.original_filename, sf.mime_type,
                s.student_pk_id, COALESCE(st.name, s.student_name, '') AS student_name
         FROM submission_files sf
         JOIN submissions s ON s.id = sf.submission_id
         LEFT JOIN students st ON st.id = s.student_pk_id
         WHERE s.assignment_id = ?
-          AND sf.file_hash IS NOT NULL AND sf.file_hash <> ''
+          AND sf.file_hash IS NOT NULL AND sf.file_hash <> ''{hash_sql}
         """,
-        (str(assignment_id),),
+        (str(assignment_id), *hash_params),
     ).fetchall()
     for row in submission_rows:
         item = dict(row)
@@ -235,8 +249,9 @@ def load_assignment_hash_claims(conn, assignment_id: str) -> list[HashClaim]:
             )
         )
 
+    draft_hash_sql, _ = _hash_filter("sdf.file_hash", file_hashes)
     draft_rows = conn.execute(
-        """
+        f"""
         SELECT sdf.id AS row_id, sdf.file_hash, sdf.relative_path, sdf.original_filename, sdf.mime_type,
                sdf.kind, sdf.question_id,
                sd.student_pk_id, COALESCE(st.name, '') AS student_name
@@ -244,9 +259,9 @@ def load_assignment_hash_claims(conn, assignment_id: str) -> list[HashClaim]:
         JOIN submission_drafts sd ON sd.id = sdf.draft_id
         LEFT JOIN students st ON st.id = sd.student_pk_id
         WHERE sd.assignment_id = ?
-          AND sdf.file_hash IS NOT NULL AND sdf.file_hash <> ''
+          AND sdf.file_hash IS NOT NULL AND sdf.file_hash <> ''{draft_hash_sql}
         """,
-        (str(assignment_id),),
+        (str(assignment_id), *hash_params),
     ).fetchall()
     for row in draft_rows:
         item = dict(row)
@@ -304,7 +319,9 @@ def find_image_hash_conflicts(
     options = options or HashCheckOptions()
     replaced_questions = {str(qid or "").strip() for qid in options.replaced_question_ids}
     replaced_paths = {_normalize_relative_path(path).lower() for path in options.replaced_relative_paths}
-    all_claims = list(claims) if claims is not None else load_assignment_hash_claims(conn, assignment_id)
+    all_claims = (list(claims) if claims is not None else
+                  load_assignment_hash_claims(conn, assignment_id,
+                                              file_hashes=[candidate.file_hash for candidate in candidates]))
     claims_by_hash: dict[str, list[HashClaim]] = {}
     for claim in all_claims:
         claims_by_hash.setdefault(claim.file_hash, []).append(claim)

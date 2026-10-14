@@ -1,0 +1,114 @@
+/* Student 申诉 entry + sheet: layout only. Materials, buttons, choices, status
+   chips and the sheet itself come from LQ components (lq-btn, lq-domain-choice,
+   lq-status, lq-sheet); text ink uses the scene tokens. */
+.appeal-entry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ls-space-2, 8px) var(--ls-space-3, 12px);
+    margin-block: var(--ls-space-3, 12px);
+    min-width: 0;
+}
+.appeal-entry__text {
+    min-width: 0;
+    color: hsl(var(--lq-material-muted));
+    font-size: 13px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+}
+.appeal-sheet {
+    display: grid;
+    align-content: start;
+    gap: var(--ls-space-3, 12px);
+    min-width: 0;
+}
+.appeal-sheet__foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--ls-space-2, 8px);
+}
+.appeal-types {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: var(--ls-space-2, 8px);
+}
+/* Choice cards hold a stacked label, so they align to the start instead of
+   the centred single-line layout an LQ button uses by default. */
+.appeal-types .appeal-type {
+    display: grid;
+    gap: 4px;
+    place-content: start stretch;
+    justify-items: start;
+    align-items: start;
+    text-align: start;
+    white-space: normal;
+    min-width: 0;
+    height: auto;
+}
+.appeal-type__title { font-weight: 600; }
+.appeal-type__desc,
+.appeal-type__meta,
+.appeal-muted {
+    color: hsl(var(--lq-material-muted));
+    font-size: 13px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+}
+.appeal-form__title { margin: 0; font-size: 16px; color: hsl(var(--lq-material-ink)); }
+.appeal-choice-group { display: grid; gap: 6px; min-width: 0; }
+.appeal-choice-group__label { color: hsl(var(--lq-material-ink)); font-weight: 600; font-size: 13px; }
+.appeal-radio-group { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 8px 16px; }
+.appeal-radio { display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--lq-material-ink)); }
+.appeal-request { display: grid; gap: 6px; min-width: 0; }
+.appeal-request__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: hsl(var(--lq-material-ink)); }
+.appeal-note { margin: 0; color: hsl(var(--lq-material-ink)); overflow-wrap: anywhere; }
+.appeal-history { display: grid; gap: var(--ls-space-2, 8px); }
+.appeal-history > .appeal-request { padding-block-start: var(--ls-space-2, 8px); }
+
+/* 批改有误: student question picker. */
+.appeal-question-list { display: grid; gap: 6px; min-width: 0; }
+.appeal-question { display: grid; gap: 4px; min-width: 0; }
+.appeal-question > .lq-input { margin-inline-start: 22px; width: calc(100% - 22px); }
+
+/* 批改有误: teacher review inside the approval modal (layout only). */
+.appeal-subhead { margin: var(--ls-space-2, 8px) 0 4px; font-size: 13px; color: hsl(var(--lq-material-ink)); }
+.appeal-question-notes,
+.appeal-ai-issues { margin: 0; padding-inline-start: 1.2em; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.appeal-hint { margin: var(--ls-space-2, 8px) 0 0; }
+.appeal-ai-box { display: grid; gap: var(--ls-space-2, 8px); margin-block-end: var(--ls-space-3, 12px); min-width: 0; }
+.appeal-ai-status,
+.appeal-ai-response { margin: 0; overflow-wrap: anywhere; }
+.appeal-ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-space-2, 8px); }
+.appeal-q-list { display: grid; gap: var(--ls-space-3, 12px); margin-block: var(--ls-space-2, 8px); }
+.appeal-q-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);
+    gap: 6px var(--ls-space-3, 12px);
+    min-width: 0;
+    padding-block-end: var(--ls-space-2, 8px);
+    border-block-end: 1px solid hsl(var(--lq-material-muted) / 0.18);
+}
+.appeal-q-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.appeal-q-ai { font-weight: 600; color: hsl(var(--lq-material-accent, var(--lq-material-ink))); }
+.appeal-q-row .form-group { margin: 0; min-width: 0; }
+@media (max-width: 560px) {
+    .appeal-q-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 超时补交: teacher decision form (layout only). */
+.late-inline { display: flex; gap: var(--ls-space-2, 8px); min-width: 0; }
+.late-inline > * { min-width: 0; flex: 1 1 0; }
+.late-preview { margin: 0; overflow-wrap: anywhere; }
+.appeal-risk-list { margin: 0; padding-inline-start: 1.2em; display: grid; gap: 4px; overflow-wrap: anywhere;
+    color: hsl(var(--lq-material-ink)); }
+/* LQ field styles set display on .form-group, which would defeat [hidden]. */
+[data-late-when][hidden],
+[data-late-custom][hidden],
+[data-late-gradient][hidden] { display: none !important; }
+
+/* Approval drawer: email channel hint (layout only). */
+.apr-email-hint { margin: 0; padding: var(--ls-space-2, 8px) var(--ls-space-4, 16px); font-size: 13px; line-height: 20px;
+    color: hsl(var(--lq-material-ink)); overflow-wrap: anywhere; }
+.apr-email-hint a { color: hsl(var(--lq-material-accent, var(--lq-material-ink))); }

@@ -22,6 +22,20 @@ async def api_get_background_tasks(user: dict = Depends(get_current_teacher)):
     return {"status": "success", **snapshot}
 
 
+@router.get("/system/runtime-metrics", response_class=JSONResponse)
+async def api_get_runtime_metrics(user: dict = Depends(get_current_teacher)):
+    """Runtime metrics for the diagnostics page.
+
+    /api/internal/* is not reachable from the public internet (nginx), so the
+    browser reads the same snapshot through this super-admin endpoint.
+    """
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+    from ...app import internal_metrics
+
+    return await internal_metrics()
+
+
 @router.post("/system/ai-jobs/{job_id:int}/requeue", response_class=JSONResponse)
 async def api_requeue_ai_job(job_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:

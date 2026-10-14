@@ -149,7 +149,7 @@
 
         async function fetchMetrics() {
             try {
-                const res = await fetch('/api/internal/metrics');
+                const res = await fetch('/api/manage/system/runtime-metrics');
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
 

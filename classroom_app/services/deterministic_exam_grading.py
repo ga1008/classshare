@@ -5,6 +5,8 @@ import math
 import re
 from typing import Any
 
+from .grading_prompt_safety import neutralize_untrusted_text
+
 
 OBJECTIVE_TYPES = {"radio", "checkbox", "text"}
 
@@ -210,7 +212,9 @@ def format_deterministic_evidence_prompt(evidence: dict[str, Any]) -> str:
     ]
     for item in evidence.get("questions") or []:
         expected_text = _compact_text(item.get("expected"))[:240]
-        actual_text = _compact_text(item.get("actual"))[:240]
+        # The student's answer is quoted inside this trusted section; strip the
+        # platform's own section markers so it cannot open a forged section.
+        actual_text = neutralize_untrusted_text(_compact_text(item.get("actual"))[:240])
         fixed = item.get("fixed_score")
         fixed_text = "待模型按规则评分" if fixed is None else f"固定得分 {fixed:g}/{float(item.get('max_score') or 0):g}"
         lines.append(

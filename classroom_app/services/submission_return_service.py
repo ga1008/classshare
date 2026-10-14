@@ -118,6 +118,11 @@ def return_submissions_for_resubmission(
             late_score_cap_applied = 0,
             resubmission_allowed = 1,
             resubmission_due_at = ?,
+            -- A returned row is a live resubmission window, never an absence
+            -- placeholder; submission_channel keeps absence_zero as the origin.
+            is_absence_score = 0,
+            absence_scored_at = NULL,
+            absence_scored_by_teacher_id = NULL,
             returned_at = ?,
             returned_by_teacher_id = ?,
             returned_reason = ?
@@ -127,12 +132,24 @@ def return_submissions_for_resubmission(
         (resubmission_due_at, now_iso, int(teacher_id), (str(reason or "").strip() or None), assignment_id, *target_ids),
     )
     from .approval_workflow_service import auto_cancel_requests
+    from .assessment_appeal_service import APPEAL_CORRECTION, APPEAL_GRADING, appeal_subject_id
 
+    note_text = request_note or "教师已直接撤回该提交并开放重交，申请自动结束。"
+    actor = {"role": "teacher", "id": int(teacher_id)}
     auto_cancel_requests(
         conn,
         request_type="submission_withdraw",
         subject_ids=[str(item) for item in target_ids],
-        note=request_note or "教师已直接撤回该提交并开放重交，申请自动结束。",
-        actor={"role": "teacher", "id": int(teacher_id)},
+        note=note_text,
+        actor=actor,
+    )
+    # Appeals key on (assignment, student); a return makes pending grading /
+    # correction appeals on those answers moot.
+    auto_cancel_requests(
+        conn,
+        request_type=(APPEAL_GRADING, APPEAL_CORRECTION),
+        subject_ids=[appeal_subject_id(assignment_id, row["student_pk_id"]) for row in targets],
+        note=note_text,
+        actor=actor,
     )
     return target_ids

@@ -308,25 +308,25 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
             except Exception as exc:
                 raise HTTPException(503, "暂时无法确认小组成绩公布状态，请稍后重试") from exc
             submission = student_visible_submission(submission, group_assignment_state)
-        # Withdraw-and-redo approval state for the student's own graded homework.
+        # Student appeal entry (错误提交 / 批改有误 / 超时补交); supersedes the
+        # legacy withdraw "?" launcher, whose context keys stay for old templates.
         withdraw_request = None
         can_request_withdraw = False
-        if user["role"] == "student" and submission and submission.get("id"):
+        appeal_state = None
+        if user["role"] == "student":
             try:
-                from ...services.approval_workflow_service import latest_request_for_subject
+                from ...services.assessment_appeal_service import build_student_appeal_state
 
-                withdraw_request = latest_request_for_subject(
-                    conn, request_type="submission_withdraw", subject_id=submission["id"], applicant=user,
+                appeal_state = build_student_appeal_state(
+                    conn, assignment=assignment, student_pk_id=int(user["id"]), submission=submission,
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"[APPROVAL] 读取撤回申请状态失败: {exc}")
-            can_request_withdraw = bool(
-                submission.get("status") == "graded"
-                and not int(submission.get("is_absence_score") or 0)
-                and not int(submission.get("resubmission_allowed") or 0)
-                and str(assignment.get("assessment_kind") or "").lower() not in {"midterm", "final"}
-                and not (group_assignment_state and group_assignment_state.get("is_group") and not group_assignment_state.get("revealed"))
-            )
+                print(f"[APPEAL] 读取申诉状态失败: {exc}")
+        personal_window = None
+        if user["role"] == "student" and not submission:
+            from ...services.assignment_student_window_service import active_window, student_window_view
+
+            personal_window = student_window_view(active_window(conn, assignment_id, int(user["id"])))
         conn.commit()
 
     submission_returned = bool(submission and submission_is_returned(submission))
@@ -384,6 +384,8 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
         "group_peer_context": group_peer_context,
         "withdraw_request": withdraw_request,
         "can_request_withdraw": can_request_withdraw,
+        "appeal_state": appeal_state,
+        "personal_window": personal_window,
         "max_upload_mb": MAX_UPLOAD_SIZE_MB,
         "max_submission_file_count": MAX_SUBMISSION_FILE_COUNT,
         "max_per_file_mb": MAX_SUBMISSION_PER_FILE_MB,

@@ -11,6 +11,8 @@ from typing import Any, Callable, Iterable, Sequence
 import aiofiles
 from fastapi import HTTPException, UploadFile
 
+from .submission_file_safety import trusted_submission_mime_type
+
 
 TEXT_FILE_EXTENSIONS = {
     ".c",
@@ -204,12 +206,9 @@ def parse_submission_manifest(files: Sequence[UploadFile], manifest: str = "") -
             fallback_name=fallback_name,
         )
         unique_relative_path = _deduplicate_relative_path(relative_path, seen_paths)
-        content_type = str(
-            manifest_item.get("content_type")
-            or file.content_type
-            or mimetypes.guess_type(unique_relative_path)[0]
-            or "application/octet-stream"
-        ).lower()
+        # The client-declared type (manifest or upload header) is untrusted and
+        # must never decide how the file is rendered; derive it from the name.
+        content_type = trusted_submission_mime_type(unique_relative_path)
         size_bytes = measure_upload_file(file)
         prepared_entries.append(
             PreparedUploadEntry(

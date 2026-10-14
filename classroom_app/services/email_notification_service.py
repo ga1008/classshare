@@ -892,6 +892,28 @@ def _load_recipient_email(conn, *, role: str, user_pk: int) -> Optional[dict[str
     return {"email": email, "name": str(row["name"] or "")}
 
 
+# Categories whose mail may go out through the platform sender when the
+# natural sender (recipient teacher / acting teacher / offering teacher) has no
+# working SMTP configuration. Workflow notices must not silently vanish.
+PLATFORM_FALLBACK_CATEGORIES = frozenset({"approval_workflow", "signature_workflow"})
+
+
+def platform_sender_teacher_id() -> int:
+    """The nominated platform sender (a teacher account with a configured SMTP), or 0."""
+    return _safe_int(os.getenv("PLATFORM_NOTIFICATION_SENDER_TEACHER_ID", "0")) or _safe_int(
+        os.getenv("SIGNATURE_NOTIFICATION_SENDER_TEACHER_ID", "0"))
+
+
+def _platform_fallback_config(conn, category: str, primary_teacher_id: Optional[int]):
+    if category not in PLATFORM_FALLBACK_CATEGORIES:
+        return None, None
+    fallback = platform_sender_teacher_id()
+    if not fallback or fallback == primary_teacher_id:
+        return None, None
+    config = _load_default_email_config(conn, fallback)
+    return (fallback, config) if config else (None, None)
+
+
 def _resolve_sender_teacher_id(conn, payload: dict[str, Any]) -> Optional[int]:
     if payload.get("category") == "signature_workflow":
         configured_sender = _safe_int(os.getenv("SIGNATURE_NOTIFICATION_SENDER_TEACHER_ID", "0"))
@@ -967,6 +989,25 @@ def get_teacher_email_reminder_readiness(conn, teacher_id: int | str) -> dict[st
         "reason": "邮件将通过你的默认发信配置发送到账号邮箱。",
         "settings_url": "/profile?section=email",
     }
+
+
+def approval_email_channel_status(conn, teacher_id: int | str) -> dict[str, Any]:
+    """Whether appeal/approval notices can reach this teacher's mailbox (plan §7.3).
+
+    ``state``: ``ok`` (own SMTP), ``platform`` (platform sender covers it),
+    ``no_address`` (no mailbox on the account) or ``not_configured``.
+    """
+    teacher_id_int = _safe_int(teacher_id)
+    if not _load_recipient_email(conn, role="teacher", user_pk=teacher_id_int):
+        return {"state": "no_address", "message": "账号未填写邮箱，申诉提醒只能在站内查看。",
+                "settings_url": "/profile?section=settings"}
+    if _load_default_email_config(conn, teacher_id_int):
+        return {"state": "ok", "message": "", "settings_url": "/profile?section=email"}
+    fallback = platform_sender_teacher_id()
+    if fallback and _load_default_email_config(conn, fallback):
+        return {"state": "platform", "message": "", "settings_url": "/profile?section=email"}
+    return {"state": "not_configured", "message": "未配置发信邮箱，申诉提醒不会发到你的邮箱。",
+            "settings_url": "/profile?section=email"}
 
 
 def _absolute_link(link_url: Any) -> str:
@@ -1197,11 +1238,10 @@ def queue_notification_email_if_applicable(conn, *, notification_id: int, payloa
         return False
 
     teacher_id = _resolve_sender_teacher_id(conn, payload)
-    if not teacher_id:
-        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_CONFIGURED)
-        return False
-    config = _load_default_email_config(conn, teacher_id)
+    config = _load_default_email_config(conn, teacher_id) if teacher_id else None
     if not config:
+        teacher_id, config = _platform_fallback_config(conn, category, teacher_id)
+    if not teacher_id or not config:
         _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_CONFIGURED)
         return False
 

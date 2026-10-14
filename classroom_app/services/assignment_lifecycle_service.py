@@ -307,13 +307,7 @@ def refresh_assignment_runtime_status(conn, assignment_row, now_dt: datetime | N
     return assignment
 
 
-def close_overdue_assignments(conn, now_dt: datetime | None = None) -> int:
-    now_dt = now_dt or _utc_like_now()
-    now_iso = _dt_to_iso(now_dt)
-    cursor = conn.execute(
-        """
-        UPDATE assignments
-        SET status = ?, closed_at = COALESCE(closed_at, ?)
+_OVERDUE_WHERE = """
         WHERE status = ?
           AND COALESCE(auto_close, 1) = 1
           AND due_at IS NOT NULL
@@ -327,26 +321,69 @@ def close_overdue_assignments(conn, now_dt: datetime | None = None) -> int:
                   AND late_submission_until <= ?
               )
           )
-        """,
-        (
-            ASSIGNMENT_STATUS_CLOSED,
-            now_iso,
-            ASSIGNMENT_STATUS_PUBLISHED,
-            now_iso,
-            now_iso,
-        ),
+"""
+
+TASK_KIND_ASSIGNMENT_CLOSE_SWEEP = "assignment_close_sweep"
+ASSIGNMENT_CLOSE_SWEEP_SECONDS = 60
+
+
+def close_overdue_assignments(conn, now_dt: datetime | None = None) -> int:
+    """Persist ``closed`` for published assignments past their deadline.
+
+    Called from many request paths, so the common no-op case is a read-only
+    indexed probe (audit B7): an UPDATE would take the SQLite write lock (and
+    churn PostgreSQL) on every page view. A scheduler sweep also runs it every
+    minute so statuses persist without traffic.
+    """
+    now_dt = now_dt or _utc_like_now()
+    now_iso = _dt_to_iso(now_dt)
+    probe = conn.execute(
+        f"SELECT 1 FROM assignments {_OVERDUE_WHERE} LIMIT 1",
+        (ASSIGNMENT_STATUS_PUBLISHED, now_iso, now_iso),
+    ).fetchone()
+    if not probe:
+        return 0
+    cursor = conn.execute(
+        f"UPDATE assignments SET status = ?, closed_at = COALESCE(closed_at, ?) {_OVERDUE_WHERE}",
+        (ASSIGNMENT_STATUS_CLOSED, now_iso, ASSIGNMENT_STATUS_PUBLISHED, now_iso, now_iso),
     )
     closed_count = int(cursor.rowcount or 0)
     if closed_count:
         # 有作业刚被自动截止：给已确认的重修/插班学生补默认分占位。
-        # best-effort——回填失败绝不能影响正常的截止流程。
-        try:
-            from .classroom_retake_service import backfill_retake_absences_everywhere
+        # best-effort——回填失败绝不能影响正常的截止流程；SAVEPOINT 保证 PostgreSQL
+        # 上回填的 SQL 失败不会把调用方的整个事务置为 aborted。
+        from ..db.savepoint import best_effort
+        from .classroom_retake_service import backfill_retake_absences_everywhere
 
+        with best_effort(conn, "retake_backfill_after_close", log_prefix="[RETAKE]"):
             backfill_retake_absences_everywhere(conn)
-        except Exception as exc:
-            print(f"[RETAKE] 自动截止后的插班生默认分回填失败: {exc}")
     return closed_count
+
+
+def ensure_assignment_close_sweep_task(conn) -> int:
+    from .scheduled_task_service import schedule_task
+
+    return schedule_task(
+        conn,
+        task_kind=TASK_KIND_ASSIGNMENT_CLOSE_SWEEP,
+        run_at=datetime.now() + timedelta(seconds=ASSIGNMENT_CLOSE_SWEEP_SECONDS),
+        payload={},
+        dedupe_key="assignment:close-sweep",
+        recurrence_seconds=ASSIGNMENT_CLOSE_SWEEP_SECONDS,
+        title="Close overdue assignments",
+        priority=60,
+        max_attempts=3,
+        replace=True,
+    )
+
+
+def handle_assignment_close_sweep_task(task: dict[str, Any]) -> str:
+    from ..database import get_db_connection
+
+    with get_db_connection() as conn:
+        closed = close_overdue_assignments(conn)
+        conn.commit()
+    return f"closed={closed}"
 
 
 def enrich_assignment_runtime_view(assignment_row, now_dt: datetime | None = None) -> dict[str, Any]:

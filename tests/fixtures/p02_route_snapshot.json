@@ -608,6 +608,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/approvals/{request_id}/ai-regrade",
+    "methods": [
+      "POST"
+    ],
+    "name": "ai_regrade_appeal",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/approvals/{request_id}/approve",
     "methods": [
       "POST"
@@ -4638,6 +4646,14 @@
       "POST"
     ],
     "name": "api_repair_submission_files",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/runtime-metrics",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_runtime_metrics",
     "include_in_schema": true
   },
   {

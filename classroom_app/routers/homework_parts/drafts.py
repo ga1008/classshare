@@ -1,4 +1,9 @@
 from .common import *
+from ...services.submission_file_safety import (
+    submission_download_media_type,
+    submission_inline_response_params,
+    untrusted_file_headers,
+)
 from ...services.submission_write_guard import submission_write_version
 
 
@@ -279,7 +284,7 @@ async def save_assignment_draft(
 
 
 @router.get("/assignments/{assignment_id}/draft-files/{file_id}")
-async def download_assignment_draft_file(
+def download_assignment_draft_file(
     assignment_id: str,
     file_id: int,
     user: dict = Depends(get_current_student),
@@ -304,8 +309,9 @@ async def download_assignment_draft_file(
         raise HTTPException(404, "草稿附件文件不存在")
     return FileResponse(
         physical_path,
-        media_type=file_dict.get("mime_type") or "application/octet-stream",
+        media_type=submission_download_media_type(file_dict),
         filename=file_dict.get("original_filename") or physical_path.name,
+        headers=untrusted_file_headers(),
     )
 
 
@@ -464,5 +470,6 @@ async def get_assignment_draft_file_image(
     )
     cache_headers = {"Cache-Control": "private, max-age=604800"}
     if variant_path is None:
-        return FileResponse(physical_path, media_type=file_dict.get("mime_type") or "application/octet-stream", headers=cache_headers)
-    return FileResponse(variant_path, media_type=IMAGE_VARIANT_MIME_TYPE, headers=cache_headers)
+        media_type, safety_headers = submission_inline_response_params(file_dict)
+        return FileResponse(physical_path, media_type=media_type, headers={**cache_headers, **safety_headers})
+    return FileResponse(variant_path, media_type=IMAGE_VARIANT_MIME_TYPE, headers={**cache_headers, **untrusted_file_headers()})

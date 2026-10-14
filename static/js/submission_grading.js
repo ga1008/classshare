@@ -1,4 +1,7 @@
 /** Manual grading keeps the reviewed versions until the teacher rechecks the page. */
+import { gradingQueueNeighbors } from './grading_queue.js';
+import { confirm as lqConfirm } from './lq/dialogs.js';
+
 export function setupSubmissionGrading(options) {
     const {
         submissionId, assignmentId, teacherId, expectedReviewRevision,
@@ -20,6 +23,11 @@ export function setupSubmissionGrading(options) {
     let recoveredDraft = null;
     let disabledControls = [];
     let explicitNavigation = false;
+    // Typed but unsaved score/feedback must survive accidental navigation.
+    const initialValues = { score: scoreInput?.value ?? '', feedback: feedbackInput?.value ?? '' };
+    const isDirty = () => Boolean(scoreInput && feedbackInput)
+        && (scoreInput.value !== initialValues.score || feedbackInput.value !== initialValues.feedback);
+    const queue = gradingQueueNeighbors({ teacherId, assignmentId, submissionId });
 
     function setStatus(message) {
         const status = byId('grade-save-status');
@@ -78,7 +86,7 @@ export function setupSubmissionGrading(options) {
     }
 
     window.addEventListener('beforeunload', (event) => {
-        if (explicitNavigation || (!needsReview && !recoveredDraft)) return;
+        if (explicitNavigation || (!needsReview && !recoveredDraft && !isDirty())) return;
         event.preventDefault();
         event.returnValue = '';
     });
@@ -153,7 +161,31 @@ export function setupSubmissionGrading(options) {
         window.location.reload();
     });
 
-    async function submitGrade() {
+    async function confirmLeave() {
+        if (!isDirty()) return true;
+        const message = '分数或评语有修改尚未保存，离开后这些修改会丢失。';
+        try {
+            return await lqConfirm({ title: '离开当前答卷？', message, confirmLabel: '不保存，离开', cancelLabel: '继续批改', danger: true });
+        } catch {
+            return window.confirm(message);
+        }
+    }
+
+    let leaving = false;
+    async function goTo(href) {
+        // One leave decision at a time: repeated clicks/keys must not stack dialogs.
+        if (!href || busy || leaving || !allowReviewChange()) return;
+        leaving = true;
+        try {
+            if (!(await confirmLeave())) return;
+            explicitNavigation = true;
+            window.location.href = href;
+        } finally {
+            leaving = false;
+        }
+    }
+
+    async function submitGrade({ advance = false } = {}) {
         if (busy || needsReview || !scoreInput || !feedbackInput || !saveButton) return;
         const scoreText = scoreInput.value.trim();
         const score = Number(scoreText);
@@ -192,9 +224,10 @@ export function setupSubmissionGrading(options) {
             succeeded = true;
             clearDraft();
             explicitNavigation = true;
-            setStatus('评分已保存，正在返回作业。');
+            const nextHref = advance && queue?.next ? `/submission/${queue.next}` : '';
+            setStatus(nextHref ? '评分已保存，正在打开下一份。' : '评分已保存，正在返回作业。');
             showToast('评分已保存', 'success');
-            setTimeout(() => { window.location.href = `/assignment/${encodeURIComponent(assignmentId)}`; }, 800);
+            setTimeout(() => { window.location.href = nextHref || `/assignment/${encodeURIComponent(assignmentId)}`; }, nextHref ? 300 : 800);
         } catch (error) {
             setStatus(error.message || '保存评分失败，请稍后重试。');
         } finally {
@@ -204,9 +237,44 @@ export function setupSubmissionGrading(options) {
         }
     }
 
-    saveButton?.addEventListener('click', submitGrade);
-    byId('grade-cancel')?.addEventListener('click', () => {
-        if (allowReviewChange()) window.history.back();
+    saveButton?.addEventListener('click', () => submitGrade());
+    byId('grade-cancel')?.addEventListener('click', async () => {
+        if (!allowReviewChange() || !(await confirmLeave())) return;
+        explicitNavigation = true;
+        window.history.back();
     });
-    return { submitGrade, isBusy: () => busy, allowReviewChange };
+    setupQueueNavigation();
+    return { submitGrade, isBusy: () => busy, allowReviewChange, isDirty };
+
+    // 上一份 / 下一份 in the order the teacher listed on the assignment page.
+    function setupQueueNavigation() {
+        const nav = byId('grading-queue-nav');
+        const saveNext = byId('grade-save-next');
+        if (nav && queue && queue.total > 1) {
+            nav.hidden = false;
+            nav.querySelector('[data-queue-pos]').textContent = `${queue.position} / ${queue.total}`;
+            nav.querySelectorAll('[data-queue-go]').forEach((button) => {
+                const target = queue[button.dataset.queueGo];
+                button.disabled = !target;
+                button.addEventListener('click', () => goTo(target ? `/submission/${target}` : ''));
+            });
+        }
+        if (saveNext && saveButton && queue?.next) {
+            saveNext.hidden = false;
+            saveNext.addEventListener('click', () => submitGrade({ advance: true }));
+        }
+        document.addEventListener('keydown', (event) => {
+            if (event.isComposing) return;
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && card?.contains(document.activeElement)) {
+                event.preventDefault();
+                submitGrade({ advance: Boolean(queue?.next) && event.shiftKey });
+            } else if (event.altKey && queue && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+                && !event.target?.closest?.('input, textarea, select, [contenteditable]')) {
+                // Option+Arrow moves the caret by word on macOS; never steal it from a field.
+                event.preventDefault();
+                const target = event.key === 'ArrowLeft' ? queue.prev : queue.next;
+                goTo(target ? `/submission/${target}` : '');
+            }
+        });
+    }
 }

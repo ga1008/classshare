@@ -84,6 +84,11 @@ from ..services.submission_preview_service import (
     serialize_submission_file_row,
     _resolve_file_path,
 )
+from ..services.submission_file_safety import (
+    submission_download_media_type,
+    submission_inline_response_params,
+    untrusted_file_headers,
+)
 from ..services.submission_image_variants import (
     VARIANT_MIME_TYPE as IMAGE_VARIANT_MIME_TYPE,
     normalize_variant as normalize_image_variant,
@@ -1581,7 +1586,8 @@ async def get_submission_file_raw(file_id: int, user: Optional[dict] = Depends(g
     if file_path is None:
         raise HTTPException(404, "File not found on disk")
 
-    return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream")
+    media_type, headers = submission_inline_response_params(file_info)
+    return FileResponse(file_path, media_type=media_type, headers=headers)
 
 
 @router.get("/submission-files/{file_id}/image", response_class=FileResponse)
@@ -1606,8 +1612,13 @@ async def get_submission_file_image(
     )
     cache_headers = {"Cache-Control": "private, max-age=604800"}
     if variant_path is None:
-        return FileResponse(file_path, media_type=file_info.get("mime_type") or "application/octet-stream", headers=cache_headers)
-    return FileResponse(variant_path, media_type=IMAGE_VARIANT_MIME_TYPE, headers=cache_headers)
+        media_type, safety_headers = submission_inline_response_params(file_info)
+        return FileResponse(file_path, media_type=media_type, headers={**cache_headers, **safety_headers})
+    return FileResponse(
+        variant_path,
+        media_type=IMAGE_VARIANT_MIME_TYPE,
+        headers={**cache_headers, **untrusted_file_headers()},
+    )
 
 
 @router.get("/submissions/download/{file_id}", response_class=FileResponse)
@@ -1627,8 +1638,9 @@ async def download_submission_file(file_id: int, user: Optional[dict] = Depends(
 
     return FileResponse(
         file_path,
-        media_type=file_info.get('mime_type') or 'application/octet-stream',
+        media_type=submission_download_media_type(file_info),
         filename=file_info['original_filename'],
+        headers=untrusted_file_headers(),
     )
 
 

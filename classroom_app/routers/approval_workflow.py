@@ -64,8 +64,13 @@ def list_requests(
             request_type=request_type, limit=limit,
         )
         pending = workflow.count_pending_requests(conn, user, assignment_id=assignment_id or None)
+        email_channel = None
+        if str(user.get("role") or "") == "teacher" and scope == "incoming":
+            from ..services.email_notification_service import approval_email_channel_status
+
+            email_channel = approval_email_channel_status(conn, user.get("id"))
         conn.commit()
-    return {"items": items, "pending_count": pending}
+    return {"items": items, "pending_count": pending, "email_channel": email_channel}
 
 
 @router.post("", response_class=JSONResponse)
@@ -108,6 +113,18 @@ async def reject_request(request_id: int, request: Request, user: dict = Depends
             conn, user, request_id, decision="reject", note=payload.get("note"),
         ))
     return {"status": "success", "request": item}
+
+
+@router.post("/{request_id}/ai-regrade", response_class=JSONResponse)
+async def ai_regrade_appeal(request_id: int, user: dict = Depends(get_current_user)):
+    """批改有误申诉：教师让 AI 以高档模型重改，结果作为候选成绩等待教师采纳。"""
+    from ..services.grading_appeal_ai_service import request_appeal_ai_regrade
+
+    try:
+        result = await request_appeal_ai_regrade(int(request_id), user)
+    except ApprovalWorkflowError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"status": "success", "ai_regrade": result}
 
 
 @router.post("/{request_id}/cancel", response_class=JSONResponse)

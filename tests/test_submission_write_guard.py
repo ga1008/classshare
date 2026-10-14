@@ -54,6 +54,11 @@ class SubmissionMutationGuardTests(unittest.TestCase):
         self.stack.enter_context(patch.object(submissions, "_build_submission_storage_dir", return_value=self.files))
         self.stack.enter_context(patch.object(submissions, "record_behavior_event", return_value=None))
         self.stack.enter_context(patch.object(submissions, "close_overdue_assignments", return_value=None))
+        # A teacher return schedules the window-lapse task; let it create the
+        # scheduler table in this synthetic database.
+        from classroom_app.db import schema_scheduler
+
+        self.stack.enter_context(patch.object(schema_scheduler, "_SCHEMA_READY", False))
 
     @contextmanager
     def connection(self):
@@ -75,7 +80,7 @@ class SubmissionMutationGuardTests(unittest.TestCase):
         return path
 
     def delete_file(self, file_id=1):
-        return asyncio.run(submissions.delete_submission_file(file_id, user={"id": 10}))
+        return submissions.delete_submission_file(file_id, user={"id": 10})
 
     def add_upload(self, filename="answer.txt", contents=b"new upload"):
         upload = UploadFile(io.BytesIO(contents), filename=filename, size=len(contents))
@@ -131,7 +136,7 @@ class SubmissionMutationGuardTests(unittest.TestCase):
             (self.files / "answer.txt").write_bytes(b"next submission")
             discard(retired)
         with patch.object(submissions, "_discard_quarantined_submission_paths", cleanup):
-            result = asyncio.run(submissions.return_submission(1, user={"id": 10}))
+            result = submissions.return_submission(1, user={"id": 10})
         self.assertEqual(1, result["deleted_submission_id"])
         self.assertEqual(b"next submission", (self.files / "answer.txt").read_bytes())
         with self.connection() as conn:
@@ -231,7 +236,7 @@ class SubmissionMutationGuardTests(unittest.TestCase):
             (self.files / "answer.txt").write_bytes(b"next round")
             discard(retired)
         with patch.object(submissions, "_discard_quarantined_submission_paths", cleanup):
-            result = asyncio.run(submissions.withdraw_submission("1", user={"id": 1}))
+            result = submissions.withdraw_submission("1", user={"id": 1})
         self.assertEqual("success", result["status"])
         self.assertEqual(b"next round", (self.files / "answer.txt").read_bytes())
 
@@ -243,7 +248,7 @@ class SubmissionMutationGuardTests(unittest.TestCase):
             conn.execute("UPDATE submissions SET status='graded',score=95 WHERE id=1")
         with patch.object(submissions, "lock_submission_writer", teacher_graded):
             with self.assertRaises(HTTPException) as error:
-                asyncio.run(submissions.withdraw_submission("1", user={"id": 1}))
+                submissions.withdraw_submission("1", user={"id": 1})
         self.assertEqual(400, error.exception.status_code)
         self.assertEqual(b"old answer", path.read_bytes())
 

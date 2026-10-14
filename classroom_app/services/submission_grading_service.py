@@ -68,9 +68,27 @@ def load_teacher_submission(conn, submission_id: int, teacher_id: int) -> dict[s
     return submission_dict
 
 
+MANUAL_GRADE_SOURCES = frozenset({"manual", "appeal_manual", "appeal_ai"})
+
+
 def grade_submission_record(conn, *, submission_id: int, teacher_id: int, data: dict,
                             actor_display_name: str = "") -> dict:
-    """Write one manual grade; the caller commits the business and its receipt."""
+    """Write one manual grade; the caller commits the business and its receipt.
+
+    With ``questions`` the teacher grades per question: the server validates
+    each score against its maximum, computes the total (an override needs a
+    reason) and renders the canonical feedback; the structured list is kept
+    with the grade revision.
+    """
+    composed = None
+    if isinstance(data.get("questions"), list) and data.get("questions"):
+        from .grading_question_service import compose_grade_from_questions
+
+        composed = compose_grade_from_questions(
+            data["questions"], summary=data.get("summary"),
+            override_score=data.get("score_override"), override_reason=data.get("score_override_reason"),
+        )
+        data = {**data, "score": composed["score"], "feedback_md": composed["feedback_md"]}
     score = validate_manual_grade(data)
     # Editors already lock assignment -> submission when invalidating AI input.
     # Use the same order before group/submission locks so the rubric reviewed by
@@ -150,20 +168,30 @@ def grade_submission_record(conn, *, submission_id: int, teacher_id: int, data: 
             submission_id,
         ),
     )
+    grade_source = str(data.get("grade_source") or "manual")
     activate_submission_grade_revision(
         conn,
         submission={**submission, "grading_job_id": None},
         data={
             "grading_revision_hash": f"manual:{submission_id}:{uuid.uuid4().hex}",
-            "source": "manual",
+            "source": grade_source if grade_source in MANUAL_GRADE_SOURCES else "manual",
             "actor_role": "teacher",
             "actor_user_pk": int(teacher_id),
-            "quality_audit": {"manual_grade": True},
+            "quality_audit": {"manual_grade": True,
+                              **({"score_override_reason": composed["override_reason"]}
+                                 if composed and composed.get("override_reason") else {})},
+            "questions": composed["questions"] if composed else data.get("structured_questions"),
+            "appeal_request_id": data.get("appeal_request_id"),
+            "previous_revision_id": submission.get("active_grade_revision_id"),
         },
         score=final_score,
         feedback_md=feedback_md,
     )
-    try:
+    from ..db.savepoint import best_effort
+
+    # Optional follow-ups: each runs in its own savepoint so a failure cannot
+    # abort the grade's PostgreSQL transaction (audit B6).
+    with best_effort(conn, "grading_notify", log_prefix="[MESSAGE_CENTER]"):
         create_student_grading_notification(
             conn,
             submission_id,
@@ -171,30 +199,22 @@ def grade_submission_record(conn, *, submission_id: int, teacher_id: int, data: 
             actor_user_pk=int(teacher_id),
             actor_display_name=str(actor_display_name or ""),
         )
-    except Exception as exc:
-        print(f"[MESSAGE_CENTER] manual grading notify failed: {exc}")
-    try:
+    with best_effort(conn, "grading_stage_exam", log_prefix="[LEARNING_PROGRESS]"):
         handle_stage_exam_grading_complete(conn, submission_id)
-    except Exception as exc:
-        print(f"[LEARNING_PROGRESS] manual grading stage handling failed: {exc}")
-    try:
+    with best_effort(conn, "grading_stage_assignment", log_prefix="[LEARNING_PROGRESS]"):
         handle_assignment_stage_grading_complete(conn, submission_id)
-    except Exception as exc:
-        print(f"[LEARNING_PROGRESS] manual grading teacher-stage handling failed: {exc}")
     # Group settlement is part of this grade: propagate failure and rollback.
     from .group_assignment_service import record_member_work_score
 
     record_member_work_score(conn, submission_id)
     if submission.get("class_offering_id") and submission.get("student_pk_id"):
-        try:
+        with best_effort(conn, "grading_learning_refresh", log_prefix="[LEARNING_PROGRESS]"):
             refresh_student_learning_state(
                 conn,
                 int(submission["class_offering_id"]),
                 int(submission["student_pk_id"]),
                 event_source_ref=f"grading:{submission_id}",
             )
-        except Exception as exc:
-            print(f"[LEARNING_PROGRESS] manual grading snapshot refresh failed: {exc}")
     # A downstream best-effort hook may have caught its own SQL exception.
     # PostgreSQL rejects this probe on an aborted transaction; COMMIT alone
     # would silently roll back and let the endpoint report false success.

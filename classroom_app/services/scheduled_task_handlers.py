@@ -625,6 +625,35 @@ def handle_approval_request_reminder(task: dict[str, Any]) -> str:
 
 register_task_handler(TASK_KIND_APPROVAL_REMINDER, handle_approval_request_reminder)
 
+from .assessment_appeal_service import (  # noqa: E402
+    TASK_KIND_RESUME_GRADING,
+    handle_resume_grading_task,
+)
+from .resubmission_expiry_service import (  # noqa: E402
+    TASK_KIND_RESUBMISSION_EXPIRY,
+    handle_resubmission_expiry_task,
+)
+
+register_task_handler(TASK_KIND_RESUME_GRADING, handle_resume_grading_task)
+register_task_handler(TASK_KIND_RESUBMISSION_EXPIRY, handle_resubmission_expiry_task)
+
+from .assignment_student_window_service import (  # noqa: E402
+    TASK_KIND_WINDOW_EXPIRY,
+    TASK_KIND_WINDOW_REMINDER,
+    handle_window_expiry_task,
+    handle_window_reminder_task,
+)
+
+register_task_handler(TASK_KIND_WINDOW_EXPIRY, handle_window_expiry_task)
+
+from .assignment_lifecycle_service import (  # noqa: E402
+    TASK_KIND_ASSIGNMENT_CLOSE_SWEEP,
+    handle_assignment_close_sweep_task,
+)
+
+register_task_handler(TASK_KIND_ASSIGNMENT_CLOSE_SWEEP, handle_assignment_close_sweep_task)
+register_task_handler(TASK_KIND_WINDOW_REMINDER, handle_window_reminder_task)
+
 from .material_workflow_storage_service import cleanup_expired_bundles  # noqa: E402
 
 register_task_handler("material_workflow_cleanup", cleanup_expired_bundles)

@@ -5,6 +5,7 @@
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/assignment-student.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assessment-student-material.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper assignment-student-page{% endblock %}
@@ -58,7 +59,7 @@
         <script type="application/json" data-assignment-submit-sync-payload>
             {{ {
                 "assignmentId": assignment.id|string,
-                "initialAccepting": assignment.is_accepting_submissions or can_resubmit_submission,
+                "initialAccepting": assignment.is_accepting_submissions or can_resubmit_submission or (personal_window is not none),
                 "canResubmitSubmission": can_resubmit_submission,
                 "resubmissionDueAt": resubmission_due_at,
                 "actionHint": action_hint,
@@ -129,11 +130,12 @@
     </div>
     {% endif %}
 
-    {% if assignment.countdown_at or assignment.late_submission_enabled %}
+    {% if personal_window or assignment.countdown_at or assignment.late_submission_enabled %}
     <div
-        class="assignment-live-clock{% if assignment.is_late_submission_open %} is-late{% endif %}" data-lq-material="content"
+        class="assignment-live-clock{% if assignment.is_late_submission_open or personal_window %} is-late{% endif %}" data-lq-material="content"
         data-assignment-clock
         data-assignment-id="{{ assignment.id }}"
+        {% if personal_window %}data-personal-window="1" data-personal-window-due-at="{{ personal_window.due_at }}" data-personal-window-label="{{ personal_window.penalty_label }}"{% endif %}
         data-server-now="{{ assignment.server_now or '' }}"
         data-countdown-at="{{ assignment.countdown_at or '' }}"
         data-late-until="{{ assignment.late_submission_until or '' }}"
@@ -158,18 +160,22 @@
             <h2 class="card-title text-base">我的提交</h2>
         </div>
         <div class="card-body">
+            {% if appeal_state %}
+            <div id="assessment-appeal-root"></div>
+            <script type="application/json" id="assessment-appeal-state">{{ appeal_state | tojson }}</script>
+            {% endif %}
             {% if submission %}
                 {% if submission_returned %}
                     <div data-lq-component="surface" class="lq-surface status-card warning card-body rounded-lg mb-lg">
                         <div class="status-card-header" style="color: var(--warning-color);">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>
-                            待重交
+                            未提交（已退回修改）
                         </div>
                         {% if can_resubmit_submission %}
                         <p class="text-muted">
-                            教师已撤回本次提交，请在
+                            本次提交已退回，请在
                             <span class="format-date">{{ resubmission_due_at }}</span>
-                            前重新提交。旧提交内容仍可查看和下载，新的提交会替换当前版本。
+                            前修改并重新提交；原答案和附件已为你保留在下方答题区，可直接修改。逾期未重新提交将以原提交为准。
                         </p>
                         {% else %}
                         <p class="text-muted">
@@ -201,14 +207,7 @@
                         <div class="grade-result-layout">
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
-                                <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}
-                                    {% if (can_request_withdraw or withdraw_request) and not is_group_final %}
-                                    <span id="withdraw-request-launcher" data-request-type="submission_withdraw" data-subject-id="{{ submission.id }}" data-can-request="{{ 1 if can_request_withdraw else 0 }}"></span>
-                                    {% endif %}
-                                </span>
-                                {% if (can_request_withdraw or withdraw_request) and not is_group_final %}
-                                <script type="application/json" id="withdraw-request-state">{{ (withdraw_request or none) | tojson }}</script>
-                                {% endif %}
+                                <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}</span>
                                 <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">进入错题本复盘</a>
                                 <a data-lq-component="button" href="/api/assignments/{{ assignment.id }}/export-review-docx" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-review-docx-export data-export-url="/api/assignments/{{ assignment.id }}/export-review-docx" data-suggested-filename="{{ (assignment.title ~ '_复习导出.docx') | e }}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path></svg>
@@ -320,6 +319,13 @@
                 {{ submission_form('重新提交作业', '重新提交会替换当前答案和附件', '确认重新提交') }}
                 {% endif %}
 
+            {% elif personal_window %}
+                <!-- Approved 超时补交: a personal window overrides the assignment's closed state -->
+                <div data-lq-component="surface" class="lq-surface status-card warning card-body rounded-lg mb-lg">
+                    <div class="status-card-header">补交通道已开启（第 {{ personal_window.grant_no }} 次）</div>
+                    <p class="text-muted">请在 {{ (personal_window.due_at or '')[:16] | replace('T', ' ') }} 前完成提交；扣分规则：{{ personal_window.penalty_label }}。</p>
+                </div>
+                {{ submission_form('开始补交', '提交后不可修改，请仔细检查', '确认补交作业') }}
             {% elif assignment.status == 'published' %}
                 <!-- Answer Form -->
                 {{ submission_form('开始答题', '提交后不可修改，请仔细检查', '确认提交作业') }}
@@ -419,7 +425,9 @@
     import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { initAssignmentClocks } from '{{ asset_url("js/assignment_time.js") }}';
     import { initReviewDocxExportButtons } from '{{ asset_url("js/review_docx_export.js") }}';
-    import { mountLauncher } from '{{ asset_url("js/approval_workflow.js") }}';
+    import { mountAppealEntry } from '{{ asset_url("js/assessment_appeal.js") }}';
+    import { localDraftKey, purgeForeignLocalDrafts } from '{{ asset_url("js/local_draft_scope.js") }}';
+    import { confirm as lqConfirm } from '{{ asset_url("js/lq/dialogs.js") }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -436,8 +444,15 @@
     const ALLOWED_FILE_TYPES = {{ assignment.allowed_file_types | tojson }};
     const CAN_RESUBMIT_SUBMISSION = {{ can_resubmit_submission | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
-    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission) | tojson }};
+    const PERSONAL_WINDOW_DUE_AT = {{ (personal_window.due_at if personal_window else none) | tojson }};
+    // Judge the window by server time: both strings are naive server-local ISO.
+    const PERSONAL_WINDOW_CLOCK_OFFSET = (() => {
+        const serverNow = Date.parse({{ (assignment.server_now or '') | tojson }});
+        return Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
+    })();
+    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission or (personal_window is not none)) | tojson }};
     let submissionSucceeded = false;
+    let submissionInFlight = false;
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
     let uploadManager = null;
@@ -474,21 +489,16 @@
         {% if submission and submission.answers_json %}
         renderSubmittedAnswers({{ submission.answers_json | tojson }});
         {% endif %}
-        {% if (not submission and assignment.status == 'published') or can_resubmit_submission %}
+        {% if (not submission and (assignment.status == 'published' or personal_window)) or can_resubmit_submission %}
         initAnswerArea();
         initSubmissionUpload();
         {% endif %}
         initReviewDocxExportButtons({ notify: showToast });
-        const withdrawLauncher = document.getElementById('withdraw-request-launcher');
-        if (withdrawLauncher) {
-            let currentWithdrawRequest = null;
-            try { currentWithdrawRequest = JSON.parse(document.getElementById('withdraw-request-state')?.textContent || 'null'); } catch (_) { currentWithdrawRequest = null; }
-            mountLauncher(withdrawLauncher, {
-                requestType: withdrawLauncher.dataset.requestType,
-                subjectId: withdrawLauncher.dataset.subjectId,
-                currentRequest: currentWithdrawRequest,
-                disabledReason: withdrawLauncher.dataset.canRequest === '1' ? '' : '当前作业状态不支持申请撤回重做',
-            });
+        const appealRoot = document.getElementById('assessment-appeal-root');
+        if (appealRoot) {
+            let appealState = null;
+            try { appealState = JSON.parse(document.getElementById('assessment-appeal-state')?.textContent || 'null'); } catch (_) { appealState = null; }
+            mountAppealEntry(appealRoot, appealState);
         }
     });
 
@@ -522,13 +532,18 @@
     function updateAssignmentSubmitAvailability(stateMap) {
         const current = stateMap?.get?.(ASSIGNMENT_ID);
         if (current) {
-            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow();
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow() || personalWindowAcceptingNow();
         } else {
-            assignmentAcceptingSubmissions = assignmentAcceptingSubmissions || resubmissionAcceptingNow();
+            assignmentAcceptingSubmissions = (assignmentAcceptingSubmissions && (!PERSONAL_WINDOW_DUE_AT || personalWindowAcceptingNow()))
+                || resubmissionAcceptingNow();
         }
         publishAssignmentSubmitAvailability();
         const submitBtn = document.getElementById('submit-btn');
         if (!submitBtn) return;
+        if (submissionInFlight || submissionSucceeded) {
+            submitBtn.disabled = true;
+            return;
+        }
         if (!assignmentAcceptingSubmissions) {
             submitBtn.disabled = true;
             submitBtn.title = '已超过允许提交时间';
@@ -536,6 +551,13 @@
         }
         submitBtn.disabled = false;
         submitBtn.removeAttribute('title');
+    }
+
+    // Approved 超时补交 window: open until its own deadline (server re-checks on submit).
+    function personalWindowAcceptingNow() {
+        if (!PERSONAL_WINDOW_DUE_AT) return false;
+        const dueTime = Date.parse(PERSONAL_WINDOW_DUE_AT);
+        return Number.isNaN(dueTime) || dueTime > Date.now() + PERSONAL_WINDOW_CLOCK_OFFSET;
     }
 
     function resubmissionAcceptingNow() {
@@ -586,7 +608,13 @@
      * keystroke (debounced) and to the server draft a few seconds later,
      * so a student can leave the classroom and continue on any device.
      * ------------------------------------------------------------ */
-    const LOCAL_ANSWER_DRAFT_KEY = `assignment_draft_${ASSIGNMENT_ID}_${SUBMISSION_VERSION}`;
+    // Scoped to the signed-in student: shared lab computers must never
+    // surface another student's answers.
+    const CURRENT_USER_ID = {{ (user_info.id ~ '') | tojson }};
+    purgeForeignLocalDrafts(window.localStorage, CURRENT_USER_ID);
+    const LOCAL_ANSWER_DRAFT_KEY = localDraftKey({
+        userId: CURRENT_USER_ID, kind: 'assignment', assignmentId: ASSIGNMENT_ID, round: SUBMISSION_VERSION,
+    });
     const ANSWER_LOCAL_SAVE_DELAY_MS = 300;
     const ANSWER_SERVER_SAVE_DELAY_MS = 5000;
     let answerLocalTimer = null;
@@ -636,15 +664,25 @@
         }
     }
 
-    /** Fill the textareas from a saved answer list (match by question text, fall back to position). */
+    /**
+     * Fill the textareas from a saved answer list: match by question text,
+     * then by position when the counts agree, then hand any still-unmatched
+     * answers to the remaining boxes in order — a returned submission's
+     * original answers must never silently disappear because the question
+     * labels changed.
+     */
     function applyDraftAnswers(list) {
         const textareas = Array.from(document.querySelectorAll('.answer-textarea'));
         if (!textareas.length || !list?.length) return 0;
         let applied = 0;
         const byQuestion = new Map(list.map((item) => [item.question, item.answer]));
+        const labels = new Set(textareas.map((ta) => ta.dataset.question || ''));
+        const unmatched = list.filter((item) => !labels.has(item.question) && String(item.answer || '').trim());
+        let cursor = 0;
         textareas.forEach((ta, index) => {
             let value = byQuestion.get(ta.dataset.question || '');
             if (value === undefined && list.length === textareas.length) value = list[index]?.answer;
+            if (value === undefined && cursor < unmatched.length) value = unmatched[cursor++].answer;
             if (value === undefined || value === ta.value) return;
             ta.value = value;
             applied += 1;
@@ -1078,31 +1116,60 @@
     }
 
     window.submitAnswers = async function() {
-        if (submissionSucceeded) return;
+        // One submission at a time: the countdown re-evaluates availability
+        // every second and must not re-enable the button mid-request.
+        if (submissionSucceeded || submissionInFlight) return;
         if (!assignmentAcceptingSubmissions) {
             showToast('已超过允许提交时间，系统正在以服务器时间为准拦截提交。', 'warning');
             return;
         }
         const textareas = document.querySelectorAll('.answer-textarea');
         const answers = [];
+        const unansweredNumbers = [];
         let hasContent = false;
-        textareas.forEach(ta => {
-            const question = ta.dataset.question || 'Answer';
+        textareas.forEach((ta, index) => {
+            const question = ta.dataset.question || '作答';
             const answer = ta.value.trim();
             if (answer) hasContent = true;
+            else unansweredNumbers.push(index + 1);
             answers.push({ question, answer });
         });
 
         const hasFiles = uploadManager?.hasFiles() ?? false;
-        if (!hasContent && !hasFiles) { showToast('Please enter an answer or upload files.', 'warning'); return; }
+        if (!hasContent && !hasFiles) { showToast('请先填写答案或上传附件。', 'warning'); return; }
+
+        submissionInFlight = true;
+        const submitBtn = document.getElementById('submit-btn');
+        submitBtn.disabled = true;
+        const confirmLines = [
+            CAN_RESUBMIT_SUBMISSION ? '确认重新提交本次作业？' : '提交后不可修改，确认提交本次作业？',
+            textareas.length > 1 && unansweredNumbers.length
+                ? `还有第 ${unansweredNumbers.join('、')} 题未填写。`
+                : '',
+            `附件：${uploadManager?.entries?.length || 0} 个。`,
+        ].filter(Boolean);
+        let confirmed = false;
+        try {
+            confirmed = await lqConfirm({
+                title: CAN_RESUBMIT_SUBMISSION ? '重新提交作业' : '提交作业',
+                message: confirmLines.join('\n'),
+                confirmLabel: '确认提交',
+                cancelLabel: '再检查一下',
+            });
+        } catch {
+            confirmed = window.confirm(confirmLines.join('\n'));
+        }
+        if (!confirmed) {
+            submissionInFlight = false;
+            updateAssignmentSubmitAvailability(null);
+            return;
+        }
         window.behaviorTracker?.log('assignment_submit_attempt', '尝试提交作业', {
             answer_count: answers.length,
             has_text_answers: hasContent,
             has_files: hasFiles
         }, 'assignment_detail');
 
-        const submitBtn = document.getElementById('submit-btn');
-        submitBtn.disabled = true;
         submitBtn.innerHTML = '<div class="spinner spinner-sm mr-2"></div> 提交中...';
 
         // Let an in-flight attachment sync finish so the server draft is consistent.
@@ -1133,7 +1200,7 @@
 
             if (!response.ok) {
                 const detail = payload.detail;
-                const message = (detail && typeof detail === 'object') ? (detail.message || JSON.stringify(detail)) : (detail || 'Submit failed');
+                const message = (detail && typeof detail === 'object') ? (detail.message || JSON.stringify(detail)) : (detail || '提交失败');
                 throw new Error(message);
             }
 
@@ -1146,7 +1213,7 @@
             clearTimeout(answerServerTimer);
             clearTimeout(draftSyncTimer);
             const successMessage = droppedCount > 0
-                ? `${droppedCount} filtered file(s) were ignored during submission.`
+                ? `提交成功，${droppedCount} 个不符合要求的文件已被忽略。`
                 : (payload.is_late_submission ? '提交成功，已按补交规则记录，批改后会自动扣分。' : '提交成功。');
             showToast(successMessage, droppedCount > 0 ? 'warning' : 'success');
             clearLocalAnswerDraft();
@@ -1156,9 +1223,10 @@
             }
             setTimeout(() => location.reload(), 800);
         } catch (e) {
-            showToast('Submit failed: ' + e.message, 'error');
-            submitBtn.disabled = false;
+            showToast('提交失败：' + e.message + '（作答内容已保留，可稍后重试）', 'error');
+            submissionInFlight = false;
             submitBtn.innerHTML = CAN_RESUBMIT_SUBMISSION ? '确认重新提交' : '确认提交作业';
+            updateAssignmentSubmitAvailability(null);
         }
     }
 

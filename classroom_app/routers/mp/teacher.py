@@ -119,62 +119,8 @@ _VERDICT_LABELS = {
 
 _CHECKBOX_SEP = "|||"
 
-# 与 Web 端 static/js/grading_feedback.js 同口径的逐题评语解析：
-# AI/教师评语里 "### 第 N 题" 小节下的 本题得分/扣分点/评价 行。
-_Q_HEADING_RE = re.compile(
-    r"^#{1,6}\s*(?:第\s*)?(\d+)\s*(?:题|问|小题)?(?:\s*[：:.\-、]\s*(.*))?$", re.I
-)
-_Q_ALT_HEADING_RE = re.compile(
-    r"^#{1,6}\s*(?:q|question)\s*\.?\s*(\d+)(?:\s*[：:.\-、]\s*(.*))?$", re.I
-)
-_FB_LABEL_RE = re.compile(
-    r"^(本题得分|得分|score|扣分点描述|扣分点|失分点|评价|评语|evaluation)\s*[：:]\s*(.*)$",
-    re.I,
-)
-_FB_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)、])\s*")
-_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
-
-
-def parse_question_feedback(feedback_md: str | None) -> dict[int, dict]:
-    """feedback_md → {题号: {score, max_score, deduction, evaluation}}。
-
-    只认已成结构的小节，解析不出就返回空——批阅视图会退回客观判定，
-    绝不因评语格式异常丢内容。
-    """
-    sections: dict[int, dict] = {}
-    current_no: int | None = None
-    for raw_line in str(feedback_md or "").splitlines():
-        stripped = raw_line.strip()
-        heading = _Q_HEADING_RE.match(stripped) or _Q_ALT_HEADING_RE.match(stripped)
-        if heading:
-            current_no = int(heading.group(1))
-            sections.setdefault(
-                current_no,
-                {"score": None, "max_score": None, "deduction": "", "evaluation": ""},
-            )
-            continue
-        if current_no is None:
-            continue
-        normalized = _FB_BULLET_PREFIX_RE.sub("", stripped).replace("**", "").strip()
-        labeled = _FB_LABEL_RE.match(normalized)
-        if not labeled:
-            continue
-        label = labeled.group(1).lower()
-        value = labeled.group(2).strip()
-        section = sections[current_no]
-        if label in ("本题得分", "得分", "score"):
-            numbers = _NUMBER_RE.findall(value)
-            section["score"] = float(numbers[0]) if numbers else None
-            section["max_score"] = float(numbers[1]) if len(numbers) > 1 else None
-        elif label in ("评价", "评语", "evaluation"):
-            section["evaluation"] = value
-        else:
-            section["deduction"] = value
-    return {
-        no: section
-        for no, section in sections.items()
-        if section["score"] is not None or section["deduction"] or section["evaluation"]
-    }
+# 逐题评语解析与 Web 端同口径，单一实现在 grading_question_service。
+from ...services.grading_question_service import parse_question_feedback  # noqa: E402,F401
 
 
 def _normalize_answer_entries(answer_entries: list[dict]) -> list[dict]:

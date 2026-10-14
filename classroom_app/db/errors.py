@@ -23,6 +23,26 @@ class DatabaseIntegrityError(LanShareDatabaseError):
     """A database integrity constraint failed."""
 
 
+def is_unique_violation(exc: BaseException) -> bool:
+    """True for a UNIQUE/primary-key conflict on SQLite or PostgreSQL (sqlstate 23505)."""
+    if str(getattr(exc, "sqlstate", "") or getattr(exc, "pgcode", "") or "") == "23505":
+        return True
+    if any(cls.__name__ == "UniqueViolation" for cls in type(exc).__mro__):
+        return True
+    import sqlite3
+
+    return isinstance(exc, sqlite3.IntegrityError) and "UNIQUE" in str(exc).upper()
+
+
+def is_retryable_conflict(exc: BaseException) -> bool:
+    """Lock/serialization conflicts a client may simply retry (SQLite busy, PG 40001/40P01/55P03)."""
+    if str(getattr(exc, "sqlstate", "") or getattr(exc, "pgcode", "") or "") in {"40001", "40P01", "55P03"}:
+        return True
+    import sqlite3
+
+    return isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower()
+
+
 class DatabaseRetryableError(LanShareDatabaseError):
     """A database operation can be retried safely by the caller."""
 

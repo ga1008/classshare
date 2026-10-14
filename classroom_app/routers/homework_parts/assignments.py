@@ -1,4 +1,5 @@
 from .common import *
+from ...db.connection import get_configured_db_engine
 from ...services.ordinary_grade_record_service import (
     normalize_ordinary_grade_kind_override,
     ordinary_grade_assignment_kind_info,
@@ -298,13 +299,40 @@ async def update_assignment(assignment_id: str, request: Request, user: dict = D
     return result
 
 
+def _real_submission_count(conn, assignment_id: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM submissions WHERE assignment_id = ? AND status <> 'unsubmitted' "
+        "AND COALESCE(is_absence_score, 0) = 0",
+        (assignment_id,),
+    ).fetchone()
+    return int((row["n"] if hasattr(row, "keys") else row[0]) or 0) if row else 0
+
+
+def _cancel_assignment_appeals(conn, assignment_id: str, user: dict) -> None:
+    """Close pending appeals/requests so they do not dangle in reviewers' inboxes."""
+    from ...services.approval_workflow_service import auto_cancel_requests, ensure_approval_workflow_schema
+    from ...services.assessment_appeal_service import APPEAL_TYPES, LEGACY_WITHDRAW
+
+    ensure_approval_workflow_schema(conn)
+    rows = conn.execute(
+        "SELECT DISTINCT subject_id FROM approval_requests WHERE assignment_id = ? AND status = 'pending'",
+        (str(assignment_id),),
+    ).fetchall()
+    subject_ids = sorted({str(row["subject_id"]) for row in rows})
+    if subject_ids:
+        auto_cancel_requests(conn, request_type=(*APPEAL_TYPES, LEGACY_WITHDRAW), subject_ids=subject_ids,
+                             note="作业已被教师删除",
+                             actor={"role": "teacher", "id": int(user["id"]), "name": user.get("name") or ""})
+
+
 @router.delete(
     "/assignments/{assignment_id}",
     response_class=JSONResponse,
     response_model=AssignmentMutationResponse,
     response_model_exclude_unset=True,
 )
-async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher)):
+async def delete_assignment(assignment_id: str, user: dict = Depends(get_current_teacher),
+                            confirm_submissions: int | None = None):
     with get_db_connection() as conn:
         assignment = conn.execute(
             """SELECT a.id,
@@ -325,9 +353,26 @@ async def delete_assignment(assignment_id: str, user: dict = Depends(get_current
         if is_personal_stage_exam_assignment(conn, assignment_id):
             _hide_personal_stage_asset()
 
+        # Deleting cascades to every submission, grade and file (audit B9):
+        # with real student work the caller must confirm the exact count. Take
+        # the write lock first so no submission can land between count and delete
+        # (on PostgreSQL a concurrent submit waits on this row through its FK).
+        begin_immediate_transaction(conn)
+        if get_configured_db_engine() == "postgres":
+            conn.execute("SELECT id FROM assignments WHERE id = ? FOR UPDATE", (assignment_id,)).fetchone()
+        submission_count = _real_submission_count(conn, assignment_id)
+        if submission_count and confirm_submissions != submission_count:
+            raise HTTPException(409, {
+                "message": f"该作业已有 {submission_count} 份学生提交，删除将永久清除这些提交、成绩与附件。",
+                "code": "assignment_has_submissions",
+                "submission_count": submission_count,
+            })
+        _cancel_assignment_appeals(conn, assignment_id, user)
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         cancel_assignment_due_reminders(conn, assignment_id)
         conn.commit()
+    print(f"[AUDIT] teacher {int(user['id'])} deleted assignment {assignment_id} "
+          f"with {submission_count} submission(s)")
     delete_storage_tree(_build_assignment_storage_dir(assignment['course_id'], assignment_id))
     return {"status": "success", "deleted_assignment_id": assignment_id}
 

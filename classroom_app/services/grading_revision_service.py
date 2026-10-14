@@ -51,7 +51,7 @@ def activate_submission_grade_revision(
     ).fetchone()
     if (existing and existing["status"] == "active" and existing["score"] == score
             and str(existing["feedback_md"] or "") == str(feedback_md or "")
-            and not any(data.get(key) for key in ("quality_audit", "review_reason_codes", "execution_metadata", "execution_state"))):
+            and not any(data.get(key) for key in ("quality_audit", "review_reason_codes", "execution_metadata", "execution_state", "questions"))):
         conn.execute("UPDATE submissions SET active_grade_revision_id = ? WHERE id = ?", (existing["id"], submission_id))
         return int(existing["id"])
     ai_job_id = data.get("ai_job_id") or submission.get("grading_job_id")
@@ -91,6 +91,17 @@ def activate_submission_grade_revision(
     }
     quality_audit = dict(data.get("quality_audit") or {})
     for key in ("execution_plan", "execution_metadata", "adjudication_execution_metadata", "execution_state", "ai_policy_version", "business_context"):
+        if data.get(key) is not None:
+            quality_audit[key] = data[key]
+    # Structured per-question grades (AI result or teacher edit): appeals and
+    # the per-question editor read these instead of re-parsing Markdown.
+    if data.get("questions"):
+        from .grading_question_service import normalize_question_items
+
+        questions = normalize_question_items(data.get("questions"))
+        if questions:
+            quality_audit["questions"] = questions
+    for key in ("appeal_request_id", "previous_revision_id"):
         if data.get(key) is not None:
             quality_audit[key] = data[key]
     revision_id = execute_insert_returning_id(

@@ -204,6 +204,53 @@ class NotificationEmailQueueTests(unittest.TestCase):
         mark.assert_called_once_with(conn, 31, emails.EMAIL_STATUS_QUEUED, job_id=91)
 
 
+class PlatformSenderFallbackTests(unittest.TestCase):
+    """Appeal/approval notices fall back to the platform sender (plan §7.3)."""
+
+    def _queue(self, category, configs, *, env="99"):
+        conn = MagicMock()
+        payload = notification_payload(category, recipient_role="teacher", recipient_user_pk=7,
+                                       recipient_identity="teacher:7")
+        with patch.dict("os.environ", {"PLATFORM_NOTIFICATION_SENDER_TEACHER_ID": env}), \
+             patch.object(emails, "notification_email_required", return_value=True), \
+             patch.object(emails, "_load_recipient_email", return_value={"name": "T", "email": "t@example.test"}), \
+             patch.object(emails, "_load_default_email_config", side_effect=lambda _c, tid: configs.get(int(tid))), \
+             patch.object(emails, "_build_email_content", return_value=("b", "<p>b</p>")), \
+             patch.object(emails, "_insert_email_outbox_job_if_absent", return_value=91) as insert, \
+             patch.object(emails, "_mark_notification_email_status") as mark:
+            queued = emails.queue_notification_email_if_applicable(conn, notification_id=31, payload=payload)
+        return queued, insert, mark
+
+    def test_teacher_own_smtp_wins(self):
+        queued, insert, _ = self._queue("approval_workflow", {7: {"id": 2}, 99: {"id": 5}})
+        self.assertTrue(queued)
+        self.assertEqual((insert.call_args.kwargs["teacher_id"], insert.call_args.kwargs["config_id"]), (7, 2))
+
+    def test_approval_notice_falls_back_to_platform_sender(self):
+        queued, insert, _ = self._queue("approval_workflow", {99: {"id": 5}})
+        self.assertTrue(queued)
+        self.assertEqual((insert.call_args.kwargs["teacher_id"], insert.call_args.kwargs["config_id"]), (99, 5))
+
+    def test_other_categories_do_not_borrow_platform_mailbox(self):
+        queued, insert, mark = self._queue("grading_result", {99: {"id": 5}})
+        self.assertFalse(queued)
+        insert.assert_not_called()
+        self.assertEqual(mark.call_args.args[1:], (31, emails.EMAIL_STATUS_NOT_CONFIGURED))
+
+    def test_channel_status_states(self):
+        conn = MagicMock()
+        with patch.dict("os.environ", {"PLATFORM_NOTIFICATION_SENDER_TEACHER_ID": "99"}), \
+             patch.object(emails, "_load_recipient_email", return_value={"name": "T", "email": "t@example.test"}), \
+             patch.object(emails, "_load_default_email_config", side_effect=lambda _c, tid: {"id": 5} if int(tid) == 99 else None):
+            self.assertEqual(emails.approval_email_channel_status(conn, 7)["state"], "platform")
+        with patch.dict("os.environ", {"PLATFORM_NOTIFICATION_SENDER_TEACHER_ID": "", "SIGNATURE_NOTIFICATION_SENDER_TEACHER_ID": ""}), \
+             patch.object(emails, "_load_recipient_email", return_value={"name": "T", "email": "t@example.test"}), \
+             patch.object(emails, "_load_default_email_config", return_value=None):
+            self.assertEqual(emails.approval_email_channel_status(conn, 7)["state"], "not_configured")
+        with patch.object(emails, "_load_recipient_email", return_value=None):
+            self.assertEqual(emails.approval_email_channel_status(conn, 7)["state"], "no_address")
+
+
 class NotificationEmailWorkerTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")

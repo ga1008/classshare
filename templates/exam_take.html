@@ -11,6 +11,7 @@
     {% include "partials/lq_editor_head.html" %}
     <link rel="stylesheet" href="{{ asset_url('css/exam-take.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assessment-student-material.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
 </head>
 <body class="exam-page{% if submission %} exam-is-submitted{% endif %}" {{ body_attrs(ui_palette) }}>
 
@@ -36,11 +37,12 @@
             <span>进度</span>
             <strong id="topbarAnsweredLabel">已答 0 / 0</strong>
         </div>
-        {% if assignment.countdown_at or assignment.late_submission_enabled %}
+        {% if personal_window or assignment.countdown_at or assignment.late_submission_enabled %}
         <div
-            class="exam-topbar-status__item exam-topbar-clock{% if assignment.is_late_submission_open %} is-late{% endif %}"
+            class="exam-topbar-status__item exam-topbar-clock{% if assignment.is_late_submission_open or personal_window %} is-late{% endif %}"
             data-assignment-clock
             data-assignment-id="{{ assignment.id }}"
+            {% if personal_window %}data-personal-window="1" data-personal-window-due-at="{{ personal_window.due_at }}" data-personal-window-label="{{ personal_window.penalty_label }}"{% endif %}
             data-server-now="{{ assignment.server_now or '' }}"
             data-countdown-at="{{ assignment.countdown_at or '' }}"
             data-late-until="{{ assignment.late_submission_until or '' }}"
@@ -192,7 +194,8 @@
     import { initExamDrawingWhiteboard } from '{{ asset_url('js/teacher_whiteboard.js') }}';
     import { initAssignmentClocks } from '{{ asset_url('js/assignment_time.js') }}';
     import { initReviewDocxExportButtons } from '{{ asset_url('js/review_docx_export.js') }}';
-    import { mountLauncher as mountApprovalLauncher } from '{{ asset_url('js/approval_workflow.js') }}';
+    import { mountAppealEntry } from '{{ asset_url('js/assessment_appeal.js') }}';
+    import { localDraftKey, purgeForeignLocalDrafts } from '{{ asset_url('js/local_draft_scope.js') }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -222,10 +225,22 @@
     const SUBMISSION_RETURNED = {{ submission_returned | tojson }};
     const RESUBMISSION_STATE = {{ resubmission_state | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
-    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission) | tojson }};
+    const PERSONAL_WINDOW_DUE_AT = {{ (personal_window.due_at if personal_window else none) | tojson }};
+    // Judge the window by server time: both strings are naive server-local ISO.
+    const PERSONAL_WINDOW_CLOCK_OFFSET = (() => {
+        const serverNow = Date.parse({{ (assignment.server_now or '') | tojson }});
+        return Number.isNaN(serverNow) ? 0 : serverNow - Date.now();
+    })();
+    let assignmentAcceptingSubmissions = {{ (assignment.is_accepting_submissions or can_resubmit_submission or (personal_window is not none)) | tojson }};
     const SUBMISSION_FEEDBACK_MD = {{ (submission.feedback_md if submission else '') | tojson }};
     const gradingFeedback = parseGradingFeedback(SUBMISSION_FEEDBACK_MD);
-    const LOCAL_DRAFT_KEY = `exam_${ASSIGNMENT_ID}`;
+    // Scoped to the signed-in student and submission round: shared lab
+    // computers must never surface or sync another student's answers.
+    const CURRENT_USER_ID = {{ (user_info.id ~ '') | tojson }};
+    purgeForeignLocalDrafts(window.localStorage, CURRENT_USER_ID);
+    const LOCAL_DRAFT_KEY = localDraftKey({
+        userId: CURRENT_USER_ID, kind: 'exam', assignmentId: ASSIGNMENT_ID, round: SUBMISSION_VERSION,
+    });
     const SERVER_DRAFT_TEXT_SAVE_DELAY_MS = 8000;
     const SERVER_DRAFT_RESTORE_SYNC_DELAY_MS = 1200;
 
@@ -236,19 +251,10 @@
     try { SUBMISSION_DATA = typeof SUBMISSION_RAW === 'string' ? JSON.parse(SUBMISSION_RAW) : (SUBMISSION_RAW || null); } catch(e) { SUBMISSION_DATA = null; }
     const SUBMISSION_STATUS = "{{ submission.status }}";
     const SUBMISSION_SCORE = {{ submission.score | tojson }};
-    const CAN_REQUEST_WITHDRAW = {{ can_request_withdraw | tojson }};
-    const WITHDRAW_REQUEST = {{ (withdraw_request or none) | tojson }};
+    const APPEAL_STATE = {{ (appeal_state or none) | tojson }};
     const SUBMISSION_ID = {{ (submission.id if submission else none) | tojson }};
     function mountWithdrawLauncher() {
-        const el = document.getElementById('withdraw-request-launcher');
-        if (!el || el.dataset.mounted) return;
-        el.dataset.mounted = '1';
-        mountApprovalLauncher(el, {
-            requestType: 'submission_withdraw',
-            subjectId: SUBMISSION_ID,
-            currentRequest: WITHDRAW_REQUEST,
-            disabledReason: CAN_REQUEST_WITHDRAW ? '' : '当前作业状态不支持申请撤回重做',
-        });
+        mountAppealEntry(document.getElementById('assessment-appeal-root'), APPEAL_STATE);
     }
     {% else %}
     const SUBMISSION_EXISTS = false;
@@ -462,9 +468,10 @@
     function updateExamSubmitAvailability(stateMap) {
         const current = stateMap?.get?.(ASSIGNMENT_ID);
         if (current) {
-            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow();
+            assignmentAcceptingSubmissions = Boolean(current.is_accepting_submissions) || resubmissionAcceptingNow() || personalWindowAcceptingNow();
         } else {
-            assignmentAcceptingSubmissions = assignmentAcceptingSubmissions || resubmissionAcceptingNow();
+            assignmentAcceptingSubmissions = (assignmentAcceptingSubmissions && (!PERSONAL_WINDOW_DUE_AT || personalWindowAcceptingNow()))
+                || resubmissionAcceptingNow();
         }
         updateTopbarNavButtons();
         const footerSubmitBtn = document.getElementById('submitExamBtn');
@@ -472,6 +479,13 @@
             footerSubmitBtn.disabled = !assignmentAcceptingSubmissions;
             footerSubmitBtn.title = assignmentAcceptingSubmissions ? '' : '已超过允许提交时间';
         }
+    }
+
+    // Approved 超时补交 window: open until its own deadline (server re-checks on submit).
+    function personalWindowAcceptingNow() {
+        if (!PERSONAL_WINDOW_DUE_AT) return false;
+        const dueTime = Date.parse(PERSONAL_WINDOW_DUE_AT);
+        return Number.isNaN(dueTime) || dueTime > Date.now() + PERSONAL_WINDOW_CLOCK_OFFSET;
     }
 
     function resubmissionAcceptingNow() {
@@ -2021,7 +2035,7 @@
         if(elements.navContainer) elements.navContainer.style.display = 'none';
         if(elements.progressContainer) elements.progressContainer.style.display = 'none';
 
-        let html = '';
+        let html = APPEAL_STATE ? '<div id="assessment-appeal-root"></div>' : '';
 
         // Status Banner
         if (SUBMISSION_RETURNED) {
@@ -2029,8 +2043,8 @@
             html += `
                 <div class="result-banner warning">
                     <div class="result-icon">!</div>
-                    <h3>${CAN_RESUBMIT_SUBMISSION ? '待重交' : '重交窗口已关闭'}</h3>
-                    <p>${CAN_RESUBMIT_SUBMISSION ? `教师已撤回本次提交，请在 ${dueText} 前重新提交。` : '教师已撤回本次提交，但当前重交窗口已关闭，请联系教师重新开放重交时间。'}</p>
+                    <h3>${CAN_RESUBMIT_SUBMISSION ? '未提交（已退回修改）' : '修改期已结束'}</h3>
+                    <p>${CAN_RESUBMIT_SUBMISSION ? `本次提交已退回，请在 ${dueText} 前修改并重新提交；点击下方按钮会载入你原来的答案和附件。逾期未重新提交将以原提交为准。` : '修改期已结束，将以原提交为准；如有疑问请联系教师。'}</p>
                     ${CAN_RESUBMIT_SUBMISSION ? '<button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" id="resubmitExamBtn" style="margin-top: 1rem;">重新作答并提交</button>' : ''}
                 </div>
             `;
@@ -2050,7 +2064,7 @@
                 <div class="result-banner success">
                     <div class="result-icon">🎉</div>
                     <h3>${gradedTitle}</h3>
-                    <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span>${(CAN_REQUEST_WITHDRAW || WITHDRAW_REQUEST) && !(GROUP_IS && GROUP_REVEALED) ? '<span id="withdraw-request-launcher"></span>' : ''}</div>
+                    <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
                     ${scoreCaption}
                     <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
                         <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">进入错题本复盘</a>
@@ -2275,8 +2289,10 @@
         }
     }
 
-    function startExamResubmission() {
-        if (!CAN_RESUBMIT_SUBMISSION) return;
+    let resubmissionStarting = false;
+    async function startExamResubmission() {
+        if (!CAN_RESUBMIT_SUBMISSION || resubmissionStarting || isEditingResubmission) return;
+        resubmissionStarting = true;
         isEditingResubmission = true;
         document.body.classList.remove('exam-is-submitted');
         state.answers = extractSubmittedAnswers();
@@ -2291,6 +2307,13 @@
         state.activeQuestionId = null;
         uploadManager = null;
         restoreExamEditingShell();
+        // An approved 错误提交 appeal seeds this round's server draft with the
+        // original answers *and attachments*; restore it so nothing is re-uploaded.
+        try {
+            await loadServerDraft();
+        } finally {
+            resubmissionStarting = false;
+        }
         renderCurrentPage();
         saveToLocal();
     }

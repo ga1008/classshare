@@ -20,11 +20,11 @@ def build_capabilities(Capability, spec, _id):
                 'expected_submission_version': version}}, transport='form', allows_files=True, max_body_bytes=512000,
             response_contract='assignment_draft'),
         Capability('http.assignment.submit', '按当前学生身份提交作业，沿用原有附件与评分流程', 'POST', '/api/assignments/{assignment_id}/submit',
-            'homework_parts.submissions', 'submit_assignment', 'f6d04ba0ca3b24f9b7328ebd1057ab32a6dd9b261a940ac4ed193fb003a47937',
+            'homework_parts.submissions', 'submit_assignment', '63876517056eeea0453ea474ad3f12be161e35bf3a675d7cd29f40209284282b',
             {'path': {'assignment_id': assignment}, 'body': {'answers_json': answers, 'manifest': manifest,
                 'started_at': spec('string', maxLength=100), 'use_server_draft': spec('boolean'),
                 'expected_submission_version': version}}, transport='form', allows_files=True, max_body_bytes=512000),
         Capability('http.assignment.withdraw', '撤回自己的未批改作业，沿用网页撤回规则', 'DELETE', '/api/assignments/{assignment_id}/withdraw',
-            'homework_parts.submissions', 'withdraw_submission', '4fc6b50fa266d52fb6d82fe7b42a4dc575fae95bfcbf432d5351b3a4f77e6dc2',
+            'homework_parts.submissions', 'withdraw_submission', 'b3dcacdf846d94625db3518ec45a8f5e5b28e758e706344395ad48cf3d163992',
             {'path': {'assignment_id': assignment}}),
     )

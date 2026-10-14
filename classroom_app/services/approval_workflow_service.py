@@ -33,7 +33,8 @@ from . import message_center_service
 
 MESSAGE_CATEGORY_APPROVAL = "approval_workflow"
 TASK_KIND_APPROVAL_REMINDER = "approval_request_reminder"
-REMINDER_INTERVAL_SECONDS = 6 * 3600
+# Appeal types expire within days, so the (cheap, indexed) sweep runs hourly.
+REMINDER_INTERVAL_SECONDS = 3600
 REASON_MAX_CHARS = 1000
 NOTE_MAX_CHARS = 1000
 
@@ -83,8 +84,17 @@ class ApprovalRequestType:
     detail: Optional[Callable[..., dict[str, Any]]] = None
     # inbox_link(request, role) -> deep link used by notifications
     inbox_link: Optional[Callable[..., str]] = None
+    # after_create(conn, request) runs inside the creating transaction, e.g. to
+    # interrupt in-flight work the request makes pointless.
+    after_create: Optional[Callable[..., None]] = None
+    # on_expire(conn, request) / on_auto_cancel(conn, request, note) settle side
+    # effects when a pending request ends without a reviewer decision.
+    on_expire: Optional[Callable[..., None]] = None
+    on_auto_cancel: Optional[Callable[..., None]] = None
     reminder_hours: int = 48
     expire_days: int = 7
+    # When set, overrides expire_days with a finer-grained deadline.
+    expire_hours: Optional[int] = None
     approve_label: str = "同意"
     reject_label: str = "拒绝"
     description: str = ""
@@ -194,6 +204,10 @@ def _record_event(conn, request_id: int, event_type: str, *, actor: Mapping[str,
     )
 
 
+REVIEWER_ONLY_PAYLOAD_KEYS = frozenset({"ai_regrade"})
+REVIEWER_ONLY_EVENT_TYPES = frozenset({"ai_regrade_requested", "ai_regrade_completed", "ai_regrade_failed"})
+
+
 def serialize_request(row: Mapping[str, Any], *, reviewers: list[dict[str, Any]] | None = None,
                       viewer: Mapping[str, Any] | None = None) -> dict[str, Any]:
     request_type = _REGISTRY.get(str(row.get("request_type") or ""))
@@ -230,6 +244,9 @@ def serialize_request(row: Mapping[str, Any], *, reviewers: list[dict[str, Any]]
             {"role": r["reviewer_role"], "id": r["reviewer_user_pk"], "name": r.get("reviewer_name") or ""}
             for r in reviewers
         ]
+    if viewer is None or str(viewer.get("role") or "") == "student":
+        # Reviewer working state (e.g. an unadopted AI re-grade) never reaches applicants.
+        item["payload"] = {k: v for k, v in item["payload"].items() if k not in REVIEWER_ONLY_PAYLOAD_KEYS}
     if viewer is not None:
         item["can_decide"] = status == APPROVAL_STATUS_PENDING and bool(reviewers) and (
             _is_reviewer(reviewers, viewer) or bool(viewer.get("_is_super_admin"))
@@ -297,19 +314,27 @@ def create_request(conn, applicant: Mapping[str, Any], *, request_type: str, sub
     if existing:
         raise ApprovalWorkflowError(409, "已有一条待审批的申请，请等待教师处理")
     now = _now_iso()
-    request_id = execute_insert_returning_id(
-        conn,
-        """
-        INSERT INTO approval_requests (
-            request_type, status, applicant_role, applicant_user_pk, applicant_name,
-            subject_type, subject_id, assignment_id, class_offering_id, title, reason,
-            payload_json, dedupe_key, expires_at, created_at, updated_at
-        ) VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (spec.key, role, user_pk, _user_name(applicant), spec.subject_type, prepared.subject_id,
-         prepared.assignment_id, prepared.class_offering_id, prepared.title, reason_text,
-         json.dumps(prepared.payload, ensure_ascii=False), prepared.dedupe_key, prepared.expires_at, now, now),
-    )
+    try:
+        request_id = execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO approval_requests (
+                request_type, status, applicant_role, applicant_user_pk, applicant_name,
+                subject_type, subject_id, assignment_id, class_offering_id, title, reason,
+                payload_json, dedupe_key, expires_at, created_at, updated_at
+            ) VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (spec.key, role, user_pk, _user_name(applicant), spec.subject_type, prepared.subject_id,
+             prepared.assignment_id, prepared.class_offering_id, prepared.title, reason_text,
+             json.dumps(prepared.payload, ensure_ascii=False), prepared.dedupe_key, prepared.expires_at, now, now),
+        )
+    except Exception as exc:  # noqa: BLE001
+        # PostgreSQL has no BEGIN IMMEDIATE: two concurrent clicks both pass the
+        # SELECT above and the partial unique index rejects the second insert.
+        message = str(exc).lower()
+        if "uq_approval_requests_pending_dedupe" in message or "approval_requests.dedupe_key" in message:
+            raise ApprovalWorkflowError(409, "已有一条待审批的申请，请等待教师处理") from exc
+        raise
     for reviewer in prepared.reviewers:
         reviewer_role, reviewer_pk = _identity(reviewer)
         if reviewer_pk <= 0:
@@ -321,6 +346,9 @@ def create_request(conn, applicant: Mapping[str, Any], *, request_type: str, sub
         )
     _record_event(conn, request_id, "created", actor=applicant, note=reason_text, payload=prepared.payload)
     request = _load_request_row(conn, request_id)
+    if spec.after_create:
+        spec.after_create(conn, request)
+        request = _load_request_row(conn, request_id)
     reviewers = _load_reviewers(conn, request_id)
     _notify(
         conn,
@@ -407,10 +435,12 @@ def get_request(conn, user: Mapping[str, Any], request_id: int | str) -> dict[st
         "WHERE request_id = ? ORDER BY id",
         (int(request["id"]),),
     ).fetchall()
+    reviewer_view = _is_reviewer(reviewers, user) or viewer["_is_super_admin"]
     item["events"] = [
         {"event_type": e["event_type"], "actor_role": e["actor_role"], "actor_name": e["actor_name"],
          "note": e["note"], "payload": _json_loads(e["payload_json"]), "created_at": e["created_at"]}
         for e in events
+        if reviewer_view or e["event_type"] not in REVIEWER_ONLY_EVENT_TYPES
     ]
     return item
 
@@ -507,15 +537,23 @@ def cancel_request(conn, applicant: Mapping[str, Any], request_id: int | str, *,
     return serialize_request(request, reviewers=reviewers, viewer=applicant)
 
 
-def auto_cancel_requests(conn, *, request_type: str, subject_ids: list[str], note: str,
+def auto_cancel_requests(conn, *, request_type: str | tuple[str, ...] | list[str], subject_ids: list[str], note: str,
                          actor: Mapping[str, Any] | None = None) -> int:
-    """Close pending requests whose business outcome was reached another way (no transaction of its own)."""
+    """Close pending requests whose business outcome was reached another way (no transaction of its own).
+
+    Auto-cancelled requests do not count against per-subject application limits.
+    """
     if not subject_ids:
         return 0
     ensure_approval_workflow_schema(conn)
+    request_types = [request_type] if isinstance(request_type, str) else list(request_type)
+    if not request_types:
+        return 0
     placeholders = ",".join("?" for _ in subject_ids)
-    select_sql = f"SELECT * FROM approval_requests WHERE request_type = ? AND status = 'pending' AND subject_id IN ({placeholders})"
-    params = (str(request_type), *[str(item) for item in subject_ids])
+    type_placeholders = ",".join("?" for _ in request_types)
+    select_sql = (f"SELECT * FROM approval_requests WHERE request_type IN ({type_placeholders}) "
+                  f"AND status = 'pending' AND subject_id IN ({placeholders})")
+    params = (*[str(item) for item in request_types], *[str(item) for item in subject_ids])
     try:
         rows = conn.execute(select_sql, params).fetchall()
     except Exception as exc:  # noqa: BLE001
@@ -544,6 +582,9 @@ def auto_cancel_requests(conn, *, request_type: str, subject_ids: list[str], not
         closed += 1
         _record_event(conn, int(request["id"]), "auto_cancelled", actor=actor, note=note)
         request = _load_request_row(conn, request["id"])
+        spec = _REGISTRY.get(str(request.get("request_type") or ""))
+        if spec and spec.on_auto_cancel:
+            spec.on_auto_cancel(conn, request, note)
         _notify(conn, recipients=[{"role": request["applicant_role"], "id": request["applicant_user_pk"]}],
                 actor=actor, title=f"申请已结束：{request['title']}", body=note, request=request, ref_suffix="auto_cancelled")
     return closed
@@ -566,7 +607,8 @@ def remind_stale_requests(conn, *, now: datetime | None = None) -> dict[str, int
             continue
         created = created.replace(tzinfo=None)
         age = now_dt - created
-        if age >= timedelta(days=spec.expire_days):
+        expire_after = timedelta(hours=spec.expire_hours) if spec.expire_hours else timedelta(days=spec.expire_days)
+        if age >= expire_after:
             stamp = now_dt.isoformat()
             cursor = conn.execute(
                 "UPDATE approval_requests SET status = 'expired', decision_note = ?, decided_at = ?, updated_at = ? "
@@ -577,6 +619,8 @@ def remind_stale_requests(conn, *, now: datetime | None = None) -> dict[str, int
                 expired += 1
                 _record_event(conn, int(request["id"]), "expired", note="reminder sweep")
                 request = _load_request_row(conn, request["id"])
+                if spec.on_expire:
+                    spec.on_expire(conn, request)
                 _notify(conn, recipients=[{"role": request["applicant_role"], "id": request["applicant_user_pk"]}],
                         actor=None, title=f"申请已过期：{request['title']}",
                         body="教师超过处理期限未审批，申请已自动过期，如仍需要可重新发起。", request=request, ref_suffix="expired")
@@ -610,5 +654,45 @@ def ensure_approval_reminder_task(conn) -> int:
         title="Approval request reminder sweep",
         priority=70,
         max_attempts=3,
-        replace=False,
+        # replace=True so an existing recurring task picks up interval changes.
+        replace=True,
     )
+
+
+def count_requests(conn, *, request_types: list[str] | tuple[str, ...], subject_ids: list[str] | tuple[str, ...],
+                   applicant: Mapping[str, Any] | None = None, statuses: list[str] | tuple[str, ...] | None = None,
+                   include_auto_cancelled: bool = False) -> int:
+    """Count requests for limit checks. System-voided (auto-cancelled) ones are excluded by default."""
+    ensure_approval_workflow_schema(conn)
+    if not request_types or not subject_ids:
+        return 0
+    where = [f"r.request_type IN ({','.join('?' for _ in request_types)})",
+             f"r.subject_id IN ({','.join('?' for _ in subject_ids)})"]
+    params: list[Any] = [*[str(t) for t in request_types], *[str(s) for s in subject_ids]]
+    if applicant:
+        role, user_pk = _identity(applicant)
+        where.append("r.applicant_role = ? AND r.applicant_user_pk = ?")
+        params.extend([role, user_pk])
+    if statuses:
+        where.append(f"r.status IN ({','.join('?' for _ in statuses)})")
+        params.extend(str(s) for s in statuses)
+    if not include_auto_cancelled:
+        where.append("NOT EXISTS (SELECT 1 FROM approval_request_events e "
+                     "WHERE e.request_id = r.id AND e.event_type = 'auto_cancelled')")
+    row = conn.execute(f"SELECT COUNT(*) AS n FROM approval_requests r WHERE {' AND '.join(where)}", tuple(params)).fetchone()
+    return int((row["n"] if hasattr(row, "keys") else row[0]) or 0)
+
+
+def record_request_event(conn, request_id: int, event_type: str, *, actor: Mapping[str, Any] | None = None,
+                         note: str = "", payload: dict[str, Any] | None = None) -> None:
+    """Public hook for request types to append business events to the timeline."""
+    _record_event(conn, int(request_id), event_type, actor=actor, note=note, payload=payload)
+
+
+def update_request_payload(conn, request_id: int, updates: Mapping[str, Any]) -> dict[str, Any]:
+    """Merge business facts discovered after creation (e.g. an interrupted grading job) into payload_json."""
+    request = _load_request_row(conn, request_id)
+    payload = {**_json_loads(request.get("payload_json")), **dict(updates)}
+    conn.execute("UPDATE approval_requests SET payload_json = ?, updated_at = ? WHERE id = ?",
+                 (json.dumps(payload, ensure_ascii=False), _now_iso(), int(request_id)))
+    return payload
