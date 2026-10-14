@@ -738,3 +738,10 @@ B1 async 路由同步 DB → 线程池；B3 查重锁改 `file_hash IN` + 索引
 | B7 | `close_overdue_assignments` 先做只读索引探测，有到期作业才执行 UPDATE（常见无操作场景不再取 SQLite 写锁）；新增每 60 秒的调度任务 `assignment_close_sweep`，无访问时也能落库截止状态 |
 
 验证：新增 `test_db_best_effort`（9 例，含生产式隐式事务、钩子自行提交、可重试冲突）、`test_attachment_export_zip`、`test_assignment_delete_guard`、`test_assignment_close_sweep`、查重哈希过滤 1 例；相关回归 394 例通过；全量 4239 例失败集合与基线一致。QA 浏览器/接口：评分经线程池保存成功；补充两个附件后导出 zip（PNG 存储、txt 压缩、临时文件已清理）；删除含 2 份提交的作业弹出"删除作业及 2 份提交"确认，取消后作业保留。代码审查（子代理）HIGH/MEDIUM 已处理：保存点在钩子提交或无事务时的健壮性、导出临时文件残留与并发上限、删除计数竞争、nginx 与应用上限联动说明、可重试冲突文案；确认被包裹的钩子均不自行提交，内部回调走容器内地址不受 nginx 限制。
+
+### 上线记录（2026-10-14）
+
+- 提交 `a92ea6a9`（dev，已推送 origin），发布 `20261014-143942-c53dc8d21234`，从冻结检出发布（主树未跟踪个人文件不入包），未停服迁移。
+- 原生 PostgreSQL 迁移门禁重做：`.codex-temp/hw-appeal-native-gate.py` → `.codex-temp/hw-appeal-gate/native-report.json`（74 个源码文件；基线 262 表 / 529,580 行，增量与全量启动两段旧数据差异 0、幂等差异 0；新增 `assignment_student_windows`）。
+- 线上核验：全部容器 healthy、`/api/internal/health` ok、无近期错误日志；`nginx -t` 通过；生产库已有 `assignment_student_windows` 表与 `idx_submission_files_file_hash`、`idx_submission_draft_files_file_hash` 索引；调度任务 `assignment_close_sweep` 已执行（`closed=0`）并续排；公网 21 MB 提交请求被 nginx 413 拦截、普通请求到达应用（401）、其他 `/api/internal/*` 返回 404；生产 `SECRET_KEY` 为自定义值（49 字符），遗留核实项关闭。
+- 说明：健康输出中 `background_tasks.ok=false` 为历史失败计数（邮件/AI 批改 review_required 等），与本次发布无关。
