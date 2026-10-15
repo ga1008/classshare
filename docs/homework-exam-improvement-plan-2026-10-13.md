@@ -745,3 +745,10 @@ B1 async 路由同步 DB → 线程池；B3 查重锁改 `file_hash IN` + 索引
 - 原生 PostgreSQL 迁移门禁重做：`.codex-temp/hw-appeal-native-gate.py` → `.codex-temp/hw-appeal-gate/native-report.json`（74 个源码文件；基线 262 表 / 529,580 行，增量与全量启动两段旧数据差异 0、幂等差异 0；新增 `assignment_student_windows`）。
 - 线上核验：全部容器 healthy、`/api/internal/health` ok、无近期错误日志；`nginx -t` 通过；生产库已有 `assignment_student_windows` 表与 `idx_submission_files_file_hash`、`idx_submission_draft_files_file_hash` 索引；调度任务 `assignment_close_sweep` 已执行（`closed=0`）并续排；公网 21 MB 提交请求被 nginx 413 拦截、普通请求到达应用（401）、其他 `/api/internal/*` 返回 404；生产 `SECRET_KEY` 为自定义值（49 字符），遗留核实项关闭。
 - 说明：健康输出中 `background_tasks.ok=false` 为历史失败计数（邮件/AI 批改 review_required 等），与本次发布无关。
+
+### 15.x 2026-10-16 发布：AI 跨厂商熔断切换 + 三处线上缺陷（commit `a80bedc1`，release `20261016-000617-2554bb11d964`）
+
+- **缺陷修复**：① 课堂页「课次详情」弹层内点开「管理课次」后整页不可点（Edge 必现）——根因是 `declarative.css` 的 `:has(details.lq-disclosure-popover[open])` 载体抬升规则把带 `data-lq-material` 的弹层本体降成 `position:relative; z-index:10`，落到自身遮罩之下；现排除 dialog/drawer/popover 本体。② 作业页右侧「申诉与申请」浮标溢出视口——根为零宽 fixed 根元素里绝对定位的按钮被 LQ 按钮材质接管后外溢；改为内容宽度、右缘锚定的玻璃标签，不再按图标按钮处理。③ 学生在申诉待审期间自行撤回提交，教师同意时报"提交记录已不存在"——撤回/教师退回现在同事务内自动关闭该答案上的待审申诉（`cancel_pending_appeals_for_answer`，savepoint 保护），审批遇到缺失提交改报 409 并提示驳回；线上悬空的申请 #7 已补记关闭。
+- **AI 动态均衡**：见 `docs/ai-provider-failover-2026-10-15.md`（熔断器、同档位代偿、探测回切、诊断页卡片、超管通知）。
+- **宕机积压**：`tools/regrade_backlog.py` 扫出 7 条；4 条（#4380/#4435/#4543/#4549）重新入队后已由恢复的 DeepSeek 批完并发布成绩；3 条 2026 年 5–6 月的旧提交（#984/#1102/#1360，作业 #75/#70/#77）因试卷评分标准不完整被 400 拒绝，需教师补齐评分标准或手工批改。草稿未触碰。
+
