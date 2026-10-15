@@ -2,6 +2,7 @@
 # AI 助教服务 (ai_assistant.py - V3.3.3 Dynamic Model Selection, Better Prompts)
 # ==============================================================================
 import asyncio
+import collections
 import base64
 import copy
 import heapq
@@ -42,8 +43,24 @@ from ai_assistant_doc_extract import (
     render_pdf_pages_to_data_urls as _render_pdf_pages,
 )
 from classroom_app.services.ai_grading_attachments import classify_ai_grading_attachment
+from classroom_app.services.ai_provider_health import (
+    FAILURE_KIND_CONNECTION,
+    FAILURE_KIND_OTHER,
+    FAILURE_KIND_REJECTED,
+    FAILURE_KIND_SERVER,
+    FAILURE_KIND_THROTTLED,
+    FAILURE_KIND_TIMEOUT,
+    IMMEDIATE_FAILOVER_KINDS,
+    OUTAGE_KINDS,
+    STATE_CLOSED as PROVIDER_STATE_CLOSED,
+    STATE_OPEN as PROVIDER_STATE_OPEN,
+    UNBILLED_KINDS,
+    ProviderHealthRegistry,
+)
 from classroom_app.services.ai_model_policy import (
     AI_TASK_DEEP_MULTIMODAL,
+    FAILOVER_PROFILE_SUFFIX,
+    failover_plan,
     AI_TASK_DEEP_TEXT,
     AI_TASK_DOCUMENT_MULTIMODAL,
     AI_TASK_FAST_TEXT,
@@ -238,6 +255,17 @@ AI_PROVIDER_HTTP_RETRY_MAX_SECONDS = max(
     _read_float_env("AI_PROVIDER_HTTP_RETRY_MAX_SECONDS", 90.0),
 )
 AI_PROVIDER_HTTP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+# Cross-vendor failover + circuit breaker (docs/ai-provider-failover-2026-10-15.md).
+AI_PROVIDER_FAILOVER_ENABLED = _read_bool_env("AI_PROVIDER_FAILOVER_ENABLED", True)
+AI_PROVIDER_BREAKER_FAILURE_THRESHOLD = max(1, _read_int_env("AI_PROVIDER_BREAKER_FAILURE_THRESHOLD", default=2))
+AI_PROVIDER_BREAKER_WINDOW_SECONDS = max(30.0, _read_float_env("AI_PROVIDER_BREAKER_WINDOW_SECONDS", 300.0))
+AI_PROVIDER_BREAKER_COOLDOWN_SECONDS = max(15.0, _read_float_env("AI_PROVIDER_BREAKER_COOLDOWN_SECONDS", 60.0))
+AI_PROVIDER_BREAKER_MAX_COOLDOWN_SECONDS = max(
+    AI_PROVIDER_BREAKER_COOLDOWN_SECONDS, _read_float_env("AI_PROVIDER_BREAKER_MAX_COOLDOWN_SECONDS", 600.0),
+)
+AI_PROVIDER_PROBE_INTERVAL_SECONDS = max(5.0, _read_float_env("AI_PROVIDER_PROBE_INTERVAL_SECONDS", 20.0))
+AI_PROVIDER_PROBE_TIMEOUT_SECONDS = max(5.0, _read_float_env("AI_PROVIDER_PROBE_TIMEOUT_SECONDS", 20.0))
+PROVIDER_LABELS = {"deepseek": "DeepSeek", "volcengine": "豆包（火山引擎）"}
 AI_GRADING_ADJUDICATION_ENABLED = _read_bool_env("AI_GRADING_ADJUDICATION_ENABLED", True)
 AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_GLOBAL_DAILY_LIMIT", default=40))
 AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT = max(0, _read_int_env("AI_GRADING_ADJUDICATION_OFFERING_DAILY_LIMIT", default=10))
@@ -468,6 +496,25 @@ ENABLED_PLATFORMS = [
     and PLATFORMS_CONFIG[provider].get("api_key")
 ]
 
+# Breaker state changes are queued here and flushed by the probe loop into
+# super-admin notifications; the observer itself must stay cheap and sync.
+_provider_health_events: collections.deque = collections.deque(maxlen=200)
+
+
+def _on_provider_health_change(provider: str, old_state: str, new_state: str, reason: str) -> None:
+    print(f"[AI HEALTH] provider={provider} {old_state} -> {new_state}: {reason}")
+    _provider_health_events.append({"provider": provider, "from": old_state, "to": new_state, "reason": reason, "at": local_iso()})
+
+
+provider_health = ProviderHealthRegistry(
+    ENABLED_PLATFORMS,
+    failure_threshold=AI_PROVIDER_BREAKER_FAILURE_THRESHOLD,
+    window_seconds=AI_PROVIDER_BREAKER_WINDOW_SECONDS,
+    cooldown_seconds=AI_PROVIDER_BREAKER_COOLDOWN_SECONDS,
+    max_cooldown_seconds=AI_PROVIDER_BREAKER_MAX_COOLDOWN_SECONDS,
+    on_change=_on_provider_health_change,
+)
+
 # --- 全局队列调度和HTTP客户端 ---
 TASK_PRIORITY_ORDER = {
     "interactive": 0,
@@ -569,7 +616,42 @@ def _build_model_routes(
                 execution_plan=plan,
             )
         )
-    return routes
+    peer = _failover_route(plan, normalized_task_type) if routes else None
+    if peer is not None:
+        routes.append(peer)
+    # Healthy vendors first: an open breaker moves the peer tier ahead of the
+    # planned provider until a probe call succeeds (see ai_provider_health).
+    return sorted(routes, key=lambda route: provider_health.rank(route.platform_name))
+
+
+def _failover_route(plan: AIExecutionPlan, task_type: str) -> AIModelRoute | None:
+    """The peer vendor's equivalent tier, when failover is on and the peer can serve this task."""
+    if not AI_PROVIDER_FAILOVER_ENABLED or plan.profile_id.endswith(FAILOVER_PROFILE_SUFFIX):
+        return None
+    try:
+        peer_plan = failover_plan(plan)
+    except (ValueError, TypeError) as exc:
+        print(f"[AI ROUTER] failover plan unavailable for {plan.route_id}: {exc}")
+        return None
+    if peer_plan is None or peer_plan.provider not in PLATFORMS_CONFIG or peer_plan.provider not in ENABLED_PLATFORMS:
+        return None
+    config = PLATFORMS_CONFIG[peer_plan.provider]
+    supports = config.get("supports") or {}
+    if not config.get("enabled") or not peer_plan.model:
+        return None
+    if task_type in MULTIMODAL_TASK_TYPES and not supports.get("images"):
+        return None
+    if plan.operation in {"grading", "adjudication"} and peer_plan.provider != "deepseek" and not supports.get("authoritative_grading"):
+        return None
+    return AIModelRoute(
+        platform_name=peer_plan.provider,
+        platform_config={"name": peer_plan.provider, **config},
+        task_type=task_type,
+        capability=peer_plan.capability,
+        model_name=peer_plan.model,
+        reason="failover",
+        execution_plan=peer_plan,
+    )
 
 
 # 关键任务（批改/出题/教案/错题归因/精修教学材料）默认使用最高思考强度。
@@ -715,6 +797,40 @@ def _max_attempts_for_error(exc: BaseException) -> int:
 
 
 _active_execution_budget: ContextVar[AIExecutionBudget | None] = ContextVar("ai_execution_budget", default=None)
+# True while the caller holds an untried peer-vendor route for this call: an
+# outage-class failure then fails over immediately instead of retrying here.
+_failover_peer_ready: ContextVar[bool] = ContextVar("ai_failover_peer_ready", default=False)
+
+
+def _classify_provider_failure(exc: BaseException) -> str:
+    """Map a provider exception to a breaker failure kind (see ai_provider_health).
+
+    Our own HTTPExceptions (incomplete output, empty content, queue full) are not
+    vendor outages unless they wrap a transport/status error as ``__cause__``.
+    """
+    if isinstance(exc, HTTPException):
+        cause = exc.__cause__
+        if cause is not None and not isinstance(cause, HTTPException):
+            return _classify_provider_failure(cause)
+        return FAILURE_KIND_OTHER
+    if isinstance(exc, httpx.TimeoutException) or (APITimeoutError and isinstance(exc, APITimeoutError)):
+        return FAILURE_KIND_TIMEOUT
+    if isinstance(exc, (httpx.NetworkError, httpx.ProtocolError)) or (APIConnectionError and isinstance(exc, APIConnectionError)):
+        return FAILURE_KIND_CONNECTION
+    status = _provider_http_status(exc)
+    if status is None:
+        try:
+            status = int(getattr(exc, "status_code", None))
+        except (TypeError, ValueError):
+            status = None
+    if status is not None:
+        if status >= 500:
+            return FAILURE_KIND_SERVER
+        if status == 429:
+            return FAILURE_KIND_THROTTLED
+        if 400 <= status < 500:
+            return FAILURE_KIND_REJECTED
+    return FAILURE_KIND_OTHER
 
 
 async def _provider_call_with_retry(
@@ -729,30 +845,46 @@ async def _provider_call_with_retry(
 
     超时类错误的重试上限单独收紧（AI_PROVIDER_TIMEOUT_MAX_ATTEMPTS），避免一个很慢的
     请求被反复用同样的超时重试，长时间占住批改/生成的并发槽。
+
+    每次尝试都向厂商熔断器汇报；当调用方还持有备用厂商路由且错误属于宕机类
+    （无响应/超时/5xx/429）时不再同厂商重试，直接交给上层切换厂商。
     """
     budget = execution_budget or _active_execution_budget.get() or AIExecutionBudget()
-    for attempt in range(1, min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS) + 1):
-        attempt_id = await budget.begin(execution_plan or {"provider": platform_name})
-        try:
-            result = await do_attempt()
-        except (asyncio.CancelledError, GeneratorExit) as exc:
-            await budget.finish(attempt_id, error=exc)
-            raise
-        except Exception as exc:  # noqa: BLE001 - 由下方判定是否可重试
-            await budget.finish(attempt_id, error=exc)
-            max_attempts = _max_attempts_for_error(exc)
-            if budget.exhausted or not _is_retryable_provider_error(exc) or attempt >= max_attempts:
+    probe = provider_health.acquire_probe(platform_name)
+    try:
+        for attempt in range(1, min(3, AI_PROVIDER_HTTP_MAX_ATTEMPTS) + 1):
+            attempt_id = await budget.begin(execution_plan or {"provider": platform_name})
+            try:
+                result = await do_attempt()
+            except (asyncio.CancelledError, GeneratorExit) as exc:
+                await budget.finish(attempt_id, error=exc)
                 raise
-            delay_seconds = _provider_retry_delay_seconds(exc, attempt)
-            print(
-                f"[AI WORKER] {platform_name} transient error; retry "
-                f"{attempt + 1}/{max_attempts} after {delay_seconds:.1f}s: "
-                f"{_provider_error_summary(exc)}"
-            )
-            await asyncio.sleep(delay_seconds)
-        else:
-            await budget.finish(attempt_id, **(attempt_metadata() if attempt_metadata else {}))
-            return result
+            except Exception as exc:  # noqa: BLE001 - 由下方判定是否可重试
+                kind = _classify_provider_failure(exc)
+                # A refused or never-processed request did not generate anything;
+                # only timeouts and content failures keep their generation slot.
+                await budget.finish(attempt_id, error=exc, billable=kind not in UNBILLED_KINDS)
+                if provider_health.record_failure(platform_name, kind, _provider_error_summary(exc, limit=300)):
+                    print(f"[AI HEALTH] {platform_name} breaker opened after {kind} failure: {_provider_error_summary(exc, limit=200)}")
+                max_attempts = _max_attempts_for_error(exc)
+                # 429 keeps its Retry-After retry here; only dead/failing vendors switch at once.
+                peer_ready = AI_PROVIDER_FAILOVER_ENABLED and kind in IMMEDIATE_FAILOVER_KINDS and _failover_peer_ready.get()
+                if peer_ready or budget.exhausted or not _is_retryable_provider_error(exc) or attempt >= max_attempts:
+                    raise
+                delay_seconds = _provider_retry_delay_seconds(exc, attempt)
+                print(
+                    f"[AI WORKER] {platform_name} transient error; retry "
+                    f"{attempt + 1}/{max_attempts} after {delay_seconds:.1f}s: "
+                    f"{_provider_error_summary(exc)}"
+                )
+                await asyncio.sleep(delay_seconds)
+            else:
+                await budget.finish(attempt_id, **(attempt_metadata() if attempt_metadata else {}))
+                provider_health.record_success(platform_name)
+                return result
+    finally:
+        if probe:
+            provider_health.release_probe(platform_name)
 
 
 class AIModelLoadRouter:
@@ -2113,6 +2245,88 @@ async def _durable_ai_worker_loop(worker_index: int, stop_event: asyncio.Event) 
             pass
 
 
+async def _probe_provider(provider: str) -> None:
+    """One cheap completion against a half-open provider; success closes its breaker."""
+    config = PLATFORMS_CONFIG.get(provider) or {}
+    model = (config.get("task_models") or {}).get(AI_TASK_FAST_TEXT) or (config.get("models") or {}).get("standard")
+    if not model or not AsyncOpenAI or not config.get("api_key") or not provider_health.acquire_probe(provider):
+        return
+    client = AsyncOpenAI(api_key=config["api_key"], base_url=config.get("base_url"),
+                         timeout=AI_PROVIDER_PROBE_TIMEOUT_SECONDS, max_retries=0)
+    try:
+        await client.chat.completions.create(model=model, messages=[{"role": "user", "content": "ping"}], max_tokens=1)
+    except Exception as exc:  # noqa: BLE001 - every outcome is a health signal
+        kind = _classify_provider_failure(exc)
+        if kind in OUTAGE_KINDS:
+            provider_health.record_failure(provider, kind, _provider_error_summary(exc, limit=300))
+            print(f"[AI HEALTH] probe of {provider} failed ({kind}); breaker stays open")
+        else:
+            # Reachable but not usable (auth/quota/our ping shape): stay half-open
+            # and let the next probe or a real call decide.
+            print(f"[AI HEALTH] probe of {provider} answered with {kind}: {_provider_error_summary(exc, limit=200)}")
+    else:
+        provider_health.record_success(provider)
+    finally:
+        provider_health.release_probe(provider)
+        with suppress(Exception):
+            await client.close()
+
+
+def _notify_super_admins_provider_health(events: list[dict[str, Any]]) -> None:
+    from classroom_app.services import message_center_service as mc
+
+    with get_db_connection() as conn:
+        admins = mc.list_super_admin_teachers(conn)
+        for event in events:
+            provider, label = event["provider"], PROVIDER_LABELS.get(event["provider"], event["provider"])
+            if event["to"] == PROVIDER_STATE_OPEN:
+                title = f"AI 厂商熔断：{label} 暂不可用，已切换备用厂商"
+                body = f"{event['reason']}。相同档位的请求已自动改走另一厂商，恢复后自动回切。"
+            elif event["to"] == PROVIDER_STATE_CLOSED and event["from"] != PROVIDER_STATE_CLOSED:
+                title = f"AI 厂商恢复：{label} 已回切"
+                body = f"{event['reason']}。"
+            else:
+                continue
+            for admin in admins:
+                payload = mc._build_notification_payload(
+                    recipient_role="teacher", recipient_user_pk=int(admin["id"]), category=mc.MESSAGE_CATEGORY_AI_FEEDBACK,
+                    title=title, body_preview=body, link_url="/manage/system/diagnostics",
+                    ref_type="ai_provider_health", ref_id=f"{provider}:{event['at']}",
+                )
+                mc._insert_notification_if_allowed(conn, payload)
+        conn.commit()
+
+
+async def _flush_provider_health_events() -> None:
+    events = []
+    while _provider_health_events:
+        events.append(_provider_health_events.popleft())
+    if not events:
+        return
+    try:
+        await asyncio.to_thread(_notify_super_admins_provider_health, events)
+    except Exception as exc:  # noqa: BLE001 - notification is best-effort
+        print(f"[AI HEALTH] super-admin notification failed: {_provider_error_summary(exc)}")
+
+
+async def _provider_probe_loop(stop_event: asyncio.Event) -> None:
+    """Recovery probing for open breakers plus delivery of breaker notifications."""
+    while not stop_event.is_set():
+        try:
+            for provider in provider_health.probe_due():
+                if provider in ENABLED_PLATFORMS:
+                    await _probe_provider(provider)
+            await _flush_provider_health_events()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AI HEALTH] probe loop error: {_provider_error_summary(exc)}")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=AI_PROVIDER_PROBE_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global durable_ai_worker_stop, durable_ai_worker_tasks
@@ -2153,11 +2367,23 @@ async def lifespan(app: FastAPI):
             f"lease={AI_JOB_WORKER_LEASE_SECONDS}s"
         )
 
+    probe_stop = asyncio.Event()
+    probe_task = asyncio.create_task(_provider_probe_loop(probe_stop)) if AI_PROVIDER_FAILOVER_ENABLED else None
+    print(
+        "[AI SERVER] Provider failover: "
+        f"enabled={AI_PROVIDER_FAILOVER_ENABLED}, threshold={AI_PROVIDER_BREAKER_FAILURE_THRESHOLD}/"
+        f"{AI_PROVIDER_BREAKER_WINDOW_SECONDS:g}s, cooldown={AI_PROVIDER_BREAKER_COOLDOWN_SECONDS:g}-"
+        f"{AI_PROVIDER_BREAKER_MAX_COOLDOWN_SECONDS:g}s, probe_every={AI_PROVIDER_PROBE_INTERVAL_SECONDS:g}s"
+    )
     print("[AI SERVER] Lifespan: Startup complete.")
     yield  # 服务在此运行
 
     # --- Shutdown ---
     print("[AI SERVER] Lifespan: Shutting down...")
+    probe_stop.set()
+    if probe_task is not None:
+        probe_task.cancel()
+        await asyncio.gather(probe_task, return_exceptions=True)
     if durable_ai_worker_stop is not None:
         durable_ai_worker_stop.set()
     for task in durable_ai_worker_tasks:
@@ -2268,6 +2494,7 @@ async def internal_health():
             "max_concurrent": AI_GRADING_MAX_CONCURRENT_JOBS,
         },
         "durable_jobs": durable_snapshot,
+        "provider_health": {"failover_enabled": AI_PROVIDER_FAILOVER_ENABLED, **provider_health.snapshot()},
         "model_routing": {
             "policies": public_policy_snapshot(),
             "execution_policy": _public_execution_policy_health(),
@@ -2281,6 +2508,28 @@ async def internal_health():
             },
         },
     }
+
+
+@app.get("/api/internal/provider-health")
+async def internal_provider_health():
+    """Breaker state per vendor (compose-network only; the main app proxies it to super admins)."""
+    return {"status": "ok", "failover_enabled": AI_PROVIDER_FAILOVER_ENABLED, "labels": PROVIDER_LABELS,
+            "enabled_platforms": ENABLED_PLATFORMS, **provider_health.snapshot()}
+
+
+@app.post("/api/internal/provider-health/{provider}/{action}")
+async def internal_provider_health_action(provider: str, action: str):
+    if provider not in ENABLED_PLATFORMS:
+        raise HTTPException(404, f"未启用的 AI 厂商: {provider}")
+    if action == "trip":
+        provider_health.trip(provider, "manual trip from diagnostics")
+    elif action == "reset":
+        provider_health.reset(provider, "manual reset from diagnostics")
+    else:
+        raise HTTPException(400, "unsupported action")
+    await _flush_provider_health_events()
+    return {"status": "ok", "failover_enabled": AI_PROVIDER_FAILOVER_ENABLED, "labels": PROVIDER_LABELS,
+            "enabled_platforms": ENABLED_PLATFORMS, **provider_health.snapshot()}
 
 
 class AIChatRequest(BaseModel):
@@ -4384,7 +4633,7 @@ async def _do_provider_call(
                         "execution_state": budget.audit_snapshot(),
                     },
                 )
-            raise HTTPException(500, f"{platform_name} 调用失败: {e}")
+            raise HTTPException(500, f"{platform_name} 调用失败: {e}") from e
 
 
 async def _call_ai_platform(
@@ -4426,9 +4675,9 @@ async def _call_ai_platform(
         raise HTTPException(500, f"没有找到支持 '{normalized_task_type}' 任务的已启用AI平台。")
 
     effort = _effort_for_task(task_type, task_label)
-    distinct_platform_count = len({route.route_id for route in candidate_routes})
     attempted_platforms: set[str] = set()
     last_exc: Optional[BaseException] = None
+    primary_route = next((route for route in candidate_routes if route.reason != "failover"), candidate_routes[0])
 
     async def _dispatch(routes: list[AIModelRoute], *, label: Optional[str]) -> Any:
         async with ai_model_router.route(routes, task_priority=task_priority) as selected_route:
@@ -4449,6 +4698,9 @@ async def _call_ai_platform(
             )
 
     try:
+        # Routes are tried one at a time in health order. Only an outage-class
+        # failure (no response / timeout / 5xx / 429) moves on to the peer vendor;
+        # format and request errors keep the bounded same-tier fallback below.
         while True:
             remaining = [
                 route for route in candidate_routes
@@ -4456,38 +4708,66 @@ async def _call_ai_platform(
             ]
             if not remaining:
                 break
+            route = remaining[0]
+            peer_available = len(remaining) > 1 and AI_PROVIDER_FAILOVER_ENABLED
+            if route.reason == "failover":
+                provider_health.note_failover(primary_route.platform_name, route.platform_name)
+                if metadata_out is not None:
+                    metadata_out["failover_from"] = primary_route.execution_plan.to_dict() if primary_route.execution_plan else primary_route.platform_name
+                print(
+                    f"[AI ROUTER] serving {normalized_task_type} on failover tier {route.platform_name}/{route.model_name} "
+                    f"(primary {primary_route.platform_name} state={provider_health.state_of(primary_route.platform_name)})"
+                )
+            token = _failover_peer_ready.set(peer_available)
             try:
-                return await _dispatch(remaining, label=task_label)
+                label = task_label if route.reason != "failover" else (f"{task_label}:failover" if task_label else "failover")
+                return await _dispatch([route], label=label)
             except Exception as exc:
+                if _is_budget_exhausted_error(exc) and last_exc is not None:
+                    # The ledger cap tripped on the peer; report the vendor outage, not the cap.
+                    raise last_exc from exc
                 last_exc = exc
-                if (
-                    len(attempted_platforms) >= distinct_platform_count
-                    or not _should_fallback_to_next_platform(exc)
-                ):
+                kind = _classify_provider_failure(exc)
+                # The planned provider gets one try even while its breaker is open
+                # when the peer rejected the request itself (e.g. an image limit).
+                peer_rejected_request = route.reason == "failover" and kind not in OUTAGE_KINDS
+                if not peer_available or (kind not in OUTAGE_KINDS and not peer_rejected_request):
                     raise
                 print(
-                    f"[AI ROUTER] platform={remaining[0].platform_name} failed "
-                    f"({type(exc).__name__}: {getattr(exc, 'detail', exc)}); "
-                    f"falling back to next platform. tried={sorted(attempted_platforms)}"
+                    f"[AI ROUTER] platform={route.platform_name} {'rejected the request' if peer_rejected_request else 'unavailable'} "
+                    f"({kind}: {getattr(exc, 'detail', exc)}); switching to {remaining[1].platform_name}/{remaining[1].model_name}. "
+                    f"tried={sorted(attempted_platforms)}"
                 )
+            finally:
+                _failover_peer_ready.reset(token)
     except Exception as primary_exc:
-        fallback_routes = _bounded_fallback_routes(
-            candidate_routes, primary_exc, capability=capability, task_type=task_type, business_context=business_context,
-        )
+        if _is_budget_exhausted_error(primary_exc):
+            raise
+        tried_models = {(route.platform_name, route.model_name) for route in candidate_routes if route.route_id in attempted_platforms}
+        fallback_routes = [
+            route for route in _bounded_fallback_routes(
+                [primary_route], primary_exc, capability=capability, task_type=task_type, business_context=business_context,
+            )
+            if (route.platform_name, route.model_name) not in tried_models
+        ]
         if not fallback_routes:
             raise
         print(
-            f"[AI ROUTER] {candidate_routes[0].platform_name}/{candidate_routes[0].model_name} could not produce a result "
+            f"[AI ROUTER] {primary_route.platform_name}/{primary_route.model_name} could not produce a result "
             f"({type(primary_exc).__name__}: {getattr(primary_exc, 'detail', primary_exc)}); "
             f"one bounded fallback to {fallback_routes[0].platform_name}/{fallback_routes[0].model_name}."
         )
         if metadata_out is not None:
-            metadata_out["fallback_from"] = candidate_routes[0].execution_plan.to_dict() if candidate_routes[0].execution_plan else candidate_routes[0].platform_name
-        return await _dispatch(fallback_routes, label=f"{task_label}:fallback" if task_label else "fallback")
+            metadata_out["fallback_from"] = primary_route.execution_plan.to_dict() if primary_route.execution_plan else primary_route.platform_name
+        return await _dispatch(fallback_routes[:1], label=f"{task_label}:fallback" if task_label else "fallback")
 
     if last_exc is not None:
         raise last_exc
     raise HTTPException(500, f"没有可用于 '{normalized_task_type}' 任务的AI平台。")
+
+
+def _is_budget_exhausted_error(exc: BaseException) -> bool:
+    return isinstance(exc, AIExecutionBudgetExceeded) or isinstance(getattr(exc, "__cause__", None), AIExecutionBudgetExceeded)
 
 
 def _fallback_eligible_error(exc: BaseException) -> bool:
@@ -4525,8 +4805,8 @@ def _bounded_fallback_routes(
             if plan.output_schema:
                 fallback_plan = size_structured_execution_plan(fallback_plan, schema=plan.output_schema,
                     question_count=plan.expected_question_count)
-            routes.extend(_build_model_routes(capability, task_type=task_type, business_context=business_context,
-                plan_override=fallback_plan))
+            routes.extend(route for route in _build_model_routes(capability, task_type=task_type,
+                business_context=business_context, plan_override=fallback_plan) if route.reason != "failover")
         except (ValueError, TypeError) as resolve_exc:
             print(f"[AI ROUTER] fallback plan for provider={provider} unavailable: {resolve_exc}")
     return routes
@@ -4590,7 +4870,7 @@ async def _call_ai_platform_chat_stream_events(
 
     route_task = asyncio.create_task(
         ai_model_router.choose_and_reserve(
-            routes,
+            routes[:1],
             task_priority=task_priority,
         )
     )
@@ -4781,6 +5061,7 @@ async def _call_ai_platform_chat_stream_events(
             print(f"[ERROR] {platform_name} 结构化流式聊天调用失败: {e}")
             print(traceback.format_exc())
             stream_error = e
+            provider_health.record_failure(platform_name, _classify_provider_failure(e), _provider_error_summary(e, limit=300))
             remaining_routes = [
                 route
                 for route in _build_model_routes(capability, task_type=task_type, business_context=business_context, execution_snapshot=execution_snapshot)
@@ -4858,6 +5139,8 @@ async def _call_ai_platform_chat_stream_events(
                         execution_state=budget.audit_snapshot(),
                     )
 
+    if stream_error is None:
+        provider_health.record_success(platform_name)
     if fallback_requested:
         async for event in _call_ai_platform_chat_stream_events(
             system_prompt,

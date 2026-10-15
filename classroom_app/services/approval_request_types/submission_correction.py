@@ -149,7 +149,7 @@ def on_approve(conn, request: Mapping[str, Any], reviewer: Mapping[str, Any], de
     context = load_appeal_context(conn, assignment_id, student_pk_id)
     assignment, submission = context["assignment"], context["submission"]
     if not is_real_submission(submission):
-        raise ApprovalWorkflowError(404, "提交记录已不存在，无法退回")
+        raise ApprovalWorkflowError(409, "提交记录已不存在（学生可能已撤回），无法退回；可直接驳回此申请")
     if int(submission.get("resubmission_allowed") or 0):
         raise ApprovalWorkflowError(409, "该提交已处于退回状态，无需再次退回")
     if str(submission.get("status") or "") == "grading":

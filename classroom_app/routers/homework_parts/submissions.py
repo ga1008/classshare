@@ -1,4 +1,5 @@
 from .common import *
+from ...services.assessment_appeal_service import cancel_pending_appeals_for_answer
 
 
 router = APIRouter()
@@ -243,6 +244,12 @@ def return_submission(submission_id: int, user: dict = Depends(get_current_teach
                 conn, assignment_id=current["assignment_id"], student_pk_id=int(current["student_pk_id"]),
             )
             conn.execute("DELETE FROM submissions WHERE id = ?", (submission_id,))
+            with best_effort(conn, "appeal_cancel", log_prefix="[APPEAL]"):
+                cancel_pending_appeals_for_answer(
+                    conn, current["assignment_id"], int(current["student_pk_id"]), submission_id=submission_id,
+                    note="教师已退回该提交，申请随之关闭",
+                    actor={"role": "teacher", "id": int(user["id"]), "name": user.get("name") or ""},
+                )
             retired_paths = _quarantine_submission_paths([str(_build_submission_storage_dir(
                 current["course_id"], current["assignment_id"], current["student_pk_id"],
             ))])
@@ -878,6 +885,14 @@ def withdraw_submission(assignment_id: str, user: dict = Depends(get_current_stu
             invalidate_member_work_score(conn, assignment_id=assignment_id, student_pk_id=int(user["id"]))
             conn.execute("DELETE FROM submission_files WHERE submission_id = ?", (submission['id'],))
             conn.execute("DELETE FROM submissions WHERE id = ?", (submission['id'],))
+            # A pending appeal on this answer has nothing left to decide once the
+            # student withdraws it; close it so it does not dangle in the drawer.
+            with best_effort(conn, "appeal_cancel", log_prefix="[APPEAL]"):
+                cancel_pending_appeals_for_answer(
+                    conn, assignment_id, int(user["id"]), submission_id=submission["id"],
+                    note="学生已自行撤回该提交，申请自动关闭",
+                    actor={"role": "student", "id": int(user["id"]), "name": user.get("name") or ""},
+                )
             retired_paths = _quarantine_submission_paths([str(_build_submission_storage_dir(
                 submission["course_id"], assignment_id, int(user["id"]),
             ))])

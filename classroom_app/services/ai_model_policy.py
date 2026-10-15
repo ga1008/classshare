@@ -399,6 +399,45 @@ def _vision_plan(task: str, operation: str, context: AIBusinessContext, kind: st
         quality_floor="assessment" if high else ("grading" if operation == "grading" else "standard"))
 
 
+# Cross-vendor failover (2026-10-15). When a provider's breaker is open the
+# router runs the same business tier on the peer vendor's equivalent model.
+# The peer plan is derived at call time and never frozen into a job snapshot.
+FAILOVER_PEERS = {"deepseek": "volcengine", "volcengine": "deepseek"}
+FAILOVER_PROFILE_SUFFIX = ":failover"
+
+
+def failover_plan(plan: AIExecutionPlan, environ: Mapping[str, str] | None = None) -> AIExecutionPlan | None:
+    """The peer vendor's equivalent of ``plan`` (same operation, capability and output budget).
+
+    deepseek → Doubao: pro for grading/adjudication/deep text (effort high; max is a
+    DeepSeek-only level), lite for fast chat. Doubao → deepseek-flash, the only
+    DeepSeek model that accepts images; ``high`` becomes ``max`` so an assessment
+    tier keeps its reasoning depth. Returns None when there is no peer.
+    """
+    env = os.environ if environ is None else environ
+    if plan.profile_id.endswith(FAILOVER_PROFILE_SUFFIX):
+        return None
+    peer = FAILOVER_PEERS.get(plan.provider)
+    if not peer:
+        return None
+    if peer == "volcengine":
+        # Canonical Doubao ids: the env allowlist check belongs to primary plans.
+        model = DOUBAO_LITE_MODEL if plan.profile_id in {"text_fast", "vision_edge_low"} else DOUBAO_PRO_MODEL
+        effort = "high" if plan.reasoning_effort in {"max", "high"} else (plan.reasoning_effort or "low")
+        thinking = plan.thinking_type if plan.thinking_type in {"enabled", "disabled"} else "enabled"
+        capability = "vision" if plan.capability == "vision" else ("thinking" if plan.thinking_type == "enabled" else "standard")
+    else:
+        model = env.get("AI_GRADING_STANDARD_MODEL") or DEEPSEEK_FLASH_MODEL
+        if model not in DEEPSEEK_VISION_MODELS:
+            model = DEEPSEEK_FLASH_MODEL
+        effort = "max" if plan.reasoning_effort == "high" else plan.reasoning_effort
+        thinking = "enabled" if plan.thinking_type == "enabled" or plan.reasoning_effort else "disabled"
+        capability = plan.capability
+    return replace(plan, profile_id=plan.profile_id + FAILOVER_PROFILE_SUFFIX, provider=peer, model=model,
+                   capability=capability, thinking_type=thinking, reasoning_effort=effort, api_style="chat_completions",
+                   allowed_fallbacks=())
+
+
 _SNAPSHOT_IMMUTABLE_FIELDS = ("profile_id", "provider", "model", "capability", "operation", "thinking_type",
     "reasoning_effort", "policy_version", "quality_floor")
 
@@ -550,7 +589,9 @@ class AIExecutionBudget:
 
     @property
     def exhausted(self):
-        return (self.failed_persistence or bool(self.state.get("legacy_history_unknown")) or len(self.state["attempts"]) >= 3
+        # At most two attempts the provider may have billed; rejected/never-processed
+        # attempts are free, but a hard cap still bounds retries across both vendors.
+        return (self.failed_persistence or bool(self.state.get("legacy_history_unknown")) or len(self.state["attempts"]) >= 6
                 or sum(a.get("status") != "rejected" for a in self.state["attempts"]) >= 2)
 
     def snapshot(self):
@@ -600,13 +641,15 @@ class AIExecutionBudget:
             await self.before_dispatch(plan, entry["attempt_id"])
         return entry["attempt_id"]
 
-    async def finish(self, attempt_id, *, usage=None, finish_reason=None, error=None, cost=None):
+    async def finish(self, attempt_id, *, usage=None, finish_reason=None, error=None, cost=None, billable=None):
+        """Close an attempt. ``billable=False`` marks a failure the provider never processed
+        (connection refused, 5xx/429 answer) so it releases the generation slot like a 4xx."""
         from datetime import datetime, timezone
         entry = next(a for a in self.state["attempts"] if a["attempt_id"] == attempt_id)
         status_code = getattr(error, "status_code", None)
         if status_code is None:
             status_code = getattr(getattr(error, "response", None), "status_code", None)
-        rejected = status_code in {400, 401, 403, 404, 405, 413, 415, 422, 429}
+        rejected = status_code in {400, 401, 403, 404, 405, 413, 415, 422, 429} or (error is not None and billable is False)
         entry.update({
             "status": "rejected" if rejected else ("unknown" if error and not usage else "completed"),
             "finished_at": datetime.now(timezone.utc).isoformat(),

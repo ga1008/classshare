@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 
@@ -136,6 +136,44 @@ async def health() -> dict[str, Any]:
         "status": "ok",
         "service": "mock-ai",
     }
+
+
+_PROVIDER_HEALTH: dict[str, Any] = {
+    "deepseek": {"state": "closed", "available": True, "consecutive_failures": 0, "recent_failures": 0, "trips": 0,
+                 "cooldown_seconds": 0, "retry_in_seconds": 0, "probe_in_flight": False, "manual": False,
+                 "network_suspected": False, "last_error": "", "last_error_kind": "", "last_error_at": "",
+                 "last_success_at": "2026-10-15T09:00:00", "last_state_change_at": "", "last_state_reason": "",
+                 "failovers_out": 0, "served_as_failover": 0},
+    "volcengine": {"state": "closed", "available": True, "consecutive_failures": 0, "recent_failures": 0, "trips": 0,
+                   "cooldown_seconds": 0, "retry_in_seconds": 0, "probe_in_flight": False, "manual": False,
+                   "network_suspected": False, "last_error": "", "last_error_kind": "", "last_error_at": "",
+                   "last_success_at": "2026-10-15T09:00:00", "last_state_change_at": "", "last_state_reason": "",
+                   "failovers_out": 0, "served_as_failover": 0},
+}
+
+
+def _provider_health_payload() -> dict[str, Any]:
+    return {"status": "ok", "failover_enabled": True, "labels": {"deepseek": "DeepSeek", "volcengine": "豆包（火山引擎）"},
+            "enabled_platforms": list(_PROVIDER_HEALTH), "policy": {"failure_threshold": 2, "window_seconds": 300,
+            "cooldown_seconds": 60, "max_cooldown_seconds": 600}, "providers": _PROVIDER_HEALTH,
+            "degraded": any(item["state"] != "closed" for item in _PROVIDER_HEALTH.values())}
+
+
+@app.get("/api/internal/provider-health")
+async def provider_health() -> dict[str, Any]:
+    """Static breaker snapshot so the diagnostics page can be exercised against the mock."""
+    return _provider_health_payload()
+
+
+@app.post("/api/internal/provider-health/{provider}/{action}")
+async def provider_health_action(provider: str, action: str) -> dict[str, Any]:
+    state = _PROVIDER_HEALTH.get(provider)
+    if state is None or action not in {"trip", "reset"}:
+        raise HTTPException(404, "unknown provider or action")
+    state.update({"state": "open" if action == "trip" else "closed", "manual": action == "trip",
+                  "retry_in_seconds": 600 if action == "trip" else 0, "trips": state["trips"] + (action == "trip"),
+                  "last_state_reason": "manual trip from diagnostics" if action == "trip" else "manual reset from diagnostics"})
+    return _provider_health_payload()
 
 
 @app.post("/api/ai/generate-assignment")

@@ -146,6 +146,22 @@ def pending_appeal(conn, assignment_id: Any, student_pk_id: Any, submission_id: 
     return None
 
 
+def cancel_pending_appeals_for_answer(conn, assignment_id: Any, student_pk_id: Any, *, note: str,
+                                      actor: Mapping[str, Any] | None = None, submission_id: Any = None) -> int:
+    """Close pending appeals when the answer they target is removed (student withdraw, teacher return).
+
+    Runs inside the caller's transaction, after the submission row is gone, so the
+    per-type auto-cancel hooks see no submission and release nothing twice.
+    """
+    from .approval_workflow_service import auto_cancel_requests
+
+    subject_ids = [appeal_subject_id(assignment_id, student_pk_id)]
+    if submission_id not in (None, ""):
+        subject_ids.append(str(submission_id))  # legacy withdraw requests key on the submission id
+    return auto_cancel_requests(conn, request_type=(*APPEAL_TYPES, LEGACY_WITHDRAW), subject_ids=subject_ids,
+                                note=note, actor=actor)
+
+
 def ensure_no_pending_appeal(conn, assignment_id: Any, student_pk_id: Any, submission_id: Any = None) -> None:
     if pending_appeal(conn, assignment_id, student_pk_id, submission_id):
         raise ApprovalWorkflowError(409, "这份答题已有一条申诉在处理中，请等待教师处理后再申请")

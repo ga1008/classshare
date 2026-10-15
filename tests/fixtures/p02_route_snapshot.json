@@ -4361,6 +4361,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/ai-providers",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_ai_provider_health",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/ai-providers/{provider}/{action}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_ai_provider_health_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/ai-usage",
     "methods": [
       "GET"

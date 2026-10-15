@@ -74,10 +74,14 @@
 :root details.lq-disclosure-popover[data-lq-placement="top"] > :not(summary) { top: auto; bottom: calc(100% + var(--ls-s-2)); }
 /* Carriers isolate their own stacking context, so a later sibling panel would
    paint over the open panel. Lift only the carriers that hold an open one. */
-:root :is(.lq-surface, .lq-glass, [data-lq-material], [data-lq-component="surface"]):has(details.lq-disclosure-popover[open]) {
+:root :is(.lq-surface, .lq-glass, [data-lq-material], [data-lq-component="surface"]):not([role="dialog"], [aria-modal="true"], [data-ui-overlay-surface], .lq-dialog__surface, .lq-modal, .lq-drawer, .lq-popover, .apr-drawer):has(details.lq-disclosure-popover[open]) {
     position: relative;
     z-index: var(--ls-z-raised);
 }
+/* Overlay surfaces (dialog/drawer/popover bodies) already sit above their scrim
+ * in the layer system; demoting one of them to position:relative / z 10 would
+ * drop it beneath its own scrim and leave the page unclickable (2026-10-15,
+ * classroom 课次详情 → 管理课次). They are excluded above and never lifted. */
 /* Panel copy follows the raised material's ink pair, not legacy greys. */
 :root details.lq-disclosure-popover > [data-lq-material="raised"] { color: hsl(var(--lq-material-ink)); }
 :root details.lq-disclosure-popover > [data-lq-material="raised"] :where(small, p) { color: hsl(var(--lq-material-muted)); }

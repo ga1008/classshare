@@ -177,6 +177,7 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
         self.stack.enter_context(mock.patch.object(ai, "PLATFORMS_CONFIG", catalog))
         self.stack.enter_context(mock.patch.object(ai, "ENABLED_PLATFORMS", list(catalog)))
         self.stack.enter_context(mock.patch.object(ai, "ai_model_router", ai.AIModelLoadRouter()))
+        ai.provider_health.reset_all()  # breaker state must not leak between transport tests
         self.stack.enter_context(mock.patch.object(ai, "ai_limiter", ai.AIPriorityLimiter(6)))
         self.stack.enter_context(mock.patch.object(ai, "_write_ai_usage_log", side_effect=self.events.append))
         self.stack.enter_context(mock.patch.object(ai, "AI_NONSTREAM_USE_PROVIDER_STREAM", False))
@@ -284,7 +285,12 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(Exception):
                 await ai._call_ai_platform(IMAGE_MESSAGES, capability="vision", task_type=AI_TASK_MULTIMODAL_GRADING,
                     business_context={"operation": "grading", "assessment_kind": "homework"}, require_json_output=True)
-        self.assertTrue(all(json.loads(r.content)["model"] == DEEPSEEK_FLASH_MODEL for r in rejected))
+        models = [json.loads(r.content)["model"] for r in rejected]
+        # Persistent 429s exhaust the same-vendor retries first; only then does the
+        # peer tier (Doubao pro) get one try (cross-vendor failover, 2026-10-15).
+        flash_attempts = models.index(DOUBAO_PRO_MODEL)
+        self.assertGreaterEqual(flash_attempts, 2)
+        self.assertEqual([DEEPSEEK_FLASH_MODEL] * flash_attempts + [DOUBAO_PRO_MODEL] * (len(models) - flash_attempts), models)
         # Important assessments never leave Doubao pro, even when the output is incomplete.
         self.transport = httpx.MockTransport(self.respond)
         self.finish_by_model = {DOUBAO_PRO_MODEL: "length"}
@@ -418,8 +424,13 @@ class ProfileTransportTests(unittest.IsolatedAsyncioTestCase):
                         business_context={"operation": "grading", "assessment_kind": "homework"})
         finally:
             ai._active_execution_budget.reset(token)
-        self.assertEqual(3, len(attempts))
-        self.assertEqual(["rejected"] * 3, [a["status"] for a in budget.state["attempts"]])
+        # Three same-vendor attempts, then the peer tier gets its own three; the
+        # hard ledger cap (6) stops a seventh. Rejections never consume a billed slot.
+        self.assertEqual(6, len(attempts))
+        self.assertEqual(["rejected"] * 6, [a["status"] for a in budget.state["attempts"]])
+        providers = [a["provider"] for a in budget.state["attempts"]]
+        self.assertEqual({providers[0]} , set(providers[:3]))
+        self.assertEqual({"deepseek", "volcengine"} - {providers[0]}, set(providers[3:]))
 
     async def test_unknown_timeout_survives_resume_and_cannot_reset_budget(self):
         budget = ai.AIExecutionBudget()

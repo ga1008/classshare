@@ -95,6 +95,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 | 聊天看图、OCR、验证码、公开 @助教 | `vision_edge_low` | 豆包 lite, low | | |
 | 普通文本快回复 | `text_fast` | deepseek-flash | | |
 | 深度文本推理（教案、错题归因、材料精修等） | `text_deep` | deepseek（当前均映射 flash） | effort max 仅关键任务 | |
+| 任一档位，所在厂商熔断中 | 原档位 + `:failover` | 对端厂商同档位（deepseek-flash ↔ 豆包 pro/lite） | 沿用原档位（high↔max 互换） | 规则 A12；探测成功自动回切 |
 
 **规则 A5**：矩阵的输入只能是数据库中的业务字段（`assignments.assessment_kind`、`source_feature`、操作类型、实际输入模态）。标题里写"期末"、提示词里写"请用最好的模型"都**不能**改变档位。
 
@@ -103,6 +104,8 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 **规则 A7**：改路由必须同时更新 `docker.env.example` 的开关与注释，并保证一键回退开关可用（当前：`AI_GRADING_STANDARD_PROVIDER=volcengine`、`AI_TEXT_ASSESSMENT_PROVIDER=deepseek`，改 env 重启 `ai` 容器即可，不用重部署）。
 
 **规则 A8**：`policy_version` 是已入队持久任务的兼容锚点。改它会让所有排队 payload 报错；新增档位要保留旧快照的 `_plan_from_legacy_snapshot` 兼容。
+
+**规则 A12（2026-10-15，跨厂商动态切换）**：每个厂商在 AI 服务进程内有一只熔断器（`classroom_app/services/ai_provider_health.py`）。无响应 / 超时 / 5xx 立即在本次调用内切到对端厂商的**同档位**（`ai_model_policy.failover_plan`：deepseek↔volcengine，flash↔豆包 pro/lite，`profile_id` 加 `:failover` 后缀，永不冻结进任务快照）；429 先按 Retry-After 同厂商重试，重试耗尽才切；格式/4xx/空内容不算宕机，仍走原有有界回退。窗口内达到阈值即开闸，开闸期间该厂商的流量全部走对端；冷却后半开，一次探测（后台 `_provider_probe_loop` 或真实流量）成功即回切，失败则冷却翻倍（上限 10 分钟）。两家同时连不上判定为本地网络，不开闸。状态见 AI 服务 `/api/internal/health.provider_health`、超管「压测与诊断」页，开闸/回切会通知超管。开关与阈值在 `docker.env.example` 的 `AI_PROVIDER_FAILOVER_ENABLED` 一组。真源：`docs/ai-provider-failover-2026-10-15.md`。
 
 ### 3.3 结构化输出与校验
 

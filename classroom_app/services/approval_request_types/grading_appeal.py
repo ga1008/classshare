@@ -246,7 +246,7 @@ def on_approve(conn, request: Mapping[str, Any], reviewer: Mapping[str, Any], de
     assignment_id, student_pk_id = parse_appeal_subject_id(request["subject_id"])
     submission = load_appeal_context(conn, assignment_id, student_pk_id)["submission"]
     if not is_real_submission(submission):
-        raise ApprovalWorkflowError(404, "提交记录已不存在")
+        raise ApprovalWorkflowError(409, "提交记录已不存在（学生可能已撤回），无法重批；可直接驳回此申请")
     mode = str(decision_payload.get("mode") or "")
     if mode == "manual":
         grade = dict(decision_payload.get("grade") or {})

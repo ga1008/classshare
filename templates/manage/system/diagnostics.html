@@ -64,6 +64,15 @@
     </section>
 </div>
 
+<section data-lq-component="surface" class="lq-surface dg-card dg-provider-card">
+    <div class="dg-card__header">
+        <h3>AI 厂商可用性与动态切换</h3>
+        <span class="dg-pill loading" id="dg-provider-pill">检测中</span>
+    </div>
+    <p class="dg-card__desc">每个厂商一只熔断器：无响应、超时、5xx、反复 429 视为宕机，达到阈值后同档位请求自动改走另一厂商；冷却后探测一次，成功即回切。两家同时连不上按本地网络处理，不切换。</p>
+    <div class="dg-provider-grid" id="dg-provider-grid"><p class="dg-card__desc">正在读取厂商状态…</p></div>
+</section>
+
 <section class="dg-task-ledger">
     <div class="dg-task-ledger__header">
         <div>
@@ -276,11 +285,87 @@
             }
         }
 
+        const providerPill = document.getElementById('dg-provider-pill');
+        const providerGrid = document.getElementById('dg-provider-grid');
+        const PROVIDER_STATES = { closed: ['正常', 'healthy'], half_open: ['探测中', 'warn'], open: ['已熔断', 'error'] };
+
+        function escapeText(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function renderProviders(data) {
+            const providers = data.providers || {};
+            const labels = data.labels || {};
+            const names = (data.enabled_platforms || Object.keys(providers)).filter((name) => providers[name]);
+            if (!names.length) {
+                providerGrid.innerHTML = '<p class="dg-card__desc">没有启用的 AI 厂商。</p>';
+                return;
+            }
+            providerGrid.innerHTML = names.map((name) => {
+                const p = providers[name];
+                const [stateLabel, tone] = PROVIDER_STATES[p.state] || [p.state, 'warn'];
+                const retry = p.state === 'open' ? '，' + Math.ceil(p.retry_in_seconds) + ' 秒后探测' : '';
+                const note = p.network_suspected ? '<p class="dg-provider-note">两家厂商同时连不上，判定为本地网络问题，未切换。</p>' : '';
+                const err = p.last_error ? '<p class="dg-provider-note">最近错误（' + escapeText(p.last_error_kind) + '，' + escapeText(p.last_error_at || '-') + '）：' + escapeText(p.last_error) + '</p>' : '';
+                const action = p.state === 'closed'
+                    ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-provider-action="trip" data-provider="' + escapeText(name) + '">手动熔断</button>'
+                    : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-provider-action="reset" data-provider="' + escapeText(name) + '">立即恢复</button>';
+                return '<div class="dg-task-item dg-provider-item" data-state="' + escapeText(p.state) + '">'
+                    + '<div class="dg-task-item__top"><strong>' + escapeText(labels[name] || name) + '</strong>'
+                    + '<span class="dg-pill ' + tone + '">' + stateLabel + (p.manual ? '（手动）' : '') + '</span></div>'
+                    + '<div class="dg-stats dg-stats--compact">'
+                    + '<div class="dg-stat"><span>窗口内失败</span><strong>' + formatNum(p.recent_failures) + '</strong></div>'
+                    + '<div class="dg-stat"><span>熔断次数</span><strong>' + formatNum(p.trips) + '</strong></div>'
+                    + '<div class="dg-stat"><span>切出 / 代偿</span><strong>' + formatNum(p.failovers_out) + ' / ' + formatNum(p.served_as_failover) + '</strong></div>'
+                    + '<div class="dg-stat"><span>最近成功</span><strong>' + escapeText(p.last_success_at || '-') + '</strong></div>'
+                    + '</div>'
+                    + '<p class="dg-provider-note">' + escapeText(p.last_state_reason || '尚无状态变化') + retry + '</p>'
+                    + note + err
+                    + '<div class="dg-actions">' + action + '</div>'
+                    + '</div>';
+            }).join('');
+        }
+
+        async function fetchProviders() {
+            try {
+                const res = await fetch('/api/manage/system/ai-providers');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                renderProviders(data);
+                setPillState(providerPill, data.degraded ? 'warn' : 'healthy');
+                if (data.failover_enabled === false) { setPillState(providerPill, 'warn'); providerPill.textContent = '切换已关闭'; }
+            } catch {
+                providerGrid.innerHTML = '<p class="dg-card__desc">AI 服务暂时不可达，无法读取厂商状态。</p>';
+                setPillState(providerPill, 'error');
+            }
+        }
+
+        providerGrid.addEventListener('click', async (event) => {
+            const button = event.target.closest('[data-provider-action]');
+            if (!button) return;
+            const action = button.dataset.providerAction;
+            const provider = button.dataset.provider;
+            if (action === 'trip' && !window.confirm('确认手动熔断 ' + provider + '？同档位请求将改走另一厂商，直到你恢复或探测成功。')) return;
+            button.disabled = true;
+            try {
+                const res = await fetch('/api/manage/system/ai-providers/' + encodeURIComponent(provider) + '/' + action, {method: 'POST'});
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+                showMessage(data.message || '操作成功。', 'success');
+                renderProviders(data);
+                setPillState(providerPill, data.degraded ? 'warn' : 'healthy');
+            } catch (error) {
+                showMessage(error.message || '操作失败。', 'error');
+                button.disabled = false;
+            }
+        });
+
         function refreshAll() {
             setPillState(healthPill, 'loading');
             setPillState(metricsPill, 'loading');
             setPillState(taskPill, 'loading');
-            Promise.all([fetchHealth(), fetchMetrics(), fetchTaskLedger()]);
+            setPillState(providerPill, 'loading');
+            Promise.all([fetchHealth(), fetchMetrics(), fetchTaskLedger(), fetchProviders()]);
         }
 
         document.getElementById('dg-refresh').addEventListener('click', refreshAll);

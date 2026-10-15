@@ -36,6 +36,47 @@ async def api_get_runtime_metrics(user: dict = Depends(get_current_teacher)):
     return await internal_metrics()
 
 
+@router.get("/system/ai-providers", response_class=JSONResponse)
+async def api_get_ai_provider_health(user: dict = Depends(get_current_teacher)):
+    """Vendor breaker state from the AI service (its /api/internal/* is compose-network only)."""
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+    from ...core import ai_client
+
+    try:
+        response = await ai_client.get("/api/internal/provider-health", timeout=10.0)
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"AI 服务不可达：{exc.__class__.__name__}") from exc
+    if response.status_code != 200:
+        raise HTTPException(503, f"AI 服务返回 HTTP {response.status_code}")
+    return {**response.json(), "status": "success"}
+
+
+@router.post("/system/ai-providers/{provider}/{action}", response_class=JSONResponse)
+async def api_ai_provider_health_action(provider: str, action: str, user: dict = Depends(get_current_teacher)):
+    """Manually open (trip) or close (reset) a vendor breaker; same effect as an automatic trip."""
+    if action not in {"trip", "reset"} or not provider.isidentifier():
+        raise HTTPException(400, "不支持的操作")
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+    from ...core import ai_client
+
+    try:
+        response = await ai_client.post(f"/api/internal/provider-health/{provider}/{action}", timeout=10.0)
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f"AI 服务不可达：{exc.__class__.__name__}") from exc
+    if response.status_code != 200:
+        detail = ""
+        try:
+            detail = str(response.json().get("detail") or "")
+        except ValueError:
+            pass
+        raise HTTPException(response.status_code if 400 <= response.status_code < 500 else 503, detail or f"AI 服务返回 HTTP {response.status_code}")
+    label = "已手动熔断" if action == "trip" else "已恢复"
+    print(f"[AUDIT] ai_provider_{action} provider={provider} by teacher={user.get('id')}")
+    return {**response.json(), "status": "success", "message": f"{provider} {label}。"}
+
+
 @router.post("/system/ai-jobs/{job_id:int}/requeue", response_class=JSONResponse)
 async def api_requeue_ai_job(job_id: int, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:

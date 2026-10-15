@@ -26,7 +26,8 @@ function adoptControls(container) {
         adoptDomainControl(node, { ...(choice ? { kind: 'choice' } : {}),
             variant: node.classList.contains('btn-primary') ? 'prominent' : node.matches('.apr-drawer-close,.modal-close') ? 'ghost' : 'glass' });
         if (choice) node.dataset.lqShape = 'surface';
-        if (node.tagName === 'BUTTON' && node.querySelector('svg')) node.classList.add('lq-btn--icon');
+        // The drawer tab keeps its visible label; only label-less buttons are icon buttons.
+        if (node.tagName === 'BUTTON' && node.querySelector('svg') && !node.matches('.apr-drawer-toggle')) node.classList.add('lq-btn--icon');
     }
     for (const field of container.querySelectorAll('.form-group')) field.classList.add('lq-field');
     for (const label of container.querySelectorAll('.form-label')) label.classList.add('lq-field__label');

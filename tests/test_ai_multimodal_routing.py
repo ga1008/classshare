@@ -229,6 +229,7 @@ class StreamingFallbackTests(unittest.IsolatedAsyncioTestCase):
                 pass
 
         volcengine = {**ai_assistant.PLATFORMS_CONFIG["volcengine"], "enabled": True, "api_key": "test-only"}
+        ai_assistant.provider_health.reset_all()
         with (
             mock.patch.object(ai_assistant, "AsyncOpenAI", FailingOpenAI),
             mock.patch.object(ai_assistant, "_write_ai_usage_log", lambda event: None),
