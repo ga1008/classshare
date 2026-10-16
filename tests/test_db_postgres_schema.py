@@ -377,6 +377,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_national_holidays.py",
             "schema_schedule_availability.py",
             "schema_schedule_editor.py",
+            # 课次知识树（课次生命周期）：运行时 engine-aware 建表。
+            "schema_session_knowledge_trees.py",
             "schema_offering_class_links.py",
             "schema_offering_merge.py",
             "schema_polls.py",

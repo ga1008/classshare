@@ -119,6 +119,7 @@ from .routers import classroom_retake
 from .routers import lesson_plans
 from .routers import assessment_plans
 from .routers import teacher_evaluations
+from .routers import session_knowledge_trees
 from .routers import document_renderer
 from .routers import resume_console
 from .routers import prompt_pool
@@ -718,6 +719,7 @@ app.include_router(classroom_retake.router)
 app.include_router(lesson_plans.router)
 app.include_router(assessment_plans.router)
 app.include_router(teacher_evaluations.router)
+app.include_router(session_knowledge_trees.router)
 app.include_router(document_renderer.router)
 app.include_router(prompt_pool.router)
 app.include_router(academic_evaluations.router)

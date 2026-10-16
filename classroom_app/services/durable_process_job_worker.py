@@ -46,6 +46,7 @@ _TARGETS = {
     "lesson_plan": ("lesson_plans", "id"),
     "assessment_plan": ("assessment_plans", "id"),
     "teacher_evaluation": ("teacher_evaluations", "id"),
+    "session_knowledge_tree": ("session_knowledge_trees", "id"),
 }
 
 
@@ -68,7 +69,30 @@ def _target_row(payload: dict[str, Any]) -> dict[str, Any]:
     return dict(row)
 
 
+def _knowledge_tree_outcome(payload: dict[str, Any]) -> dict[str, Any]:
+    """A knowledge tree records its own failure; the teacher regenerates on demand."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT status, ai_gen_status, ai_gen_task_id FROM session_knowledge_trees WHERE id = ? LIMIT 1",
+            (str(payload.get("target_id") or ""),),
+        ).fetchone()
+    if not row:
+        raise ValueError("durable process target no longer exists")
+    superseded = str(row["ai_gen_task_id"] or "") != str(payload.get("task_token") or "")
+    ai_status = str(row["ai_gen_status"] or "").strip().lower()
+    if not superseded and ai_status not in {"completed", "failed"}:
+        raise RuntimeError(f"knowledge tree finished with ai_gen_status={ai_status or 'empty'}")
+    return {
+        "target_type": "session_knowledge_tree",
+        "target_id": str(payload.get("target_id") or ""),
+        "business_status": str(row["status"] or ""),
+        "ai_gen_status": "superseded" if superseded else ai_status,
+    }
+
+
 def _ensure_target_completed(payload: dict[str, Any]) -> dict[str, Any]:
+    if str(payload.get("target_type") or "") == "session_knowledge_tree":
+        return _knowledge_tree_outcome(payload)
     row = _target_row(payload)
     ai_status = str(row.get("ai_gen_status") or "").strip().lower()
     if ai_status not in {"completed", "completed_with_fallback"}:
@@ -130,6 +154,10 @@ async def _dispatch_generation(payload: dict[str, Any]) -> None:
         from .teacher_evaluation_generation_service import run_generation_job
 
         await run_generation_job(target_id, class_offering_id, teacher_id, prompt, field_overrides)
+    elif target_type == "session_knowledge_tree":
+        from .session_knowledge_tree_generation_service import run_generation_job
+
+        await run_generation_job(target_id, int(payload.get("session_id") or 0), str(payload.get("task_token") or ""))
     else:
         raise ValueError(f"unsupported durable generation target: {target_type!r}")
 

@@ -26,6 +26,7 @@ from .schema_signature_workflow import ensure_signature_workflow_schema
 from .schema_lesson_plans import ensure_lesson_plan_schema
 from .schema_assessment_plans import ensure_assessment_plan_schema
 from .schema_teacher_evaluations import ensure_teacher_evaluation_schema
+from .schema_session_knowledge_trees import ensure_session_knowledge_tree_schema
 from .schema_prompt_pool import ensure_prompt_pool_schema
 from .schema_user_ui_preferences import ensure_user_ui_preferences_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
@@ -306,6 +307,18 @@ def init_database():
             print("[DB] PostgreSQL teacher-evaluation table ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL teacher-evaluation schema step skipped: {exc}")
+        # Per-session knowledge trees (课次知识树) follow the same isolated,
+        # engine-aware runtime pattern.
+        try:
+            knowledge_tree_conn = get_db_connection()
+            try:
+                ensure_session_knowledge_tree_schema(knowledge_tree_conn)
+                knowledge_tree_conn.commit()
+            finally:
+                knowledge_tree_conn.close()
+            print("[DB] PostgreSQL session-knowledge-tree table ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL session-knowledge-tree schema step skipped: {exc}")
         # The resume console (简历管理与优化) tables follow the same
         # runtime-managed, engine-aware pattern (isolated connection so the
         # validate path above stays DDL-free) — student-owned résumé workbench.
@@ -414,6 +427,7 @@ def init_database():
             ensure_lesson_plan_schema(conn)
             ensure_assessment_plan_schema(conn)
             ensure_teacher_evaluation_schema(conn)
+            ensure_session_knowledge_tree_schema(conn)
             ensure_resume_schema(conn)
             ensure_career_path_schema(conn)
             ensure_prompt_pool_schema(conn)

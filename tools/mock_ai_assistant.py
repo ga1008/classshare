@@ -61,6 +61,29 @@ def _build_response_json(payload: dict[str, Any]) -> dict[str, Any]:
                 return {"status": "success", "response_json": proposal}
             except (ValueError, IndexError, TypeError):
                 return {"status": "success", "response_json": {"layout": "content", "blocks": [{"type": "text", "md": "AI 验收示例"}]}}
+        if task_label.startswith("knowledge_tree:"):
+            def unit(label: str, weight: int) -> dict[str, Any]:
+                return {"label": label, "weight": weight, "detail": f"{label}的要点说明（验收示例）。",
+                        "example": f"{label}的课堂案例。", "question": f"如何判断{label}已经掌握？",
+                        "prerequisite": "先理解上一节的基本概念。", "extension": "为后续内容打基础。"}
+            return {
+                "status": "success",
+                "response_json": {
+                    "title": "传输层可靠传输",
+                    "summary": "理解确认、重传与滑动窗口如何共同实现可靠传输。",
+                    "nodes": [
+                        {"label": "可靠传输的基本原理", "detail": "可靠传输需要解决丢失、乱序与重复。", "children": [
+                            {"label": "确认与重传", "children": [unit("ACK 确认语义", 8), unit("超时重传机制", 12), unit("快速重传", 6)]},
+                            {"label": "序号与去重", "children": [unit("字节流序号", 6), unit("重复报文丢弃", 4)]},
+                        ]},
+                        {"label": "滑动窗口与流量控制", "children": [
+                            {"label": "发送窗口", "children": [unit("窗口大小的含义", 10), unit("窗口滑动过程", 12)]},
+                            {"label": "接收窗口通告", "children": [unit("rwnd 通告", 8), unit("零窗口探测", 5)]},
+                        ]},
+                        {"label": "连接管理", "children": [unit("三次握手", 12), unit("四次挥手", 10), unit("TIME_WAIT 状态", 7)]},
+                    ],
+                },
+            }
         if task_label == "wrong_summary_knowledge_analysis":
             return {
                 "status": "success",

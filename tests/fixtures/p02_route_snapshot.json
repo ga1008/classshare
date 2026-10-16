@@ -2313,6 +2313,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_knowledge_tree",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/bulk",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_bulk_knowledge_leaves",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_generate_knowledge_tree",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/leaves/{leaf_id}",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_mark_knowledge_leaf",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/order",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_order_knowledge_tree",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/learning-material",
     "methods": [
       "PUT"

@@ -53,6 +53,7 @@ def enqueue_process_generation(
     prompt: str = "",
     field_overrides: dict[str, Any] | None = None,
     session_plan: list[dict[str, Any]] | None = None,
+    extra_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row, _ = create_ai_job(
         conn,
@@ -66,6 +67,7 @@ def enqueue_process_generation(
             "prompt": str(prompt or ""),
             "field_overrides": field_overrides or {},
             "session_plan": session_plan or [],
+            **(extra_payload or {}),
         },
         scope_type="class_offering",
         scope_id=str(class_offering_id),

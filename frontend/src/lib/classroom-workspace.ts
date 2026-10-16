@@ -20,6 +20,7 @@ export type ClassroomSession = {
   is_academic_exam?: boolean; is_anchor?: boolean; detail_title?: string; title?: string;
   session_number_label?: string; session_date?: string;
   detail_meta?: string; segment_title?: string; session_status_label?: string;
+  knowledge_progress?: { progress: number; lifecycle: string } | null;
 };
 
 export function parseClassroomDate(value: string): number {

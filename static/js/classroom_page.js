@@ -9,6 +9,7 @@ import { setOverlayOpen } from '/static/js/ui_overlay_motion.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
 import { enhanceNavMenus } from './lq/nav-menu.js';
 import { getLayerSystem } from './lq/layer.js';
+import { openKnowledgeTree, lifecycleLabel } from './session_knowledge_tree.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -942,6 +943,7 @@ function initTeachingTimeline() {
     const sessionModalOpenHomeBtn = document.getElementById('teachingSessionOpenHomeBtn');
     const sessionModalOpenMaterialBtn = document.getElementById('teachingSessionOpenMaterialBtn');
     const sessionModalCheckinBtn = document.getElementById('teachingSessionCheckinBtn');
+    const sessionModalKnowledgeTreeBtn = document.getElementById('teachingSessionKnowledgeTreeBtn');
     const sessionCheckinPanel = document.getElementById('teachingSessionCheckinPanel');
     const sessionCheckinMessage = document.getElementById('teachingSessionCheckinMessage');
     const sessionCheckinStats = document.getElementById('teachingSessionCheckinStats');
@@ -1126,6 +1128,43 @@ function initTeachingTimeline() {
             }
         }
     };
+    // 课次生命周期：知识树进度显示在课次卡片与详情入口上（数字+符号+颜色）。
+    const sessionHasBoundMaterial = (session) => Boolean(session?.learning_material_id || Number(session?.learning_material_count || 0) > 0);
+    const paintKnowledgeIndicator = (indicator, progress, { entry = false } = {}) => {
+        if (!indicator) return;
+        const state = progress ? String(progress.lifecycle || 'not_started') : 'none';
+        const percent = progress ? Math.max(0, Math.min(100, Number(progress.progress) || 0)) : 0;
+        indicator.dataset.state = state;
+        indicator.style.setProperty('--kp', `${percent}%`);
+        const value = indicator.querySelector(entry ? '[data-role="knowledge-tree-entry-label"]' : '[data-role="session-knowledge-progress-value"]');
+        if (value) value.textContent = progress ? (state === 'completed' ? '100%' : `${percent}%`) : (entry ? '未生成' : '');
+        indicator.title = progress ? `本课知识点完成 ${percent}% · ${lifecycleLabel(state)}` : '';
+        if (!entry) indicator.hidden = !progress;
+    };
+    const syncKnowledgeEntry = (session) => {
+        const button = sessionModalKnowledgeTreeBtn;
+        if (!button) return;
+        const eligible = Boolean(session?.id) && !isHomeEntry(session) && !isAcademicExamEntry(session);
+        const progress = session?.knowledge_progress || null;
+        button.hidden = !eligible || (!isTeacher && !progress);
+        const hasMaterial = sessionHasBoundMaterial(session);
+        button.disabled = isTeacher ? !hasMaterial && !progress : !progress;
+        button.title = isTeacher && !hasMaterial && !progress ? '请先为本课次绑定学习材料，再生成知识树' : '';
+        paintKnowledgeIndicator(button.querySelector('[data-role="knowledge-tree-entry-state"]'), progress, { entry: true });
+    };
+    const applyKnowledgeProgress = (sessionId, state) => {
+        const session = sessions.find(item => Number(item.id) === Number(sessionId) && !isHomeEntry(item) && !isAcademicExamEntry(item));
+        if (!session) return;
+        session.knowledge_progress = state?.has_tree ? {
+            progress: Number(state.progress) || 0,
+            lifecycle: state.lifecycle || 'not_started',
+            leaf_count: Number(state.leaf_count) || 0,
+            completed_count: Number(state.completed_count) || 0,
+        } : null;
+        const card = buttonMap.get(String(session.order_index));
+        paintKnowledgeIndicator(card?.querySelector('[data-role="session-knowledge-progress"]'), session.knowledge_progress);
+        if (activeModalSession && Number(activeModalSession.id) === Number(session.id)) syncKnowledgeEntry(session);
+    };
     const renderSessionModal = (session, options = {}) => {
         if (!sessionModal || !session) return;
         const isHome = isHomeEntry(session);
@@ -1164,6 +1203,7 @@ function initTeachingTimeline() {
             sessionModalCheckinBtn.hidden = isExam;
             sessionModalCheckinBtn.disabled = isHome || isExam;
         }
+        syncKnowledgeEntry(session);
         renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
         if (compactWorkspace && !isExam) void prepareSessionMaterials(session, Boolean(options.resume));
@@ -2144,6 +2184,17 @@ function initTeachingTimeline() {
     sessionModalCheckinBtn?.addEventListener('click', () => {
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
         fetchSessionCheckin({ sync: false });
+    });
+    sessionModalKnowledgeTreeBtn?.addEventListener('click', () => {
+        const session = activeModalSession || getSessionByOrder(selectedOrder);
+        if (!session?.id || isHomeEntry(session) || isAcademicExamEntry(session)) return;
+        openKnowledgeTree({
+            classOfferingId: window.APP_CONFIG.classOfferingId,
+            session,
+            canEdit: isTeacher,
+            trigger: sessionModalKnowledgeTreeBtn,
+            onChange: applyKnowledgeProgress,
+        });
     });
     sessionSyncCheckinBtn?.addEventListener('click', () => {
         fetchSessionCheckin({ sync: true });

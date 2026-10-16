@@ -4,6 +4,7 @@ from ...services.score_projection_service import load_submission_score_facts
 from ...services.offering_membership_service import student_belongs_to_offering
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 from ...services.session_learning_materials_service import attach_learning_material_counts
+from ...services.session_knowledge_tree_service import attach_session_knowledge_progress
 
 
 router = APIRouter()
@@ -281,6 +282,7 @@ def classroom_main(
             teacher_id=int(offering_data["teacher_id"]),
         )
         attach_learning_material_counts(conn, class_offering_id, session_items, offering_data)
+        attach_session_knowledge_progress(conn, class_offering_id, session_items)
         teaching_plan = decorate_offering_sessions(
             session_items,
             home_material=offering_data.get("home_learning_material"),

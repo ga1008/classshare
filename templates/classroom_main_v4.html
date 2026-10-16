@@ -16,6 +16,7 @@
 {% endif %}
 <link rel="stylesheet" href="{{ asset_url('css/classroom_extras.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_workspace.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/session_knowledge_tree.css') }}">
 {% endblock %}
 
 {% block head %}
@@ -187,6 +188,7 @@
                                             <span data-role="session-card-date">{{ '目录与简介' if session.is_home_entry else (session.month_day_label or session.date_label or '日期待定') }}</span>
                                             {% if not session.is_home_entry and (session.academic_section_text or session.weekday_label) %}<span data-role="session-card-slot">{{ ('第 ' ~ session.academic_section_text ~ ' 节') if session.academic_section_text else session.weekday_label }}</span>{% endif %}
                                         </span>
+                                        {% set kp = session.knowledge_progress %}<span class="cw-kp" data-role="session-knowledge-progress" data-state="{{ kp.lifecycle if kp else 'none' }}" style="--kp: {{ kp.progress if kp else 0 }}%" title="{{ ('本课知识点完成 ' ~ kp.progress ~ '%') if kp else '' }}" {% if not kp %}hidden{% endif %}><span class="cw-kp__ring" aria-hidden="true"></span><span data-role="session-knowledge-progress-value">{{ (kp.progress ~ '%') if kp else '' }}</span></span>
                                     </button>
                                     {% endfor %}
                                 </div>
@@ -264,6 +266,10 @@
                                 <span>进入本次学习材料</span>
                             </button>
                             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action" id="cw-session-back">返回课次</button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action" id="teachingSessionKnowledgeTreeBtn" aria-haspopup="dialog" hidden>
+                                <span>知识树</span>
+                                <small class="cw-kp" data-role="knowledge-tree-entry-state" data-state="none"><span class="cw-kp__ring" aria-hidden="true"></span><span data-role="knowledge-tree-entry-label">未生成</span></small>
+                            </button>
                             {% if user_info.role == 'teacher' %}
                             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action is-accent" id="teachingSessionCheckinBtn">
                                 <span>点名统计</span>

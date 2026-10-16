@@ -117,7 +117,7 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 ### 3.4 持久任务（durable jobs）
 
-批改、出题、教案/考核计划/评学表生成与导入必须走 `ai_durable_job_service`，遵守 `docs/ai-durable-job-architecture-2026-07-12.md` 的 8 条不变量，核心是：
+批改、出题、教案/考核计划/评学表/课次知识树生成与导入必须走 `ai_durable_job_service`，遵守 `docs/ai-durable-job-architecture-2026-07-12.md` 的 8 条不变量，核心是：
 
 1. 业务行与任务行同事务创建；请求返回前任务已持久化。
 2. worker 短事务领取（PG `FOR UPDATE SKIP LOCKED`，SQLite 条件更新），模型调用期间不持连接、不持锁；租约令牌拦截迟到结果。
@@ -351,6 +351,7 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 | 平台知识注入 | `platform_knowledge_service.py` | 记忆 `agent-bridge-and-knowledge` | — |
 | 提示词池 | `prompt_pool_service.py`、`static/js/prompt_pool.js` | `docs/prompt-pool-guidelines.md` | `tests/test_prompt_pool_service.py` |
 | 文档类 AI 功能 | `*_generation_service.py`、`*_import_service.py`、`material_final_document_service.py` | `docs/document-feature-ai-implementation-guide.md` | 各 `tests/test_*_plan*` / `*_evaluation*` |
+| 课次知识树（课次生命周期） | `session_knowledge_tree_service.py`（归一化/比重/进度真源）、`session_knowledge_tree_generation_service.py`（durable 目标 `session_knowledge_tree`，思考档 + 标准档重试，生成令牌防迟到覆盖）、`routers/session_knowledge_trees.py` | `docs/session-knowledge-tree-2026-10-17.md` | `tests/test_session_knowledge_tree.py` |
 | 联网检索 | `ai_web_research.py`；`ai_assistant.py` `/api/ai/web-search` | 模块 docstring | — |
 | 轻量聊天查询 | `chat_platform_query_service.py` | 模块 docstring | `tests/test_agent_g9_light_query_eval.py` |
 | Agent 任务与队列 | `routers/agent_tasks.py`、`services/agent_task_service.py`、`agent_queue_control_service.py`、`agent_task_worker.py` | `docs/agent-runtime-openai-agents-2026-09-25.md` | `tests/test_agent_task_service.py`、`test_agent_sdk_runtime.py`、`test_agent_task_worker.py` |
