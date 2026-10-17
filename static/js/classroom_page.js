@@ -10,6 +10,7 @@ import { adoptDomainControl } from './lq/domain-controls.js';
 import { enhanceNavMenus } from './lq/nav-menu.js';
 import { getLayerSystem } from './lq/layer.js';
 import { openKnowledgeTree, lifecycleLabel } from './session_knowledge_tree.js';
+import { openKnowledgeTreeManager } from './session_knowledge_tree_manager.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -2184,6 +2185,21 @@ function initTeachingTimeline() {
     sessionModalCheckinBtn?.addEventListener('click', () => {
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
         fetchSessionCheckin({ sync: false });
+    });
+    // 文档与知识树：全部课次的文档与知识树批量管理（教师）。
+    document.getElementById('cw-knowledge-manager')?.addEventListener('click', event => {
+        openKnowledgeTreeManager({
+            classOfferingId: window.APP_CONFIG.classOfferingId,
+            trigger: event.currentTarget,
+            resolveSession: id => sessions.find(item => Number(item.id) === Number(id) && !isHomeEntry(item) && !isAcademicExamEntry(item)) || null,
+            onProgress: applyKnowledgeProgress,
+            onOpenSession: id => {
+                const session = sessions.find(item => Number(item.id) === Number(id) && !isHomeEntry(item) && !isAcademicExamEntry(item));
+                if (!session) return;
+                setActiveSession(session.order_index, { center: true });
+                openSessionModal(session, { origin: buttonMap.get(String(session.order_index)) });
+            },
+        });
     });
     sessionModalKnowledgeTreeBtn?.addEventListener('click', () => {
         const session = activeModalSession || getSessionByOrder(selectedOrder);

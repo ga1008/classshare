@@ -231,3 +231,39 @@
 @media (prefers-reduced-motion: reduce) { .kt-fold, .kt-node.is-folded { transition: none; } }
 :where([data-lq-motion="off"]) :is(.kt-fold, .kt-node.is-folded) { transition: none; }
 @media (forced-colors: active) { .kt-fold { border-color: CanvasText; background: Canvas; color: CanvasText; } }
+
+/* ---------- 文档与知识树 manager (session_knowledge_tree_manager.js) ---------- */
+.ktm-dialog .lq-dialog__body { display: flex; flex-direction: column; min-height: 0; white-space: normal; }
+.ktm-shell { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.ktm-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: hsl(var(--lq-material-muted, var(--ls-control-muted))); font-variant-numeric: tabular-nums; }
+.ktm-summary__item:first-child { font-weight: 650; color: hsl(var(--lq-material-ink, var(--ls-ink))); }
+.ktm-actions, .ktm-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ktm-filters { gap: 4px; padding: 2px; border-radius: var(--ls-r-lg); background: hsl(var(--ls-glass-fill-inset)); width: fit-content; max-width: 100%; }
+.ktm-list { display: grid; gap: 8px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 2px; }
+.ktm-row {
+    display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 1fr) minmax(170px, auto) auto; align-items: center; gap: 8px 16px;
+    padding: 12px 14px; border-radius: var(--ls-r-md); background: hsl(var(--ls-glass-fill-inset));
+    content-visibility: auto; contain-intrinsic-size: auto 64px;
+}
+.ktm-row[data-state="stale"] { box-shadow: inset 3px 0 0 hsl(var(--ls-tone-warning-fg)); }
+.ktm-row[data-state="failed"] { box-shadow: inset 3px 0 0 hsl(var(--ls-tone-danger-fg)); }
+.ktm-row[data-state="generating"] { box-shadow: inset 3px 0 0 hsl(var(--ls-primary)); }
+.ktm-row__head { display: grid; gap: 2px; min-width: 0; }
+.ktm-row__order, .ktm-row__date, .ktm-row__muted { font-size: 12px; color: hsl(var(--lq-material-muted, var(--ls-control-muted))); }
+.ktm-row__title { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.ktm-row__docs { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; font-size: 13px; }
+.ktm-doc { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--ls-on-primary-soft)); }
+a.ktm-doc:hover { text-decoration: underline; }
+.ktm-row__status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.ktm-row__error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: hsl(var(--ls-tone-danger-fg)); }
+.ktm-row__ops { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ktm-empty { margin: 24px 0; text-align: center; font-size: 13px; color: hsl(var(--lq-material-muted, var(--ls-control-muted))); }
+@media (max-width: 900px) {
+    .ktm-row { grid-template-columns: minmax(0, 1fr); }
+    .ktm-row__ops { justify-content: flex-start; }
+}
+
+/* Large trees: isolate node layout/paint work from the rest of the dialog. */
+.kt-canvas { contain: layout style; }
+.kt-node { contain: layout style; }
+.kt-edges { contain: strict; }

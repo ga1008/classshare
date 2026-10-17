@@ -197,6 +197,54 @@ class PersistenceTests(unittest.TestCase):
         self.assertIsNone(items[0]["knowledge_progress"])
 
 
+class PromptQualityTests(unittest.TestCase):
+    def test_exemplar_is_flawless_and_normalizes_to_its_own_weights(self):
+        from classroom_app.services import session_knowledge_tree_prompts as prompts
+
+        self.assertEqual(prompts.quality_issues(prompts.EXAMPLE_OUTPUT), [])
+        raw = [leaf["weight"] for leaf in kt.iter_leaves(prompts.EXAMPLE_OUTPUT["nodes"])]
+        self.assertEqual(sum(raw), 100)
+        tree = kt.normalize_tree(prompts.EXAMPLE_OUTPUT)
+        self.assertEqual([leaf["weight"] for leaf in kt.iter_leaves(tree["nodes"])], raw)
+        self.assertIn("栈与队列", prompts.SYSTEM_PROMPT)
+        self.assertIn("输出前自检", prompts.SYSTEM_PROMPT)
+
+    def test_quality_issues_flag_common_ai_mistakes(self):
+        from classroom_app.services import session_knowledge_tree_prompts as prompts
+
+        flat = {"nodes": [{"label": f"点{i}"} for i in range(5)]}
+        issues = " ".join(prompts.quality_issues(flat))
+        self.assertIn("1–4", issues)
+        self.assertIn("只有一层", issues)
+        sloppy = {"nodes": [{"label": "概述", "children": [{"label": "A", "weight": 5}]},
+                            {"label": "B", "children": [{"label": "A", "weight": 5}, {"label": "C", "weight": 5}]}]}
+        issues = " ".join(prompts.quality_issues(sloppy))
+        for expected in ("空泛标签", "重复标签", "只有一个下级", "粒度太粗"):
+            self.assertIn(expected, issues)
+        repair = prompts.build_repair_message("原始输入", sloppy, ["问题甲"])
+        self.assertIn("原始输入", repair)
+        self.assertIn("问题甲", repair)
+
+
+class BatchSelectionTests(unittest.TestCase):
+    ROWS = [
+        {"session_id": 1, "has_material": True, "has_tree": False, "status": "empty", "is_stale": False},
+        {"session_id": 2, "has_material": True, "has_tree": True, "status": "ready", "is_stale": True},
+        {"session_id": 3, "has_material": True, "has_tree": True, "status": "ready", "is_stale": False},
+        {"session_id": 4, "has_material": False, "has_tree": False, "status": "empty", "is_stale": False},
+        {"session_id": 5, "has_material": True, "has_tree": False, "status": "generating", "is_stale": False},
+    ]
+
+    def test_modes(self):
+        self.assertEqual(kt.select_batch_targets(self.ROWS, "missing")[0], [1])
+        self.assertEqual(kt.select_batch_targets(self.ROWS, "stale")[0], [2])
+        targets, skipped = kt.select_batch_targets(self.ROWS, "all")
+        self.assertEqual(targets, [1, 2, 3])
+        self.assertEqual({item["session_id"] for item in skipped}, {4, 5})
+        with self.assertRaises(HTTPException):
+            kt.select_batch_targets(self.ROWS, "everything")
+
+
 class GenerationPromptTests(unittest.TestCase):
     def test_payload_parsing_and_prompt_contents(self):
         self.assertEqual(gen.parse_ai_payload({"response_json": SAMPLE})["title"], "TCP 可靠传输")

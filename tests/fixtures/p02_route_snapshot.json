@@ -2121,6 +2121,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/knowledge-trees",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_knowledge_trees",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/knowledge-trees/generate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_batch_generate_knowledge_trees",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/learning-home-material",
     "methods": [
       "PUT"

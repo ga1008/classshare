@@ -155,14 +155,19 @@ def distribute_weights(raw_weights: list[float]) -> list[int]:
     else:
         floor = min(w for w in weights if w > 0)
         weights = [w if w > 0 else floor for w in weights]
-    spare = 100 - count  # one point reserved per leaf
+    # Proportional largest-remainder rounding keeps weights that already sum
+    # to 100 unchanged; any leaf rounded to 0 then borrows from the largest.
     total = sum(weights)
-    exact = [w / total * spare for w in weights]
-    result = [1 + int(value) for value in exact]
-    remainder = 100 - sum(result)
+    exact = [w / total * 100 for w in weights]
+    result = [int(value) for value in exact]
     order = sorted(range(count), key=lambda i: (exact[i] - int(exact[i]), weights[i]), reverse=True)
-    for index in order[:remainder]:
+    for index in order[:100 - sum(result)]:
         result[index] += 1
+    for index in range(count):
+        if result[index] < 1:
+            donor = max(range(count), key=lambda i: result[i])
+            result[donor] -= 1
+            result[index] = 1
     return result
 
 
@@ -588,3 +593,93 @@ def attach_session_knowledge_progress(conn, class_offering_id: int, session_item
         progress = load_offering_progress(conn, class_offering_id)
     for item in session_items:
         item["knowledge_progress"] = progress.get(int(item.get("id") or 0))
+
+
+# ---------------------------------------------------------------------------
+# Offering-wide management (文档与知识树 batch panel)
+# ---------------------------------------------------------------------------
+BATCH_MODES = {"missing", "stale", "all"}
+BATCH_LIMIT = 80
+
+
+def _session_entries(conn, class_offering_id: int, session: dict[str, Any], teacher_id: int) -> list[dict[str, Any]]:
+    from .session_learning_materials_service import build_material_entries
+
+    try:
+        return build_material_entries(conn, int(class_offering_id), int(session["id"]), teacher_id=int(teacher_id), persist_legacy=False)
+    except HTTPException:
+        raise
+    except Exception as exc:  # binding table may be absent on legacy fixtures
+        print(f"[KNOWLEDGE_TREE] material entries unavailable: {exc!r}")
+        return []
+
+
+def list_offering_trees(conn, class_offering_id: int, teacher_id: int) -> list[dict[str, Any]]:
+    """Every active session with its bound documents and knowledge-tree state."""
+    sessions = conn.execute(
+        """
+        SELECT id, order_index, title, session_date, learning_material_id
+        FROM class_offering_sessions
+        WHERE class_offering_id = ? AND COALESCE(schedule_status, 'scheduled') NOT IN ('cancelled', 'canceled')
+        ORDER BY session_date, order_index
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
+    rows = {
+        int(row["session_id"]): dict(row)
+        for row in conn.execute("SELECT * FROM session_knowledge_trees WHERE class_offering_id = ?", (int(class_offering_id),)).fetchall()
+    }
+    result = []
+    for raw in sessions:
+        session = dict(raw)
+        entries = _session_entries(conn, class_offering_id, session, teacher_id)
+        ids = [int(session["learning_material_id"])] if session.get("learning_material_id") else []
+        ids += [int(entry["material_id"]) for entry in entries]
+        ids = [material_id for material_id in dict.fromkeys(ids) if material_id > 0]
+        named = {int(entry["material_id"]): entry for entry in entries}
+        materials = []
+        for material_id in ids:
+            entry = named.get(material_id)
+            if entry is None:
+                found = conn.execute("SELECT name FROM course_materials WHERE id = ?", (material_id,)).fetchone()
+                entry = {"name": found["name"] if found else f"材料 {material_id}", "open_url": ""}
+            materials.append({"id": material_id, "name": str(entry.get("name") or ""), "open_url": str(entry.get("open_url") or "")})
+        row = rows.get(int(session["id"]))
+        if row:
+            row = expire_stale_generation(conn, row)
+        state = serialize(row, can_edit=True, has_material=bool(ids),
+                          current_fingerprint=source_fingerprint(conn, ids) if ids and row else None)
+        state.pop("tree", None)
+        result.append({
+            **state,
+            "session_id": int(session["id"]),
+            "order_index": int(session.get("order_index") or 0),
+            "title": str(session.get("title") or ""),
+            "session_date": str(session.get("session_date") or ""),
+            "materials": materials,
+        })
+    return result
+
+
+def select_batch_targets(rows: list[dict[str, Any]], mode: str) -> tuple[list[int], list[dict[str, Any]]]:
+    """Session ids a batch should (re)generate, plus the skipped ones with reasons."""
+    if mode not in BATCH_MODES:
+        raise HTTPException(400, "未知的批量生成方式")
+    targets: list[int] = []
+    skipped: list[dict[str, Any]] = []
+    for row in rows:
+        sid = int(row["session_id"])
+        if row.get("status") == STATUS_GENERATING:
+            skipped.append({"session_id": sid, "reason": "正在生成"})
+        elif not row.get("has_material"):
+            skipped.append({"session_id": sid, "reason": "未绑定学习材料"})
+        elif mode == "missing" and row.get("has_tree"):
+            continue
+        elif mode == "stale" and not (row.get("has_tree") and row.get("is_stale")):
+            continue
+        else:
+            targets.append(sid)
+    if len(targets) > BATCH_LIMIT:
+        skipped += [{"session_id": sid, "reason": "超出单次批量上限"} for sid in targets[BATCH_LIMIT:]]
+        targets = targets[:BATCH_LIMIT]
+    return targets, skipped

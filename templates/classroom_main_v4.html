@@ -128,7 +128,7 @@
                     <div class="cw-session-nav">                            {{ lq_btn(icon='chevron-left', variant='glass', size='sm', id='teachingTimelinePrevBtn', attrs={'aria-label': '向左浏览课次', 'title': '向左浏览课次', 'data-lq-component': 'button'}) }}
                             {{ lq_btn(icon='chevron-right', variant='glass', size='sm', id='teachingTimelineNextBtn', attrs={'aria-label': '向右浏览课次', 'title': '向右浏览课次', 'data-lq-component': 'button'}) }}
 
-<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" data-cw-open="timeline">全部课次</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" id="cw-current-session">定位课次</button></div>
+{% if user_info.role == 'teacher' %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" id="cw-knowledge-manager" aria-haspopup="dialog">文档与知识树</button>{% endif %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" data-cw-open="timeline">全部课次</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" id="cw-current-session">定位课次</button></div>
                 </div>
 
                 <div class="embedded-teaching-plan-shell" id="teaching-plan-widget">

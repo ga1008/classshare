@@ -89,6 +89,27 @@ export function shareOf(index, info, done) {
     }, { total: 0, done: 0 });
 }
 
+/** Weight totals for every node in one post-order pass (O(n) instead of O(n^2)). */
+export function computeShares(index, done) {
+    const shares = new Map();
+    const visit = info => {
+        if (info.isLeaf) {
+            const weight = Number(info.node.weight) || 0;
+            const share = { total: weight, done: done.has(info.node.id) ? weight : 0 };
+            shares.set(info.node.id, share);
+            return share;
+        }
+        const share = info.children.reduce((sum, child) => {
+            const part = visit(index.map.get(child.id));
+            return { total: sum.total + part.total, done: sum.done + part.done };
+        }, { total: 0, done: 0 });
+        shares.set(info.node.id, share);
+        return share;
+    };
+    visit(index.map.get('__root'));
+    return shares;
+}
+
 /**
  * Tidy-tree layout along a main (depth) and cross (sibling) axis.
  * sizes: Map(id -> {w, h}); returns boxes Map(id -> {x, y, w, h}) and canvas size.
@@ -198,9 +219,9 @@ export function progressFor(tree, completedIds) {
 /**
  * Open the knowledge tree dialog for one session.
  * @param {{classOfferingId: number|string, session: object, canEdit: boolean, trigger?: Element,
- *          onChange?: (sessionId: number, state: object) => void}} options
+ *          onChange?: (sessionId: number, state: object) => void, onClose?: () => void}} options
  */
-export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, onChange }) {
+export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, onChange, onClose }) {
     const sessionId = Number(session?.id || 0);
     if (!sessionId) return null;
     const base = `/api/classrooms/${encodeURIComponent(classOfferingId)}/sessions/${sessionId}/knowledge-tree`;
@@ -217,6 +238,9 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     let layout = null;
     let zoom = 1;
     const nodeEls = new Map();
+    const edgeEls = new Map();
+    const descendants = new Map();
+    let shares = new Map();
     const foldEls = new Map();
     const foldsKey = `${FOLDS_KEY}${sessionId}`;
     let collapsed = new Set();
@@ -391,9 +415,12 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     function buildNodes() {
         nodeResizeObserver?.disconnect();
         nodeEls.clear();
+        edgeEls.clear();
+        descendants.clear();
         foldEls.clear();
         nodesLayer.replaceChildren();
         foldLayer.replaceChildren();
+        svg.replaceChildren();
         layout = null;
         sizes = null;
         if (!index) return;
@@ -421,6 +448,13 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             nodesLayer.append(node);
             nodeEls.set(id, node);
             nodeResizeObserver?.observe(node);
+            descendants.set(id, descendantCount(info, index));
+            if (info.parent) {
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.dataset.branch = String(Math.max(0, info.branch) % 4);
+                path.setAttribute('class', `kt-edge kt-edge--l${info.level}`);
+                edgeEls.set(id, path);
+            }
             if (info.children.length) {
                 const fold = el('button', 'kt-fold');
                 fold.type = 'button';
@@ -430,6 +464,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
                 foldEls.set(id, fold);
             }
         }
+        svg.append(...edgeEls.values());
         // Forget folds of nodes that no longer exist (e.g. after regeneration).
         const pruned = new Set([...collapsed].filter(id => index.map.get(id)?.children.length));
         if (pruned.size !== collapsed.size) { collapsed = pruned; saveFolds(); }
@@ -445,7 +480,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             const folded = collapsed.has(id);
             const hidden = layout ? !layout.visible.has(id) : false;
             fold.setAttribute('aria-expanded', folded ? 'false' : 'true');
-            fold.textContent = folded ? `+${descendantCount(info, index)}` : '';
+            fold.textContent = folded ? `+${descendants.get(id) || 0}` : '';
             fold.setAttribute('aria-label', `${folded ? '展开' : '收起'}「${info.node.label}」的下级知识点`);
             fold.title = folded ? '展开下级知识点' : '收起下级知识点';
             fold.classList.toggle('is-folded', hidden);
@@ -488,11 +523,11 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
 
     function paintState() {
         if (!index) return;
-        const done = doneSet();
+        shares = computeShares(index, doneSet());
         for (const [id, info] of index.map) {
             const node = nodeEls.get(id);
             if (!node) continue;
-            const share = shareOf(index, info, done);
+            const share = shares.get(id);
             const complete = share.total > 0 && share.done >= share.total;
             node.dataset.done = complete ? 'true' : 'false';
             node.dataset.selected = id === selectedId ? 'true' : 'false';
@@ -570,23 +605,21 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         if (center) centerOn('__root');
     }
 
+    // Paths are created once per tree; repaint only touches geometry and state.
+    let edgeLayoutKey = null;
     function drawEdges() {
         if (!layout || !index) return;
-        const done = doneSet();
-        const parts = [];
-        for (const [id, info] of index.map) {
-            if (!info.parent || !layout.visible.has(id)) continue;
-            const parentBox = layout.boxes.get(info.parent.node.id);
-            const childBox = layout.boxes.get(id);
-            if (!parentBox || !childBox) continue;
-            const share = shareOf(index, info, done);
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', edgePath(parentBox, childBox, prefs.direction));
-            path.setAttribute('class', `kt-edge kt-edge--l${info.level}${share.total > 0 && share.done >= share.total ? ' is-done' : ''}`);
-            path.dataset.branch = String(Math.max(0, info.branch) % 4);
-            parts.push(path);
+        const geometry = edgeLayoutKey !== layout;
+        edgeLayoutKey = layout;
+        for (const [id, path] of edgeEls) {
+            const info = index.map.get(id);
+            const shown = layout.visible.has(id);
+            path.style.display = shown ? '' : 'none';
+            if (!shown) continue;
+            if (geometry) path.setAttribute('d', edgePath(layout.boxes.get(info.parent.node.id), layout.boxes.get(id), prefs.direction));
+            const share = shares.get(id);
+            path.classList.toggle('is-done', Boolean(share && share.total > 0 && share.done >= share.total));
         }
-        svg.replaceChildren(...parts);
     }
 
     function centerOn(id) {
@@ -642,7 +675,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             if (canEdit) row.append(createDomainButton({ label: complete ? '标记为未完成' : '标记为已完成', variant: complete ? 'glass' : 'prominent', attrs: { 'data-kt-toggle': info.node.id } }));
             side.append(row);
         } else if (info.level > 0) {
-            const share = shareOf(index, info, done);
+            const share = shares.get(info.node.id) || shareOf(index, info, done);
             side.append(el('p', 'kt-side__meta', `包含比重 ${share.total}% · 已完成 ${share.done}%`));
         }
         if (info.level === 0) {
@@ -689,7 +722,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     // ---- state ------------------------------------------------------------
     function applyState(next, { relayout = false } = {}) {
         const treeChanged = relayout || !data || data.has_tree !== next.has_tree
-            || JSON.stringify(data.tree) !== JSON.stringify(next.tree);
+            || (data.tree !== next.tree && (data.version !== next.version || JSON.stringify(data.tree) !== JSON.stringify(next.tree)));
         const firstTree = !layout;
         data = next;
         renderHeader();
@@ -979,12 +1012,21 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         if (fold) toggleFold(fold.dataset.foldId);
     });
     // Plain wheel scrolls natively; Ctrl+wheel (and trackpad pinch) zooms around the cursor.
+    let wheelFactor = 1;
+    let wheelAnchor = null;
+    let wheelFrame = 0;
     viewport.addEventListener('wheel', event => {
         if (!event.ctrlKey || !layout) return;
         event.preventDefault();
         const rect = viewport.getBoundingClientRect();
         const delta = Math.max(-120, Math.min(120, event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY));
-        setZoom(zoom * Math.exp(-delta * 0.0018), { anchor: { x: event.clientX - rect.left, y: event.clientY - rect.top } });
+        wheelFactor *= Math.exp(-delta * 0.0018);
+        wheelAnchor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        if (!wheelFrame) wheelFrame = window.requestAnimationFrame(() => {
+            wheelFrame = 0;
+            setZoom(zoom * wheelFactor, { anchor: wheelAnchor });
+            wheelFactor = 1;
+        });
     }, { passive: false });
     viewport.addEventListener('keydown', event => {
         if (event.target !== viewport || !layout || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -1059,10 +1101,12 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         nodeResizeObserver?.disconnect();
         window.cancelAnimationFrame(resizeFrame);
         window.cancelAnimationFrame(measureFrame);
+        window.cancelAnimationFrame(wheelFrame);
         window.clearTimeout(pollTimer);
         clearHold();
         dropdowns.forEach(binding => binding.destroy?.());
         dropdowns = [];
+        onClose?.();
     }
     openDialog(root, {
         trigger,

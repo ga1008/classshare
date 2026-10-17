@@ -18,6 +18,7 @@ import httpx
 
 from ..core import ai_client
 from ..database import get_db_connection
+from . import session_knowledge_tree_prompts as prompts
 from . import session_knowledge_tree_service as kt
 from .academic_service import build_classroom_ai_context
 
@@ -26,37 +27,8 @@ _AI_TIMEOUT = 240.0
 _AI_RETRY_TIMEOUT = 150.0
 _RETRY_DOC_BUDGET = 9000
 
-SYSTEM_PROMPT = """你是高校课程的教学设计专家，负责把"一次课"的学习文档整理成知识树（思维导图），供教师逐项勾选授课进度。
+SYSTEM_PROMPT = prompts.SYSTEM_PROMPT
 
-严格输出一个 JSON 对象，不要输出任何其他文字：
-{
-  "title": "本次课主题，不超过20字",
-  "summary": "一句话概括本次课，不超过40字",
-  "nodes": [
-    {
-      "label": "大知识点，一句话，不超过16字",
-      "detail": "该知识点的详细介绍，60-120字",
-      "example": "一个具体案例或应用场景，不超过80字",
-      "question": "一个引导思考的问题，不超过50字",
-      "prerequisite": "前置关联：学习它需要先掌握什么，不超过50字",
-      "extension": "后续关联：它会引出或支撑什么，不超过50字",
-      "children": [
-        {"label": "细分知识", "detail": "...", "example": "...", "question": "...", "prerequisite": "...", "extension": "...",
-         "children": [
-           {"label": "基础知识单元", "weight": 8, "detail": "...", "example": "...", "question": "...", "prerequisite": "...", "extension": "..."}
-         ]}
-      ]
-    }
-  ]
-}
-
-结构规则（必须遵守）：
-1. 顶层大知识点 1-4 个，2-3 个最佳；只围绕本次课的学习文档，不要扩展到文档没有讲的内容。
-2. 整棵树两层或三层：大知识点 → 细分知识 → 基础知识单元；三层为主，内容简单时可两层（大知识点 → 基础知识单元）。不得超过三层，也不得只有一层。
-3. 没有 children 的节点就是末梢（基础知识单元），只有末梢写 "weight"：按重要程度和授课耗时给出 1-30 的整数，越重要越大；系统会把所有末梢的比重归一化为合计 100%。
-4. 末梢总数 6-24 个，每个末梢应是课堂上能明确"讲完/没讲完"的一个教学单元。
-5. label 一律一句话，简洁具体，不加编号，不重复上级的字眼。
-6. 同级节点按授课顺序排列。所有文字使用简体中文。"""
 
 
 def _safe_text(value: Any) -> str:
@@ -93,11 +65,30 @@ def parse_ai_payload(data: Any) -> dict[str, Any] | None:
     return _loads_json(data.get("response_text"))
 
 
-async def _chat_tree(user_message: str, *, label: str, retry_message: str) -> dict[str, Any] | None:
+async def _post_tree(payload: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any] | None:
+    """One thinking-tier call; a 5xx/timeout or unusable reply falls back to the standard tier once."""
+    try:
+        response = await ai_client.post("/api/ai/chat", json=payload, timeout=_AI_TIMEOUT)
+        response.raise_for_status()
+        parsed = parse_ai_payload(response.json())
+        if parsed and parsed.get("nodes"):
+            return parsed
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        if status < 500:
+            raise
+    except (httpx.TimeoutException, httpx.TransportError):
+        pass
+    response = await ai_client.post("/api/ai/chat", json=fallback, timeout=_AI_RETRY_TIMEOUT)
+    response.raise_for_status()
+    return parse_ai_payload(response.json())
+
+
+def _payloads(message: str, retry_message: str, label: str) -> tuple[dict[str, Any], dict[str, Any]]:
     payload = {
         "system_prompt": SYSTEM_PROMPT,
         "messages": [],
-        "new_message": user_message,
+        "new_message": message,
         "file_texts": [],
         "model_capability": "thinking",
         "task_type": "deep_text_reasoning",
@@ -106,32 +97,35 @@ async def _chat_tree(user_message: str, *, label: str, retry_message: str) -> di
         "task_priority": "background",
         "task_label": label,
     }
-    retry_payload = {
+    fallback = {
         **payload,
         "new_message": retry_message,
         "model_capability": "standard",
         "task_type": "fast_text_response",
         "task_label": f"{label}:standard-retry",
     }
+    return payload, fallback
+
+
+async def _chat_tree(user_message: str, *, label: str, retry_message: str) -> dict[str, Any] | None:
+    """Generate, then re-ask once with the concrete defects if the tree breaks the rules."""
+    first = await _post_tree(*_payloads(user_message, retry_message, label))
+    issues = prompts.quality_issues(first)
+    if not issues:
+        return first
+    print(f"[KNOWLEDGE_TREE] {label} quality re-ask: {'; '.join(issues)}")
     try:
-        response = await ai_client.post("/api/ai/chat", json=payload, timeout=_AI_TIMEOUT)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code if exc.response is not None else 0
-        if status < 500:
-            raise
-        response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_RETRY_TIMEOUT)
-        response.raise_for_status()
-    except (httpx.TimeoutException, httpx.TransportError):
-        response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_RETRY_TIMEOUT)
-        response.raise_for_status()
-    parsed = parse_ai_payload(response.json())
-    if parsed and parsed.get("nodes"):
-        return parsed
-    # One standard-tier retry when the thinking reply was unusable.
-    response = await ai_client.post("/api/ai/chat", json=retry_payload, timeout=_AI_RETRY_TIMEOUT)
-    response.raise_for_status()
-    return parse_ai_payload(response.json())
+        second = await _post_tree(*_payloads(
+            prompts.build_repair_message(user_message, first or {}, issues),
+            prompts.build_repair_message(retry_message, first or {}, issues),
+            f"{label}:repair",
+        ))
+    except Exception as exc:  # the first answer may still be usable after normalization
+        print(f"[KNOWLEDGE_TREE] {label} repair failed: {exc!r}")
+        return first
+    if second and len(prompts.quality_issues(second)) <= len(issues):
+        return second
+    return first
 
 
 def _neighbor_context(conn, session: dict[str, Any]) -> tuple[str, str, list[str]]:
