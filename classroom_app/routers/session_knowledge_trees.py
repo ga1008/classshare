@@ -1,4 +1,4 @@
-"""课次知识树 API：读取、AI 生成、末梢完成标记、全部完成/取消、同级排序。
+"""课次知识树 API：读取、AI 生成、末梢完成标记、全部完成/取消、同级排序与节点编辑。
 
 教师（课堂授课教师或超管）可写；本课堂学生只读已生成的知识树与进度。
 """
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from ..config import AI_DURABLE_JOBS_ENABLED
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
+from ..services import session_knowledge_tree_edit_service as kte
 from ..services import session_knowledge_tree_service as kt
 from ..services.durable_process_job_service import enqueue_process_generation
 from ..services.resource_access_service import ensure_classroom_access
@@ -60,6 +61,27 @@ def _queue_generation(conn, offering: dict, session: dict, user: dict) -> tuple[
             extra_payload={"session_id": int(session["id"]), "task_token": token},
         )
     return str(row["id"]), token
+
+
+class NodeCreateBody(BaseModel):
+    parent_id: str = Field(default="", max_length=32)
+    label: str = Field(default="", max_length=200)
+    index: int | None = Field(default=None, ge=0, le=200)
+
+
+class NodeUpdateBody(BaseModel):
+    label: str | None = Field(default=None, max_length=200)
+    detail: str | None = Field(default=None, max_length=2000)
+    example: str | None = Field(default=None, max_length=2000)
+    question: str | None = Field(default=None, max_length=2000)
+    prerequisite: str | None = Field(default=None, max_length=2000)
+    extension: str | None = Field(default=None, max_length=2000)
+    weight: int | None = Field(default=None, ge=0, le=kte.WEIGHT_MAX)
+
+
+class NodeMoveBody(BaseModel):
+    parent_id: str = Field(default="", max_length=32)
+    index: int = Field(default=0, ge=0, le=200)
 
 
 class OrderBody(BaseModel):
@@ -183,3 +205,53 @@ async def api_order_knowledge_tree(
         kt.save_order(conn, int(session["id"]), body.parent_id, body.order, body.version)
         conn.commit()
         return _state(conn, offering, session, user)
+
+
+def _edit(class_offering_id: int, session_id: int, user: dict, operation) -> dict:
+    with get_db_connection() as conn:
+        offering, session = _load_session(conn, class_offering_id, session_id, user)
+        _row, extra = kte.edit_tree(conn, int(session["id"]), operation)
+        conn.commit()
+        return {**_state(conn, offering, session, user), **extra}
+
+
+@router.post("/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes")
+async def api_add_knowledge_node(
+    class_offering_id: int, session_id: int, body: NodeCreateBody, user: dict = Depends(get_current_teacher),
+):
+    """新增末梢节点；返回 ``created_id``。"""
+    return _edit(class_offering_id, session_id, user, lambda tree, done: kte.add_node(
+        tree, done, parent_id=body.parent_id, label=body.label, index=body.index))
+
+
+@router.patch("/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}")
+async def api_update_knowledge_node(
+    class_offering_id: int, session_id: int, node_id: str, body: NodeUpdateBody, user: dict = Depends(get_current_teacher),
+):
+    changes = body.model_dump(exclude_unset=True)
+    return _edit(class_offering_id, session_id, user, lambda tree, done: kte.update_node(
+        tree, done, node_id=str(node_id)[:32], changes=changes))
+
+
+@router.delete("/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}")
+async def api_delete_knowledge_node(
+    class_offering_id: int, session_id: int, node_id: str, user: dict = Depends(get_current_teacher),
+):
+    return _edit(class_offering_id, session_id, user, lambda tree, done: kte.delete_node(
+        tree, done, node_id=str(node_id)[:32]))
+
+
+@router.post("/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}/move")
+async def api_move_knowledge_node(
+    class_offering_id: int, session_id: int, node_id: str, body: NodeMoveBody, user: dict = Depends(get_current_teacher),
+):
+    return _edit(class_offering_id, session_id, user, lambda tree, done: kte.move_node(
+        tree, done, node_id=str(node_id)[:32], parent_id=body.parent_id, index=body.index))
+
+
+@router.post("/{class_offering_id}/sessions/{session_id}/knowledge-tree/weights/normalize")
+async def api_normalize_knowledge_weights(
+    class_offering_id: int, session_id: int, user: dict = Depends(get_current_teacher),
+):
+    """按比例把末梢比重调整为合计 100。"""
+    return _edit(class_offering_id, session_id, user, kte.normalize_weights)

@@ -216,12 +216,30 @@ def lifecycle_state(has_tree: bool, percent: int, completed_count: int = 0) -> s
     return "not_started"
 
 
+def leaf_weight(leaf: dict[str, Any]) -> int:
+    try:
+        return max(0, int(leaf.get("weight") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def compute_progress(tree: dict[str, Any], completed_ids: Iterable[str]) -> dict[str, Any]:
+    """Progress = completed weight share of the total weight.
+
+    Generated trees always total 100; after manual edits the total may differ
+    (the editor warns until it is 100 again), so the share is taken against the
+    actual total. An all-zero tree falls back to counting units.
+    """
     leaves = list(iter_leaves(tree.get("nodes") or []))
     leaf_ids = {leaf["id"] for leaf in leaves}
     done = [node_id for node_id in dict.fromkeys(str(i) for i in completed_ids) if node_id in leaf_ids]
     done_set = set(done)
-    percent = sum(int(leaf.get("weight") or 0) for leaf in leaves if leaf["id"] in done_set)
+    total = sum(leaf_weight(leaf) for leaf in leaves)
+    done_weight = sum(leaf_weight(leaf) for leaf in leaves if leaf["id"] in done_set)
+    if total > 0:
+        percent = done_weight if total == 100 else int(done_weight * 100 / total + 0.5)
+    else:
+        percent = int(len(done_set) * 100 / len(leaves) + 0.5) if leaves else 0
     percent = max(0, min(100, percent))
     if leaves and len(done_set) == len(leaves):
         percent = 100
@@ -232,6 +250,7 @@ def compute_progress(tree: dict[str, Any], completed_ids: Iterable[str]) -> dict
         "progress": percent,
         "leaf_count": len(leaves),
         "completed_count": len(done),
+        "weight_total": total,
         "lifecycle": lifecycle_state(bool(leaves), percent, len(done)),
     }
 
@@ -239,6 +258,9 @@ def compute_progress(tree: dict[str, Any], completed_ids: Iterable[str]) -> dict
 def reorder_children(tree: dict[str, Any], parent_id: str, order: list[str]) -> dict[str, Any]:
     """Return a copy of ``tree`` with ``parent_id``'s children in ``order``."""
     tree = json.loads(json.dumps(tree))
+    for index, node in enumerate(tree.get("nodes") or []):
+        if not isinstance(node.get("tone"), int):
+            node["tone"] = index % 8  # keep each major point's colour across reordering
     if parent_id:
         parent = next((node for node in iter_nodes(tree.get("nodes") or []) if node["id"] == parent_id), None)
         if not parent or not parent.get("children"):
@@ -539,7 +561,7 @@ def serialize(row: dict[str, Any] | None, *, can_edit: bool, has_material: bool,
     tree = _loads(row.get("tree_json"), {})
     has_tree = bool(tree.get("nodes"))
     state = compute_progress(tree, _loads(row.get("completed_json"), [])) if has_tree else {
-        "completed_ids": [], "progress": 0, "leaf_count": 0, "completed_count": 0, "lifecycle": "none",
+        "completed_ids": [], "progress": 0, "leaf_count": 0, "completed_count": 0, "weight_total": 0, "lifecycle": "none",
     }
     stored_fingerprint = str(row.get("source_fingerprint") or "")
     is_stale = bool(

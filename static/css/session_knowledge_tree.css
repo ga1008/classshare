@@ -27,7 +27,8 @@
 .kt-attention::after { content: ""; position: absolute; top: 4px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--ls-tone-warning-fg)); }
 .kt-main { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; gap: 12px; min-height: 0; }
 .kt-main.has-side { grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); }
-.kt-viewport { position: relative; min-height: 0; overflow: auto; overscroll-behavior: contain; border-radius: var(--ls-r-lg); background: var(--kt-canvas); outline-offset: -2px; }
+/* The controller anchors the picture itself; native scroll anchoring would nudge it on every repaint. */
+.kt-viewport { position: relative; min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; border-radius: var(--ls-r-lg); background: var(--kt-canvas); outline-offset: -2px; }
 .kt-empty { display: grid; place-content: center; justify-items: center; gap: 10px; padding: 40px 24px; text-align: center; border-radius: var(--ls-r-lg); background: hsl(var(--ls-glass-fill-inset)); }
 .kt-empty strong { font-size: 16px; }
 .kt-empty p { max-width: 520px; margin: 0; font-size: 13px; line-height: 1.7; color: hsl(var(--lq-material-muted, var(--ls-control-muted))); }
@@ -35,16 +36,26 @@
 /* ---------- canvas (content slot) ---------- */
 .kt-sizer { position: relative; min-width: 100%; min-height: 100%; }
 .kt-canvas { position: absolute; top: 0; left: 0; transform: scale(var(--kt-zoom, 1)); transform-origin: 0 0; background-image: var(--kt-grid, none); background-size: 24px 24px; }
+/* No size containment here: the SVG takes its size from width/height attributes,
+   and `contain: size` would collapse it to 0px and paint-clip every edge. */
 .kt-edges { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
-.kt-edge { fill: none; stroke: hsl(var(--kt-branch)); stroke-width: calc(var(--kt-edge-w, 1) * 1.6px); stroke-linecap: round; opacity: .55; stroke-dasharray: var(--kt-edge-dash, none); }
-.kt-edge--l1 { stroke-width: calc(var(--kt-edge-w, 1) * 3px); opacity: .7; }
+.kt-edge { fill: none; stroke: hsl(var(--kt-branch)); stroke-width: calc(var(--kt-edge-w, 1) * 1.6px); stroke-linecap: round; opacity: .6; stroke-dasharray: var(--kt-edge-dash, none); transition: opacity 160ms ease, stroke 200ms ease; }
+.kt-edge--l1 { stroke-width: calc(var(--kt-edge-w, 1) * 3px); opacity: .75; }
 .kt-edge--l2 { stroke-width: calc(var(--kt-edge-w, 1) * 2.2px); }
 .kt-edge.is-done { opacity: 1; stroke-dasharray: none; }
+.kt-edge.is-hidden { opacity: 0; }
 .kt-shell [data-branch="0"] { --kt-branch: var(--kt-b0); }
 .kt-shell [data-branch="1"] { --kt-branch: var(--kt-b1); }
 .kt-shell [data-branch="2"] { --kt-branch: var(--kt-b2); }
 .kt-shell [data-branch="3"] { --kt-branch: var(--kt-b3); }
+.kt-shell [data-branch="4"] { --kt-branch: var(--kt-b4); }
+.kt-shell [data-branch="5"] { --kt-branch: var(--kt-b5); }
+.kt-shell [data-branch="6"] { --kt-branch: var(--kt-b6); }
+.kt-shell [data-branch="7"] { --kt-branch: var(--kt-b7); }
 
+/* Position comes from the spring field (transform, set per frame); press, lift and tilt use
+   the independent `scale`/`rotate` properties so they compose with it instead of fighting it. */
+@property --kt-share { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 .kt-nodes { position: absolute; inset: 0; }
 .kt-node {
     position: absolute; top: 0; left: 0;
@@ -54,18 +65,30 @@
     background: var(--kt-node-bg); color: var(--kt-ink);
     font: inherit; font-family: var(--kt-font, inherit); font-size: 13px; line-height: 1.45; text-align: left;
     cursor: pointer; touch-action: pan-x pan-y; user-select: none; -webkit-user-select: none;
-    transform: translate(var(--kt-pos, 0px, 0px)) translate(var(--kt-drag, 0px, 0px));
-    transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out)), background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    will-change: transform;
+    scale: 1; rotate: 0deg;
+    transition: scale var(--lq-motion-control-duration, 180ms) var(--lq-motion-spring, var(--ls-ease-out)), rotate 140ms ease-out,
+        opacity var(--lq-motion-presence-duration, 220ms) ease, background-color 160ms ease, border-color 160ms ease, box-shadow 200ms ease, --kt-share 420ms var(--lq-motion-ease, ease);
 }
 .kt-node:hover { border-color: hsl(var(--kt-branch, var(--ls-primary)) / .7); }
+.kt-node:active:not(.is-dragging) { scale: var(--lq-motion-press-x, 1.012) var(--lq-motion-press-y, .965); transition-duration: var(--lq-motion-press-duration, 80ms); }
+.kt-shell[data-kt-editable] .kt-node:not([data-level="0"]) { cursor: grab; }
+.kt-node.is-dragging {
+    z-index: 5; cursor: grabbing; scale: 1.05; rotate: var(--kt-tilt, 0deg);
+    box-shadow: 0 18px 44px hsl(222 47% 11% / .28), 0 4px 12px hsl(222 47% 11% / .14);
+}
+.kt-viewport.is-dragging-node, .kt-viewport.is-dragging-node .kt-node { cursor: grabbing; }
+.kt-node.is-entering { opacity: 0; scale: .6; transition: none; }
+.kt-node.is-leaving { opacity: 0; scale: .5; pointer-events: none; }
 .kt-node:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
 .kt-node[data-selected="true"] { box-shadow: 0 0 0 2px hsl(var(--kt-branch, var(--ls-primary))), 0 8px 24px hsl(var(--kt-branch, var(--ls-primary)) / .18); }
 .kt-node__label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .kt-node[data-level="0"] { display: grid; gap: 2px; width: 200px; padding: 12px 16px; border-color: transparent; background: var(--kt-root-bg); color: var(--kt-root-ink); font-family: var(--kt-title-font, inherit); font-size: 15px; font-weight: 650; }
 .kt-node[data-level="0"][data-selected="true"] { box-shadow: 0 0 0 2px hsl(var(--ls-primary) / .5), 0 8px 24px hsl(var(--ls-primary) / .2); }
 .kt-node__kicker { font-size: 11px; font-weight: 500; opacity: .85; }
-.kt-node[data-level="1"] { width: 176px; padding-block: 10px; border-color: hsl(var(--kt-branch) / .55); border-inline-start: 4px solid hsl(var(--kt-branch)); background: var(--kt-major-bg); color: var(--kt-major-ink, var(--kt-ink)); font-family: var(--kt-title-font, inherit); font-size: 14px; font-weight: 650; }
-.kt-node[data-level="2"]:not([data-leaf]) { width: 168px; font-weight: 600; }
+.kt-node[data-level="1"] { width: 176px; padding-block: 10px; border-color: hsl(var(--kt-branch) / .55); border-inline-start: 4px solid hsl(var(--kt-branch)); background: color-mix(in srgb, hsl(var(--kt-branch)) var(--kt-major-tint, 14%), var(--kt-major-bg)); color: var(--kt-major-ink, var(--kt-ink)); font-family: var(--kt-title-font, inherit); font-size: 14px; font-weight: 650; }
+.kt-node[data-level="2"]:not([data-leaf]) { width: 168px; font-weight: 600; border-color: hsl(var(--kt-branch) / .38); background: color-mix(in srgb, hsl(var(--kt-branch)) var(--kt-minor-tint, 6%), var(--kt-node-bg)); }
+.kt-node[data-leaf] { border-color: hsl(var(--kt-branch) / .26); }
 .kt-node:not([data-leaf]):not([data-level="0"]) { flex-wrap: wrap; row-gap: 6px; }
 .kt-node__meter { flex: 1 0 100%; height: 3px; border-radius: 3px; background: linear-gradient(90deg, hsl(var(--kt-branch)) var(--kt-share, 0%), hsl(var(--kt-branch) / .16) 0); }
 .kt-node[data-leaf] { width: 212px; }
@@ -73,15 +96,19 @@
 .kt-shell[data-kt-direction="bt"] .kt-node[data-level="0"] { width: 180px; }
 .kt-shell[data-kt-direction="bt"] .kt-node[data-leaf] { flex-wrap: wrap; row-gap: 4px; }
 .kt-shell[data-kt-direction="bt"] .kt-node[data-leaf] .kt-node__label { flex-basis: calc(100% - 28px); }
-.kt-node__check { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border: 2px solid hsl(var(--kt-branch) / .7); border-radius: 50%; }
+.kt-node__check { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 18px; border: 2px solid hsl(var(--kt-branch) / .7); border-radius: 50%; transition: background-color 160ms ease, border-color 160ms ease; }
+/* A finger-sized hit area around the round check (it toggles; the rest of the node selects). */
+.kt-shell[data-kt-editable] .kt-node__check { cursor: pointer; }
+.kt-shell[data-kt-editable] .kt-node__check::before { content: ""; position: absolute; inset: -9px -8px -9px -12px; border-radius: 50%; }
+.kt-shell[data-kt-editable] .kt-node__check:hover { border-color: hsl(var(--kt-branch)); background: hsl(var(--kt-branch) / .14); }
+.kt-node.is-ticked .kt-node__check { animation: kt-tick-pop 420ms var(--lq-motion-spring, ease-out); }
+.kt-node.is-ticked[data-done="true"] .kt-node__check::after { animation: kt-tick-draw 260ms ease-out both; }
+@keyframes kt-tick-pop { 0% { scale: 1; } 30% { scale: .78; } 65% { scale: 1.16; } 100% { scale: 1; } }
+@keyframes kt-tick-draw { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 .kt-node__weight { flex: none; padding: 1px 6px; border-radius: var(--ls-r-capsule); background: hsl(var(--kt-branch) / .14); color: var(--kt-weight-ink, var(--kt-ink)); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .kt-node[data-leaf][data-done="true"] { border-color: hsl(var(--kt-branch) / .8); background: var(--kt-done-bg, hsl(var(--kt-branch) / .15)); }
 .kt-node[data-leaf][data-done="true"] .kt-node__check { border-color: hsl(var(--kt-branch)); background: hsl(var(--kt-branch)); }
 .kt-node[data-leaf][data-done="true"] .kt-node__check::after { content: ""; width: 5px; height: 9px; margin-top: -2px; border: solid var(--kt-check-ink, #fff); border-width: 0 2px 2px 0; transform: rotate(45deg); }
-.kt-node.is-dragging { z-index: 2; cursor: grabbing; transition: none; box-shadow: 0 16px 40px hsl(222 47% 11% / .25); }
-.kt-drop-marker { position: absolute; top: 0; left: 0; z-index: 3; pointer-events: none; border-radius: 3px; background: hsl(var(--ls-primary)); transform: translate(var(--kt-pos, 0px, 0px)); }
-.kt-drop-marker[data-axis="h"] { width: var(--kt-len); height: 3px; }
-.kt-drop-marker[data-axis="v"] { width: 3px; height: var(--kt-len); }
 
 /* ---------- sidebar ---------- */
 .kt-side { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px; border-radius: var(--ls-r-lg); background: hsl(var(--ls-glass-fill-inset)); }
@@ -106,7 +133,9 @@
     --kt-root-bg: hsl(var(--ls-primary));
     --kt-root-ink: hsl(var(--ls-on-primary));
     --kt-major-bg: hsl(var(--lq-page-raised, var(--ls-glass-fill-strong)));
-    --kt-b0: var(--ls-primary); --kt-b1: var(--ls-c-teal-500); --kt-b2: var(--ls-c-amber-500); --kt-b3: var(--ls-c-violet-500);
+    /* Eight distinguishable mid-tone hues that hold up on light and dark glass. */
+    --kt-b0: 173 72% 34%; --kt-b1: 217 78% 54%; --kt-b2: 32 90% 46%; --kt-b3: 262 62% 58%;
+    --kt-b4: 346 70% 52%; --kt-b5: 150 58% 36%; --kt-b6: 196 82% 42%; --kt-b7: 18 80% 50%;
 }
 .kt-shell[data-kt-theme="ink"] {
     --kt-canvas: hsl(var(--ls-surface-1));
@@ -121,9 +150,12 @@
     --kt-done-bg: hsl(var(--ls-ink) / .07);
     --kt-check-ink: hsl(var(--ls-surface-1));
     --kt-edge-w: .7;
-    --kt-b0: var(--ls-ink); --kt-b1: var(--ls-ink); --kt-b2: var(--ls-ink); --kt-b3: var(--ls-ink);
+    /* Ink wash: dark, low-chroma inks (indigo, cinnabar, pine, umber, plum, slate, ochre, rouge). */
+    --kt-b0: 222 38% 30%; --kt-b1: 4 52% 38%; --kt-b2: 162 34% 27%; --kt-b3: 28 44% 32%;
+    --kt-b4: 282 24% 36%; --kt-b5: 200 30% 32%; --kt-b6: 42 56% 32%; --kt-b7: 340 34% 36%;
+    --kt-major-tint: 8%; --kt-minor-tint: 3%;
 }
-.kt-shell[data-kt-theme="ink"] .kt-node[data-level="1"] { border-inline-start-width: 1px; }
+.kt-shell[data-kt-theme="ink"] .kt-node[data-level="1"] { border-inline-start-width: 3px; }
 .kt-shell[data-kt-theme="ribbon"] {
     --kt-canvas: hsl(var(--ls-surface-1));
     --kt-ink: hsl(var(--ls-ink));
@@ -132,7 +164,9 @@
     --kt-root-bg: linear-gradient(135deg, hsl(var(--ls-c-rose-500)), hsl(var(--ls-c-violet-600)));
     --kt-root-ink: #fff;
     --kt-edge-w: 1.6;
-    --kt-b0: var(--ls-c-rose-500); --kt-b1: var(--ls-c-sky-700); --kt-b2: var(--ls-c-emerald-700); --kt-b3: var(--ls-c-violet-600);
+    /* Festive saturated ribbons. */
+    --kt-b0: 350 82% 54%; --kt-b1: 204 84% 42%; --kt-b2: 156 70% 34%; --kt-b3: 264 66% 56%;
+    --kt-b4: 34 92% 48%; --kt-b5: 12 84% 52%; --kt-b6: 186 78% 36%; --kt-b7: 302 56% 48%;
 }
 .kt-shell[data-kt-theme="ribbon"] .kt-node:not([data-level="0"]) { border-color: hsl(var(--kt-branch) / .5); }
 .kt-shell[data-kt-theme="ribbon"] .kt-node[data-level="1"] { border-inline-start-width: 1px; background: hsl(var(--kt-branch)); color: #fff; }
@@ -154,7 +188,10 @@
     --kt-check-ink: #0b2340;
     --kt-font: var(--ls-font-mono);
     --kt-edge-dash: 5 4;
+    /* Chalk pastels on navy. */
     --kt-b0: 199 89% 70%; --kt-b1: 170 70% 62%; --kt-b2: 45 90% 66%; --kt-b3: 280 80% 78%;
+    --kt-b4: 0 86% 74%; --kt-b5: 120 52% 66%; --kt-b6: 28 92% 68%; --kt-b7: 226 90% 78%;
+    --kt-major-tint: 22%; --kt-minor-tint: 10%;
 }
 .kt-shell[data-kt-theme="paper"] {
     --kt-canvas: #fbf5ea;
@@ -169,11 +206,14 @@
     --kt-done-bg: #efe2c8;
     --kt-weight-ink: #3b2f2a;
     --kt-title-font: var(--ls-font-serif-cjk);
+    /* Earth pigments on warm paper. */
     --kt-b0: 22 52% 38%; --kt-b1: 150 30% 34%; --kt-b2: 205 38% 38%; --kt-b3: 345 38% 40%;
+    --kt-b4: 42 58% 34%; --kt-b5: 268 22% 42%; --kt-b6: 182 32% 30%; --kt-b7: 8 46% 42%;
+    --kt-major-tint: 12%; --kt-minor-tint: 5%;
 }
 
-@media (prefers-reduced-motion: reduce) { .kt-node { transition: none; } }
-:where([data-lq-motion="off"]) .kt-node { transition: none; }
+@media (prefers-reduced-motion: reduce) { .kt-node, .kt-edge { transition: none; } .kt-node.is-ticked .kt-node__check, .kt-node.is-ticked .kt-node__check::after { animation: none; } .kt-node:active:not(.is-dragging) { scale: 1; } }
+:where([data-lq-motion="off"]) :is(.kt-node, .kt-edge) { transition: none; animation: none; }
 @media (forced-colors: active) {
     .kt-node { border-color: CanvasText; background: Canvas; color: CanvasText; }
     .kt-node[data-leaf][data-done="true"] .kt-node__check { background: Highlight; border-color: Highlight; }
@@ -203,7 +243,7 @@
 .kt-viewport { cursor: grab; }
 .kt-viewport.is-panning { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 .kt-viewport.is-panning .kt-node { cursor: grabbing; }
-.kt-node.is-folded { opacity: 0; visibility: hidden; pointer-events: none; transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out)), opacity 160ms ease, visibility 0s linear 220ms; }
+.kt-node.is-folded { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 160ms ease, visibility 0s linear 220ms; }
 .kt-folds { position: absolute; inset: 0; pointer-events: none; }
 .kt-fold {
     position: absolute; top: 0; left: 0; z-index: 1;
@@ -213,8 +253,7 @@
     background: var(--kt-fold-bg, hsl(var(--ls-surface-1)));
     color: hsl(var(--kt-branch)); font: 600 10px/1 var(--ls-font-sans); font-variant-numeric: tabular-nums;
     cursor: pointer; pointer-events: auto;
-    transform: translate(var(--kt-pos, 0px, 0px)) translate(-50%, -50%);
-    transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out)), opacity 160ms ease;
+    transition: opacity 160ms ease, min-width 140ms ease, height 140ms ease;
 }
 .kt-fold::before { content: ""; position: absolute; inset: -8px; border-radius: 999px; }
 .kt-fold[aria-expanded="true"]:hover::after, .kt-fold[aria-expanded="true"]:focus-visible::after { content: "−"; margin-top: -1px; font-size: 11px; }
@@ -228,7 +267,7 @@
 .kt-hint { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-glass-fill-strong)); color: hsl(var(--lq-material-muted, var(--ls-control-muted))); font-size: 12px; pointer-events: none; }
 .kt-hint[hidden] { display: none; }
 @media (pointer: coarse), (max-width: 760px) { .kt-hint { display: none; } .kt-fold::before { inset: -12px; } }
-@media (prefers-reduced-motion: reduce) { .kt-fold, .kt-node.is-folded { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .kt-fold, .kt-node.is-folded, .kt-node.is-leaving { transition: none; } }
 :where([data-lq-motion="off"]) :is(.kt-fold, .kt-node.is-folded) { transition: none; }
 @media (forced-colors: active) { .kt-fold { border-color: CanvasText; background: Canvas; color: CanvasText; } }
 
@@ -266,4 +305,13 @@ a.ktm-doc:hover { text-decoration: underline; }
 /* Large trees: isolate node layout/paint work from the rest of the dialog. */
 .kt-canvas { contain: layout style; }
 .kt-node { contain: layout style; }
-.kt-edges { contain: strict; }
+
+/* ---------- editing (round 4): side actions, edit form, weight status ---------- */
+.kt-side__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.kt-side__weight { display: grid; gap: 8px; }
+.kt-side__weight .lq-field { max-width: 160px; }
+.kt-weight-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.kt-progress__meta .kt-weight-status { display: inline-flex; }
+.kt-edit { display: grid; gap: 12px; }
+.kt-edit__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kt-edit__actions .kt-side__hint { flex: 1 1 auto; }

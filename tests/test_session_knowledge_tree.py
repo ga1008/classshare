@@ -2,11 +2,13 @@ import json
 import sqlite3
 import unittest
 from datetime import datetime, timedelta
+from unittest import mock
 
 from fastapi import HTTPException
 
 from classroom_app.db import schema_session_knowledge_trees as schema
 from classroom_app.services import session_knowledge_tree_generation_service as gen
+from classroom_app.services import session_knowledge_tree_edit_service as kte
 from classroom_app.services import session_knowledge_tree_service as kt
 
 
@@ -195,6 +197,192 @@ class PersistenceTests(unittest.TestCase):
         items = [{"id": 1}]
         kt.attach_session_knowledge_progress(conn, 3, items)  # table missing: no exception
         self.assertIsNone(items[0]["knowledge_progress"])
+
+
+def _leaves(tree):
+    return {leaf["label"]: leaf for leaf in kt.iter_leaves(tree["nodes"])}
+
+
+def _total(tree):
+    return sum(leaf["weight"] for leaf in kt.iter_leaves(tree["nodes"]))
+
+
+class EditOperationTests(unittest.TestCase):
+    def setUp(self):
+        self.tree = kt.normalize_tree(SAMPLE)
+        self.by_label = {node["label"]: node for node in kt.iter_nodes(self.tree["nodes"])}
+
+    def test_progress_uses_actual_weight_total(self):
+        leaves = list(kt.iter_leaves(self.tree["nodes"]))
+        for leaf in leaves:
+            leaf["weight"] = 10  # total 50
+        state = kt.compute_progress(self.tree, [leaves[0]["id"]])
+        self.assertEqual((state["progress"], state["weight_total"]), (20, 50))
+        for leaf in leaves:
+            leaf["weight"] = 0
+        self.assertEqual(kt.compute_progress(self.tree, [leaves[0]["id"]])["progress"], 20)  # by count
+
+    def test_add_under_leaf_inherits_weight_and_completion(self):
+        unit = self.by_label["窗口大小"]  # level-2 unit
+        tree, done, extra = kte.add_node(self.tree, [unit["id"]], parent_id=unit["id"], label="rwnd 通告")
+        child = _leaves(tree)["rwnd 通告"]
+        self.assertEqual(child["id"], extra["created_id"])
+        self.assertEqual(child["weight"], unit["weight"])
+        self.assertEqual(done, [child["id"]])
+        self.assertNotIn("窗口大小", _leaves(tree))
+        self.assertEqual(_total(tree), 100)
+        self.assertEqual(_total(self.tree), 100)  # input untouched
+
+    def test_add_under_branch_fills_gap_then_uses_average(self):
+        branch = self.by_label["确认与重传"]
+        tree, _done, _ = kte.add_node(self.tree, [], parent_id=branch["id"], label="快速重传", index=0)
+        self.assertEqual(kte._locate(tree, branch["id"])["node"]["children"][0]["label"], "快速重传")
+        self.assertGreater(_total(tree), 100)  # editor then offers normalization
+        unit = _leaves(self.tree)["窗口滑动"]
+        short, _done, _ = kte.update_node(self.tree, [], node_id=unit["id"], changes={"weight": 0})
+        gap = 100 - _total(short)
+        filled, _done, _ = kte.add_node(short, [], parent_id=branch["id"])
+        self.assertEqual(_leaves(filled)[kte.DEFAULT_LABEL]["weight"], gap)
+        self.assertEqual(_total(filled), 100)
+
+    def test_add_respects_depth_and_capacity(self):
+        unit = self.by_label["ACK 语义"]  # level 3
+        with self.assertRaises(HTTPException):
+            kte.add_node(self.tree, [], parent_id=unit["id"])
+        tree = self.tree
+        for _ in range(kte.MANUAL_MAX_TOP - len(tree["nodes"])):
+            tree, _done, _ = kte.add_node(tree, [], parent_id="")
+        with self.assertRaises(HTTPException):
+            kte.add_node(tree, [], parent_id="")
+        with self.assertRaises(HTTPException):
+            kte.add_node(self.tree, [], parent_id="missing")
+
+    def test_update_fields_and_weight_rules(self):
+        unit = self.by_label["ACK 语义"]
+        tree, _done, _ = kte.update_node(self.tree, [], node_id=unit["id"], changes={
+            "label": "  ACK  语义 ", "detail": "", "example": "示例", "weight": 30})
+        node = kte._locate(tree, unit["id"])["node"]
+        self.assertEqual((node["label"], node["example"], node["weight"]), ("ACK 语义", "示例", 30))
+        self.assertNotIn("detail", node)
+        with self.assertRaises(HTTPException):
+            kte.update_node(self.tree, [], node_id=self.by_label["滑动窗口"]["id"], changes={"weight": 5})
+        with self.assertRaises(HTTPException):
+            kte.update_node(self.tree, [], node_id=unit["id"], changes={"label": "   "})
+        with self.assertRaises(HTTPException):
+            kte.update_node(self.tree, [], node_id=unit["id"], changes={"weight": 101})
+
+    def test_delete_leaf_and_branch(self):
+        ack, retry = self.by_label["ACK 语义"], self.by_label["超时重传"]
+        tree, done, extra = kte.delete_node(self.tree, [ack["id"], retry["id"]], node_id=ack["id"])
+        self.assertEqual(done, [retry["id"]])
+        self.assertEqual(extra["removed"], [ack["id"]])
+        self.assertEqual(_total(tree), 100 - ack["weight"])
+        branch = self.by_label["确认与重传"]
+        tree, done, extra = kte.delete_node(self.tree, [ack["id"]], node_id=branch["id"])
+        self.assertEqual(set(extra["removed"]), {branch["id"], ack["id"], retry["id"]})
+        self.assertEqual(done, [])
+
+    def test_deleting_last_child_turns_parent_into_unit(self):
+        seq_branch, unit = self.by_label["序号机制"], self.by_label["字节序号"]
+        tree, done, _ = kte.delete_node(self.tree, [unit["id"]], node_id=unit["id"])
+        parent = kte._locate(tree, seq_branch["id"])["node"]
+        self.assertNotIn("children", parent)
+        self.assertEqual(parent["weight"], unit["weight"])
+        self.assertEqual(done, [seq_branch["id"]])
+        self.assertEqual(_total(tree), 100)
+        self.assertEqual(kt.compute_progress(tree, done)["leaf_count"], 5)
+
+    def test_last_major_point_cannot_be_deleted(self):
+        tree, _done, _ = kte.delete_node(self.tree, [], node_id=self.tree["nodes"][1]["id"])
+        with self.assertRaises(HTTPException):
+            kte.delete_node(tree, [], node_id=tree["nodes"][0]["id"])
+
+    def test_move_between_parents_keeps_level(self):
+        ack, window = self.by_label["ACK 语义"], self.by_label["窗口大小"]
+        seq_branch = self.by_label["序号机制"]
+        tree, done, _ = kte.move_node(self.tree, [ack["id"]], node_id=ack["id"], parent_id=seq_branch["id"], index=0)
+        self.assertEqual(kte._locate(tree, seq_branch["id"])["node"]["children"][0]["id"], ack["id"])
+        self.assertEqual(done, [ack["id"]])
+        self.assertEqual(_total(tree), 100)
+        with self.assertRaises(HTTPException):  # a level-1 parent cannot take a level-3 unit
+            kte.move_node(self.tree, [], node_id=ack["id"], parent_id=self.tree["nodes"][1]["id"], index=0)
+        with self.assertRaises(HTTPException):  # into a unit
+            kte.move_node(self.tree, [], node_id=ack["id"], parent_id=window["id"], index=0)
+        with self.assertRaises(HTTPException):  # into own subtree
+            kte.move_node(self.tree, [], node_id=self.tree["nodes"][0]["id"], parent_id=seq_branch["id"], index=0)
+        top = [node["id"] for node in self.tree["nodes"]]
+        swapped, _done, _ = kte.move_node(self.tree, [], node_id=top[1], parent_id="", index=0)
+        self.assertEqual([node["id"] for node in swapped["nodes"]], list(reversed(top)))
+
+    def test_moving_last_child_out_leaves_zero_weight_unit(self):
+        unit, target = self.by_label["字节序号"], self.by_label["确认与重传"]
+        tree, _done, _ = kte.move_node(self.tree, [], node_id=unit["id"], parent_id=target["id"], index=5)
+        old_parent = kte._locate(tree, self.by_label["序号机制"]["id"])["node"]
+        self.assertEqual(old_parent.get("weight"), 0)
+        self.assertEqual(kte._locate(tree, target["id"])["node"]["children"][-1]["id"], unit["id"])
+
+    def test_root_edits_title_and_summary_and_takes_majors(self):
+        tree, _done, _ = kte.update_node(self.tree, [], node_id=kte.ROOT_ID, changes={"label": "新主题", "detail": "新概述"})
+        self.assertEqual((tree["title"], tree["summary"]), ("新主题", "新概述"))
+        with self.assertRaises(HTTPException):
+            kte.update_node(self.tree, [], node_id=kte.ROOT_ID, changes={"weight": 5})
+        tree, _done, extra = kte.add_node(self.tree, [], parent_id=kte.ROOT_ID, label="新大点")
+        major = tree["nodes"][-1]
+        self.assertEqual((major["id"], major["label"]), (extra["created_id"], "新大点"))
+        self.assertNotIn(major["tone"], {node["tone"] for node in tree["nodes"][:-1]})
+
+    def test_tones_pinned_before_reorder(self):
+        top = [node["id"] for node in self.tree["nodes"]]
+        swapped, _done, _ = kte.move_node(self.tree, [], node_id=top[1], parent_id="", index=0)
+        self.assertEqual([node["tone"] for node in swapped["nodes"]], [1, 0])
+
+    def test_normalize_keeps_zero_units_and_leaf_cap(self):
+        unit = self.by_label["窗口滑动"]
+        tree, _done, _ = kte.update_node(self.tree, [], node_id=unit["id"], changes={"weight": 0})
+        tree, _done, _ = kte.normalize_weights(tree, [])
+        self.assertEqual(_leaves(tree)["窗口滑动"]["weight"], 0)
+        self.assertEqual(_total(tree), 100)
+        with mock.patch.object(kte, "MANUAL_MAX_LEAVES", 5):  # SAMPLE has 5 units
+            with self.assertRaises(HTTPException):
+                kte.add_node(self.tree, [], parent_id=self.by_label["确认与重传"]["id"])
+            # Subdividing a unit does not add a unit, so it stays allowed at the cap.
+            kte.add_node(self.tree, [], parent_id=self.by_label["窗口大小"]["id"])
+
+    def test_normalize_weights(self):
+        unit = self.by_label["ACK 语义"]
+        tree, _done, _ = kte.update_node(self.tree, [], node_id=unit["id"], changes={"weight": 60})
+        self.assertNotEqual(_total(tree), 100)
+        tree, _done, _ = kte.normalize_weights(tree, [])
+        self.assertEqual(_total(tree), 100)
+        self.assertTrue(all(leaf["weight"] >= 1 for leaf in kt.iter_leaves(tree["nodes"])))
+
+
+class EditPersistenceTests(unittest.TestCase):
+    def test_edit_tree_persists_progress_and_locks_while_generating(self):
+        conn = _conn()
+        row, tree = _ready_row(conn)
+        unit = next(iter(kt.iter_leaves(tree["nodes"])))
+        kt.set_leaf_done(conn, 7, unit["id"], True)
+        updated, extra = kte.edit_tree(conn, 7, lambda t, d: kte.update_node(t, d, node_id=unit["id"], changes={"weight": 50}))
+        self.assertEqual(extra, {})
+        stored = json.loads(updated["tree_json"])
+        total = sum(leaf["weight"] for leaf in kt.iter_leaves(stored["nodes"]))
+        self.assertEqual(updated["progress_percent"], int(50 * 100 / total + 0.5))
+        self.assertTrue(stored.get("edited_at"))
+        self.assertGreater(int(updated["version"]), int(row["version"]))
+        updated, _ = kte.edit_tree(conn, 7, lambda t, d: kte.delete_node(t, d, node_id=unit["id"]))
+        self.assertEqual(json.loads(updated["completed_json"]), [])
+        kt.start_generation(conn, updated)
+        with self.assertRaises(HTTPException) as ctx:
+            kte.edit_tree(conn, 7, kte.normalize_weights)
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_edit_without_tree_is_404(self):
+        conn = _conn()
+        kt.ensure_row(conn, class_offering_id=3, session_id=11, teacher_id=1)
+        with self.assertRaises(HTTPException) as ctx:
+            kte.edit_tree(conn, 11, kte.normalize_weights)
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 class PromptQualityTests(unittest.TestCase):

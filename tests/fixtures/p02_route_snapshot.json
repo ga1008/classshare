@@ -2361,11 +2361,51 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_add_knowledge_node",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "api_delete_knowledge_node",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_update_knowledge_node",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes/{node_id}/move",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_move_knowledge_node",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/order",
     "methods": [
       "PUT"
     ],
     "name": "api_order_knowledge_tree",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/weights/normalize",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_normalize_knowledge_weights",
     "include_in_schema": true
   },
   {
