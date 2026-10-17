@@ -11,6 +11,7 @@ import { createDomainButton, adoptDomainContentSlot, adoptDomainControl } from '
 import { enhanceDropdowns } from './lq/dropdown.js';
 
 const PREFS_KEY = 'lanshare:knowledge-tree:prefs';
+const FOLDS_KEY = 'lanshare:knowledge-tree:folds:';
 export const KNOWLEDGE_TREE_THEMES = Object.freeze([
     { key: 'glass', label: '玻璃' },
     { key: 'ink', label: '墨线' },
@@ -92,15 +93,23 @@ export function shareOf(index, info, done) {
  * Tidy-tree layout along a main (depth) and cross (sibling) axis.
  * sizes: Map(id -> {w, h}); returns boxes Map(id -> {x, y, w, h}) and canvas size.
  */
-export function layoutTree(index, sizes, direction) {
+export function layoutTree(index, sizes, direction, collapsed = new Set()) {
     const lr = direction !== 'bt';
     const cross = id => (lr ? sizes.get(id).h : sizes.get(id).w);
     const mainSize = id => (lr ? sizes.get(id).w : sizes.get(id).h);
+    const kidsOf = info => (collapsed.has(info.node.id) ? [] : info.children.map(child => index.map.get(child.id)));
+    const rootInfo = index.map.get('__root');
+    const visible = new Set();
+    const collect = info => { visible.add(info.node.id); kidsOf(info).forEach(collect); };
+    collect(rootInfo);
     const depthMain = [];
-    for (const [id, info] of index.map) depthMain[info.level] = Math.max(depthMain[info.level] || 0, mainSize(id));
+    for (const id of visible) {
+        const level = index.map.get(id).level;
+        depthMain[level] = Math.max(depthMain[level] || 0, mainSize(id));
+    }
     const span = new Map();
     const measure = info => {
-        const kids = info.children.map(child => index.map.get(child.id));
+        const kids = kidsOf(info);
         const own = cross(info.node.id);
         if (!kids.length) { span.set(info.node.id, own); return own; }
         const gap = GAP_CROSS[info.level + 1] || 8;
@@ -108,11 +117,10 @@ export function layoutTree(index, sizes, direction) {
         span.set(info.node.id, Math.max(own, total));
         return span.get(info.node.id);
     };
-    const rootInfo = index.map.get('__root');
     const totalCross = measure(rootInfo);
     const centers = new Map();
     const place = (info, start) => {
-        const kids = info.children.map(child => index.map.get(child.id));
+        const kids = kidsOf(info);
         const own = span.get(info.node.id);
         if (!kids.length) { centers.set(info.node.id, start + own / 2); return; }
         const gap = GAP_CROSS[info.level + 1] || 8;
@@ -126,7 +134,8 @@ export function layoutTree(index, sizes, direction) {
     depthMain.reduce((acc, size, level) => { offsets[level] = acc; return acc + size + GAP_MAIN; }, 0);
     const totalMain = offsets[depthMain.length - 1] + depthMain[depthMain.length - 1];
     const boxes = new Map();
-    for (const [id, info] of index.map) {
+    for (const id of visible) {
+        const info = index.map.get(id);
         const { w, h } = sizes.get(id);
         const c = centers.get(id);
         if (lr) {
@@ -137,7 +146,26 @@ export function layoutTree(index, sizes, direction) {
             boxes.set(id, { x: PAD + c - w / 2, y: PAD + rowBottom - rowSize + (rowSize - h) / 2, w, h });
         }
     }
-    return { boxes, width: (lr ? totalMain : totalCross) + PAD * 2, height: (lr ? totalCross : totalMain) + PAD * 2 };
+    // Folded descendants rest on their nearest visible ancestor's fold dot, so
+    // folding and unfolding animate into and out of that dot.
+    for (const [id, info] of index.map) {
+        if (visible.has(id)) continue;
+        let anchor = info.parent;
+        while (anchor && !visible.has(anchor.node.id)) anchor = anchor.parent;
+        const point = foldPoint(boxes.get(anchor.node.id), direction);
+        const { w, h } = sizes.get(id);
+        boxes.set(id, { x: point.x - w / 2, y: point.y - h / 2, w, h });
+    }
+    return { boxes, visible, width: (lr ? totalMain : totalCross) + PAD * 2, height: (lr ? totalCross : totalMain) + PAD * 2 };
+}
+
+/** Point where a node's outgoing edges start (its fold dot). */
+export function foldPoint(box, direction) {
+    return direction === 'bt' ? { x: box.x + box.w / 2, y: box.y } : { x: box.x + box.w, y: box.y + box.h / 2 };
+}
+
+export function descendantCount(info, index) {
+    return info.children.reduce((sum, child) => sum + 1 + descendantCount(index.map.get(child.id), index), 0);
 }
 
 export function edgePath(parent, child, direction) {
@@ -189,6 +217,18 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     let layout = null;
     let zoom = 1;
     const nodeEls = new Map();
+    const foldEls = new Map();
+    const foldsKey = `${FOLDS_KEY}${sessionId}`;
+    let collapsed = new Set();
+    try { collapsed = new Set(JSON.parse(window.localStorage.getItem(foldsKey) || '[]')); } catch { collapsed = new Set(); }
+    // Re-measure whenever a node's rendered size changes (fonts, theme, browser
+    // zoom), so the layout never keeps stale boxes and labels cannot overlap.
+    let measureFrame = 0;
+    const nodeResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+        if (!layout || hold?.dragging) return;
+        window.cancelAnimationFrame(measureFrame);
+        measureFrame = window.requestAnimationFrame(() => { if (!closed && layout && !viewport.hidden) { sizes = null; applyLayout(); } });
+    }) : null;
 
     // ---- static structure -------------------------------------------------
     const shell = el('div', 'kt-shell');
@@ -235,7 +275,14 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         createDomainButton({ label: '放大', variant: 'ghost', attrs: { 'data-kt-zoom': 'in' } }),
         createDomainButton({ label: '适应', variant: 'ghost', attrs: { 'data-kt-zoom': 'fit' } }),
     );
-    controls.append(zoomGroup, directionGroup, themeSelect);
+    const foldGroup = el('div', 'kt-zoom');
+    foldGroup.setAttribute('role', 'group');
+    foldGroup.setAttribute('aria-label', '展开与收起');
+    foldGroup.append(
+        createDomainButton({ label: '全部展开', variant: 'ghost', attrs: { 'data-kt-fold-all': 'open' } }),
+        createDomainButton({ label: '只看大知识点', variant: 'ghost', attrs: { 'data-kt-fold-all': 'major' } }),
+    );
+    controls.append(zoomGroup, foldGroup, directionGroup, themeSelect);
     if (canEdit) controls.append(completeAllBtn, clearAllBtn);
     toolbar.append(progressBox, controls);
 
@@ -243,7 +290,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     const main = el('div', 'kt-main');
     const viewport = el('div', 'kt-viewport');
     viewport.tabIndex = 0;
-    viewport.setAttribute('aria-label', '知识树画布，可滚动浏览');
+    viewport.setAttribute('aria-label', '知识树画布：滚轮上下滚动，Ctrl+滚轮缩放，拖动空白处平移，+/− 键缩放，0 键适应');
     const canvas = el('div', 'kt-canvas');
     adoptDomainContentSlot(canvas);
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -254,7 +301,8 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     nodesLayer.setAttribute('aria-label', '本次课知识树');
     const dropMarker = el('div', 'kt-drop-marker');
     dropMarker.hidden = true;
-    canvas.append(svg, nodesLayer, dropMarker);
+    const foldLayer = el('div', 'kt-folds');
+    canvas.append(svg, nodesLayer, foldLayer, dropMarker);
     const sizer = el('div', 'kt-sizer');
     sizer.append(canvas);
     viewport.append(sizer);
@@ -262,7 +310,9 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     const side = el('aside', 'kt-side');
     side.hidden = true;
     side.setAttribute('aria-label', '知识点详情');
-    main.append(viewport, empty, side);
+    const hint = el('div', 'kt-hint', 'Ctrl+滚轮缩放 · 拖动空白处平移 · 点圆点展开/收起 · 双击空白处适应');
+    hint.setAttribute('aria-hidden', 'true');
+    main.append(viewport, empty, side, hint);
     shell.append(toolbar, notice, main);
 
     const root = createDialog({ title: '知识树', body: shell, size: 'full', closeLabel: '关闭知识树' });
@@ -324,6 +374,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         const showEmpty = !data?.has_tree;
         empty.hidden = !showEmpty;
         viewport.hidden = showEmpty;
+        hint.hidden = showEmpty;
         if (!showEmpty) return;
         const add = (title, text) => empty.append(el('strong', '', title), el('p', '', text));
         if (!data) add('正在读取', '请稍候。');
@@ -338,8 +389,11 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
 
     // ---- canvas -----------------------------------------------------------
     function buildNodes() {
+        nodeResizeObserver?.disconnect();
         nodeEls.clear();
+        foldEls.clear();
         nodesLayer.replaceChildren();
+        foldLayer.replaceChildren();
         layout = null;
         sizes = null;
         if (!index) return;
@@ -366,7 +420,70 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             }
             nodesLayer.append(node);
             nodeEls.set(id, node);
+            nodeResizeObserver?.observe(node);
+            if (info.children.length) {
+                const fold = el('button', 'kt-fold');
+                fold.type = 'button';
+                fold.dataset.foldId = id;
+                fold.dataset.branch = node.dataset.branch;
+                foldLayer.append(fold);
+                foldEls.set(id, fold);
+            }
         }
+        // Forget folds of nodes that no longer exist (e.g. after regeneration).
+        const pruned = new Set([...collapsed].filter(id => index.map.get(id)?.children.length));
+        if (pruned.size !== collapsed.size) { collapsed = pruned; saveFolds(); }
+    }
+
+    function saveFolds() {
+        try { window.localStorage.setItem(foldsKey, JSON.stringify([...collapsed])); } catch { /* storage unavailable */ }
+    }
+
+    function paintFolds() {
+        for (const [id, fold] of foldEls) {
+            const info = index.map.get(id);
+            const folded = collapsed.has(id);
+            const hidden = layout ? !layout.visible.has(id) : false;
+            fold.setAttribute('aria-expanded', folded ? 'false' : 'true');
+            fold.textContent = folded ? `+${descendantCount(info, index)}` : '';
+            fold.setAttribute('aria-label', `${folded ? '展开' : '收起'}「${info.node.label}」的下级知识点`);
+            fold.title = folded ? '展开下级知识点' : '收起下级知识点';
+            fold.classList.toggle('is-folded', hidden);
+            fold.tabIndex = hidden ? -1 : 0;
+            if (layout) {
+                const point = foldPoint(layout.boxes.get(id), prefs.direction);
+                fold.style.setProperty('--kt-pos', `${Math.round(point.x)}px, ${Math.round(point.y)}px`);
+            }
+        }
+    }
+
+    /** Fold or unfold while keeping ``anchorId`` at the same place on screen. */
+    function setFolds(next, anchorId = '__root') {
+        const before = layout?.boxes.get(anchorId);
+        const screen = before && { x: canvas.offsetLeft + before.x * zoom - viewport.scrollLeft, y: canvas.offsetTop + before.y * zoom - viewport.scrollTop };
+        collapsed = next;
+        saveFolds();
+        applyLayout();
+        const after = layout?.boxes.get(anchorId);
+        if (screen && after) {
+            viewport.scrollLeft = canvas.offsetLeft + after.x * zoom - screen.x;
+            viewport.scrollTop = canvas.offsetTop + after.y * zoom - screen.y;
+        }
+        if (selectedId && layout && !layout.visible.has(selectedId)) select('');
+    }
+
+    function toggleFold(id) {
+        const next = new Set(collapsed);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        setFolds(next, id);
+    }
+
+    /** Unfold every ancestor so ``id`` is on screen. */
+    function expandTo(id) {
+        let info = index?.map.get(id)?.parent;
+        const next = new Set(collapsed);
+        while (info) { next.delete(info.node.id); info = info.parent; }
+        if (next.size !== collapsed.size) setFolds(next, id);
     }
 
     function paintState() {
@@ -379,6 +496,11 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             const complete = share.total > 0 && share.done >= share.total;
             node.dataset.done = complete ? 'true' : 'false';
             node.dataset.selected = id === selectedId ? 'true' : 'false';
+            const hidden = layout ? !layout.visible.has(id) : false;
+            node.classList.toggle('is-folded', hidden);
+            node.tabIndex = hidden ? -1 : 0;
+            if (hidden) node.setAttribute('aria-hidden', 'true'); else node.removeAttribute('aria-hidden');
+            if (info.children.length) node.setAttribute('aria-expanded', collapsed.has(id) ? 'false' : 'true');
             if (info.isLeaf) {
                 node.setAttribute('aria-pressed', complete ? 'true' : 'false');
                 node.setAttribute('aria-label', `${info.node.label}，比重 ${Number(info.node.weight) || 0}%，${complete ? '已完成' : '未完成'}${canEdit ? '，单击切换完成状态' : ''}`);
@@ -388,6 +510,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
                 node.setAttribute('aria-label', `${info.node.label}${info.level ? `，已完成 ${pct}%` : ''}，查看详情`);
             }
         }
+        paintFolds();
         drawEdges();
     }
 
@@ -397,10 +520,14 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         return Math.max(ZOOM_FIT_MIN, Math.min(1, scale));
     }
 
-    function setZoom(value, { keepCenter = true } = {}) {
-        const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(value * 100) / 100));
-        const cx = (viewport.scrollLeft + viewport.clientWidth / 2 - canvas.offsetLeft) / zoom;
-        const cy = (viewport.scrollTop + viewport.clientHeight / 2 - canvas.offsetTop) / zoom;
+    // ``anchor`` is a viewport point (e.g. the cursor) that stays over the same
+    // canvas spot; omitted, the viewport centre stays put.
+    function setZoom(value, { keepCenter = true, anchor = null } = {}) {
+        const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(value * 1000) / 1000));
+        const ax = anchor ? anchor.x : viewport.clientWidth / 2;
+        const ay = anchor ? anchor.y : viewport.clientHeight / 2;
+        const cx = (viewport.scrollLeft + ax - canvas.offsetLeft) / zoom;
+        const cy = (viewport.scrollTop + ay - canvas.offsetTop) / zoom;
         zoom = next;
         canvas.style.setProperty('--kt-zoom', String(zoom));
         if (layout) {
@@ -416,7 +543,10 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             sizer.style.height = `${Math.ceil(height + offsetY)}px`;
         }
         zoomValue.textContent = `${Math.round(zoom * 100)}%`;
-        if (keepCenter) viewport.scrollTo({ left: Math.max(0, canvas.offsetLeft + cx * zoom - viewport.clientWidth / 2), top: Math.max(0, canvas.offsetTop + cy * zoom - viewport.clientHeight / 2) });
+        if (keepCenter) {
+            viewport.scrollLeft = Math.max(0, canvas.offsetLeft + cx * zoom - ax);
+            viewport.scrollTop = Math.max(0, canvas.offsetTop + cy * zoom - ay);
+        }
     }
 
     function applyLayout({ center = false, fit = false } = {}) {
@@ -425,7 +555,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             sizes = new Map();
             for (const [id, node] of nodeEls) sizes.set(id, { w: node.offsetWidth, h: node.offsetHeight });
         }
-        layout = layoutTree(index, sizes, prefs.direction);
+        layout = layoutTree(index, sizes, prefs.direction, collapsed);
         canvas.style.width = `${layout.width}px`;
         canvas.style.height = `${layout.height}px`;
         setZoom(fit ? fitZoom() : zoom, { keepCenter: false });
@@ -436,7 +566,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             const node = nodeEls.get(id);
             if (node) node.style.setProperty('--kt-pos', `${Math.round(box.x)}px, ${Math.round(box.y)}px`);
         }
-        drawEdges();
+        paintState();
         if (center) centerOn('__root');
     }
 
@@ -445,7 +575,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         const done = doneSet();
         const parts = [];
         for (const [id, info] of index.map) {
-            if (!info.parent) continue;
+            if (!info.parent || !layout.visible.has(id)) continue;
             const parentBox = layout.boxes.get(info.parent.node.id);
             const childBox = layout.boxes.get(id);
             if (!parentBox || !childBox) continue;
@@ -549,6 +679,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     }
 
     function select(id, { reveal = false } = {}) {
+        if (id && reveal) expandTo(id);
         selectedId = id;
         paintState();
         renderSide();
@@ -808,7 +939,10 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         const siblings = info.parent ? info.parent.children : [];
         const position = siblings.findIndex(item => item.id === info.node.id);
         if (event.key === keys.parent) go(info.parent);
-        else if (event.key === keys.child) go(info.children[0] ? index.map.get(info.children[0].id) : null);
+        else if (event.key === keys.child) {
+            if (collapsed.has(info.node.id)) { event.preventDefault(); toggleFold(info.node.id); }
+            else go(info.children[0] ? index.map.get(info.children[0].id) : null);
+        }
         else if (event.key === keys.prev && position > 0) go(index.map.get(siblings[position - 1].id));
         else if (event.key === keys.next && position >= 0 && position < siblings.length - 1) go(index.map.get(siblings[position + 1].id));
     });
@@ -827,6 +961,11 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             const mode = target.dataset.ktZoom;
             if (mode === 'fit') { setZoom(fitZoom(), { keepCenter: false }); centerOn('__root'); }
             else setZoom(zoom * (mode === 'in' ? 1.2 : 1 / 1.2));
+        } else if (target.matches('[data-kt-fold-all]')) {
+            if (!index) return;
+            setFolds(target.dataset.ktFoldAll === 'open' ? new Set()
+                : new Set([...index.map.values()].filter(info => info.level === 1 && info.children.length).map(info => info.node.id)));
+            centerOn('__root');
         } else if (target.matches('[data-kt-bulk]')) void bulk(target.dataset.ktBulk === 'done');
         else if (target.matches('[data-kt-generate]')) void generate();
         else if (target.matches('[data-kt-side-close]')) { const previous = selectedId; select(''); nodeEls.get(previous)?.focus(); }
@@ -835,11 +974,58 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         else if (target.matches('[data-kt-move]')) moveSelected(Number(target.dataset.ktMove));
     });
     generateBtn.addEventListener('click', () => void generate());
+    foldLayer.addEventListener('click', event => {
+        const fold = event.target.closest('.kt-fold');
+        if (fold) toggleFold(fold.dataset.foldId);
+    });
+    // Plain wheel scrolls natively; Ctrl+wheel (and trackpad pinch) zooms around the cursor.
     viewport.addEventListener('wheel', event => {
         if (!event.ctrlKey || !layout) return;
         event.preventDefault();
-        setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+        const rect = viewport.getBoundingClientRect();
+        const delta = Math.max(-120, Math.min(120, event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY));
+        setZoom(zoom * Math.exp(-delta * 0.0018), { anchor: { x: event.clientX - rect.left, y: event.clientY - rect.top } });
     }, { passive: false });
+    viewport.addEventListener('keydown', event => {
+        if (event.target !== viewport || !layout || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.key === '+' || event.key === '=') { event.preventDefault(); setZoom(zoom * 1.2); }
+        else if (event.key === '-' || event.key === '_') { event.preventDefault(); setZoom(zoom / 1.2); }
+        else if (event.key === '0') { event.preventDefault(); setZoom(fitZoom(), { keepCenter: false }); centerOn('__root'); }
+    });
+    viewport.addEventListener('dblclick', event => {
+        if (!layout || event.target.closest('.kt-node, .kt-fold')) return;
+        setZoom(fitZoom(), { keepCenter: false });
+        centerOn('__root');
+    });
+
+    // Press on empty canvas and drag to pan (mouse/pen; touch already pans natively).
+    let pan = null;
+    viewport.addEventListener('pointerdown', event => {
+        if (!layout || event.pointerType === 'touch' || ![0, 1].includes(event.button)) return;
+        if (event.target.closest('.kt-node, .kt-fold')) return;
+        // Leave the native scrollbars alone.
+        const rect = viewport.getBoundingClientRect();
+        if (event.clientX - rect.left >= viewport.clientWidth || event.clientY - rect.top >= viewport.clientHeight) return;
+        event.preventDefault();
+        viewport.focus({ preventScroll: true });
+        pan = { id: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+        viewport.classList.add('is-panning');
+        try { viewport.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
+    });
+    viewport.addEventListener('pointermove', event => {
+        if (!pan || event.pointerId !== pan.id) return;
+        viewport.scrollLeft = pan.left - (event.clientX - pan.x);
+        viewport.scrollTop = pan.top - (event.clientY - pan.y);
+    });
+    const endPan = event => {
+        if (!pan || event.pointerId !== pan.id) return;
+        try { viewport.releasePointerCapture(pan.id); } catch { /* already released */ }
+        pan = null;
+        viewport.classList.remove('is-panning');
+    };
+    viewport.addEventListener('pointerup', endPan);
+    viewport.addEventListener('pointercancel', endPan);
+    viewport.addEventListener('lostpointercapture', endPan);
     themeSelect.addEventListener('change', () => {
         prefs.theme = themeSelect.value;
         writePrefs(prefs);
@@ -870,7 +1056,9 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         if (closed) return;
         closed = true;
         resizeObserver?.disconnect();
+        nodeResizeObserver?.disconnect();
         window.cancelAnimationFrame(resizeFrame);
+        window.cancelAnimationFrame(measureFrame);
         window.clearTimeout(pollTimer);
         clearHold();
         dropdowns.forEach(binding => binding.destroy?.());

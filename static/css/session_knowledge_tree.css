@@ -198,3 +198,36 @@
 .teaching-timeline-segment:is(.is-selected, [aria-pressed="true"]) .cw-kp__ring { background: conic-gradient(currentColor var(--kp, 0%), color-mix(in srgb, currentColor 32%, transparent) 0); }
 .teaching-timeline-segment:is(.is-selected, [aria-pressed="true"]) .cw-kp[data-state="completed"] .cw-kp__ring { background: color-mix(in srgb, currentColor 30%, transparent); }
 .teaching-timeline-segment:is(.is-selected, [aria-pressed="true"]) .cw-kp[data-state="completed"] .cw-kp__ring::after { border-color: currentColor; }
+
+/* ---------- pan, fold dots, hint (2026-10-17 round 2) ---------- */
+.kt-viewport { cursor: grab; }
+.kt-viewport.is-panning { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.kt-viewport.is-panning .kt-node { cursor: grabbing; }
+.kt-node.is-folded { opacity: 0; visibility: hidden; pointer-events: none; transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out)), opacity 160ms ease, visibility 0s linear 220ms; }
+.kt-folds { position: absolute; inset: 0; pointer-events: none; }
+.kt-fold {
+    position: absolute; top: 0; left: 0; z-index: 1;
+    display: grid; place-items: center;
+    min-width: 12px; height: 12px; margin: 0; padding: 0;
+    border: 2px solid hsl(var(--kt-branch)); border-radius: 999px;
+    background: var(--kt-fold-bg, hsl(var(--ls-surface-1)));
+    color: hsl(var(--kt-branch)); font: 600 10px/1 var(--ls-font-sans); font-variant-numeric: tabular-nums;
+    cursor: pointer; pointer-events: auto;
+    transform: translate(var(--kt-pos, 0px, 0px)) translate(-50%, -50%);
+    transition: transform var(--lq-motion-presence-duration, 220ms) var(--lq-motion-spring, var(--ls-ease-out)), opacity 160ms ease;
+}
+.kt-fold::before { content: ""; position: absolute; inset: -8px; border-radius: 999px; }
+.kt-fold[aria-expanded="true"]:hover::after, .kt-fold[aria-expanded="true"]:focus-visible::after { content: "−"; margin-top: -1px; font-size: 11px; }
+.kt-fold[aria-expanded="true"]:hover, .kt-fold[aria-expanded="true"]:focus-visible { min-width: 16px; height: 16px; }
+.kt-fold[aria-expanded="false"] { min-width: 24px; height: 18px; padding: 0 6px; background: hsl(var(--kt-branch)); color: var(--kt-fold-ink, #fff); }
+.kt-fold:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
+.kt-fold.is-folded { opacity: 0; visibility: hidden; pointer-events: none; }
+.kt-shell[data-kt-theme="blueprint"] { --kt-fold-bg: #0b2340; --kt-fold-ink: #0b2340; }
+.kt-shell[data-kt-theme="paper"] { --kt-fold-bg: #fffaf2; }
+.kt-shell[data-kt-theme="ink"] { --kt-fold-ink: hsl(var(--ls-surface-1)); }
+.kt-hint { position: absolute; left: 12px; bottom: 10px; z-index: 2; padding: 4px 10px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-glass-fill-strong)); color: hsl(var(--lq-material-muted, var(--ls-control-muted))); font-size: 12px; pointer-events: none; }
+.kt-hint[hidden] { display: none; }
+@media (pointer: coarse), (max-width: 760px) { .kt-hint { display: none; } .kt-fold::before { inset: -12px; } }
+@media (prefers-reduced-motion: reduce) { .kt-fold, .kt-node.is-folded { transition: none; } }
+:where([data-lq-motion="off"]) :is(.kt-fold, .kt-node.is-folded) { transition: none; }
+@media (forced-colors: active) { .kt-fold { border-color: CanvasText; background: Canvas; color: CanvasText; } }
