@@ -2071,6 +2071,25 @@
       "tone": "dark"
     },
     {
+      "file": "xianxia-night-cloud-waterfall-20261019-a946c4b9.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "交流",
+        "演示",
+        "合作",
+        "反馈",
+        "思考"
+      ],
+      "luma": 139,
+      "tone": "dark"
+    },
+    {
       "file": "xianxia-sunny-nantianmen-day-20261011-64cca936.webp",
       "categories": [
         "人生大实话",
@@ -2396,6 +2415,24 @@
         "学业规则"
       ],
       "luma": 178,
+      "tone": "light"
+    },
+    {
+      "file": "xueye-sunny-rover-studio-20261019-7ebc02ba.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "目标",
+        "成长",
+        "坚持"
+      ],
+      "luma": 186,
       "tone": "light"
     },
     {

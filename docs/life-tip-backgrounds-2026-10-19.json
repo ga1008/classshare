@@ -1,0 +1,140 @@
+{
+  "batch_id": "2026-10-19",
+  "before": 326,
+  "after": 328,
+  "added": [
+    {
+      "file": "xueye-sunny-rover-studio-20261019-7ebc02ba.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "目标",
+        "成长",
+        "坚持"
+      ],
+      "luma": 186,
+      "tone": "light",
+      "bytes": 103104,
+      "width": 1600,
+      "height": 900,
+      "quality": 78,
+      "sha256": "7ebc02ba14e778408c33f6871368d3ba4f09a0c96d056d0f044629a180d0dd84",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-80c60269-94bb-442b-9cee-0890b6c2a0c4.png",
+      "key": "day",
+      "nearest_history": "zhichang-sunny-robotics-hall08-fe084d14.webp",
+      "frost": "static\\img\\life_tips\\frost\\xueye-sunny-rover-studio-20261019-7ebc02ba.webp",
+      "frost_sha256": "e0e674f051d36a56ef831bd2daadc383e4fbd630b7c581f8863c84fb8a5538b7"
+    },
+    {
+      "file": "xianxia-night-cloud-waterfall-20261019-a946c4b9.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "交流",
+        "演示",
+        "合作",
+        "反馈",
+        "思考"
+      ],
+      "luma": 139,
+      "tone": "dark",
+      "bytes": 118492,
+      "width": 1600,
+      "height": 900,
+      "quality": 72,
+      "sha256": "a946c4b9d721e8e69d902af51c8e6df0a00c3d306d7d096c21462990808f98bb",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-a650895a-5551-4468-be8a-00250c0b024e.png",
+      "key": "night",
+      "nearest_history": "xianxia-moon-palace-night-20261011-a294acc3.webp",
+      "frost": "static\\img\\life_tips\\frost\\xianxia-night-cloud-waterfall-20261019-a946c4b9.webp",
+      "frost_sha256": "7b9821e50464841ad977879c1c16d79363cc88481f431c11c9f1b5aaf7bc735a"
+    }
+  ],
+  "retired": [],
+  "generation_calls": 2,
+  "old_entries_and_hashes_preserved": true,
+  "status": "verified-assets-awaiting-release",
+  "prompt_evidence": {
+    "batch_id": "2026-10-19",
+    "prompts": {
+      "day": "Use case: photorealistic-natural. Original 16:9 landscape welcome-screen background for a university, also seen in a very narrow central phone crop. A sunlit university mobile-robot testing studio, photographed from a mezzanine looking obliquely downward with a natural 40mm perspective. One modest real four-wheeled autonomous rover with a small lidar puck stands on the upper central portion of a broad pale matte floor, next to a single wide sweeping charcoal test-route curve; no markings or numbers. The route bends from the lower left along the outer edge toward the rover, leaving the central middle quiet and empty. Human-scale model obstacles of simple low timber blocks sit sparsely along the far perimeter, a compact tool cart at the far right, tall translucent clerestory windows and soft green trees beyond the top edge. This is a believable student engineering practice space, not an industrial robot assembly line: no robot arms, no humanoids, no giant machinery. High oblique viewpoint reveals the floor plan and the rover's modest scale; generous negative space and one clear curved trajectory rather than an axial hallway or a desk scene. Clear morning daylight falls diagonally from the upper right, making soft geometric window shadows on warm ivory terrazzo, brushed aluminum and muted sage rover panels with realistic small rubber wheels. Restrained natural colors and bright diffuse sky bounce, no blown highlights. The central 26 percent vertical crop retains the rover in its upper third and open low-detail flooring across the middle for welcome text; route and shadow boundaries avoid the central text area. Show only the photographic scene, no text boxes or dark overlay. No people, readable labels, letters, numbers, signs, logos, watermarks, interface, screens, holograms, neon, fantasy or cartoon styling.",
+      "night": "Use case: stylized-concept. Original 16:9 landscape welcome-screen background, Eastern Chinese xianxia celestial realm with cinematic photorealistic environment design. Single wonder: one celestial waterfall descending from an elevated white-marble palace water terrace into layered clouds at clear blue night. Camera is on a separate small rocky cloud-island ledge, a slightly elevated three-quarter side view with a 70mm photographic perspective, looking across a deep open gap rather than along a bridge. The main palace terrace is high near the upper center, its dark timber roof, ordered dougong brackets and pale jade parapet visibly grounded on a massive weathered marble outcrop. One broad but soft translucent cascade spills over its lip near the upper central-right, curves gently with depth, and dissolves into cloud mist before reaching the middle text zone; no second waterfall and no visible terrestrial ground. A short crescent of natural pale stone ledge curves across the lower foreground with a small normal-size carved balustrade at its edge as a scale anchor, no path leading to the palace, no figures. Structure and water retain believable material texture and gravity. Near mist is thin, the middle cloud sea has layered slate-blue valleys and soft silver crests, and distant clouds disappear into a pale indigo horizon. Cool off-frame moonlight from high left grazes water droplets and marble, with only two tiny warm palace lanterns well above the text area. No visible moon or sun, no star field. The atmosphere is tranquil, vast and inviting, not stormy or threatening; shadows remain readable, no black voids. The central 26 percent phone crop must retain the terrace and cascade high in the frame and the quiet stone ledge below. Broad low-contrast soft clouds fill the actual center text area, without a bright waterfall stripe, roof edge or railing crossing its middle. Natural Chinese stone, dark wood, restrained old red and tiny warm bronze details, no all-gold palace. No other celestial wonders, giant bell, tree, central bridge, ice wall, opaque white pillar of water, dense fog hiding the main scene, cotton-ball clouds, melted architecture, bent columns, Western castles, glass towers, magic rings, lightning, neon, game combat effects, crowds or closeup characters. No text, inscriptions, UI, borders, watermarks or logos."
+    },
+    "designs": [
+      {
+        "key": "day",
+        "theme": "校园移动机器人试验场",
+        "time": "day",
+        "nearest_old": "zhichang-sunny-robotics-hall08-fe084d14.webp",
+        "planned_differences": [
+          "楼层高处斜俯视可移动小车和弧形地面测试路线，替代平视机械臂与台面",
+          "右上侧光、大片哑光地面和稀疏木障碍，替代玻璃幕墙与金属机械臂"
+        ],
+        "rotation": "Campus daylight; paired xianxia switches from last weekly daylight to night."
+      },
+      {
+        "key": "night",
+        "theme": "天河飞瀑",
+        "time": "night",
+        "nearest_old": "xianxia-moon-palace-night-20261011-a294acc3.webp",
+        "planned_differences": [
+          "隔云峡斜侧眺望上方瀑布宫台，替代廊柱近景与月体",
+          "自由岩台前景和半透明垂瀑，月光来自画外且无巨大天体"
+        ],
+        "rotation": "Xianxia night follows 2026-10-12 daylight bell."
+      }
+    ],
+    "history_prompt_files": [
+      ".codex-temp\\life-tip-weekly-20260914\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20260928\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261005\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261012\\image-prompts.json",
+      ".codex-temp\\xianxia-preview-20261011\\prompts.json",
+      "docs\\life-tip-backgrounds-2026-10-11.json",
+      "docs\\life-tip-backgrounds-2026-10-12.json"
+    ],
+    "unique_full_prompts_compared": 12,
+    "weekly_batches_available": [
+      "2026-09-14",
+      "2026-09-28",
+      "2026-10-05",
+      "2026-10-12"
+    ],
+    "coverage_gap": "Only four prior weekly batches have local prompt records; searched all available records and viewed all 326 gallery thumbnails, including four 2026-10-11 manual images. Older raw gallery has no full prompt archive here.",
+    "normalized_duplicate": false
+  },
+  "visual_review": {
+    "day": {
+      "actual_differences": [
+        "高处斜俯视地面小车和弧线测试区，旧图为平视机械臂大厅",
+        "大面积哑光地面与斜向柔和窗影，旧图主要是正面玻璃和远景"
+      ],
+      "crop": "390×844中心裁切保留上部小车、下方弧线和安静地面；两项差异仍可感知。"
+    },
+    "night": {
+      "actual_differences": [
+        "独立岩台隔云峡望向上部宫台飞瀑，旧图沿近处长廊望巨大月体",
+        "主要光源在画外，瀑布与云峡形成空间纵深，旧图月体与廊柱主导"
+      ],
+      "crop": "中心裁切保留上方宫台、右上瀑布和下方岩台；中央云层安静。实际有一处从属细流，不作为第二奇观，主瀑仍清晰。"
+    }
+  },
+  "review_method": "Viewed all 326 gallery thumbnails, full generated images and side-by-side nearest historical full/390x844 center crops; compared 12 unique archived full prompts across all 4 available prior weekly batches plus 4 manual previews.",
+  "generation_limit": {
+    "started": 2,
+    "completed": 2,
+    "retries": 0,
+    "external_paid_calls": 0
+  }
+}
