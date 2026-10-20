@@ -10,6 +10,14 @@ def ensure_teacher_identity_schema(conn, *, engine: str = "sqlite") -> None:
             columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "employee_number" not in columns:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN employee_number TEXT NOT NULL DEFAULT ''")
+    for name, definition in {
+        "cancelled_at": "TEXT",
+        "cancelled_by_teacher_id": "INTEGER",
+    }.items():
+        if engine == "postgres":
+            conn.execute(f"ALTER TABLE teachers ADD COLUMN IF NOT EXISTS {name} {definition}")
+        elif name not in {row[1] for row in conn.execute("PRAGMA table_info(teachers)").fetchall()}:
+            conn.execute(f"ALTER TABLE teachers ADD COLUMN {name} {definition}")
     # Empty legacy accounts stay usable by email. Occupied identities remain
     # reserved even when a membership is inactive, protecting historic links.
     conn.execute(

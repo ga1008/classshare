@@ -11,7 +11,7 @@ const pages = [
   ['textbooks', '/manage/library/textbooks', '#textbookCardGrid'],
   ['lesson-plans', '/manage/library/lesson-plans', '[data-lp-grid]'],
   ['materials', '/manage/library/materials', '[data-testid="p03-materials-list"]'],
-  ['users', '/manage/system/users', '#teacher-table-body'],
+  ['users', '/manage/system/users', '#teacher-card-grid'],
 ] as const;
 const more = (page: Page) => page.locator('#manage-pilot-topbar > [data-lq-pane-open="actions"]');
 const actions = (page: Page) => page.locator('#manage-pilot-topbar--lq-actions');
@@ -21,7 +21,7 @@ const repairedText: Record<string, (string | { selector: string; pseudo: string 
   semesters: ['.academic-context-block h4', '#semesterSummaryText', '.semester-calendar-overview-card strong', '.semester-header-cell.month', '#semesterList .academic-list-item:not(.is-active) .academic-list-main > strong', '#semesterList .academic-list-item:not(.is-active) .academic-list-main > p', '.semester-band-cell.is-gap .semester-band-cell__label', '#semesterList .academic-badge.is-success', '#semesterList .academic-badge.is-accent'],
   textbooks: ['.textbook-catalog-preview'],
   materials: ['.materials-name-copy strong', '.materials-row-time strong', '.materials-meta-item', '#materials-filters-toggle', '.materials-breadcrumb-count'],
-  users: ['.um-hero-main h3', '.um-summary-item strong', '.um-panel tbody strong', '.um-panel .um-badge.is-super'],
+  users: ['.um-overview h3', '.um-stat-strip dd', '.um-card-heading strong', '.um-card-number [data-lq-tone-level="primary"]'],
 };
 
 // Only the exact neutral surfaces repaired in this pilot; no claim that every
@@ -154,7 +154,7 @@ test.describe('S3 LQ eight explicit manage pilots', () => {
           const surfaces: Record<string, [string, string]> = {
             courses: ['.course-card-metric', '--ls-surface-2'], classes: ['.class-manage-card', '--ls-surface-1'],
             semesters: ['.semester-calendar-panel', '--ls-surface-1'], textbooks: ['.textbook-catalog-preview', '--ls-surface-2'],
-            materials: ['.materials-card', '--ls-surface-1'], users: ['.um-hero-main', '--ls-surface-1'],
+            materials: ['.materials-card', '--ls-surface-1'], users: ['.um-overview', '--lq-material-fill'],
           };
           if (surfaces[name]) {
             const [selector, token] = surfaces[name], node = page.locator(selector).first();
@@ -364,15 +364,36 @@ test.describe('S3 LQ eight explicit manage pilots', () => {
 
   test('superadmin real account edit fails without clearing draft, own delete stays disabled, other delete cancels/409', async ({ page }) => {
     const fixture = await openPilot(page, '/manage/system/users', true), id = fixture.otherTeacher.id;
-    await expect(page.locator(`[data-teacher-row][data-id="${fixture.superTeacher.id}"] [data-action="delete"]`)).toBeDisabled();
-    const row = page.locator(`[data-teacher-row][data-id="${id}"]`);
-    await row.locator('[data-action="edit"]').click();
+    await page.locator(`[data-teacher-card][data-id="${fixture.superTeacher.id}"]`).click();
+    await expect(page.locator('#teacher-edit-form [name="name"]')).toBeEnabled();
+    await expect(page.locator('[data-teacher-action="deactivate"]')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#teacher-detail-modal')).toBeHidden();
+    const card = page.locator(`[data-teacher-card][data-id="${id}"]`);
+    await card.click();
+    await expect(page.locator('#teacher-edit-form [name="name"]')).toBeEnabled();
     const input = page.locator('#edit-name'); await input.fill('S3 未保存教师资料');
-    if (!await page.locator('#edit-school-name').inputValue()) await page.locator('#edit-school-name').fill('S3合成学校');
+    await expect(page.locator('#edit-school-name')).toHaveAttribute('readonly', '');
+    await expect(page.locator('#edit-school-name')).not.toHaveValue('');
     if (!await page.locator('#edit-department').inputValue()) await page.locator('#edit-department').fill('S3合成系部');
+    if (!await page.locator('#edit-employee-number').inputValue()) await page.locator('#edit-employee-number').fill(`S3-USER-${id}`);
     const failure = await failEndpoint(page, `/api/manage/system/teachers/${id}`, 'POST');
-    await expectFailure(page, failure, input, 'S3 未保存教师资料', page.locator('#teacher-edit-form button[type="submit"]'));
-    await page.locator('#teacher-edit-modal [data-close-modal]').first().click();
-    await cancelNativeDelete(page, row.locator('[data-action="delete"]'), `/api/manage/system/teachers/${id}`);
+    await expectFailure(page, failure, input, 'S3 未保存教师资料', page.locator('button[form="teacher-edit-form"][type="submit"]'));
+    await page.locator('#teacher-detail-modal [data-close-modal]').first().click();
+    await page.getByRole('dialog', { name: '放弃未保存的修改？', exact: true })
+      .getByRole('button', { name: '放弃修改', exact: true }).click();
+    await expect(page.locator('#teacher-detail-modal')).toBeHidden();
+    await card.click();
+    await expect(page.locator('#teacher-edit-form [name="name"]')).toBeEnabled();
+    const deletion = await failEndpoint(page, `/api/manage/system/teachers/${id}`, 'DELETE', 409);
+    const button = page.locator('[data-teacher-action="deactivate"]');
+    await button.click();
+    await page.getByRole('dialog', { name: /^停用账号 · / }).getByRole('button', { name: '取消', exact: true }).click();
+    expect(deletion.requests).toBe(0);
+    await button.click();
+    await page.getByRole('dialog', { name: /^停用账号 · / }).getByRole('button', { name: '停用账号', exact: true }).click();
+    await expect.poll(() => deletion.requests).toBe(1);
+    await expect(button).toBeEnabled();
+    await expect(page.getByText('S3 有界失败：输入保留', { exact: false }).first()).toBeVisible();
   });
 });

@@ -22,7 +22,7 @@ REQUIRED_POSTGRES_COLUMNS = {
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     **ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     **FEEDBACK_CONVERSATION_REQUIRED_COLUMNS,
-    "teachers": ("id", "name", "employee_number"),
+    "teachers": ("id", "name", "employee_number", "cancelled_at", "cancelled_by_teacher_id"),
     "system_settings": ("key", "value", "updated_at"),
     "teacher_onboarding_state": (
         "teacher_id",

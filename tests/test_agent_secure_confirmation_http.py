@@ -149,7 +149,12 @@ class SecureConfirmationHTTPTests(PlatformWriteFixture):
         self.assert_no_secret_in_history(response)
 
     def test_restore_is_explicit_and_preserves_target_identifier(self):
-        self.conn.execute("UPDATE teachers SET is_active=0 WHERE id=8")
+        accounts.upsert_teacher_membership(
+            self.conn, teacher_id=8, school_code="test-school", school_name="Test school",
+            college="Test college", department="Test department", employee_number="NEW001", is_primary=True,
+        )
+        accounts.deactivate_teacher_account(self.conn, teacher_id=8, actor_teacher_id=7)
+        self.conn.execute("UPDATE teachers SET phone='13000000000', description='Preserved profile' WHERE id=8")
         self.conn.commit()
         request = self.proposal("create_teacher_account_secure", self.profile(email="8@example.test"))
         response = self.client.post(self.url + "/execute", json=request)
@@ -162,4 +167,6 @@ class SecureConfirmationHTTPTests(PlatformWriteFixture):
         self.assertEqual(2, self.count("teachers"))
         self.assertEqual(1, self.conn.execute("SELECT is_active FROM teachers WHERE id=8").fetchone()[0])
         self.assertTrue(response.json()["result"]["teacher"]["is_super_admin"])
+        self.assertEqual("13000000000", response.json()["result"]["teacher"]["phone"])
+        self.assertEqual("Preserved profile", response.json()["result"]["teacher"]["description"])
         self.assert_no_secret_in_history(response)

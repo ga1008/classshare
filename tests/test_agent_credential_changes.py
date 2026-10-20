@@ -8,12 +8,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from classroom_app import dependencies
+from classroom_app.db.schema_academic_teacher_timetables import ensure_academic_teacher_timetable_schema
 from classroom_app.routers import profile
 from classroom_app.routers.ui_parts import auth
 from classroom_app.routers.manage_parts import system_config
 from classroom_app.services.account_credentials_service import credentials_changed, prepare_credentials_change
 from classroom_app.services.agent_delegation_service import create_persistent_authorization, verify_task_delegation
 from classroom_app.services.student_auth_service import build_password_setup_token
+from classroom_app.services.teacher_account_service import upsert_teacher_membership
 from tests.test_agent_platform_writes import PlatformWriteFixture
 
 
@@ -23,6 +25,11 @@ class CredentialChangeTests(PlatformWriteFixture):
 
     def setUp(self):
         super().setUp()
+        ensure_academic_teacher_timetable_schema(self.conn)
+        upsert_teacher_membership(
+            self.conn, teacher_id=7, school_code='gxufl', school_name='广西外国语学院',
+            college='合成学院', department='合成系', employee_number='0007', is_primary=True,
+        )
         self.conn.execute('UPDATE teachers SET is_super_admin=1 WHERE id=7')
         hashed = dependencies.get_password_hash(self.old_password)
         self.conn.execute('UPDATE teachers SET hashed_password=? WHERE id=7', (hashed,))
@@ -51,11 +58,11 @@ class CredentialChangeTests(PlatformWriteFixture):
         self.app.dependency_overrides[dependencies.get_current_teacher] = lambda: user
         self.app.dependency_overrides[dependencies.get_current_student] = lambda: user
 
-    def assert_revoked(self, role, *, session_retained):
+    def assert_revoked(self, role, *, session_retained, reason='account_credential_changed'):
         for table in ('agent_task_delegations','agent_persistent_authorizations'):
             rows=self.conn.execute(f'SELECT status,revoke_reason FROM {table} WHERE actor_role=? AND actor_id=7',(role,)).fetchall()
             self.assertTrue(rows)
-            self.assertTrue(all(row['status']=='revoked' and row['revoke_reason']=='account_credential_changed' for row in rows))
+            self.assertTrue(all(row['status']=='revoked' and row['revoke_reason']==reason for row in rows))
         count=self.conn.execute('SELECT COUNT(*) FROM user_sessions WHERE session_user_key=?',(f'{role}:7',)).fetchone()[0]
         self.assertEqual(int(session_retained),count)
         with self.assertRaises(HTTPException): verify_task_delegation(self.conn,self.tokens[role],purpose='tools',required_scope='platform:read')
@@ -84,9 +91,14 @@ class CredentialChangeTests(PlatformWriteFixture):
     def test_teacher_admin_reset_revokes_sessions_and_grants_in_same_commit(self):
         self.login(self.teacher)
         with TestClient(self.app) as client:
-            response=client.post('/api/manage/system/teachers/7/reset-password',data={'password':self.new_password})
+            detail=client.get('/api/manage/system/teachers/7')
+            self.assertEqual(200,detail.status_code,detail.text)
+            response=client.post('/api/manage/system/teachers/7/reset-password',data={
+                'password':self.new_password,'expected_revision':detail.json()['teacher']['revision'],
+            })
         self.assertEqual(200,response.status_code,response.text)
-        self.assert_revoked('teacher',session_retained=False)
+        self.assert_revoked('teacher',session_retained=False,reason='teacher_account_management')
+        self.assertTrue(response.json()['requires_relogin'])
         verify_task_delegation(self.conn,self.tokens['student'],purpose='tools',required_scope='platform:read')
 
     def test_invalid_old_password_keeps_authority_and_commit_failure_rolls_back_password_and_revocation(self):
@@ -157,15 +169,47 @@ class CredentialChangeTests(PlatformWriteFixture):
             self.assertEqual(200,response.status_code,response.text)
         self.assert_revoked('student',session_retained=True)
 
-    def test_normal_teacher_creation_restores_inactive_account_without_reviving_old_grants(self):
+    def test_normal_teacher_creation_cannot_restore_or_overwrite_inactive_identity(self):
         self.conn.execute('UPDATE teachers SET is_active=0 WHERE id=7')
         self.conn.execute('UPDATE teachers SET is_super_admin=1 WHERE id=8');self.conn.commit()
         self.login({'role':'teacher','id':8})
         with TestClient(self.app) as client:
-            response=client.post('/api/manage/system/teachers',data={'name':'Restored teacher','email':'7@example.test','password':self.new_password,'department':'Test Department'})
+            response=client.post('/api/manage/system/teachers',data={
+                'name':'Replacement teacher','email':'7@example.test','password':self.new_password,
+                'school_code':'gxufl','school_name':'广西外国语学院','department':'合成系','employee_number':'0007',
+            })
+        self.assertEqual(400,response.status_code,response.text)
+        self.assertIn('明确启用',response.json()['detail'])
+        row=self.conn.execute('SELECT name,is_active,hashed_password FROM teachers WHERE id=7').fetchone()
+        self.assertEqual(('Teacher 7',0),(row['name'],row['is_active']))
+        self.assertTrue(dependencies.verify_password(self.old_password,row['hashed_password']))
+        for table in ('agent_task_delegations','agent_persistent_authorizations'):
+            self.assertEqual('active',self.conn.execute(
+                f"SELECT status FROM {table} WHERE actor_role='teacher' AND actor_id=7",
+            ).fetchone()[0])
+
+    def test_explicit_activation_retires_legacy_grants_without_replacing_identity_or_password(self):
+        # Simulate an older disabled row that still has a lingering session and
+        # Agent authority; activation must not make either usable again.
+        self.conn.execute('UPDATE teachers SET is_active=0 WHERE id=7')
+        self.conn.execute('UPDATE teachers SET is_super_admin=1 WHERE id=8');self.conn.commit()
+        self.login({'role':'teacher','id':8})
+        with TestClient(self.app) as client:
+            detail=client.get('/api/manage/system/teachers/7')
+            self.assertEqual(200,detail.status_code,detail.text)
+            response=client.post('/api/manage/system/teachers/7/activate',data={
+                'expected_revision':detail.json()['teacher']['revision'],
+            })
         self.assertEqual(200,response.status_code,response.text)
         self.assertEqual(7,response.json()['teacher']['id'])
-        self.assert_revoked('teacher',session_retained=False)
+        self.assertEqual('Teacher 7',response.json()['teacher']['name'])
+        self.assertEqual('0007',response.json()['teacher']['employee_number'])
+        self.assertEqual(False,response.json()['teacher']['is_super_admin'])
+        self.assertTrue(dependencies.verify_password(self.old_password,self.conn.execute(
+            'SELECT hashed_password FROM teachers WHERE id=7',
+        ).fetchone()[0]))
+        self.assert_revoked('teacher',session_retained=False,reason='teacher_account_management')
+        verify_task_delegation(self.conn,self.tokens['student'],purpose='tools',required_scope='platform:read')
 
     def test_reset_approval_that_waited_for_transition_cannot_overwrite_completed_request(self):
         self.conn.execute("INSERT INTO student_password_reset_requests(id,student_id,class_id,teacher_id,status,request_name,request_student_id_number,request_class_name) VALUES(1,7,30,7,'pending','Student 7','S7','Class 30')")

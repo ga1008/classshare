@@ -57,6 +57,18 @@ class TeacherTimetableAPITests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.detail.assert_called_once_with(sentinel.conn, 73, "000123", year="2026-2027", term="1")
 
+    def test_employee_number_with_slash_preserves_exact_identity_and_static_routes(self):
+        response = self.client.get("/api/manage/academic/teachers/00%2F0123/timetable?year=2026-2027&term=1")
+        self.assertEqual(200, response.status_code)
+        self.detail.assert_called_once_with(sentinel.conn, 73, "00/0123", year="2026-2027", term="1")
+        body = {"year": "2026-2027", "term": "1"}
+        response = self.client.post("/api/manage/academic/teachers/00%2F0123/sync", json=body)
+        self.assertEqual(200, response.status_code)
+        self.single_sync.assert_awaited_once_with(73, "00/0123", body)
+        response = self.client.post("/api/manage/academic/teachers/query", json={"q": "00/0123"})
+        self.assertEqual(200, response.status_code)
+        self.query.assert_awaited_once_with(73, {"q": "00/0123"}, force_sync=False)
+
     def test_single_sync_keeps_actor_employee_number_and_safe_errors(self):
         body = {"year": "2026-2027", "term": "1", "teacher_id": 999, "teacher_no": "000456"}
         response = self.client.post("/api/manage/academic/teachers/000123/sync", json=body)

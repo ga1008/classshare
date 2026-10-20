@@ -36,6 +36,49 @@ test.afterEach(async ({ page }, info) => {
   await info.attach('synthetic-jwxt-requests', { body: JSON.stringify(calls()), contentType: 'application/json' });
 });
 
+test('account deep link opens the exact cached timetable without any automatic query or sync', async ({ page }) => {
+  expect((await page.request.post(`${API}/000123/sync`, { data: { year: '2026-2027', term: '1' } })).ok()).toBe(true);
+  const before = calls().length;
+  const posts: string[] = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().includes(API)) posts.push(request.url());
+  });
+  await page.goto('/manage/academic/teachers/schedule?teacher_no=000123&year=2026-2027&term=1&local_only=1');
+  const dialog = page.getByRole('dialog', { name: '同名教师的课表', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-csd-lesson-detail]').first()).toBeVisible();
+  await expect(page.locator('#teacherQueryName')).toHaveValue('000123');
+  await expect(page.locator('#teacherQueryTerm')).toHaveValue('2026-2027|1');
+  expect(posts).toEqual([]);
+  expect(calls().length).toBe(before);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-teacher-no="000123"]')).toBeFocused();
+});
+
+test('missing and malformed account deep links never fall back to remote queries', async ({ page }) => {
+  const before = calls().length;
+  const posts: string[] = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().includes(API)) posts.push(request.url());
+  });
+  await page.goto('/manage/academic/teachers/schedule?teacher_no=missing-cache&year=2026-2027&term=1');
+  await expect(page.locator('#teacherQueryFeedback')).toContainText('关联课表暂不可查看');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  for (const search of [
+    'teacher_no=000123&year=2026-2028&term=1',
+    'teacher_no=000123&year=2026-2027&term=9',
+    'teacher_no=000123&teacher_no=000456&year=2026-2027&term=1',
+    'teacher_no=%00&year=2026-2027&term=1',
+  ]) {
+    await page.goto(`/manage/academic/teachers/schedule?${search}`);
+    await expect(page.locator('#teacherQueryFeedback')).toContainText('关联课表链接无效');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  }
+  expect(posts).toEqual([]);
+  expect(calls().length).toBe(before);
+});
+
 test('empty keyword automatically browses cached teachers by latest sync with local pagination and term changes', async ({ page }, info) => {
   // Seed via the real service+adapter; everything after navigation must be local.
   expect((await page.request.post(`${API}/sync`, { data: { year: '2026-2027', term: '1', q: '分页' } })).ok()).toBe(true);

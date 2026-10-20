@@ -101,8 +101,19 @@ def dispatch_user_secure_action(conn, *, user, source_session_id, task_id, opera
                 raise HTTPException(409, "该邮箱已有账户，请明确核对现有账户或使用恢复操作。")
             if action == 'restore_teacher_account_secure' and (before['is_active'] or not existing or int(existing['id']) != int(before['id'])):
                 raise HTTPException(409, "恢复对象必须仍是该邮箱对应的已停用账户。")
-            after = domain.create_teacher_account(conn, actor_teacher_id=actor.id, password=password,
-                **{key: value for key, value in clean.items() if key not in _IDENTITY})
+            if action == 'restore_teacher_account_secure':
+                domain.activate_teacher_account(conn, teacher_id=before['id'], actor_teacher_id=actor.id)
+                domain.update_teacher_account(
+                    conn, teacher_id=before['id'],
+                    **{key: before[key] for key in ('phone', 'wechat', 'qq', 'homepage_url', 'description')},
+                    **{key: value for key, value in clean.items() if key not in _IDENTITY and key != 'is_super_admin'},
+                )
+                after = domain.reset_teacher_password(conn, teacher_id=before['id'], password=password)
+                if clean['is_super_admin']:
+                    after = domain.grant_teacher_super_admin(conn, teacher_id=before['id'])
+            else:
+                after = domain.create_teacher_account(conn, actor_teacher_id=actor.id, password=password,
+                    **{key: value for key, value in clean.items() if key not in _IDENTITY})
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
     result = {'url': '/manage/system/teachers', 'label': SECURE_ACTION_DEFINITIONS[action]['done_label'],

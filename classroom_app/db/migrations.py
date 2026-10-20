@@ -344,6 +344,7 @@ def _ensure_teacher_organization_memberships_schema(conn: sqlite3.Connection) ->
         """
         SELECT id, school_code, school_name, college, department, created_by_teacher_id
         FROM teachers
+        WHERE COALESCE(is_active, 1) = 1
         """
     ).fetchall()
     for row in rows:

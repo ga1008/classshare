@@ -261,9 +261,9 @@ function renderUnscheduled(modal, host) {
     section.append(list); host.append(section);
 }
 
-async function openTeacher(teacher, trigger) {
+async function openTeacher(teacher, trigger, { initialData = null, selectedTerm = null } = {}) {
     if (state.modal || state.disposed) return;
-    const selected = state.result.selected_term || state.query;
+    const selected = selectedTerm || state.result?.selected_term || state.query;
     const modal = { teacher, closed: false, controller: null, refreshController: null, events: new AbortController(), deck: null, detail: null, handle: null, data: null, busy: false };
     state.modal = modal;
     const body = node('div', 'teacher-timetable-body');
@@ -408,7 +408,75 @@ async function openTeacher(teacher, trigger) {
         const index = modal.data?.overview?.weeks?.findIndex(week => week.is_current) ?? -1;
         if (index >= 0 && !modal.busy) modal.deck?.goToWeek(index);
     }, { signal: modal.events.signal });
-    await load();
+    if (initialData) {
+        showData(initialData, false);
+        setModalBusy(false);
+    } else await load();
+}
+
+function linkedTimetableTarget(search) {
+    const params = new URLSearchParams(search);
+    if (!params.has('teacher_no')) return null;
+    const teacherNo = params.get('teacher_no') || '';
+    const year = params.get('year') || '';
+    const term = params.get('term') || '';
+    const years = /^((?:19|20|21)\d{2})-((?:19|20|21|22)\d{2})$/.exec(year);
+    if (['teacher_no', 'year', 'term'].some(key => params.getAll(key).length !== 1)
+        || !teacherNo || teacherNo !== teacherNo.trim() || teacherNo.length > 80
+        || /[\u0000-\u001f\u007f]/.test(teacherNo)
+        || !years || Number(years[2]) !== Number(years[1]) + 1 || !/^[123]$/.test(term)) {
+        return { invalid: true };
+    }
+    return { teacherNo, year, term };
+}
+
+async function openLinkedTimetable(target) {
+    // Account links refer to an exact cached teacher, not a fuzzy query whose
+    // missing coverage could trigger an upstream login and scrape.
+    if (target.invalid) {
+        feedback('关联课表链接无效，请返回用户详情重新打开。', 'error');
+        return;
+    }
+    const { teacherNo, year, term } = target;
+    refs.name.value = teacherNo;
+    const selectedKey = termKey({ year, term });
+    if (![...refs.term.options].some(option => option.value === selectedKey)) {
+        refs.term.add(new Option(`${year} 第${term}学期`, selectedKey));
+    }
+    refs.term.value = selectedKey;
+    getDropdown(refs.term)?.refresh();
+    updateQueryMode();
+    const query = { ...currentQuery(), local_only: true };
+    const controller = new AbortController(), generation = ++state.generation;
+    state.request = controller;
+    setBusy(true);
+    feedback('正在读取已关联教师的本地课表…');
+    try {
+        const params = new URLSearchParams({ year, term });
+        const data = await apiFetch(`${API}/${encodeURIComponent(teacherNo)}/timetable?${params}`, {
+            signal: controller.signal, silent: true,
+        });
+        if (state.disposed || controller.signal.aborted || generation !== state.generation
+            || queryKey(currentQuery()) !== queryKey(query)) return;
+        state.query = query;
+        const selected = data.overview.selected_term;
+        renderResults({
+            status: 'success', source: 'local', mode: 'linked_local', summary_scope: 'query',
+            items: [data.teacher], selected_term: selected, synced_at: data.synced_at,
+            pagination: { page: 1, page_size: 1, total_count: 1, total_page: 1 },
+        });
+        feedback('已定位关联教师的本地课表。', 'success');
+        const trigger = [...refs.cards.children].find(card => card.dataset.teacherNo === teacherNo) || refs.submit;
+        await openTeacher(data.teacher, trigger, { initialData: data, selectedTerm: selected });
+    } catch (error) {
+        if (state.disposed || controller.signal.aborted || generation !== state.generation) return;
+        feedback(`关联课表暂不可查看：${error.message || '没有可用的本地缓存，请返回用户详情核对。'}`, 'error');
+    } finally {
+        if (!state.disposed && generation === state.generation) {
+            state.request = null;
+            setBusy(false);
+        }
+    }
 }
 
 on(refs.form, 'submit', event => { event.preventDefault(); void queryTeachers(); });
@@ -432,4 +500,6 @@ on(window, 'pagehide', event => {
     lifetime.abort();
 });
 applyOptions(boot, true);
-void queryTeachers();
+const linkedTarget = linkedTimetableTarget(window.location.search);
+if (linkedTarget) void openLinkedTimetable(linkedTarget);
+else void queryTeachers();

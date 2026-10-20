@@ -1,650 +1,153 @@
-﻿{% extends "manage/layout.html" %}
+{% extends "manage/layout.html" %}
 {% from "macros/manage_page.html" import page_head %}
-
+{% from "macros/lq/button.html" import lq_btn %}
 {% block title %}用户管理{% endblock %}
-
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
 {{ topbar_action('找回申请', '学生安全', 'shield', href='/manage/me/password-resets', variant='solid', tone='amber') }}
 {% endblock %}
 
+{% macro field(prefix, name, label, type='text', required=false, hint='', autocomplete='off') %}
+<div class="form-group">
+    <label class="form-label{% if required %} required{% endif %}" for="{{ prefix }}-{{ name|replace('_', '-') }}">{{ label }}</label>
+    <input data-lq-component="input" class="lq-input" id="{{ prefix }}-{{ name|replace('_', '-') }}" name="{{ name }}" type="{{ type }}" autocomplete="{{ autocomplete }}"{% if required %} required{% endif %}{% if type == 'password' %} minlength="8"{% endif %}{% if name == 'employee_number' %} maxlength="64"{% endif %}{% if hint %} aria-describedby="{{ prefix }}-{{ name }}-hint"{% endif %}>
+    {% if hint %}<small class="form-hint" id="{{ prefix }}-{{ name }}-hint">{{ hint }}</small>{% endif %}
+</div>
+{% endmacro %}
+{% macro organization_fields(prefix) %}
+{{ field(prefix, 'school_name', '学校', required=true) }}
+<input type="hidden" name="school_code" id="{{ prefix }}-school-code">
+{{ field(prefix, 'employee_number', '职工号', required=true, hint='保留开头的 0；用于登录及匹配该学校的教师课表。') }}
+<div class="um-form-grid">{{ field(prefix, 'college', '学院') }}{{ field(prefix, 'department', '系别', required=true) }}</div>
+<p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
+{% endmacro %}
+{% macro modal_head(id, title) %}
+<div class="lq-dialog__grip" aria-hidden="true"></div>
+<header class="lq-dialog__head"><h2 id="{{ id }}-title">{{ title }}</h2>{{ lq_btn('关闭', variant='ghost', attrs={'data-close-modal': id, 'aria-label': '关闭'}) }}</header>
+{% endmacro %}
 
 {% block content %}
-{{ page_head('教师账号与超管授权', lq_enabled=lq_pilot_enabled|default(false), description='教师账号由超管统一创建。删除账号会停用登录并清理会话，课程、班级、材料和历史记录继续保留。') }}
-<div class="um-hero">
-    <section class="um-hero-main">
-        <div>
-            <h3>账号概览</h3>
-            <div class="um-seed-note">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
-                初始超管：{{ initial_super_admin_name }}（{{ initial_super_admin_email }}）
-            </div>
-            <div class="um-summary">
-                <div class="um-summary-item"><span>教师账号</span><strong>{{ teacher_account_summary.total_count or 0 }}</strong></div>
-                <div class="um-summary-item"><span>启用中</span><strong>{{ teacher_account_summary.active_count or 0 }}</strong></div>
-                <div class="um-summary-item"><span>超管</span><strong>{{ teacher_account_summary.super_admin_count or 0 }}</strong></div>
-                <div class="um-summary-item"><span>已停用</span><strong>{{ teacher_account_summary.inactive_count or 0 }}</strong></div>
-            </div>
-        </div>
-    </section>
-
-    <section data-lq-component="surface" class="lq-surface um-create-card">
-        <h3>新增教师</h3>
-        <form id="teacher-create-form">
-            <div class="form-group">
-                <label class="form-label required" for="create-name">姓名</label>
-                <input data-lq-component="input" class="lq-input form-control" id="create-name" name="name" type="text" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label required" for="create-email">邮箱</label>
-                <input data-lq-component="input" class="lq-input form-control" id="create-email" name="email" type="email" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label required" for="create-password">初始密码</label>
-                <input data-lq-component="input" class="lq-input form-control" id="create-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
-            </div>
-            <div class="form-group">
-                <label class="form-label required" for="create-school-name">学校</label>
-                <input data-lq-component="input" class="lq-input form-control" id="create-school-name" name="school_name" type="text" required placeholder="默认：广西外国语学院">
-                <input type="hidden" name="school_code">
-            </div>
-            <div class="form-group">
-                <label class="form-label required" for="create-employee-number">职工号</label>
-                <input data-lq-component="input" class="lq-input form-control" id="create-employee-number" name="employee_number" type="text" maxlength="64" required placeholder="该学校的职工号，保留开头的 0" autocomplete="off">
-            </div>
-            <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="form-group">
-                    <label class="form-label" for="create-college">学院</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="create-college" name="college" type="text" placeholder="例如：信息工程学院">
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="create-department">系别</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="create-department" name="department" type="text" required placeholder="例如：软件工程系">
-                </div>
-            </div>
-            <label class="form-check">
-                <input data-lq-component="checkbox" class="lq-checkbox form-check-input" type="checkbox" name="is_super_admin" value="1">
-                <span>同时授予超管权限</span>
-            </label>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                创建教师
-            </button>
-        </form>
-    </section>
-</div>
-
-<section data-lq-component="surface" class="lq-surface um-panel">
-    <div data-lq-component="toolbar" class="lq-domain-toolbar um-toolbar">
-        <h3>教师列表</h3>
-        <div class="um-toolbar-controls">
-            <input data-lq-component="input" class="lq-input form-control um-search" id="teacher-search" type="search" placeholder="搜索姓名、邮箱、联系方式">
-            <select aria-label="教师状态" data-lq-dropdown data-lq-component="select" class="lq-select form-control um-filter" id="teacher-status-filter">
-                <option value="all">全部状态</option>
-                <option value="active">启用中</option>
-                <option value="super">超管</option>
-                <option value="inactive">已停用</option>
-            </select>
-        </div>
-    </div>
-
-    <div class="table-responsive">
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>教师</th>
-                    <th>权限</th>
-                    <th>教学数据</th>
-                    <th>账号状态</th>
-                    <th class="text-right">操作</th>
-                </tr>
-            </thead>
-            <tbody id="teacher-table-body">
-                {% for teacher in teacher_accounts %}
-                <tr
-                    data-teacher-row
-                    data-id="{{ teacher.id }}"
-                    data-name="{{ teacher.name|e }}"
-                    data-email="{{ teacher.email|e }}"
-                    data-employee-number="{{ teacher.employee_number|default('')|e }}"
-                    data-phone="{{ teacher.phone|e }}"
-                    data-wechat="{{ teacher.wechat|e }}"
-                    data-qq="{{ teacher.qq|e }}"
-                    data-homepage-url="{{ teacher.homepage_url|e }}"
-                    data-description="{{ teacher.description|e }}"
-                    data-school-code="{{ teacher.school_code|e }}"
-                    data-school-name="{{ teacher.school_name|e }}"
-                    data-college="{{ teacher.college|e }}"
-                    data-department="{{ teacher.department|e }}"
-                    data-memberships='{{ teacher.memberships|tojson|forceescape }}'
-                    data-active="{{ 1 if teacher.is_active else 0 }}"
-                    data-super="{{ 1 if teacher.is_super_admin else 0 }}"
-                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.employee_number|default('') ~ ' ' ~ (teacher.memberships|map(attribute='employee_number', default='')|join(' ')) ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label ~ ' ' ~ (teacher.membership_labels|join(' ')))|lower|e }}"
-                >
-                    <td>
-                        <strong>{{ teacher.name }}</strong>
-                        <div class="text-muted text-sm">{{ teacher.email }}</div>
-                        <div class="text-muted text-sm">职工号：{{ teacher.employee_number|default('待补充', true) }}</div>
-                        <div class="um-table-meta">
-                            {% if teacher.phone %}<span>{{ teacher.phone }}</span>{% endif %}
-                            {% if teacher.wechat %}<span>微信 {{ teacher.wechat }}</span>{% endif %}
-                            {% if teacher.qq %}<span>QQ {{ teacher.qq }}</span>{% endif %}
-                            {% for membership_label in teacher.membership_labels %}
-                                {% if loop.index <= 3 %}<span>{{ membership_label }}</span>{% endif %}
-                            {% endfor %}
-                            {% if teacher.membership_count > 3 %}<span>另 {{ teacher.membership_count - 3 }} 个归属</span>{% endif %}
-                            {% if not teacher.membership_labels and teacher.organization_label %}<span>{{ teacher.organization_label }}</span>{% endif %}
-                        </div>
-                    </td>
-                    <td>
-                        {% if teacher.is_super_admin %}
-                        <span class="um-badge is-super">超管</span>
-                        {% else %}
-                        <span class="um-badge is-normal">普通教师</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div class="um-table-meta">
-                            <span>班级 {{ teacher.class_count }}</span>
-                            <span>课程 {{ teacher.course_count }}</span>
-                            <span>课堂 {{ teacher.offering_count }}</span>
-                            <span>材料 {{ teacher.material_count }}</span>
-                            <span>找回待审 {{ teacher.pending_reset_count }}</span>
-                        </div>
-                    </td>
-                    <td>
-                        {% if teacher.is_active %}
-                        <span class="um-badge is-super">启用中</span>
-                        {% else %}
-                        <span class="um-badge is-inactive">已停用</span>
-                        {% endif %}
-                        <div class="text-muted text-xs mt-sm">更新 {{ teacher.updated_at or teacher.created_at }}</div>
-                    </td>
-                    <td>
-                        <div class="um-actions">
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="edit" {% if not teacher.is_active %}disabled{% endif %}>修改</button>
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="memberships" {% if not teacher.is_active %}disabled{% endif %}>任教归属</button>
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-secondary lq-btn--glass btn-sm" type="button" data-action="reset" {% if not teacher.is_active %}disabled{% endif %}>重置密码</button>
-                            {% if teacher.is_super_admin %}
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="revoke" {% if not teacher.is_active %}disabled{% endif %}>撤销超管</button>
-                            {% else %}
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-action="grant" {% if not teacher.is_active %}disabled{% endif %}>授予超管</button>
-                            {% endif %}
-                            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" type="button" data-action="delete" {% if (not teacher.is_active) or teacher.id == user_info.id %}disabled{% endif %}>删除</button>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <div class="um-empty" id="teacher-empty-state">没有匹配的教师账号。</div>
-    </div>
+{% call page_head('教师用户', lq_enabled=lq_pilot_enabled|default(false), description='统一管理账号、任教归属与课表关联。点击教师卡片查看和编辑。') %}
+{{ lq_btn('新增用户', variant='prominent', attrs={'id': 'teacher-create-open'}) }}
+{% endcall %}
+<section id="teacher-overview" class="lq-surface um-overview" data-lq-component="surface" data-lq-padding="md" aria-label="账号概览">
+    <div class="um-overview-heading"><h3>账号概览</h3><span class="text-muted text-sm">初始超管：{{ initial_super_admin_name }}</span></div>
+    <dl class="um-stat-strip">
+        {% for key,label,value in [('total', '教师账号', teacher_account_summary.total_count), ('active', '启用中', teacher_account_summary.active_count), ('super', '超管', teacher_account_summary.super_admin_count), ('inactive', '已停用', teacher_account_summary.inactive_count), ('cancelled', '已注销', teacher_account_summary.cancelled_count|default(0))] %}
+        <div><dt>{{ label }}</dt><dd data-account-stat="{{ key }}">{{ value or 0 }}</dd></div>
+        {% endfor %}
+    </dl>
 </section>
-
-<div class="lq-domain-region um-modal-backdrop" id="teacher-edit-modal" hidden data-lq-component="layer">
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-edit-title">
-        <form id="teacher-edit-form">
-            <div class="um-modal-header">
-                <h3 id="teacher-edit-title">修改教师资料</h3>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-edit-modal" aria-label="关闭">
-                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="um-modal-body">
-                <input type="hidden" name="teacher_id" id="edit-teacher-id">
-                <div class="form-group">
-                    <label class="form-label required" for="edit-name">姓名</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="edit-name" name="name" type="text" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="edit-email">邮箱</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="edit-email" name="email" type="email" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="edit-employee-number">职工号</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="edit-employee-number" name="employee_number" type="text" maxlength="64" required autocomplete="off" aria-describedby="edit-employee-number-hint">
-                    <small class="form-hint" id="edit-employee-number-hint">填写下方学校的职工号。可用于登录，并与课表教师自动匹配。</small>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-group">
-                        <label class="form-label" for="edit-phone">电话</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-phone" name="phone" type="text">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="edit-wechat">微信</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-wechat" name="wechat" type="text">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="edit-qq">QQ</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-qq" name="qq" type="text">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="edit-homepage-url">主页</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-homepage-url" name="homepage_url" type="url">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="edit-school-name">学校</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="edit-school-name" name="school_name" type="text" required>
-                    <input id="edit-school-code" name="school_code" type="hidden">
-                </div>
-                <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-group">
-                        <label class="form-label" for="edit-college">学院</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-college" name="college" type="text">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label required" for="edit-department">系别</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="edit-department" name="department" type="text" required>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="edit-description">简介</label>
-                    <textarea data-lq-component="textarea" class="lq-textarea form-control" id="edit-description" name="description" rows="3"></textarea>
-                </div>
-            </div>
-            <div class="um-modal-footer">
-                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" type="button" data-close-modal="teacher-edit-modal">取消</button>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">保存修改</button>
-            </div>
-        </form>
+<section class="um-directory" aria-labelledby="teacher-list-title">
+    <div class="lq-filter-bar um-toolbar" data-lq-component="toolbar">
+        <h3 id="teacher-list-title">教师列表 <span class="text-muted text-sm" id="teacher-result-count" role="status"></span></h3>
+        <label class="um-search"><span class="sr-only">搜索教师</span><input data-lq-component="input" class="lq-input" id="teacher-search" type="search" placeholder="搜索姓名、工号、学校或邮箱"></label>
+        <select aria-label="教师状态" data-lq-dropdown data-lq-component="select" class="lq-select um-filter" id="teacher-status-filter">
+            <option value="all">全部状态</option><option value="active">启用中</option><option value="super">超管</option><option value="inactive">已停用</option><option value="cancelled">已注销</option>
+        </select>
     </div>
-</div>
+    <div id="teacher-card-grid" class="um-card-grid"></div>
+    <div class="lq-empty lq-surface" data-lq-component="surface" id="teacher-empty-state" hidden><strong>没有匹配的教师账号</strong><p>试试姓名、职工号或学校，也可以调整状态筛选。</p></div>
+    <noscript><p>请启用 JavaScript 以使用教师卡片和账号管理浮窗。</p></noscript>
+</section>
+<script type="application/json" id="teacher-management-data">{{ {'teachers': teacher_accounts, 'currentTeacherId': user_info.id}|tojson }}</script>
 
-<div class="lq-domain-region um-modal-backdrop" id="teacher-membership-modal" hidden data-lq-component="layer">
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-membership-title">
-        <div class="um-modal-header">
-            <div>
-                <h3 id="teacher-membership-title">任教归属</h3>
-                <p class="text-muted text-sm mb-0" id="membership-target-label"></p>
-            </div>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-membership-modal" aria-label="关闭">
-                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-        </div>
-        <div class="um-modal-body">
-            <div class="um-membership-list" id="teacher-membership-list"></div>
-            <form class="um-membership-form" id="teacher-membership-form">
-                <input type="hidden" id="membership-teacher-id">
-                <input type="hidden" id="membership-school-code" name="school_code">
-                <div class="form-group">
-                    <label class="form-label required" for="membership-school-name">学校</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="membership-school-name" name="school_name" type="text" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label required" for="membership-employee-number">职工号</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="membership-employee-number" name="employee_number" type="text" maxlength="64" required autocomplete="off" placeholder="填写该学校的职工号">
-                </div>
-                <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="form-group">
-                        <label class="form-label" for="membership-college">学院</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="membership-college" name="college" type="text">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label required" for="membership-department">系别</label>
-                        <input data-lq-component="input" class="lq-input form-control" id="membership-department" name="department" type="text" required>
-                    </div>
-                </div>
-                <label class="form-check">
-                    <input data-lq-component="checkbox" class="lq-checkbox form-check-input" type="checkbox" name="is_primary" value="1">
-                    <span>设为默认任教归属</span>
-                </label>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">保存任教归属</button>
+<div class="lq-dialog-root" data-lq-dialog="modal" id="teacher-create-modal" hidden>
+    <div class="lq-scrim" aria-hidden="true"></div>
+    <section class="lq-dialog__surface lq-modal lq-modal--md lq-glass lq-glass--thick" role="dialog" tabindex="-1" aria-labelledby="teacher-create-modal-title">
+        {{ modal_head('teacher-create-modal', '新增用户') }}
+        <div class="lq-dialog__body um-dialog-body">
+            <p class="text-muted">保存后会按学校与职工号查找已同步的教师课表。</p>
+            <form id="teacher-create-form" class="um-form">
+                <div class="um-form-grid">{{ field('create', 'name', '姓名', required=true) }}{{ field('create', 'email', '邮箱', type='email', required=true) }}</div>
+                {{ field('create', 'password', '初始密码', type='password', required=true, hint=teacher_password_hint, autocomplete='new-password') }}
+                {{ organization_fields('create') }}
+                <label class="form-check"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="is_super_admin" value="1"><span>同时授予超管权限</span></label>
+                <p class="lq-alert" data-lq-status="alert" data-lq-tone-level="danger" role="alert" data-form-error hidden></p>
             </form>
         </div>
-    </div>
+        <footer class="lq-dialog__foot um-dialog-footer">{{ lq_btn('取消', variant='ghost', attrs={'data-close-modal': 'teacher-create-modal'}) }}{{ lq_btn('保存并查看', variant='prominent', type='submit', attrs={'form': 'teacher-create-form'}) }}</footer>
+    </section>
 </div>
-
-<div class="lq-domain-region um-modal-backdrop" id="teacher-password-modal" hidden data-lq-component="layer">
-    <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised um-modal" role="dialog" aria-modal="true" aria-labelledby="teacher-password-title">
-        <form id="teacher-password-form">
-            <div class="um-modal-header">
-                <h3 id="teacher-password-title">重置教师密码</h3>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-icon" type="button" data-close-modal="teacher-password-modal" aria-label="关闭">
-                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-            <div class="um-modal-body">
-                <input type="hidden" id="password-teacher-id">
-                <p class="text-muted mb-0" id="password-target-label"></p>
-                <div class="form-group">
-                    <label class="form-label required" for="reset-password">新密码</label>
-                    <input data-lq-component="input" class="lq-input form-control" id="reset-password" name="password" type="password" minlength="8" required placeholder="{{ teacher_password_hint }}">
+<div class="lq-dialog-root" data-lq-dialog="modal" id="teacher-detail-modal" hidden>
+    <div class="lq-scrim" aria-hidden="true"></div>
+    <section class="lq-dialog__surface lq-modal lq-modal--lg lq-glass lq-glass--thick" role="dialog" tabindex="-1" aria-labelledby="teacher-detail-modal-title">
+        {{ modal_head('teacher-detail-modal', '教师用户详情') }}
+        <div class="lq-dialog__body um-dialog-body">
+            <div id="teacher-detail-summary" class="um-detail-summary"></div>
+            <p id="teacher-detail-notice" class="lq-alert" data-lq-status="alert" data-lq-tone-level="info" role="status" hidden></p>
+            <div class="um-section-heading"><h3>基础信息</h3>{{ lq_btn('重新载入', variant='ghost', size='sm', attrs={'id':'teacher-detail-reload'}) }}</div>
+            <form id="teacher-edit-form" class="um-form">
+                <input type="hidden" name="teacher_id" id="edit-teacher-id"><input type="hidden" name="expected_revision">
+                <fieldset id="teacher-edit-fields" class="um-fieldset" disabled>
+                    <div class="um-form-grid">{{ field('edit', 'name', '姓名', required=true) }}{{ field('edit', 'email', '邮箱', type='email', required=true) }}</div>
+                    {{ organization_fields('edit') }}
+                    <p class="form-hint">此处编辑默认学校的资料。变更学校请在下方新增归属、设为默认，再按需要停用旧归属。修改工号后，旧工号的课表关联会失效，并重新匹配新工号。</p>
+                    <details class="um-contact-details">
+                        <summary>联系方式与简介</summary>
+                        <div class="um-form-grid">{{ field('edit', 'phone', '电话', type='tel') }}{{ field('edit', 'wechat', '微信') }}{{ field('edit', 'qq', 'QQ') }}{{ field('edit', 'homepage_url', '主页', type='url') }}</div>
+                        <div class="form-group"><label class="form-label" for="edit-description">简介</label><textarea data-lq-component="textarea" class="lq-textarea" id="edit-description" name="description" rows="3"></textarea></div>
+                    </details>
+                </fieldset>
+                <p class="lq-alert" data-lq-status="alert" data-lq-tone-level="danger" role="alert" data-form-error hidden></p>
+            </form>
+            <section class="um-detail-section">
+                <div class="um-section-heading"><h3>任教归属</h3>{{ lq_btn('新增归属', variant='glass', size='sm', attrs={'data-teacher-action':'memberships'}) }}</div>
+                <p class="form-hint">同一学校保留一个系别；每个学校单独填写职工号。</p>
+                <div id="teacher-membership-list" class="um-membership-list"></div>
+            </section>
+            <section class="um-detail-section" aria-labelledby="teacher-links-title">
+                <div class="um-section-heading"><h3 id="teacher-links-title">课表关联</h3><span class="lq-status" data-lq-status="badge" data-lq-tone-level="info">弱关联</span></div>
+                <p class="form-hint">按学校与职工号匹配已同步的课表，不转移课表、不自动授予权限。后续同步也会重新匹配。</p>
+                <div id="teacher-timetable-links" class="um-membership-list" role="status"></div>
+            </section>
+            <section class="um-detail-section">
+                <h3>账号管理</h3>
+                <p class="form-hint" id="teacher-lifecycle-hint">停用会撤销登录与课表关联，可再次启用；注销保留教学历史及身份占用，不能直接恢复。</p>
+                <div class="um-detail-actions">
+                    {{ lq_btn('重置密码', variant='glass', attrs={'data-teacher-action':'reset'}) }}
+                    {{ lq_btn('授予超管', variant='glass', attrs={'data-teacher-action':'grant'}) }}
+                    {{ lq_btn('撤销超管', variant='glass', attrs={'data-teacher-action':'revoke'}) }}
+                    {{ lq_btn('启用账号', variant='prominent', attrs={'data-teacher-action':'activate'}) }}
+                    {{ lq_btn('停用账号', variant='glass', attrs={'data-teacher-action':'deactivate'}) }}
+                    {{ lq_btn('注销账号', variant='destructive', attrs={'data-teacher-action':'cancel'}) }}
                 </div>
-            </div>
-            <div class="um-modal-footer">
-                <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" type="button" data-close-modal="teacher-password-modal">取消</button>
-                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success" type="submit">确认重置</button>
-            </div>
-        </form>
-    </div>
+            </section>
+        </div>
+        <footer class="lq-dialog__foot um-dialog-footer"><span id="teacher-save-status" class="form-hint" role="status"></span>{{ lq_btn('关闭', variant='ghost', attrs={'data-close-modal':'teacher-detail-modal'}) }}{{ lq_btn('保存修改', variant='prominent', type='submit', attrs={'form':'teacher-edit-form', 'id':'teacher-detail-save'}) }}</footer>
+    </section>
+</div>
+<div class="lq-dialog-root" data-lq-dialog="modal" id="teacher-membership-modal" hidden>
+    <div class="lq-scrim" aria-hidden="true"></div>
+    <section class="lq-dialog__surface lq-modal lq-modal--md lq-glass lq-glass--thick" role="dialog" tabindex="-1" aria-labelledby="teacher-membership-modal-title">
+        {{ modal_head('teacher-membership-modal', '编辑任教归属') }}
+        <div class="lq-dialog__body um-dialog-body">
+            <p id="membership-target-label" class="text-muted"></p>
+            <form id="teacher-membership-form" class="um-form">
+                <input type="hidden" id="membership-teacher-id"><input type="hidden" name="expected_revision">
+                {{ organization_fields('membership') }}
+                <label class="form-check"><input data-lq-component="checkbox" class="lq-checkbox" name="is_primary" type="checkbox" value="1"><span>设为默认任教归属</span></label>
+                <p class="lq-alert" data-lq-status="alert" data-lq-tone-level="danger" role="alert" data-form-error hidden></p>
+            </form>
+        </div>
+        <footer class="lq-dialog__foot um-dialog-footer">{{ lq_btn('取消', variant='ghost', attrs={'data-close-modal':'teacher-membership-modal'}) }}{{ lq_btn('保存任教归属', variant='prominent', type='submit', attrs={'form':'teacher-membership-form'}) }}</footer>
+    </section>
+</div>
+<div class="lq-dialog-root" data-lq-dialog="modal" id="teacher-password-modal" hidden>
+    <div class="lq-scrim" aria-hidden="true"></div>
+    <section class="lq-dialog__surface lq-modal lq-modal--sm lq-glass lq-glass--thick" role="dialog" tabindex="-1" aria-labelledby="teacher-password-modal-title">
+        {{ modal_head('teacher-password-modal', '重置密码') }}
+        <div class="lq-dialog__body um-dialog-body">
+            <p id="password-target-label" class="text-muted"></p>
+            <form id="teacher-password-form" class="um-form">
+                <input type="hidden" id="password-teacher-id"><input type="hidden" name="expected_revision">
+                {{ field('reset', 'password', '新密码', type='password', required=true, hint=teacher_password_hint, autocomplete='new-password') }}
+                <p class="form-hint">保存后会使该账号已有登录会话失效。</p>
+                <p class="lq-alert" data-lq-status="alert" data-lq-tone-level="danger" role="alert" data-form-error hidden></p>
+            </form>
+        </div>
+        <footer class="lq-dialog__foot um-dialog-footer">{{ lq_btn('取消', variant='ghost', attrs={'data-close-modal':'teacher-password-modal'}) }}{{ lq_btn('确认重置', variant='prominent', type='submit', attrs={'form':'teacher-password-form'}) }}</footer>
+    </section>
 </div>
 {% endblock %}
-
-{% block scripts %}
-<script type="module">
-import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
-import { bindOrganizationSuggestions } from '{{ asset_url("js/organization_suggestions.js") }}';
-(() => {
-    const organizationOwners = new Map();
-    ['teacher-create-form', 'teacher-edit-form', 'teacher-membership-form'].forEach((id) => {
-        organizationOwners.set(id, bindOrganizationSuggestions(document.getElementById(id)));
-    });
-    organizationOwners.get('teacher-create-form')?.refresh();
-    const searchInput = document.getElementById('teacher-search');
-    const statusFilter = document.getElementById('teacher-status-filter');
-    const rows = Array.from(document.querySelectorAll('[data-teacher-row]'));
-    const emptyState = document.getElementById('teacher-empty-state');
-    const currentTeacherId = Number('{{ user_info.id }}');
-
-    const applyFilters = () => {
-        const keyword = (searchInput?.value || '').trim().toLowerCase();
-        const status = statusFilter?.value || 'all';
-        let visibleCount = 0;
-        rows.forEach((row) => {
-            const matchesKeyword = !keyword || (row.dataset.search || '').includes(keyword);
-            const isActive = row.dataset.active === '1';
-            const isSuper = row.dataset.super === '1';
-            const matchesStatus =
-                status === 'all' ||
-                (status === 'active' && isActive) ||
-                (status === 'super' && isSuper && isActive) ||
-                (status === 'inactive' && !isActive);
-            const visible = matchesKeyword && matchesStatus;
-            row.hidden = !visible;
-            if (visible) visibleCount += 1;
-        });
-        if (emptyState) emptyState.style.display = visibleCount ? 'none' : 'block';
-    };
-
-    searchInput?.addEventListener('input', applyFilters);
-    statusFilter?.addEventListener('change', applyFilters);
-    applyFilters();
-
-    const modalOwners = new Map();
-    const modalOwner = (id) => {
-        if (modalOwners.has(id)) return modalOwners.get(id);
-        const modal = document.getElementById(id);
-        const owner = createDomainModal(modal, {
-            surface: modal?.querySelector('.um-modal'),
-            beforeClose: () => !modal.querySelector('form[data-saving="true"]'),
-        });
-        modalOwners.set(id, owner);
-        return owner;
-    };
-    const openModal = (id) => modalOwner(id).open();
-    const closeModal = (id) => modalOwner(id).close();
-
-    document.querySelectorAll('[data-close-modal]').forEach((button) => {
-        button.addEventListener('click', () => closeModal(button.dataset.closeModal));
-    });
-
-    document.querySelectorAll('.um-modal-backdrop').forEach((backdrop) => {
-        backdrop.addEventListener('click', (event) => {
-            if (event.target === backdrop) closeModal(backdrop.id);
-        });
-    });
-
-    const submitWithLock = async (form, callback) => {
-        if (form.dataset.saving === 'true') return;
-        form.dataset.saving = 'true';
-        const submitButton = form.querySelector('button[type="submit"]');
-        const originalText = submitButton?.innerHTML;
-        if (submitButton) {
-            submitButton.disabled = true;
-            submitButton.innerHTML = '处理中...';
-        }
-        try {
-            await callback();
-        } finally {
-            delete form.dataset.saving;
-            if (submitButton) {
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalText;
-            }
-        }
-    };
-
-    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-    }[char]));
-
-    const parseMemberships = (row) => {
-        try {
-            return JSON.parse(row.dataset.memberships || '[]') || [];
-        } catch (error) {
-            return [];
-        }
-    };
-
-    const renderMembershipList = (row) => {
-        const teacherId = Number(row.dataset.id || 0);
-        const memberships = parseMemberships(row);
-        const list = document.getElementById('teacher-membership-list');
-        const activeMemberships = memberships.filter((item) => item.is_active);
-        document.getElementById('membership-teacher-id').value = String(teacherId || '');
-        document.getElementById('membership-target-label').textContent = `${row.dataset.name || '该教师'} 可在多个学校任教；同一学校只保留一个系部归属。`;
-        if (!list) return;
-        if (!memberships.length) {
-            list.innerHTML = '<p class="text-muted mb-0">暂无任教归属。</p>';
-            return;
-        }
-        list.innerHTML = memberships.map((item) => {
-            const isActive = Boolean(item.is_active);
-            const canDeactivate = isActive && activeMemberships.length > 1;
-            const label = item.organization_label || [item.school_name, item.college, item.department].filter(Boolean).join(' / ') || '未命名归属';
-            return `
-                <article data-lq-component="surface" class="lq-surface um-membership-item ${item.is_primary ? 'is-primary' : ''}">
-                    <header>
-                        <strong>${escapeHtml(label)}</strong>
-                        <span class="um-badge ${isActive ? 'is-super' : 'is-inactive'}">${isActive ? (item.is_primary ? '默认' : '启用') : '已停用'}</span>
-                    </header>
-                    <p class="text-muted text-sm">职工号：${escapeHtml(item.employee_number || '待补充')}</p>
-                    <div class="um-membership-actions">
-                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-membership-action="edit" data-teacher-id="${teacherId}" data-membership-id="${item.id}">${isActive ? '编辑归属' : '恢复并编辑'}</button>
-                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-membership-action="primary" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${(!isActive || item.is_primary) ? 'disabled' : ''}>设为默认</button>
-                        <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" type="button" data-membership-action="delete" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${canDeactivate ? '' : 'disabled'}>停用</button>
-                    </div>
-                </article>
-            `;
-        }).join('');
-    };
-
-    document.getElementById('teacher-create-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        await submitWithLock(form, async () => {
-            try {
-                const result = await window.apiFetch('/api/manage/system/teachers', {
-                    method: 'POST',
-                    body: new FormData(form),
-                });
-                showMessage(result.message || '教师账号已创建。', 'success');
-                window.setTimeout(() => window.location.reload(), 500);
-            } catch (error) {
-                showMessage(error.message || '创建教师账号失败。', 'error');
-            }
-        });
-    });
-
-    const fillEditForm = (row) => {
-        document.getElementById('edit-teacher-id').value = row.dataset.id || '';
-        document.getElementById('edit-name').value = row.dataset.name || '';
-        document.getElementById('edit-email').value = row.dataset.email || '';
-        document.getElementById('edit-employee-number').value = row.dataset.employeeNumber || '';
-        document.getElementById('edit-phone').value = row.dataset.phone || '';
-        document.getElementById('edit-wechat').value = row.dataset.wechat || '';
-        document.getElementById('edit-qq').value = row.dataset.qq || '';
-        document.getElementById('edit-homepage-url').value = row.dataset.homepageUrl || '';
-        document.getElementById('edit-description').value = row.dataset.description || '';
-        document.getElementById('edit-school-code').value = row.dataset.schoolCode || '';
-        document.getElementById('edit-school-name').value = row.dataset.schoolName || '';
-        document.getElementById('edit-college').value = row.dataset.college || '';
-        document.getElementById('edit-department').value = row.dataset.department || '';
-        organizationOwners.get('teacher-edit-form')?.refresh();
-    };
-
-    document.getElementById('teacher-membership-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const teacherId = document.getElementById('membership-teacher-id').value;
-        await submitWithLock(form, async () => {
-            try {
-                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}/memberships`, {
-                    method: 'POST',
-                    body: new FormData(form),
-                });
-                showMessage(result.message || '任教归属已保存。', 'success');
-                window.setTimeout(() => window.location.reload(), 500);
-            } catch (error) {
-                showMessage(error.message || '保存任教归属失败。', 'error');
-            }
-        });
-    });
-
-    document.getElementById('teacher-membership-list')?.addEventListener('click', async (event) => {
-        const button = event.target.closest('[data-membership-action]');
-        if (!button || button.disabled) return;
-        const teacherId = Number(button.dataset.teacherId || 0);
-        const membershipId = Number(button.dataset.membershipId || 0);
-        if (!teacherId || !membershipId) return;
-        if (button.dataset.membershipAction === 'edit') {
-            const row = rows.find((item) => Number(item.dataset.id) === teacherId);
-            const membership = row && parseMemberships(row).find((item) => Number(item.id) === membershipId);
-            if (!membership) return;
-            document.getElementById('membership-school-code').value = membership.school_code || '';
-            document.getElementById('membership-school-name').value = membership.school_name || '';
-            document.getElementById('membership-college').value = membership.college || '';
-            document.getElementById('membership-department').value = membership.department || '';
-            document.getElementById('membership-employee-number').value = membership.employee_number || '';
-            document.querySelector('#teacher-membership-form [name="is_primary"]').checked = Boolean(membership.is_primary);
-            organizationOwners.get('teacher-membership-form')?.refresh();
-            document.getElementById('membership-employee-number').focus();
-            return;
-        }
-        const isDelete = button.dataset.membershipAction === 'delete';
-        const message = isDelete ? '确认停用该任教归属？' : '确认设为默认任教归属？';
-        if (!window.confirm(message)) return;
-        try {
-            const url = isDelete
-                ? `/api/manage/system/teachers/${teacherId}/memberships/${membershipId}`
-                : `/api/manage/system/teachers/${teacherId}/memberships/${membershipId}/primary`;
-            const result = await window.apiFetch(url, { method: isDelete ? 'DELETE' : 'POST' });
-            showMessage(result.message || '任教归属已更新。', 'success');
-            window.setTimeout(() => window.location.reload(), 500);
-        } catch (error) {
-            showMessage(error.message || '任教归属更新失败。', 'error');
-        }
-    });
-
-    document.getElementById('teacher-edit-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const teacherId = document.getElementById('edit-teacher-id').value;
-        await submitWithLock(form, async () => {
-            try {
-                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}`, {
-                    method: 'POST',
-                    body: new FormData(form),
-                });
-                showMessage(result.message || '教师资料已更新。', 'success');
-                window.setTimeout(() => window.location.reload(), 500);
-            } catch (error) {
-                showMessage(error.message || '更新教师资料失败。', 'error');
-            }
-        });
-    });
-
-    document.getElementById('teacher-password-form')?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const teacherId = document.getElementById('password-teacher-id').value;
-        await submitWithLock(form, async () => {
-            try {
-                const result = await window.apiFetch(`/api/manage/system/teachers/${teacherId}/reset-password`, {
-                    method: 'POST',
-                    body: new FormData(form),
-                });
-                showMessage(result.message || '教师密码已重置。', 'success');
-                window.setTimeout(() => window.location.reload(), 500);
-            } catch (error) {
-                showMessage(error.message || '重置教师密码失败。', 'error');
-            }
-        });
-    });
-
-    const runRowAction = async (row, action) => {
-        const teacherId = Number(row.dataset.id || 0);
-        const name = row.dataset.name || '该教师';
-        if (!teacherId) return;
-        if (action === 'edit') {
-            fillEditForm(row);
-            openModal('teacher-edit-modal');
-            return;
-        }
-        if (action === 'memberships') {
-            renderMembershipList(row);
-            document.getElementById('membership-school-code').value = row.dataset.schoolCode || '';
-            document.getElementById('membership-school-name').value = row.dataset.schoolName || '';
-            document.getElementById('membership-college').value = row.dataset.college || '';
-            document.getElementById('membership-department').value = row.dataset.department || '';
-            document.getElementById('membership-employee-number').value = row.dataset.employeeNumber || '';
-            document.querySelector('#teacher-membership-form [name="is_primary"]').checked = false;
-            organizationOwners.get('teacher-membership-form')?.refresh();
-            openModal('teacher-membership-modal');
-            return;
-        }
-        if (action === 'reset') {
-            document.getElementById('password-teacher-id').value = String(teacherId);
-            document.getElementById('password-target-label').textContent = `正在为 ${name} 重置登录密码。`;
-            document.getElementById('reset-password').value = '';
-            openModal('teacher-password-modal');
-            return;
-        }
-
-        const actionMap = {
-            grant: {
-                message: `确认授予 ${name} 超管权限？`,
-                url: `/api/manage/system/teachers/${teacherId}/super-admin/grant`,
-                method: 'POST',
-            },
-            revoke: {
-                message: teacherId === currentTeacherId
-                    ? `确认撤销自己的超管权限？操作后需要重新登录。`
-                    : `确认撤销 ${name} 的超管权限？`,
-                url: `/api/manage/system/teachers/${teacherId}/super-admin/revoke`,
-                method: 'POST',
-            },
-            delete: {
-                message: `确认删除 ${name} 的登录账号？历史教学数据会保留。`,
-                url: `/api/manage/system/teachers/${teacherId}`,
-                method: 'DELETE',
-            },
-        };
-        const config = actionMap[action];
-        if (!config || !window.confirm(config.message)) return;
-        try {
-            const result = await window.apiFetch(config.url, { method: config.method });
-            showMessage(result.message || '操作已完成。', 'success');
-            window.setTimeout(() => window.location.reload(), 500);
-        } catch (error) {
-            showMessage(error.message || '操作失败。', 'error');
-        }
-    };
-
-    document.getElementById('teacher-table-body')?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-action]');
-        const row = event.target.closest('[data-teacher-row]');
-        if (!button || !row || button.disabled) return;
-        runRowAction(row, button.dataset.action);
-    });
-})();
-</script>
-{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/manage_users.js') }}"></script>{% endblock %}

@@ -13,6 +13,76 @@ from ...services.ai_usage_budget_service import (
 router = APIRouter()
 
 
+def _begin_teacher_change(conn, user, teacher_id, expected_revision, *, allow_inactive=False):
+    from ...services.teacher_account_service import (
+        TeacherAccountConflict, lock_teacher_account_management, require_teacher_account_revision,
+    )
+    from ...services.account_credentials_service import prepare_credentials_change
+    lock_teacher_account_management(conn)
+    _require_current_super_admin(conn, user)
+    try:
+        before = require_teacher_account_revision(conn, teacher_id, expected_revision)
+    except TeacherAccountConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if before["account_status"] == "cancelled":
+        raise HTTPException(status_code=400, detail="该教师账号已注销，资料仅供历史查阅。")
+    if not allow_inactive and not before["is_active"]:
+        raise HTTPException(status_code=400, detail="该教师账号已停用，请先启用再修改。")
+    prepare_credentials_change(conn, role="teacher", user_id=int(teacher_id))
+    return before
+
+
+def _teacher_detail_payload(conn, user, teacher_id):
+    from ...services.academic_teacher_identity_service import load_teacher_timetable_link_summaries
+    teacher = get_teacher_account(conn, teacher_id, include_counts=True)
+    links = load_teacher_timetable_link_summaries(conn, [int(teacher_id)], actor_teacher_id=int(user["id"]))
+    return {"teacher": teacher, "timetable_links": links.get(int(teacher_id), {})}
+
+
+def _finish_teacher_change(conn, user, before, *, reset_password=False):
+    from ...services.account_credentials_service import actor_authority_changed
+    after = get_teacher_account(conn, before["id"])
+
+    def identity(item):
+        return (
+            item["email"],
+            tuple(sorted((m["school_code"], m["employee_number"]) for m in item["memberships"])),
+        )
+
+    def authority(item):
+        return (
+            item["account_status"], item["is_super_admin"],
+            tuple(sorted((m["school_code"], m["college"], m["department"], m["is_active"], m["is_primary"])
+                         for m in item["memberships"])),
+        )
+
+    identity_changed = identity(before) != identity(after)
+    authority_changed = authority(before) != authority(after)
+    revoke_sessions = reset_password or identity_changed or before["account_status"] != after["account_status"] or before["is_super_admin"] != after["is_super_admin"]
+    if reset_password or identity_changed or authority_changed:
+        actor_authority_changed(
+            conn, role="teacher", user_id=int(before["id"]), reason="teacher_account_management",
+            invalidate_sessions=revoke_sessions,
+        )
+    return {
+        **_teacher_detail_payload(conn, user, before["id"]),
+        "requires_relogin": bool(revoke_sessions and int(before["id"]) == int(user["id"])),
+    }
+
+
+@router.get("/system/teachers/{teacher_id}", response_class=JSONResponse)
+async def api_get_teacher_account_detail(teacher_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        _require_current_super_admin(conn, user)
+        try:
+            detail = _teacher_detail_payload(conn, user, teacher_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "success", **detail}
+
+
 @router.get("/system/background-tasks", response_class=JSONResponse)
 async def api_get_background_tasks(user: dict = Depends(get_current_teacher)):
     """Return the unified background task ledger for super-admin diagnostics."""
@@ -501,14 +571,10 @@ async def api_create_teacher_account(
     user: dict = Depends(get_current_teacher),
 ):
     """新增教师账号，仅超管可用。"""
-    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
-    from ...services.teacher_account_service import lock_teacher_account_management, normalize_teacher_email
+    from ...services.teacher_account_service import lock_teacher_account_management
     with get_db_connection() as conn:
         lock_teacher_account_management(conn)
         _require_current_super_admin(conn, user)
-        existing = conn.execute("SELECT id FROM teachers WHERE email=? LIMIT 1", (normalize_teacher_email(email),)).fetchone()
-        if existing:
-            prepare_credentials_change(conn, role="teacher", user_id=int(existing["id"]))
         try:
             teacher = create_teacher_account(
                 conn,
@@ -525,10 +591,9 @@ async def api_create_teacher_account(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if existing:
-            credentials_changed(conn, role="teacher", user_id=int(existing["id"]), invalidate_sessions=True)
+        detail = _teacher_detail_payload(conn, user, teacher["id"])
         conn.commit()
-    return {"status": "success", "message": "教师账号已创建。", "teacher": teacher}
+    return {"status": "success", "message": "教师账号已创建。", **detail}
 
 
 @router.post("/system/teachers/{teacher_id}", response_class=JSONResponse)
@@ -546,11 +611,12 @@ async def api_update_teacher_account(
     college: str = Form(default=""),
     department: str = Form(default=""),
     employee_number: str = Form(default=""),
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """修改教师账号资料，仅超管可用。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             teacher = update_teacher_account(
                 conn,
@@ -570,8 +636,9 @@ async def api_update_teacher_account(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
-    return {"status": "success", "message": "教师资料已更新。", "teacher": teacher}
+    return {"status": "success", "message": "教师资料已更新。", **detail}
 
 
 @router.post("/system/teachers/{teacher_id}/memberships", response_class=JSONResponse)
@@ -583,11 +650,12 @@ async def api_upsert_teacher_membership(
     department: str = Form(default=""),
     is_primary: str = Form(default=""),
     employee_number: str = Form(default=""),
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """为教师新增或恢复一个学校任教归属；同一学校只保留一个系部归属。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             membership = upsert_teacher_membership(
                 conn,
@@ -603,19 +671,21 @@ async def api_upsert_teacher_membership(
             teacher = get_teacher_account(conn, teacher_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
-    return {"status": "success", "message": "任教归属已保存。", "membership": membership, "teacher": teacher}
+    return {"status": "success", "message": "任教归属已保存。", "membership": membership, **detail}
 
 
 @router.post("/system/teachers/{teacher_id}/memberships/{membership_id}/primary", response_class=JSONResponse)
 async def api_set_teacher_primary_membership(
     teacher_id: int,
     membership_id: int,
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """设置教师默认任教归属，并同步教师主档案上的组织字段。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             membership = set_teacher_primary_membership(
                 conn,
@@ -625,19 +695,21 @@ async def api_set_teacher_primary_membership(
             teacher = get_teacher_account(conn, teacher_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
-    return {"status": "success", "message": "默认任教归属已更新。", "membership": membership, "teacher": teacher}
+    return {"status": "success", "message": "默认任教归属已更新。", "membership": membership, **detail}
 
 
 @router.delete("/system/teachers/{teacher_id}/memberships/{membership_id}", response_class=JSONResponse)
 async def api_deactivate_teacher_membership(
     teacher_id: int,
     membership_id: int,
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """停用教师的一个任教归属；至少保留一个启用归属。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             membership = deactivate_teacher_membership(
                 conn,
@@ -648,32 +720,32 @@ async def api_deactivate_teacher_membership(
             teacher = get_teacher_account(conn, teacher_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
-    return {"status": "success", "message": "任教归属已停用。", "membership": membership, "teacher": teacher}
+    return {"status": "success", "message": "任教归属已停用。", "membership": membership, **detail}
 
 
 @router.post("/system/teachers/{teacher_id}/reset-password", response_class=JSONResponse)
 async def api_reset_teacher_account_password(
     teacher_id: int,
     password: str = Form(...),
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """重置教师账号密码，仅超管可用。"""
-    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
-        prepare_credentials_change(conn, role="teacher", user_id=int(teacher_id))
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             teacher = reset_teacher_password(conn, teacher_id=teacher_id, password=password)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        credentials_changed(conn, role="teacher", user_id=int(teacher_id), invalidate_sessions=True)
+        detail = _finish_teacher_change(conn, user, before, reset_password=True)
         conn.commit()
 
     return {
         "status": "success",
         "message": f"已重置 {teacher['name']} 的密码，并清理其当前登录会话。",
-        "teacher": teacher,
+        **detail,
         "password_hint": TEACHER_PASSWORD_HINT,
     }
 
@@ -681,46 +753,50 @@ async def api_reset_teacher_account_password(
 @router.post("/system/teachers/{teacher_id}/super-admin/grant", response_class=JSONResponse)
 async def api_grant_teacher_account_super_admin(
     teacher_id: int,
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """授予教师超管权限，仅超管可用。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             teacher = grant_teacher_super_admin(conn, teacher_id=teacher_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
-    return {"status": "success", "message": f"已授予 {teacher['name']} 超管权限。", "teacher": teacher}
+    return {"status": "success", "message": f"已授予 {teacher['name']} 超管权限。", **detail}
 
 
 @router.post("/system/teachers/{teacher_id}/super-admin/revoke", response_class=JSONResponse)
 async def api_revoke_teacher_account_super_admin(
     teacher_id: int,
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """撤销教师超管权限，仅超管可用。"""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision)
         try:
             teacher = revoke_teacher_super_admin(conn, teacher_id=teacher_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
 
-    if int(teacher_id) == int(user["id"]):
-        invalidate_session_for_user(str(teacher_id), "teacher")
-    return {"status": "success", "message": f"已撤销 {teacher['name']} 的超管权限。", "teacher": teacher}
+    return {"status": "success", "message": f"已撤销 {teacher['name']} 的超管权限。", **detail}
 
 
 @router.delete("/system/teachers/{teacher_id}", response_class=JSONResponse)
+@router.post("/system/teachers/{teacher_id}/deactivate", response_class=JSONResponse)
 async def api_delete_teacher_account(
     teacher_id: int,
+    expected_revision: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
-    """删除教师账号：停用登录，保留历史教学数据。"""
+    """Temporarily suspend login while keeping teaching history and memberships."""
     with get_db_connection() as conn:
-        _require_current_super_admin(conn, user)
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision, allow_inactive=True)
         try:
             teacher = deactivate_teacher_account(
                 conn,
@@ -729,14 +805,46 @@ async def api_delete_teacher_account(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
         conn.commit()
 
-    invalidate_session_for_user(str(teacher_id), "teacher")
     return {
         "status": "success",
-        "message": f"已删除 {teacher['name']} 的登录账号，历史教学数据已保留。",
-        "teacher": teacher,
+        "message": f"已停用 {teacher['name']} 的登录账号，历史教学数据已保留。",
+        **detail,
     }
+
+
+@router.post("/system/teachers/{teacher_id}/activate", response_class=JSONResponse)
+async def api_activate_teacher_account(
+    teacher_id: int, expected_revision: str = Form(default=""), user: dict = Depends(get_current_teacher),
+):
+    from ...services.teacher_account_service import activate_teacher_account
+    with get_db_connection() as conn:
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision, allow_inactive=True)
+        try:
+            activate_teacher_account(conn, teacher_id=teacher_id, actor_teacher_id=int(user["id"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
+        conn.commit()
+    return {"status": "success", "message": "教师账号已启用，任教归属已恢复；超管权限需另行授予。", **detail}
+
+
+@router.post("/system/teachers/{teacher_id}/cancel", response_class=JSONResponse)
+async def api_cancel_teacher_account(
+    teacher_id: int, expected_revision: str = Form(default=""), user: dict = Depends(get_current_teacher),
+):
+    from ...services.teacher_account_service import cancel_teacher_account
+    with get_db_connection() as conn:
+        before = _begin_teacher_change(conn, user, teacher_id, expected_revision, allow_inactive=True)
+        try:
+            cancel_teacher_account(conn, teacher_id=teacher_id, actor_teacher_id=int(user["id"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = _finish_teacher_change(conn, user, before)
+        conn.commit()
+    return {"status": "success", "message": "教师账号已注销，登录及关联已失效，历史教学数据完整保留。", **detail}
 
 
 @router.get("/system/blog-crawler/status", response_class=JSONResponse)

@@ -116,6 +116,8 @@ def ensure_foundation_schema(conn: sqlite3.Connection) -> None:
         "college": "TEXT NOT NULL DEFAULT ''",
         "department": "TEXT NOT NULL DEFAULT ''",
         "employee_number": "TEXT NOT NULL DEFAULT ''",
+        "cancelled_at": "TEXT",
+        "cancelled_by_teacher_id": "INTEGER",
         "updated_at": "TEXT",
         "deactivated_at": "TEXT",
         "deactivated_by_teacher_id": "INTEGER",

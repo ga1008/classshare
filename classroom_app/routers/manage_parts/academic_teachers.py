@@ -51,7 +51,7 @@ async def teacher_timetable_sync(request: Request, user=Depends(_AUTH)):
     return await _query(request, user, True)
 
 
-@router.post("/academic/teachers/{teacher_no}/sync")
+@router.post("/academic/teachers/{teacher_no:path}/sync")
 async def teacher_timetable_single_sync(teacher_no: str, request: Request, user=Depends(_AUTH)):
     try:
         try:
@@ -64,7 +64,7 @@ async def teacher_timetable_single_sync(teacher_no: str, request: Request, user=
         return _failure(exc)
 
 
-@router.get("/academic/teachers/{teacher_no}/timetable")
+@router.get("/academic/teachers/{teacher_no:path}/timetable")
 async def teacher_timetable_detail(teacher_no: str, year: str, term: str, user=Depends(_AUTH)):
     try:
         with get_db_connection() as conn:

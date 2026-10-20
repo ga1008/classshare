@@ -19,9 +19,10 @@ from classroom_app.services.agent_delegation_service import create_task_attempt,
 
 def extend_account_fields(conn, *, engine="sqlite"):
     """Extend the deliberately small native authority fixture, without DDL magic."""
-    for name in ("email", "phone", "wechat", "qq", "homepage_url", "description", "created_at", "updated_at", "password_updated_at", "deactivated_at", "employee_number"):
+    for name in ("email", "phone", "wechat", "qq", "homepage_url", "description", "created_at", "updated_at", "password_updated_at", "deactivated_at", "employee_number", "cancelled_at"):
         conn.execute(f"ALTER TABLE teachers ADD COLUMN {name} TEXT DEFAULT ''")
     conn.execute("ALTER TABLE teachers ADD COLUMN deactivated_by_teacher_id BIGINT")
+    conn.execute("ALTER TABLE teachers ADD COLUMN cancelled_by_teacher_id BIGINT")
     for name in ("source", "created_at", "deactivated_at", "employee_number"):
         conn.execute(f"ALTER TABLE teacher_organization_memberships ADD COLUMN {name} TEXT DEFAULT ''")
     for name in ("created_by_teacher_id", "updated_by_teacher_id"):
