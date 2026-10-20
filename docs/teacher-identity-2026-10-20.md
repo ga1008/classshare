@@ -76,14 +76,24 @@ python tools/ui/audit_lq_components.py --output docs/lq-platform-component-audit
 
 - 后端 133 项定向回归通过，覆盖身份、资料、管理调用等相关逻辑；课表服务、API 和适配器另有 49 项 SQLite/API 用例通过。
 - 课表完整用例在原生隔离 PostgreSQL 上 29 项通过，另有 4 组原生 PostgreSQL 并发身份探针通过。
-- 使用正式迁移回放流程，在两个独立恢复数据库中分别执行两轮增量迁移与两轮完整启动迁移：182/182 表，旧字段和序列差异为 0，重复执行差异为 0，失败索引为 0，跳过项为 0。回放目标为独立离线恢复库，没有连接在线业务库运行测试。正式报告为 `E:/CodexTemp/lanshare-teacher-identity-pg-20261020/native-report.json`，最终来源匹配验证为同目录下的 `native-validation-identity-final.json`，并发探针输出为 `employee-claim-probe.stdout`；恢复输入为 `E:/CodexTemp/lanshare-lq-release-20260923/snapshot.dump`。
+- 使用正式迁移回放流程，将 2026-09-23 历史已验证备份恢复到新建本机隔离 PostgreSQL 集群，在两个独立恢复数据库中分别执行两轮增量迁移与两轮完整启动迁移：182/182 表，旧字段和序列差异为 0，重复执行差异为 0，失败索引为 0，跳过项为 0。业务测试使用纯合成数据，迁移回放使用上述历史备份恢复库；两者均未连接生产数据库运行测试。正式报告为 `E:/CodexTemp/lanshare-teacher-identity-pg-20261020/native-report.json`，最终来源匹配验证为同目录下的 `native-validation-identity-final.json`，并发探针输出为 `employee-claim-probe.stdout`；恢复输入为 `E:/CodexTemp/lanshare-lq-release-20260923/snapshot.dump`。
 - 正式构建 `npm run build` 通过，最终静态资产图为 `467031947da485656b257b438007b324eebde3e4f9c51d4c46fb1a7d07dccceb`，493 个文件。构建日志位于 `.codex-temp/teacher-identity-build-final.log`。
-- 隔离合成环境加载正式资产，LQ 全部 families 启用与关闭两种配置分别通过 4 项浏览器场景。场景文件为 `tests/e2e/specs/teacher-identity.spec.ts`，配置为 `tests/e2e/teacher-identity.playwright.config.ts`；验证用户管理工号与别名保存、个人资料与登录、窄屏/暗色布局，以及繁忙时关闭否决、缓存和 IME。
+- 隔离合成环境加载正式资产，LQ 全部 families 启用与关闭两种配置分别通过 4 项浏览器场景。场景文件为 `tests/e2e/specs/teacher-identity.spec.ts`，配置为 `tests/e2e/teacher-identity.playwright.config.ts`；验证用户管理工号与别名保存、个人资料与登录、窄屏/暗色布局。后续繁忙/IME 定向补跑是额外第 5 项，不计入前述 4 项。
 - 截图已经实审；暗色归属卡白底白字的问题改为共享 LQ Surface，删除域内私有材质。登录兼容分支也使用 LQ Surface/Input。相关本地截图为 `.codex-temp/teacher-identity-browser/desktop-membership.png`、`mobile-membership.png`、`mobile-login.png`。
 - `.codex-temp/teacher-identity-browser/results.json` 当前保留最后一次单项定向补跑（1 项通过）：保存中不能用 Esc 或关闭按钮关闭，409 后保留工号和学院草稿，IME 开始/结束保持输入，反复切换字段后仅有 3 个 datalist、请求不超过 5 次。该 JSON 不代表两组完整运行。
-- 首次 LQ 关闭配置的 4 项原始报告位于 `tests/e2e/.codex-temp/teacher-identity-browser/results.json`，由发布执行者保留副本；最终 LQ 启用配置的 4 项报告被定向补跑覆盖，成功结果保存在当次工具标准输出中，未伪造独立 JSON 报告。
+- 首次 LQ 关闭配置的 4 项原始报告已保留为 `.codex-temp/teacher-identity-browser/initial-family-off-results.json`；最终 LQ 启用配置的 4 项报告被定向补跑覆盖，成功结果保存在当次工具标准输出中，未伪造独立 JSON 报告。
 
-发布闭环单独补充：
+## 发布闭环
 
-- 现有流程部署、`/lanshare/data` 保护、容器及公开健康核验、相关业务上线核验：待补充。
-- Git 提交、分支、推送与远端 SHA：待补充，独立于上线核验记录。
+实现提交 `4bf818a348545af63583578a702f736b5266226b` 已推送 `origin/dev`，并通过 `git ls-remote` 确认远端实现提交一致。本记录的补充提交随后随同分支推送。
+
+从该实现提交创建独立发布工作树，保留经过验证的源文件字节和迁移摘要；发布目录未包含原工作区的其他未提交文件。发布目录重新正式构建得到同一静态资产图，Git 跟踪文件和暂存区均无差异。先通过 `deploy_remote.ps1 -DryRun -QuiesceForMigration`，再执行正式部署，最终 `DEPLOY_DONE`：
+
+- 线上版本：`20261020-195714-7b6df87c75f2`。
+- 切换前停写 PostgreSQL 备份：`/tmp/lanshare-deploy-backups/db-cutover-20261020-195726.sql.gz`；原代码备份由既有流程同时保存。`/lanshare/data` 全程排除于代码归档，现有数据与草稿保留。
+- 线上迁移：182/182 必需表、失败索引 0、跳过步骤 0。
+- 最终 8 个服务全部运行；配置了健康检查的主应用、AI、mailer、nginx、PostgreSQL、scheduler 均 healthy。
+- 公网及容器发布标识一致；主服务、AI 健康检查成功，未发现新错误日志。健康摘要中的历史失败累计值未被清零，各任务当前状态均为 ok，stale 为 0。
+- 只读业务上线核验：29 个改动源码文件逐字节匹配，2 个工号字段、2 个身份索引存在，无同校重复的非空职工号；公开登录页包含职工号入口和学校消歧字段，5 个相关公开资源哈希一致。
+
+部署日志为 `.codex-temp/teacher-identity-deploy.log`，预检日志为 `.codex-temp/teacher-identity-deploy-dryrun.log`，只读上线核验为 `.codex-temp/teacher-identity-postflight.json`。上线核验不创建生产测试账号，也不修改真实教师档案。迁移与功能验收分别使用离线恢复库及隔离合成环境。
