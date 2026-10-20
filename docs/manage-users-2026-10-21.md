@@ -56,4 +56,15 @@
 
 ## 发布记录
 
-部署与公网、容器、源码字节、字段和资源图核验完成后补记；生产切换仍需取得停写备份，以保护历史演练快照之后的新数据。
+实现提交 `d91d25813237a671c56ac72839e897ad342e24c1` 已推送 `origin/dev`，`git ls-remote` 已核对相同提交。发布记录随后单独提交并推送。
+
+从实现提交创建干净发布工作树，仅复制已验证的跟踪源码字节和正式资源，未带入主工作区其他未跟踪文件。迁移报告在提交后及发布目录预检均通过。先执行 `deploy_remote.ps1 -DryRun -QuiesceForMigration`，再按同一门禁正式部署，最终返回 `DEPLOY_DONE`：
+
+- 线上发布标识 `20261021-003230-af6e869bd38a`。
+- 停写备份 `/tmp/lanshare-deploy-backups/db-cutover-20261021-003251.sql.gz`，保护历史演练快照之后的新数据；既有流程保留代码及镜像回滚点。
+- 线上迁移 182/182 必需表，失败索引 0、跳过步骤 0；`/lanshare/data` 未被代码包覆盖，现有 3.3G 数据目录保留。
+- 8 个服务均 running；配置健康检查的 app、AI、mailer、nginx、PostgreSQL、scheduler 均 healthy。
+- 公网与容器发布标识一致，主服务和 AI 返回 `status=ok`。后台历史失败累计仍存在，11 类任务当前状态均为 ok，stale 为 0；本次没有清空历史记录。
+- 只读上线核验通过：14 个改动源码文件逐字节匹配，2 个注销字段及 2 个工号索引存在，无同校重复非空工号、无注销仍具活动权限的记录；5 个公网相关资源哈希及完整资产图匹配。公开登录页仍保留邮箱/职工号入口。
+
+预检日志 `.codex-temp/manage-users-deploy-dryrun.log`，部署日志 `.codex-temp/manage-users-deploy.log`，上线只读报告 `.codex-temp/manage-users-postflight.json`。公网/数据库核验没有创建生产测试账号或写入真实教师资料。两个管理浏览器合成服务和课表合成服务均已停止；临时发布工作树通过托管归档清理。
