@@ -25,16 +25,18 @@
             </label>
             <label class="lq-field teacher-query-name" for="teacherQueryName">
                 <span class="lq-field__label">教师姓名或工号</span>
-                <input data-lq-component="input" class="lq-input" type="search" id="teacherQueryName" name="q" maxlength="80" placeholder="例如：兰瑞江，或完整教工号" autocomplete="off" required>
+                <input data-lq-component="input" class="lq-input" type="search" id="teacherQueryName" name="q" maxlength="80" placeholder="输入姓名或教工号；留空浏览本地课表" autocomplete="off" aria-describedby="teacherQueryHelp">
             </label>
             <div data-lq-component="toolbar" class="lq-domain-toolbar teacher-query-actions">
                 {{ lq_btn('查询', variant='prominent', type='submit', attrs={'id': 'teacherQuerySubmit'}) }}
-                {{ lq_btn('同步', variant='glass', attrs={'id': 'teacherQuerySync', 'title': '从教务系统重新同步，再显示查询结果'}) }}
+                {{ lq_btn('同步', variant='glass', disabled=true, attrs={'id': 'teacherQuerySync', 'title': '先输入教师姓名或工号，再从教务系统同步'}) }}
             </div>
         </div>
-        <p class="teacher-query-help">查询优先使用本地缓存；没有缓存时自动同步。同步会重新读取教务系统，按工号分别保存每位教师的完整学期课表。</p>
+        <p class="teacher-query-help" id="teacherQueryHelp">留空浏览本学期已缓存课表，按最近同步排序。输入姓名或工号后，查询优先读取本地，没有缓存时自动同步；点击同步可更新教务数据。</p>
+        <p class="teacher-query-help" id="teacherQuerySyncHint">同步前请先输入教师姓名或工号，避免抓取全校课表。</p>
         <details class="teacher-query-advanced">
             <summary>更多筛选</summary>
+            <p class="teacher-query-help" id="teacherQueryFilterHint">输入姓名或工号后可使用更多筛选。</p>
             <div class="teacher-query-filter-grid">
                 {% for key, label in [('campus_id', '校区'), ('department_id', '部门'), ('title_id', '职称'), ('college_id', '开课学院'), ('external', '是否外聘')] %}
                 <label class="lq-field" for="teacherQuery-{{ key }}">
@@ -46,7 +48,7 @@
         </details>
     </form>
 
-    <div data-lq-component="status" class="lq-status teacher-query-feedback" id="teacherQueryFeedback" role="status" aria-live="polite">输入教师姓名或工号开始查询。</div>
+    <div data-lq-component="status" class="lq-status teacher-query-feedback" id="teacherQueryFeedback" role="status" aria-live="polite">正在读取本学期的本地课表…</div>
     <p id="teacherQueryCredential" {% if teacher_schedule_boot.credential_ready %}hidden{% endif %}>需要访问教务时，请先在<a href="/manage/academic/integrations">教务对接</a>中验证账号；已有本地缓存仍可查询。</p>
 
     <section class="teacher-query-metrics" aria-label="本次查询统计">
@@ -58,7 +60,7 @@
     <section class="teacher-query-results" aria-label="教师查询结果">
         <div class="teacher-query-result-head"><h3>教师列表</h3><span id="teacherQueryResultMeta">同名教师按工号分别显示</span></div>
         <div class="teacher-query-cards" id="teacherQueryCards"></div>
-        <div id="teacherQueryEmpty">{{ lq_empty('no-results', variant='card', title='查找一位教师', description='选择学年学期，输入姓名或教工号后点击查询。') }}</div>
+        <div id="teacherQueryEmpty">{{ lq_empty('no-results', variant='card', title='浏览已缓存教师', description='也可输入教师姓名或教工号，查询并同步完整学期课表。') }}</div>
         <nav class="teacher-query-pagination" id="teacherQueryPagination" aria-label="教师列表分页" hidden>
             {{ lq_btn('上一页', variant='ghost', attrs={'id': 'teacherQueryPrev'}) }}
             <span id="teacherQueryPage"></span>

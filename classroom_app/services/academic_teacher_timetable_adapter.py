@@ -203,7 +203,7 @@ def normalize_timetable(payload, *, teacher_no, xnm, xqm) -> tuple[list[dict], l
     return lessons, others
 
 
-async def fetch_teacher_timetables(client, *, xnm, xqm, filters):
+async def fetch_teacher_timetables(client, *, xnm, xqm, filters, exact_teacher_no=None):
     """Fetch bounded, complete results, using the caller's existing auth client."""
     xnm, xqm = str(xnm), str(xqm)
     response = await client.get(INDEX)
@@ -215,10 +215,10 @@ async def fetch_teacher_timetables(client, *, xnm, xqm, filters):
     query = {key: "" for key in ("jsxb_id", "kkxb_id", "xzzw", "tsxxkcxbj", "xsdm", "kclxdm",
                                      "kclbdm", "zs", "yf", "jsdm_query", "kbsjlyqz", "xb_id", "xsxy",
                                      "ccdm", "rkxy_id", "drcx_id", "jzglbm")}
-    query.update({"xnm": xnm, "xqm": xqm, "jgh": filters["q"], "zxsypkjs": "false"})
+    query.update({"xnm": xnm, "xqm": xqm, "jgh": exact_teacher_no or filters["q"], "zxsypkjs": "false"})
     for local, remote in (("campus_id", "xqh_id"), ("department_id", "jg_id"), ("title_id", "zcm"),
                           ("college_id", "kkbm_id"), ("external", "sfwp")):
-        value = _text(filters.get(local))
+        value = "" if exact_teacher_no is not None else _text(filters.get(local))
         if value and value not in {o["id"] for o in options.get(remote, [])}:
             raise TeacherTimetableSourceError("筛选选项已变更，请重新查询后选择。")
         query[remote] = value
@@ -232,7 +232,7 @@ async def fetch_teacher_timetables(client, *, xnm, xqm, filters):
         rows.extend(more)
     if len(rows) != total:
         raise TeacherTimetableSourceError("教师列表未完整返回，未更新缓存。")
-    teachers, seen = [], set()
+    teachers, seen, matched_rows = [], set(), []
     for row in rows:
         if not isinstance(row, dict):
             raise TeacherTimetableSourceError("教务教师资料格式无效。")
@@ -242,6 +242,12 @@ async def fetch_teacher_timetables(client, *, xnm, xqm, filters):
         if _text(row.get("xnm")) != xnm or _text(row.get("xqm")) != xqm:
             raise TeacherTimetableSourceError("教师列表的学期与查询不一致。")
         seen.add(no)
+        if exact_teacher_no is None or no == exact_teacher_no:
+            matched_rows.append(row)
+    if exact_teacher_no is not None and len(matched_rows) != 1:
+        raise TeacherTimetableSourceError("教务系统未找到该精确工号，已有课表缓存保持不变。")
+    for row in matched_rows:
+        no, name = _text(row.get("jgh")), _text(row.get("xm"))
         # Match filters select teachers only. Every snapshot always stores their
         # full term, never a college/week/primary-only subset.
         detail = {k: _text(row.get(k)) for k in ("jgh", "jgh_id", "xm", "jgmc", "rkxy", "xqh_id")}

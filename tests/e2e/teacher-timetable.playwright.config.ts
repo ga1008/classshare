@@ -6,7 +6,7 @@ export default defineConfig({
   retries: 0, timeout: 90_000, outputDir: path.join(output, 'test-results'),
   reporter: [['list'], ['json', { outputFile: path.join(output, 'results.json') }]],
   use: { ...devices['Desktop Chrome'], channel: 'chrome', baseURL: 'http://127.0.0.1:8367', actionTimeout: 10_000,
-    screenshot: 'only-on-failure', trace: 'retain-on-failure' },
+    timezoneId: 'Pacific/Honolulu', screenshot: 'only-on-failure', trace: 'retain-on-failure' },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1440, height: 980 } } },
     { name: 'touch', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },

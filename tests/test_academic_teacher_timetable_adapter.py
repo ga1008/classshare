@@ -44,7 +44,7 @@ class TimetableAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.delay.start()
         self.addCleanup(self.delay.stop)
 
-    async def fetch(self, **filters):
+    async def fetch(self, *, exact_teacher_no=None, **filters):
         def handle(request):
             if request.method == "GET":
                 return httpx.Response(200, text=INDEX_HTML)
@@ -70,7 +70,8 @@ class TimetableAdapterTests(unittest.IsolatedAsyncioTestCase):
         async with httpx.AsyncClient(base_url="https://academic.synthetic.invalid",
                                      transport=httpx.MockTransport(handle)) as client:
             return await adapter.fetch_teacher_timetables(client, xnm="2026", xqm="3",
-                                                          filters={"q": "同名教师", **filters})
+                                                          filters={"q": "同名教师", **filters},
+                                                          exact_teacher_no=exact_teacher_no)
 
     async def test_complete_term_keeps_other_courses_and_academic_details(self):
         result = await self.fetch(college_id="04", campus_id="1")
@@ -100,6 +101,27 @@ class TimetableAdapterTests(unittest.IsolatedAsyncioTestCase):
         result = await self.fetch()
         self.assertEqual(result["teachers"], [])
         self.assertEqual(len(self.calls), 1)
+
+    async def test_exact_employee_sync_filters_before_detail_requests(self):
+        self.rows = [teacher("1001"), teacher("001"), teacher("0010")]
+        self.page_size = 1
+        result = await self.fetch(exact_teacher_no="001", college_id="outdated", campus_id="outdated")
+        self.assertEqual(["001"], [p["teacher_no"] for p in result["teachers"]])
+        details = [data for path, data in self.calls if path.endswith("cxJsKb.html") or path.endswith("cxXnxqsfkz.html")]
+        self.assertEqual(["001", "001"], [d["jgh"] for d in details])
+        self.assertEqual("opaque-001", details[-1]["jgh_id"])
+        self.assertEqual("001", self.calls[0][1]["jgh"])
+        self.assertEqual("", self.calls[0][1]["kkbm_id"])
+        self.assertEqual("", self.calls[0][1]["xqh_id"])
+
+    async def test_exact_missing_employee_is_not_a_successful_empty_result(self):
+        for rows in ([], [teacher("1001")], [teacher("0010")], [teacher("001"), teacher("001")]):
+            with self.subTest(rows=rows):
+                self.calls = []
+                self.rows = rows
+                with self.assertRaises(adapter.TeacherTimetableSourceError):
+                    await self.fetch(exact_teacher_no="001")
+                self.assertFalse(any(p.endswith("cxJsKb.html") for p, _ in self.calls))
 
     async def test_invalid_and_partial_lists_never_become_empty_cache(self):
         for value in ({}, {"items": []}, {"items": [], "totalCount": 1, "totalPage": 1, "currentPage": 1},

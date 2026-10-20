@@ -41,6 +41,17 @@ test('read-only lesson callback uses native controls and disables the extra expa
 
 const classes = Array.from({ length: 8 }, (_, index) => `人工智能260${index + 1}班（专升本）`).join(' · ');
 
+test.describe('school time zone', () => {
+  test.use({ timezoneId: 'Pacific/Honolulu' });
+  test('today column follows Shanghai even when the browser is on the previous day', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-20T01:00:00Z'));
+    await mountDeck(page);
+    expect(await page.evaluate(() => new Date().getDay())).toBe(1);
+    await expect(page.locator('.cs-card.is-active .cs-grid__day--today')).toHaveText('周二');
+    await expect(page.locator('.cs-expand .cs-grid__day--today')).toHaveText('周二今天');
+  });
+});
+
 async function mountDeck(page: Page) {
   await page.route('http://schedule.test/**', async route => {
     if (await serveScheduleModule(route)) return;

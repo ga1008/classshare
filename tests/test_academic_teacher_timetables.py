@@ -224,11 +224,129 @@ class TeacherTimetableTests(unittest.IsolatedAsyncioTestCase):
         self.fetch.assert_not_awaited()
 
     async def test_invalid_filters_do_not_query_upstream(self):
-        for bad in [{"q": ""}, {"primary_only": "false"}, {"external": "yes"}, {"year": "nonsense"},
+        for bad in [{"primary_only": "false"}, {"external": "yes"}, {"year": "nonsense"}, {"local_only": "true"},
                     {"q": "x" * 81}]:
             with self.subTest(bad=bad), self.assertRaises(svc.TimetableQueryError):
                 await svc.query_teacher_timetables(1, {**self.query, **bad})
         self.fetch.assert_not_awaited()
+
+    async def test_empty_search_is_local_without_credentials_and_sync_requires_keyword(self):
+        with patch.object(svc, "load_teacher_academic_access_method") as credential:
+            result = await svc.query_teacher_timetables(1, {**self.query, "q": "  "})
+            self.assertEqual(("local", "local_browse", []), (result["source"], result["mode"], result["items"]))
+            self.assertEqual(0, result["pagination"]["total_count"])
+            with self.assertRaises(svc.TimetableQueryError) as error:
+                await svc.query_teacher_timetables(1, {**self.query, "q": ""}, force_sync=True)
+            self.assertEqual(400, error.exception.http_status)
+            credential.assert_not_called()
+        self.fetch.assert_not_awaited()
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM academic_teacher_query_leases").fetchone()[0])
+
+    async def test_local_browse_has_stable_term_scope_pagination_and_page_statistics(self):
+        self.fetch.return_value = {"teachers": [fixture_teacher(), fixture_teacher("000456"), fixture_teacher("000789")]}
+        await svc.query_teacher_timetables(1, self.query)
+        await svc.query_teacher_timetables(1, {**self.query, "term": "2"})
+        self.conn.execute("UPDATE academic_teacher_timetables SET synced_at='2026-10-20T10:00:00' WHERE teacher_no<>'000123'")
+        self.conn.execute("UPDATE academic_teacher_timetables SET synced_at='2026-10-19T10:00:00' WHERE teacher_no='000123'")
+        # A list must not load/decode raw snapshots, even when they are large.
+        self.conn.execute("UPDATE academic_teacher_timetables SET snapshot_json='not-list-data',lessons_json='not-list-data'")
+        self.conn.commit()
+        with patch.object(svc, "load_teacher_academic_access_method") as credential, patch.object(
+            svc, "_account_links", wraps=svc._account_links,
+        ) as links:
+            query = {**self.query, "q": "", "page_size": 2, "college_id": "unrelated-opening-college", "campus_id": "old"}
+            first = await svc.query_teacher_timetables(1, query)
+            second = await svc.query_teacher_timetables(1, {**query, "page": 99})
+            credential.assert_not_called()
+            self.assertEqual(["000456", "000789"], links.call_args_list[0].args[1])
+            self.assertEqual(["000123"], links.call_args_list[1].args[1])
+        self.assertEqual(["000456", "000789"], [p["teacher_no"] for p in first["items"]])
+        self.assertEqual(["000123"], [p["teacher_no"] for p in second["items"]])
+        self.assertEqual({"page": 2, "page_size": 2, "total_count": 3, "total_page": 2}, second["pagination"])
+        self.assertEqual({"teacher_count": 3, "linked_count": 0, "course_count": 4, "lesson_count": 6}, first["summary"])
+        self.assertEqual(1, second["summary"]["linked_count"])
+        self.assertEqual("page", first["summary_scope"])
+        self.assertEqual(["campus_id", "college_id"], first["ignored_filters"])
+        self.assertIn("未应用", first["message"])
+        self.assertEqual("1", first["selected_term"]["term"])
+        self.assertEqual(2, self.fetch.await_count)
+        with self.assertRaises(svc.TimetableQueryError) as error:
+            await svc.query_teacher_timetables(3, query)
+        self.assertEqual(403, error.exception.http_status)
+
+    async def test_local_only_refresh_never_falls_back_to_remote(self):
+        with patch.object(svc, "load_teacher_academic_access_method") as credential:
+            missing = await svc.query_teacher_timetables(1, {**self.query, "local_only": True})
+            self.assertEqual(("local_only", []), (missing["mode"], missing["items"]))
+            credential.assert_not_called()
+        self.fetch.assert_not_awaited()
+        await svc.query_teacher_timetables(1, self.query)
+        result = await svc.query_teacher_timetables(1, {**self.query, "local_only": True})
+        self.assertEqual(("local", 2), (result["source"], len(result["items"])))
+        self.assertEqual(1, self.fetch.await_count)
+        with self.assertRaises(svc.TimetableQueryError):
+            await svc.query_teacher_timetables(1, {**self.query, "local_only": True}, force_sync=True)
+
+    async def test_exact_sync_updates_only_target_and_never_replaces_fuzzy_coverage(self):
+        await svc.query_teacher_timetables(1, {**self.query, "q": "000123"})
+        coverage = [tuple(r) for r in self.conn.execute("SELECT * FROM academic_teacher_query_cache")]
+        other = tuple(self.conn.execute("SELECT * FROM academic_teacher_timetables WHERE teacher_no='000456'").fetchone())
+        person = fixture_teacher()
+        person["lessons"][0]["course_name"] = "更新课程"
+        self.fetch.return_value = {"teachers": [person]}
+        detail = await svc.sync_teacher_timetable(1, "000123", {**self.query, "q": "000456", "college_id": "outdated"})
+        self.assertEqual("academic", detail["source"])
+        self.assertEqual("000123", detail["teacher"]["teacher_no"])
+        self.assertEqual("更新课程", detail["lessons"]["1"]["course_name"])
+        self.assertEqual("未排课程", detail["unscheduled_courses"][0]["course_name"])
+        self.assertEqual("1", detail["overview"]["selected_term"]["term"])
+        self.assertEqual("000123", self.fetch.call_args.kwargs["exact_teacher_no"])
+        self.assertEqual("000123", self.fetch.call_args.kwargs["filters"]["q"])
+        self.assertEqual("", self.fetch.call_args.kwargs["filters"]["college_id"])
+        self.assertEqual(coverage, [tuple(r) for r in self.conn.execute("SELECT * FROM academic_teacher_query_cache")])
+        self.assertEqual(other, tuple(self.conn.execute("SELECT * FROM academic_teacher_timetables WHERE teacher_no='000456'").fetchone()))
+        cached = await svc.query_teacher_timetables(1, {**self.query, "q": "000123", "local_only": True})
+        self.assertEqual(2, len(cached["items"]))
+
+    async def test_exact_sync_missing_wrong_or_partial_response_preserves_every_cache(self):
+        await svc.query_teacher_timetables(1, self.query)
+        tables = ("academic_teacher_directory", "academic_teacher_timetables", "academic_teacher_query_cache")
+        before = {t: [tuple(r) for r in self.conn.execute("SELECT * FROM " + t)] for t in tables}
+        invalid = fixture_teacher()
+        invalid["lessons"][0]["weeks"] = []
+        for teachers in ([], [fixture_teacher("000456")], [fixture_teacher(), fixture_teacher("000456")], [invalid]):
+            with self.subTest(teachers=teachers):
+                self.fetch.return_value = {"teachers": teachers}
+                with self.assertRaises(svc.TimetableQueryError) as error:
+                    await svc.sync_teacher_timetable(1, "000123", self.query)
+                self.assertEqual(502, error.exception.http_status)
+                self.assertEqual(before, {t: [tuple(r) for r in self.conn.execute("SELECT * FROM " + t)] for t in tables})
+                self.assertEqual("", self.conn.execute("SELECT lease_token FROM academic_teacher_query_leases").fetchone()[0])
+
+    async def test_exact_sync_uses_same_lease_scope_and_cancellation_cleanup(self):
+        await svc.query_teacher_timetables(1, self.query)
+        before = [tuple(r) for r in self.conn.execute("SELECT * FROM academic_teacher_timetables")]
+        self.fetch.reset_mock()
+        key = svc._lease_key(self.credential)
+        self.assertTrue(svc._claim(self.conn, key, "query-owner", svc._stamp()))
+        self.conn.commit()
+        with self.assertRaises(svc.TimetableQueryError) as error:
+            await svc.sync_teacher_timetable(1, "000123", self.query)
+        self.assertEqual(409, error.exception.http_status)
+        self.fetch.assert_not_awaited()
+        svc._release(self.conn, key, "query-owner")
+        self.conn.commit()
+        self.fetch.side_effect = asyncio.CancelledError()
+        with self.assertRaises(asyncio.CancelledError):
+            await svc.sync_teacher_timetable(1, "000123", self.query)
+        self.assertEqual("", self.conn.execute("SELECT lease_token FROM academic_teacher_query_leases").fetchone()[0])
+        self.assertEqual(before, [tuple(r) for r in self.conn.execute("SELECT * FROM academic_teacher_timetables")])
+        with self.assertRaises(svc.TimetableQueryError) as error:
+            await svc.sync_teacher_timetable(3, "000123", self.query)
+        self.assertEqual(403, error.exception.http_status)
+        for payload in (None, {}, {"year": "2026-2027"}, {"year": "bad", "term": "1"}):
+            with self.assertRaises(svc.TimetableQueryError):
+                await svc.sync_teacher_timetable(1, "000123", payload)
 
 
 if __name__ == "__main__":

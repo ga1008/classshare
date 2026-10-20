@@ -107,7 +107,8 @@ function sectionBand(section) {
 
 /** 今天对应的远端星期（1=周一 .. 7=周日）。 */
 function todayRemoteWeekday() {
-    return ((new Date().getDay() + 6) % 7) + 1;
+    const day = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', weekday: 'short' }).format(new Date());
+    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(day) + 1;
 }
 
 function weekEmptyMarkHtml(week) {

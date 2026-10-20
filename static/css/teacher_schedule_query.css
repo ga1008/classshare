@@ -27,6 +27,8 @@
 .teacher-timetable-dialog .lq-dialog__surface { width: min(1200px, calc(100vw - 32px)); max-width: none; }
 .teacher-timetable-body { display: grid; gap: 12px; min-width: 0; white-space: normal; }
 .teacher-timetable-identity { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+.teacher-timetable-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.teacher-timetable-position { margin: 0; font-size: .875rem; line-height: 1.6; }
 .teacher-timetable-dialog .cs-stage { height: min(600px, 65vh); min-height: 420px; }
 .teacher-timetable-dialog .cs-card { width: min(1000px, 87%); height: calc(100% - 70px); }
 .teacher-timetable-dialog .cs-card__bar { flex-wrap: wrap; gap: 5px 10px; }

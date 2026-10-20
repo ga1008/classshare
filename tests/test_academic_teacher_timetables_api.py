@@ -19,11 +19,13 @@ class TeacherTimetableAPITests(unittest.TestCase):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
         self.query = AsyncMock(return_value={"status": "success", "items": []})
+        self.single_sync = AsyncMock(return_value={"status": "success", "teacher": {"teacher_no": "000123"}, "overview": {}})
         self.detail = Mock(return_value={"status": "success", "overview": {}})
         @contextmanager
         def db():
             yield sentinel.conn
         for name, replacement in [("query_teacher_timetables", self.query),
+                                  ("sync_teacher_timetable", self.single_sync),
                                   ("load_teacher_timetable", self.detail), ("get_db_connection", db)]:
             p = patch.object(api, name, replacement)
             p.start()
@@ -41,16 +43,30 @@ class TeacherTimetableAPITests(unittest.TestCase):
         self.user = {"id": 2, "role": "student"}
         self.assertEqual(403, self.client.post("/api/manage/academic/teachers/query", json={}).status_code)
         self.assertEqual(403, self.client.get("/api/manage/academic/teachers/000123/timetable?year=2026-2027&term=1").status_code)
+        self.assertEqual(403, self.client.post("/api/manage/academic/teachers/000123/sync", json={}).status_code)
         del self.app.dependency_overrides[get_current_user]
         self.app.dependency_overrides[get_current_user_optional] = lambda: None
         self.assertEqual(401, self.client.post("/api/manage/academic/teachers/query", json={}).status_code)
+        self.assertEqual(401, self.client.post("/api/manage/academic/teachers/000123/sync", json={}).status_code)
         self.query.assert_not_awaited()
+        self.single_sync.assert_not_awaited()
         self.detail.assert_not_called()
 
     def test_detail_uses_authenticated_actor_and_keeps_employee_number_text(self):
         response = self.client.get("/api/manage/academic/teachers/000123/timetable?year=2026-2027&term=1&teacher_id=999")
         self.assertEqual(200, response.status_code)
         self.detail.assert_called_once_with(sentinel.conn, 73, "000123", year="2026-2027", term="1")
+
+    def test_single_sync_keeps_actor_employee_number_and_safe_errors(self):
+        body = {"year": "2026-2027", "term": "1", "teacher_id": 999, "teacher_no": "000456"}
+        response = self.client.post("/api/manage/academic/teachers/000123/sync", json=body)
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("private, no-store", response.headers["cache-control"])
+        self.single_sync.assert_awaited_once_with(73, "000123", body)
+        self.single_sync.side_effect = TimetableQueryError("当前账号正在同步。", status="busy", http_status=409)
+        response = self.client.post("/api/manage/academic/teachers/000123/sync", json=body)
+        self.assertEqual(409, response.status_code)
+        self.assertEqual("private, no-store", response.headers["cache-control"])
 
     def test_expected_errors_preserve_status_and_safe_message(self):
         for status, code in [("forbidden", 403), ("busy", 409), ("failed", 502)]:
@@ -61,10 +77,12 @@ class TeacherTimetableAPITests(unittest.TestCase):
             self.assertEqual("安全错误消息", response.json()["message"])
 
     def test_invalid_json_is_rejected_before_service(self):
-        response = self.client.post("/api/manage/academic/teachers/query", content="{",
-                                    headers={"Content-Type": "application/json"})
-        self.assertEqual(400, response.status_code)
+        for endpoint in ("query", "000123/sync"):
+            response = self.client.post("/api/manage/academic/teachers/" + endpoint, content="{",
+                                        headers={"Content-Type": "application/json"})
+            self.assertEqual(400, response.status_code)
         self.query.assert_not_awaited()
+        self.single_sync.assert_not_awaited()
 
 
 if __name__ == "__main__":

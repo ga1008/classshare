@@ -53,10 +53,11 @@ async def respond(request):
             return httpx.Response(503, text="Synthetic maintenance")
         if state["mode"] == "malformed":
             return httpx.Response(200, json={"items": []})
-        count = 14 if form["jgh"] == "分页" else 2
+        count = 14 if form["jgh"] == "分页" or form["jgh"].startswith("000") else 2
         people = [{"jgh": f"000{123 + index}", "xm": "同名教师", "jgh_id": f"opaque-{index}",
                    "jg_id": "04", "jgmc": "合成数字学院" if index == 0 else "合成语言学院",
-                   "xnm": form["xnm"], "xqm": form["xqm"], "xqh_id": "1", "zcmc": "讲师", "zcm": "013"}
+                   "xnm": form["xnm"], "xqm": form["xqm"], "xqh_id": "1",
+                   "zcmc": "副教授" if state.get("revision") == 2 else "讲师", "zcm": "013"}
                   for index in range(count)]
         if form["jgh"] == "无匹配":
             people = []
@@ -73,11 +74,15 @@ async def respond(request):
         "jgh": no, "xnm": form["xnm"], "xqm": form["xqm"], "kch": "CS101",
         "kcmc": "合成数据库原理" if no == "000123" else "合成英语阅读", "jxb_id": "CLASS-" + no,
         "jxbmc": "课程-" + no, "jxbzc": "合成软件2601班", "xqj": "3", "jc": "2-3节",
-        "jcs": "2-3", "zcd": "1-20周", "cdmc": "合成楼B412", "xkrs": "35",
+        "jcs": "2-3", "zcd": "1-20周", "cdmc": "更新楼C201" if state.get("revision") == 2 else "合成楼B412", "xkrs": "35",
         "kcxszc": "理论:16,实践:16", "zxs": "32", "xf": "2", "xqmc": "合成校区",
     }]
+    if lessons and state.get("revision") == 2:
+        lessons.append({**lessons[0], "kch": "CS202", "kcmc": "合成新增课程", "jxb_id": "NEW-" + no,
+                        "xqj": "5", "jc": "4-5节", "jcs": "4-5"})
+    unscheduled = "更新安全教育" if state.get("revision") == 2 else "合成安全教育"
     return httpx.Response(200, json={"kbList": lessons,
-                                   "sjkList": [{"kcmc": "合成安全教育", "qtkcgs": "合成安全教育/1-12周/安全教育-01/合成班"}],
+                                   "sjkList": [{"kcmc": unscheduled, "qtkcgs": f"{unscheduled}/1-12周/安全教育-01/合成班"}],
                                    "bjsjkList": [], "jxhjkcList": []})
 
 

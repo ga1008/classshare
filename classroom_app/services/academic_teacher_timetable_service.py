@@ -133,8 +133,10 @@ def _normalize_query(conn, teacher_id, payload):
     else:
         identity = _default_identity(_terms(conn), china_now().date())
     q = re.sub(r"\s+", " ", str(payload.get("q") or "").strip())
-    if not q or len(q) > 80:
+    if len(q) > 80:
         raise TimetableQueryError("请输入教师姓名或工号（最多80个字符）。")
+    if type(payload.get("local_only", False)) is not bool:
+        raise TimetableQueryError("本地查询参数无效。")
     filters = {"q": q, **{key: str(payload.get(key) or "").strip() for key in FILTER_KEYS}}
     if any(len(filters[key]) > 120 for key in FILTER_KEYS):
         raise TimetableQueryError("筛选条件过长。")
@@ -191,7 +193,8 @@ def _read_cached(conn, identity, signature, page, page_size, *, source="local"):
     if nos:
         # Upstream requests are bounded at 100 teachers; no unbounded parameter lists.
         rows = conn.execute(
-            f"SELECT * FROM academic_teacher_timetables WHERE school_code=? AND term_code=? AND teacher_no IN ({','.join('?' for _ in nos)})",
+            f"""SELECT teacher_no,profile_json,summary_json,synced_at FROM academic_teacher_timetables
+                WHERE school_code=? AND term_code=? AND teacher_no IN ({','.join('?' for _ in nos)})""",
             (SCHOOL, identity.code, *nos),
         ).fetchall()
         if len(rows) != len(nos):
@@ -203,7 +206,7 @@ def _read_cached(conn, identity, signature, page, page_size, *, source="local"):
              for no in nos]
     pages = max(1, (len(cards) + page_size - 1) // page_size)
     page = min(page, pages)
-    return {"status": "success", "source": source, "synced_at": coverage["synced_at"],
+    return {"status": "success", "source": source, "summary_scope": "query", "synced_at": coverage["synced_at"],
             "selected_term": _term_payload(identity), "message": "已从本地缓存查询。" if source == "local" else "已同步教务系统并完成查询。",
             "items": cards[(page - 1) * page_size:page * page_size],
             "pagination": {"page": page, "page_size": page_size, "total_count": len(cards), "total_page": pages},
@@ -211,6 +214,34 @@ def _read_cached(conn, identity, signature, page, page_size, *, source="local"):
                         "course_count": sum(c["summary"]["course_count"] for c in cards),
                         "lesson_count": sum(c["summary"]["lesson_count"] for c in cards)},
             "options": json.loads(coverage["options_json"])}
+
+
+def _browse_local(conn, identity, filters, page, page_size):
+    """Browse complete term snapshots only; remote filter meanings are not inferred."""
+    total = conn.execute(
+        "SELECT COUNT(*) FROM academic_teacher_timetables WHERE school_code=? AND term_code=?",
+        (SCHOOL, identity.code),
+    ).fetchone()[0]
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, pages)
+    rows = conn.execute(
+        """SELECT teacher_no,profile_json,summary_json,synced_at FROM academic_teacher_timetables
+           WHERE school_code=? AND term_code=? ORDER BY synced_at DESC,teacher_no ASC LIMIT ? OFFSET ?""",
+        (SCHOOL, identity.code, page_size, (page - 1) * page_size),
+    ).fetchall()
+    links = _account_links(conn, [r["teacher_no"] for r in rows])
+    cards = [{**json.loads(r["profile_json"]), **links[r["teacher_no"]],
+              "summary": json.loads(r["summary_json"]), "synced_at": r["synced_at"]} for r in rows]
+    ignored = [key for key in FILTER_KEYS if filters[key]]
+    return {"status": "success", "source": "local", "mode": "local_browse",
+            "sort": "synced_at_desc", "summary_scope": "page", "ignored_filters": ignored,
+            "synced_at": cards[0]["synced_at"] if cards else "", "selected_term": _term_payload(identity),
+            "message": "已按最近同步时间显示本学期本地课表。" + (" 高级筛选未应用，输入姓名或工号后生效。" if ignored else ""),
+            "items": cards, "pagination": {"page": page, "page_size": page_size, "total_count": total, "total_page": pages},
+            "summary": {"teacher_count": total, "linked_count": sum(c["account_status"] == "linked" for c in cards),
+                        "course_count": sum(c["summary"]["course_count"] for c in cards),
+                        "lesson_count": sum(c["summary"]["lesson_count"] for c in cards)},
+            "options": {}}
 
 
 def _lease_key(credential):
@@ -301,26 +332,60 @@ def _publish(conn, credential_key, token, identity, filters, signature, result, 
                WHERE academic_teacher_timetables.synced_at<=excluded.synced_at""",
             (SCHOOL, profile["teacher_no"], identity.code, _dump(profile), _dump(snapshot), _dump(lessons), _dump(summary), stamp),
         )
-    conn.execute(
-        """INSERT INTO academic_teacher_query_cache
-           (school_code,term_code,query_key,filters_json,teacher_nos_json,options_json,synced_at)
-           VALUES(?,?,?,?,?,?,?) ON CONFLICT(school_code,term_code,query_key) DO UPDATE SET
-           filters_json=excluded.filters_json,teacher_nos_json=excluded.teacher_nos_json,
-           options_json=excluded.options_json,synced_at=excluded.synced_at
-           WHERE academic_teacher_query_cache.synced_at<=excluded.synced_at""",
-        (SCHOOL, identity.code, signature, _dump(filters), _dump([p["teacher_no"] for p, *_ in normalized]),
-         _dump(result.get("options") or {}), stamp),
-    )
+    # An exact-employee refresh is not evidence of a complete fuzzy-name query.
+    if signature is not None:
+        conn.execute(
+            """INSERT INTO academic_teacher_query_cache
+               (school_code,term_code,query_key,filters_json,teacher_nos_json,options_json,synced_at)
+               VALUES(?,?,?,?,?,?,?) ON CONFLICT(school_code,term_code,query_key) DO UPDATE SET
+               filters_json=excluded.filters_json,teacher_nos_json=excluded.teacher_nos_json,
+               options_json=excluded.options_json,synced_at=excluded.synced_at
+               WHERE academic_teacher_query_cache.synced_at<=excluded.synced_at""",
+            (SCHOOL, identity.code, signature, _dump(filters), _dump([p["teacher_no"] for p, *_ in normalized]),
+             _dump(result.get("options") or {}), stamp),
+        )
     _release(conn, credential_key, token)
 
 
 async def query_teacher_timetables(teacher_id, payload, *, force_sync=False):
     with get_db_connection() as conn:
         identity, filters, signature, page, page_size = _normalize_query(conn, teacher_id, payload)
+        if not filters["q"]:
+            if force_sync:
+                raise TimetableQueryError("请输入教师姓名或工号后同步。")
+            return _browse_local(conn, identity, filters, page, page_size)
+        if force_sync and payload.get("local_only"):
+            raise TimetableQueryError("同步操作不能同时指定仅查本地。")
         if not force_sync:
             cached = _read_cached(conn, identity, signature, page, page_size)
             if cached is not None:
                 return cached
+            if payload.get("local_only"):
+                return {"status": "success", "source": "local", "mode": "local_only", "summary_scope": "query",
+                        "selected_term": _term_payload(identity), "synced_at": "", "items": [], "options": {},
+                        "message": "当前条件尚无完整本地查询记录，请点击查询或同步。",
+                        "pagination": {"page": 1, "page_size": page_size, "total_count": 0, "total_page": 1},
+                        "summary": {"teacher_count": 0, "linked_count": 0, "course_count": 0, "lesson_count": 0}}
+    return await _sync_teacher_timetables(teacher_id, identity, filters, signature, page, page_size)
+
+
+async def sync_teacher_timetable(teacher_id, teacher_no, payload):
+    """Refresh one exact employee independently of any cached fuzzy query."""
+    if not isinstance(payload, dict) or not payload.get("year") or not payload.get("term"):
+        raise TimetableQueryError("请选择有效的学年学期。")
+    if not isinstance(teacher_no, str) or not teacher_no.strip() or len(teacher_no) > 80 or teacher_no != teacher_no.strip():
+        raise TimetableQueryError("教师工号无效。")
+    with get_db_connection() as conn:
+        identity, filters, _, page, page_size = _normalize_query(
+            conn, teacher_id, {"year": payload["year"], "term": payload["term"], "q": teacher_no},
+        )
+    return await _sync_teacher_timetables(teacher_id, identity, filters, None, page, page_size,
+                                         exact_teacher_no=teacher_no)
+
+
+async def _sync_teacher_timetables(teacher_id, identity, filters, signature, page, page_size, *, exact_teacher_no=None):
+    with get_db_connection() as conn:
+        _scope(conn, teacher_id)
         credential = load_teacher_academic_access_method(conn, teacher_id, school_code=SCHOOL)
         if not credential:
             raise TimetableQueryError("请先在教务系统对接中保存并验证账号。", status="missing_credential")
@@ -335,8 +400,12 @@ async def query_teacher_timetables(teacher_id, payload, *, force_sync=False):
         async with open_authenticated_academic_client(credential) as (client, profile, _login):
             if profile.school_code != SCHOOL:
                 raise ValueError("教务学校不匹配")
-            result = await _fetch_teacher_timetables(client, xnm=xnm, xqm=xqm, filters=filters)
+            exact = {"exact_teacher_no": exact_teacher_no} if exact_teacher_no is not None else {}
+            result = await _fetch_teacher_timetables(client, xnm=xnm, xqm=xqm, filters=filters, **exact)
         normalized = _normalize_teachers(result)
+        if exact_teacher_no is not None and (len(normalized) != 1 or normalized[0][0]["teacher_no"] != exact_teacher_no):
+            raise TimetableQueryError("教务系统未返回该工号的完整课表，已有缓存保持不变。",
+                                      status="failed", http_status=502)
         with get_db_connection() as conn:
             # A revoked membership or replaced/deleted credential cannot publish.
             _scope(conn, teacher_id)
@@ -352,6 +421,10 @@ async def query_teacher_timetables(teacher_id, payload, *, force_sync=False):
             except Exception:
                 conn.rollback()
                 raise
+            if exact_teacher_no is not None:
+                year, term = identity.as_year_term()
+                detail = load_teacher_timetable(conn, teacher_id, exact_teacher_no, year=year, term=term)
+                return {**detail, "source": "academic", "message": "已同步该教师的完整学期课表。"}
             return _read_cached(conn, identity, signature, page, page_size, source="academic")
     except asyncio.CancelledError:
         # Client disconnects and worker shutdown must not strand a ten-minute
