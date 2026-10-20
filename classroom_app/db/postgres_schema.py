@@ -13,6 +13,7 @@ from .schema_ai_jobs import (
 )
 from .schema_grade_publications import GRADE_PUBLICATION_POSTGRES_TABLES, GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES
+from .schema_academic_teacher_timetables import ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES
 from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
@@ -412,6 +413,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
+    **ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES,
     **AI_WORKSPACE_POSTGRES_TABLES,
     **ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES,
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
@@ -632,6 +634,7 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
 
 
 REQUIRED_POSTGRES_TABLES = (
+    *ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES,
     *ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES,
     "user_ui_preferences",
     "teachers",
@@ -647,6 +650,7 @@ REQUIRED_POSTGRES_TABLES = (
     "classes",
     "courses",
     "class_offerings",
+    "class_offering_git_learning_bindings",
     "assignments",
     "assignment_classification_revisions",
     "submissions",

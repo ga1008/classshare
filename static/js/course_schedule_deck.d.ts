@@ -29,3 +29,26 @@ export type ScheduleDeckOverlay = {
   dismissTop: (reason?: string) => boolean;
   connect: (coordinator: ScheduleOverlayCoordinator) => () => void;
 };
+export type ScheduleWeek = { week_index: number; lessons?: ScheduleLesson[]; [key: string]: unknown };
+export type ScheduleDeckOptions = {
+  title?: string;
+  description?: string;
+  showTermSelect?: boolean;
+  compactSummary?: boolean;
+  allowExpand?: boolean;
+  onTermChange?: (year: string, term: string) => void;
+  onNavigate?: (url: string) => void;
+  onLessonClick?: (lesson: ScheduleLesson, context: { trigger: HTMLElement; week: ScheduleWeek }) => void;
+  emptyHtml?: (overview: unknown) => string;
+  editorUrl?: string | ((term: Record<string, unknown>) => string);
+};
+export function createScheduleDeck(container: HTMLElement | null, options?: ScheduleDeckOptions): {
+  overlay: ScheduleDeckOverlay;
+  setOverview: (overview: unknown, options?: { keepWeek?: boolean }) => void;
+  goToWeek: (index: number) => void;
+  openExpanded: () => void;
+  focusLesson: (eventKey: string, weekIndex?: number) => unknown;
+  showAdjustment: (eventKey: string) => unknown;
+  getActiveWeekIndex: () => number;
+  destroy: () => void;
+} | null;

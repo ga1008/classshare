@@ -461,6 +461,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/system/smart-classroom-integrations", "/manage/teaching/smart-classroom-integrations"),
     ),
     ManageNavItem(
+        key="teacher_schedule_query",
+        domain="academic",
+        group="教师",
+        label="课表查询",
+        icon="calendar",
+        href="/manage/academic/teachers/schedule",
+        search_text="教师课表查询 教工号 教师姓名 学年 学期 同名教师 timetable teacher",
+        ai_hint="教师课表查询：按姓名或教工号查询教师，优先读取本地学期缓存，可从教务重新同步并查看完整3D课表和课程详情。",
+    ),
+    ManageNavItem(
         key="classrooms",
         domain="academic",
         group="场地",

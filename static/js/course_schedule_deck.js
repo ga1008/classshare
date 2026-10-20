@@ -124,6 +124,9 @@ export function createScheduleDeck(container, options = {}) {
             || '滚轮或方向键切换周次，点击最前面的周卡片放大查看整周课表。',
         showTermSelect: Boolean(options.showTermSelect),
         onTermChange: typeof options.onTermChange === 'function' ? options.onTermChange : null,
+        // Read-only consumers can own lesson details without inventing a URL.
+        onLessonClick: typeof options.onLessonClick === 'function' ? options.onLessonClick : null,
+        allowExpand: options.allowExpand !== false,
         emptyHtml: typeof options.emptyHtml === 'function'
             ? options.emptyHtml
             : () => '<strong>暂无课表数据</strong><p>请先同步智慧课堂课程表。</p>',
@@ -160,6 +163,7 @@ export function createScheduleDeck(container, options = {}) {
     let lastLineGeometry = '';
 
     container.classList.add('cs-deck');
+    container.classList.toggle('cs-deck--inline-details', !config.allowExpand);
     container.innerHTML = `
         <div class="cs-deck-head">
             <div class="cs-deck-head__copy">
@@ -175,7 +179,7 @@ export function createScheduleDeck(container, options = {}) {
             </div>
         </div>
         <div class="cs-stage" data-csd-stage tabindex="0" aria-label="按周课程表，使用滚轮、方向键或左右拖拽切换周次">
-            <div class="cs-stage__hint">滚轮/拖拽切换周次 · 点击卡片放大</div>
+            <div class="cs-stage__hint">滚轮/拖拽切换周次 · ${config.allowExpand ? '点击卡片放大' : '点击课程查看详情'}</div>
         </div><div class="cs-deck-feedback" data-csd-feedback role="status"></div>`;
 
     const expand = document.createElement('div');
@@ -253,12 +257,12 @@ export function createScheduleDeck(container, options = {}) {
         const change = pendingScheduleChange(lesson);
         const changes = scheduleChanges(lesson);
         const proposed = change?.endpoint === 'proposed' || lesson.is_change_plan;
-        const href = String(lesson.classroom_url || lesson.create_url || '');
+        const href = config.onLessonClick ? '' : String(lesson.classroom_url || lesson.create_url || '');
         const isCreate = Boolean(href) && !lesson.classroom_url;
         const fullRoom = String(lesson.classroom || lesson.classroom_short || '教室待定');
         const extractedRoom = compactClassroomName(fullRoom);
         const shortRoom = extractedRoom === fullRoom && lesson.classroom_short ? compactClassroomName(lesson.classroom_short) : extractedRoom;
-        const linkHint = !lesson.classroom_url && lesson.class_offering_id ? '课次尚未精确关联，请同步教务课表核对'
+        const linkHint = config.onLessonClick ? '点击查看课程详情' : !lesson.classroom_url && lesson.class_offering_id ? '课次尚未精确关联，请同步教务课表核对'
             : isCreate ? '尚无对应课堂 · 点击创建；创建后请再次同步关联课次' : href ? '点击进入课堂 →' : '';
         const sessionText = lesson.session_no ? `第${lesson.session_no}次课${lesson.session_total ? `（共${lesson.session_total}次）` : ''}` : '';
         const weekday = lesson.weekday_label || `星期${['一','二','三','四','五','六','日'][Math.min(6, Math.max(0, Number(lesson.weekday || 1) - 1))]}`;
@@ -291,17 +295,20 @@ export function createScheduleDeck(container, options = {}) {
         });
         const button = buttons.length ? `<span class="cs-adjustment-actions">${buttons.join('')}</span>` : '';
         const comparison = comparisons.length ? `<div class="cs-adjustment-details" hidden>${comparisons.map(escapeHtml).join('<br>')}</div>` : '';
-        const mainTag = changes.length && href ? 'a' : 'div';
-        const mainAttrs = changes.length ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
+        const mainTag = config.onLessonClick ? 'button' : changes.length && href ? 'a' : 'div';
+        const mainAttrs = config.onLessonClick
+            ? ` type="button" data-lq-component="button" data-csd-lesson-detail aria-label="${escapeHtml([lesson.course_name, lesson.section_label, lesson.class_label, '查看课程详情'].filter(Boolean).join(' · '))}"`
+            : changes.length ? href ? ` href="${escapeHtml(href)}" aria-label="${escapeHtml(lesson.course_name + ' · ' + fullRoom)}"` : ' tabindex="0"' : '';
+        const detailsTag = config.onLessonClick ? 'span' : 'div';
         const badge = scheduleChangeBadge(lesson);
         const badgeHtml = badge ? `<span data-lq-component="chip" class="lq-chip lq-chip--status lq-chip--sm cs-lesson__phase" data-tone="${badge.tone}" title="${escapeHtml(badge.title)}"><span class="lq-chip__dot" aria-hidden="true"></span><span class="lq-chip__label">${escapeHtml(badge.label)}</span></span>` : '';
-        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface">${badgeHtml}<${mainTag} class="cs-lesson__main"${mainAttrs}><strong class="cs-lesson__title">${lesson.is_change_history ? '原安排 · ' : ''}${escapeHtml(lesson.course_name)}</strong><div class="cs-lesson__details">${details}</div></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
+        const content = `<div data-lq-component="surface" data-lq-visual="category" class="lq-surface cs-lesson__surface">${badgeHtml}<${mainTag} class="cs-lesson__main${config.onLessonClick ? ' lq-btn lq-btn--ghost lq-btn--sm cs-lesson__detail-action' : ''}"${mainAttrs}><strong class="cs-lesson__title">${lesson.is_change_history ? '原安排 · ' : ''}${escapeHtml(lesson.course_name)}</strong><${detailsTag} class="cs-lesson__details">${details}</${detailsTag}></${mainTag}>${comparison}<div class="cs-lesson__footer"><span class="cs-lesson__room" title="${escapeHtml(fullRoom)}"><span class="cs-lesson__room-short">${escapeHtml(shortRoom)}</span><span class="cs-lesson__room-full">教室 ${escapeHtml(fullRoom)}</span></span>${button}</div></div>`;
         const draft = changes.some(item => item.phase === 'draft');
         const classes = `cs-lesson cs-lesson--${expanded ? 'cell' : 'mini'}${change ? ' cs-lesson--pending' : ''}${draft ? ' cs-lesson--draft' : ''}${badge?.roomChanged ? ' cs-lesson--room-changed' : ''}${proposed ? ' cs-lesson--proposed' : ''}${lesson.is_change_history ? ' cs-lesson--history' : ''}${isCreate ? ' cs-lesson--create' : ''}`;
         const keyAttr = ` data-event-key="${escapeHtml(eventKey)}"`;
         if (!expanded) return `<div class="${classes}"${keyAttr} style="--cs-accent:${accent};${gridPos}" title="${escapeHtml(`${lesson.course_name} · ${fullRoom}`)}">${content}</div>`;
         const tag = !changes.length && href ? 'a' : 'div';
-        const outerAttrs = !changes.length ? href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"' : '';
+        const outerAttrs = !changes.length && !config.onLessonClick ? href ? ` href="${escapeHtml(href)}"` : ' tabindex="0"' : '';
         return `<div class="cs-lesson-slot"${lane.count > 1 ? ` data-cs-lanes="${lane.count}"` : ''} style="${gridPos}"><${tag} class="${classes}"${outerAttrs}${keyAttr} style="--cs-accent:${accent}">${content}</${tag}></div>`;
     }
 
@@ -927,7 +934,7 @@ export function createScheduleDeck(container, options = {}) {
     }
 
     function openExpanded() {
-        if (destroyed || !state.overview?.weeks?.length || !refs.expand) return;
+        if (!config.allowExpand || destroyed || !state.overview?.weeks?.length || !refs.expand) return;
         if (state.expanded) return;
         expandMotionGeneration += 1;
         if (refs.expand.hidden) expandedTrigger = document.activeElement;
@@ -1032,6 +1039,7 @@ export function createScheduleDeck(container, options = {}) {
     function onStageClick(event) {
         if (dragMoved) return;
         if (handleChangeClick(event)) return;
+        if (handleLessonClick(event)) return;
         const link = event.target.closest('a.cs-lesson__main');
         if (link) {
             if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
@@ -1041,6 +1049,22 @@ export function createScheduleDeck(container, options = {}) {
         }
         const card = event.target.closest('.cs-card');
         if (card && card.classList.contains('is-active')) openExpanded();
+    }
+
+    function handleLessonClick(event) {
+        if (!config.onLessonClick) return false;
+        const cell = event.target.closest('.cs-lesson[data-event-key]');
+        if (!cell) return false;
+        const week = state.overview?.weeks?.[state.activeWeekIndex];
+        const lesson = week?.lessons?.find((item, index) =>
+            (item.event_key || `${week.week_index}:${item.id || index}:${index}`) === cell.dataset.eventKey);
+        if (!lesson) return false;
+        event.preventDefault();
+        pendingTouchPreview = null;
+        const trigger = cell.querySelector('[data-csd-lesson-detail]') || cell;
+        trigger.focus({ preventScroll: true });
+        config.onLessonClick(lesson, { trigger, week });
+        return true;
     }
 
     /* 触摸 / 鼠标水平拖拽翻周（移动端没有滚轮）。每拖 90px 翻一周；
@@ -1093,6 +1117,7 @@ export function createScheduleDeck(container, options = {}) {
     function onExpandBodyClick(event) {
         if (handleLineAction(event)) return;
         if (handleChangeClick(event)) return;
+        if (handleLessonClick(event)) return;
         const cell = event.target.closest('.cs-lesson--cell');
         const touch = pendingTouchPreview;
         pendingTouchPreview = null;
@@ -1296,6 +1321,7 @@ export function createScheduleDeck(container, options = {}) {
             document.removeEventListener('pointerdown', trackPointer);
             expand.remove();
             container.classList.remove('cs-deck');
+            container.classList.remove('cs-deck--inline-details');
             container.innerHTML = '';
             deckCards = [];
             renderedDeckCard = null;

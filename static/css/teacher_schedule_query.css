@@ -1,0 +1,61 @@
+/* Teacher query owns only arrangement and data typography; LQ owns materials. */
+.teacher-query-shell { display: grid; gap: 18px; min-width: 0; padding-bottom: calc(var(--lq-dock-h, 0px) + var(--ls-s-24, 96px) + env(safe-area-inset-bottom)); }
+.teacher-query-form { display: grid; gap: 12px; padding: 20px; }
+.teacher-query-primary { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(220px, 2fr) auto; gap: 16px; align-items: end; }
+.teacher-query-primary .lq-field, .teacher-query-filter-grid .lq-field { display: grid; gap: 7px; min-width: 0; }
+.teacher-query-primary input, .teacher-query-primary select, .teacher-query-filter-grid select { width: 100%; }
+.teacher-query-actions { display: flex; align-items: center; gap: 8px; }
+.teacher-query-help { margin: 0; font-size: .875rem; line-height: 1.7; }
+.teacher-query-advanced summary { cursor: pointer; width: fit-content; padding-block: 5px; }
+.teacher-query-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding-top: 16px; }
+.teacher-query-feedback { white-space: normal; overflow-wrap: anywhere; line-height: 1.65; }
+.teacher-query-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.teacher-query-metric { display: grid; gap: 8px; padding: 18px; }
+.teacher-query-metric strong { font-size: clamp(1.4rem, 2.8vw, 2rem); font-variant-numeric: tabular-nums; }
+.teacher-query-results { min-width: 0; }
+.teacher-query-result-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+.teacher-query-result-head h3 { margin: 0; }
+.teacher-query-result-head span { font-size: .85rem; overflow-wrap: anywhere; }
+.teacher-query-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 275px), 1fr)); gap: 16px; }
+.teacher-query-card.lq-btn { display: grid; align-content: start; align-items: start; justify-items: stretch; gap: 14px; width: 100%; min-height: 190px; height: auto; padding: 20px; text-align: left; white-space: normal; }
+.teacher-query-card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.teacher-query-card__head strong { font-size: 1.2rem; }
+.teacher-query-card__identity, .teacher-query-card__stats { display: grid; gap: 6px; font-size: .875rem; line-height: 1.6; overflow-wrap: anywhere; }
+.teacher-query-card__foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: .8rem; line-height: 1.5; }
+.teacher-query-pagination { display: flex; justify-content: center; align-items: center; gap: 18px; margin-top: 20px; }
+.teacher-query-pagination[hidden] { display: none; }
+.teacher-timetable-dialog .lq-dialog__surface { width: min(1200px, calc(100vw - 32px)); max-width: none; }
+.teacher-timetable-body { display: grid; gap: 12px; min-width: 0; white-space: normal; }
+.teacher-timetable-identity { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+.teacher-timetable-dialog .cs-stage { height: min(600px, 65vh); min-height: 420px; }
+.teacher-timetable-dialog .cs-card { width: min(1000px, 87%); height: calc(100% - 70px); }
+.teacher-timetable-dialog .cs-card__bar { flex-wrap: wrap; gap: 5px 10px; }
+.teacher-timetable-dialog .cs-card__badge { display: none; }
+.teacher-lesson-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
+.teacher-lesson-details div { min-width: 0; padding-block: 10px; }
+.teacher-lesson-details dt { font-size: .8rem; margin-bottom: 5px; }
+.teacher-lesson-details dd { margin: 0; font-weight: 600; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+.teacher-lesson-details .is-wide { grid-column: 1 / -1; }
+.teacher-lesson-source { margin-top: 16px; }
+.teacher-lesson-source summary { cursor: pointer; padding-block: 8px; }
+@media (max-width: 760px) {
+    .teacher-query-primary { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .teacher-query-actions { justify-content: flex-end; }
+    .teacher-query-actions .lq-btn { flex: 1; }
+    .teacher-query-filter-grid, .teacher-query-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .teacher-query-form { padding: 16px; }
+    .teacher-timetable-dialog .lq-dialog__surface { width: calc(100vw - 16px); }
+    .teacher-timetable-dialog .lq-dialog__body { padding-inline: 10px; }
+    .teacher-timetable-dialog .cs-deck-head { display: grid; gap: 8px; }
+    .teacher-timetable-dialog .cs-deck-nav { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; margin-left: 0; width: 100%; gap: 6px; }
+    .teacher-timetable-dialog .cs-deck-nav__btn { width: 44px; min-width: 44px; }
+    .teacher-timetable-dialog .cs-deck-slider { grid-column: 1 / -1; width: 100%; }
+    .teacher-timetable-dialog .cs-week-indicator { min-width: 90px; }
+    .teacher-timetable-dialog .cs-stage { height: 410px; min-height: 0; }
+    .teacher-timetable-dialog .cs-card { width: 88%; height: 350px; }
+    .teacher-timetable-dialog .cs-card__body { padding: 4px; }
+    .teacher-timetable-dialog .cs-card__body > .cs-grid { inset: 4px; gap: 2px; }
+    .teacher-timetable-dialog .cs-card__bar { padding: 8px; }
+    .teacher-timetable-dialog .cs-lesson--mini .cs-lesson__surface { padding: 2px; }
+    .teacher-lesson-details { grid-template-columns: minmax(0, 1fr); }
+}

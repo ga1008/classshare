@@ -33,6 +33,28 @@ async def manage_academic_overview_page(request: Request, week: str = "", user: 
     )
 
 
+@router.get("/manage/academic/teachers/schedule", response_class=HTMLResponse)
+async def get_manage_teacher_schedule_query_page(
+    request: Request, user: dict = Depends(require_teacher_domain("academic")),
+):
+    """查询任意教师的教务课表；打开页面只读取本地选项。"""
+    from ...services.academic_teacher_timetable_service import TimetableQueryError, build_teacher_timetable_options
+
+    with get_db_connection() as conn:
+        try:
+            boot = build_teacher_timetable_options(conn, int(user["id"]))
+        except TimetableQueryError as exc:
+            raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    return templates.TemplateResponse(
+        request,
+        "manage/teacher_schedule_query.html",
+        _build_manage_template_context(
+            request, user, page_title="教师课表查询", active_page="teacher_schedule_query",
+            extra={"teacher_schedule_boot": boot},
+        ),
+    )
+
+
 @router.get("/manage/academic/classrooms", response_class=HTMLResponse)
 async def get_manage_classrooms_page(request: Request, user: dict = Depends(get_current_teacher)):
     """教学场地与空闲教室查询页面。"""

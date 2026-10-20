@@ -1,6 +1,44 @@
 import { test, expect, type Page } from '@playwright/test';
 import { serveScheduleModule, settleScheduleMotion } from './schedule-fixture-modules';
 
+test('read-only lesson callback uses native controls and disables the extra expanded layer', async ({ page }) => {
+  await page.route('http://schedule.test/**', async route => {
+    if (await serveScheduleModule(route)) return;
+    await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+      <link rel="stylesheet" href="/schedule-tokens.css"><div id="deck"></div><script type="module">
+      import { createScheduleDeck } from '/deck.js';
+      window.details = []; window.navigations = [];
+      window.deck = createScheduleDeck(document.getElementById('deck'), {
+        allowExpand: false,
+        onNavigate: value => window.navigations.push(value),
+        onLessonClick: (lesson, context) => window.details.push({id:lesson.id, week:context.week.week_index, native:context.trigger.tagName})
+      });
+      window.deck.setOverview({selected_term:{label:'合成学期'},section_range:{min:1,max:11},weeks:[1,2].map(week=>({
+        week_index:week,label:'第'+week+'周',lessons:[{id:'detail-'+week,course_name:'查询课程'+week,
+          weekday:1,sections:[2,3],class_label:'合成班',classroom_url:'/must-not-navigate'}]
+      }))});
+      </script></html>` });
+  });
+  await page.goto('http://schedule.test/');
+  const lesson = page.locator('[data-csd-lesson-detail]');
+  await expect(lesson).toHaveCount(1);
+  await lesson.click();
+  await expect.poll(() => page.evaluate(() => (window as any).details)).toEqual([{ id: 'detail-1', week: 1, native: 'BUTTON' }]);
+  await lesson.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).details.length)).toBe(2);
+  await page.locator('[data-csd-next]').click();
+  await page.locator('[data-csd-lesson-detail]').press('Space');
+  await expect.poll(() => page.evaluate(() => (window as any).details.at(-1))).toEqual({ id: 'detail-2', week: 2, native: 'BUTTON' });
+  await page.locator('[data-csd-stage]').focus();
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => (window as any).deck.openExpanded());
+  await expect(page.locator('.cs-expand')).toBeHidden();
+  expect(await page.evaluate(() => (window as any).navigations)).toEqual([]);
+  await page.evaluate(() => (window as any).deck.destroy());
+  await expect(page.locator('.cs-expand')).toHaveCount(0);
+  await expect(page.locator('[data-csd-lesson-detail]')).toHaveCount(0);
+});
+
 const classes = Array.from({ length: 8 }, (_, index) => `人工智能260${index + 1}班（专升本）`).join(' · ');
 
 async function mountDeck(page: Page) {

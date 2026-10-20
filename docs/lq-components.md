@@ -391,6 +391,15 @@ columns: [{ key: 's1', label: '第 1 次课', slot: true }]
 2. **宿主数不得随数据增长。** `.lq-surface` 的模糊改为按需开启（`.lq-surface--boundary` 或页面层声明），因为每个 `lq_card` 都带 `.lq-surface`：一面四十张卡片的墙就是四十个合成层。承载面板做边界，卡片只保留半透明与高光边。
 3. **底色与文字色必须成对翻转。** `--gray-*` 此前是写死十六进制、无暗色分支，而压在其上的文字色会翻转，于是出现深字压深底（实测 1.02）。已补暗色映射到既有语义令牌。
 
+### 3D 课表的只读教师查询（2026-10-20）
+
+教师课表查询新增可选 `createScheduleDeck(container, { onLessonClick, allowExpand })`：
+`onLessonClick(lesson, {trigger, week})` 交给宿主打开课程详情；配置时课次使用原生按钮，
+支持 Enter/Space，并且不生成课堂跳转链接。`allowExpand: false` 禁用内置整周展开，
+让“教师 Dialog → 课程详情 Dialog”保持两层，周切换、滚轮、滑杆和触摸拖动仍可用。
+未配置时保留原首页导航与展开行为。宿主关闭时销毁 deck，二级 Dialog 使用共享层栈，
+关闭后归还课次按钮焦点。该消费者及验收见 [教师课表查询](teacher-timetable-query-2026-10-20.md)。
+
 ### 3D 周课表的按需内容（2026-09-29）
 
 `createScheduleDeck` 继续使用原有 `setOverview/goToWeek/focusLesson/openExpanded/destroy` 接口，无新增请求或消费者参数。各周 `.cs-card` Surface 外壳保持原节点和几何，只有 `.is-active` 拥有 `.cs-card__content`（表头、网格、课程及可选 compactSummary）。切周同步销毁旧缩略内容并构造当前周内容；不会缓存所有周的离屏 DOM。展开视图仍由原控制器独立管理。

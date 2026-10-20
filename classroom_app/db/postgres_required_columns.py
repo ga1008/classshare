@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from .schema_ai_jobs import AI_JOB_REQUIRED_POSTGRES_COLUMNS
 from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS
+from .schema_academic_teacher_timetables import ACADEMIC_TEACHER_TIMETABLE_REQUIRED_COLUMNS
 from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 from .schema_ai_workspace import AI_WORKSPACE_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
+    **ACADEMIC_TEACHER_TIMETABLE_REQUIRED_COLUMNS,
     **AI_WORKSPACE_REQUIRED_COLUMNS,
     **ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS,
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
@@ -172,6 +174,10 @@ REQUIRED_POSTGRES_COLUMNS = {
         "group_qr_mime_type",
         "group_qr_description",
         "group_qr_revision",
+    ),
+    "class_offering_git_learning_bindings": (
+        "class_offering_id", "repository_id", "lesson_order", "material_id",
+        "session_id", "owns_binding", "suppressed", "updated_at",
     ),
     "assignment_classification_revisions": (
         "id", "assignment_id", "class_offering_id", "previous_kind", "assessment_kind",

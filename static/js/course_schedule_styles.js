@@ -129,6 +129,8 @@ export const DECK_CSS = `
     backdrop-filter: var(--cs-live-blur); -webkit-backdrop-filter: var(--cs-live-blur);
 }
 .cs-card.is-active:hover { box-shadow: var(--ls-glass-shadow-strong); }
+.cs-deck--inline-details .cs-card.is-active { cursor: default; }
+.cs-lesson__detail-action.lq-btn { display: block; width: 100%; height: 100%; min-height: 0; padding: 0; text-align: left; white-space: normal; }
 /* 无排课周的水印 */
 .cs-week-empty-mark {
     position: absolute;

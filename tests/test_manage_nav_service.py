@@ -102,6 +102,7 @@ class ManageNavServiceTests(unittest.TestCase):
                 "course_schedule",
                 "system_academic_integrations",
                 "system_smart_classroom_integrations",
+                "teacher_schedule_query",
                 "classrooms",
                 "gongwen",
                 "system_gongwen_integrations",

@@ -1,0 +1,74 @@
+{% extends "manage/layout.html" %}
+{% from "macros/manage_page.html" import page_head %}
+{% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/forms.html" import lq_field %}
+{% from "macros/lq/content.html" import lq_empty %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/teacher_schedule_query.css') }}">
+{% endblock %}
+
+{% block header_actions %}
+{% from "macros/app_topbar.html" import topbar_action %}
+{{ topbar_action('教务对接', '账号设置', 'shield', href='/manage/academic/integrations', variant='solid', tone='blue') }}
+{% endblock %}
+
+{% block content %}
+<div class="academic-shell teacher-query-shell" data-teacher-query>
+    {{ page_head('教师课表查询', description='按姓名或工号查找教师，查看完整学期课表。', eyebrow='教务 · 教师', lq_enabled=true) }}
+
+    <form data-lq-component="surface" class="lq-surface teacher-query-form" id="teacherQueryForm">
+        <div class="teacher-query-primary">
+            <label class="lq-field" for="teacherQueryTerm">
+                <span class="lq-field__label">学年学期</span>
+                <select data-lq-component="select" data-lq-dropdown class="lq-select" id="teacherQueryTerm" name="term" required></select>
+            </label>
+            <label class="lq-field teacher-query-name" for="teacherQueryName">
+                <span class="lq-field__label">教师姓名或工号</span>
+                <input data-lq-component="input" class="lq-input" type="search" id="teacherQueryName" name="q" maxlength="80" placeholder="例如：兰瑞江，或完整教工号" autocomplete="off" required>
+            </label>
+            <div data-lq-component="toolbar" class="lq-domain-toolbar teacher-query-actions">
+                {{ lq_btn('查询', variant='prominent', type='submit', attrs={'id': 'teacherQuerySubmit'}) }}
+                {{ lq_btn('同步', variant='glass', attrs={'id': 'teacherQuerySync', 'title': '从教务系统重新同步，再显示查询结果'}) }}
+            </div>
+        </div>
+        <p class="teacher-query-help">查询优先使用本地缓存；没有缓存时自动同步。同步会重新读取教务系统，按工号分别保存每位教师的完整学期课表。</p>
+        <details class="teacher-query-advanced">
+            <summary>更多筛选</summary>
+            <div class="teacher-query-filter-grid">
+                {% for key, label in [('campus_id', '校区'), ('department_id', '部门'), ('title_id', '职称'), ('college_id', '开课学院'), ('external', '是否外聘')] %}
+                <label class="lq-field" for="teacherQuery-{{ key }}">
+                    <span class="lq-field__label">{{ label }}</span>
+                    <select data-lq-component="select" data-lq-dropdown class="lq-select" id="teacherQuery-{{ key }}" name="{{ key }}"><option value="">全部</option></select>
+                </label>
+                {% endfor %}
+            </div>
+        </details>
+    </form>
+
+    <div data-lq-component="status" class="lq-status teacher-query-feedback" id="teacherQueryFeedback" role="status" aria-live="polite">输入教师姓名或工号开始查询。</div>
+    <p id="teacherQueryCredential" {% if teacher_schedule_boot.credential_ready %}hidden{% endif %}>需要访问教务时，请先在<a href="/manage/academic/integrations">教务对接</a>中验证账号；已有本地缓存仍可查询。</p>
+
+    <section class="teacher-query-metrics" aria-label="本次查询统计">
+        {% for key, label in [('teachers', '匹配教师'), ('courses', '任教课程'), ('lessons', '课次安排'), ('linked', '已关联平台账号')] %}
+        <div data-lq-component="surface" class="lq-surface teacher-query-metric"><span>{{ label }}</span><strong data-teacher-metric="{{ key }}">—</strong></div>
+        {% endfor %}
+    </section>
+
+    <section class="teacher-query-results" aria-label="教师查询结果">
+        <div class="teacher-query-result-head"><h3>教师列表</h3><span id="teacherQueryResultMeta">同名教师按工号分别显示</span></div>
+        <div class="teacher-query-cards" id="teacherQueryCards"></div>
+        <div id="teacherQueryEmpty">{{ lq_empty('no-results', variant='card', title='查找一位教师', description='选择学年学期，输入姓名或教工号后点击查询。') }}</div>
+        <nav class="teacher-query-pagination" id="teacherQueryPagination" aria-label="教师列表分页" hidden>
+            {{ lq_btn('上一页', variant='ghost', attrs={'id': 'teacherQueryPrev'}) }}
+            <span id="teacherQueryPage"></span>
+            {{ lq_btn('下一页', variant='ghost', attrs={'id': 'teacherQueryNext'}) }}
+        </nav>
+    </section>
+</div>
+<script type="application/json" id="teacher-query-boot">{{ teacher_schedule_boot | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ asset_url('js/manage_teacher_schedule_query.js') }}"></script>
+{% endblock %}

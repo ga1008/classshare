@@ -19,7 +19,6 @@ DEFAULT_REQUIRED_ENTRIES = (
     "frontend/src/islands/message-center-sync.tsx",
     "frontend/src/islands/message-center-workspace-sync.tsx",
     "frontend/src/islands/assignment-submit-sync.tsx",
-    "frontend/src/islands/assignment-task-board-sync.tsx",
 )
 
 
