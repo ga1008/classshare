@@ -46,7 +46,13 @@
             <div class="form-group">
                 <label class="form-label required" for="create-school-name">学校</label>
                 <input data-lq-component="input" class="lq-input form-control" id="create-school-name" name="school_name" type="text" required placeholder="默认：广西外国语学院">
+                <input type="hidden" name="school_code">
             </div>
+            <div class="form-group">
+                <label class="form-label required" for="create-employee-number">职工号</label>
+                <input data-lq-component="input" class="lq-input form-control" id="create-employee-number" name="employee_number" type="text" maxlength="64" required placeholder="该学校的职工号，保留开头的 0" autocomplete="off">
+            </div>
+            <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
             <div class="grid grid-cols-2 gap-3">
                 <div class="form-group">
                     <label class="form-label" for="create-college">学院</label>
@@ -101,6 +107,7 @@
                     data-id="{{ teacher.id }}"
                     data-name="{{ teacher.name|e }}"
                     data-email="{{ teacher.email|e }}"
+                    data-employee-number="{{ teacher.employee_number|default('')|e }}"
                     data-phone="{{ teacher.phone|e }}"
                     data-wechat="{{ teacher.wechat|e }}"
                     data-qq="{{ teacher.qq|e }}"
@@ -113,11 +120,12 @@
                     data-memberships='{{ teacher.memberships|tojson|forceescape }}'
                     data-active="{{ 1 if teacher.is_active else 0 }}"
                     data-super="{{ 1 if teacher.is_super_admin else 0 }}"
-                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label ~ ' ' ~ (teacher.membership_labels|join(' ')))|lower|e }}"
+                    data-search="{{ (teacher.name ~ ' ' ~ teacher.email ~ ' ' ~ teacher.employee_number|default('') ~ ' ' ~ (teacher.memberships|map(attribute='employee_number', default='')|join(' ')) ~ ' ' ~ teacher.phone ~ ' ' ~ teacher.wechat ~ ' ' ~ teacher.qq ~ ' ' ~ teacher.organization_label ~ ' ' ~ (teacher.membership_labels|join(' ')))|lower|e }}"
                 >
                     <td>
                         <strong>{{ teacher.name }}</strong>
                         <div class="text-muted text-sm">{{ teacher.email }}</div>
+                        <div class="text-muted text-sm">职工号：{{ teacher.employee_number|default('待补充', true) }}</div>
                         <div class="um-table-meta">
                             {% if teacher.phone %}<span>{{ teacher.phone }}</span>{% endif %}
                             {% if teacher.wechat %}<span>微信 {{ teacher.wechat }}</span>{% endif %}
@@ -193,6 +201,11 @@
                     <label class="form-label required" for="edit-email">邮箱</label>
                     <input data-lq-component="input" class="lq-input form-control" id="edit-email" name="email" type="email" required>
                 </div>
+                <div class="form-group">
+                    <label class="form-label required" for="edit-employee-number">职工号</label>
+                    <input data-lq-component="input" class="lq-input form-control" id="edit-employee-number" name="employee_number" type="text" maxlength="64" required autocomplete="off" aria-describedby="edit-employee-number-hint">
+                    <small class="form-hint" id="edit-employee-number-hint">填写下方学校的职工号。可用于登录，并与课表教师自动匹配。</small>
+                </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="edit-phone">电话</label>
@@ -216,6 +229,7 @@
                     <input data-lq-component="input" class="lq-input form-control" id="edit-school-name" name="school_name" type="text" required>
                     <input id="edit-school-code" name="school_code" type="hidden">
                 </div>
+                <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="edit-college">学院</label>
@@ -259,6 +273,11 @@
                     <label class="form-label required" for="membership-school-name">学校</label>
                     <input data-lq-component="input" class="lq-input form-control" id="membership-school-name" name="school_name" type="text" required>
                 </div>
+                <div class="form-group">
+                    <label class="form-label required" for="membership-employee-number">职工号</label>
+                    <input data-lq-component="input" class="lq-input form-control" id="membership-employee-number" name="employee_number" type="text" maxlength="64" required autocomplete="off" placeholder="填写该学校的职工号">
+                </div>
+                <p class="form-hint" data-organization-hint role="status">学校、学院和系别可从推荐中选择，也可直接输入。</p>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="form-group">
                         <label class="form-label" for="membership-college">学院</label>
@@ -308,7 +327,13 @@
 {% block scripts %}
 <script type="module">
 import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
+import { bindOrganizationSuggestions } from '{{ asset_url("js/organization_suggestions.js") }}';
 (() => {
+    const organizationOwners = new Map();
+    ['teacher-create-form', 'teacher-edit-form', 'teacher-membership-form'].forEach((id) => {
+        organizationOwners.set(id, bindOrganizationSuggestions(document.getElementById(id)));
+    });
+    organizationOwners.get('teacher-create-form')?.refresh();
     const searchInput = document.getElementById('teacher-search');
     const statusFilter = document.getElementById('teacher-status-filter');
     const rows = Array.from(document.querySelectorAll('[data-teacher-row]'));
@@ -343,7 +368,10 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
     const modalOwner = (id) => {
         if (modalOwners.has(id)) return modalOwners.get(id);
         const modal = document.getElementById(id);
-        const owner = createDomainModal(modal, { surface: modal?.querySelector('.um-modal') });
+        const owner = createDomainModal(modal, {
+            surface: modal?.querySelector('.um-modal'),
+            beforeClose: () => !modal.querySelector('form[data-saving="true"]'),
+        });
         modalOwners.set(id, owner);
         return owner;
     };
@@ -361,6 +389,8 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
     });
 
     const submitWithLock = async (form, callback) => {
+        if (form.dataset.saving === 'true') return;
+        form.dataset.saving = 'true';
         const submitButton = form.querySelector('button[type="submit"]');
         const originalText = submitButton?.innerHTML;
         if (submitButton) {
@@ -370,6 +400,7 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         try {
             await callback();
         } finally {
+            delete form.dataset.saving;
             if (submitButton) {
                 submitButton.disabled = false;
                 submitButton.innerHTML = originalText;
@@ -410,12 +441,14 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
             const canDeactivate = isActive && activeMemberships.length > 1;
             const label = item.organization_label || [item.school_name, item.college, item.department].filter(Boolean).join(' / ') || '未命名归属';
             return `
-                <article class="um-membership-item ${item.is_primary ? 'is-primary' : ''}">
+                <article data-lq-component="surface" class="lq-surface um-membership-item ${item.is_primary ? 'is-primary' : ''}">
                     <header>
                         <strong>${escapeHtml(label)}</strong>
                         <span class="um-badge ${isActive ? 'is-super' : 'is-inactive'}">${isActive ? (item.is_primary ? '默认' : '启用') : '已停用'}</span>
                     </header>
+                    <p class="text-muted text-sm">职工号：${escapeHtml(item.employee_number || '待补充')}</p>
                     <div class="um-membership-actions">
+                        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-membership-action="edit" data-teacher-id="${teacherId}" data-membership-id="${item.id}">${isActive ? '编辑归属' : '恢复并编辑'}</button>
                         <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" type="button" data-membership-action="primary" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${(!isActive || item.is_primary) ? 'disabled' : ''}>设为默认</button>
                         <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-danger lq-btn--destructive btn-sm" type="button" data-membership-action="delete" data-teacher-id="${teacherId}" data-membership-id="${item.id}" ${canDeactivate ? '' : 'disabled'}>停用</button>
                     </div>
@@ -445,6 +478,7 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         document.getElementById('edit-teacher-id').value = row.dataset.id || '';
         document.getElementById('edit-name').value = row.dataset.name || '';
         document.getElementById('edit-email').value = row.dataset.email || '';
+        document.getElementById('edit-employee-number').value = row.dataset.employeeNumber || '';
         document.getElementById('edit-phone').value = row.dataset.phone || '';
         document.getElementById('edit-wechat').value = row.dataset.wechat || '';
         document.getElementById('edit-qq').value = row.dataset.qq || '';
@@ -454,6 +488,7 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         document.getElementById('edit-school-name').value = row.dataset.schoolName || '';
         document.getElementById('edit-college').value = row.dataset.college || '';
         document.getElementById('edit-department').value = row.dataset.department || '';
+        organizationOwners.get('teacher-edit-form')?.refresh();
     };
 
     document.getElementById('teacher-membership-form')?.addEventListener('submit', async (event) => {
@@ -480,6 +515,20 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         const teacherId = Number(button.dataset.teacherId || 0);
         const membershipId = Number(button.dataset.membershipId || 0);
         if (!teacherId || !membershipId) return;
+        if (button.dataset.membershipAction === 'edit') {
+            const row = rows.find((item) => Number(item.dataset.id) === teacherId);
+            const membership = row && parseMemberships(row).find((item) => Number(item.id) === membershipId);
+            if (!membership) return;
+            document.getElementById('membership-school-code').value = membership.school_code || '';
+            document.getElementById('membership-school-name').value = membership.school_name || '';
+            document.getElementById('membership-college').value = membership.college || '';
+            document.getElementById('membership-department').value = membership.department || '';
+            document.getElementById('membership-employee-number').value = membership.employee_number || '';
+            document.querySelector('#teacher-membership-form [name="is_primary"]').checked = Boolean(membership.is_primary);
+            organizationOwners.get('teacher-membership-form')?.refresh();
+            document.getElementById('membership-employee-number').focus();
+            return;
+        }
         const isDelete = button.dataset.membershipAction === 'delete';
         const message = isDelete ? '确认停用该任教归属？' : '确认设为默认任教归属？';
         if (!window.confirm(message)) return;
@@ -542,10 +591,13 @@ import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
         }
         if (action === 'memberships') {
             renderMembershipList(row);
+            document.getElementById('membership-school-code').value = row.dataset.schoolCode || '';
             document.getElementById('membership-school-name').value = row.dataset.schoolName || '';
             document.getElementById('membership-college').value = row.dataset.college || '';
-            document.getElementById('membership-department').value = '';
+            document.getElementById('membership-department').value = row.dataset.department || '';
+            document.getElementById('membership-employee-number').value = row.dataset.employeeNumber || '';
             document.querySelector('#teacher-membership-form [name="is_primary"]').checked = false;
+            organizationOwners.get('teacher-membership-form')?.refresh();
             openModal('teacher-membership-modal');
             return;
         }

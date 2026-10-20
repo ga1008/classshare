@@ -31,10 +31,11 @@ def _definition(label, fields, description):
 IDENTITY_ACTION_DEFINITIONS = {
     "manage_teacher_account": _definition("修改教师资料", {
         "name": {"type": "str", "max_chars": 200}, "email": {"type": "str", "max_chars": 320},
+        "employee_number": {"type": "str", "max_chars": 64},
         **{key: {"type": "str", "max_chars": 200} for key in ("phone", "wechat", "qq", "homepage_url")},
         "description": {"type": "text", "max_chars": 5000}, **_ORG_FIELDS,
     }, "按正常超管权限修改教师资料与主组织归属；先读取 identity.teacher 获得 expected_revision。未传字段保留原值。"),
-    "upsert_teacher_membership": _definition("保存教师任教归属", {**_ORG_FIELDS, "is_primary": {"type": "int", "minimum": 0, "maximum": 1}},
+    "upsert_teacher_membership": _definition("保存教师任教归属", {**_ORG_FIELDS, "employee_number": {"type": "str", "max_chars": 64}, "is_primary": {"type": "int", "minimum": 0, "maximum": 1}},
         "按正常组织目录规则新增或恢复学校任教归属；is_primary 只接受0或1，同学校规则与普通Web相同。"),
     "set_teacher_primary_membership": _definition("设置默认任教归属", {"membership_id": _ID}, "选择现有启用任教归属作为默认组织。"),
     "deactivate_teacher_membership": _definition("停用任教归属", {"membership_id": _ID}, "停用指定归属，正常业务要求至少保留一个启用归属。"),

@@ -224,6 +224,10 @@ def apply_assessment_migrations(conn) -> None:
         ensure_agent_interactions_schema(adapter)
         ensure_agent_platform_requests_schema(adapter)
         ensure_agent_children_schema(adapter)
+    if conn.execute("SELECT to_regclass('public.teacher_organization_memberships')").fetchone()[0]:
+        from classroom_app.db.postgres import LanSharePostgresConnection
+        from classroom_app.db.schema_teacher_identity import ensure_teacher_identity_schema
+        ensure_teacher_identity_schema(LanSharePostgresConnection(conn), engine="postgres")
 
 
 def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrations, progress: Callable = print):
@@ -274,7 +278,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,
         "source_unchanged": source_unchanged, "database_preservation_passed": passed,
-        "migration_scope": "assessment classification, durable AI/review ledger, grade publication, signature visibility, Agent actor/delegation/key/budget schema",
+        "migration_scope": "assessment classification, durable AI/review ledger, grade publication, signature visibility, Agent actor/delegation/key/budget schema, school-scoped teacher employee identity",
         "before": before, "stages": stages, "idempotency_differences": idempotency,
         "added_tables": sorted(set(first_full["tables"]) - set(before["tables"])),
         "added_columns": {table: added for table, meta in before["tables"].items()

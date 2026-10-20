@@ -121,6 +121,10 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
 
         with patch.object(teacher_account_service, "_teacher_exists_by_email", return_value=None), patch.object(
             teacher_account_service,
+            "canonicalize_membership_scope",
+            return_value={"school_code": "gxufl", "school_name": "School", "college": "", "department": ""},
+        ), patch.object(
+            teacher_account_service,
             "get_password_hash",
             return_value="hashed",
         ), patch.object(
@@ -144,6 +148,7 @@ class AccountTodoPostgresWriteTests(unittest.TestCase):
                 password="password123",
                 school_code="gxufl",
                 school_name="School",
+                employee_number="001",
             )
 
         self.assertEqual({"id": 333}, result)

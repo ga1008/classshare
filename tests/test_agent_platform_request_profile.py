@@ -19,6 +19,7 @@ class AgentPlatformRequestProfileTests(PlatformRequestFixture):
                               'description','identity_category','avatar_file_hash','avatar_mime_type','avatar_updated_at',
                               'today_mood','today_mood_updated_at','created_at','gender'):
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {field} TEXT DEFAULT ''")
+            conn.execute("ALTER TABLE teachers ADD COLUMN employee_number TEXT DEFAULT ''")
             conn.executescript("""
               ALTER TABLE blog_posts ADD COLUMN author_role TEXT;
               ALTER TABLE blog_posts ADD COLUMN author_user_pk INTEGER;

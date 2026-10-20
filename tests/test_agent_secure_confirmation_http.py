@@ -35,6 +35,7 @@ class SecureConfirmationHTTPTests(PlatformWriteFixture):
 
     def profile(self, **extra):
         return {"name": "Synthetic teacher", "email": "new@example.test", "is_super_admin": False,
+                "employee_number": "NEW001",
                 "school_code": "test-school", "school_name": "Test school", "college": "Test college",
                 "department": "Test department", **extra}
 

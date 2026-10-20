@@ -215,6 +215,40 @@ class AuthFormFallbackTests(unittest.TestCase):
         response = self.client.post("/teacher/login", data={"email": "teacher@example.test", "password": self.password, "next": "/protected?tab=files&item=2"})
         self.assert_form_error(response, "teacher", 400, "teacher@example.test")
 
+    def test_teacher_employee_login_requires_school_when_number_is_ambiguous(self):
+        self.conn.execute(
+            """CREATE TABLE teacher_organization_memberships (
+                teacher_id INTEGER, school_code TEXT, school_name TEXT, employee_number TEXT, is_active INTEGER)"""
+        )
+        self.conn.execute("INSERT INTO teachers VALUES(8,'Other teacher','other@example.test',?,1)", (self.hashed_password,))
+        self.conn.executemany(
+            "INSERT INTO teacher_organization_memberships VALUES(?,?,?,?,1)",
+            [(7, "a", "School A", "0007"), (8, "b", "School B", "0007")],
+        )
+        self.conn.commit()
+        fields = {"email": "0007", "password": self.password, "next": "/protected?tab=files&item=2"}
+        response = self.client.post("/teacher/login", data=fields)
+        self.assert_form_error(response, "teacher", 409, "0007")
+        self.assertIn("多个学校", response.context["login_error"])
+        response = self.client.post("/teacher/login", data={**fields, "school_name": "Wrong school"})
+        self.assert_form_error(response, "teacher", 400, "0007")
+        self.assertEqual("Wrong school", response.context["login_school_name"])
+        response = self.client.post("/teacher/login", data={**fields, "school_name": "School A"})
+        self.assertEqual(303, response.status_code)
+        self.assertEqual(["7"], [r["user_id"] for r in self.conn.execute("SELECT user_id FROM user_sessions")])
+
+    def test_teacher_single_employee_number_login_preserves_leading_zeroes(self):
+        self.conn.execute(
+            """CREATE TABLE teacher_organization_memberships (
+                teacher_id INTEGER, school_code TEXT, school_name TEXT, employee_number TEXT, is_active INTEGER)"""
+        )
+        self.conn.execute("INSERT INTO teacher_organization_memberships VALUES(7,'a','School A','0007',1)")
+        self.conn.commit()
+        fields = {"password": self.password, "next": "/protected?tab=files&item=2"}
+        self.assert_form_error(self.client.post("/teacher/login", data={**fields, "email": "7"}), "teacher", 400, "7")
+        response = self.client.post("/teacher/login", data={**fields, "identifier": "０００７"})
+        self.assertEqual(303, response.status_code)
+
     def test_teacher_success_retains_native_redirect_and_role_scoped_student_session(self):
         student = self.post_student()
         student_token = self.client.cookies["access_token"]

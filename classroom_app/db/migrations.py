@@ -305,6 +305,7 @@ def _ensure_teacher_organization_memberships_schema(conn: sqlite3.Connection) ->
         "school_name": f"TEXT NOT NULL DEFAULT '{DEFAULT_SCHOOL_NAME}'",
         "college": "TEXT NOT NULL DEFAULT ''",
         "department": "TEXT NOT NULL DEFAULT ''",
+        "employee_number": "TEXT NOT NULL DEFAULT ''",
         "is_primary": "INTEGER NOT NULL DEFAULT 0",
         "is_active": "INTEGER NOT NULL DEFAULT 1",
         "source": "TEXT NOT NULL DEFAULT 'manual'",
@@ -321,6 +322,14 @@ def _ensure_teacher_organization_memberships_schema(conn: sqlite3.Connection) ->
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_teacher_org_memberships_one_school "
         "ON teacher_organization_memberships (teacher_id, school_code)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_teacher_membership_school_employee "
+        "ON teacher_organization_memberships (school_code, employee_number) WHERE employee_number <> ''"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_teacher_membership_employee_login "
+        "ON teacher_organization_memberships (employee_number, is_active, teacher_id) WHERE employee_number <> ''"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_teacher_org_memberships_teacher "

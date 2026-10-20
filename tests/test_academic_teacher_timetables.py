@@ -31,12 +31,14 @@ class TeacherTimetableTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.conn.close)
         schema = """
             CREATE TABLE teachers(id INTEGER PRIMARY KEY, name TEXT, is_active INTEGER DEFAULT 1,
-                school_code TEXT, school_name TEXT, college TEXT, department TEXT);
-            INSERT INTO teachers VALUES(1,'查询人',1,'gxufl','合成学校','',''),
+                school_code TEXT, school_name TEXT, college TEXT, department TEXT,
+                employee_number TEXT NOT NULL DEFAULT '');
+            INSERT INTO teachers(id,name,is_active,school_code,school_name,college,department)
+                VALUES(1,'查询人',1,'gxufl','合成学校','',''),
                 (2,'关联人',1,'gxufl','合成学校','',''),(3,'其他学校',1,'other','其他学校','','');
             CREATE TABLE teacher_organization_memberships(id INTEGER PRIMARY KEY,teacher_id INTEGER,
                 school_code TEXT,school_name TEXT,college TEXT,department TEXT,is_primary INTEGER,
-                is_active INTEGER,updated_at TEXT);
+                is_active INTEGER,updated_at TEXT,employee_number TEXT NOT NULL DEFAULT '');
             CREATE TABLE teacher_academic_system_credentials(id INTEGER PRIMARY KEY,teacher_id INTEGER,
                 school_code TEXT,username TEXT,enabled INTEGER,last_status TEXT,last_verified_at TEXT);
             INSERT INTO teacher_academic_system_credentials VALUES(10,1,'gxufl','admin',1,'verified','2026-01-01'),
@@ -139,12 +141,12 @@ class TeacherTimetableTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(svc.TimetableQueryError) as error:
             await svc.query_teacher_timetables(3, self.query)
         self.assertEqual(403, error.exception.http_status)
-        self.conn.execute("INSERT INTO teacher_organization_memberships VALUES(1,1,'gxufl','合成','','',1,0,'2026')")
+        self.conn.execute("INSERT INTO teacher_organization_memberships VALUES(1,1,'gxufl','合成','','',1,0,'2026','')")
         with self.assertRaises(svc.TimetableQueryError):
             svc.load_teacher_timetable(self.conn, 1, "000123", year="2026-2027", term="1")
 
     async def test_secondary_school_membership_and_ambiguous_accounts(self):
-        self.conn.execute("INSERT INTO teacher_organization_memberships VALUES(1,3,'gxufl','合成','','',0,1,'2026')")
+        self.conn.execute("INSERT INTO teacher_organization_memberships VALUES(1,3,'gxufl','合成','','',0,1,'2026','')")
         self.conn.execute("INSERT INTO teacher_academic_system_credentials VALUES(30,3,'gxufl','000123',1,'verified','2026')")
         result = await svc.query_teacher_timetables(1, self.query)
         self.assertEqual("ambiguous", result["items"][0]["account_status"])
@@ -153,6 +155,87 @@ class TeacherTimetableTests(unittest.IsolatedAsyncioTestCase):
         self.conn.execute("UPDATE teacher_academic_system_credentials SET enabled=0 WHERE id=30")
         result = await svc.query_teacher_timetables(1, self.query)
         self.assertEqual(2, result["items"][0]["linked_teacher_id"])
+
+    async def test_employee_number_links_during_sync_without_academic_credentials(self):
+        self.conn.execute("DELETE FROM teacher_academic_system_credentials WHERE teacher_id=2")
+        self.conn.execute(
+            "INSERT INTO teacher_organization_memberships VALUES(1,2,'gxufl','合成','','',1,1,'2026','000123')"
+        )
+        result = await svc.query_teacher_timetables(1, self.query)
+        linked = result["items"][0]
+        self.assertEqual(("linked", 2, "employee_number"),
+                         (linked["account_status"], linked["linked_teacher_id"], linked["account_link_source"]))
+        self.assertEqual("unlinked", result["items"][1]["account_status"])
+
+    async def test_profile_saved_after_sync_links_cached_queries_and_detail_immediately(self):
+        self.conn.execute("DELETE FROM teacher_academic_system_credentials WHERE teacher_id=2")
+        self.conn.commit()
+        before = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual("unlinked", before["items"][0]["account_status"])
+        self.conn.execute("UPDATE teachers SET employee_number='000123' WHERE id=2")
+        self.conn.commit()
+        after = await svc.query_teacher_timetables(1, {**self.query, "local_only": True})
+        self.assertEqual(("local", 2), (after["source"], after["items"][0]["linked_teacher_id"]))
+        detail = svc.load_teacher_timetable(self.conn, 1, "000123", year="2026-2027", term="1")
+        self.assertEqual(2, detail["teacher"]["linked_teacher_id"])
+        self.assertEqual(1, self.fetch.await_count)
+
+    async def test_changed_employee_number_supersedes_old_verified_credential_and_cached_link(self):
+        self.conn.execute(
+            "INSERT INTO teacher_organization_memberships VALUES(1,2,'gxufl','合成','','',1,1,'2026','000123')"
+        )
+        await svc.query_teacher_timetables(1, self.query)
+        self.conn.execute(
+            "UPDATE teacher_organization_memberships SET employee_number='000456' WHERE teacher_id=2"
+        )
+        self.conn.commit()
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual("unlinked", result["items"][0]["account_status"])
+        self.assertEqual(2, result["items"][1]["linked_teacher_id"])
+        self.assertEqual(1, self.fetch.await_count)
+
+    async def test_revoked_membership_and_disabled_teacher_remove_employee_link(self):
+        self.conn.execute("UPDATE teachers SET employee_number='000123' WHERE id=2")
+        self.conn.execute(
+            "INSERT INTO teacher_organization_memberships VALUES(1,2,'gxufl','合成','','',1,1,'2026','000123')"
+        )
+        await svc.query_teacher_timetables(1, self.query)
+        self.conn.execute("UPDATE teacher_organization_memberships SET is_active=0 WHERE teacher_id=2")
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual("unlinked", result["items"][0]["account_status"])
+        self.conn.execute("UPDATE teacher_organization_memberships SET is_active=1 WHERE teacher_id=2")
+        self.conn.execute("UPDATE teachers SET is_active=0 WHERE id=2")
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual("unlinked", result["items"][0]["account_status"])
+
+    async def test_school_and_leading_zero_identity_never_inferred_from_name_or_primary_projection(self):
+        self.conn.execute("DELETE FROM teacher_academic_system_credentials WHERE teacher_id=2")
+        self.conn.execute("UPDATE teachers SET employee_number='000123' WHERE id=3")
+        self.conn.execute(
+            "INSERT INTO teacher_organization_memberships VALUES(1,3,'gxufl','合成','','',0,1,'2026','123')"
+        )
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertTrue(all(t["account_status"] == "unlinked" for t in result["items"]))
+        self.conn.execute("UPDATE teacher_organization_memberships SET employee_number='000123' WHERE teacher_id=3")
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual(3, result["items"][0]["linked_teacher_id"])
+
+    async def test_explicit_employee_conflict_with_legacy_credential_never_chooses_an_account(self):
+        self.conn.execute(
+            "INSERT INTO teacher_organization_memberships VALUES(1,3,'gxufl','合成','','',0,1,'2026','000123')"
+        )
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual("ambiguous", result["items"][0]["account_status"])
+        self.assertIsNone(result["items"][0]["linked_teacher_id"])
+        self.assertEqual(0, result["summary"]["linked_count"])
+
+    async def test_employee_identity_normalization_is_shared_and_preserves_source_number(self):
+        self.conn.execute("DELETE FROM teacher_academic_system_credentials WHERE teacher_id=2")
+        self.conn.execute("UPDATE teachers SET employee_number='AB001' WHERE id=2")
+        self.fetch.return_value = {"teachers": [fixture_teacher("ａｂ００１")]}
+        result = await svc.query_teacher_timetables(1, self.query)
+        self.assertEqual(2, result["items"][0]["linked_teacher_id"])
+        self.assertEqual("ａｂ００１", result["items"][0]["teacher_no"])
 
     async def test_lease_contention_is_busy_and_does_not_fetch(self):
         key = svc._lease_key(self.credential)

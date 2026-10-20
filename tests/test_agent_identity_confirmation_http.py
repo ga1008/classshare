@@ -20,7 +20,7 @@ class IdentityConfirmationHTTPTests(PlatformWriteFixture):
         super().setUp()
         self.conn.execute("UPDATE teachers SET is_super_admin=1")
         accounts.upsert_teacher_membership(self.conn, teacher_id=8, school_code="B", school_name="Other school",
-            college="Other college", department="Other department", is_primary=True, actor_teacher_id=7)
+            college="Other college", department="Other department", is_primary=True, actor_teacher_id=7, employee_number="0008")
         self.conn.commit()
         app = FastAPI()
         app.include_router(agent_tasks.router)

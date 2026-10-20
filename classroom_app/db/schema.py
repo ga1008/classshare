@@ -31,6 +31,7 @@ from .schema_session_knowledge_trees import ensure_session_knowledge_tree_schema
 from .schema_prompt_pool import ensure_prompt_pool_schema
 from .schema_user_ui_preferences import ensure_user_ui_preferences_schema
 from .schema_materials_integrations import ensure_materials_integrations_schema
+from .schema_teacher_identity import ensure_teacher_identity_schema
 from .schema_git_learning_bindings import ensure_git_learning_bindings_schema
 from .schema_academic_final_materials import ensure_academic_final_material_schema
 from .schema_academic_evaluations import ensure_academic_evaluation_schema
@@ -92,6 +93,7 @@ def init_database():
             ensure_ai_workspace_schema(conn, engine="postgres")
             runtime_column_report = ensure_postgres_runtime_columns(conn)
             runtime_constraint_report = ensure_postgres_runtime_constraints(conn)
+            ensure_teacher_identity_schema(conn, engine="postgres")
             ensure_signature_workflow_schema(conn)
             ensure_user_ui_preferences_schema(conn)
             ensure_git_learning_bindings_schema(conn)
@@ -405,6 +407,7 @@ def init_database():
             ensure_offering_class_links_schema(conn)
             ensure_offering_merge_schema(conn)
             ensure_materials_integrations_schema(conn)
+            ensure_teacher_identity_schema(conn, engine="sqlite")
             ensure_git_learning_bindings_schema(conn)
             ensure_attendance_report_schema(conn, engine="sqlite")
             ensure_learning_blog_signature_schema(conn)

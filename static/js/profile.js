@@ -254,6 +254,7 @@ function initBasicForm() {
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton?.disabled) return;
         const payload = Object.fromEntries(new FormData(form).entries());
         setButtonBusy(submitButton, true, '保存中');
         try {
@@ -262,6 +263,8 @@ function initBasicForm() {
                 body: payload,
             });
             updateProfileChrome(response.profile);
+            const employeeNumber = form.elements.namedItem('employee_number');
+            if (employeeNumber && response.profile?.employee_number != null) employeeNumber.value = response.profile.employee_number;
             showToast(response.message || '基础信息已保存', 'success');
         } catch (error) {
             showToast(error.message || '保存失败', 'error');

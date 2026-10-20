@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -27,16 +29,29 @@ _DEPARTMENT_ALIASES = {
 
 
 def normalize_department(value: Any) -> str:
-    text = str(value or "").strip()
+    text = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value or "")))
     if not text:
         return ""
-    text = text.replace(" ", "")
-    if text in _DEPARTMENT_ALIASES:
-        return _DEPARTMENT_ALIASES[text]
+    # A known abbreviation remains the same abbreviation with an explicit 系
+    # suffix. Do not infer initials or partial matches for unknown departments.
+    alias = text.removesuffix("系")
+    if alias in _DEPARTMENT_ALIASES:
+        return _DEPARTMENT_ALIASES[alias]
     for preset in DEPARTMENT_PRESETS:
         if text == preset or text == preset.removesuffix("系"):
             return preset
     return text if text.endswith("系") else f"{text}系"
+
+
+def department_aliases(department: Any) -> list[str]:
+    canonical = normalize_department(department)
+    if not canonical:
+        return []
+    aliases = {canonical.removesuffix("系")}
+    for alias, target in _DEPARTMENT_ALIASES.items():
+        if target == canonical:
+            aliases.update((alias, f"{alias}系"))
+    return sorted(aliases - {canonical})
 
 
 def infer_department_from_text(*parts: Any) -> str:

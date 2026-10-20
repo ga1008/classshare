@@ -21,14 +21,14 @@ class _AuthRoute(APIRoute):
 router = APIRouter(route_class=_AuthRoute)
 
 
-def _login_form_error(request, *, role, next_url, message, identifier="", email="", status_code=400):
+def _login_form_error(request, *, role, next_url, message, identifier="", email="", school_name="", status_code=400):
     return templates.TemplateResponse(
         request,
         "teacher_login_v4.html" if role == "teacher" else "student_login_v4.html",
-        _build_login_page_context(
+        {**_build_login_page_context(
             request, next_url, login_error=message,
             login_identifier=identifier, login_email=email,
-        ),
+        ), "login_school_name": school_name},
         status_code=status_code,
         headers={"Cache-Control": "no-store"},
     )
@@ -571,35 +571,38 @@ def handle_teacher_login(
     email: str = Form(default=""),
     password: str = Form(default=""),
     next: Optional[str] = Form(default=None),
+    identifier: str = Form(default=""),
+    school_name: str = Form(default=""),
+    school_code: str = Form(default=""),
 ):
-    """V4.0: 教师登录 - 验证数据库"""
+    """Email or a school-scoped employee identity, followed by password."""
     from ...dependencies import get_client_ip
     client_ip = get_client_ip(request)
     safe_next = sanitize_next_path(next, fallback="/dashboard")
-    email = email.strip()
+    email = str(identifier or email).strip()
     if not email or not password:
         return _login_form_error(
-            request, role="teacher", next_url=safe_next, email=email,
+            request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
             message="登录失败：请填写完整的登录信息。",
         )
 
     with get_db_connection() as conn:
-        teacher = conn.execute(
-            """
-            SELECT *
-            FROM teachers
-            WHERE lower(email) = ?
-              AND COALESCE(is_active, 1) = 1
-            LIMIT 1
-            """,
-            (email.lower(),),
-        ).fetchone()
+        from ...services.teacher_identity_service import teacher_login_candidates
+        candidates = teacher_login_candidates(conn, email, school_name=school_name, school_code=school_code)
+    if len(candidates) > 1:
+        return _login_form_error(
+            request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
+            message=("该邮箱对应的账号信息存在冲突，请联系管理员核对。"
+                     if "@" in email else "该职工号对应多个学校，请填写学校全称或改用邮箱登录。"),
+            status_code=409,
+        )
+    teacher = candidates[0] if candidates else None
 
     # 修复：使用 verify_password 验证
     if not teacher or not verify_password(password, teacher['hashed_password']):
         return _login_form_error(
-            request, role="teacher", next_url=safe_next, email=email,
-            message="登录失败：邮箱或密码错误。",
+            request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
+            message="登录失败：邮箱、职工号、学校或密码错误。",
         )
 
     teacher_data = dict(teacher)

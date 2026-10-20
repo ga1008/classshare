@@ -62,6 +62,12 @@
                                     <input data-lq-component="input" id="profile-nickname" name="nickname" class="lq-input lq-control--md form-control" value="{{ profile.nickname }}" maxlength="40">
                                 </div>
                                 {% if profile.role == 'teacher' %}
+                                <input type="hidden" name="expected_school_code" value="{{ profile.school_code|default('') }}">
+                                <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
+                                    <label class="form-label required{% if _profile_lq %} lq-field__label{% endif %}" for="profile-employee-number">职工号</label>
+                                    <input data-lq-component="input" id="profile-employee-number" name="employee_number" type="text" class="lq-input lq-control--md form-control" value="{{ profile.employee_number|default('') }}" maxlength="64" required aria-describedby="profile-employee-number-hint" autocomplete="off" spellcheck="false">
+                                    <small class="form-hint" id="profile-employee-number-hint">所属学校：{{ profile.school_name|default('请联系管理员完善任教归属', true) }}。可使用职工号和密码登录；课表按学校与职工号自动匹配，请保留开头的 0。</small>
+                                </div>
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group profile-form-grid__wide">
                                     <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}">职务身份（可兼任，最多 4 个）</label>
                                     <div id="profile-identity-editor" data-profile-identity-editor>

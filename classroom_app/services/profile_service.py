@@ -113,6 +113,9 @@ def _normalize_profile_payload(payload: dict[str, Any], *, role: str) -> dict[st
         "homepage_url": _normalize_homepage_url(payload.get("homepage_url")),
         "description": _normalize_text(payload.get("description"), limit=FIELD_LIMITS["description"], multiline=True),
     }
+    if role == "teacher":
+        from .teacher_identity_service import normalize_employee_number
+        normalized["employee_number"] = normalize_employee_number(payload.get("employee_number"), required=True)
     return normalized
 
 
@@ -129,6 +132,11 @@ def _serialize_profile(row, *, role: str) -> dict[str, Any]:
         "role_label": "教师" if role == "teacher" else "学生",
         "name": str(item.get("name") or ""),
         "student_id_number": str(item.get("student_id_number") or ""),
+        "employee_number": str(item.get("employee_number") or ""),
+        "school_code": str(item.get("school_code") or ""),
+        "school_name": str(item.get("school_name") or ""),
+        "college": str(item.get("college") or ""),
+        "department": str(item.get("department") or ""),
         "class_name": str(item.get("class_name") or ""),
         "classmate_count": _safe_int(item.get("classmate_count")),
         "email": str(item.get("email") or ""),
@@ -166,7 +174,7 @@ def _calculate_profile_completion(profile: dict[str, Any]) -> dict[str, Any]:
         "today_mood",
     ]
     if profile.get("role") == "teacher":
-        weighted_fields.append("description")
+        weighted_fields.extend(("description", "employee_number"))
     completed = [field for field in weighted_fields if str(profile.get(field) or "").strip()]
     percent = round(len(completed) / len(weighted_fields) * 100) if weighted_fields else 0
     return {
@@ -184,7 +192,8 @@ def get_user_profile(conn, user: dict) -> dict[str, Any]:
             """
             SELECT id, name, email, phone, wechat, qq, homepage_url, password_updated_at, profile_info,
                    nickname, description, identity_category, avatar_file_hash, avatar_mime_type,
-                   avatar_updated_at, today_mood, today_mood_updated_at, created_at
+                   avatar_updated_at, today_mood, today_mood_updated_at, created_at,
+                   employee_number, school_code, school_name, college, department
             FROM teachers
             WHERE id = ?
             LIMIT 1
@@ -730,6 +739,19 @@ def update_basic_profile(conn, user: dict, payload: dict[str, Any]) -> dict[str,
     role = str(user.get("role") or "").strip().lower()
     user_id = _safe_int(user.get("id"))
     data = _normalize_profile_payload(payload, role=role)
+    if role == "teacher":
+        from .teacher_account_service import lock_teacher_account_management
+        from .teacher_identity_service import update_primary_employee_number
+        lock_teacher_account_management(conn)
+        if conn.execute(
+            "SELECT id FROM teachers WHERE lower(email) = ? AND id <> ? LIMIT 1",
+            (data["email"], user_id),
+        ).fetchone():
+            raise ValueError("邮箱已被其他账号使用。")
+        update_primary_employee_number(
+            conn, teacher_id=user_id, employee_number=data["employee_number"],
+            expected_school_code=str(payload.get("expected_school_code") or ""),
+        )
     from .signature_account_lock_service import lock_identity_accounts
     lock_identity_accounts(conn, [(role, user_id)])
     table_name = "teachers" if role == "teacher" else "students"

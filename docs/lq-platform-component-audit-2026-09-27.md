@@ -97,6 +97,8 @@
 
 ## 边界
 
+2026-10-20 教师组织推荐、职工号登录与课表关联的字段、接口和验收边界见 [专项记录](teacher-identity-2026-10-20.md)、[当日全平台源码快照](lq-platform-component-audit-2026-10-20.json) 与 [本次源码摘要](teacher-identity-source-audit-2026-10-20.json)。源码清点仍为 pending/unknown；浏览器、正式构建、部署核验和 Git 推送分别追加证据，不据此覆盖其他页面的验收状态。
+
 2026-09-29 调课变更清单的追加清点、共享 Table/Chip/Button/Popover 组合和运行时验收见 [专项记录](lq-schedule-changes-2026-09-29.md) 与 [最新源码摘要](lq-schedule-changes-source-summary-2026-09-29.json)。该追加记录不把其他页面的 pending/unknown 自动改为通过。
 
 - Static lexical inventory, not a JavaScript interpreter or a full JSX/Jinja execution engine. Unresolved dynamic tags/factories remain unknown.

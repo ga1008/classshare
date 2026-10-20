@@ -19,10 +19,10 @@ from classroom_app.services.agent_delegation_service import create_task_attempt,
 
 def extend_account_fields(conn, *, engine="sqlite"):
     """Extend the deliberately small native authority fixture, without DDL magic."""
-    for name in ("email", "phone", "wechat", "qq", "homepage_url", "description", "created_at", "updated_at", "password_updated_at", "deactivated_at"):
+    for name in ("email", "phone", "wechat", "qq", "homepage_url", "description", "created_at", "updated_at", "password_updated_at", "deactivated_at", "employee_number"):
         conn.execute(f"ALTER TABLE teachers ADD COLUMN {name} TEXT DEFAULT ''")
     conn.execute("ALTER TABLE teachers ADD COLUMN deactivated_by_teacher_id BIGINT")
-    for name in ("source", "created_at", "deactivated_at"):
+    for name in ("source", "created_at", "deactivated_at", "employee_number"):
         conn.execute(f"ALTER TABLE teacher_organization_memberships ADD COLUMN {name} TEXT DEFAULT ''")
     for name in ("created_by_teacher_id", "updated_by_teacher_id"):
         conn.execute(f"ALTER TABLE teacher_organization_memberships ADD COLUMN {name} BIGINT")
@@ -58,9 +58,9 @@ class AgentIdentityManagementTests(unittest.TestCase):
         """)
         extend_account_fields(self.conn)
         _ensure_organization_catalog_schema(self.conn)
-        self.conn.execute("UPDATE teachers SET email=CAST(id AS TEXT)||'@example.test'")
+        self.conn.execute("UPDATE teachers SET email=CAST(id AS TEXT)||'@example.test', employee_number=CAST(id AS TEXT)")
         for teacher in (7, 8, 9):
-            domain.upsert_teacher_membership(self.conn, teacher_id=teacher, is_primary=True)
+            domain.upsert_teacher_membership(self.conn, teacher_id=teacher, is_primary=True, employee_number=str(teacher))
         ensure_agent_authority_schema(self.conn)
         self.attempt = create_task_attempt(self.conn, task_id=10, worker_id="identity", startup_key="identity")
         self.token = issue_task_delegation(self.conn, task_id=10, attempt_id=self.attempt["id"], fencing_token=1,

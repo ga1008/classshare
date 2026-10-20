@@ -38,6 +38,7 @@ from ..services.email_notification_service import (
 )
 from ..services.student_auth_service import get_student_auth_record_by_pk, validate_student_password
 from ..services.teacher_account_service import TEACHER_PASSWORD_HINT, validate_teacher_password
+from ..services.teacher_identity_service import TeacherIdentityConflict
 
 router = APIRouter()
 
@@ -425,6 +426,8 @@ async def api_update_basic_profile(request: Request, user: dict = Depends(get_cu
         try:
             profile = update_basic_profile(conn, user, data)
             conn.commit()
+        except TeacherIdentityConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except sqlite3.IntegrityError as exc:

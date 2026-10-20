@@ -10,6 +10,7 @@ _IDENTITY = {"teacher_id": {"type": "int", "required": True},
              "expected_revision": {"type": "str", "required": True, "max_chars": 64}}
 _PROFILE = {"name": {"type": "str", "required": True, "max_chars": 200},
             "email": {"type": "str", "required": True, "max_chars": 320},
+            "employee_number": {"type": "str", "required": True, "max_chars": 64},
             "is_super_admin": {"type": "bool", "required": True},
             **{name: {"type": "str", "max_chars": 200} for name in ("school_code", "school_name", "college", "department")}}
 

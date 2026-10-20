@@ -26,7 +26,7 @@ const node = (tag, className, text) => {
     if (text !== undefined) element.textContent = String(text);
     return element;
 };
-const accountLabels = { linked: '已关联平台账号', unlinked: '尚未关联平台账号', ambiguous: '账号关联待核实' };
+const accountLabels = { linked: '已关联平台账号', unlinked: '尚未关联平台账号', ambiguous: '职工号关联冲突，请核实账号' };
 const timestamp = value => value ? String(value).replace('T', ' ').slice(0, 16) : '未同步';
 const termKey = term => `${term?.year || ''}|${term?.term || ''}`;
 

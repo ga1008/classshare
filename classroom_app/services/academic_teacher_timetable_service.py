@@ -156,29 +156,9 @@ def _normalize_query(conn, teacher_id, payload):
 
 
 def _account_links(conn, teacher_nos):
-    """Verified exact employee identity only; ambiguous accounts stay unlinked."""
-    result = {no: {"linked_teacher_id": None, "account_status": "unlinked"} for no in teacher_nos}
-    if not teacher_nos:
-        return result
-    placeholders = ",".join("?" for _ in teacher_nos)
-    rows = conn.execute(
-        f"""SELECT DISTINCT c.username,c.teacher_id FROM teacher_academic_system_credentials c
-            JOIN teachers t ON t.id=c.teacher_id
-            WHERE c.school_code=? AND c.enabled=1 AND c.last_status='verified'
-              AND COALESCE(c.last_verified_at,'')<>'' AND COALESCE(t.is_active,1)=1
-              AND c.username IN ({placeholders})""", (SCHOOL, *teacher_nos),
-    ).fetchall()
-    memberships, matches = {}, {}
-    for row in rows:
-        tid = int(row["teacher_id"])
-        if tid not in memberships:
-            memberships[tid] = any(m["school_code"] == SCHOOL for m in load_teacher_org_memberships(conn, tid))
-        if memberships[tid]:
-            matches.setdefault(row["username"], set()).add(tid)
-    for no, ids in matches.items():
-        result[no] = {"linked_teacher_id": next(iter(ids)) if len(ids) == 1 else None,
-                      "account_status": "linked" if len(ids) == 1 else "ambiguous"}
-    return result
+    from .academic_teacher_identity_service import resolve_teacher_account_links
+
+    return resolve_teacher_account_links(conn, SCHOOL, teacher_nos)
 
 
 def _read_cached(conn, identity, signature, page, page_size, *, source="local"):

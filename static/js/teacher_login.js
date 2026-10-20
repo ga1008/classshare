@@ -85,7 +85,7 @@ function initTeacherLogin() {
 
             const html = await response.text();
             shakeLoginCard();
-            const message = extractStatusMessage(html) || '登录失败：邮箱或密码错误。';
+            const message = extractStatusMessage(html) || '登录失败：邮箱、职工号或密码错误。';
             if (!setLoginFeedback(form, message)) showToast(message, 'error');
         } catch (error) {
             shakeLoginCard();

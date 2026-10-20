@@ -8,6 +8,8 @@ from typing import Any
 from ..db.connection import execute_insert_returning_id
 from ..dependencies import get_password_hash
 from .organization_scope_service import build_org_scope, normalize_org_text, organization_label
+from .organization_suggestion_service import canonicalize_membership_scope, invalidate_organization_suggestions
+from .teacher_identity_service import assert_employee_number_available, normalize_employee_number
 
 TEACHER_PASSWORD_MIN_LENGTH = 8
 TEACHER_PASSWORD_HINT = "密码至少 8 位。"
@@ -83,7 +85,7 @@ def _get_teacher_account_row(conn: sqlite3.Connection, teacher_id: int | str):
     return conn.execute(
         """
         SELECT id, name, email, phone, wechat, qq, homepage_url, description,
-               school_code, school_name, college, department,
+               school_code, school_name, college, department, employee_number,
                COALESCE(is_super_admin, 0) AS is_super_admin,
                COALESCE(is_active, 1) AS is_active,
                created_at, updated_at, password_updated_at, deactivated_at
@@ -109,6 +111,7 @@ def _serialize_teacher_account(row) -> dict[str, Any]:
         "school_name": str(row["school_name"] or ""),
         "college": str(row["college"] or ""),
         "department": str(row["department"] or ""),
+        "employee_number": str(row["employee_number"] or ""),
         "organization_label": " / ".join(
             part
             for part in (
@@ -142,6 +145,7 @@ def _serialize_teacher_membership(row) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "teacher_id": int(row["teacher_id"]),
+        "employee_number": str(row["employee_number"] or ""),
         **scope,
         "organization_label": organization_label(scope),
         "is_primary": bool(row["is_primary"]),
@@ -223,6 +227,7 @@ def _sync_teacher_primary_scope(conn: sqlite3.Connection, teacher_id: int) -> No
             school_name = ?,
             college = ?,
             department = ?,
+            employee_number = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -231,6 +236,7 @@ def _sync_teacher_primary_scope(conn: sqlite3.Connection, teacher_id: int) -> No
             scope["school_name"],
             scope["college"],
             scope["department"],
+            str(primary["employee_number"] or ""),
             _now_iso(),
             int(teacher_id),
         ),
@@ -324,6 +330,7 @@ def upsert_teacher_membership(
     is_primary: bool = False,
     actor_teacher_id: int | None = None,
     source: str = "manual",
+    employee_number: str | None = None,
 ) -> dict[str, Any]:
     lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
@@ -331,7 +338,8 @@ def upsert_teacher_membership(
         raise ValueError("教师账号不存在或已停用。")
     requested_school_name = normalize_org_text(school_name)
     requested_school_code = normalize_org_text(school_code)
-    scope = build_org_scope(
+    scope = canonicalize_membership_scope(
+        conn,
         school_code=requested_school_code or ("" if requested_school_name else target["school_code"]),
         school_name=requested_school_name or target["school_name"],
         college=college if normalize_org_text(college) else target["college"],
@@ -339,6 +347,17 @@ def upsert_teacher_membership(
     )
     if not scope["department"]:
         raise ValueError("教师任教归属必须包含系部。")
+    existing = conn.execute(
+        "SELECT employee_number FROM teacher_organization_memberships WHERE teacher_id = ? AND school_code = ?",
+        (int(teacher_id), scope["school_code"]),
+    ).fetchone()
+    number = normalize_employee_number(
+        employee_number if employee_number is not None else (existing["employee_number"] if existing else ""),
+        required=employee_number is not None,
+    )
+    assert_employee_number_available(
+        conn, teacher_id=teacher_id, school_code=scope["school_code"], employee_number=number,
+    )
     timestamp = _now_iso()
     _ensure_membership_catalog_scope(conn, scope, actor_teacher_id=actor_teacher_id)
     if is_primary:
@@ -349,14 +368,15 @@ def upsert_teacher_membership(
     conn.execute(
         """
         INSERT INTO teacher_organization_memberships (
-            teacher_id, school_code, school_name, college, department,
+            teacher_id, school_code, school_name, college, department, employee_number,
             is_primary, is_active, source, created_by_teacher_id, updated_by_teacher_id, updated_at, deactivated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
         ON CONFLICT(teacher_id, school_code) DO UPDATE SET
             school_name = excluded.school_name,
             college = excluded.college,
             department = excluded.department,
+            employee_number = excluded.employee_number,
             is_primary = CASE WHEN excluded.is_primary = 1 THEN 1 ELSE teacher_organization_memberships.is_primary END,
             is_active = 1,
             source = excluded.source,
@@ -370,6 +390,7 @@ def upsert_teacher_membership(
             scope["school_name"],
             scope["college"],
             scope["department"],
+            number,
             1 if is_primary else 0,
             str(source or "manual"),
             actor_teacher_id,
@@ -378,6 +399,7 @@ def upsert_teacher_membership(
         ),
     )
     _sync_teacher_primary_scope(conn, int(teacher_id))
+    invalidate_organization_suggestions(conn)
     row = conn.execute(
         """
         SELECT *
@@ -489,7 +511,7 @@ def list_teacher_accounts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT t.id, t.name, t.email, t.phone, t.wechat, t.qq, t.homepage_url, t.description,
-               t.school_code, t.school_name, t.college, t.department,
+               t.school_code, t.school_name, t.college, t.department, t.employee_number,
                COALESCE(t.is_super_admin, 0) AS is_super_admin,
                COALESCE(t.is_active, 1) AS is_active,
                t.created_at, t.updated_at, t.password_updated_at, t.deactivated_at,
@@ -546,11 +568,14 @@ def create_teacher_account(
     school_name: str = "",
     college: str = "",
     department: str = "",
+    employee_number: str = "",
 ) -> dict[str, Any]:
     lock_teacher_account_management(conn)
     normalized_name, normalized_email = _validate_teacher_identity(name, email)
     validate_teacher_password(password)
-    org_scope = build_org_scope(
+    number = normalize_employee_number(employee_number, required=True)
+    org_scope = canonicalize_membership_scope(
+        conn,
         school_code=school_code,
         school_name=school_name,
         college=college,
@@ -562,6 +587,10 @@ def create_teacher_account(
 
     if existing and int(existing["is_active"] or 0) == 1:
         raise ValueError("该教师邮箱已存在。")
+    assert_employee_number_available(
+        conn, teacher_id=int(existing["id"]) if existing else 0,
+        school_code=org_scope["school_code"], employee_number=number,
+    )
 
     if existing:
         teacher_id = int(existing["id"])
@@ -635,6 +664,7 @@ def create_teacher_account(
         is_primary=True,
         actor_teacher_id=actor_teacher_id,
         source="account_primary",
+        employee_number=number,
     )
     return get_teacher_account(conn, teacher_id)
 
@@ -661,6 +691,7 @@ def update_teacher_account(
     school_name: str = "",
     college: str = "",
     department: str = "",
+    employee_number: str | None = None,
 ) -> dict[str, Any]:
     lock_teacher_account_management(conn)
     target = _get_teacher_account_row(conn, teacher_id)
@@ -668,6 +699,9 @@ def update_teacher_account(
         raise ValueError("教师账号不存在。")
     if not bool(target["is_active"]):
         raise ValueError("该教师账号已停用，不能修改资料。")
+    number = normalize_employee_number(
+        employee_number if employee_number is not None else target["employee_number"], required=True,
+    )
 
     normalized_name, normalized_email = _validate_teacher_identity(name, email)
     email_conflict = _teacher_exists_by_email(conn, normalized_email, exclude_teacher_id=teacher_id)
@@ -679,8 +713,9 @@ def update_teacher_account(
         "college": target["college"],
         "department": target["department"],
     }
-    org_scope = build_org_scope(
-        school_code=school_code or current_scope["school_code"],
+    org_scope = canonicalize_membership_scope(
+        conn,
+        school_code=school_code or ("" if school_name and school_name != current_scope["school_name"] else current_scope["school_code"]),
         school_name=school_name or current_scope["school_name"],
         college=college if normalize_org_text(college) else current_scope["college"],
         department=department if normalize_org_text(department) else current_scope["department"],
@@ -728,6 +763,7 @@ def update_teacher_account(
         department=org_scope["department"],
         is_primary=True,
         source="account_primary",
+        employee_number=number,
     )
     return get_teacher_account(conn, teacher_id)
 

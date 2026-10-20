@@ -59320,9 +59320,7 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
     display: grid;
     gap: 8px;
     padding: 10px 12px;
-    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    background: hsl(var(--ls-c-slate-50) / 0.86);
 }
 
 .um-membership-item header {
@@ -59333,7 +59331,6 @@ table.gw-reader-table tr:nth-child(even) td { background: hsl(var(--ls-c-slate-5
 }
 
 .um-membership-item strong {
-    color: var(--text-primary);
     line-height: 1.45;
 }
 

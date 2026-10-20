@@ -22,7 +22,7 @@ REQUIRED_POSTGRES_COLUMNS = {
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     **ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     **FEEDBACK_CONVERSATION_REQUIRED_COLUMNS,
-    "teachers": ("id", "name"),
+    "teachers": ("id", "name", "employee_number"),
     "system_settings": ("key", "value", "updated_at"),
     "teacher_onboarding_state": (
         "teacher_id",
@@ -90,6 +90,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "school_name",
         "college",
         "department",
+        "employee_number",
         "is_primary",
         "is_active",
         "source",

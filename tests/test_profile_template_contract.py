@@ -184,11 +184,14 @@ class ProfileTemplateContractTests(unittest.TestCase):
                 _, doc, _ = self.render(role, 'settings')
                 self.assertEqual(1, len(doc.by_id('profile-basic-form')))
                 expected = {'nickname', 'email', 'phone', 'wechat', 'qq', 'homepage_url'}
-                if role == 'teacher': expected.add('description')
+                if role == 'teacher': expected.update({'description', 'employee_number', 'expected_school_code'})
                 self.assertEqual(expected, {attrs['name'] for tag, attrs in doc.profile_tags if tag in ('input', 'textarea') and 'name' in attrs})
                 self.assertIn('readonly', doc.by_id('profile-name')[0][1])
                 self.assertEqual(int(role == 'student'), len(doc.by_id('profile-student-id')))
                 self.assertEqual(int(role == 'teacher'), len(doc.by_id('profile-identity-editor')))
+                if role == 'teacher':
+                    self.assertIn('required', doc.by_id('profile-employee-number')[0][1])
+                    self.assertEqual('text', doc.by_id('profile-employee-number')[0][1]['type'])
                 if role == 'teacher': self.assertEqual('第一行\n第二行 <不应成为标签>', doc.contents['profile-description'])
                 self.assertEqual('image/png,image/jpeg,image/gif', doc.by_id('profile-avatar-input')[0][1]['accept'])
 

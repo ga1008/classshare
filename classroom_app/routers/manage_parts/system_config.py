@@ -497,6 +497,7 @@ async def api_create_teacher_account(
     school_name: str = Form(default=""),
     college: str = Form(default=""),
     department: str = Form(default=""),
+    employee_number: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """新增教师账号，仅超管可用。"""
@@ -520,6 +521,7 @@ async def api_create_teacher_account(
                 school_name=school_name,
                 college=college,
                 department=department,
+                employee_number=employee_number,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -543,6 +545,7 @@ async def api_update_teacher_account(
     school_name: str = Form(default=""),
     college: str = Form(default=""),
     department: str = Form(default=""),
+    employee_number: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """修改教师账号资料，仅超管可用。"""
@@ -563,6 +566,7 @@ async def api_update_teacher_account(
                 school_name=school_name,
                 college=college,
                 department=department,
+                employee_number=employee_number,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -578,6 +582,7 @@ async def api_upsert_teacher_membership(
     college: str = Form(default=""),
     department: str = Form(default=""),
     is_primary: str = Form(default=""),
+    employee_number: str = Form(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     """为教师新增或恢复一个学校任教归属；同一学校只保留一个系部归属。"""
@@ -593,6 +598,7 @@ async def api_upsert_teacher_membership(
                 department=department,
                 is_primary=_form_bool(is_primary),
                 actor_teacher_id=int(user["id"]),
+                employee_number=employee_number,
             )
             teacher = get_teacher_account(conn, teacher_id)
         except ValueError as exc:

@@ -11,6 +11,7 @@ from .organization_scope_service import (
     normalize_school_code,
     normalize_school_name,
 )
+from .organization_suggestion_service import invalidate_organization_suggestions
 
 
 class OrganizationManagementError(ValueError):
@@ -406,6 +407,7 @@ def create_school(
         ),
     )
     row = _school_row(conn, normalized_code)
+    invalidate_organization_suggestions()
     return _serialize_school(conn, row)
 
 
@@ -446,6 +448,7 @@ def update_school(
         ),
     )
     _update_school_name_references(conn, school_code=row["school_code"], school_name=normalized_name)
+    invalidate_organization_suggestions()
     return _serialize_school(conn, _school_row(conn, row["school_code"]))
 
 
@@ -465,6 +468,7 @@ def delete_school(conn: sqlite3.Connection, *, school_id: int, actor_teacher_id:
         """,
         (actor_teacher_id, timestamp, timestamp, int(school_id)),
     )
+    invalidate_organization_suggestions()
     return _serialize_school(conn, _school_row(conn, row["school_code"]))
 
 
@@ -510,6 +514,7 @@ def create_college(
         "SELECT * FROM organization_colleges WHERE school_code = ? AND college_name = ? LIMIT 1",
         (normalized_school, normalized_college),
     ).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_college(conn, row)
 
 
@@ -558,6 +563,7 @@ def update_college(
     if old_name != new_name:
         _update_college_references(conn, school_code=row["school_code"], old_name=old_name, new_name=new_name)
     updated = conn.execute("SELECT * FROM organization_colleges WHERE id = ? LIMIT 1", (int(college_id),)).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_college(conn, updated)
 
 
@@ -578,6 +584,7 @@ def delete_college(conn: sqlite3.Connection, *, college_id: int, actor_teacher_i
         (actor_teacher_id, timestamp, timestamp, int(college_id)),
     )
     updated = conn.execute("SELECT * FROM organization_colleges WHERE id = ? LIMIT 1", (int(college_id),)).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_college(conn, updated)
 
 
@@ -639,6 +646,7 @@ def create_department(
         """,
         (normalized_school, normalized_college, normalized_department),
     ).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_department(conn, row)
 
 
@@ -693,6 +701,7 @@ def update_department(
             new_name=new_name,
         )
     updated = conn.execute("SELECT * FROM organization_departments WHERE id = ? LIMIT 1", (int(department_id),)).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_department(conn, updated)
 
 
@@ -713,4 +722,5 @@ def delete_department(conn: sqlite3.Connection, *, department_id: int, actor_tea
         (actor_teacher_id, timestamp, timestamp, int(department_id)),
     )
     updated = conn.execute("SELECT * FROM organization_departments WHERE id = ? LIMIT 1", (int(department_id),)).fetchone()
+    invalidate_organization_suggestions()
     return _serialize_department(conn, updated)
