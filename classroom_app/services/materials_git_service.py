@@ -903,11 +903,12 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path, *, protec
         profile = infer_material_profile(file_path.name)
         if existing_row:
             path_to_id[relative_path] = int(existing_row["id"])
+            content_changed = str(existing_row.get("file_hash") or "") != file_hash
             file_changed = (
                 _safe_int(existing_row.get("parent_id")) != parent_id
                 or str(existing_row.get("material_path") or "") != material_path
                 or str(existing_row.get("name") or "") != file_path.name
-                or str(existing_row.get("file_hash") or "") != file_hash
+                or content_changed
                 or _safe_int(existing_row.get("file_size")) != file_size
                 or str(existing_row.get("mime_type") or "") != profile["mime_type"]
                 or str(existing_row.get("preview_type") or "") != profile["preview_type"]
@@ -915,17 +916,22 @@ def _sync_workspace_to_repository(conn, root_row, workspace_dir: Path, *, protec
                 or str(existing_row.get("file_ext") or "") != profile["file_ext"]
             )
             if file_changed:
-                if existing_row.get("file_hash") and str(existing_row["file_hash"]) != file_hash:
+                if existing_row.get("file_hash") and content_changed:
                     deleted_file_hashes.add(str(existing_row["file_hash"]))
-                conn.execute(
-                    """
-                    UPDATE course_materials
-                    SET parent_id = ?, material_path = ?, name = ?, mime_type = ?, preview_type = ?,
-                        ai_capability = ?, file_ext = ?, file_hash = ?, file_size = ?,
+                # Location/profile repairs do not invalidate document-derived
+                # work. Only a different SHA-256 denotes new file content.
+                derived_reset = """
                         ai_parse_status = 'idle', ai_parse_result_json = NULL,
                         check_questions_json = '', check_questions_status = 'idle',
                         check_questions_error = '', check_questions_generated_at = NULL,
                         ai_optimize_status = 'idle', ai_optimized_markdown = NULL,
+                """ if content_changed else ""
+                conn.execute(
+                    f"""
+                    UPDATE course_materials
+                    SET parent_id = ?, material_path = ?, name = ?, mime_type = ?, preview_type = ?,
+                        ai_capability = ?, file_ext = ?, file_hash = ?, file_size = ?,
+                        {derived_reset}
                         updated_at = ?
                     WHERE id = ?
                     """,
@@ -1364,6 +1370,9 @@ async def execute_material_repository_action(
                     git_sync.lock_and_check(conn, dict(latest_root_row), _fetch_subtree_rows, lessondoc_baseline)
                 except editor_service.EditorError as exc:
                     raise HTTPException(exc.status, str(exc)) from exc
+                from .session_knowledge_tree_service import upgrade_repository_source_fingerprints
+                upgrade_repository_source_fingerprints(
+                    conn, int(latest_root_row["id"]), int(teacher_user["id"]))
                 sync_summary, removable_hashes, changed_entries = _sync_workspace_to_repository(
                     conn,
                     dict(latest_root_row),

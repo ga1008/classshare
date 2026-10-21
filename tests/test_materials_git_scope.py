@@ -128,6 +128,27 @@ class MaterialRepositoryScopeTests(unittest.TestCase):
         self.assertNotEqual(file_row["file_hash"], updated["file_hash"])
         self.assertEqual(self.scope(self.root()), self.scope(updated))
 
+    def test_same_hash_metadata_repair_preserves_document_derived_work(self):
+        self.sync()
+        file_row = next(row for row in self.children() if row["node_type"] == "file")
+        self.conn.execute("""UPDATE course_materials SET name='old display title', mime_type='legacy/type',
+            ai_parse_status='done', ai_parse_result_json='parsed', ai_optimize_status='done',
+            ai_optimized_markdown='optimized', check_questions_status='done', check_questions_json='questions',
+            check_questions_generated_at='old-generated' WHERE id=?""", (file_row["id"],))
+        self.sync()
+        repaired = next(row for row in self.children() if row["id"] == file_row["id"])
+        self.assertEqual(repaired["file_hash"], file_row["file_hash"])
+        self.assertEqual((repaired["ai_parse_result_json"], repaired["ai_optimized_markdown"],
+                          repaired["check_questions_json"], repaired["check_questions_generated_at"]),
+                         ("parsed", "optimized", "questions", "old-generated"))
+        self.lesson_path.write_bytes(b"<html>changed content</html>")
+        self.sync()
+        changed = next(row for row in self.children() if row["id"] == file_row["id"])
+        self.assertEqual((changed["ai_parse_status"], changed["ai_optimize_status"], changed["check_questions_status"]),
+                         ("idle", "idle", "idle"))
+        self.assertIsNone(changed["ai_parse_result_json"])
+        self.assertEqual(changed["check_questions_json"], "")
+
     def test_other_repository_with_identical_paths_is_untouched(self):
         self.conn.execute(
             """

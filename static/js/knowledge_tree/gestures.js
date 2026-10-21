@@ -1,41 +1,44 @@
-// 知识树画布手势：普通滚轮原生滚动，Ctrl+滚轮/触控板捏合以光标为锚缩放（按帧合并），
-// 画布获焦时 +/−/0 缩放与适应，双击空白处适应，鼠标/笔按住空白处拖动平移（触屏原生滑动）。
+// 普通滚轮以光标为锚缩放（按帧合并）；鼠标/笔左键拖动空白处平移。
+// Ctrl/Meta 滚轮保留浏览器原生行为，触屏保留原生滑动。
 
 /**
  * ctx: { viewport, ready() -> bool, zoomBy(factor, anchor|null), fit() }
  * Returns { dispose() } that cancels a pending zoom frame.
  */
 export function bindViewportGestures({ viewport, ready, zoomBy, fit }) {
+    const listeners = new AbortController();
+    const options = { signal: listeners.signal };
     let wheelFactor = 1;
     let wheelAnchor = null;
     let wheelFrame = 0;
     viewport.addEventListener('wheel', event => {
-        if (!event.ctrlKey || !ready()) return;
+        if (event.ctrlKey || event.metaKey || !ready()) return;
         event.preventDefault();
         const rect = viewport.getBoundingClientRect();
-        const delta = Math.max(-120, Math.min(120, event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY));
+        const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+        const delta = Math.max(-120, Math.min(120, event.deltaY * unit));
         wheelFactor *= Math.exp(-delta * 0.0018);
-        wheelAnchor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        wheelAnchor = { x: event.clientX - rect.left - viewport.clientLeft, y: event.clientY - rect.top - viewport.clientTop };
         if (!wheelFrame) wheelFrame = window.requestAnimationFrame(() => {
             wheelFrame = 0;
-            zoomBy(wheelFactor, wheelAnchor);
+            if (ready()) zoomBy(wheelFactor, wheelAnchor);
             wheelFactor = 1;
         });
-    }, { passive: false });
+    }, { ...options, passive: false });
     viewport.addEventListener('keydown', event => {
         if (event.target !== viewport || !ready() || event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.key === '+' || event.key === '=') { event.preventDefault(); zoomBy(1.2, null); }
         else if (event.key === '-' || event.key === '_') { event.preventDefault(); zoomBy(1 / 1.2, null); }
         else if (event.key === '0') { event.preventDefault(); fit(); }
-    });
+    }, options);
     viewport.addEventListener('dblclick', event => {
         if (!ready() || event.target.closest('.kt-node, .kt-fold')) return;
         fit();
-    });
+    }, options);
 
     let pan = null;
     viewport.addEventListener('pointerdown', event => {
-        if (!ready() || event.pointerType === 'touch' || ![0, 1].includes(event.button)) return;
+        if (!ready() || event.pointerType === 'touch' || event.button !== 0) return;
         if (event.target.closest('.kt-node, .kt-fold')) return;
         // Leave the native scrollbars alone.
         const rect = viewport.getBoundingClientRect();
@@ -45,21 +48,26 @@ export function bindViewportGestures({ viewport, ready, zoomBy, fit }) {
         pan = { id: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
         viewport.classList.add('is-panning');
         try { viewport.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
-    });
+    }, options);
     viewport.addEventListener('pointermove', event => {
         if (!pan || event.pointerId !== pan.id) return;
         viewport.scrollLeft = pan.left - (event.clientX - pan.x);
         viewport.scrollTop = pan.top - (event.clientY - pan.y);
-    });
+    }, options);
     const endPan = event => {
         if (!pan || event.pointerId !== pan.id) return;
         try { viewport.releasePointerCapture(pan.id); } catch { /* already released */ }
         pan = null;
         viewport.classList.remove('is-panning');
     };
-    viewport.addEventListener('pointerup', endPan);
-    viewport.addEventListener('pointercancel', endPan);
-    viewport.addEventListener('lostpointercapture', endPan);
+    viewport.addEventListener('pointerup', endPan, options);
+    viewport.addEventListener('pointercancel', endPan, options);
+    viewport.addEventListener('lostpointercapture', endPan, options);
 
-    return { dispose() { window.cancelAnimationFrame(wheelFrame); wheelFrame = 0; } };
+    return { dispose() {
+        listeners.abort();
+        window.cancelAnimationFrame(wheelFrame);
+        wheelFrame = 0;
+        if (pan) endPan({ pointerId: pan.id });
+    } };
 }

@@ -37,7 +37,7 @@ export function createProgressCommands(ctx) {
 
     async function generate() {
         const data = ctx.data();
-        if (!ctx.canEdit || !data || generating() || !data.has_material) return;
+        if (!ctx.canEdit || !data || generating() || !data.has_material || !ctx.canGenerate()) return;
         if (data.has_tree) {
             const hasProgress = Number(data.completed_count) > 0;
             const loses = [hasProgress ? `当前已完成的 ${data.progress || 0}% 进度` : '', data.tree?.edited_at ? '手动编辑过的内容' : ''].filter(Boolean).join('和');
@@ -49,25 +49,35 @@ export function createProgressCommands(ctx) {
             });
             if (!ok || ctx.closed()) return;
         }
-        if (ctx.editingId()) await ctx.saveEdit({ quiet: true });
-        ctx.generateBtn.disabled = true;
+        if (!ctx.canGenerate()) return;
+        if (ctx.editingId() && !await ctx.saveEdit({ quiet: true })) return;
+        ctx.setGenerationPending(true);
+        let failed = false;
         try {
             ctx.applyState(await ctx.request('/generate', { method: 'POST' }));
             pollStarted = Date.now();
             schedulePoll();
         } catch (error) {
+            failed = true;
             showToast(error.message || '无法开始生成，请稍后重试。', 'error');
-            await ctx.refresh();
+        } finally {
+            ctx.setGenerationPending(false);
+            if (failed && !ctx.closed()) {
+                await ctx.refresh();
+                // A lost POST response may still have started the server job.
+                schedulePoll();
+            }
         }
     }
 
     async function bulk(done) {
         const data = ctx.data();
-        if (!data?.has_tree) return;
+        if (!data?.has_tree || !ctx.editable()) return;
         if (!done && Number(data.completed_count)) {
             const ok = await lqConfirm({ title: '全部取消？', message: '将清空本课所有已完成标记，进度归零。', confirmLabel: '全部取消', danger: true });
             if (!ok || ctx.closed()) return;
         }
+        if (!ctx.editable()) return;
         const ids = done ? [...ctx.index().map.values()].filter(info => info.isLeaf).map(info => info.node.id) : [];
         ctx.mutate('/bulk', { method: 'POST', body: { done } }, state => progressFor(state.tree, ids));
     }

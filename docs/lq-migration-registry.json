@@ -31,7 +31,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 200,
+        "line": 201,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -11831,7 +11831,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 200,
+        "line": 201,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -13805,12 +13805,14 @@
         "js/lq/layer.js",
         "js/lq/shells.js",
         "js/manage_lq_pilot.js",
+        "js/manage_users.js",
         "js/message_center_bell.js",
         "js/user_ui_preferences.js"
       ],
       "islands": [],
       "templateReferences": [
         "macros/app_topbar.html",
+        "macros/lq/button.html",
         "macros/manage_page.html",
         "manage/layout.html"
       ],
@@ -13820,48 +13822,36 @@
         "static/js/user_ui_preferences.js"
       ],
       "domHooks": [
-        "create-college",
-        "create-department",
-        "create-email",
-        "create-name",
-        "create-password",
-        "create-school-name",
-        "edit-college",
-        "edit-department",
         "edit-description",
-        "edit-email",
-        "edit-homepage-url",
-        "edit-name",
-        "edit-phone",
-        "edit-qq",
-        "edit-school-code",
-        "edit-school-name",
         "edit-teacher-id",
-        "edit-wechat",
-        "membership-college",
-        "membership-department",
-        "membership-school-code",
-        "membership-school-name",
         "membership-target-label",
         "membership-teacher-id",
         "password-target-label",
         "password-teacher-id",
-        "reset-password",
+        "teacher-card-grid",
         "teacher-create-form",
+        "teacher-create-modal",
+        "teacher-detail-modal",
+        "teacher-detail-notice",
+        "teacher-detail-summary",
+        "teacher-edit-fields",
         "teacher-edit-form",
-        "teacher-edit-modal",
-        "teacher-edit-title",
         "teacher-empty-state",
+        "teacher-lifecycle-hint",
+        "teacher-links-title",
+        "teacher-list-title",
+        "teacher-management-data",
         "teacher-membership-form",
         "teacher-membership-list",
         "teacher-membership-modal",
-        "teacher-membership-title",
+        "teacher-overview",
         "teacher-password-form",
         "teacher-password-modal",
-        "teacher-password-title",
+        "teacher-result-count",
+        "teacher-save-status",
         "teacher-search",
         "teacher-status-filter",
-        "teacher-table-body"
+        "teacher-timetable-links"
       ],
       "apis": [
         "POST /api/manage/system/teachers",
@@ -13899,7 +13889,7 @@
         "LQ Button/Icon（壳入口）",
         "LQ Layer（Shell唯一层所有者）"
       ],
-      "inventorySourceSha256": "b83a3ea625c050d758dcd84e8649da6e3b4f96590c0a98ec69da3e9729880e46",
+      "inventorySourceSha256": "abfbd30cb112723f00b4f071fff81b8b1aa0dea321a5d4c165392bfc08cc8173",
       "before": {
         "sourceSha256": "017e80f4bdd35c475b57f75ea703d762a730c31f9ae7c92f711fdce790b80616",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/system/users.html",
@@ -19507,6 +19497,8 @@
         "profile-basic-form",
         "profile-description",
         "profile-email",
+        "profile-employee-number",
+        "profile-employee-number-hint",
         "profile-homepage",
         "profile-identity-editor",
         "profile-mood-input",
@@ -19522,7 +19514,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "dfe3528bfc67618c2a9f4b5c6532960e4375dbae892859632b6cbd960c1bb549",
+      "inventorySourceSha256": "1af622cbfd9424561033784e3d6c5b7d34024b81bc9a0e236d17d76a0e0520af",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -20598,7 +20590,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 200,
+        "line": 201,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -23254,6 +23246,7 @@
       ],
       "domHooks": [
         "email",
+        "login-school-name",
         "password",
         "teacher-login-form",
         "teacher-login-form-feedback"
@@ -23265,7 +23258,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d0cdfc99d5a3fc2a7b4e8ef6466db207092bb93c268f4ec85b19a0312847e1ec",
+      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
       "before": {
         "sourceSha256": "11a33cca2f1a973d623e1e4fd703a7bfc3b56d8a77c58e70ceadde485c8aec9e",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/teacher_login_v4.html",
@@ -23361,6 +23354,7 @@
       ],
       "domHooks": [
         "email",
+        "login-school-name",
         "password",
         "teacher-login-form",
         "teacher-login-form-feedback"
@@ -23372,7 +23366,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d0cdfc99d5a3fc2a7b4e8ef6466db207092bb93c268f4ec85b19a0312847e1ec",
+      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -23452,6 +23446,7 @@
       ],
       "domHooks": [
         "email",
+        "login-school-name",
         "password",
         "teacher-login-form",
         "teacher-login-form-feedback"
@@ -23463,7 +23458,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d0cdfc99d5a3fc2a7b4e8ef6466db207092bb93c268f4ec85b19a0312847e1ec",
+      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
       "before": {
         "sourceSha256": null,
         "screenshots": [],

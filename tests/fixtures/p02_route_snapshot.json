@@ -2345,6 +2345,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/draft",
+    "methods": [
+      "PUT"
+    ],
+    "name": "api_save_knowledge_draft",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/sessions/{session_id}/knowledge-tree/generate",
     "methods": [
       "POST"
@@ -3793,6 +3801,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/academic/teachers/options",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_timetable_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/teachers/query",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_timetable_query",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/teachers/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_timetable_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/teachers/{teacher_no:path}/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "teacher_timetable_single_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/academic/teachers/{teacher_no:path}/timetable",
+    "methods": [
+      "GET"
+    ],
+    "name": "teacher_timetable_detail",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/ai/ai-generate",
     "methods": [
       "POST"
@@ -4230,6 +4278,14 @@
       "GET"
     ],
     "name": "api_list_offerings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/organization-suggestions",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_organization_suggestions",
     "include_in_schema": true
   },
   {
@@ -4843,9 +4899,41 @@
   {
     "path": "/api/manage/system/teachers/{teacher_id}",
     "methods": [
+      "GET"
+    ],
+    "name": "api_get_teacher_account_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}",
+    "methods": [
       "POST"
     ],
     "name": "api_update_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/activate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_activate_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_teacher_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/teachers/{teacher_id}/deactivate",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_delete_teacher_account",
     "include_in_schema": true
   },
   {
@@ -7270,6 +7358,14 @@
       "GET"
     ],
     "name": "get_manage_system_smart_classroom_integrations_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/academic/teachers/schedule",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_teacher_schedule_query_page",
     "include_in_schema": true
   },
   {

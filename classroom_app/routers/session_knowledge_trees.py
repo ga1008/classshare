@@ -90,6 +90,12 @@ class OrderBody(BaseModel):
     version: int | None = None
 
 
+class DraftBody(BaseModel):
+    expected_version: int = Field(ge=1)
+    tree: dict
+    completed_ids: list[str] = Field(default_factory=list, max_length=kte.MANUAL_MAX_LEAVES)
+
+
 def _load_session(conn, class_offering_id: int, session_id: int, user: dict) -> tuple[dict, dict]:
     offering = dict(ensure_classroom_access(conn, int(class_offering_id), user))
     session = conn.execute(
@@ -111,8 +117,9 @@ def _state(conn, offering: dict, session: dict, user: dict) -> dict:
     if row:
         row = kt.expire_stale_generation(conn, row)
     material_ids = kt.session_material_ids(conn, int(offering["id"]), session, int(offering["teacher_id"]))
-    fingerprint = kt.source_fingerprint(conn, material_ids) if material_ids else ""
-    payload = kt.serialize(row, can_edit=True, has_material=bool(material_ids), current_fingerprint=fingerprint)
+    fingerprint, legacy = kt.source_fingerprints(conn, material_ids) if material_ids else ("", "")
+    payload = kt.serialize(row, can_edit=True, has_material=bool(material_ids), current_fingerprint=fingerprint,
+                           legacy_fingerprint=legacy or None)
     payload["session_id"] = int(session["id"])
     return payload
 
@@ -213,6 +220,18 @@ def _edit(class_offering_id: int, session_id: int, user: dict, operation) -> dic
         _row, extra = kte.edit_tree(conn, int(session["id"]), operation)
         conn.commit()
         return {**_state(conn, offering, session, user), **extra}
+
+
+@router.put("/{class_offering_id}/sessions/{session_id}/knowledge-tree/draft")
+async def api_save_knowledge_draft(
+    class_offering_id: int, session_id: int, body: DraftBody, user: dict = Depends(get_current_teacher),
+):
+    with get_db_connection() as conn:
+        offering, session = _load_session(conn, class_offering_id, session_id, user)
+        kte.save_draft(conn, int(session["id"]), expected_version=body.expected_version,
+                       tree=body.tree, completed_ids=body.completed_ids)
+        conn.commit()
+        return _state(conn, offering, session, user)
 
 
 @router.post("/{class_offering_id}/sessions/{session_id}/knowledge-tree/nodes")

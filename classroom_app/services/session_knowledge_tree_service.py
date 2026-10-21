@@ -405,7 +405,7 @@ def _write_completion(conn, row: dict[str, Any], completed_ids: list[str]) -> di
         UPDATE session_knowledge_trees
         SET completed_json = ?, progress_percent = ?, completed_count = ?, completed_at = ?,
             version = version + 1, updated_at = ?
-        WHERE id = ? AND version = ?
+        WHERE id = ? AND version = ? AND status <> 'generating'
         """,
         (json.dumps(state["completed_ids"]), state["progress"], state["completed_count"], completed_at,
          now_text(), row["id"], int(row["version"])),
@@ -460,7 +460,7 @@ def save_order(conn, session_id: int, parent_id: str, order: list[str], expected
         raise HTTPException(409, "知识树已在别处更新，请刷新后再调整顺序")
     tree = reorder_children(_loads(row.get("tree_json"), {}), str(parent_id or ""), order)
     cursor = conn.execute(
-        "UPDATE session_knowledge_trees SET tree_json = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
+        "UPDATE session_knowledge_trees SET tree_json = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ? AND status <> 'generating'",
         (json.dumps(tree, ensure_ascii=False), now_text(), row["id"], int(row["version"])),
     )
     if getattr(cursor, "rowcount", 1) == 0:
@@ -514,15 +514,76 @@ def _source_rows(conn, material_ids: list[int]) -> list[tuple[Any, Any]]:
     return pairs
 
 
-def source_fingerprint(conn, material_ids: list[int]) -> str:
-    """Hash of the bound documents' identity and content hash (no file reads)."""
-    parts = [
+def source_fingerprints(conn, material_ids: list[int]) -> tuple[str, str]:
+    """Content revision plus its legacy identity-based equivalent, without I/O.
+
+    A Git rename, equivalent entry replacement, duplicate binding or binding
+    reorder does not change the document content used to build a tree. Missing
+    hashes remain identity-specific: unknown files must never compare equal.
+    The legacy value only proves an existing tree is still current; it must not
+    be used to mark an already-stale tree as current during an upgrade.
+    """
+    pairs = _source_rows(conn, material_ids)
+    legacy_parts = [
         f"{int(row['id'])}:{int(file_row['id'])}:{file_row['file_hash'] or ''}"
-        for row, file_row in _source_rows(conn, material_ids)
+        for row, file_row in pairs
     ]
-    if not parts:
-        return ""
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    if not legacy_parts:
+        return "", ""
+    content_parts = sorted({
+        str(file_row['file_hash']) if file_row['file_hash'] else f"missing:{int(file_row['id'])}"
+        for _row, file_row in pairs
+    })
+    content = hashlib.sha256("|".join(content_parts).encode("utf-8")).hexdigest()
+    legacy = hashlib.sha256("|".join(legacy_parts).encode("utf-8")).hexdigest()
+    return f"content-v1:{content}", legacy
+
+
+def source_fingerprint(conn, material_ids: list[int]) -> str:
+    return source_fingerprints(conn, material_ids)[0]
+
+
+def upgrade_repository_source_fingerprints(conn, root_id: int, teacher_id: int) -> int:
+    """Preserve proven-current legacy trees before Git changes files/bindings.
+
+    Runs within the publication transaction, before any material mutation. Only
+    matching legacy revisions are upgraded; stale trees and in-flight generation
+    are untouched. CAS protects an intervening tree edit/generation, and no tree
+    content, progress, version or user-visible timestamps are changed.
+    """
+    from .git_learning_bindings_service import table_exists
+    if not table_exists(conn, "session_knowledge_trees"):
+        return 0
+    binding_clause = ""
+    params = [int(teacher_id), int(root_id)]
+    if table_exists(conn, "class_offering_learning_materials"):
+        binding_clause = """ OR EXISTS (
+            SELECT 1 FROM class_offering_learning_materials b
+            JOIN course_materials m ON m.id=b.material_id
+            WHERE b.class_offering_id=s.class_offering_id AND b.session_id=s.id AND m.root_id=?)"""
+        params.append(int(root_id))
+    rows = conn.execute(f"""
+        SELECT kt.*, s.learning_material_id
+        FROM session_knowledge_trees kt
+        JOIN class_offering_sessions s ON s.id=kt.session_id AND s.class_offering_id=kt.class_offering_id
+        JOIN class_offerings o ON o.id=s.class_offering_id
+        WHERE o.teacher_id=? AND kt.status <> 'generating'
+          AND kt.source_fingerprint <> '' AND kt.source_fingerprint NOT LIKE 'content-v1:%'
+          AND (EXISTS (SELECT 1 FROM course_materials m WHERE m.id=s.learning_material_id AND m.root_id=?)
+               {binding_clause})
+    """, params).fetchall()
+    upgraded = 0
+    for raw in rows:
+        row = dict(raw)
+        session = {"id": row["session_id"], "learning_material_id": row["learning_material_id"]}
+        ids = session_material_ids(conn, int(row["class_offering_id"]), session, teacher_id)
+        content, legacy = source_fingerprints(conn, ids)
+        if legacy and str(row["source_fingerprint"]) == legacy:
+            result = conn.execute("""UPDATE session_knowledge_trees SET source_fingerprint=?
+                WHERE id=? AND version=? AND source_fingerprint=? AND status <> 'generating'""",
+                (content, row["id"], int(row["version"]), legacy))
+            upgraded += max(0, result.rowcount)
+    return upgraded
 
 
 def read_source_texts(conn, material_ids: list[int], *, char_budget: int) -> tuple[str, list[str]]:
@@ -556,7 +617,8 @@ def read_source_texts(conn, material_ids: list[int], *, char_budget: int) -> tup
 # ---------------------------------------------------------------------------
 # Serialization and page summaries
 # ---------------------------------------------------------------------------
-def serialize(row: dict[str, Any] | None, *, can_edit: bool, has_material: bool, current_fingerprint: str | None = None) -> dict[str, Any]:
+def serialize(row: dict[str, Any] | None, *, can_edit: bool, has_material: bool, current_fingerprint: str | None = None,
+              legacy_fingerprint: str | None = None) -> dict[str, Any]:
     row = row or {}
     tree = _loads(row.get("tree_json"), {})
     has_tree = bool(tree.get("nodes"))
@@ -565,7 +627,8 @@ def serialize(row: dict[str, Any] | None, *, can_edit: bool, has_material: bool,
     }
     stored_fingerprint = str(row.get("source_fingerprint") or "")
     is_stale = bool(
-        can_edit and has_tree and current_fingerprint is not None and current_fingerprint != stored_fingerprint
+        can_edit and has_tree and current_fingerprint is not None
+        and stored_fingerprint not in (current_fingerprint, legacy_fingerprint)
     )
     return {
         "session_id": int(row["session_id"]) if row.get("session_id") else None,
@@ -581,6 +644,7 @@ def serialize(row: dict[str, Any] | None, *, can_edit: bool, has_material: bool,
         "has_material": bool(has_material),
         "can_edit": bool(can_edit),
         "is_stale": is_stale,
+        "current_source_fingerprint": str(current_fingerprint or "") if can_edit else "",
         **state,
     }
 
@@ -669,8 +733,9 @@ def list_offering_trees(conn, class_offering_id: int, teacher_id: int) -> list[d
         row = rows.get(int(session["id"]))
         if row:
             row = expire_stale_generation(conn, row)
+        fingerprint, legacy = source_fingerprints(conn, ids) if ids and row else ("", "")
         state = serialize(row, can_edit=True, has_material=bool(ids),
-                          current_fingerprint=source_fingerprint(conn, ids) if ids and row else None)
+                          current_fingerprint=fingerprint if row else None, legacy_fingerprint=legacy or None)
         state.pop("tree", None)
         result.append({
             **state,

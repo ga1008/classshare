@@ -240,3 +240,61 @@ export function patchTree(tree, id, changes) {
     walk(next.nodes || []);
     return next;
 }
+
+/** Local creation mirrors add_node; the server validates the complete draft at save. */
+export function addToTree(tree, completedIds, parentId, position = null) {
+    const sourceIndex = indexTree(tree);
+    const info = sourceIndex.map.get(parentId);
+    if (!canAddChild(info) || addBlocker(sourceIndex, info)) return null;
+    const next = pinTones(clone(tree));
+    const target = childrenOf(next, parentId === '__root' ? '' : parentId);
+    let id;
+    do {
+        // randomUUID is unavailable on an HTTP LAN origin; uniqueness is still
+        // checked against this tree, and IDs are not authentication material.
+        const random = globalThis.crypto?.randomUUID?.().replaceAll('-', '')
+            || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+        id = `n${random.slice(0, 24)}`;
+    } while (sourceIndex.map.has(id));
+    const node = { id, label: '新知识点' };
+    let completed = [...completedIds];
+    if (info.isLeaf) {
+        node.weight = leafWeight(target.parent);
+        delete target.parent.weight;
+        completed = completed.map(item => item === parentId ? id : item);
+    } else {
+        const leaves = leavesOf(next.nodes);
+        const total = leaves.reduce((sum, leaf) => sum + leafWeight(leaf), 0);
+        node.weight = total < 100 ? 100 - total : (leaves.length ? Math.max(1, Math.min(100, Math.floor(total / leaves.length + .5))) : 100);
+    }
+    if (!target.parent) {
+        const used = new Set(target.list.map(item => item.tone));
+        node.tone = Array.from({ length: BRANCH_TONES }, (_, i) => i).find(tone => !used.has(tone)) ?? target.list.length % BRANCH_TONES;
+    }
+    target.list.splice(position === null ? target.list.length : Math.max(0, Math.min(position, target.list.length)), 0, node);
+    return { tree: next, completed_ids: completed, created_id: id };
+}
+
+/** Largest remainder allocation; explicit zero weights stay zero. */
+export function normalizeTreeWeights(tree) {
+    const next = pinTones(clone(tree));
+    const leaves = leavesOf(next.nodes);
+    const positive = leaves.filter(leaf => leafWeight(leaf) > 0);
+    const weighted = positive.length ? positive : leaves;
+    if (!weighted.length || weighted.length > MAX_LEAVES) return null;
+    const weights = weighted.map(leaf => positive.length ? leafWeight(leaf) : 1);
+    const total = weights.reduce((sum, value) => sum + value, 0);
+    const exact = weights.map(value => value / total * 100);
+    const result = exact.map(Math.floor);
+    const order = exact.map((_, i) => i).sort((a, b) => (exact[b] - result[b]) - (exact[a] - result[a]) || weights[b] - weights[a]);
+    const remainder = 100 - result.reduce((sum, value) => sum + value, 0);
+    order.slice(0, remainder).forEach(i => { result[i] += 1; });
+    result.forEach((value, i) => {
+        if (value >= 1) return;
+        const donor = result.indexOf(Math.max(...result));
+        result[donor] -= 1;
+        result[i] = 1;
+    });
+    weighted.forEach((leaf, i) => { leaf.weight = result[i]; });
+    return next;
+}

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -260,6 +261,115 @@ def normalize_weights(tree, completed):
 # Persistence
 # ---------------------------------------------------------------------------
 Operation = Callable[[dict[str, Any], list[str]], tuple[dict[str, Any], list[str], dict[str, Any]]]
+
+
+def validate_draft(tree: dict[str, Any], completed_ids: list[str]) -> tuple[dict[str, Any], list[str]]:
+    """Validate the bounded manual-editor snapshot without regenerating stable IDs.
+
+    Only editable fields cross this boundary. Generation/source metadata remains
+    server-owned; invalid structure is rejected, never silently dropped.
+    """
+    def text(value, limit):
+        if not isinstance(value, str) or len(value) > limit:
+            raise HTTPException(400, f"知识点文字必须是长度不超过 {limit} 的文本。")
+        return kt._clean_text(value, limit)
+
+    used: set[str] = set()
+    leaf_ids: set[str] = set()
+
+    def nodes(raw, level):
+        limit = MANUAL_MAX_TOP if level == 1 else MANUAL_MAX_CHILDREN
+        if not isinstance(raw, list) or not raw or len(raw) > limit or level > kt.MAX_DEPTH:
+            raise HTTPException(400, "知识树层级或同级节点数量不符合编辑限制。")
+        result = []
+        for item in raw:
+            if not isinstance(item, dict):
+                raise HTTPException(400, "知识点数据格式无效。")
+            node_id = item.get("id")
+            if (not isinstance(node_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", node_id)
+                    or node_id == ROOT_ID or node_id in used):
+                raise HTTPException(400, "知识点标识无效或重复。")
+            used.add(node_id)
+            if len(used) > MANUAL_MAX_NODES:
+                raise HTTPException(400, f"一棵知识树最多 {MANUAL_MAX_NODES} 个知识点。")
+            label = text(item.get("label"), kt.LABEL_LIMIT)
+            if not label:
+                raise HTTPException(400, "知识点名称不能为空。")
+            node = {"id": node_id, "label": label}
+            for field, field_limit in DETAIL_EDIT_LIMITS.items():
+                if field in item:
+                    value = text(item[field], field_limit)
+                    if value:
+                        node[field] = value
+            if level == 1 and "tone" in item:
+                tone = item["tone"]
+                if type(tone) is not int or not 0 <= tone < BRANCH_TONES:
+                    raise HTTPException(400, "知识点配色无效。")
+                node["tone"] = tone
+            children = item.get("children")
+            if children is not None and not isinstance(children, list):
+                raise HTTPException(400, "知识点下级必须是列表。")
+            if children:
+                node["children"] = nodes(children, level + 1)
+            else:
+                weight = item.get("weight", 0)
+                # A former branch can inherit the sum of several units; manual
+                # editing deliberately permits a total above 100 until normalized.
+                if type(weight) is not int or not 0 <= weight <= MANUAL_MAX_LEAVES * WEIGHT_MAX:
+                    raise HTTPException(400, "基础单元比重必须是有效的非负整数。")
+                node["weight"] = weight
+                leaf_ids.add(node_id)
+                if len(leaf_ids) > MANUAL_MAX_LEAVES:
+                    raise HTTPException(400, f"一棵知识树最多 {MANUAL_MAX_LEAVES} 个基础单元。")
+            result.append(node)
+        return result
+
+    if not isinstance(tree, dict):
+        raise HTTPException(400, "知识树数据格式无效。")
+    cleaned = {"title": text(tree.get("title", ""), 60),
+               "summary": text(tree.get("summary", ""), 200), "nodes": nodes(tree.get("nodes"), 1)}
+    cleaned["depth"] = kt.tree_depth(cleaned["nodes"])
+    if (not isinstance(completed_ids, list) or len(completed_ids) > MANUAL_MAX_LEAVES
+            or any(not isinstance(item, str) or item not in leaf_ids for item in completed_ids)):
+        raise HTTPException(400, "完成记录只能引用当前知识树的基础单元。")
+    return cleaned, list(dict.fromkeys(completed_ids))
+
+
+def save_draft(conn, session_id: int, *, expected_version: int,
+               tree: dict[str, Any], completed_ids: list[str]) -> dict[str, Any]:
+    """Atomically save an explicit editor draft; stale drafts never overwrite peers."""
+    new_tree, completed = validate_draft(tree, completed_ids)
+    row = kt.load_row(conn, session_id)
+    current_tree = kt._loads((row or {}).get("tree_json"), {})
+    if not row or not current_tree.get("nodes"):
+        raise HTTPException(404, "本课次还没有知识树")
+    if str(row.get("status") or "") == kt.STATUS_GENERATING:
+        raise HTTPException(409, "知识树正在重新生成，当前草稿已保留，请完成后刷新核对。")
+    current, current_done = validate_draft(current_tree, kt._loads(row.get("completed_json"), []))
+    # A successful save whose response was lost may be retried at the old
+    # version. Return it without another write only if the entire state agrees.
+    if new_tree == current and set(completed) == set(current_done):
+        return row
+    if int(row["version"]) != int(expected_version):
+        raise HTTPException(409, "知识树或完成进度已在别处更新，当前草稿已保留，请核对后再保存。")
+    state = kt.compute_progress(new_tree, completed)
+    completed_at = row.get("completed_at") if state["progress"] >= 100 else None
+    if state["progress"] >= 100 and not completed_at:
+        completed_at = kt.now_text()
+    # Preserve any generation metadata; clients cannot inject or alter it.
+    persisted = {**current_tree, **new_tree, "edited_at": kt.now_text()}
+    cursor = conn.execute(
+        """UPDATE session_knowledge_trees
+           SET tree_json = ?, completed_json = ?, progress_percent = ?, leaf_count = ?, completed_count = ?,
+               completed_at = ?, version = version + 1, updated_at = ?
+           WHERE id = ? AND version = ? AND status <> ?""",
+        (json.dumps(persisted, ensure_ascii=False), json.dumps(state["completed_ids"]), state["progress"],
+         state["leaf_count"], state["completed_count"], completed_at, kt.now_text(), row["id"],
+         int(expected_version), kt.STATUS_GENERATING),
+    )
+    if getattr(cursor, "rowcount", 1) == 0:
+        raise HTTPException(409, "知识树同时被修改，当前草稿已保留，请刷新核对。")
+    return kt.load_row(conn, session_id)
 
 
 def edit_tree(conn, session_id: int, operation: Operation) -> tuple[dict[str, Any], dict[str, Any]]:

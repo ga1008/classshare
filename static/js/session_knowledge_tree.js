@@ -6,7 +6,8 @@
 // motion（弹簧位置动效）、drag（拖动）、side（侧栏）。
 import { apiFetch } from '/static/js/api.js';
 import { showToast } from '/static/js/ui.js';
-import { openDialog } from './lq/dialogs.js';
+import { openDialog, choose, confirm as lqConfirm } from './lq/dialogs.js';
+import { getLayerSystem } from './lq/layer.js';
 import { createStatus } from './lq/status.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { enhanceForms } from './lq/forms.js';
@@ -22,6 +23,7 @@ import { bindViewportGestures } from './knowledge_tree/gestures.js';
 import { createProgressCommands } from './knowledge_tree/progress.js';
 import { buildChrome, paintChrome, el, readPrefs, writePrefs } from './knowledge_tree/chrome.js';
 import { fillNode, nodeKey, paintNode, paintFold } from './knowledge_tree/nodes.js';
+import { createEditHistory } from './knowledge_tree/history.js';
 
 export { KNOWLEDGE_TREE_THEMES, lifecycleLabel } from './knowledge_tree/chrome.js';
 export { indexTree, computeShares, progressFor, descendantCount } from './knowledge_tree/model.js';
@@ -55,6 +57,16 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     let closed = false;
     let mutationSeq = 0;
     let queue = Promise.resolve();
+    let pendingWrites = 0;
+    let saving = false;
+    let requestingGeneration = false;
+    let saveError = '';
+    let saveErrorDetail = '';
+    let serverVersion = 0;
+    const history = createEditHistory();
+    const dismissedKey = `lanshare:knowledge-tree:update:${classOfferingId}:${sessionId}`;
+    let dismissedSource = '';
+    try { dismissedSource = window.localStorage.getItem(dismissedKey) || ''; } catch { /* private storage */ }
     let layout = null;
     let zoom = 1;
     let offset = null;          // canvas offset inside the sizer, kept stable across resizes
@@ -81,10 +93,22 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     // ---- helpers ----------------------------------------------------------
     const doneSet = () => new Set(data?.completed_ids || []);
     const isGenerating = () => data?.status === 'generating';
-    const editable = () => canEdit && Boolean(data?.has_tree) && !isGenerating();
+    const editable = () => canEdit && Boolean(data?.has_tree) && !isGenerating() && !saving && !pendingWrites && !requestingGeneration;
     const currentTotal = () => (data?.tree ? weightTotal(data.tree) : 0);
     const effectiveFolds = () => dragFolds || collapsed;
-    const renderChrome = () => paintChrome(ui, { data, canEdit, total: currentTotal() });
+    const hasDraft = () => Boolean(data?.has_tree && history.dirty(data));
+    const formChanged = () => {
+        const form = side.querySelector('[data-kt-edit-form]');
+        const info = index?.map.get(editingId);
+        if (!form || !info) return false;
+        const current = editingId === '__root' ? { label: info.node.label, detail: info.node.summary || '' } : info.node;
+        return Object.entries(readForm(form)).some(([key, value]) => String(value || '').trim() !== String(current[key] || '').trim());
+    };
+    const renderChrome = () => paintChrome(ui, {
+        data, canEdit, total: currentTotal(), dirty: hasDraft() || formChanged(), busy: saving || Boolean(pendingWrites) || requestingGeneration,
+        undoLabel: formChanged() ? '修改知识点' : history.label, saveError, saveErrorDetail, requestingGeneration,
+        updateDismissed: Boolean(data?.current_source_fingerprint && dismissedSource === data.current_source_fingerprint),
+    });
 
     // ---- canvas: elements are reconciled by id, never rebuilt wholesale ----
     let measureFrame = 0;
@@ -249,8 +273,10 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             const roomX = Math.max(0, viewport.clientWidth - width);
             const roomY = Math.max(0, viewport.clientHeight - height);
             const bt = prefs.direction === 'bt';
-            let x = roomX / 2;
-            let y = bt ? roomY : roomY / 2;
+            // One viewport of breathing room in every direction keeps blank-space
+            // panning and pointer-centred zoom available even for a small tree.
+            let x = viewport.clientWidth + roomX / 2;
+            let y = viewport.clientHeight + (bt ? roomY : roomY / 2);
             if (!recenter && offset) {
                 // Keep the tree where it is: a narrower viewport (side panel) or a grown tree
                 // scrolls instead of sliding; the next fit/zoom recentres.
@@ -260,8 +286,8 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             offset = { x: Math.floor(x), y: Math.floor(y) };
             canvas.style.left = `${offset.x}px`;
             canvas.style.top = `${offset.y}px`;
-            sizer.style.width = `${Math.ceil(width + offset.x)}px`;
-            sizer.style.height = `${Math.ceil(height + offset.y)}px`;
+            sizer.style.width = `${Math.ceil(width + offset.x + viewport.clientWidth)}px`;
+            sizer.style.height = `${Math.ceil(height + offset.y + viewport.clientHeight)}px`;
         }
         zoomValue.textContent = `${Math.round(zoom * 100)}%`;
         if (keepCenter) {
@@ -360,11 +386,12 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
 
     // ---- sidebar ----------------------------------------------------------
     let formLease = null;
+    let sideViewKey = '';
     function refreshSide() {
         const info = index?.map.get(selectedId);
         side.hidden = !info;
         main.classList.toggle('has-side', Boolean(info));
-        if (!info) { formLease?.dispose?.(); formLease = null; side.replaceChildren(); editingId = ''; return; }
+        if (!info) { formLease?.dispose?.(); formLease = null; side.replaceChildren(); editingId = ''; sideViewKey = ''; return; }
         // Never rebuild an open form under the teacher's typing.
         const openForm = side.querySelector('[data-kt-edit-form]');
         if (openForm && openForm.dataset.ktEditForm === editingId && editingId === selectedId) return;
@@ -374,11 +401,14 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             index, data, shares, done: doneSet(), canEdit, busy: !editable(),
             editing: Boolean(editingId) && editingId === selectedId, uid, total: currentTotal(),
         });
+        const viewKey = `${selectedId}:${editingId === selectedId ? 'edit' : 'read'}`;
+        if (sideViewKey !== viewKey) side.scrollTop = 0;
+        sideViewKey = viewKey;
         if (side.querySelector('.lq-field')) formLease = enhanceForms(side);
     }
 
     function select(id, { reveal = false } = {}) {
-        if (editingId && editingId !== id) void saveEdit({ quiet: true });
+        if (editingId && editingId !== id && !saveEdit({ quiet: true })) return;
         if (id && reveal) expandTo(id);
         selectedId = id;
         paintState();
@@ -408,24 +438,37 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         layout = null;
     }
 
-    function applyState(next) {
+    function applyState(next, { committed = true, preserveHistory = false } = {}) {
+        if (closed) return;
         const previous = index;
+        if (committed) {
+            serverVersion = Number(next.version || 0);
+            if (next.has_tree) {
+                if (preserveHistory) history.saved(next); else history.reset(next);
+            }
+            saveError = '';
+            saveErrorDetail = '';
+        }
         data = next;
         renderChrome();
-        if (drag.active) { deferredSync = true; onChange?.(sessionId, data); return; }
+        if (drag.active) { deferredSync = true; if (committed) onChange?.(sessionId, data); return; }
         syncTree(previous);
         paintState();
         refreshSide();
-        onChange?.(sessionId, data);
+        if (committed) onChange?.(sessionId, data);
         if (pendingEditId && index?.map.has(pendingEditId)) { const id = pendingEditId; pendingEditId = ''; startEdit(id); }
     }
 
     const request = (path = '', options = {}) => apiFetch(`${base}${path}`, { silent: true, ...options });
 
     async function refresh() {
+        if (closed || saving || pendingWrites || requestingGeneration || hasDraft() || formChanged()) return;
+        const seq = mutationSeq;
         try {
-            applyState(await request());
+            const next = await request();
+            if (!closed && seq === mutationSeq && !hasDraft() && !formChanged()) applyState(next);
         } catch (error) {
+            if (closed) return;
             ui.notice.replaceChildren(createStatus('alert', { tone: 'danger', title: '知识树读取失败', body: error.message || '请稍后重试。' }));
             ui.notice.hidden = false;
         }
@@ -435,15 +478,25 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     // the server truth instead of leaving an optimistic guess on screen.
     function mutate(path, options, optimistic, after) {
         if (!editable()) return Promise.resolve(null);
+        // Progress made while editing belongs to the same draft. This also keeps
+        // undo after a save from rolling back a newer immediate progress request.
+        if (hasDraft() || history.size) {
+            if (optimistic) commitDraft(optimistic(data), '修改完成状态');
+            return Promise.resolve(data);
+        }
         const seq = ++mutationSeq;
-        if (optimistic) applyState({ ...data, ...optimistic(data) });
+        const before = data;
+        let needsRefresh = false;
+        pendingWrites += 1;
+        if (optimistic) applyState({ ...data, ...optimistic(data) }, { committed: false });
         const run = queue.then(async () => {
             let next;
             try {
                 next = await request(path, options);
             } catch (error) {
                 showToast(error.message || '保存失败，请重试。', 'error');
-                if (!closed && seq === mutationSeq) await refresh();
+                needsRefresh = true;
+                if (!closed && seq === mutationSeq) applyState(before, { committed: false });
                 return null;
             }
             if (closed) return next;
@@ -453,8 +506,79 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             return next;
         });
         // A rendering bug must surface, but never stall the write queue.
-        queue = run.catch(error => { window.reportError?.(error); return null; });
+        queue = run.catch(error => { window.reportError?.(error); return null; }).finally(async () => {
+            pendingWrites -= 1;
+            if (!closed) { renderChrome(); refreshSide(); }
+            // The write may have committed even if its response was lost. Read
+            // confirmed state once; a newer edit/closed owner vetoes this read.
+            if (needsRefresh && !closed && seq === mutationSeq) await refresh();
+        });
         return queue;
+    }
+
+    function commitDraft(patch, label) {
+        if (!editable()) return false;
+        const next = { ...data, ...patch };
+        if (!history.push(data, next, label)) return false;
+        mutationSeq += 1;
+        applyState(next, { committed: false });
+        return true;
+    }
+
+    function undo() {
+        if (!editable() || drag.active) return;
+        if (editingId && !saveEdit({ quiet: true })) return;
+        const previous = history.undo();
+        if (!previous) { renderChrome(); return; }
+        editingId = '';
+        mutationSeq += 1;
+        applyState({ ...data, tree: previous.tree, ...progressFor(previous.tree, previous.completed_ids) }, { committed: false });
+        viewport.focus({ preventScroll: true });
+    }
+
+    async function saveDraft() {
+        if (!editable() || drag.active) return false;
+        if (editingId && !saveEdit({ quiet: true })) return false;
+        if (!hasDraft()) return true;
+        saving = true;
+        saveError = '';
+        saveErrorDetail = '';
+        mutationSeq += 1;
+        renderChrome(); refreshSide();
+        try {
+            const next = await request('/draft', { method: 'PUT', body: {
+                expected_version: serverVersion, tree: data.tree, completed_ids: data.completed_ids || [],
+            } });
+            if (!closed) applyState(next, { preserveHistory: true });
+            return true;
+        } catch (error) {
+            if (!closed) {
+                saveError = error.status === 409 ? '版本冲突，草稿已保留' : '保存失败，草稿已保留';
+                saveErrorDetail = error.message || '可再次点击“保存”重试；也可以保留当前窗口继续编辑。';
+            }
+            return false;
+        } finally {
+            saving = false;
+            if (!closed) { renderChrome(); refreshSide(); }
+        }
+    }
+
+    async function discardAndRefresh() {
+        if (saving || pendingWrites || requestingGeneration || closed) return;
+        const ok = await lqConfirm({ title: '放弃草稿并刷新？', message: '将放弃本窗口尚未保存的修改，并读取最新知识树。', confirmLabel: '放弃草稿并刷新', danger: true });
+        if (!ok || closed || saving) return;
+        saving = true;
+        renderChrome();
+        try {
+            const next = await request();
+            editingId = '';
+            applyState(next);
+        } catch (error) {
+            showToast(error.message || '读取失败，原草稿已保留。', 'error');
+        } finally {
+            saving = false;
+            if (!closed) { renderChrome(); refreshSide(); }
+        }
     }
 
     function toggleLeaf(id) {
@@ -474,7 +598,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
 
     function startEdit(id) {
         if (!editable() || !index?.map.has(id)) return;
-        if (editingId && editingId !== id) void saveEdit({ quiet: true });
+        if (editingId && editingId !== id && !saveEdit({ quiet: true })) return;
         expandTo(id);
         selectedId = id;
         editingId = id;
@@ -484,23 +608,26 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         const field = side.querySelector('[data-kt-field="label"]');
         field?.focus({ preventScroll: true });
         field?.select?.();
+        renderChrome();
     }
 
     function stopEdit() {
         const id = editingId;
         editingId = '';
         refreshSide();
+        renderChrome();
         if (id) nodeEls.get(id)?.focus({ preventScroll: true });
     }
 
-    async function saveEdit({ quiet = false } = {}) {
+    function saveEdit({ quiet = false } = {}) {
+        if (!editable()) return false;
         const form = side.querySelector('[data-kt-edit-form]');
         const id = editingId;
         const info = index?.map.get(id);
-        if (!form || !info || form.dataset.ktEditForm !== id) { editingId = ''; return; }
+        if (!form || !info || form.dataset.ktEditForm !== id) { editingId = ''; return true; }
         const values = readForm(form);
         const label = String(values.label || '').trim();
-        if (!label && !quiet) { form.querySelector('[data-kt-field="label"]')?.reportValidity?.(); return; }
+        if (!label) { form.querySelector('[data-kt-field="label"]')?.reportValidity?.(); return false; }
         const current = id === '__root' ? { label: info.node.label, detail: info.node.summary || '' } : info.node;
         const changes = {};
         for (const [key, value] of Object.entries(values)) {
@@ -509,20 +636,9 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
             if (text !== String(current[key] || '').trim()) changes[key] = text;
         }
         if (quiet) editingId = ''; else stopEdit();
-        if (!Object.keys(changes).length) return;
-        const saved = await mutate(`/nodes/${encodeURIComponent(id)}`, { method: 'PATCH', body: changes }, state => ({ tree: patchTree(state.tree, id, changes) }));
-        // A rejected save must not lose the teacher's text: reopen the form with the draft.
-        if (!saved && !closed && index?.map.has(id) && !editingId) restoreDraft(id, values);
-    }
-
-    function restoreDraft(id, values) {
-        startEdit(id);
-        const form = side.querySelector(`[data-kt-edit-form="${CSS.escape(id)}"]`);
-        if (!form) return;
-        for (const control of form.querySelectorAll('[data-kt-field]')) {
-            if (values[control.dataset.ktField] !== undefined) control.value = values[control.dataset.ktField];
-        }
-        formLease?.refresh?.();
+        if (Object.keys(changes).length) commitDraft({ tree: patchTree(data.tree, id, changes) }, '修改知识点');
+        else { refreshSide(); renderChrome(); }
+        return true;
     }
 
     const commands = createStructureCommands({
@@ -532,7 +648,7 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         closed: () => closed,
         editable,
         currentTotal,
-        mutate,
+        commit: commitDraft,
         saveEdit,
         startEdit,
         refreshSide,
@@ -546,7 +662,12 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
 
     const lifecycle = createProgressCommands({
         data: () => data, index: () => index, canEdit, closed: () => closed, editingId: () => editingId,
-        saveEdit, generateBtn, request, applyState, refresh, mutate,
+        saveEdit, generateBtn, request, applyState, refresh, mutate, editable,
+        canGenerate: () => !saving && !pendingWrites && !requestingGeneration && !hasDraft() && !formChanged(),
+        setGenerationPending(value) {
+            requestingGeneration = value;
+            if (!closed) { renderChrome(); refreshSide(); }
+        },
     });
     const { generate, bulk } = lifecycle;
 
@@ -677,8 +798,13 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     side.addEventListener('submit', event => {
         if (!event.target.matches('[data-kt-edit-form]')) return;
         event.preventDefault();
+        if (composing) return;
         void saveEdit();
     });
+    let composing = false;
+    side.addEventListener('compositionstart', () => { composing = true; });
+    side.addEventListener('compositionend', () => { window.setTimeout(() => { composing = false; }, 0); });
+    side.addEventListener('input', () => { if (!closed) renderChrome(); });
     side.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || event.isComposing || !event.target.closest('[data-kt-edit-form]')) return;
         event.preventDefault();
@@ -721,8 +847,25 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         else if (target.matches('[data-kt-add-sibling]')) void addSibling(target.dataset.ktAddSibling);
         else if (target.matches('[data-kt-delete]')) void requestDelete(target.dataset.ktDelete);
         else if (target.matches('[data-kt-normalize]')) normalizeWeights();
+        else if (target.matches('[data-kt-dismiss-update]')) {
+            dismissedSource = data?.current_source_fingerprint || '';
+            if (dismissedSource) {
+                try { window.localStorage.setItem(dismissedKey, dismissedSource); } catch { /* private storage */ }
+            }
+            renderChrome();
+            generateBtn.focus({ preventScroll: true });
+        }
     });
     generateBtn.addEventListener('click', () => void generate());
+    ui.saveBtn.addEventListener('click', () => void saveDraft());
+    ui.undoBtn.addEventListener('click', undo);
+    ui.reloadBtn.addEventListener('click', () => void discardAndRefresh());
+    root.addEventListener('keydown', event => {
+        if (!canEdit || event.isComposing || composing || event.keyCode === 229 || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+        const key = event.key.toLowerCase();
+        if (key === 's') { event.preventDefault(); if (!event.repeat) void saveDraft(); }
+        else if (key === 'z' && !event.shiftKey && !isTyping(event.target)) { event.preventDefault(); if (!event.repeat) undo(); }
+    });
     foldLayer.addEventListener('click', event => {
         const fold = event.target.closest('.kt-fold');
         if (fold) toggleFold(fold.dataset.foldId);
@@ -769,10 +912,47 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
     resizeObserver?.observe(viewport);
 
     let dropdowns = [];
+    let dialogHandle = null;
+    let closeDecision = null;
+    let approvedClose = false;
+    const beforeUnload = event => {
+        if (!hasDraft() && !formChanged() && !saving && !pendingWrites && !requestingGeneration) return;
+        event.preventDefault();
+        event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    function beforeClose() {
+        if (saving || pendingWrites || requestingGeneration) return false;
+        if (approvedClose) { approvedClose = false; return true; }
+        if (!hasDraft() && !formChanged()) return true;
+        // Deny this close immediately. A nested choice must complete before a
+        // fresh LQ close starts, otherwise its opening sequence invalidates the
+        // parent's focus return (and a slow decision exceeds the layer timeout).
+        if (!closeDecision) {
+            closeDecision = resolveClose().finally(() => { closeDecision = null; });
+        }
+        return false;
+    }
+    async function resolveClose() {
+        const result = await choose({
+            title: '保存知识树修改？',
+            message: '本窗口有未保存的修改。保存后其他设备和课堂进度才会更新。',
+            cancelLabel: '继续编辑',
+            choices: [
+                { value: 'save', label: '保存并关闭' },
+                { value: 'discard', label: '放弃修改', danger: true },
+            ],
+        });
+        if (closed || result.status !== 'chosen') return;
+        if (result.value !== 'discard' && !await saveDraft()) return;
+        if (closed) return;
+        approvedClose = true;
+        await getLayerSystem(document).close(dialogHandle, 'draft-choice');
+    }
     function cleanup() {
         if (closed) return;
-        if (editingId) void saveEdit({ quiet: true });
         closed = true;
+        window.removeEventListener('beforeunload', beforeUnload);
         drag.cancel();
         springs.stop();
         resizeObserver?.disconnect();
@@ -787,8 +967,9 @@ export function openKnowledgeTree({ classOfferingId, session, canEdit, trigger, 
         dropdowns = [];
         onClose?.();
     }
-    openDialog(root, {
+    dialogHandle = openDialog(root, {
         trigger,
+        beforeClose,
         onClose: cleanup,
         onDestroy: cleanup,
     });

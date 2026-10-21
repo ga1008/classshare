@@ -72,7 +72,7 @@ function weightEditor(info, { uid, busy, total }) {
     box.append(input({
         id: `${uid}-weight`, label: '比重', type: 'number', size: 'sm', value: String(leafWeight(info.node)),
         min: '0', max: '100', step: '1', inputMode: 'numeric', suffix: '%', disabled: Boolean(busy),
-        help: '修改后自动保存，本课进度按比重合计计算。',
+        help: '修改记入草稿，点击顶部“保存”后生效。本课进度按比重合计计算。',
         attrs: { 'data-kt-weight': info.node.id },
     }), weightStatus(total, { canEdit: true, busy }));
     return box;
@@ -96,11 +96,11 @@ export function editForm(info, { uid, busy }) {
         }));
     }
     const actions = el('div', 'kt-edit__actions');
-    const save = createDomainButton({ label: '保存', variant: 'prominent', attrs: { 'data-kt-edit-save': '' } });
+    const save = createDomainButton({ label: '应用修改', variant: 'prominent', attrs: { 'data-kt-edit-save': '' } });
     save.type = 'submit';
     save.disabled = Boolean(busy);
     actions.append(save, createDomainButton({ label: '取消', variant: 'ghost', attrs: { 'data-kt-edit-cancel': '' } }),
-        el('span', 'kt-side__hint', '名称框内 Enter 保存 · Esc 取消'));
+        el('span', 'kt-side__hint', 'Enter 应用到草稿 · 顶部保存后生效 · Esc 取消'));
     form.append(actions);
     return form;
 }

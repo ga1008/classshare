@@ -267,12 +267,15 @@ def sync_repository_learning_bindings(conn, root, rows, teacher_id):
                              (min((int(row["sort_order"]) for row in existing), default=0) - 1, offering_id, desired_session, desired_id))
             if correct_legacy or materials._primary_material_id(conn, offering_id, desired_session) <= 0:
                 materials._set_primary_material_id(conn, offering_id, desired_session, desired_id)
-            conn.execute("""INSERT INTO class_offering_git_learning_bindings
-                (class_offering_id,repository_id,lesson_order,material_id,session_id,owns_binding,suppressed,updated_at)
-                VALUES (?,?,?,?,?,?,0,?) ON CONFLICT(class_offering_id,repository_id,lesson_order)
-                DO UPDATE SET material_id=excluded.material_id,session_id=excluded.session_id,
-                              owns_binding=excluded.owns_binding,updated_at=excluded.updated_at""",
-                (offering_id, root["id"], number, desired_id, desired_session, owns, materials._now()))
+            # Re-reading the entire repository repairs missing links, but a
+            # matched unchanged projection is not a new binding revision.
+            if not rule or (int(rule["material_id"]), int(rule["session_id"]), int(rule["owns_binding"])) != (desired_id, desired_session, owns):
+                conn.execute("""INSERT INTO class_offering_git_learning_bindings
+                    (class_offering_id,repository_id,lesson_order,material_id,session_id,owns_binding,suppressed,updated_at)
+                    VALUES (?,?,?,?,?,?,0,?) ON CONFLICT(class_offering_id,repository_id,lesson_order)
+                    DO UPDATE SET material_id=excluded.material_id,session_id=excluded.session_id,
+                                  owns_binding=excluded.owns_binding,updated_at=excluded.updated_at""",
+                    (offering_id, root["id"], number, desired_id, desired_session, owns, materials._now()))
             granted.append(desired_id)
             result["total_home_assignments" if number == 0 else "total_assignments"] += 1
             result["assignments"].append({"class_offering_id": offering_id, "session_id": desired_session,

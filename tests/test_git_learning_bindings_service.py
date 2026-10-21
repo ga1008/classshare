@@ -57,6 +57,26 @@ class GitLearningBindingsTests(unittest.TestCase):
         self.assertEqual(self.sync()['total_assignments'], 4)
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM class_offering_learning_materials").fetchone()[0], 5)
 
+    def test_unchanged_rebinding_preserves_documents_and_binding_revisions(self):
+        self.sync()
+        self.conn.execute("UPDATE class_offering_learning_materials SET ai_blurb='kept',ai_blurb_status='done'")
+        tables = ('course_materials', 'class_offering_sessions', 'class_offering_learning_materials',
+                  'class_offering_git_learning_bindings')
+        before = {table: [tuple(row) for row in self.conn.execute(f'SELECT * FROM {table} ORDER BY 1,2,3')]
+                  for table in tables}
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        try:
+            self.sync()
+        finally:
+            self.conn.set_trace_callback(None)
+        # SQLite's existing row-lock emulation deliberately does id=id writes;
+        # unchanged provenance must issue neither an INSERT nor an UPDATE.
+        self.assertFalse(any(sql.lstrip().upper().startswith(('INSERT ', 'UPDATE '))
+                             and 'class_offering_git_learning_bindings' in sql for sql in statements))
+        self.assertEqual(before, {table: [tuple(row) for row in self.conn.execute(f'SELECT * FROM {table} ORDER BY 1,2,3')]
+                                 for table in tables})
+
     def test_move_third_to_end_preserves_identity_and_moves_complete_teaching_bundle(self):
         self.sync()
         materials.bind_material_in_transaction(self.conn, 5, 30, 100, 1)
