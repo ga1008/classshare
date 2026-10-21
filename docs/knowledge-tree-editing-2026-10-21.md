@@ -34,4 +34,16 @@ LQ lint 仍有 6 项本次未改动的历史阻塞：学生/教师登录 JS 与�
 
 最终正式资源浏览器 15 项全部通过。桌面教师、390px 教师深色及学生浅/深色四组截图已人工检查，保存和关闭动作均可达；运行期错误与意外请求均为零，只有一个可见模态层。全场景采样的最长任务为桌面 119ms、手机教师 98ms、学生浅色 94ms、深色 108ms；这不是帧率测量。初次打开 35 个请求（34 个资源/文档及 1 个读取），连续本地编辑不写服务器，手机保存仅增加 1 个 PUT。证据位于本地 `.codex-temp/knowledge-tree-20261021-final-browser/`。
 
-原生 PostgreSQL 门禁采用已实际运行的 `lanshare-teacher-cards-pg-20261021/native-report.json` 与原始自定义格式备份，当前 77 个迁移源文件及备份 SHA 复核通过；没有新增 schema。上线核验在交付时补录。
+原生 PostgreSQL 门禁采用已实际运行的 `lanshare-teacher-cards-pg-20261021/native-report.json` 与原始自定义格式备份，当前 77 个迁移源文件及备份 SHA 复核通过；没有新增 schema。
+
+## 上线记录
+
+- 功能提交：`49e81f311596b5584aeb41fa17ac2a85b6d4fa93`。独立受管工作区冻结 3,531 个受控文件，源码逐文件 SHA 与已验收工作区一致；未跟踪的用户资料未进入发布包。现有部署脚本为 Git 忽略文件，单独复制并核验原始字节，未改动部署逻辑。
+- 发布预演通过后正式发布，发布号 `20261021-213303-51e999c63c40`，部署脚本退出 0 并输出 `DEPLOY_DONE`。服务器重建的正式资源图与上述本地验收图完全一致。
+- 停止应用写入后的 PostgreSQL 备份：`/tmp/lanshare-deploy-backups/db-cutover-20261021-213319.sql.gz`。迁移初始化报告 182/182 必需表、0 失败索引、0 跳过步骤；`/lanshare/data` 保留，未创建生产测试账号或业务记录。
+- 切换后 app、AI、mailer、nginx、PostgreSQL、scheduler 均 healthy；agent-worker、blog-crawler 均运行。主服务与 AI 健康状态为 ok，AI 批改队列存在且 pending=0，近期 app/AI/mailer 日志检查无错误。
+- 生产容器内本轮 14 个产品源码文件 SHA、5 个公开知识树资源 SHA 与冻结版本完全一致。公网和容器发布号一致；匿名 GET 知识树与 PUT 草稿均返回 401。首次 HTML 仅清除 HTTP cache，同一浏览器下一次不再清除，未清除 storage/cookies。
+- 后台任务总览仍累计 872 次历史失败而显示 `ok=false`；逐项当前 status 均为 ok、stale=0，未将累计值误报为本次部署失败。
+- 本节为部署后的文档补录，产品代码仍为上述功能提交。Git 交付包含功能提交与此上线记录，最终核验以本地 HEAD 与 `origin/dev` 一致为准。
+
+本地发布证据：`.codex-temp/knowledge-tree-frozen.json`、`knowledge-tree-deploy-dry-run.log`、`knowledge-tree-deploy.log`、`knowledge-tree-postflight.json`、`knowledge-tree-containers.log`。
