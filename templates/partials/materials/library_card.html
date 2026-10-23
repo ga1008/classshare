@@ -1,30 +1,24 @@
-{# 材料库主卡：目录导航 / 工具栏 / 列表（由 materials.html include）。 #}
-<div class="materials-shell materials-shell--single">
-    <section data-lq-component="surface" class="lq-surface materials-card materials-library-card materials-library-card--expanded">
-        <div data-lq-component="toolbar" class="lq-domain-toolbar materials-toolbar materials-library-nav">
-            <div class="materials-toolbar-group">
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-repository-btn" hidden>仓库</button>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-ai-expand-btn" hidden title="根据本文件夹已有材料，让 AI 续写下一份材料">AI 续写</button>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
-            </div>
-            <div class="materials-breadcrumbs" id="materials-breadcrumbs">
-                <span class="text-muted">材料库根目录</span>
-            </div>
-        </div>
-
-        <div class="materials-library-controls">
-            <div data-lq-component="toolbar" class="lq-domain-toolbar materials-filter-toolbar">
-                <label class="materials-search-box lq-search" for="materials-search-input">
-                    <input data-lq-component="input"
-                        type="search"
-                        id="materials-search-input"
-                        data-testid="p03-materials-search"
-                        class="lq-input form-control"
-                        placeholder="按名称或路径模糊搜索当前范围内的材料"
-                        autocomplete="off"
-                    >
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm lq-search__end" id="materials-search-clear-btn" hidden>清空</button>
-                </label>
+{# 材料库主区（由 materials.html include）：独立的「搜索 / 类型 / 更多筛选」控制面板 + 列表板块（卡片 / 列表两种视图）。
+   控件 id 与 materials_manage.js 的契约保持不变；类型 chips 只是 `kind` 筛选状态的可视代理。 #}
+<div class="materials-page-shell" data-materials-shell data-library-view="{{ initial_library_filter.library_view | default('') }}">
+    <section data-lq-component="surface" class="lq-surface materials-control-panel" aria-label="学习文档筛选和排序">
+        <div class="materials-control-row primary">
+            <label class="materials-search-box lq-search" for="materials-search-input">
+                <input data-lq-component="input"
+                    type="search"
+                    id="materials-search-input"
+                    data-testid="p03-materials-search"
+                    class="lq-input form-control"
+                    placeholder="按名称或路径搜索文档库；命中的文件会归并到所属文档库"
+                    autocomplete="off"
+                >
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm lq-search__end" id="materials-search-clear-btn" hidden>清空</button>
+            </label>
+            <div class="materials-control-side">
+                <div class="materials-view-toggle" role="group" aria-label="列表视图" id="materials-view-toggle">
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-view="cards" aria-pressed="false" title="卡片">卡片</button>
+                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-view="list" aria-pressed="false" title="列表">列表</button>
+                </div>
                 <button data-lq-component="button"
                     type="button"
                     class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm materials-filter-toggle"
@@ -32,19 +26,29 @@
                     aria-controls="materials-filters-panel"
                     aria-expanded="false"
                 >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" width="14" height="14">
                         <path d="M4 6h16"></path>
                         <path d="M7 12h10"></path>
                         <path d="M10 18h4"></path>
                     </svg>
-                    <span>筛选</span>
+                    <span>更多筛选</span>
                     <span class="materials-filter-count" id="materials-filter-count" hidden>0</span>
                 </button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-filters-clear-btn" hidden>清除筛选</button>
             </div>
+        </div>
 
-            <div class="materials-sort-controls" id="materials-filters-panel" hidden>
-                <label class="materials-inline-field">
-                    <span>开放范围</span>
+        <div class="materials-chip-groups" role="group" aria-label="主筛选">
+            <div class="materials-chip-group" role="group" aria-label="类型" id="materials-kind-chips">
+                <span class="materials-chip-group__label">类型</span>
+                <button data-lq-component="chip" type="button" class="lq-chip lq-chip--filter" data-kind-group="all" aria-pressed="true">全部</button>
+            </div>
+        </div>
+
+        <div class="materials-more-filters" id="materials-filters-panel" hidden>
+            <div class="materials-control-row secondary">
+                <div class="materials-filter-field">
+                    <label for="materials-scope-filter">开放范围</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-scope-filter" class="lq-select form-control">
                         <option value="all">全部范围</option>
                         <option value="owned">我管理的</option>
@@ -55,52 +59,69 @@
                         <option value="school">全校公开</option>
                         <option value="public">完全公开</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>学校</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-school-filter">学校</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-school-filter" class="lq-select form-control">
                         <option value="">全部学校</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>系部</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-department-filter">系部</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-department-filter" class="lq-select form-control">
                         <option value="">全部系部</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>学院</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-college-filter">学院</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-college-filter" class="lq-select form-control">
                         <option value="">全部学院</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>课程</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-course-filter">课程</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-course-filter" class="lq-select form-control">
                         <option value="">全部课程</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>班级</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-class-filter">班级</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-class-filter" class="lq-select form-control">
                         <option value="">全部班级</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>排序字段</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-sort-by">排序字段</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-sort-by" class="lq-select form-control">
-                        <option value="name">名称</option>
+                        <option value="updated_at">最近更新</option>
                         <option value="created_at">创建时间</option>
-                        <option value="updated_at">更新时间</option>
+                        <option value="name">名称</option>
                     </select>
-                </label>
-                <label class="materials-inline-field">
-                    <span>排序方向</span>
+                </div>
+                <div class="materials-filter-field">
+                    <label for="materials-sort-order">排序方向</label>
                     <select data-lq-dropdown data-lq-component="select" id="materials-sort-order" class="lq-select form-control">
-                        <option value="asc">升序</option>
                         <option value="desc">降序</option>
+                        <option value="asc">升序</option>
                     </select>
-                </label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section data-lq-component="surface" class="lq-surface materials-board materials-library-card" id="materials-board" data-view="cards" aria-label="学习文档列表">
+        <div class="materials-board__head">
+            <div>
+                <h3 class="materials-board__title" id="materials-board-title">文档库</h3>
+                <p class="materials-board__summary" id="materials-board-summary">正在整理学习文档…</p>
+            </div>
+            <div class="materials-board__tools">
+                <div class="materials-breadcrumbs" id="materials-breadcrumbs">
+                    <span class="text-muted">材料库根目录</span>
+                </div>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-repository-btn" hidden>仓库</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-ai-expand-btn" hidden title="根据本文件夹已有材料，让 AI 续写下一份材料">AI 续写</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="materials-refresh-btn" data-testid="p03-materials-refresh">刷新</button>
             </div>
         </div>
 
@@ -126,5 +147,4 @@
             </div>
         </div>
     </section>
-
 </div>

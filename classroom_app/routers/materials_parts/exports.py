@@ -527,6 +527,84 @@ async def download_material(material_id: int, user: dict = Depends(get_current_u
     )
 
 
+_INLINE_PREVIEW_MIME_PREFIXES = ("application/pdf", "image/", "audio/", "video/")
+
+
+@router.get("/materials/inline/{material_id}", response_class=FileResponse)
+async def inline_material(material_id: int, user: dict = Depends(get_current_user)):
+    """PDF / 图片 / 音视频按 inline 方式返回，供浏览器原生预览或 <video>/<audio> 播放。
+
+    与下载同一道大小闸门：能预览的就能下载，不另开口子。
+    """
+    with get_db_connection() as conn:
+        material = ensure_user_material_access(conn, material_id, user)
+    if material["node_type"] != "file":
+        raise HTTPException(400, "文件夹不能直接预览")
+    media_type = str(material["mime_type"] or mimetypes.guess_type(material["name"] or "")[0] or "")
+    if not media_type.lower().startswith(_INLINE_PREVIEW_MIME_PREFIXES):
+        raise HTTPException(400, "当前材料类型不支持内联预览")
+    ensure_download_allowed(material["file_size"], resource_label="课堂材料")
+    file_path = _load_material_storage_path(material)
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(str(material['name'] or 'material'))}",
+            "X-Content-Type-Options": "nosniff",
+            "ETag": f'"{material["file_hash"]}"',
+            "Cache-Control": "private, no-cache, max-age=0, must-revalidate",
+        },
+    )
+
+
+@router.get("/materials/document-preview/{material_id}", response_class=HTMLResponse)
+@_with_reader_return_on_unavailable
+async def material_document_preview_page(
+    material_id: int,
+    class_offering_id: int | None = Query(default=None),
+    session_id: int | None = Query(default=None),
+    user: dict = Depends(get_current_user),
+):
+    """PDF / Word / Excel 材料的页面图预览（复用过程材料的文档真实预览渲染器）。"""
+    from ...services.material_preview_service import supports_document_preview
+
+    with get_db_connection() as conn:
+        material = dict(ensure_user_material_access(conn, material_id, user))
+    if material.get("node_type") != "file":
+        raise HTTPException(400, "文件夹不能直接预览")
+    if not supports_document_preview(material):
+        raise HTTPException(400, "当前材料类型不支持文档预览")
+    policy = _decorate_material_download_policy(dict(material))
+    file_path = _load_material_storage_path(material)
+    title = str(material.get("name") or "课程材料")
+    try:
+        content = await asyncio.to_thread(file_path.read_bytes)
+        job = await asyncio.to_thread(
+            document_render_service.render_artifact,
+            content,
+            filename=title,
+            media_type=material.get("mime_type") or None,
+            source_format=str(material.get("file_ext") or "").lower() or None,
+        )
+    except (RuntimeError, DocumentRenderError, OSError) as exc:
+        return HTMLResponse(
+            document_render_service.render_error_html(title=title, message=str(exc)),
+            status_code=503,
+            headers=_DYNAMIC_DOCUMENT_HEADERS,
+        )
+    return HTMLResponse(
+        document_render_service.render_preview_html(
+            job,
+            title=title,
+            user=user,
+            eyebrow="课程材料 · 文档预览",
+            download_label="下载原文件",
+            download_disabled_reason="" if policy.get("download_allowed", True) else str(policy.get("download_blocked_reason") or ""),
+        ),
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
+    )
+
+
 @router.post("/api/materials/download", response_class=FileResponse)
 async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: dict = Depends(get_current_user)):
     if not payload.material_ids:

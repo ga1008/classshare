@@ -84,6 +84,14 @@ from ...services.material_library_filter_service import (
     attach_material_assignment_facets as _attach_material_assignment_facets,
 )
 from ...services.material_render_service import attach_render_metadata
+from ...services.material_document_kind_service import (
+    MATERIAL_KIND_FILTER_GROUPS,
+    attach_material_document_kinds,
+    build_kind_facets,
+    kinds_for_filter,
+    normalize_kind_filter,
+)
+from ...services.material_preview_service import attach_material_preview_metadata
 from ...services.message_center_service import is_super_admin_teacher
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope
 from ...services.session_material_generation_service import (
@@ -377,10 +385,56 @@ def _serialize_material_items(conn, rows, user: dict | None = None) -> list[dict
     items = attach_git_repository_metadata(conn, items)
     items = attach_render_metadata(conn, items)
     items = _attach_lessondoc_pack_metadata(conn, items)
+    items = _attach_html_package_flag(conn, items)
+    items = attach_material_document_kinds(items)
+    items = attach_material_preview_metadata(items)
+    items = _attach_material_summary(items)
     return [
         _decorate_material_download_policy(_decorate_material_ownership(conn, item, user))
         for item in items
     ]
+
+
+def _attach_html_package_flag(conn, items: list[dict]) -> list[dict]:
+    """标记 HTML 课件包根（main.html + lesson_N/）。
+
+    只对"可渲染的 HTML 文件夹"做子树解析：普通文件夹不触发子树查询，列表性能不受影响。
+    """
+    from ...services.html_package_service import parse_html_package
+
+    for item in items:
+        item.setdefault("is_html_package", False)
+        item.setdefault("html_package_lesson_count", 0)
+        if item.get("node_type") != "folder" or not item.get("is_renderable"):
+            continue
+        if str(item.get("render_kind") or "") != "html":
+            continue
+        try:
+            package = parse_html_package(conn, item)
+        except Exception:
+            package = None
+        if package:
+            item["is_html_package"] = True
+            item["html_package_lesson_count"] = len(package.get("lessons") or [])
+    return items
+
+
+def _attach_material_summary(items: list[dict]) -> list[dict]:
+    """从已存在的 AI 解析结果里抽一句摘要给卡片用，并剥掉列表不需要的大字段。"""
+    for item in items:
+        summary = ""
+        raw = item.get("ai_parse_result_json")
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                summary = str((parsed or {}).get("summary") or "").strip()
+            except (TypeError, ValueError):
+                summary = ""
+        item["summary"] = summary[:240]
+        item.pop("ai_parse_result_json", None)
+        item.pop("ai_optimized_markdown", None)
+        item.pop("check_questions_json", None)
+    return items
 
 
 def _attach_lessondoc_pack_metadata(conn, items: list[dict]) -> list[dict]:
@@ -599,6 +653,14 @@ def _build_material_filter_facets(rows, teacher_id: int) -> dict[str, Any]:
     }
 
 
+def _apply_material_kind_filter(items: list[dict], kind_filter: str) -> list[dict]:
+    normalized = normalize_kind_filter(kind_filter)
+    if not normalized:
+        return items
+    allowed = kinds_for_filter(normalized)
+    return [item for item in items if str(item.get("document_kind") or "") in allowed]
+
+
 def _apply_material_library_filters(
     rows,
     *,
@@ -812,6 +874,7 @@ def _list_material_rows_for_parent(
     sort_by: str = MATERIAL_LIBRARY_DEFAULT_SORT_BY,
     sort_order: str = MATERIAL_LIBRARY_DEFAULT_SORT_ORDER,
     library_view: str = "",
+    collapse_to_roots: bool = False,
 ):
     keyword = _normalize_material_keyword(keyword)
     document_type = _normalize_material_document_type_filter(document_type)
@@ -883,7 +946,115 @@ def _list_material_rows_for_parent(
         ORDER BY {order_clause}
     """
     rows = conn.execute(query, params).fetchall()
+    if collapse_to_roots and keyword and parent_row is None:
+        rows = _collapse_rows_to_roots(conn, rows, teacher_id=int(teacher_id), sort_by=sort_by, sort_order=sort_order)
     return _attach_material_assignment_facets(conn, rows)
+
+
+def _collapse_rows_to_roots(conn, rows, *, teacher_id: int, sort_by: str, sort_order: str) -> list:
+    """把任意层级的搜索命中折叠到各自的最外层入口。
+
+    学习文档页以"文档库"为单位展示：一个仓库里命中了 7 个文件，列表只出现这个仓库一次，
+    并附带命中样本（``search_matches``）与命中数（``search_match_count``）。根本身命中时也只算一次。
+    """
+    matches_by_root: dict[int, list[dict]] = {}
+    order: list[int] = []
+    for raw in rows:
+        row = dict(raw)
+        if is_git_internal_material_path(row.get("material_path")):
+            continue
+        root_id = int(row.get("root_id") or row.get("id") or 0)
+        if root_id not in matches_by_root:
+            matches_by_root[root_id] = []
+            order.append(root_id)
+        matches_by_root[root_id].append(row)
+    if not order:
+        return []
+    visible_sql, visible_params = _material_visibility_condition(conn, teacher_id)
+    marks = ",".join("?" for _ in order)
+    root_rows = conn.execute(
+        f"""
+        SELECT m.*,
+               (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
+               (SELECT COUNT(*) FROM course_material_assignments a WHERE a.material_id = m.id) AS assignment_count
+        FROM course_materials m
+        WHERE m.id IN ({marks}) AND {visible_sql}
+        ORDER BY {_build_material_order_clause(sort_by, sort_order)}
+        """,
+        [*order, *visible_params],
+    ).fetchall()
+    collapsed = []
+    for raw in root_rows:
+        row = dict(raw)
+        matches = matches_by_root.get(int(row["id"]), [])
+        samples = [
+            {
+                "id": int(match["id"]),
+                "name": str(match.get("name") or ""),
+                "material_path": str(match.get("material_path") or ""),
+                "node_type": str(match.get("node_type") or ""),
+            }
+            for match in matches
+            if int(match["id"]) != int(row["id"])
+        ]
+        row["search_match_count"] = len(matches)
+        row["search_matches"] = samples[:6]
+        collapsed.append(row)
+    return collapsed
+
+
+def _attach_root_activity(conn, items: list[dict]) -> list[dict]:
+    """顶层文件夹补充整棵子树的最近更新时间与文件数，供"最新更新的文档库"排序与卡片展示。"""
+    root_ids = [int(item["id"]) for item in items if item.get("node_type") == "folder" and item.get("parent_id") is None]
+    for item in items:
+        item.setdefault("latest_activity_at", item.get("updated_at"))
+        item.setdefault("subtree_file_count", None)
+        item.setdefault("subtree_folder_count", None)
+    if not root_ids:
+        return items
+    marks = ",".join("?" for _ in root_ids)
+    rows = conn.execute(
+        f"""
+        SELECT root_id,
+               MAX(updated_at) AS latest_activity_at,
+               SUM(CASE WHEN node_type = 'file' THEN 1 ELSE 0 END) AS file_count,
+               SUM(CASE WHEN node_type = 'folder' THEN 1 ELSE 0 END) AS folder_count
+        FROM course_materials
+        WHERE root_id IN ({marks})
+          AND material_path NOT LIKE '%/.git/%'
+          AND material_path NOT LIKE '%/.git'
+        GROUP BY root_id
+        """,
+        root_ids,
+    ).fetchall()
+    by_root = {int(row["root_id"]): dict(row) for row in rows}
+    for item in items:
+        stats = by_root.get(int(item["id"]))
+        if not stats:
+            continue
+        latest = str(stats.get("latest_activity_at") or "")
+        current = str(item.get("updated_at") or "")
+        item["latest_activity_at"] = max(latest, current)
+        item["subtree_file_count"] = int(stats.get("file_count") or 0)
+        item["subtree_folder_count"] = max(int(stats.get("folder_count") or 0) - 1, 0)
+    return items
+
+
+def _sort_items_by_activity(items: list[dict], sort_by: str, sort_order: str) -> list[dict]:
+    """``updated_at`` 排序在顶层按子树最近活动时间重排（文件夹仍在前）。"""
+    if sort_by != "updated_at":
+        return items
+    reverse = sort_order != "asc"
+
+    def key(item):
+        return (
+            0 if item.get("node_type") == "folder" else 1,
+            str(item.get("latest_activity_at") or item.get("updated_at") or ""),
+        )
+
+    folders = sorted((item for item in items if item.get("node_type") == "folder"), key=key, reverse=reverse)
+    files = sorted((item for item in items if item.get("node_type") != "folder"), key=key, reverse=reverse)
+    return [*folders, *files]
 
 
 def _get_teacher_material_stats(conn, teacher_id: int, *, document_type: str = "", library_view: str = "") -> dict:

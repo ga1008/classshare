@@ -432,6 +432,10 @@ def _apply_repository_metadata(item: dict, metadata: dict | None) -> dict:
         and _safe_int(item.get("id")) == _safe_int(item.get("root_id"))
         and item["git_repo_status"] == REPO_STATUS_REPOSITORY
     )
+    # Last-sync state is read straight off the row (serialize_material_row keeps m.*).
+    item.update(read_last_sync_state(item))
+    if not item["is_git_repository"]:
+        item["git_last_sync_summary"] = {}
     return item
 
 
@@ -1151,11 +1155,32 @@ def _build_askpass_files(temp_dir: Path, platform_name: str | None = None) -> Pa
     return sh_path
 
 
-async def _run_git_command(command_tokens: list[str], cwd: Path, credential: dict | None = None) -> dict:
-    temp_dir_obj = None
-    env = os.environ.copy()
+def _git_command_env(cwd: Path, base_env: dict | None = None) -> dict:
+    """Environment that pins git to the exported workspace.
+
+    The workspace is a temporary export of the material tree. If its ``.git``
+    is incomplete (a repository uploaded without objects, a damaged HEAD), git's
+    directory discovery would otherwise walk up from the temp folder and could
+    operate on an unrelated checkout that happens to contain it. Pinning the
+    repository and work tree, plus a discovery ceiling, turns that into a plain
+    "not a git repository" failure that publishes nothing.
+    """
+    env = dict(base_env if base_env is not None else os.environ)
+    workspace = Path(cwd)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GCM_INTERACTIVE"] = "never"
+    env["GIT_DIR"] = str(workspace / ".git")
+    env["GIT_WORK_TREE"] = str(workspace)
+    env["GIT_CEILING_DIRECTORIES"] = str(workspace.parent)
+    env.pop("GIT_INDEX_FILE", None)
+    env.pop("GIT_OBJECT_DIRECTORY", None)
+    env.pop("GIT_ALTERNATE_OBJECT_DIRECTORIES", None)
+    return env
+
+
+async def _run_git_command(command_tokens: list[str], cwd: Path, credential: dict | None = None) -> dict:
+    temp_dir_obj = None
+    env = _git_command_env(cwd)
 
     if credential and credential.get("secret"):
         temp_dir_obj = tempfile.TemporaryDirectory(prefix="lanshare-git-auth-")
@@ -1259,6 +1284,71 @@ def _failed_repository_update(repo_detail: dict, remote_info: dict, execution_lo
     }
 
 
+def _sync_outcome_summary(action: str, result: dict) -> dict:
+    """Compact, JSON-safe record of one sync for ``git_last_sync_summary``."""
+    summary = dict(result.get("sync_summary") or {})
+    bindings = result.get("learning_bindings") or {}
+    return {
+        "action": str(action or ""),
+        "status": str(result.get("status") or ""),
+        "message": str(result.get("message") or "")[:300],
+        "inserted": int(summary.get("inserted") or 0),
+        "updated": int(summary.get("updated") or 0),
+        "deleted": int(summary.get("deleted") or 0),
+        "unchanged": int(summary.get("unchanged") or 0),
+        "lessondoc_warning_count": len(summary.get("lessondoc_warnings") or []),
+        "bound_lessons": int(bindings.get("total_assignments") or 0),
+        "bound_homes": int(bindings.get("total_home_assignments") or 0),
+        "removed_bindings": int(bindings.get("removed_count") or 0),
+        "unresolved_count": len(bindings.get("unresolved") or []),
+        "warning_count": len(bindings.get("warnings") or []),
+        "classroom_count": int(bindings.get("target_classroom_count") or 0),
+        "binding_message": str(bindings.get("message") or "")[:200],
+    }
+
+
+def _record_sync_outcome(conn_factory, material_id: int, action: str, result: dict) -> None:
+    """Persist the last sync state on the root row; never let bookkeeping break the request.
+
+    Only a successful publication is recorded: a failed or unauthenticated pull
+    must not touch the database at all (the progress board and the response
+    carry its message), which keeps the "failed pull commits nothing" guarantee.
+    """
+    if str(action or "") != "update" or str(result.get("status") or "") != "success":
+        return
+    try:
+        import json as _json
+        payload = _sync_outcome_summary(action, result)
+        with conn_factory() as conn:
+            conn.execute(
+                "UPDATE course_materials SET git_last_sync_at = ?, git_last_sync_status = ?, git_last_sync_summary = ? WHERE id = ?",
+                (_now_iso(), payload["status"], _json.dumps(payload, ensure_ascii=False), int(material_id)),
+            )
+            conn.commit()
+    except Exception:
+        # Columns may be missing on a database provisioned before this release;
+        # the init path adds them on the next start.
+        return
+
+
+def read_last_sync_state(item: dict) -> dict:
+    """Decode the persisted last-sync columns for API consumers."""
+    import json as _json
+    raw = item.get("git_last_sync_summary")
+    summary = {}
+    if raw:
+        try:
+            summary = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (TypeError, ValueError):
+            summary = {}
+    return {
+        "git_last_sync_at": str(item.get("git_last_sync_at") or ""),
+        "git_last_sync_status": str(item.get("git_last_sync_status") or ""),
+        "git_last_sync_summary": summary if isinstance(summary, dict) else {},
+        "git_head_commit": str(item.get("git_head_commit") or ""),
+    }
+
+
 async def execute_material_repository_action(
     conn_factory,
     material_id: int,
@@ -1266,10 +1356,48 @@ async def execute_material_repository_action(
     action: str,
     custom_command: str = "",
 ) -> dict:
+    """Run a repository action, publishing phase progress and recording the outcome."""
+    from . import materials_git_progress as progress
+
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action not in {"update", "commit_push", "custom"}:
+        raise HTTPException(400, "不支持的仓库操作")
+    progress.start(int(material_id), normalized_action)
+    try:
+        result = await _execute_material_repository_action(
+            conn_factory, material_id, teacher_user, normalized_action, custom_command, progress=progress,
+        )
+    except HTTPException as exc:
+        progress.finish(int(material_id), "failed", str(exc.detail))
+        _record_sync_outcome(conn_factory, material_id, normalized_action, {"status": "failed", "message": str(exc.detail)})
+        raise
+    except Exception as exc:
+        progress.finish(int(material_id), "failed", str(exc))
+        _record_sync_outcome(conn_factory, material_id, normalized_action, {"status": "failed", "message": str(exc)})
+        raise
+    progress.finish(int(material_id), str(result.get("status") or "failed"), str(result.get("message") or ""))
+    _record_sync_outcome(conn_factory, material_id, normalized_action, result)
+    result["last_sync"] = _sync_outcome_summary(normalized_action, result)
+    return result
+
+
+async def _execute_material_repository_action(
+    conn_factory,
+    material_id: int,
+    teacher_user: dict,
+    action: str,
+    custom_command: str = "",
+    *,
+    progress=None,
+) -> dict:
     normalized_action = str(action or "").strip().lower()
     from .lessondoc import editor_service, git_sync, pack_service
     if normalized_action not in {"update", "commit_push", "custom"}:
         raise HTTPException(400, "不支持的仓库操作")
+
+    def _phase(name: str, message: str = "") -> None:
+        if progress is not None:
+            progress.advance(int(material_id), name, message)
 
     with conn_factory() as conn:
         repo_detail = get_material_repository_detail(conn, material_id, int(teacher_user["id"]))
@@ -1282,6 +1410,7 @@ async def execute_material_repository_action(
             workspace_dir = Path(temp_dir_name) / "workspace"
             execution_log: list[dict] = []
 
+            _phase("export")
             with conn_factory() as conn:
                 root_row = conn.execute(
                     "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
@@ -1303,9 +1432,11 @@ async def execute_material_repository_action(
                         "repository": repo_detail,
                         "sync_summary": {"inserted": 0, "updated": 0, "deleted": 0, "unchanged": 0},
                     }
+                _phase("identity")
                 execution_log.extend(await _ensure_repository_identity(workspace_dir, teacher_user))
                 if any(entry["returncode"] != 0 and not entry.get("allow_failure") for entry in execution_log):
                     return _failed_repository_update(repo_detail, remote_info, execution_log, credential)
+                _phase("pull", f"{repo_detail['remote_name']}/{repo_detail['default_branch']}")
                 execution_log.append(
                     await _run_git_command(
                         ["git", "pull", "--no-rebase", "--no-edit", "--ff", repo_detail["remote_name"], repo_detail["default_branch"]],
@@ -1352,6 +1483,7 @@ async def execute_material_repository_action(
                 execution_log.append(await _run_git_command(_parse_custom_command(custom_command), workspace_dir, credential))
                 message = "Git 命令执行完成" if execution_log[-1]["returncode"] == 0 else "Git 命令执行失败"
 
+            _phase("prepare")
             try:
                 lessondoc_prepared = git_sync.prepare(workspace_dir, lessondoc_baseline)
             except editor_service.EditorError as exc:
@@ -1359,6 +1491,7 @@ async def execute_material_repository_action(
             removable_hashes: list[str] = []
             readme_candidates: list[dict] = []
             learning_bindings = None
+            _phase("publish")
             with conn_factory() as conn:
                 latest_root_row = conn.execute(
                     "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
@@ -1390,6 +1523,7 @@ async def execute_material_repository_action(
                 if normalized_action == "update":
                     # Publication and lesson projection are one atomic change.
                     # An unchanged pull must also repair previously missing links.
+                    _phase("bindings")
                     published_rows = _fetch_subtree_rows(conn, dict(latest_root_row))
                     learning_bindings = sync_repository_learning_bindings(
                         conn, dict(latest_root_row), published_rows, int(teacher_user["id"]))
@@ -1451,6 +1585,10 @@ async def execute_material_repository_action(
             "combined_output": combined_output,
             "repository": updated_repository,
             "sync_summary": sync_summary,
+            "changed_entries": [
+                {key: entry.get(key) for key in ("status", "relative_path", "material_path", "material_id", "node_type", "name", "preview_type")}
+                for entry in (changed_entries or [])
+            ][:400],
             "readme_candidates": readme_candidates,
             "learning_bindings": learning_bindings,
             "credential_saved": bool(credential),

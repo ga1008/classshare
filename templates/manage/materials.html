@@ -74,6 +74,10 @@
 </div>
 {% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/materials_library.css') }}">
+{% endblock %}
+
 {% block content %}
 {% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
 {% set show_material_insights =

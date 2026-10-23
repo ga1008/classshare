@@ -362,6 +362,10 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "check_questions_status": "TEXT NOT NULL DEFAULT 'idle'",
         "check_questions_error": "TEXT DEFAULT ''",
         "check_questions_generated_at": "TEXT",
+        "git_last_sync_at": "TEXT",
+        "git_last_sync_status": "TEXT DEFAULT ''",
+        "git_last_sync_summary": "TEXT DEFAULT ''",
+        "git_head_commit": "TEXT DEFAULT ''",
     },
     "material_ai_import_records": {
         "signature_revision": "TEXT NOT NULL DEFAULT ''",

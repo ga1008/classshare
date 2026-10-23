@@ -476,6 +476,11 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         ("check_questions_status", "TEXT NOT NULL DEFAULT 'idle'"),
         ("check_questions_error", "TEXT DEFAULT ''"),
         ("check_questions_generated_at", "TEXT"),
+        # Git 仓库最近一次同步的落地状态（卡片/资源管理器直接展示，不必重跑 git）。
+        ("git_last_sync_at", "TEXT"),
+        ("git_last_sync_status", "TEXT DEFAULT ''"),
+        ("git_last_sync_summary", "TEXT DEFAULT ''"),
+        ("git_head_commit", "TEXT DEFAULT ''"),
     ):
         try:
             conn.execute(f"ALTER TABLE course_materials ADD COLUMN {column_name} {column_def}")

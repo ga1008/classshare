@@ -454,11 +454,19 @@ async def get_teacher_material_library(
     class_name: str = Query(default=""),
     sort_by: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_BY),
     sort_order: str = Query(default=MATERIAL_LIBRARY_DEFAULT_SORT_ORDER),
+    kind: str = Query(default=""),
+    collapse: str = Query(default=""),
     user: dict = Depends(get_current_teacher),
 ):
     normalized_keyword = _normalize_material_keyword(keyword)
     normalized_document_type_filter = _normalize_material_document_type_filter(document_type)
     normalized_library_view = _normalize_material_library_view(library_view)
+    normalized_kind_filter = normalize_kind_filter(kind)
+    # 学习文档视图默认把搜索命中折叠到最外层入口；其他视图保持扁平命中列表。
+    collapse_to_roots = (
+        str(collapse or "").strip().lower() == "roots"
+        or (normalized_library_view == "learning" and str(collapse or "").strip().lower() != "flat")
+    )
     normalized_scope_filter = _normalize_material_scope_filter(scope_level)
     normalized_school_filter = _normalize_material_org_filter(school)
     normalized_department_filter = _normalize_material_org_filter(department)
@@ -485,6 +493,7 @@ async def get_teacher_material_library(
             sort_by=normalized_sort_by,
             sort_order=normalized_sort_order,
             library_view=normalized_library_view,
+            collapse_to_roots=collapse_to_roots,
         )
         facets = _build_material_filter_facets(all_rows, int(user["id"]))
         rows = _apply_material_library_filters(
@@ -498,6 +507,13 @@ async def get_teacher_material_library(
             class_name=normalized_class_filter,
         )
         items = [_decorate_learning_document_item(item) for item in _serialize_material_items(conn, rows, user=user)]
+        items = _attach_root_activity(conn, items)
+        facets["kinds"] = build_kind_facets(items)
+        facets["kind_groups"] = [
+            {"key": group["key"], "label": group["label"]} for group in MATERIAL_KIND_FILTER_GROUPS
+        ]
+        items = _apply_material_kind_filter(items, normalized_kind_filter)
+        items = _sort_items_by_activity(items, normalized_sort_by, normalized_sort_order)
         current_folder_item = None
         if current_folder:
             current_folder_item = attach_git_repository_metadata(
@@ -537,6 +553,8 @@ async def get_teacher_material_library(
             "class_name": normalized_class_filter,
             "sort_by": normalized_sort_by,
             "sort_order": normalized_sort_order,
+            "kind": normalized_kind_filter,
+            "collapse": "roots" if collapse_to_roots else "flat",
         },
         "facets": facets,
         "overview": overview,
@@ -584,6 +602,10 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         if material["node_type"] == "folder":
             detail = attach_learning_document_metadata(conn, [detail])[0]
             detail = _decorate_learning_document_item(detail)
+            detail = _attach_lessondoc_pack_metadata(conn, [detail])[0]
+            detail = _attach_html_package_flag(conn, [detail])[0]
+        detail = attach_material_document_kinds([detail])[0]
+        detail = attach_material_preview_metadata([detail], can_edit=detail.get("can_manage", False))[0]
         detail = _decorate_material_download_policy(detail)
         ai_import_record = _find_material_ai_import_record(conn, material_id, material["teacher_id"])
         if ai_import_record:
@@ -644,6 +666,37 @@ async def run_material_repository_command(
         payload.action,
         payload.command,
     )
+
+
+@router.get("/api/materials/{material_id}/repository/progress", response_class=JSONResponse)
+async def get_material_repository_progress(material_id: int, user: dict = Depends(get_current_teacher)):
+    """当前进程内该仓库操作的阶段进度；没有记录时返回 idle。"""
+    from ...services import materials_git_progress
+
+    with get_db_connection() as conn:
+        ensure_user_material_access(conn, material_id, user)
+    return {"status": "success", "progress": materials_git_progress.snapshot(int(material_id))}
+
+
+@router.get("/api/materials/{material_id}/repository/binding-plan", response_class=JSONResponse)
+async def get_material_repository_binding_plan(material_id: int, user: dict = Depends(get_current_teacher)):
+    """只读：下一次「更新」会把哪些课次入口对应到哪些课堂课次（不写库）。"""
+    from ...services.git_learning_bindings_service import plan_repository_learning_bindings
+    from ...services.materials_git_service import _fetch_subtree_rows
+
+    with get_db_connection() as conn:
+        root = conn.execute(
+            "SELECT * FROM course_materials WHERE id = ? AND teacher_id = ?",
+            (int(material_id), int(user["id"])),
+        ).fetchone()
+        if not root:
+            raise HTTPException(404, "仓库材料不存在")
+        root_dict = dict(root)
+        if root_dict.get("node_type") != "folder" or int(root_dict.get("root_id") or 0) != int(root_dict["id"]):
+            raise HTTPException(400, "仅根目录文件夹支持课次对应预览")
+        rows = _fetch_subtree_rows(conn, root_dict)
+        plan = plan_repository_learning_bindings(conn, root_dict, rows, int(user["id"]))
+    return plan
 
 
 @router.post("/api/materials/{material_id}/repository/credentials", response_class=JSONResponse)

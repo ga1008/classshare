@@ -140,6 +140,138 @@ def suppress_git_binding(conn, offering_id, session_id, material_id):
         (int(offering_id), int(root["id"]), number, int(material_id), int(session_id)))
 
 
+def _repository_offering_scope(conn, root, teacher_id):
+    """Classrooms a repository projects onto: assigned to the root, a descendant or an ancestor, owned by the teacher."""
+    root_id = int(root.get("root_id") or root["id"])
+    root_path = str(root["material_path"]).strip("/")
+    assignments = conn.execute("""
+        SELECT DISTINCT a.class_offering_id, m.material_path
+        FROM course_material_assignments a JOIN course_materials m ON m.id=a.material_id
+        JOIN class_offerings o ON o.id=a.class_offering_id
+        WHERE m.root_id=? AND o.teacher_id=?
+    """, (root_id, int(teacher_id))).fetchall()
+    return sorted({int(row["class_offering_id"]) for row in assignments
+                   if not is_git_internal_material_path(row["material_path"])
+                   and (str(row["material_path"]).strip("/") == root_path
+                        or str(row["material_path"]).startswith(root_path + "/")
+                        or root_path.startswith(str(row["material_path"]).strip("/") + "/"))})
+
+
+def _offering_labels(conn, offering_ids):
+    if not offering_ids:
+        return {}
+    marks = ",".join("?" for _ in offering_ids)
+    try:
+        rows = conn.execute(f"""
+            SELECT o.id, o.semester, c.name AS class_name, co.name AS course_name
+            FROM class_offerings o
+            LEFT JOIN classes c ON c.id = o.class_id
+            LEFT JOIN courses co ON co.id = o.course_id
+            WHERE o.id IN ({marks})
+        """, [int(value) for value in offering_ids]).fetchall()
+    except Exception:
+        # Minimal fixtures (tests, repair tools) may not model classes/courses.
+        return {int(value): {"class_offering_id": int(value), "course_name": "", "class_name": "", "semester": ""}
+                for value in offering_ids}
+    return {int(row["id"]): {"class_offering_id": int(row["id"]), "course_name": str(row["course_name"] or ""),
+                             "class_name": str(row["class_name"] or ""), "semester": str(row["semester"] or "")}
+            for row in rows}
+
+
+def _entry_relative_path(root, entry):
+    prefix = str(root["material_path"]).replace("\\", "/").strip("/") + "/"
+    path = str(entry.get("material_path") or "").replace("\\", "/").strip("/")
+    return path[len(prefix):] if path.startswith(prefix) else path
+
+
+def plan_repository_learning_bindings(conn, root, rows, teacher_id):
+    """Read-only preview of what the next ``update`` would project, per classroom.
+
+    Uses the same entry parser and the same ordinal rule as the writer, resolving
+    session numbering through ``plan_offering_resequence`` without applying it.
+    Nothing is written; the result tells the teacher, per lesson number, whether
+    the entry is already bound, would be bound, would move, is suppressed by an
+    explicit unbind, or has no active session to land on.
+    """
+    from .offering_session_resequence_service import plan_offering_resequence, load_offering_sessions
+    from . import session_learning_materials_service as materials
+    entries, unresolved = repository_lesson_entries(root, rows)
+    rows_by_id = {int(row["id"]): dict(row) for row in rows}
+    offering_ids = _repository_offering_scope(conn, root, teacher_id)
+    labels = _offering_labels(conn, offering_ids)
+    has_rules = table_exists(conn, "class_offering_git_learning_bindings")
+    has_projection = materials.has_material_bindings_table(conn)
+    entry_payload = [
+        {"lesson_order": number, "material_id": int(entry["id"]), "name": str(entry.get("name") or ""),
+         "material_path": str(entry.get("material_path") or ""), "relative_path": _entry_relative_path(root, entry),
+         "target_type": "home" if number == 0 else "lesson"}
+        for number, entry in sorted(entries.items())
+    ]
+    unresolved_payload = []
+    for item in unresolved:
+        row = rows_by_id.get(int(item["material_id"])) or {}
+        unresolved_payload.append({**item, "name": str(row.get("name") or ""),
+                                   "material_path": str(row.get("material_path") or ""),
+                                   "relative_path": _entry_relative_path(root, row) if row else ""})
+    offerings_payload = []
+    for offering_id in offering_ids:
+        sessions = load_offering_sessions(conn, offering_id)
+        plan = plan_offering_resequence(conn, offering_id, sessions=sessions)
+        sessions_by_id = {int(row["id"]): row for row in sessions}
+        targets = {}
+        for assignment in plan["assignments"]:
+            if assignment["active"]:
+                session = sessions_by_id[int(assignment["session_id"])]
+                targets[int(assignment["order_index"])] = {
+                    "id": int(session["id"]), "title": str(session.get("title") or ""),
+                    "session_date": str(assignment["slot"].get("date") or session.get("session_date") or ""),
+                    "order_index": int(assignment["order_index"]),
+                }
+        targets[0] = {"id": 0, "title": "课程首页", "session_date": "", "order_index": 0}
+        previous = {}
+        if has_rules:
+            previous = {int(row["lesson_order"]): dict(row) for row in conn.execute(
+                "SELECT * FROM class_offering_git_learning_bindings WHERE class_offering_id=? AND repository_id=?",
+                (offering_id, root["id"])).fetchall()}
+        lessons = []
+        counts = {"bound": 0, "will_bind": 0, "will_move": 0, "suppressed": 0, "missing_session": 0, "will_release": 0, "unchanged": 0}
+        for number in sorted(set(entries) | set(previous)):
+            entry, target, rule = entries.get(number), targets.get(number), previous.get(number)
+            current_primary = materials._primary_material_id(conn, offering_id, int(target["id"])) if target else 0
+            if rule and int(rule["suppressed"]):
+                status = "suppressed"
+            elif entry and not target:
+                status = "missing_session"
+            elif entry and target:
+                if rule and int(rule["material_id"]) == int(entry["id"]) and int(rule["session_id"]) == int(target["id"]):
+                    status = "bound"
+                elif rule:
+                    status = "will_move"
+                else:
+                    existing = materials._fetch_rows(conn, offering_id, int(target["id"])) if has_projection else []
+                    present = any(int(row["material_id"]) == int(entry["id"]) for row in existing)
+                    status = "bound" if present or int(current_primary or 0) == int(entry["id"]) else "will_bind"
+            else:
+                status = "will_release" if rule and int(rule["owns_binding"]) else "unchanged"
+            counts[status] = counts.get(status, 0) + 1
+            lessons.append({
+                "lesson_order": number, "target_type": "home" if number == 0 else "lesson", "status": status,
+                "entry": ({"material_id": int(entry["id"]), "name": str(entry.get("name") or ""),
+                           "relative_path": _entry_relative_path(root, entry)} if entry else None),
+                "session": target, "current_primary_material_id": int(current_primary or 0),
+                "rule": ({"material_id": int(rule["material_id"]), "session_id": int(rule["session_id"]),
+                          "owns_binding": int(rule["owns_binding"]), "suppressed": int(rule["suppressed"])} if rule else None),
+            })
+        offerings_payload.append({**labels.get(offering_id, {"class_offering_id": offering_id}),
+                                  "numbered_session_count": len([key for key in targets if key]),
+                                  "lessons": lessons, "counts": counts})
+    return {"status": "success", "binding_mode": "repository_ordinal", "repository_id": int(root["id"]),
+            "entries": entry_payload, "unresolved": unresolved_payload, "offerings": offerings_payload,
+            "target_classroom_count": len(offering_ids),
+            "message": ("仓库尚未分配课堂，同步后不会建立课次绑定。" if not offering_ids else
+                        f"已识别 {len(entry_payload)} 个课次入口，将按序号对应到 {len(offering_ids)} 个课堂。")}
+
+
 def sync_repository_learning_bindings(conn, root, rows, teacher_id):
     """Called inside Git publication transaction, with the latest tree locked."""
     from . import session_learning_materials_service as materials
@@ -281,10 +413,28 @@ def sync_repository_learning_bindings(conn, root, rows, teacher_id):
             result["assignments"].append({"class_offering_id": offering_id, "session_id": desired_session,
                 "target_type": "home" if number == 0 else "lesson", "confidence": "high",
                 "order_index": number, "material_id": desired_id, "session_title": target["title"],
-                "material_path": entry["material_path"], "source": "repository_ordinal"})
+                "session_date": str(target.get("session_date") or ""),
+                "material_path": entry["material_path"], "relative_path": _entry_relative_path(root, entry),
+                "newly_bound": not present, "source": "repository_ordinal"})
         if granted:
             sync_classroom_learning_material_assignments(conn, class_offering_id=offering_id,
                                                          teacher_id=teacher_id, material_ids=granted)
+    # Classroom labels let the UI group assignments per classroom without a second request.
+    labels = _offering_labels(conn, offering_ids)
+    for assignment in result["assignments"]:
+        assignment.update({key: value for key, value in labels.get(int(assignment["class_offering_id"]), {}).items()
+                           if key != "class_offering_id"})
+    for warning in result["warnings"]:
+        warning.update({key: value for key, value in labels.get(int(warning.get("class_offering_id") or 0), {}).items()
+                        if key != "class_offering_id"})
+    result["offerings"] = [
+        {**labels.get(offering_id, {"class_offering_id": offering_id}),
+         "lesson_count": sum(1 for item in result["assignments"] if int(item["class_offering_id"]) == offering_id and item["target_type"] == "lesson"),
+         "home_bound": any(int(item["class_offering_id"]) == offering_id and item["target_type"] == "home" for item in result["assignments"]),
+         "new_count": sum(1 for item in result["assignments"] if int(item["class_offering_id"]) == offering_id and item.get("newly_bound")),
+         "warning_count": sum(1 for item in result["warnings"] if int(item.get("class_offering_id") or 0) == offering_id)}
+        for offering_id in offering_ids
+    ]
     result["message"] = f"已同步 {result['total_assignments']} 个课次教材、{result['total_home_assignments']} 个课程首页。"
     if result["warnings"]:
         result["message"] += f"另有 {len(result['warnings'])} 项保留或未匹配记录，请核对。"

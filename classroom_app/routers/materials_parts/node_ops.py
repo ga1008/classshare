@@ -318,7 +318,20 @@ async def move_material_node(
 
 def _serialize_tree_node(row: dict) -> dict[str, Any]:
     item = serialize_material_row(row)
+    attach_material_document_kinds([item])
+    attach_material_preview_metadata([item])
     return {
+        "document_kind": item.get("document_kind"),
+        "kind_label": item.get("kind_label"),
+        "kind_short": item.get("kind_short"),
+        "kind_tone": item.get("kind_tone"),
+        "kind_color": item.get("kind_color"),
+        "preview_mode": item.get("preview_mode"),
+        "preview_url": item.get("preview_url"),
+        "preview_frame_url": item.get("preview_frame_url"),
+        "preview_image_url": item.get("preview_image_url"),
+        "preview_media_url": item.get("preview_media_url"),
+        "preview_content_url": item.get("preview_content_url"),
         "id": int(row["id"]),
         "root_id": int(row["root_id"]) if row.get("root_id") is not None else int(row["id"]),
         "parent_id": int(row["parent_id"]) if row.get("parent_id") is not None else None,
