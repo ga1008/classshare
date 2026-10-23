@@ -31,6 +31,14 @@
 - 浏览器（p03-qa-lq，1440 / 390 宽，深色与浅色）：私信面板 `rgba(21,26,40,.5)` / `rgba(255,255,255,.5)` 配对主题墨；边栏标签、提示、标题全部可读；composer 一行动作；390 宽无横向溢出；通知页列表/芯片/设置按钮正常。
 - 页面 spec `lq-message-layout.spec.ts`（专用配置 8295 端口 + `prepare_ui_v3_runtime.py` 合成库 + `serve_ui_v3.py`）：学生 / 教师各 1 项通过（照片背景浅色 1440 宽、390 宽深色、通知↔私信切换、阅读状态 Selection 弹层模糊）。首轮教师项暴露 **阅读状态 select 双 owner**（message_center.js 的 Selection 与平台 Dropdown 同时接管），已按合同改为 `data-lq-selection-owner`；首轮学生项失败为冷启动服务器登录超时，预热后通过。
 
-## 发布
+## 发布结果
 
-见文末「发布结果」小节（部署与 Git 推送分别记录）。
+| 项目 | 结果 |
+|---|---|
+| 产品代码提交 | `3b6c6c49`，已推送 `origin/dev`（推送与部署分别完成） |
+| 服务器发布号 | `20261024-020933-9b215a717e3e`（冻结工作树 `frozen-3b6c6c49` 发布，清单 3538 个文件，不含未跟踪个人文档与缓存目录） |
+| PostgreSQL 门禁 | 未改 `classroom_app/db/*` 与 `config.py`，复用 `.codex-temp/library-cards-gate/native-report.json`（77 个迁移源文件）+ 同一 dump，validate ok |
+| 服务恢复 | app / ai / mailer / postgres healthy，scheduler / crawler / agent-worker 启动，Nginx 已刷新；主应用与 AI 健康检查 ok，近期无错误日志 |
+| 公网核验 | 登录页引用新资源图；线上 `tailwind-app.css` 与本地验收构建逐字节一致，遗留 `.message-center-composer__actions{min-height:100%}` 规则已消失，新增 `.emoji-picker` 组件规则与 `message-center-conversation__identity` 页面规则均在线 |
+| 既有告警 | `background_tasks.ok=false` 为历史失败计数，与本次发布无关 |
+
