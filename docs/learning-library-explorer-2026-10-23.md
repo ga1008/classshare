@@ -47,3 +47,9 @@ CSS：`static/css/materials_library.css`（页面材质别名 `--lq-page-content
 - 后端隔离：`tools/test_backend.py` — `test_material_library_cards.py`（类型/折叠/活动排序/预览契约/进度板/对应预览/git 环境钉死，16 项）、`test_material_*`、`test_materials_git_scope`、`test_lessondoc_*`、`test_git_learning_bindings_service`、`test_html_package_service`、`test_session_learning_materials_service`、`test_permission_materials_service`、`test_document_render_service`、`test_agent_material_*` 全部通过；`test_process_material_workflow_contract` 与 `test_manage_lq_pilot_templates` 只剩与本轮无关的 3 项既有失败；`test_materials_git_update`（真实 git clone）在本机因 Git for Windows 的 msys `NtCreateDirectoryObject` 错误无法运行，基线同样失败。
 - Playwright：`tests/e2e/specs/materials.spec.ts` 3 项通过。
 - 浏览器（P03 隔离 SQLite 运行时，合成材料）：卡片/类型色/类型 chips/折叠搜索（`lesson` → 1 个文档库 4 处命中）/列表切换/卡片菜单/资源管理器（目录树、文件夹列表、Markdown 渲染与编辑保存、HTML 渲染与实时预览、右键菜单、Git 面板、课次对应预览、一键更新失败路径）/PDF 页面图预览 200/inline PDF；移动端布局。
+
+## 7. 发布记录（2026-10-23）
+
+- 代码：commit `40b94088`，已推 `origin/dev`。
+- 门禁：改了 `schema_materials_integrations.py`/`postgres_schema.py`，重做原生 PostgreSQL 迁移演练（`.codex-temp/run_library_cards_native_gate.py`，报告 `.codex-temp/library-cards-gate/native-report.json`，77 个源码文件，无阻塞）；从冻结 worktree 发布，DryRun 后正式一次通过，未停服。
+- 上线核验：8 个容器 healthy；app 容器内新模块可导入、`_git_command_env` 已在；生产库 `course_materials` 已有 `git_last_sync_at/git_last_sync_status/git_last_sync_summary/git_head_commit`；公网 `/api/materials/{id}/repository/progress|binding-plan`、`/api/materials/library?kind=` 未登录 401，`/materials/document-preview|inline` 未登录 303 到登录页；`/static/assets/manifest.json` 含 7 个新 JS/CSS；无近期错误日志，根盘 51%。
