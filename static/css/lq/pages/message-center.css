@@ -1,9 +1,16 @@
-/* Page-only layout for the messages family (lq_family_enabled('messages')).
- * Reuses frozen shared component classes (lq-page-head, lq-tabs chips via
- * lqPresentation.createComponent('chip', ...), lq-list/lq-row, lq-bubble,
- * lq-composer, lq-field, lq-btn) from static/css/lq/components/*.css and
- * only adds message-center specific layout/spacing on top of them.
- * Colors/spacing use --ls-*/--tone-* tokens only (see tokens.css). */
+/* ── 消息中心（通知 / 私信）页面布局 ───────────────────────────────────────
+   消费者：templates/partials/profile/messages.html（个人中心「通知」「私信」两节）、
+   static/js/message_center.js（通知行 / 气泡 / 空态 / 黑名单行 / 当前联系人卡）、
+   frontend/src/islands/message-center-workspace-sync.tsx（概览状态岛）。
+   复用的共享模块：Surface（content，四个顶层面板）、PageHead、Field/Input/Select、
+   Button/Chip/Badge、List/Row、Card、Empty、Bubble、Composer、Dropdown、EmojiPicker。
+
+   本文件只负责"把共享模块摆到哪里、留多大间距"。约束：
+   1. 不写任何控件/面板的填充、文字色、描边、滤镜与动效——那些由 lq/components 持有；
+      唯一允许的颜色来源是与面板填充配对的 --ls-ink / --ls-ink-2 / --ls-ink-3 与 --ls-line。
+   2. 顶层面板（概览、筛选、通知流、私信面板）是材质边界；面板内部的分区、行、卡片、
+      气泡不得再成为模糊宿主（materials.css / page-material.css 的嵌套守卫负责）。
+   3. 改动前先查 docs/lq-module-registry.md「messages」条目，确认影响的共享模块与消费者。 */
 
 .lq-messages.profile-message-center {
     display: flex;
@@ -12,16 +19,8 @@
     min-width: 0;
 }
 
-.lq-messages .lq-messages__overview,
-.lq-messages .message-center-toolbar {
-    padding: var(--ls-s-5);
-    border: 1px solid hsl(var(--ls-glass-line));
-    border-radius: var(--ls-r-lg);
-    background: hsl(var(--lq-page-content));
-    color: hsl(var(--ls-ink));
-}
-
-.lq-messages__overview {
+/* ── 概览板块 ───────────────────────────────────────────────────────────── */
+.lq-messages .lq-messages__overview {
     display: grid;
     gap: var(--ls-s-3);
     min-width: 0;
@@ -36,7 +35,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
-    gap: var(--ls-s-4);
+    gap: var(--ls-s-3) var(--ls-s-4);
 }
 
 .lq-messages .lq-message-workspace__status {
@@ -51,7 +50,7 @@
 .lq-messages .lq-message-workspace__counts {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--ls-s-4) var(--ls-s-8);
+    gap: var(--ls-s-3) var(--ls-s-8);
     margin: 0;
     min-width: 0;
 }
@@ -83,11 +82,11 @@
     min-width: 0;
 }
 
-/* Toolbar: tabs group + search/filter/mark-read controls */
+/* ── 筛选板块：分类芯片 + 搜索 / 阅读状态 / 操作 ───────────────────────── */
 .lq-messages .message-center-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--ls-s-4);
+    gap: var(--ls-s-3);
 }
 
 .lq-messages #message-center-tabs {
@@ -98,9 +97,16 @@
     min-width: 0;
 }
 
+.lq-messages #message-center-tabs[hidden],
+.lq-messages #message-center-tabs:empty {
+    display: none;
+}
+
 .lq-messages .message-center-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
     align-items: end;
     gap: var(--ls-s-3);
     min-width: 0;
@@ -108,11 +114,11 @@
     width: 100%;
 }
 
-.lq-messages .message-center-search.lq-input {
+.lq-messages .message-center-controls > .lq-field {
     min-width: 0;
 }
 
-.lq-messages .message-center-controls > .lq-field {
+.lq-messages .message-center-search.lq-input {
     min-width: 0;
 }
 
@@ -120,8 +126,7 @@
     min-height: calc(var(--ls-s-10) + var(--ls-s-1));
 }
 
-/* Preserve selection's clipped native owner; legacy form-control width/height
-   must not leave an invisible full-width element overflowing the panel. */
+/* Selection 保留被裁剪的原生 owner；遗留表单控件尺寸不能让它撑出面板。 */
 .lq-messages .message-center-filter.lq-selection-native {
     width: 1px;
     height: 1px;
@@ -133,7 +138,32 @@
     white-space: nowrap;
 }
 
-/* Notification rows: extra copy line under the lq-row title/meta */
+/* ── 通知流面板：固定一块顶层面板，条目（lq-list / lq-row）是数据项 ───────── */
+.lq-messages.profile-message-center .message-center-feed {
+    display: grid;
+    align-content: start;
+    min-height: 12rem;
+    min-width: 0;
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--lq-page-content));
+    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
+                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
+                var(--ls-glass-shadow);
+    overflow: clip;
+}
+
+/* 面板已经是边界；列表自身的框与底色退让，否则是框中框。 */
+.lq-messages .message-center-feed > .lq-list {
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+}
+
+.lq-messages .message-center-feed > .lq-empty {
+    margin: var(--ls-s-4);
+}
+
 .lq-messages__notification-copy {
     margin: var(--ls-s-1) 0 0;
     color: hsl(var(--ls-ink-2));
@@ -142,34 +172,134 @@
     overflow-wrap: anywhere;
 }
 
-/* Private message body: two-pane layout (contacts/blocks + conversation) */
-.lq-messages .message-center-private-panel {
+/* ── 私信面板：一个 Surface 边界，两栏只是分区 ───────────────────────────── */
+.lq-messages.profile-message-center .message-center-private-panel {
     display: grid;
-    grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
-    gap: var(--ls-s-4);
-    align-items: start;
+    grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+    align-items: stretch;
     min-width: 0;
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-lg);
+    background: hsl(var(--lq-page-content));
+    overflow: clip;
 }
 
 .lq-messages .message-center-sidebar {
     display: flex;
     flex-direction: column;
-    gap: var(--ls-s-3);
+    gap: var(--ls-s-4);
+    min-width: 0;
+    padding: var(--ls-s-4);
+    border-inline-end: 1px solid hsl(var(--ls-line));
+}
+
+.lq-messages .message-center-pane-head {
+    display: grid;
+    gap: var(--ls-s-1);
     min-width: 0;
 }
 
-.lq-messages .message-center-contact-picker {
+.lq-messages .message-center-pane-row {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--ls-s-2);
     min-width: 0;
 }
 
+.lq-messages .message-center-pane-title {
+    margin: 0;
+    color: hsl(var(--ls-ink));
+    font-size: var(--ls-t-title3);
+    line-height: var(--ls-leading-title3);
+    font-weight: var(--ls-weight-title3);
+    overflow-wrap: anywhere;
+}
+
+.lq-messages .message-center-pane-title--sub {
+    font-size: var(--ls-t-body);
+    line-height: var(--ls-leading-body);
+}
+
+.lq-messages .message-center-conversation__hint {
+    margin: 0;
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+    overflow-wrap: anywhere;
+}
+
+.lq-messages .message-center-contact-picker {
+    display: grid;
+    gap: var(--ls-s-3);
+    min-width: 0;
+}
+
+/* 当前联系人：共享 Card（选中态由 data-lq-selected 配对填充与前景） */
+.lq-messages .message-center-contact-current:empty {
+    display: none;
+}
+
+.lq-messages .message-center-contact-current > .lq-card {
+    padding: var(--ls-s-3) var(--ls-s-4);
+    box-shadow: none;
+}
+
+.lq-messages .message-center-contact-current .lq-card__body:not(:empty) {
+    margin-top: var(--ls-s-2);
+    color: hsl(var(--ls-ink-2));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+}
+
+.lq-messages .message-center-contact-current .lq-card[data-lq-selected="true"] .lq-card__body,
+.lq-messages .message-center-contact-current .lq-card[data-lq-selected="true"] .lq-card__meta {
+    color: inherit;
+}
+
+/* 最近会话：共享 List；边栏已是分区，列表退到无框 */
+.lq-messages .message-center-recent > .lq-list {
+    border: 0;
+    border-radius: var(--ls-r-md);
+}
+
+.lq-messages .message-center-recent .lq-row {
+    min-height: var(--ls-s-12);
+    padding: var(--ls-s-2) var(--ls-s-3);
+}
+
+/* 黑名单：标题行 + 共享 List（解除按钮是行的 trail 动作） */
+.lq-messages .message-center-blocks {
+    display: grid;
+    gap: var(--ls-s-2);
+    min-width: 0;
+    padding-block-start: var(--ls-s-3);
+    border-block-start: 1px solid hsl(var(--ls-line));
+}
+
+.lq-messages .message-center-block-list > .lq-list {
+    border: 0;
+    background: transparent;
+}
+
+.lq-messages .message-center-block-list .lq-row {
+    min-height: var(--ls-s-12);
+    padding: var(--ls-s-2) var(--ls-s-1);
+}
+
+.lq-messages .message-center-block-empty {
+    margin: 0;
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+}
+
+/* ── 会话栏：头部 / 消息流 / 输入区 ─────────────────────────────────────── */
 .lq-messages .message-center-conversation {
     display: flex;
     flex-direction: column;
-    gap: var(--ls-s-3);
     min-width: 0;
+    min-height: 32rem;
 }
 
 .lq-messages .message-center-conversation__header {
@@ -178,18 +308,46 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--ls-s-3);
-    padding-block-end: var(--ls-s-2);
+    padding: var(--ls-s-4);
     border-block-end: 1px solid hsl(var(--ls-line));
 }
 
+.lq-messages .message-center-conversation__header:empty {
+    display: none;
+}
+
+.lq-messages .message-center-conversation__identity {
+    display: grid;
+    gap: var(--ls-s-1);
+    min-width: 0;
+    flex: 1 1 16rem;
+}
+
+.lq-messages .message-center-conversation__tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-2);
+}
+
 .lq-messages .message-center-conversation__body {
+    flex: 1 1 auto;
     min-height: 16rem;
     max-height: 60vh;
     overflow-y: auto;
-    padding-inline-end: var(--ls-s-1);
+    overscroll-behavior: contain;
+    padding: var(--ls-s-4);
 }
 
-/* Message bubble stream: vertical rhythm between bubbles, tighter when connected */
+.lq-messages .message-center-conversation__body > .lq-empty--card {
+    margin: 0;
+}
+
+.lq-messages .message-center-conversation__body > [data-ai-poll-error] {
+    margin-block-end: var(--ls-s-3);
+}
+
+/* 气泡流：垂直节奏，同一发信人的连续气泡收紧 */
 .lq-messages__stream {
     display: flex;
     flex-direction: column;
@@ -201,6 +359,10 @@
     margin-top: calc(-1 * var(--ls-s-2));
 }
 
+.lq-messages__stream .lq-bubble > .lq-btn {
+    margin-top: var(--ls-s-2);
+}
+
 .lq-messages__status-copy {
     margin: var(--ls-s-1) 0 0;
     color: hsl(var(--ls-ink-3));
@@ -208,98 +370,197 @@
     line-height: var(--ls-leading-caption);
 }
 
-/* Composer: glass capsule with auto-growing textarea and icon actions.
-   遗留的 .message-center-composer（ui-system.src.css:4040）用硬编码
-   rgba(255,255,255,.96) 压住了组件自己的 .lq-surface，暗色下这块输入区是一整块
-   白板。它排在 lq 之后、特指度相同，删不掉也躲不开，只能在页面层把材质交还给
-   内容级填充。 */
-.lq-messages .message-center-composer.lq-composer {
+/* 气泡里的附件：图片缩略为按钮（打开灯箱），文件为真实链接 */
+.message-center-message__attachments {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: var(--ls-s-2);
-    padding: var(--ls-s-3) var(--ls-s-4);
-    border-radius: var(--ls-r-xl);
-    background: hsl(var(--lq-page-content));
-}
-
-.lq-messages .message-center-composer__editor {
-    display: flex;
-    align-items: flex-end;
-    gap: var(--ls-s-2);
+    margin-top: var(--ls-s-2);
     min-width: 0;
 }
 
-.lq-messages .message-center-composer__main {
-    flex: 1;
-    min-width: 0;
+.message-center-message__attachment.is-image {
+    height: auto;
+    min-height: 0;
+    padding: var(--ls-s-1);
+    display: inline-grid;
+    gap: var(--ls-s-1);
+    justify-items: start;
 }
 
-.lq-messages .message-center-composer__input.lq-composer__input {
-    max-height: calc(var(--ls-s-10) * 3);
-    resize: none;
-    overflow-y: auto;
+.message-center-message__attachment.is-image img {
+    display: block;
+    width: 9rem;
+    max-width: 100%;
+    height: 6rem;
+    object-fit: cover;
+    border-radius: var(--ls-r-sm);
 }
 
-.lq-messages .message-center-composer__actions {
-    display: flex;
+.message-center-message__attachment.is-image span {
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--ls-t-caption);
+    line-height: var(--ls-leading-caption);
+}
+
+.message-center-message__attachment.is-file {
+    display: inline-flex;
     align-items: center;
     gap: var(--ls-s-2);
-    flex-shrink: 0;
+    max-width: 100%;
+    padding: var(--ls-s-1) var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-capsule);
+    color: inherit;
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+    text-decoration: none;
+}
+
+.message-center-message__attachment.is-file:hover,
+.message-center-message__attachment.is-file:focus-visible {
+    border-color: hsl(var(--ls-primary) / .5);
+    text-decoration: underline;
+}
+
+.message-center-message__attachment.is-file small {
+    margin-inline-start: var(--ls-s-1);
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-caption);
+}
+
+/* ── 输入区：共享 Composer 的槽位 ────────────────────────────────────────
+   composer 是会话栏底部的一块内容级材质（嵌套在面板里，不再模糊）。
+   工具栏与标签同一行，textarea 无框、随内容生长，底部一行工具 + 发送。 */
+.lq-messages .message-center-composer.lq-composer {
+    width: auto;
+    margin: 0 var(--ls-s-4) var(--ls-s-4);
+    padding: var(--ls-s-3) var(--ls-s-4);
+    border-radius: var(--ls-r-lg);
+}
+
+.lq-messages .message-center-composer__form {
+    display: grid;
+    gap: var(--ls-s-2);
+    min-width: 0;
+}
+
+.lq-messages .message-center-composer__form.is-dragover {
+    outline: 2px dashed hsl(var(--ls-primary) / .6);
+    outline-offset: var(--ls-s-2);
+    border-radius: var(--ls-r-md);
+}
+
+.lq-messages .message-center-composer__main.lq-field {
+    gap: var(--ls-s-1);
+}
+
+.lq-messages .message-center-composer__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ls-s-2);
+    min-width: 0;
 }
 
 .lq-messages .message-center-editor-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--ls-s-1);
-    margin-block-end: var(--ls-s-1);
+    align-items: center;
+    gap: calc(var(--ls-s-1) / 2);
 }
 
-/* Attachment preview chips above the composer */
+.lq-messages .message-center-composer__input.lq-composer__input {
+    max-height: calc(var(--ls-s-10) * 4);
+    padding-inline: var(--ls-s-1);
+}
+
+.lq-messages .message-center-composer__actions.lq-composer__actions {
+    flex-wrap: wrap;
+    gap: var(--ls-s-2);
+    margin-top: 0;
+}
+
+.lq-messages .message-center-composer__actions .lq-composer__tools {
+    gap: var(--ls-s-1);
+}
+
+.lq-messages .message-center-emoji-anchor {
+    position: relative;
+    display: inline-flex;
+}
+
+/* 待发送附件：共享控件底色的胶囊 */
 .lq-messages .message-center-attachment-preview {
     display: flex;
     flex-wrap: wrap;
     gap: var(--ls-s-2);
-    padding-block-end: var(--ls-s-1);
+    min-width: 0;
 }
 
 .lq-messages .message-center-attachment-chip {
     display: flex;
     align-items: center;
     gap: var(--ls-s-2);
-    padding: var(--ls-s-1) var(--ls-s-3);
+    max-width: 100%;
+    padding: var(--ls-s-1) var(--ls-s-1) var(--ls-s-1) var(--ls-s-3);
     border: 1px solid hsl(var(--ls-line));
     border-radius: var(--ls-r-capsule);
     background: hsl(var(--lq-page-control));
+    color: hsl(var(--ls-ink));
     font-size: var(--ls-t-sub);
-    max-width: 100%;
+}
+
+.lq-messages .message-center-attachment-chip img,
+.lq-messages .message-center-attachment-chip__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--ls-s-8);
+    height: var(--ls-s-8);
+    object-fit: cover;
+    border-radius: var(--ls-r-sm);
 }
 
 .lq-messages .message-center-attachment-chip__meta {
+    display: grid;
     min-width: 0;
+    line-height: var(--ls-leading-caption);
+}
+
+.lq-messages .message-center-attachment-chip__meta :is(strong, small) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* Send cooldown ("12s 后可发送") is written into the button's own
- * .lq-btn__label text by setSubmitButtonVisualState() in message_center.js
- * (no separate DOM node); tabular-nums avoids the label width jittering
- * while the countdown ticks down inside the button. */
+.lq-messages .message-center-attachment-chip__meta small {
+    color: hsl(var(--ls-ink-3));
+    font-size: var(--ls-t-caption);
+}
+
+/* 发送冷却（"12s 后可发送"）直接写进按钮标签；等宽数字避免倒计时抖动 */
 .lq-messages [data-send-button] .lq-btn__label {
     font-variant-numeric: tabular-nums;
 }
 
-/* Block list */
-.lq-messages .message-center-blocks {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ls-s-2);
-    min-width: 0;
-}
-
+/* ── 响应式 ─────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-    .lq-messages .message-center-private-panel {
+    .lq-messages.profile-message-center .message-center-private-panel {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lq-messages .message-center-sidebar {
+        border-inline-end: 0;
+        border-block-end: 1px solid hsl(var(--ls-line));
+    }
+
+    .lq-messages .message-center-conversation {
+        min-height: 0;
     }
 
     .lq-messages .message-center-conversation__body {
@@ -308,6 +569,7 @@
 
     .lq-messages .message-center-controls {
         grid-template-columns: minmax(0, 1fr) auto;
+        grid-auto-flow: row;
     }
 
     .lq-messages .lq-messages__search-field {
@@ -320,11 +582,6 @@
 }
 
 @media (max-width: 479px) {
-    .lq-messages .lq-messages__overview,
-    .lq-messages .message-center-toolbar {
-        padding: var(--ls-s-4);
-    }
-
     .lq-messages .message-center-controls {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -332,49 +589,30 @@
     .lq-messages #message-center-mark-read {
         width: 100%;
     }
+
+    .lq-messages .message-center-composer.lq-composer {
+        margin: 0 var(--ls-s-3) var(--ls-s-3);
+        padding: var(--ls-s-3);
+    }
+
+    .lq-messages .message-center-composer__actions .lq-composer__tools {
+        flex: 1 1 100%;
+    }
 }
 
-/* ── 顶层面板的填充与嵌套守卫（S9 U2）─────────────────────────────────────
-   私信面板是这一页的顶层面板，模糊由 pages/page-material.css 末尾主任务那段提供。
-   但它的填充仍被 ui-system.src.css:3636 的 `hsl(var(--ls-surface-1) / 0.94)` 压着
-   —— 实测计算值 alpha 0.94，几乎不透明，材质标度在这一页失真（内容级是 .74/.76）。
-   这里把填充交还内容级别名；描边同样收回令牌，遗留那条 rgba(148,163,184,.16)
-   在暗色下几乎看不见。 */
-.lq-messages.profile-message-center .message-center-private-panel {
-    background: hsl(var(--lq-page-content));
-    border: 1px solid hsl(var(--ls-line));
-    border-radius: var(--ls-r-lg);
-}
-
-/* 通知流面板是「通知」这一档的顶层面板，和私信面板对称：填充回到内容级，模糊与
-   高光边在这里给出。它是版式里固定的一块（每页一个），不随通知条数增长；条目本身
-   （.lq-row / .lq-card）是数据项，由下面的守卫压平，不做宿主。 */
-.lq-messages.profile-message-center .message-center-feed {
-    background: hsl(var(--lq-page-content));
-    border: 1px solid hsl(var(--ls-line));
-}
-
-.lq-messages .message-center-feed {
-    /* Keep the loading viewport stable without stretching a short list card
-       across the legacy 420px minimum-height grid. */
-    align-content: start;
-    box-shadow: inset 0 1px 0 hsl(var(--ls-glass-rim)),
-                inset 0 -1px 0 hsl(var(--ls-glass-rim-bottom)),
-                var(--ls-glass-shadow);
-}
-
-/* 嵌套守卫。私信面板不带材质类，materials.css 的「材质套材质」守卫够不着它，
-   面板里的 composer / 联系人列表 / 会话卡会各自再建一层合成层 —— 实测
-   .message-center-composer.lq-surface 就是这样变成第二个宿主的。 */
+/* ── 嵌套守卫 ──────────────────────────────────────────────────────────────
+   私信面板与通知流面板是这一页的两块顶层面板（材质边界，模糊由
+   pages/page-material.css 提供）；其中任何子材质（composer、联系人卡、空态卡、
+   气泡）不得再建合成层。 */
 .lq-messages .message-center-private-panel :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]),
 .lq-messages .message-center-feed :is(.lq-glass, .lq-surface, .lq-surface--frost, [data-lq-material]) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
 }
 
-/* Blog cards (blog plan §6.2/§7.5): layout only. The quote, the new comment,
-   the composer, chips, AvatarStack and switches are LQ components and keep
-   their own presentation; the reply panel sits inside the Row's main column. */
+/* ── 博客通知行（blog plan §6.2/§7.5）：只做布局 ───────────────────────────
+   引用、新评论、composer、芯片、AvatarStack 与开关都是 LQ 组件，各自持有表现；
+   回复面板位于 Row 的主列内。 */
 .lq-messages .lq-row__lead:has(.lq-avatar-stack) {
     align-self: center;
 }
@@ -387,7 +625,6 @@
     border-top: 1px solid hsl(var(--ls-line));
 }
 
-/* Chips and the "去帖子查看" link keep their own width inside the grid. */
 .mc-blog-reply > :is(.lq-chip, .lq-btn) {
     justify-self: start;
 }
@@ -430,7 +667,7 @@
 .mc-notify-settings__title {
     margin: 0;
     font-size: var(--ls-t-body);
-    font-weight: 600;
+    font-weight: var(--ls-weight-title3);
 }
 
 .mc-notify-settings__forced {

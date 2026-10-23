@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, '../..');
 const packageRoot = resolve(dirname(require.resolve('lucide-react')), '../..');
 const pkg = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8'));
-const names = ['arrow-left', 'arrow-right', 'bell', 'book-open', 'calendar', 'check', 'chevron-down', 'chevron-left', 'chevron-right', 'chevron-up', 'circle', 'circle-alert', 'circle-check', 'circle-question-mark', 'clock', 'download', 'ellipsis', 'external-link', 'file-text', 'folder', 'info', 'layout-dashboard', 'link', 'list', 'loader-circle', 'lock', 'menu', 'message-circle', 'paperclip', 'pencil', 'plus', 'refresh-cw', 'search', 'send', 'settings', 'smile', 'trash-2', 'triangle-alert', 'upload', 'user', 'users', 'x'];
+const names = ['arrow-left', 'arrow-right', 'ban', 'bell', 'bold', 'book-open', 'braces', 'calendar', 'check', 'chevron-down', 'chevron-left', 'chevron-right', 'chevron-up', 'circle', 'circle-alert', 'circle-check', 'circle-question-mark', 'clock', 'code', 'download', 'ellipsis', 'external-link', 'file-text', 'folder', 'heading', 'image', 'info', 'italic', 'layout-dashboard', 'link', 'list', 'list-ordered', 'loader-circle', 'lock', 'menu', 'message-circle', 'paperclip', 'pencil', 'plus', 'quote', 'refresh-cw', 'search', 'send', 'settings', 'smile', 'trash-2', 'triangle-alert', 'upload', 'user', 'user-x', 'users', 'x'];
 const aliases = { 'circle-help': 'circle-question-mark', refresh: 'refresh-cw', edit: 'pencil', delete: 'trash-2', close: 'x', warning: 'triangle-alert', error: 'circle-alert', success: 'circle-check' };
 const nodes = {};
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

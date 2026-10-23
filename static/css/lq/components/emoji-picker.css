@@ -1,0 +1,77 @@
+/* ── EmojiPicker：贴在触发器上方的 raised 浮层 ──────────────────────────────
+   DOM owner：static/js/emoji_picker.js（createEmojiPicker）。
+   材质：根节点声明 lq-glass + lq-domain-raised + data-lq-material="raised"，
+   填充 / 前景 / 描边由 materials.css 与 declarative.css 配对给出，这里不再配色；
+   前景只读 --lq-material-ink / --lq-material-muted。
+   表情格是 adoptDomainControl(kind='choice', variant='ghost') 的共享选择控件，
+   本文件只定几何（方形、无最小高度）。
+   消费者：私信输入区（message_center.js）、博客评论（blog.js）、反馈会话（feedback.js）。
+   出入场：ui_overlay_motion（data-lq-presence="panel"）；is-open 只切换可见性。 */
+.emoji-picker {
+    position: absolute;
+    inset-inline-end: 0;
+    bottom: calc(100% + var(--ls-s-2));
+    z-index: var(--ls-z-popover);
+    width: min(24rem, calc(100vw - var(--ls-s-8)));
+    max-height: min(22rem, 52vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--ls-s-3);
+    border-radius: var(--ls-r-lg);
+    color: hsl(var(--lq-material-ink, var(--ls-ink)));
+    opacity: 0;
+    pointer-events: none;
+}
+
+.emoji-picker.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.emoji-picker-section + .emoji-picker-section {
+    margin-top: var(--ls-s-2);
+}
+
+.emoji-picker-header {
+    padding: var(--ls-s-1) 0;
+    color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
+    font-size: var(--ls-t-caption);
+    line-height: var(--ls-leading-caption);
+    font-weight: var(--ls-weight-title3);
+}
+
+.emoji-picker-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--ls-s-1) / 2);
+}
+
+.emoji-picker-item {
+    width: calc(var(--ls-s-8) + var(--ls-s-1));
+    height: calc(var(--ls-s-8) + var(--ls-s-1));
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.emoji-picker-item img {
+    width: calc(var(--ls-s-5) + var(--ls-s-1) / 2);
+    height: calc(var(--ls-s-5) + var(--ls-s-1) / 2);
+    pointer-events: none;
+}
+
+.emoji-picker-empty {
+    padding: var(--ls-s-2);
+    color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+}
+
+@media (pointer: coarse) {
+    .emoji-picker-item {
+        width: var(--ls-s-10);
+        height: var(--ls-s-10);
+    }
+}

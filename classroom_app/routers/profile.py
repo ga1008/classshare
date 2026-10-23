@@ -180,7 +180,6 @@ def _render_profile(request: Request, user: dict, *, section: str, tab: str, con
         "profile_in_shell": in_shell,
         "profile_section_base": "/manage/me/" if in_shell else "/profile?section=",
         "profile_lq_enabled": profile_lq_enabled,
-        "messages_lq_enabled": lq_family_enabled("messages"),
         "profile_section_hrefs": {
             name: shell_profile_href(name) if in_shell else f"/profile?section={name}"
             for name in PROFILE_SECTIONS

@@ -1139,18 +1139,32 @@ if (app) {
         }
 
         if (!activeContact) {
-            contactCurrentEl.innerHTML = `
-                <div data-lq-component="surface" class="lq-surface message-center-empty__card">
-                    <h3>暂未选择联系人</h3>
-                    <p class="message-center-conversation__hint">
-                        ${options.length > 0 ? '请先通过搜索和下拉列表选择要打开的会话。' : '当前筛选条件下没有匹配的联系人。'}
-                    </p>
-                </div>
-            `;
+            renderEmpty(contactCurrentEl, '暂未选择联系人',
+                options.length > 0 ? '请先通过搜索和下拉列表选择要打开的会话。' : '当前筛选条件下没有匹配的联系人。');
             publishWorkspaceSnapshot();
             return;
         }
 
+        if (lqEnabled) {
+            // Shared Card carries the selected pairing (fill + ink) via data-lq-selected;
+            // the business selection itself still lives in the native select above.
+            const unread = Number(activeContact.unread_count || 0);
+            const preview = document.createElement('p');
+            preview.textContent = activeContact.last_message_preview || '暂无私信记录';
+            const card = lqContent.createContent('card', {
+                title: activeContact.display_name || '联系人', variant: 'flat',
+                meta: activeContact.subtitle || activeContact.role || '',
+                attrs: { 'data-contact-current': '' },
+            }, { body: [preview] });
+            card.dataset.lqComponent = 'surface';
+            card.dataset.lqSelected = 'true';
+            card.querySelector('.lq-card__actions').append(lqPresentation.createComponent('chip', {
+                label: unread > 0 ? `${unread} 条未读` : '已选择', tone: unread > 0 ? 'primary' : 'neutral', size: 'sm',
+            }));
+            contactCurrentEl.replaceChildren(card);
+            publishWorkspaceSnapshot();
+            return;
+        }
         contactCurrentEl.innerHTML = `
             <div class="message-center-contact__meta">
                 <strong class="message-center-contact__name">${escapeHtml(activeContact.display_name || '联系人')}</strong>
@@ -1164,13 +1178,21 @@ if (app) {
 
     function renderBlocks() {
         if (!Array.isArray(state.blocks) || state.blocks.length === 0) {
-            blockListEl.innerHTML = '<div class="message-center-block-empty">当前没有拉黑任何联系人。</div>';
+            blockListEl.innerHTML = '<p class="message-center-block-empty">当前没有拉黑任何联系人。</p>';
             blockCountEl.textContent = '0';
             publishWorkspaceSnapshot();
             return;
         }
 
         blockCountEl.textContent = String(state.blocks.length);
+        if (lqEnabled) {
+            blockListEl.replaceChildren(lqContent.createContent('list', { label: '黑名单', items: state.blocks.map(block => ({
+                title: block.display_name || '联系人', meta: block.role || '',
+                actions: [{ label: '解除', variant: 'ghost', attrs: { 'data-unblock': String(block.identity) } }],
+            })) }));
+            publishWorkspaceSnapshot();
+            return;
+        }
         blockListEl.innerHTML = state.blocks.map((block) => `
             <div class="message-center-block-item">
                 <div>
@@ -1310,7 +1332,7 @@ if (app) {
         if (state.conversationStatus === 'loading' || state.conversationStatus === 'error'
             || state.bootstrapStatus === 'error' || state.bootstrapStatus === 'loading') {
             const activeContact = getActiveContact();
-            conversationHeaderEl.innerHTML = `<div><h2 class="message-center-pane-title">${escapeHtml(activeContact?.display_name || '私信会话')}</h2></div>`;
+            conversationHeaderEl.innerHTML = `<div class="message-center-conversation__identity"><h2 class="message-center-pane-title">${escapeHtml(activeContact?.display_name || '私信会话')}</h2></div>`;
             if (state.bootstrapStatus === 'error') {
                 renderLoadFailure(conversationBodyEl, '信息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
             } else if (state.conversationStatus === 'error') {
@@ -1329,7 +1351,7 @@ if (app) {
         }
         if (!contact) {
             conversationHeaderEl.innerHTML = `
-                <div>
+                <div class="message-center-conversation__identity">
                     <h2 class="message-center-pane-title">选择一个联系人</h2>
                     <p class="message-center-conversation__hint">通过上方搜索和下拉列表打开会话后，即可查看与发送私信。</p>
                 </div>
@@ -1359,17 +1381,20 @@ if (app) {
         ` : '';
 
         conversationHeaderEl.innerHTML = `
-            <div>
+            <div class="message-center-conversation__identity">
                 <h2 class="message-center-pane-title">${escapeHtml(contact.display_name || '联系人')}</h2>
                 <p class="message-center-conversation__hint">${escapeHtml(contact.subtitle || contact.role || '')}</p>
                 ${contact.is_blocked_by_contact ? '<p class="message-center-conversation__hint">对方当前不接收你的私信。</p>' : ''}
             </div>
             <div class="message-center-conversation__tools">
-                ${contact.is_blocked ? '<span class="message-center-pill is-danger">已拉黑</span>' : ''}
+                ${contact.is_blocked ? '<span class="message-center-pill is-danger" data-blocked-badge>已拉黑</span>' : ''}
                 ${blockAction}
             </div>
         `;
 
+        if (lqEnabled && contact.is_blocked) {
+            conversationHeaderEl.querySelector('[data-blocked-badge]')?.replaceWith(lqPresentation.createComponent('chip', { label: '已拉黑', tone: 'danger', size: 'sm' }));
+        }
         if (lqEnabled && contact.can_block) {
             conversationHeaderEl.querySelector('[data-toggle-block]')?.replaceWith(lqPresentation.createComponent('button', {
                 label: contact.is_blocked ? '解除黑名单' : '加入黑名单', variant: 'ghost', size: 'sm',
@@ -1457,12 +1482,19 @@ if (app) {
         }
 
         if (state.aiReplyPollError) {
-            const notice = document.createElement('div');
-            notice.className = 'lq-surface message-center-empty__card';
-            notice.dataset.lqComponent = 'surface';
-            notice.dataset.aiPollError = '';
-            notice.innerHTML = `<p role="status">${escapeHtml(state.aiReplyPollError)}</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ai-poll-retry>刷新会话</button>`;
-            notice.querySelector('button').addEventListener('click', () => { void loadConversation(state.currentContact, state.currentScope, { showLoading: false }); });
+            let notice;
+            if (lqEnabled) {
+                notice = lqContent.createContent('empty', { reason: 'error', title: 'AI 回复状态同步失败', description: state.aiReplyPollError, variant: 'card',
+                    attrs: { 'data-ai-poll-error': '' }, actions: [{ label: '刷新会话', variant: 'soft', attrs: { 'data-ai-poll-retry': '' } }] });
+                notice.setAttribute('role', 'status');
+            } else {
+                notice = document.createElement('div');
+                notice.className = 'lq-surface message-center-empty__card';
+                notice.dataset.lqComponent = 'surface';
+                notice.dataset.aiPollError = '';
+                notice.innerHTML = `<p role="status">${escapeHtml(state.aiReplyPollError)}</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass" data-ai-poll-retry>刷新会话</button>`;
+            }
+            notice.querySelector('[data-ai-poll-retry]').addEventListener('click', () => { void loadConversation(state.currentContact, state.currentScope, { showLoading: false }); });
             conversationBodyEl.prepend(notice);
         }
         const canSend = Boolean(contact.can_send);

@@ -1,120 +1,127 @@
-{% set _messages_lq = messages_lq_enabled|default(false) %}
-{% if _messages_lq %}{% from 'macros/lq/button.html' import lq_btn %}{% endif %}
-            <section id="profile-message-center" class="message-center-shell profile-message-center{% if _messages_lq %} lq-messages{% endif %}" data-message-center-app{% if _messages_lq %} data-lq-messages data-private-href="{{ (profile_section_hrefs|default({})).get('private', '/profile?section=private') }}#profile-message-center" data-notifications-href="{{ (profile_section_hrefs|default({})).get('notifications', '/profile?section=notifications') }}#profile-message-center"{% endif %} data-message-center-mode="{{ 'private' if active_section == 'private' else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
+{#
+  消息中心（通知 / 私信）— 个人中心 partial。
+  结构合同：每个板块都是一个共享 Surface；控件一律是共享 Button / Field / Select；
+  会话气泡、通知行、空态、黑名单行由 message_center.js 通过 lq/content.js 工厂生成。
+  本文件只声明 DOM 与槽位，不写任何配色；布局见 static/css/lq/pages/message-center.css，
+  模块登记见 docs/lq-module-registry.md（messages 页面条目）。
+  业务 owner：static/js/message_center.js（id / data-* 钩子全部保留）。
+#}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% set _is_private = active_section == 'private' %}
+            <section id="profile-message-center" class="message-center-shell profile-message-center lq-messages" data-message-center-app data-lq-messages data-private-href="{{ (profile_section_hrefs|default({})).get('private', '/profile?section=private') }}#profile-message-center" data-notifications-href="{{ (profile_section_hrefs|default({})).get('notifications', '/profile?section=notifications') }}#profile-message-center" data-message-center-mode="{{ 'private' if _is_private else 'notifications' }}" data-initial-tab="{{ initial_tab }}" data-initial-contact="{{ initial_contact }}" data-initial-scope="{{ initial_scope if initial_scope is not none else '' }}">
                 <div
                     data-lanshare-island="message-center-page"
                     data-island-id="message-center-page-profile-{{ active_section }}"
                     hidden
                 ></div>
-                {% if _messages_lq %}<section class="lq-messages__overview lq-surface" data-lq-material="content" aria-label="{{ '私信概览' if active_section == 'private' else '通知概览' }}">{% endif %}
-                <section class="{% if _messages_lq %}lq-page-head lq-messages__heading{% else %}profile-band profile-stream-head profile-reveal{% endif %}">
-                    <div>
-                        <h2{% if _messages_lq %} class="lq-page-head__title"{% endif %} data-explain data-explain-title="{{ '私信' if active_section == 'private' else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if active_section == 'private' else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if active_section == 'private' else '通知中心' }}</h2>
-                    </div>
-                    {# 工作台状态卡是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}
+
+                {# 概览板块：标题 + 工作台状态岛（刷新 / 通知 / 私信 / 输入） #}
+                <section data-lq-component="surface" data-lq-material="content" data-lq-padding="md" class="lq-surface lq-messages__overview" aria-label="{{ '私信概览' if _is_private else '通知概览' }}">
+                    <header class="lq-page-head lq-messages__heading">
+                        <div class="page-head__copy">
+                            <h2 class="lq-page-head__title" data-explain data-explain-title="{{ '私信' if _is_private else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if _is_private else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if _is_private else '通知中心' }}</h2>
+                        </div>
+                    </header>
+                    {# 工作台状态岛是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}
                     <div hidden>
                         <strong id="message-center-unread-total">0</strong>
                         <strong id="message-center-current-tab-label">全部</strong>
                         <strong id="message-center-contact-total">0</strong>
                     </div>
+                    <div
+                        class="message-center-workspace-island"
+                        data-lanshare-island="message-center-workspace-sync"
+                        data-island-id="message-center-workspace-profile-{{ active_section }}"
+                    ></div>
                 </section>
 
-                <div
-                    class="message-center-workspace-island{% if not _messages_lq %} profile-reveal{% endif %}"
-                    data-lanshare-island="message-center-workspace-sync"
-                    data-island-id="message-center-workspace-profile-{{ active_section }}"
-                ></div>
-                {% if _messages_lq %}</section>{% endif %}
-
-                <section data-lq-component="surface" data-lq-padding="md" data-lq-material="content" class="lq-surface message-center-toolbar profile-message-toolbar{% if not _messages_lq %} profile-reveal{% endif %}" aria-label="消息筛选与操作">
-                    <div data-lq-component="toolbar" class="lq-domain-toolbar message-center-tabs" id="message-center-tabs"{% if _messages_lq %} role="group" aria-label="通知分类筛选"{% endif %}></div>
+                {# 筛选板块：分类芯片 + 搜索 / 阅读状态 / 操作 #}
+                <section data-lq-component="surface" data-lq-material="content" data-lq-padding="md" class="lq-surface message-center-toolbar profile-message-toolbar" aria-label="消息筛选与操作">
+                    <div data-lq-component="toolbar" class="lq-domain-toolbar message-center-tabs" id="message-center-tabs" role="group" aria-label="通知分类筛选"></div>
                     <div class="message-center-controls">
-                        {% if _messages_lq %}
                         <div class="lq-field lq-messages__search-field">
                             <label class="lq-field__label" for="message-center-search">搜索消息</label>
                             <div class="lq-field__control"><input id="message-center-search" class="message-center-search lq-input" type="search" placeholder="搜索标题或内容关键词"></div>
                         </div>
                         <div class="lq-field lq-messages__filter-field">
                             <label class="lq-field__label" for="message-center-filter">阅读状态</label>
-                            <select data-lq-component="select" data-lq-dropdown id="message-center-filter" class="message-center-filter lq-select" aria-label="阅读状态"></select>
+                            {# 阅读状态由 message_center.js 的 Selection（combobox）持有呈现：声明 owner，平台 Dropdown 不再二次接管同一个 select #}
+                            <select data-lq-component="select" data-lq-selection-owner id="message-center-filter" class="message-center-filter lq-select" aria-label="阅读状态"></select>
                         </div>
-                        {% else %}
-                        <div class="lq-search"><input data-lq-component="input" id="message-center-search" class="lq-input message-center-search" type="search" placeholder="搜索关键词"></div>
-                        <select data-lq-dropdown data-lq-component="select" id="message-center-filter" class="lq-select message-center-filter"></select>
-                        {% endif %}
-                        {% if _messages_lq and active_section != 'private' %}{{ lq_btn('通知设置', id='message-center-settings', variant='ghost', icon='settings') }}{% endif %}
-                        {% if _messages_lq %}{{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}{% else %}<button data-lq-component="button" type="button" id="message-center-mark-read" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass">标记当前已读</button>{% endif %}
+                        {% if not _is_private %}{{ lq_btn('通知设置', id='message-center-settings', variant='ghost', icon='settings') }}{% endif %}
+                        {{ lq_btn('标记当前已读', id='message-center-mark-read', variant='soft', icon='check') }}
                     </div>
                 </section>
 
-                <section class="message-center-body profile-message-body{% if not _messages_lq %} profile-reveal{% endif %}">
-                    <div id="message-center-feed" class="message-center-feed"{% if _messages_lq %} role="region" aria-label="通知列表"{% endif %} data-lq-material="content"></div>
-                    <div data-lq-component="surface" id="message-center-private-panel" class="lq-surface message-center-private-panel" hidden data-lq-material="content">
-                        <aside class="message-center-sidebar">
-                            <div class="message-center-pane-header">
+                <section class="message-center-body profile-message-body">
+                    {# 通知列表：lq-list / lq-row 由 JS 生成；本容器是这一档的顶层面板（材质边界） #}
+                    <div id="message-center-feed" class="message-center-feed" role="region" aria-label="通知列表" data-lq-material="content"></div>
+
+                    {# 私信面板：一个 Surface 作为边界，内部两栏仅做分区，不再各自建材质 #}
+                    <div data-lq-component="surface" id="message-center-private-panel" class="lq-surface message-center-private-panel" hidden data-lq-material="content" data-lq-padding="none">
+                        <aside class="message-center-sidebar" aria-label="联系人">
+                            <div class="message-center-pane-head">
                                 <h2 class="message-center-pane-title">私信会话</h2>
                                 <p class="message-center-conversation__hint">支持联系本班同学、老师与 AI 助教。</p>
                             </div>
                             <div class="message-center-contact-picker">
-                                <label for="message-center-contact-search" class="message-center-conversation__hint">联系人搜索</label>
-                                <div class="lq-search"><input data-lq-component="input" id="message-center-contact-search" class="lq-input message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词"></div>
-                                <label for="message-center-contact-select" class="message-center-conversation__hint">联系人下拉列表</label>
-                                <select data-lq-dropdown data-lq-component="select" id="message-center-contact-select" class="lq-select message-center-contact-select"></select>
-                                <div id="message-center-contact-current" class="message-center-contact-current"></div>
-                                {% if _messages_lq %}<div id="message-center-recent-contacts" hidden></div>{% endif %}
+                                <div class="lq-field">
+                                    <label class="lq-field__label" for="message-center-contact-search">联系人搜索</label>
+                                    <div class="lq-field__control"><input data-lq-component="input" id="message-center-contact-search" class="lq-input message-center-search message-center-search--compact" type="search" placeholder="输入姓名、课程、班级关键词"></div>
+                                </div>
+                                <div class="lq-field">
+                                    <label class="lq-field__label" for="message-center-contact-select">联系人</label>
+                                    <select aria-label="选择联系人" data-lq-dropdown data-lq-component="select" id="message-center-contact-select" class="lq-select message-center-contact-select"></select>
+                                </div>
                             </div>
-                            <div class="message-center-blocks">
-                                <div class="message-center-card__actions">
-                                    <h3 class="message-center-pane-title">黑名单</h3>
-                                    <span class="message-center-pill" id="message-center-block-count">0</span>
+                            {# 当前联系人卡（lq-card，选中态 data-lq-selected）与最近会话列表（lq-list）由 JS 生成 #}
+                            <div id="message-center-contact-current" class="message-center-contact-current"></div>
+                            <div id="message-center-recent-contacts" class="message-center-recent" hidden></div>
+                            <section class="message-center-blocks" aria-labelledby="message-center-blocks-title">
+                                <div class="message-center-pane-row">
+                                    <h3 class="message-center-pane-title message-center-pane-title--sub" id="message-center-blocks-title">黑名单</h3>
+                                    <span class="lq-badge" data-tone="neutral" id="message-center-block-count" aria-label="黑名单人数">0</span>
                                 </div>
                                 <div id="message-center-block-list" class="message-center-block-list"></div>
-                            </div>
+                            </section>
                         </aside>
-                        <section class="message-center-conversation">
+                        <section class="message-center-conversation" aria-label="当前会话">
                             <div id="message-center-conversation-header" class="message-center-conversation__header"></div>
-                            <div id="message-center-conversation-body" class="message-center-conversation__body"{% if _messages_lq %} role="region" aria-label="私信消息"{% endif %}></div>
-                            <div class="message-center-composer{% if _messages_lq %} lq-composer lq-surface{% endif %}">
+                            <div id="message-center-conversation-body" class="message-center-conversation__body" role="region" aria-label="私信消息"></div>
+                            {# 输入区：共享 Composer 的槽位结构（content / input / actions.tools + send）；
+                               textarea 不单独套控件材质，焦点环落在整个 composer 外壳上 #}
+                            <div class="message-center-composer lq-composer lq-surface" data-lq-component="surface" data-lq-material="content">
                                 <form id="message-center-compose-form" class="message-center-composer__form">
                                     <div id="message-center-attachment-preview" class="message-center-attachment-preview" hidden></div>
                                     <input data-lq-component="file" class="lq-native-file" id="message-center-image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden aria-label="选择图片">
                                     <input data-lq-component="file" class="lq-native-file" id="message-center-file-input" type="file" multiple hidden aria-label="选择附件">
-                                    <div class="message-center-composer__editor">
-                                        <div class="message-center-composer__main{% if _messages_lq %} lq-field{% endif %}">
-                                            <div data-lq-component="toolbar" id="message-center-editor-toolbar" class="lq-domain-toolbar message-center-editor-toolbar">
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="heading" title="标题">H</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="bold" title="加粗"><b>B</b></button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="italic" title="斜体"><i>I</i></button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="code" title="行内代码">&lt;/&gt;</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="codeblock" title="代码块">{ }</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="ul" title="无序列表">&#8226;</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="ol" title="有序列表">1.</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="quote" title="引用">&ldquo;</button>
-                                                <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-md-insert="link" title="链接">&#128279;</button>
+                                    <div class="message-center-composer__main lq-field">
+                                        <div class="message-center-composer__head">
+                                            <label class="lq-field__label" for="message-center-compose-input">私信内容</label>
+                                            <div data-lq-component="toolbar" id="message-center-editor-toolbar" class="lq-domain-toolbar message-center-editor-toolbar" role="toolbar" aria-label="Markdown 格式">
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='heading', attrs={'data-md-insert': 'heading', 'aria-label': '标题', 'title': '标题'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='bold', attrs={'data-md-insert': 'bold', 'aria-label': '加粗', 'title': '加粗'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='italic', attrs={'data-md-insert': 'italic', 'aria-label': '斜体', 'title': '斜体'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='code', attrs={'data-md-insert': 'code', 'aria-label': '行内代码', 'title': '行内代码'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='braces', attrs={'data-md-insert': 'codeblock', 'aria-label': '代码块', 'title': '代码块'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='list', attrs={'data-md-insert': 'ul', 'aria-label': '无序列表', 'title': '无序列表'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='list-ordered', attrs={'data-md-insert': 'ol', 'aria-label': '有序列表', 'title': '有序列表'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='quote', attrs={'data-md-insert': 'quote', 'aria-label': '引用', 'title': '引用'}) }}
+                                                {{ lq_btn('', variant='ghost', size='sm', icon='link', attrs={'data-md-insert': 'link', 'aria-label': '链接', 'title': '链接'}) }}
                                             </div>
-                                            {% if _messages_lq %}<label class="lq-field__label" for="message-center-compose-input">私信内容</label>{% endif %}
-                                            <textarea data-lq-component="textarea" id="message-center-compose-input" class="lq-textarea message-center-composer__input{% if _messages_lq %} lq-composer__input{% endif %}" placeholder="输入私信内容（支持 Markdown 语法）"{% if _messages_lq %} rows="1" data-lq-auto-grow="true" aria-describedby="message-center-compose-hint"{% endif %}></textarea>
-                                            {% if _messages_lq %}<p id="message-center-compose-hint" class="lq-field__help">选择联系人后可发送；Enter 换行，点击发送提交。</p>{% endif %}
                                         </div>
-                                        <div class="message-center-composer__actions">
-                                            {% if _messages_lq %}
+                                        <textarea id="message-center-compose-input" class="lq-composer__input message-center-composer__input" placeholder="输入私信内容（支持 Markdown 语法）" rows="1" data-lq-auto-grow="true" aria-describedby="message-center-compose-hint"></textarea>
+                                        <p id="message-center-compose-hint" class="lq-field__help">选择联系人后可发送；Enter 换行，点击发送提交。图片和附件保存在当前会话草稿中。</p>
+                                    </div>
+                                    <div class="lq-composer__actions message-center-composer__actions">
+                                        <div class="lq-composer__tools">
                                             {{ lq_btn('图片', id='message-center-image-trigger', variant='ghost', icon='image') }}
                                             {{ lq_btn('附件', id='message-center-file-trigger', variant='ghost', icon='paperclip') }}
-                                            {% else %}
-                                            <button data-lq-component="button" type="button" id="message-center-image-trigger" class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button" title="添加图片">图片</button>
-                                            <button data-lq-component="button" type="button" id="message-center-file-trigger" class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button" title="添加文件">附件</button>
-                                            {% endif %}
                                             <div id="message-center-emoji-anchor" class="message-center-emoji-anchor">
-                                                {% if _messages_lq %}{{ lq_btn('表情', id='message-center-emoji-trigger', variant='ghost', icon='smile') }}{% else %}<button data-lq-component="button" type="button" id="message-center-emoji-trigger" class="lq-btn lq-btn--sm lq-btn--glass message-center-composer__action-button message-center-emoji-trigger" title="表情">
-                                                    <span class="message-center-composer__action-icon" aria-hidden="true">&#128522;</span>
-                                                    <span>表情</span>
-                                                </button>{% endif %}
+                                                {{ lq_btn('表情', id='message-center-emoji-trigger', variant='ghost', icon='smile') }}
                                             </div>
-                                            {% if _messages_lq %}{{ lq_btn('发送', icon='send', variant='prominent', type='submit', attrs={'data-send-button':''}) }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent message-center-compose-submit" data-send-button>
-                                                <span class="message-center-compose-submit__spinner" aria-hidden="true"></span>
-                                                <span class="message-center-compose-submit__label">发送</span>
-                                            </button>{% endif %}
                                         </div>
+                                        {{ lq_btn('发送', icon='send', variant='prominent', type='submit', attrs={'data-send-button': ''}) }}
                                     </div>
                                 </form>
                             </div>

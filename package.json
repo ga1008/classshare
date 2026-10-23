@@ -7,6 +7,8 @@
     "dev:frontend": "vite --host 127.0.0.1 --port 5173",
     "inventory:frontend": "python tools/frontend_migration_inventory.py",
     "inventory:lq": "python tools/frontend_migration_inventory.py --lq-registry",
+    "inventory:lq-modules": "python tools/ui/lq_module_registry.py",
+    "check:lq-modules": "python tools/ui/lq_module_registry.py --check",
     "lint:lq": "python tools/ui/lint_lq.py",
     "check:lq-size": "node tools/ui/measure_lq_entry.mjs --production --check",
     "test": "vitest run",

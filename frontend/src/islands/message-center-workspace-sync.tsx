@@ -1,12 +1,9 @@
-import { Bell, MessageCircle, RefreshCw, Send, ShieldMinus } from 'lucide-react';
-import type { MouseEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
-import { LqButton, LqCardFrame } from '@/components/lq-presentation';
+import { LqButton } from '@/components/lq-presentation';
 import {
   buildMessageCenterWorkspaceMessage,
-  canUsePrivateWorkspace,
   getPrimaryMessageCenterMetric,
   MESSAGE_CENTER_WORKSPACE_COMMAND_EVENT,
   MESSAGE_CENTER_WORKSPACE_EVENT,
@@ -24,33 +21,12 @@ function sendWorkspaceCommand(type: string, detail: Record<string, unknown> = {}
   }));
 }
 
-function Metric({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string;
-  value: number | string;
-  tone?: string;
-}) {
-  return (
-    <div className={`message-center-workspace-sync__metric is-${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
 function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspaceSnapshot }) {
   const message = buildMessageCenterWorkspaceMessage(snapshot);
   const primaryMetric = getPrimaryMessageCenterMetric(snapshot);
-  const privateDirect = canUsePrivateWorkspace(snapshot);
-  const contactLabel = snapshot.currentContactName || '未选择';
-  const contactMeta = snapshot.currentContactSubtitle || (snapshot.privateOpen ? '私信会话' : '通知列表');
-  const privateHref = '/profile?section=private&tab=private_message#profile-message-center';
-  const notificationsHref = '/profile?section=notifications#profile-message-center';
 
-  if (snapshot.lqEnabled) return (
+  // The messages family is unconditionally LQ (2026-10-24): one presentation, shared components only.
+  return (
     <section className="lq-message-workspace" aria-label="消息概况" data-message-center-workspace-sync>
       <p className="lq-message-workspace__status" role="status">{message}</p>
       {snapshot.loadStatus === 'ready' ? <dl className="lq-message-workspace__counts">
@@ -65,93 +41,6 @@ function MessageCenterWorkspace({ snapshot }: { snapshot: MessageCenterWorkspace
         {snapshot.privateOpen ? <LqButton label="输入" icon="pencil" variant="ghost" disabled={!snapshot.hasConversation || !snapshot.canSend} onClick={() => sendWorkspaceCommand('focus-composer')} /> : null}
       </div>
     </section>
-  );
-
-  const handlePrivateClick = (event: MouseEvent<HTMLElement>) => {
-    if (!privateDirect) {
-      return;
-    }
-    event.preventDefault();
-    sendWorkspaceCommand('set-tab', { tab: 'private_message' });
-  };
-
-  const handleNotificationsClick = (event: MouseEvent<HTMLElement>) => {
-    if (snapshot.mode !== 'private') {
-      event.preventDefault();
-      sendWorkspaceCommand('set-tab', { tab: 'all' });
-    }
-  };
-
-  return (
-    <LqCardFrame as="section" title={snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel} className="message-center-workspace-sync" attrs={{ 'data-message-center-workspace-sync': '' }}>
-      <div className="message-center-workspace-sync__summary">
-        <span className="message-center-workspace-sync__eyebrow">
-          <Bell size={14} aria-hidden="true" />
-          {snapshot.privateOpen ? '私信工作台' : '通知工作台'}
-        </span>
-        <h2>{snapshot.privateOpen ? contactLabel : snapshot.currentTabLabel}</h2>
-        <p role="status">{message}</p>
-        <div className="message-center-workspace-sync__chips">
-          {snapshot.filterLabel && snapshot.filterLabel !== '全部' ? <span>{snapshot.filterLabel}</span> : null}
-          {snapshot.keyword ? <span>关键词：{snapshot.keyword}</span> : null}
-          {snapshot.pendingAttachmentCount > 0 ? <span>待发附件 {snapshot.pendingAttachmentCount}</span> : null}
-          {snapshot.isSendingMessage ? <span>发送中</span> : null}
-          {snapshot.sendCooldownSeconds > 0 ? <span>{snapshot.sendCooldownSeconds}s 后可发送</span> : null}
-        </div>
-      </div>
-
-      <div className="message-center-workspace-sync__metrics">
-        <Metric label={primaryMetric.label} value={primaryMetric.value} tone="primary" />
-        <Metric label="总未读" value={snapshot.unreadTotal} tone={snapshot.unreadTotal > 0 ? 'danger' : 'success'} />
-        {snapshot.privateOpen ? (
-          <Metric label="联系人" value={`${snapshot.visibleContactTotal}/${snapshot.contactTotal}`} tone="contact" />
-        ) : null}
-        {snapshot.blockCount > 0 ? (
-          <Metric label="黑名单" value={snapshot.blockCount} tone="warning" />
-        ) : null}
-      </div>
-
-      {snapshot.privateOpen && (snapshot.currentContactUnread > 0 || snapshot.isBlocked) ? (
-        <div className="message-center-workspace-sync__contact">
-          <div>
-            <span>当前联系人</span>
-            <strong>{contactLabel}</strong>
-            <small>{contactMeta}</small>
-          </div>
-          {snapshot.currentContactUnread > 0 ? (
-            <em>{snapshot.currentContactUnread} 条未读</em>
-          ) : null}
-          {snapshot.isBlocked ? (
-            <em className="is-warning"><ShieldMinus size={13} aria-hidden="true" /> 已拉黑</em>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="message-center-workspace-sync__actions" aria-label="消息中心快捷操作">
-        <LqButton size="sm" variant="glass" type="button" onClick={() => sendWorkspaceCommand('refresh')}>
-          <RefreshCw size={15} aria-hidden="true" />
-          刷新
-        </LqButton>
-        <LqButton size="sm" variant="glass" href={notificationsHref} onClick={handleNotificationsClick}>
-          <Bell size={15} aria-hidden="true" />
-          通知
-        </LqButton>
-        <LqButton size="sm" variant="glass" href={privateHref} onClick={handlePrivateClick}>
-          <MessageCircle size={15} aria-hidden="true" />
-          私信
-        </LqButton>
-        {snapshot.privateOpen ? (
-          <LqButton size="sm" variant="glass"
-            type="button"
-            onClick={() => sendWorkspaceCommand('focus-composer')}
-            disabled={!snapshot.hasConversation || !snapshot.canSend}
-          >
-            <Send size={15} aria-hidden="true" />
-            输入
-          </LqButton>
-        ) : null}
-      </div>
-    </LqCardFrame>
   );
 }
 

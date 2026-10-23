@@ -92,7 +92,8 @@ class ProfileFamilyRoutingTests(unittest.TestCase):
                     self.assertEqual(200, response.status_code)
                     context = self.rendered[-1][1]
                     self.assertEqual(profile_on, context['profile_lq_enabled'])
-                    self.assertEqual(messages_on, context['messages_lq_enabled'])
+                    # The messages partial is unconditionally LQ (2026-10-24); no server flag is exposed.
+                    self.assertNotIn('messages_lq_enabled', context)
                     self.assertEqual('teacher:91', context['initial_contact'])
                     self.assertEqual(41, context['initial_scope'])
                     self.assertEqual('private_message', context['initial_tab'])

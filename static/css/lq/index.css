@@ -27,6 +27,7 @@
 @import "./components/insights.css";
 @import "./components/shells.css";
 @import "./components/composer.css";
+@import "./components/emoji-picker.css";
 @import "./components/lightbox.css";
 @import "./components/prose-copy.css";
 @import "./components/page-backdrop.css";

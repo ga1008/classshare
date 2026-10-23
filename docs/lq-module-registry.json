@@ -1,0 +1,8168 @@
+{
+ "generatedAt": "2026-10-24",
+ "generator": "python tools/ui/lq_module_registry.py",
+ "modules": {
+  "materials": {
+   "css": "static/css/lq/materials.css",
+   "roots": [
+    "lq-glass",
+    "lq-material-accent",
+    "lq-material-control",
+    "lq-material-muted",
+    "lq-profile",
+    "lq-surface"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Materials 材质层（四层材质模型）",
+   "layer": "foundation",
+   "notes": {
+    "summary": "control / content / chrome / raised / clear 五档材质的配方：填充、模糊、光泽边、与填充配对的 ink/muted/accent。`.lq-glass` 与 `.lq-surface` 是材质根；场景色调 `data-lq-tone` / `html[data-lq-scene-tone]` 同时切换填充与全部前景。",
+    "params": "`data-lq-material=\"content|raised|clear|control\"`、`.lq-glass--thick/--clear`、`.lq-surface--frost/--boundary`、`data-lq-tone=\"light|dark\"`、`data-lq-scene=\"auto\"`。",
+    "states": "透明关闭 / 高对比 / Tier B·C / forced-colors 退回不透明主题配对；嵌套材质自动不再成为模糊宿主。",
+    "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
+   },
+   "consumers": {
+    "count": 174,
+    "files": [
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 45
+     },
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 23
+     },
+     {
+      "path": "templates/manage/system/blog_crawler.html",
+      "hits": 22
+     },
+     {
+      "path": "templates/assignment_detail_student.html",
+      "hits": 15
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 13
+     },
+     {
+      "path": "templates/submission_detail.html",
+      "hits": 12
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 11
+     },
+     {
+      "path": "templates/exam_editor.html",
+      "hits": 11
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 11
+     },
+     {
+      "path": "templates/manage/offerings.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/manage/student_detail.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/assignment_wrong_summary.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/dev/lq.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/system/monitor.html",
+      "hits": 8
+     },
+     {
+      "path": "static/js/classroom_interactions.js",
+      "hits": 7
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/ai.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/partials/materials/modals_repository.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/signatures.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/ai_usage.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/materials/modals_generate.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/materials/modals_library.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/profile/portfolio.html",
+      "hits": 6
+     },
+     {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 5
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/profile_signatures.js",
+      "hits": 5
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/session_material_ai_modal.html",
+      "hits": 5
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/dev/lq_business.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/me_credentials.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/diagnostics.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/exams/modals.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/student_login_v4.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/classroom_material_list.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_assessment_plans.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_blog_crawler.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_blog_review.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_lesson_plans.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_organizations.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/material_selection_panel.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/teacher_onboarding.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/error.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/macros/manage_insights.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/academic_overview.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/system/agent_keys.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/classroom_members/exams.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/exams/board.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/profile/overview.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/teacher_onboarding_modal.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/permission_denied.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/points_shop.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/report_card.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/session_expired.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/status.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/teacher_login_v4.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/wrong_book.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/app_files.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/cultivation_identity.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/login_scene.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ls_image_lightbox.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_section.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_point_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_insights.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_status.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/macros/manage_page.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/course_schedule.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/exams.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/organizations.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/super_admin.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_members/settings.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/job_targets.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/student_auth_flow_v4.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/teacher_register_v4.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/academic_final_materials.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/chat.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/emoji_picker.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/group_assignment_config.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/group_peer_eval.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/lessondoc_wizard.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_agent_keys.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_course_schedule.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_gongwen_integrations.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_life_tips.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_semesters.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_system_monitor.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_textbooks.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/material_hub.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/offering_bootstrap.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/process_material_modal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_applications.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_builder.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_home.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_list.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_personal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/signature_pad.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ui_explanation.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/achievements.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/base_navbar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_centered.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_content.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_data.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_workspace.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/macros/user_ui_preferences.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/course_schedule_editor.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/life_tips.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/lq_sidebar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/offering_merge.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/material_viewer.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_group_qr.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_members/overview.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_task_preview.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/cultivation_card.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/learning_certificate_reveal.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/learning_material_selector.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/lq_navbar_topbar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/profile/body.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/student_security_modal.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/resume/builder.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/resume/layout.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/teacher_evaluation_editor.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "business": {
+   "css": "static/css/lq/components/business.css",
+   "roots": [
+    "lq-clock",
+    "lq-job",
+    "lq-nav-grid"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/business.html": [
+      "lq_deadline_clock",
+      "lq_job_status",
+      "lq_question_navigator"
+     ]
+    },
+    "js": {
+     "static/js/lq/business.js": [
+      "BUSINESS_KINDS",
+      "businessMarkup",
+      "businessProps",
+      "createBusiness",
+      "deadlineClock",
+      "deadline_clock",
+      "html",
+      "jobStatus",
+      "job_status",
+      "questionNavigator",
+      "question_navigator"
+     ]
+    },
+    "python": "classroom_app/lq_business.py",
+    "react": []
+   },
+   "title": "Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）",
+   "layer": "component",
+   "notes": {
+    "summary": "截止时钟、异步任务状态、题目导航网格；原控制器继续持有时钟、任务轮询与代次检查。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "templates/dev/lq_business.html",
+      "hits": 5
+     }
+    ]
+   }
+  },
+  "button": {
+   "css": "static/css/lq/components/button.css",
+   "roots": [
+    "lq-btn"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/button.html": [
+      "lq_btn"
+     ]
+    },
+    "js": {
+     "static/js/lq/components.js": [
+      "avatar",
+      "badge",
+      "button",
+      "chip",
+      "componentMarkup",
+      "createComponent",
+      "enhanceComponents",
+      "html",
+      "progress",
+      "skeleton",
+      "spinner"
+     ]
+    },
+    "python": "classroom_app/lq_components.py",
+    "react": [
+     "LqButton"
+    ]
+   },
+   "title": "Button 按钮",
+   "layer": "component",
+   "notes": {
+    "summary": "所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。",
+    "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。",
+    "states": "default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。",
+    "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。"
+   },
+   "consumers": {
+    "count": 267,
+    "files": [
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 387
+     },
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 312
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 220
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 196
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 158
+     },
+     {
+      "path": "templates/exam_editor.html",
+      "hits": 154
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 148
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 125
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 124
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 121
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 120
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 108
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 108
+     },
+     {
+      "path": "static/js/manage_lesson_plans.js",
+      "hits": 104
+     },
+     {
+      "path": "templates/submission_detail.html",
+      "hits": 104
+     },
+     {
+      "path": "static/js/teacher_onboarding.js",
+      "hits": 92
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 88
+     },
+     {
+      "path": "static/js/resume_list.js",
+      "hits": 84
+     },
+     {
+      "path": "templates/partials/materials/modals_generate.html",
+      "hits": 84
+     },
+     {
+      "path": "static/js/manage_assessment_plans.js",
+      "hits": 80
+     },
+     {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "hits": 80
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 80
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 80
+     },
+     {
+      "path": "templates/manage/signatures.html",
+      "hits": 80
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 68
+     },
+     {
+      "path": "static/js/lessondoc_wizard.js",
+      "hits": 65
+     },
+     {
+      "path": "static/js/classroom_interactions.js",
+      "hits": 64
+     },
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 64
+     },
+     {
+      "path": "templates/partials/materials/modals_library.html",
+      "hits": 64
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 61
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 60
+     },
+     {
+      "path": "templates/partials/materials/modals_repository.html",
+      "hits": 60
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 56
+     },
+     {
+      "path": "templates/partials/classroom_group_qr.html",
+      "hits": 56
+     },
+     {
+      "path": "templates/partials/exams/board.html",
+      "hits": 56
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 53
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 53
+     },
+     {
+      "path": "static/js/profile_signatures.js",
+      "hits": 52
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 52
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 52
+     },
+     {
+      "path": "templates/material_viewer.html",
+      "hits": 52
+     },
+     {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "hits": 52
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 49
+     },
+     {
+      "path": "templates/manage/offerings.html",
+      "hits": 48
+     },
+     {
+      "path": "static/js/classroom_materials.js",
+      "hits": 47
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 47
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 45
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 45
+     },
+     {
+      "path": "templates/partials/ai_workspace_widget.html",
+      "hits": 45
+     },
+     {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 44
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 44
+     },
+     {
+      "path": "static/js/signature_point_workflow.js",
+      "hits": 44
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 44
+     },
+     {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "hits": 44
+     },
+     {
+      "path": "templates/assignment_wrong_summary.html",
+      "hits": 41
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 40
+     },
+     {
+      "path": "templates/assignment_detail_student.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/manage/academic_overview.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/partials/classroom_task_preview.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/partials/profile/portfolio.html",
+      "hits": 40
+     },
+     {
+      "path": "templates/student_login_v4.html",
+      "hits": 40
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 36
+     },
+     {
+      "path": "static/js/material_selection_panel.js",
+      "hits": 36
+     },
+     {
+      "path": "templates/manage/system/blog_crawler.html",
+      "hits": 36
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 36
+     },
+     {
+      "path": "templates/partials/exams/modals.html",
+      "hits": 36
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 34
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 34
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 34
+     },
+     {
+      "path": "static/js/academic_final_materials.js",
+      "hits": 32
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 32
+     },
+     {
+      "path": "templates/lesson_plan_editor.html",
+      "hits": 32
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 32
+     },
+     {
+      "path": "templates/partials/lq_navbar_topbar.html",
+      "hits": 31
+     },
+     {
+      "path": "templates/manage/system/organizations.html",
+      "hits": 29
+     },
+     {
+      "path": "templates/partials/profile/email.html",
+      "hits": 29
+     },
+     {
+      "path": "static/js/ai_workspace_capture.js",
+      "hits": 28
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 28
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 28
+     },
+     {
+      "path": "templates/assessment_plan_editor.html",
+      "hits": 28
+     },
+     {
+      "path": "templates/partials/learning_material_selector.html",
+      "hits": 28
+     },
+     {
+      "path": "templates/teacher_evaluation_editor.html",
+      "hits": 28
+     },
+     {
+      "path": "static/js/materials_library_cards.js",
+      "hits": 25
+     },
+     {
+      "path": "static/js/app_files.js",
+      "hits": 24
+     },
+     {
+      "path": "static/js/ls_image_lightbox.js",
+      "hits": 24
+     },
+     {
+      "path": "static/js/manage_organizations.js",
+      "hits": 24
+     },
+     {
+      "path": "static/js/signature_workflows.js",
+      "hits": 24
+     },
+     {
+      "path": "static/js/student_dashboard_schedule.js",
+      "hits": 24
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/manage/ai.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/manage/student_detail.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/manage/system/diagnostics.html",
+      "hits": 24
+     },
+     {
+      "path": "frontend/src/islands/exam-assign-sync.tsx",
+      "hits": 23
+     },
+     {
+      "path": "frontend/src/islands/assignment-authoring-sync.tsx",
+      "hits": 21
+     },
+     {
+      "path": "static/js/signature_pad.js",
+      "hits": 21
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 21
+     },
+     {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "hits": 20
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/classroom_material_list.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/group_assignment_config.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/learning_material_selector.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/manage_academic_integrations.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/manage_smart_classroom_integrations.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/manage_textbooks.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/resume_job_targets.js",
+      "hits": 20
+     },
+     {
+      "path": "templates/career_path.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/system/feedback.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/system/monitor.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/material_render_shell.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/classroom_members/settings.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/exams/scripts.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/profile/hero.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/session_material_ai_modal.html",
+      "hits": 20
+     },
+     {
+      "path": "static/js/manage_semesters.js",
+      "hits": 19
+     },
+     {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 19
+     },
+     {
+      "path": "static/js/profile.js",
+      "hits": 18
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 18
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 18
+     },
+     {
+      "path": "static/js/manage_blog_crawler.js",
+      "hits": 16
+     },
+     {
+      "path": "static/js/manage_gongwen_integrations.js",
+      "hits": 16
+     },
+     {
+      "path": "static/js/material_editors.js",
+      "hits": 16
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 16
+     },
+     {
+      "path": "templates/manage/course_schedule_editor.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/manage/exams.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/assessment_classification_batch.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/classroom_members/alerts.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/classroom_members/exams.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/teacher_onboarding_modal.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/resume/builder.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/resume/home.html",
+      "hits": 16
+     },
+     {
+      "path": "static/js/ai_chat_component.js",
+      "hits": 15
+     },
+     {
+      "path": "templates/macros/manage_page.html",
+      "hits": 15
+     },
+     {
+      "path": "templates/partials/dashboard_agenda_widget.html",
+      "hits": 15
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 15
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 14
+     },
+     {
+      "path": "static/js/process_material_modal.js",
+      "hits": 13
+     },
+     {
+      "path": "templates/manage/system/agent_keys.html",
+      "hits": 13
+     },
+     {
+      "path": "static/js/agent_workbench_render.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/career_path_network.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/classroom_retake.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/cultivation_identity.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/grade_publication_controls.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/group_peer_eval.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/manage_agent_keys.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/manage_classes.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/manage_life_tips.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/manage_system_monitor.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/offering_bootstrap.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/resume_builder.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/resume_personal.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/resume_section.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/teaching_lifecycle_review.js",
+      "hits": 12
+     },
+     {
+      "path": "templates/manage/layout.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/manage/life_tips.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/partials/app_topbar_utility_actions.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/partials/assessment_kind_control.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/resume/personal.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/wrong_book.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/permission_denied.html",
+      "hits": 11
+     },
+     {
+      "path": "static/js/academic_sync_dialog.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/whiteboard/toolbar.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/agent_workbench.js",
+      "hits": 9
+     },
+     {
+      "path": "static/js/chat.js",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/lq_utility.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/work_inbox.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/report_card.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/status.html",
+      "hits": 9
+     },
+     {
+      "path": "static/js/assessment_plan_editor.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/classroom_private_messages.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/grade_material_preflight.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/manage_blog_review.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/manage_classrooms.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/manage_offering_merge.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/material_renderers.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/process_material_file_picker.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/submission_upload.js",
+      "hits": 8
+     },
+     {
+      "path": "templates/base_navbar.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/assessment_plans.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/lesson_plans.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/lq_sidebar.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/teacher_evaluations.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/learning_certificate_reveal.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/profile/overview.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/student_security_modal.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/teaching_stage_bar.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/resume/list.html",
+      "hits": 8
+     },
+     {
+      "path": "static/js/blog_moderation_ui.js",
+      "hits": 7
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 7
+     },
+     {
+      "path": "static/js/manage_courses.js",
+      "hits": 7
+     },
+     {
+      "path": "static/js/learning_progress.js",
+      "hits": 6
+     },
+     {
+      "path": "templates/dev/lq_content.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/session_expired.html",
+      "hits": 6
+     },
+     {
+      "path": "frontend/src/islands/message-center-workspace-sync.tsx",
+      "hits": 5
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/manage_signatures.js",
+      "hits": 5
+     },
+     {
+      "path": "templates/error.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/profile/hero_lq.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/profile/security.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/student_auth_flow_v4.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/teacher_login_v4.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/teacher_register_v4.html",
+      "hits": 5
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/ai_workspace_history.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/app_exams.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/classroom_members.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/file_preview.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/lesson_plan_editor.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/process_material_filters.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/process_material_import_summary.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/resume_applications.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/resume_home.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/session_material_ai_assistant.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/ui_explanation.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/base.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/dev/lq_insights.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/macros/app_topbar.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/macros/ui_explanation.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/archive_pipeline.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/course_schedule.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/ai_usage.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/super_admin.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/material_reader_unavailable.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/feedback_button.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/profile_button.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/points_shop.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/resume/applications.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/resume/job_targets.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/resume/section.html",
+      "hits": 4
+     },
+     {
+      "path": "frontend/src/components/action-entry.tsx",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/islands/submission-jump-nav.tsx",
+      "hits": 3
+     },
+     {
+      "path": "static/js/course_schedule_editor_styles.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_course_schedule.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_offerings.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/prompt_pool.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/ui.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/user_ui_preferences.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/whiteboard/panels/controls.js",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/components/ui/dialog.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_changes.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/login_scene.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_centered.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_data.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/macros/user_ui_preferences.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/layout.html",
+      "hits": 2
+     },
+     {
+      "path": "frontend/src/islands/dashboard-quick-actions.tsx",
+      "hits": 1
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/course_schedule_styles.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/knowledge_tree/side.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/whiteboard/board.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/whiteboard/exam_board.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_shell.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_workspace.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "chip-row": {
+   "css": "static/css/lq/components/chip-row.css",
+   "roots": [
+    "lq-chip-row"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/chip-row.html": [
+      "lq_chip_row"
+     ]
+    },
+    "js": {
+     "static/js/lq/chip-row.js": [
+      "bindChipRow",
+      "chipRowMarkup",
+      "chipRowProps",
+      "createChipRow"
+     ]
+    },
+    "python": "classroom_app/lq_chip_row.py",
+    "react": []
+   },
+   "title": "ChipRow 芯片行",
+   "layer": "component",
+   "notes": {
+    "summary": "一组互斥或多选芯片的行容器与键盘漫游（`bindChipRow`）；真实值仍在原生 select/input。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 10,
+    "files": [
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/work_inbox.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "chip": {
+   "css": "static/css/lq/components/chip.css",
+   "roots": [
+    "lq-chip"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/chip.html": [
+      "lq_chip"
+     ]
+    },
+    "js": {
+     "static/js/lq/components.js": [
+      "avatar",
+      "badge",
+      "button",
+      "chip",
+      "componentMarkup",
+      "createComponent",
+      "enhanceComponents",
+      "html",
+      "progress",
+      "skeleton",
+      "spinner"
+     ]
+    },
+    "python": "classroom_app/lq_components.py",
+    "react": [
+     "LqChipGroup"
+    ]
+   },
+   "title": "Chip 芯片",
+   "layer": "component",
+   "notes": {
+    "summary": "筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。",
+    "params": "`label, kind(label|filter), tone, size, pressed, icon, attrs`。",
+    "states": "pressed / hover / focus-visible / disabled。",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 26,
+    "files": [
+     {
+      "path": "static/js/materials_sync_report.js",
+      "hits": 14
+     },
+     {
+      "path": "static/js/materials_library_cards.js",
+      "hits": 13
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/achievements.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_changes.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_editor_styles.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/side.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_classrooms.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_filter_chips.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/profile/appearance.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_styles.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_classes.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/work_inbox.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "collapsible": {
+   "css": "static/css/lq/components/collapsible.css",
+   "roots": [
+    "lq-collapsible",
+    "lq-filter-more"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/collapsible.html": [
+      "lq_collapsible"
+     ]
+    },
+    "js": {
+     "static/js/lq/collapsible.js": [
+      "collapsibleMarkup",
+      "collapsibleProps",
+      "createCollapsible",
+      "enhanceCollapsible",
+      "html"
+     ]
+    },
+    "python": "classroom_app/lq_collapsible.py",
+    "react": []
+   },
+   "title": "Collapsible 折叠",
+   "layer": "component",
+   "notes": {
+    "summary": "原生 details/summary 的共享外观与过渡；`lq-filter-more` 用于筛选栏「更多」。",
+    "params": "",
+    "states": "",
+    "rules": "保留浏览器的展开、焦点和键盘行为。"
+   },
+   "consumers": {
+    "count": 5,
+    "files": [
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_filter_chips.js",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "composer": {
+   "css": "static/css/lq/components/composer.css",
+   "roots": [
+    "lq-composer"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/composer.html": [
+      "lq_composer"
+     ]
+    },
+    "js": {
+     "static/js/lq/composer.js": [
+      "COMPOSER_KINDS",
+      "composer",
+      "composerMarkup",
+      "composerProps",
+      "createComposer",
+      "enhanceComposer",
+      "html"
+     ]
+    },
+    "python": "classroom_app/lq_composer.py",
+    "react": []
+   },
+   "title": "Composer 输入区",
+   "layer": "component",
+   "notes": {
+    "summary": "消息/评论输入外壳：content 槽（附件/引用）+ 无框 textarea + actions（tools 槽与发送）；焦点环落在整个外壳；`enhanceComposer` 处理自动增高、Enter 策略、固定底部与键盘避让，不发请求。",
+    "params": "`label, name, value, placeholder, required, maxlength, disabled, busy, hasContent, enter(newline|send), attachment, emoji, sendLabel, submit_name/value`。",
+    "states": "disabled / busy（readonly + 发送禁用）/ hasContent / data-lq-composer-fixed。",
+    "rules": "领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。"
+   },
+   "consumers": {
+    "count": 4,
+    "files": [
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/dev/lq_content.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "content": {
+   "css": "static/css/lq/components/content.css",
+   "roots": [
+    "lq-board",
+    "lq-bubble",
+    "lq-card",
+    "lq-empty",
+    "lq-filter-bar",
+    "lq-list",
+    "lq-page-head",
+    "lq-prose",
+    "lq-row",
+    "lq-scene-heading",
+    "lq-stat-strip"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/content.html": [
+      "lq_card",
+      "lq_list",
+      "lq_row",
+      "lq_empty",
+      "lq_page_head",
+      "lq_filter_bar",
+      "lq_prose",
+      "lq_bubble"
+     ]
+    },
+    "js": {
+     "static/js/lq/content.js": [
+      "contentKinds",
+      "contentMarkup",
+      "contentProps",
+      "createContent",
+      "enhanceRow",
+      "html"
+     ]
+    },
+    "python": "classroom_app/lq_content.py",
+    "react": [
+     "LqCardFrame",
+     "LqEmpty"
+    ]
+   },
+   "title": "Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）",
+   "layer": "component",
+   "notes": {
+    "summary": "数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。",
+    "params": "card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。",
+    "states": "row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。",
+    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。"
+   },
+   "consumers": {
+    "count": 164,
+    "files": [
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 44
+     },
+     {
+      "path": "static/js/blog_studio.js",
+      "hits": 34
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 30
+     },
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 23
+     },
+     {
+      "path": "templates/manage/system/blog_crawler.html",
+      "hits": 22
+     },
+     {
+      "path": "templates/dev/lq_content.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/assignment_detail_student.html",
+      "hits": 15
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 15
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 13
+     },
+     {
+      "path": "templates/macros/manage_page.html",
+      "hits": 13
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 13
+     },
+     {
+      "path": "templates/submission_detail.html",
+      "hits": 12
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 11
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 11
+     },
+     {
+      "path": "templates/exam_editor.html",
+      "hits": 11
+     },
+     {
+      "path": "templates/wrong_book.html",
+      "hits": 11
+     },
+     {
+      "path": "templates/manage/offerings.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/manage/student_detail.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/assignment_wrong_summary.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/system/monitor.html",
+      "hits": 8
+     },
+     {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "hits": 7
+     },
+     {
+      "path": "static/js/classroom_interactions.js",
+      "hits": 7
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 7
+     },
+     {
+      "path": "templates/dev/lq_shell.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/ai.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/me_credentials.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/manage/signatures.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/partials/materials/modals_repository.html",
+      "hits": 7
+     },
+     {
+      "path": "static/js/chat.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/classroom_private_messages.js",
+      "hits": 6
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/ai_usage.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/materials/modals_generate.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/materials/modals_library.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/profile/portfolio.html",
+      "hits": 6
+     },
+     {
+      "path": "static/js/profile_signatures.js",
+      "hits": 5
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/session_material_ai_modal.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/points_shop.html",
+      "hits": 5
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/achievements.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/diagnostics.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/exams/modals.html",
+      "hits": 4
+     },
+     {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 3
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/classroom_material_list.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_assessment_plans.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_blog_crawler.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_blog_review.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_lesson_plans.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_organizations.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/teacher_onboarding.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/macros/manage_insights.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/academic_overview.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/system/agent_keys.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/work_inbox.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/classroom_members/exams.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/exams/board.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/profile/overview.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/teacher_onboarding_modal.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_section.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_point_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/assessment_plans.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/course_schedule.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/exams.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/lesson_plans.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/organizations.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/super_admin.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/teacher_evaluations.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_members/settings.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/job_targets.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/student_login_v4.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/academic_final_materials.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/app_files.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/cultivation_identity.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/group_assignment_config.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/group_peer_eval.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/lessondoc_wizard.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_agent_keys.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_course_schedule.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_gongwen_integrations.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_life_tips.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_semesters.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_system_monitor.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_textbooks.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/material_hub.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/offering_bootstrap.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/process_material_modal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_applications.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_builder.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_home.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_list.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_personal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/signature_pad.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/base_navbar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/error.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/macros/user_ui_preferences.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/archive_pipeline.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/course_schedule_editor.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/life_tips.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/offering_merge.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/material_viewer.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_group_qr.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_members/overview.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_task_preview.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/cultivation_card.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/learning_certificate_reveal.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/learning_material_selector.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/student_security_modal.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/permission_denied.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/report_card.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/resume/builder.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/resume/layout.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/session_expired.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/status.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/teacher_evaluation_editor.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/teacher_login_v4.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "control-geometry": {
+   "css": "static/css/lq/components/control-geometry.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Control geometry 控件几何",
+   "layer": "foundation",
+   "notes": {
+    "summary": "按钮/芯片的胶囊半径、三档尺寸高度、44px 触控最小命中区；多行内容的选择卡用 `data-lq-shape=\"surface\"` 退出胶囊。",
+    "params": "",
+    "states": "",
+    "rules": "大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。"
+   },
+   "consumers": {
+    "count": 0,
+    "files": []
+   }
+  },
+  "control-states": {
+   "css": "static/css/lq/components/control-states.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Control states 控件状态配方",
+   "layer": "foundation",
+   "notes": {
+    "summary": "按钮 / 芯片 / 字段共享的 hover、focus-visible、active、selected、disabled、loading、aria-busy 状态变量（`--lq-control-*`），按压形变与回弹来自 motion。",
+    "params": "",
+    "states": "",
+    "rules": "新控件不得自写 hover/focus 配色；disabled 用 native disabled，aria-disabled 由唯一控制器阻止执行。"
+   },
+   "consumers": {
+    "count": 0,
+    "files": []
+   }
+  },
+  "declarative": {
+   "css": "static/css/lq/components/declarative.css",
+   "roots": [
+    "lq-disclosure-popover",
+    "lq-disclosure-trigger",
+    "lq-domain-choice",
+    "lq-domain-raised",
+    "lq-domain-region",
+    "lq-domain-toolbar",
+    "lq-native-dialog"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/lq/domain-controls.js": [
+      "adoptDomainContentSlot",
+      "adoptDomainControl",
+      "adoptDomainHandle",
+      "createDomainButton",
+      "createDomainPopoverSystem",
+      "domainButtonAttributes"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "Declarative 显式声明与领域壳",
+   "layer": "foundation",
+   "notes": {
+    "summary": "`data-lq-component` 显式声明把服务端/领域 DOM 的填充、前景、描边锁定到共享配方，防止晚加载的旧样式夺回外观；也提供 `lq-domain-toolbar`（组合边界）、`lq-domain-choice`（选择卡）、`lq-domain-raised`（浮层材质）、`data-lq-selected` Surface 选中态、`lq-disclosure-popover`（原生 details 浮层）。",
+    "params": "`data-lq-component=\"button|input|select|surface|toolbar|choice|popover|…\"`、`data-lq-padding=\"none|sm|md|lg\"`、`data-lq-selected=\"true\"`、`data-lq-align/placement`。",
+    "states": "",
+    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。"
+   },
+   "consumers": {
+    "count": 146,
+    "files": [
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 49
+     },
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 37
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 22
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 22
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/materials/modals_library.html",
+      "hits": 18
+     },
+     {
+      "path": "static/js/teacher_onboarding.js",
+      "hits": 17
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 17
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 16
+     },
+     {
+      "path": "templates/exam_editor.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/manage/signatures.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/materials/modals_generate.html",
+      "hits": 14
+     },
+     {
+      "path": "templates/assignment_wrong_summary.html",
+      "hits": 12
+     },
+     {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/materials/modals_repository.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/material_viewer.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/exams/modals.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 7
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 7
+     },
+     {
+      "path": "static/js/academic_sync_dialog.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/student_login_v4.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/ai_workspace_widget.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 5
+     },
+     {
+      "path": "templates/partials/learning_material_selector.html",
+      "hits": 5
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/classroom_materials.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/learning_progress.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/materials_sync_report.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/assessment_plan_editor.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/submission_detail.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/teacher_evaluation_editor.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/agent_workbench.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/agent_workbench_render.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/prompt_pool.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/whiteboard/exam_board.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/course_schedule_editor.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/session_material_ai_modal.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/student_security_modal.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/teacher_onboarding_modal.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/ai_workspace_capture.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_material_list.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/grade_material_preflight.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/grade_publication_controls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/group_assignment_config.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/group_peer_eval.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_course_schedule.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_courses.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_offerings.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_semesters.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_selection_panel.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/process_material_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/profile_signatures.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_pad.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_point_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_workflows.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/toolbar.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/base_navbar.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/career_path.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/lesson_plan_editor.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/assessment_plans.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/course_schedule.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/exams.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/layout.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/lesson_plans.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/life_tips.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/lq_topbar.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/blog_crawler.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/feedback.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/monitor.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/organizations.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/teacher_evaluations.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/material_render_shell.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_group_qr.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_members/exams.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_task_preview.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/dashboard_agenda_widget.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/learning_certificate_reveal.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/layout.html",
+      "hits": 2
+     },
+     {
+      "path": "frontend/src/islands/submission-jump-nav.tsx",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ai_workspace_history.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/career_path_network.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/cultivation_identity.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/emoji_picker.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/lesson_plan_editor.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/lessondoc_wizard.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ls_date_picker.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_offering_merge.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/process_material_import_summary.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/resume_personal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ui_explanation.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/user_ui_preferences.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/macros/manage_page.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/macros/user_ui_preferences.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/lq_sidebar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/offerings.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/assessment_classification_batch.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/exams/board.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/profile/email.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/profile/hero_lq.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/submission_retained_grade.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/teaching_stage_bar.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "dialogs": {
+   "css": "static/css/lq/components/dialogs.css",
+   "roots": [
+    "lq-dialog",
+    "lq-dialog-root",
+    "lq-drawer",
+    "lq-modal",
+    "lq-popover",
+    "lq-scrim",
+    "lq-sheet"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/dialogs.html": [
+      "lq_dialog"
+     ]
+    },
+    "js": {
+     "static/js/lq/dialogs.js": [
+      "choiceProps",
+      "choose",
+      "confirm",
+      "createDialog",
+      "dialogMarkup",
+      "dialogProps",
+      "disposeDialog",
+      "openDialog"
+     ]
+    },
+    "python": "classroom_app/lq_dialogs.py",
+    "react": []
+   },
+   "title": "Dialog / Sheet / Drawer / Confirm / Choose",
+   "layer": "component",
+   "notes": {
+    "summary": "模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。",
+    "params": "",
+    "states": "open / closing（可取消）/ busy 否决关闭 / nested child。",
+    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。"
+   },
+   "consumers": {
+    "count": 21,
+    "files": [
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 30
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 9
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 8
+     },
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 6
+     },
+     {
+      "path": "static/js/agent_workbench.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/components/ui/dialog.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ai_workspace_history.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/editing.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/progress.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/session_knowledge_tree.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/submission_grading.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ls_image_lightbox.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/student_auth_flow_v4.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "domain-controls": {
+   "css": "static/css/lq/components/domain-controls.css",
+   "roots": [
+    "lq-chip-group",
+    "lq-domain-graph-choice",
+    "lq-pagination"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/lq/domain-controls.js": [
+      "adoptDomainContentSlot",
+      "adoptDomainControl",
+      "adoptDomainHandle",
+      "createDomainButton",
+      "createDomainPopoverSystem",
+      "domainButtonAttributes"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "Domain controls 领域控件就地接入",
+   "layer": "foundation",
+   "notes": {
+    "summary": "`adoptDomainControl` / `createDomainButton` / `adoptDomainContentSlot` / `adoptDomainHandle` / `createDomainPopoverSystem`：已有领域控制器持有节点时只换呈现、不重绑业务事件；分页、图形选择卡、芯片组的布局钩子。",
+    "params": "",
+    "states": "",
+    "rules": "不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual=\"color\"`。"
+   },
+   "consumers": {
+    "count": 44,
+    "files": [
+     {
+      "path": "static/js/ai_workspace_history.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/app_files.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_classification_batch.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/chat.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_members.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_private_messages.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/cultivation_identity.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/emoji_picker.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/feedback.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/feedback_conversation.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/file_preview.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/side.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/ai_panel.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/canvas_controller.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/content_controls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/index.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/media_picker.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/lessondoc_editor/ui.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ls_date_picker.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_filter_chips.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_signatures.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_render_shell.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_selection_panel.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui_color_picker.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/board.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/exam_board.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/panels/controls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/popover.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/text_editor.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/toolbar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/career_path_network.js",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "emoji-picker": {
+   "css": "static/css/lq/components/emoji-picker.css",
+   "roots": [],
+   "extraRoots": [
+    ".emoji-picker",
+    ".emoji-picker-item",
+    ".emoji-picker-grid",
+    "createEmojiPicker"
+   ],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/emoji_picker.js": [
+      "createEmojiPicker"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "EmojiPicker 表情选择器",
+   "layer": "component",
+   "notes": {
+    "summary": "贴在触发器上方的 raised 浮层（lq-glass + lq-domain-raised），常用 + 分类网格；表情格是 adoptDomainControl 的 choice 控件；出入场走 ui_overlay_motion。",
+    "params": "",
+    "states": "",
+    "rules": "位置相对 `position: relative` 的锚点；材质与前景来自 raised 配对，本模块只定几何。"
+   },
+   "consumers": {
+    "count": 4,
+    "files": [
+     {
+      "path": "static/js/emoji_picker.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/feedback.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "forms": {
+   "css": "static/css/lq/components/forms.css",
+   "roots": [
+    "lq-checkbox",
+    "lq-choice",
+    "lq-control",
+    "lq-error-summary",
+    "lq-field",
+    "lq-form-actions",
+    "lq-form-section",
+    "lq-input",
+    "lq-native-color",
+    "lq-native-file",
+    "lq-radio",
+    "lq-range",
+    "lq-select",
+    "lq-switch",
+    "lq-textarea"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/forms.html": [
+      "lq_input",
+      "lq_textarea",
+      "lq_select",
+      "lq_checkbox",
+      "lq_radio",
+      "lq_range",
+      "lq_switch",
+      "lq_field",
+      "lq_form_section",
+      "lq_form_actions",
+      "lq_error_summary"
+     ]
+    },
+    "js": {
+     "static/js/lq/forms.js": [
+      "checkbox",
+      "createForm",
+      "enhanceForms",
+      "errorSummary",
+      "field",
+      "focusFirstError",
+      "formActions",
+      "formKinds",
+      "formMarkup",
+      "formProps",
+      "formSection",
+      "html",
+      "input",
+      "nativeSelect",
+      "radio",
+      "range",
+      "switchControl",
+      "textarea"
+     ]
+    },
+    "python": "classroom_app/lq_forms.py",
+    "react": [
+     "LqField",
+     "LqNativeInput",
+     "LqNativeTextarea",
+     "LqNativeSelect"
+    ]
+   },
+   "title": "Forms 字段与原生输入",
+   "layer": "component",
+   "notes": {
+    "summary": "`lq-field`（label / control / help / error / count）包裹原生 input / textarea / select / checkbox / radio / switch / range / file；`enhanceForms` 提供清空、计数、自动增高、首错聚焦，不接管值与校验。",
+    "params": "`id, name, label, type, value, placeholder, required, readonly, min/max/step, autocomplete, help, error, clearable, count, autoGrow, attrs`。",
+    "states": "focus-visible 环 / aria-invalid 错误 / disabled 虚线 / readonly；IME composition 期间不触发派生逻辑。",
+    "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
+   },
+   "consumers": {
+    "count": 170,
+    "files": [
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 115
+     },
+     {
+      "path": "templates/partials/profile/email.html",
+      "hits": 88
+     },
+     {
+      "path": "templates/exam_editor.html",
+      "hits": 84
+     },
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 68
+     },
+     {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 61
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 60
+     },
+     {
+      "path": "templates/manage/system/blog_crawler.html",
+      "hits": 58
+     },
+     {
+      "path": "static/js/teacher_onboarding.js",
+      "hits": 52
+     },
+     {
+      "path": "templates/manage/signatures.html",
+      "hits": 52
+     },
+     {
+      "path": "templates/partials/materials/modals_generate.html",
+      "hits": 50
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 46
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 38
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 37
+     },
+     {
+      "path": "templates/student_login_v4.html",
+      "hits": 36
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 35
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 35
+     },
+     {
+      "path": "templates/manage/system/organizations.html",
+      "hits": 34
+     },
+     {
+      "path": "static/js/manage_lesson_plans.js",
+      "hits": 32
+     },
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 32
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 31
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 24
+     },
+     {
+      "path": "static/js/classroom_interactions.js",
+      "hits": 22
+     },
+     {
+      "path": "templates/manage/life_tips.html",
+      "hits": 22
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 22
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 21
+     },
+     {
+      "path": "templates/manage/system/academic_integrations.html",
+      "hits": 21
+     },
+     {
+      "path": "templates/manage/system/smart_classroom_integrations.html",
+      "hits": 21
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/lessondoc_wizard.js",
+      "hits": 20
+     },
+     {
+      "path": "static/js/resume_applications.js",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/assessment_plans.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/lesson_plans.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/offerings.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/manage/teacher_evaluations.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 20
+     },
+     {
+      "path": "templates/student_auth_flow_v4.html",
+      "hits": 20
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 18
+     },
+     {
+      "path": "templates/manage/system/agent_keys.html",
+      "hits": 18
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 17
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 16
+     },
+     {
+      "path": "static/js/resume_builder.js",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/exams/modals.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/profile/security.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/teacher_login_v4.html",
+      "hits": 15
+     },
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 14
+     },
+     {
+      "path": "static/js/manage_assessment_plans.js",
+      "hits": 14
+     },
+     {
+      "path": "static/js/manage_teacher_evaluations.js",
+      "hits": 14
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 14
+     },
+     {
+      "path": "templates/partials/profile/portfolio.html",
+      "hits": 14
+     },
+     {
+      "path": "static/js/agent_workbench.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/assessment_plan_editor.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/grade_publication_controls.js",
+      "hits": 12
+     },
+     {
+      "path": "static/js/resume_section.js",
+      "hits": 12
+     },
+     {
+      "path": "templates/macros/user_ui_preferences.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/teacher_register_v4.html",
+      "hits": 12
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 11
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 11
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/dashboard_agenda_widget.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/group_assignment_config.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 10
+     },
+     {
+      "path": "static/js/signature_scope_fields.js",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/materials/modals_library.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/materials/modals_repository.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/partials/session_material_ai_modal.html",
+      "hits": 10
+     },
+     {
+      "path": "static/js/lessondoc_editor/ui.js",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/course_schedule.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/manage/system/gongwen_integrations.html",
+      "hits": 9
+     },
+     {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "hits": 8
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/classroom_closeout.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/grade_material_preflight.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/lesson_plan_editor.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/material_selection_panel.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/materials_manage.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/resume_personal.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "hits": 8
+     },
+     {
+      "path": "static/js/teaching_lifecycle_review.js",
+      "hits": 8
+     },
+     {
+      "path": "templates/assignment_detail_student.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/ai.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/classroom_members/exams.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/student_dashboard_schedule.html",
+      "hits": 8
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 7
+     },
+     {
+      "path": "static/js/exam_paper_preview.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/manage_offering_merge.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/resume_list.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 6
+     },
+     {
+      "path": "templates/dashboard.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/dashboard_teacher.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/dev/lq.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/dev/lq_shell.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/exams/scripts.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/partials/student_security_modal.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/resume/job_targets.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/submission_detail.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/wrong_book.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/dev/lq_centered.html",
+      "hits": 5
+     },
+     {
+      "path": "static/js/academic_final_materials.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/ai_workspace_capture.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/blog_studio.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/classroom_materials.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/course_schedule_deck.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/material_viewer.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/offering_bootstrap.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/profile.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/profile_signatures.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/signature_point_workflow.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/signature_workflows.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/ui_color_picker.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/career_path.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/ai_workspace_widget.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/classroom_group_qr.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/classroom_members/settings.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/resume/builder.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/session_knowledge_tree.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 3
+     },
+     {
+      "path": "templates/macros/manage_page.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/partials/profile/appearance.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/academic_sync_dialog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/agent_workbench_render.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/app_exams.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/blog_moderation_ui.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_retake.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/side.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_blog_review.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_signatures.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/material_editors.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_library_cards.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/prompt_pool.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_business.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_content.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/course_schedule_editor.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/layout.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/student_detail.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/ai_usage.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/monitor.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/super_admin.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/material_viewer.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/academic_sync_dialog.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/assessment_kind_control.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/learning_material_selector.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/semester_calendar_panel.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/home.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/list.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/resume/personal.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/teacher_evaluation_editor.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/panels/controls.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_status.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/dev/lq_workspace.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/lq_sidebar.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "indicators": {
+   "css": "static/css/lq/components/indicators.css",
+   "roots": [
+    "lq-avatar",
+    "lq-badge",
+    "lq-progress",
+    "lq-spinner"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/indicators.html": [
+      "lq_badge",
+      "lq_avatar",
+      "lq_spinner",
+      "lq_progress"
+     ]
+    },
+    "js": {
+     "static/js/lq/components.js": [
+      "avatar",
+      "badge",
+      "button",
+      "chip",
+      "componentMarkup",
+      "createComponent",
+      "enhanceComponents",
+      "html",
+      "progress",
+      "skeleton",
+      "spinner"
+     ]
+    },
+    "python": "classroom_app/lq_components.py",
+    "react": [
+     "LqAvatar"
+    ]
+   },
+   "title": "Indicators 徽标 / 头像 / 进度 / 加载",
+   "layer": "component",
+   "notes": {
+    "summary": "`lq-badge`（计数/点）、`lq-avatar`（首字或图片）、`lq-spinner`、`lq-progress`（条/环）；都是只读呈现。",
+    "params": "badge: `value, tone, dot, label`；avatar: `name, src, size(24|32|40|56)`；progress: `label, value, max, variant`。",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 12,
+    "files": [
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 10
+     },
+     {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 8
+     },
+     {
+      "path": "templates/partials/lq_navbar_topbar.html",
+      "hits": 4
+     },
+     {
+      "path": "static/js/materials_sync_report.js",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/components/action-entry.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_blog_review.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/profile.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/profile/hero_lq.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/profile/messages.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "insights": {
+   "css": "static/css/lq/components/insights.css",
+   "roots": [
+    "lq-avatar-stack",
+    "lq-bars",
+    "lq-insight",
+    "lq-meter",
+    "lq-ring"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/insights.html": [
+      "lq_avatar_stack",
+      "insight_ring",
+      "insight_bars",
+      "insight_meter"
+     ]
+    },
+    "js": {
+     "static/js/lq/insights.js": [
+      "INSIGHT_KINDS",
+      "avatar_stack",
+      "createInsight",
+      "html",
+      "insightMarkup",
+      "insightProps",
+      "insight_bars",
+      "insight_meter",
+      "insight_ring"
+     ]
+    },
+    "python": "classroom_app/lq_insights.py",
+    "react": []
+   },
+   "title": "Insights 统计（AvatarStack / Ring / Bars / Meter）",
+   "layer": "component",
+   "notes": {
+    "summary": "头像堆叠与三种小型统计图；数据色是内容槽位。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 3,
+    "files": [
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/blog_studio.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_insights.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "layers": {
+   "css": "static/css/lq/components/layers.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/lq/layer.js": [
+      "getLayerSystem"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "Layer 层栈",
+   "layer": "component",
+   "notes": {
+    "summary": "`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。",
+    "params": "",
+    "states": "",
+    "rules": "禁止第二个焦点栈或滚动锁。"
+   },
+   "consumers": {
+    "count": 24,
+    "files": [
+     {
+      "path": "static/js/academic_sync_dialog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ai_workspace_capture.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/approval_workflow.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_kind_controls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/base_resource_modes.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/career_path_app.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_materials.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_polls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/global_search.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ls_date_picker.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ls_image_lightbox.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/process_material_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_shell.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/session_knowledge_tree.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/teacher_evaluation_editor.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/tree_select_form_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui_explanation.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui_preferences_panel.js",
+      "hits": 2
+     }
+    ]
+   }
+  },
+  "lightbox": {
+   "css": "static/css/lq/components/lightbox.css",
+   "roots": [
+    "lq-lightbox"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/ls_image_lightbox.js": [
+      "bindImageLightboxDelegation",
+      "closeImageLightbox",
+      "collectLightboxGroup",
+      "destroyImageLightbox",
+      "isImageLightboxOpen",
+      "openImageLightbox"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "Lightbox 灯箱",
+   "layer": "component",
+   "notes": {
+    "summary": "通用液态毛玻璃图片灯箱（`data-ls-lightbox` 声明式接入），私信/学习文档/AI/博客共用。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "static/js/ls_image_lightbox.js",
+      "hits": 31
+     }
+    ]
+   }
+  },
+  "material-boundaries": {
+   "css": "static/css/lq/components/material-boundaries.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Material boundaries 用户偏好终裁",
+   "layer": "foundation",
+   "notes": {
+    "summary": "用户的透明度 / 对比度 / 低端设备偏好对所有材质拥有最终裁决：关闭实时模糊、改为不透明配对；Toast/Tooltip 不采样。放在 index.css 最后以保证优先级。",
+    "params": "",
+    "states": "",
+    "rules": "领域 CSS 不得用更高特异性恢复模糊或半透明；改动此文件要跑六配色亮暗矩阵。"
+   },
+   "consumers": {
+    "count": 0,
+    "files": []
+   }
+  },
+  "menus": {
+   "css": "static/css/lq/components/menus.css",
+   "roots": [
+    "lq-menu"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/menus.html": [
+      "lq_menu"
+     ]
+    },
+    "js": {
+     "static/js/lq/menus.js": [
+      "bindMenu",
+      "createMenu",
+      "menuMarkup",
+      "menuProps",
+      "resolveMenuActionTrigger"
+     ]
+    },
+    "python": "classroom_app/lq_menu_tooltip.py",
+    "react": []
+   },
+   "title": "Menu / Popover 菜单与浮层",
+   "layer": "component",
+   "notes": {
+    "summary": "由 LQ.layer 托管的 portal 菜单：原生条目 + 作者内容槽，精细指针悬停、触摸点击、键盘同一 owner；`lq-popover` 为 raised 边界采样。",
+    "params": "",
+    "states": "",
+    "rules": "菜单条目不套按钮胶囊；关闭成功后才执行领域动作。"
+   },
+   "consumers": {
+    "count": 10,
+    "files": [
+     {
+      "path": "templates/assignment_detail_teacher.html",
+      "hits": 10
+     },
+     {
+      "path": "templates/manage/exams.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/macros/app_utility_menus.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/macros/classroom_menus.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui_explanation.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/materials.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/exam_take.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "motion": {
+   "css": "static/css/lq/components/motion.css",
+   "roots": [
+    "lq-domain-popover"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Motion 动效参数",
+   "layer": "foundation",
+   "notes": {
+    "summary": "按压 / 释放 / 浮层出入场 / 菜单 / 反馈的时长与曲线变量；`data-lq-motion=\"off|quiet|standard|expressive\"` 可设在 html、组件或子树；系统 prefers-reduced-motion 优先。",
+    "params": "",
+    "states": "",
+    "rules": "只动画 transform/opacity，不动画 blur、宽高；不用动画时长当网络完成信号。"
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "static/js/ui_popover.js",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "nav-menu": {
+   "css": "static/css/lq/components/nav-menu.css",
+   "roots": [
+    "lq-nav-menu"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/nav-menu.html": [
+      "lq_nav_menu"
+     ]
+    },
+    "js": {
+     "static/js/lq/nav-menu.js": [
+      "createNavMenu",
+      "enhanceNavMenus",
+      "navMenuMarkup",
+      "navMenuProps"
+     ]
+    },
+    "python": "classroom_app/lq_nav_menu.py",
+    "react": []
+   },
+   "title": "NavMenu 导航菜单",
+   "layer": "component",
+   "notes": {
+    "summary": "顶栏「更多 / 个人」等触发器 + Menu 组合；窄屏保留完整可点击宽度。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 6,
+    "files": [
+     {
+      "path": "templates/partials/lq_navbar_topbar.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/classroom_page.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/macros/app_utility_menus.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/macros/classroom_menus.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/dashboard_schedule_tools.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "navigation": {
+   "css": "static/css/lq/components/navigation.css",
+   "roots": [
+    "lq-segment",
+    "lq-tabs"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/navigation.html": [
+      "lq_tabs",
+      "lq_segment"
+     ]
+    },
+    "js": {
+     "static/js/lq/navigation.js": [
+      "createNavigation",
+      "createSegment",
+      "createTabs",
+      "html",
+      "navigationMarkup",
+      "navigationProps",
+      "segment",
+      "tabs"
+     ]
+    },
+    "python": "classroom_app/lq_navigation.py",
+    "react": []
+   },
+   "title": "Navigation Tabs / Segment",
+   "layer": "component",
+   "notes": {
+    "summary": "`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 17,
+    "files": [
+     {
+      "path": "static/js/collaboration.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/classroom_interactions.js",
+      "hits": 4
+     },
+     {
+      "path": "templates/assignment_wrong_summary.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/feedback_review.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/learning_path.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/profile/appearance.html",
+      "hits": 3
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/resume_common.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/blog.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/attendance_reports.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/signature_workflows.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_members/workspace.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/feedback_modal.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/system/blog_review.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "overflow-label": {
+   "css": "static/css/lq/components/overflow-label.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/lq/overflow-label.js": [
+      "bindOverflowLabels"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "OverflowLabel 固定宽度长标签",
+   "layer": "component",
+   "notes": {
+    "summary": "`bindOverflowLabels(owner)`：仅精细指针 hover / 键盘 focus-visible 时测量一次，确有溢出才做一次内部文字 transform。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "static/js/course_schedule_editor.js",
+      "hits": 2
+     }
+    ]
+   }
+  },
+  "page-backdrop": {
+   "css": "static/css/lq/components/page-backdrop.css",
+   "roots": [
+    "lq-page-backdrop"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Page backdrop 页面背景层",
+   "layer": "foundation",
+   "notes": {
+    "summary": "视口背景图/纯色与到场过渡（`lq-scene-arrive`）；由 page_backdrop.js 绘制并发布场景色调。",
+    "params": "",
+    "states": "",
+    "rules": "材质只在视口背景上采样，面板内不得重绘一份壁纸。"
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "templates/partials/lq_page_backdrop.html",
+      "hits": 2
+     }
+    ]
+   }
+  },
+  "prose-copy": {
+   "css": "static/css/lq/components/prose-copy.css",
+   "roots": [],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Prose copy 正文排版",
+   "layer": "foundation",
+   "notes": {
+    "summary": "`.lq-prose` 内 Markdown 正文（标题、列表、表格、代码、链接）的排版与配色；AI 回复气泡与博客正文共用。",
+    "params": "",
+    "states": "",
+    "rules": "正文链接保留真实 a；用户文档内容是内容槽位，不强制涂成玻璃。"
+   },
+   "consumers": {
+    "count": 0,
+    "files": []
+   }
+  },
+  "react-bridges": {
+   "css": "static/css/lq/components/react-bridges.css",
+   "roots": [
+    "lq-avatar-link"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "React bridges",
+   "layer": "foundation",
+   "notes": {
+    "summary": "Radix/React 岛与共享 DOM 合同的桥接样式（如 `lq-avatar-link`）；React 薄适配器只消费同一 props 与 CSS。",
+    "params": "",
+    "states": "",
+    "rules": "React 不得各自实现颜色、动画、禁用判断或焦点栈。"
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "frontend/src/components/action-entry.tsx",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "search": {
+   "css": "static/css/lq/components/search.css",
+   "roots": [
+    "lq-search"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "Search 搜索包装",
+   "layer": "component",
+   "notes": {
+    "summary": "`.lq-search` 只清除包装层底色并提供尾部槽（清空/提交）；放大镜由 `.lq-input[type=search]` 自己绘制，避免框中框。",
+    "params": "",
+    "states": "",
+    "rules": "不要再给搜索框外面画一层框或自放图标。"
+   },
+   "consumers": {
+    "count": 12,
+    "files": [
+     {
+      "path": "templates/manage/academic_final_materials.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/exams/control_panel.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/classes.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/classrooms.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/courses.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/material_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/offering_hub.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/semesters.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/textbooks.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "selection": {
+   "css": "static/css/lq/components/selection.css",
+   "roots": [
+    "lq-dropdown",
+    "lq-selection"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/selection.html": [
+      "lq_combobox",
+      "lq_listbox"
+     ]
+    },
+    "js": {
+     "static/js/lq/selection.js": [
+      "bindSelection",
+      "createSelection",
+      "selectionKinds",
+      "selectionMarkup",
+      "selectionOptions",
+      "selectionProps"
+     ],
+     "static/js/lq/dropdown.js": [
+      "bindDropdown",
+      "dropdownResults",
+      "enhanceDropdowns",
+      "getDropdown",
+      "installDropdowns"
+     ]
+    },
+    "python": "classroom_app/lq_selection.py",
+    "react": []
+   },
+   "title": "Selection / Dropdown 选择列表",
+   "layer": "component",
+   "notes": {
+    "summary": "平台 select 的共享呈现：`data-lq-dropdown` 由 Dropdown 接管展示，原生 select 继续独占值、表单与校验；combobox/listbox 用于可搜索选择。",
+    "params": "`data-lq-dropdown`、`data-lq-selection-owner`（已有 owner）、`data-lq-dropdown-manual`（React 显式生命周期）、`searchable`。",
+    "states": "",
+    "rules": "同一 select 只能有一个呈现 owner；动态领域 owner 调 `enhanceDropdowns(root)`。"
+   },
+   "consumers": {
+    "count": 9,
+    "files": [
+     {
+      "path": "static/js/course_schedule_editor_styles.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/dashboard.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/semester_calendar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/student_dashboard_schedule.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/ui_preferences_panel.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_data.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/signature_multi_select.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "shells": {
+   "css": "static/css/lq/components/shells.css",
+   "roots": [
+    "lq-crumbs",
+    "lq-dock",
+    "lq-editor",
+    "lq-fab",
+    "lq-nav-item",
+    "lq-page-layout",
+    "lq-scroll-edge",
+    "lq-shell-pane",
+    "lq-shell-slot",
+    "lq-sidebar",
+    "lq-sidebar-root",
+    "lq-steps",
+    "lq-topbar"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/shells.html": [
+      "lq_shell",
+      "lq_topbar",
+      "lq_sidebar",
+      "lq_dock",
+      "lq_editor",
+      "lq_page_layout",
+      "lq_nav_item",
+      "lq_fab",
+      "lq_crumbs",
+      "lq_steps"
+     ]
+    },
+    "js": {
+     "static/js/lq/shells.js": [
+      "createShell",
+      "enhanceDock",
+      "enhanceShell",
+      "html",
+      "shellKinds",
+      "shellMarkup",
+      "shellProps"
+     ]
+    },
+    "python": "classroom_app/lq_shells.py",
+    "react": []
+   },
+   "title": "Shells 页面壳（Topbar / Sidebar / Dock / Editor / PageLayout / FAB / Crumbs / Steps）",
+   "layer": "composite",
+   "notes": {
+    "summary": "AppShell 家族：导航壳、编辑器壳、底部 dock（`enhanceDock` 测量高度令牌）、浮动操作入口、面包屑与步骤条。",
+    "params": "",
+    "states": "",
+    "rules": "FAB 复用 `.lq-fab` 定位与 slot 合同；禁止另做 resize/scroll 测量循环。"
+   },
+   "consumers": {
+    "count": 9,
+    "files": [
+     {
+      "path": "templates/manage/lq_sidebar.html",
+      "hits": 16
+     },
+     {
+      "path": "templates/partials/lq_navbar_topbar.html",
+      "hits": 13
+     },
+     {
+      "path": "templates/dev/lq_shell.html",
+      "hits": 8
+     },
+     {
+      "path": "static/js/manage_lq_pilot.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/navbar_lq.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/report_card.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/lq_topbar.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/ai_workspace_widget.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/lq_app_bottomnav.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "skeleton": {
+   "css": "static/css/lq/components/skeleton.css",
+   "roots": [
+    "lq-skeleton"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/skeleton.html": [
+      "lq_skeleton"
+     ]
+    },
+    "js": {
+     "static/js/lq/components.js": [
+      "avatar",
+      "badge",
+      "button",
+      "chip",
+      "componentMarkup",
+      "createComponent",
+      "enhanceComponents",
+      "html",
+      "progress",
+      "skeleton",
+      "spinner"
+     ]
+    },
+    "python": "classroom_app/lq_components.py",
+    "react": []
+   },
+   "title": "Skeleton 骨架屏",
+   "layer": "component",
+   "notes": {
+    "summary": "加载占位：形状 + 行数；reduced-motion 下静止。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 14,
+    "files": [
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/agent_workbench.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/agent_workbench_render.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/course_schedule_changes.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/knowledge_tree/side.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/login_scene.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_polls.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/message_center_blog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_presentation.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "status": {
+   "css": "static/css/lq/components/status.css",
+   "roots": [
+    "lq-alert",
+    "lq-conflict",
+    "lq-save-status",
+    "lq-status"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/status.html": [
+      "lq_status",
+      "lq_save_status",
+      "lq_alert",
+      "lq_conflict"
+     ]
+    },
+    "js": {
+     "static/js/lq/status.js": [
+      "STATUS_KINDS",
+      "alert",
+      "conflict",
+      "createStatus",
+      "html",
+      "saveStatus",
+      "save_status",
+      "status",
+      "statusMarkup",
+      "statusProps"
+     ]
+    },
+    "python": "classroom_app/lq_status.py",
+    "react": [
+     "LqStatus"
+    ]
+   },
+   "title": "Status / SaveStatus / Alert / Conflict",
+   "layer": "component",
+   "notes": {
+    "summary": "业务状态呈现：状态胶囊、保存状态行、Alert（含重试动作与诊断转义）、409 冲突面板；只消费控制器确认的快照。",
+    "params": "",
+    "states": "",
+    "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。"
+   },
+   "consumers": {
+    "count": 14,
+    "files": [
+     {
+      "path": "templates/dev/lq_status.html",
+      "hits": 9
+     },
+     {
+      "path": "templates/lessondoc_editor.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/system/users.html",
+      "hits": 6
+     },
+     {
+      "path": "static/js/knowledge_tree/chrome.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/session_knowledge_tree.js",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/islands/classroom-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_appeal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/blog.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/chat.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/lessondoc_editor/ui.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/manage_users.js",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "tables": {
+   "css": "static/css/lq/components/tables.css",
+   "roots": [
+    "lq-bulk-bar",
+    "lq-pager",
+    "lq-result-count",
+    "lq-table",
+    "lq-table-shell"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/tables.html": [
+      "lq_table",
+      "lq_pager",
+      "lq_bulk_bar",
+      "lq_result_count"
+     ]
+    },
+    "js": {
+     "static/js/lq/tables.js": [
+      "createTable",
+      "enhanceTable",
+      "html",
+      "tableKinds",
+      "tableMarkup",
+      "tableProps"
+     ]
+    },
+    "python": "classroom_app/lq_tables.py",
+    "react": [
+     "LqPager"
+    ]
+   },
+   "title": "Table / Pager / BulkBar / ResultCount",
+   "layer": "component",
+   "notes": {
+    "summary": "数据表外壳（sticky 表头、行选中）、分页器、批量操作栏与结果计数。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 11,
+    "files": [
+     {
+      "path": "templates/dev/lq_data.html",
+      "hits": 7
+     },
+     {
+      "path": "static/js/course_schedule_editor_styles.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/attendance_reports.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/course_schedule_changes.js",
+      "hits": 3
+     },
+     {
+      "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/academic_schedule_sync.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_classrooms.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/manage_gongwen.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/dev/lq_shell.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/manage/gongwen.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/manage/system/password_resets.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "toast": {
+   "css": "static/css/lq/components/toast.css",
+   "roots": [
+    "lq-toast",
+    "lq-toast-fallback",
+    "lq-toasts"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {
+     "static/js/lq/toast.js": [
+      "createToastClock",
+      "getToastSystem",
+      "toast",
+      "toastProps"
+     ]
+    },
+    "python": null,
+    "react": []
+   },
+   "title": "Toast 通知",
+   "layer": "component",
+   "notes": {
+    "summary": "raised 填充 + thick 实时模糊（栈上限 3），有 shell 顶栏时下移；图标为成对 tone 小胶囊。",
+    "params": "",
+    "states": "",
+    "rules": "全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。"
+   },
+   "consumers": {
+    "count": 2,
+    "files": [
+     {
+      "path": "static/js/ui.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/message_center_bell.js",
+      "hits": 2
+     }
+    ]
+   }
+  },
+  "tooltips": {
+   "css": "static/css/lq/components/tooltips.css",
+   "roots": [
+    "lq-tooltip"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/tooltips.html": [
+      "lq_tooltip"
+     ]
+    },
+    "js": {
+     "static/js/lq/tooltips.js": [
+      "bindTooltip",
+      "createTooltip",
+      "tooltipMarkup",
+      "tooltipProps"
+     ]
+    },
+    "python": "classroom_app/lq_menu_tooltip.py",
+    "react": []
+   },
+   "title": "Tooltip 提示",
+   "layer": "component",
+   "notes": {
+    "summary": "悬停/聚焦提示，不采样模糊；全站功能说明浮窗另见 ui explanation popover。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "templates/dev/lq_interactions.html",
+      "hits": 1
+     }
+    ]
+   }
+  },
+  "upload": {
+   "css": "static/css/lq/components/upload.css",
+   "roots": [
+    "lq-dropzone",
+    "lq-file-chip",
+    "lq-upload"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/upload.html": [
+      "lq_upload",
+      "lq_dropzone",
+      "lq_file_chip"
+     ]
+    },
+    "js": {
+     "static/js/lq/upload.js": [
+      "FILE_STATES",
+      "UPLOAD_KINDS",
+      "bindUpload",
+      "createUpload",
+      "uploadItem",
+      "uploadMarkup",
+      "uploadProps",
+      "uploadSnapshot"
+     ]
+    },
+    "python": "classroom_app/lq_upload.py",
+    "react": []
+   },
+   "title": "Upload / Dropzone / FileChip",
+   "layer": "component",
+   "notes": {
+    "summary": "上传队列呈现：拖放区、文件芯片与 FILE_STATES；队列、413 恢复、提交由业务控制器持有。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "templates/dev/lq_business.html",
+      "hits": 9
+     }
+    ]
+   }
+  },
+  "workspace": {
+   "css": "static/css/lq/components/workspace.css",
+   "roots": [
+    "lq-domain-workspace",
+    "lq-split",
+    "lq-viewer"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {
+     "templates/macros/lq/workspace.html": [
+      "lq_split",
+      "lq_viewer"
+     ]
+    },
+    "js": {
+     "static/js/lq/workspace.js": [
+      "createWorkspace",
+      "enhanceSplit",
+      "html",
+      "workspaceKinds",
+      "workspaceMarkup",
+      "workspaceProps"
+     ]
+    },
+    "python": "classroom_app/lq_workspace.py",
+    "react": []
+   },
+   "title": "Workspace Split / Viewer",
+   "layer": "component",
+   "notes": {
+    "summary": "可拖分栏与文档查看器外壳；iframe/表单原位，移动端操作可达。",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 2,
+    "files": [
+     {
+      "path": "templates/dev/lq_workspace.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/ai_workspace_widget.html",
+      "hits": 1
+     }
+    ]
+   }
+  }
+ },
+ "pages": {
+  "calendar": {
+   "css": "static/css/lq/pages/calendar.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "centered": {
+   "css": "static/css/lq/pages/centered.css",
+   "linkedBy": [
+    "templates/base_centered.html"
+   ],
+   "bundledInIndex": false
+  },
+  "dashboard": {
+   "css": "static/css/lq/pages/dashboard.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "growth": {
+   "css": "static/css/lq/pages/growth.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "life-tip": {
+   "css": "static/css/lq/pages/life-tip.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "login": {
+   "css": "static/css/lq/pages/login.css",
+   "linkedBy": [
+    "templates/base_centered.html"
+   ],
+   "bundledInIndex": false
+  },
+  "manage-archive": {
+   "css": "static/css/lq/pages/manage-archive.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "message-center": {
+   "css": "static/css/lq/pages/message-center.css",
+   "linkedBy": [
+    "templates/partials/profile/head.html",
+    "templates/partials/profile/messages.html"
+   ],
+   "bundledInIndex": false
+  },
+  "navbar": {
+   "css": "static/css/lq/pages/navbar.css",
+   "linkedBy": [
+    "templates/base_navbar.html"
+   ],
+   "bundledInIndex": false
+  },
+  "page-material": {
+   "css": "static/css/lq/pages/page-material.css",
+   "linkedBy": [],
+   "bundledInIndex": true
+  },
+  "profile": {
+   "css": "static/css/lq/pages/profile.css",
+   "linkedBy": [
+    "templates/partials/profile/head.html"
+   ],
+   "bundledInIndex": false
+  },
+  "status": {
+   "css": "static/css/lq/pages/status.css",
+   "linkedBy": [
+    "templates/base_centered.html"
+   ],
+   "bundledInIndex": false
+  }
+ },
+ "consumersByFile": {
+  "classroom_app/services/document_render_service.py": [
+   "button",
+   "content",
+   "declarative",
+   "indicators",
+   "materials"
+  ],
+  "frontend/src/components/action-entry.tsx": [
+   "button",
+   "indicators",
+   "react-bridges"
+  ],
+  "frontend/src/components/ui/dialog.tsx": [
+   "button",
+   "dialogs"
+  ],
+  "frontend/src/islands/assignment-authoring-sync.tsx": [
+   "button"
+  ],
+  "frontend/src/islands/classroom-workspace.tsx": [
+   "button",
+   "chip",
+   "content",
+   "forms",
+   "status"
+  ],
+  "frontend/src/islands/dashboard-quick-actions.tsx": [
+   "button"
+  ],
+  "frontend/src/islands/dashboard-workspace.tsx": [
+   "button",
+   "chip",
+   "content",
+   "forms",
+   "status",
+   "tables"
+  ],
+  "frontend/src/islands/exam-assign-sync.tsx": [
+   "button"
+  ],
+  "frontend/src/islands/message-center-workspace-sync.tsx": [
+   "button"
+  ],
+  "frontend/src/islands/submission-jump-nav.tsx": [
+   "button",
+   "declarative"
+  ],
+  "static/js/academic_final_materials.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/academic_schedule_sync.js": [
+   "button",
+   "chip",
+   "dialogs",
+   "materials",
+   "menus",
+   "skeleton",
+   "tables"
+  ],
+  "static/js/academic_sync_dialog.js": [
+   "button",
+   "declarative",
+   "forms",
+   "layers"
+  ],
+  "static/js/agent_workbench.js": [
+   "button",
+   "declarative",
+   "dialogs",
+   "forms",
+   "skeleton"
+  ],
+  "static/js/agent_workbench_render.js": [
+   "button",
+   "declarative",
+   "forms",
+   "skeleton"
+  ],
+  "static/js/ai_chat_component.js": [
+   "button"
+  ],
+  "static/js/ai_workspace_capture.js": [
+   "button",
+   "declarative",
+   "forms",
+   "layers"
+  ],
+  "static/js/ai_workspace_history.js": [
+   "button",
+   "declarative",
+   "dialogs",
+   "domain-controls"
+  ],
+  "static/js/app_exams.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/app_files.js": [
+   "button",
+   "content",
+   "domain-controls",
+   "materials"
+  ],
+  "static/js/approval_workflow.js": [
+   "button",
+   "declarative",
+   "dialogs",
+   "domain-controls",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/assessment_appeal.js": [
+   "button",
+   "declarative",
+   "dialogs",
+   "domain-controls",
+   "forms",
+   "layers",
+   "status"
+  ],
+  "static/js/assessment_classification_batch.js": [
+   "domain-controls"
+  ],
+  "static/js/assessment_kind_controls.js": [
+   "layers"
+  ],
+  "static/js/assessment_plan_editor.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/attendance_reports.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "materials",
+   "skeleton",
+   "tables"
+  ],
+  "static/js/base_resource_modes.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/blog.js": [
+   "button",
+   "content",
+   "declarative",
+   "dialogs",
+   "emoji-picker",
+   "forms",
+   "materials",
+   "status"
+  ],
+  "static/js/blog_moderation_ui.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/blog_studio.js": [
+   "content",
+   "forms",
+   "insights"
+  ],
+  "static/js/career_path_app.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/career_path_network.js": [
+   "button",
+   "declarative",
+   "domain-controls"
+  ],
+  "static/js/chat.js": [
+   "button",
+   "content",
+   "domain-controls",
+   "materials",
+   "status"
+  ],
+  "static/js/classroom_closeout.js": [
+   "forms"
+  ],
+  "static/js/classroom_interactions.js": [
+   "button",
+   "content",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "static/js/classroom_material_list.js": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "static/js/classroom_materials.js": [
+   "button",
+   "declarative",
+   "forms",
+   "layers"
+  ],
+  "static/js/classroom_members.js": [
+   "button",
+   "domain-controls"
+  ],
+  "static/js/classroom_page.js": [
+   "button",
+   "content",
+   "domain-controls",
+   "layers",
+   "materials",
+   "nav-menu"
+  ],
+  "static/js/classroom_polls.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/classroom_private_messages.js": [
+   "button",
+   "content",
+   "domain-controls"
+  ],
+  "static/js/classroom_retake.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/collaboration.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials",
+   "navigation"
+  ],
+  "static/js/course_schedule_changes.js": [
+   "button",
+   "chip",
+   "skeleton",
+   "tables"
+  ],
+  "static/js/course_schedule_deck.js": [
+   "button",
+   "chip",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/course_schedule_editor.js": [
+   "button",
+   "content",
+   "declarative",
+   "dialogs",
+   "forms",
+   "materials",
+   "overflow-label"
+  ],
+  "static/js/course_schedule_editor_styles.js": [
+   "button",
+   "chip",
+   "selection",
+   "tables"
+  ],
+  "static/js/course_schedule_styles.js": [
+   "button",
+   "chip"
+  ],
+  "static/js/cultivation_identity.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "materials"
+  ],
+  "static/js/dashboard.js": [
+   "button",
+   "collapsible",
+   "content",
+   "domain-controls",
+   "layers",
+   "materials",
+   "nav-menu",
+   "navigation",
+   "selection"
+  ],
+  "static/js/dashboard_agenda_widget.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "materials"
+  ],
+  "static/js/emoji_picker.js": [
+   "declarative",
+   "domain-controls",
+   "emoji-picker",
+   "materials"
+  ],
+  "static/js/exam_paper_preview.js": [
+   "forms"
+  ],
+  "static/js/feedback.js": [
+   "domain-controls",
+   "emoji-picker"
+  ],
+  "static/js/feedback_conversation.js": [
+   "domain-controls"
+  ],
+  "static/js/file_preview.js": [
+   "button",
+   "domain-controls"
+  ],
+  "static/js/global_search.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/grade_material_preflight.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/grade_publication_controls.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/group_assignment_config.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/group_peer_eval.js": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "static/js/knowledge_tree/chrome.js": [
+   "button",
+   "chip",
+   "dialogs",
+   "domain-controls",
+   "indicators",
+   "skeleton",
+   "status"
+  ],
+  "static/js/knowledge_tree/editing.js": [
+   "dialogs"
+  ],
+  "static/js/knowledge_tree/progress.js": [
+   "dialogs"
+  ],
+  "static/js/knowledge_tree/side.js": [
+   "button",
+   "chip",
+   "domain-controls",
+   "forms",
+   "skeleton"
+  ],
+  "static/js/learning_material_selector.js": [
+   "button"
+  ],
+  "static/js/learning_progress.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/lesson_plan_editor.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/lessondoc_editor/ai_panel.js": [
+   "domain-controls"
+  ],
+  "static/js/lessondoc_editor/canvas_controller.js": [
+   "domain-controls"
+  ],
+  "static/js/lessondoc_editor/content_controls.js": [
+   "domain-controls"
+  ],
+  "static/js/lessondoc_editor/index.js": [
+   "domain-controls"
+  ],
+  "static/js/lessondoc_editor/media_picker.js": [
+   "domain-controls"
+  ],
+  "static/js/lessondoc_editor/ui.js": [
+   "domain-controls",
+   "forms",
+   "status"
+  ],
+  "static/js/lessondoc_wizard.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/login_scene.js": [
+   "button",
+   "materials",
+   "skeleton"
+  ],
+  "static/js/ls_date_picker.js": [
+   "declarative",
+   "domain-controls",
+   "layers"
+  ],
+  "static/js/ls_image_lightbox.js": [
+   "button",
+   "dialogs",
+   "layers",
+   "lightbox",
+   "materials"
+  ],
+  "static/js/manage_academic_integrations.js": [
+   "button"
+  ],
+  "static/js/manage_agent_keys.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_assessment_plans.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/manage_blog_crawler.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_blog_review.js": [
+   "button",
+   "content",
+   "forms",
+   "indicators",
+   "materials"
+  ],
+  "static/js/manage_classes.js": [
+   "button",
+   "chip"
+  ],
+  "static/js/manage_classrooms.js": [
+   "button",
+   "chip",
+   "tables"
+  ],
+  "static/js/manage_course_schedule.js": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "static/js/manage_courses.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/manage_filter_chips.js": [
+   "chip",
+   "collapsible",
+   "domain-controls"
+  ],
+  "static/js/manage_gongwen.js": [
+   "button",
+   "chip",
+   "content",
+   "declarative",
+   "forms",
+   "tables"
+  ],
+  "static/js/manage_gongwen_integrations.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_lesson_plans.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/manage_life_tips.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_lq_pilot.js": [
+   "shells"
+  ],
+  "static/js/manage_offering_merge.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/manage_offerings.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/manage_organizations.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_polls.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "materials",
+   "skeleton"
+  ],
+  "static/js/manage_semesters.js": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "static/js/manage_signatures.js": [
+   "button",
+   "domain-controls",
+   "forms"
+  ],
+  "static/js/manage_smart_classroom_integrations.js": [
+   "button"
+  ],
+  "static/js/manage_system_monitor.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_teacher_evaluations.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/manage_teacher_schedule_query.js": [
+   "button",
+   "declarative",
+   "dialogs",
+   "domain-controls",
+   "skeleton"
+  ],
+  "static/js/manage_textbooks.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/manage_users.js": [
+   "button",
+   "content",
+   "declarative",
+   "dialogs",
+   "materials",
+   "status"
+  ],
+  "static/js/material_editors.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/material_hub.js": [
+   "content",
+   "materials"
+  ],
+  "static/js/material_render_shell.js": [
+   "domain-controls"
+  ],
+  "static/js/material_renderers.js": [
+   "button"
+  ],
+  "static/js/material_selection_panel.js": [
+   "button",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "materials"
+  ],
+  "static/js/material_viewer.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "materials"
+  ],
+  "static/js/materials_explorer.js": [
+   "button",
+   "chip",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "static/js/materials_library_cards.js": [
+   "button",
+   "chip",
+   "forms"
+  ],
+  "static/js/materials_manage.js": [
+   "button",
+   "chip",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/materials_sync_report.js": [
+   "chip",
+   "declarative",
+   "indicators"
+  ],
+  "static/js/message_center.js": [
+   "button",
+   "chip",
+   "content",
+   "domain-controls",
+   "emoji-picker",
+   "forms",
+   "indicators",
+   "materials",
+   "selection",
+   "skeleton"
+  ],
+  "static/js/message_center_bell.js": [
+   "toast"
+  ],
+  "static/js/message_center_blog.js": [
+   "button",
+   "chip",
+   "composer",
+   "content",
+   "forms",
+   "insights",
+   "skeleton"
+  ],
+  "static/js/navbar_lq.js": [
+   "shells"
+  ],
+  "static/js/offering_bootstrap.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/process_material_file_picker.js": [
+   "button"
+  ],
+  "static/js/process_material_filters.js": [
+   "button"
+  ],
+  "static/js/process_material_import_summary.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/process_material_modal.js": [
+   "button",
+   "content",
+   "declarative",
+   "layers",
+   "materials"
+  ],
+  "static/js/profile.js": [
+   "button",
+   "forms",
+   "indicators"
+  ],
+  "static/js/profile_signatures.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/prompt_pool.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/report_card.js": [
+   "shells"
+  ],
+  "static/js/resume_applications.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/resume_builder.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/resume_common.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "static/js/resume_home.js": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "static/js/resume_job_targets.js": [
+   "button"
+  ],
+  "static/js/resume_list.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/resume_personal.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/resume_section.js": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "static/js/resume_shell.js": [
+   "layers"
+  ],
+  "static/js/semester_calendar.js": [
+   "button",
+   "content",
+   "declarative",
+   "domain-controls",
+   "forms",
+   "layers",
+   "materials",
+   "navigation",
+   "selection"
+  ],
+  "static/js/session_knowledge_tree.js": [
+   "dialogs",
+   "forms",
+   "layers",
+   "status"
+  ],
+  "static/js/session_knowledge_tree_manager.js": [
+   "button",
+   "chip",
+   "dialogs",
+   "domain-controls",
+   "indicators",
+   "skeleton"
+  ],
+  "static/js/session_material_ai_assistant.js": [
+   "button"
+  ],
+  "static/js/signature_multi_select.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "selection"
+  ],
+  "static/js/signature_pad.js": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "static/js/signature_point_workflow.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/signature_scope_fields.js": [
+   "forms"
+  ],
+  "static/js/signature_workflows.js": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "static/js/student_dashboard_schedule.js": [
+   "button",
+   "selection"
+  ],
+  "static/js/submission_grading.js": [
+   "dialogs"
+  ],
+  "static/js/submission_upload.js": [
+   "button"
+  ],
+  "static/js/teacher_evaluation_editor.js": [
+   "button",
+   "declarative",
+   "forms",
+   "layers"
+  ],
+  "static/js/teacher_onboarding.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "static/js/teaching_lifecycle_review.js": [
+   "button",
+   "forms"
+  ],
+  "static/js/tree_select_form_modal.js": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "layers",
+   "materials"
+  ],
+  "static/js/ui.js": [
+   "button",
+   "layers",
+   "toast"
+  ],
+  "static/js/ui_color_picker.js": [
+   "domain-controls",
+   "forms"
+  ],
+  "static/js/ui_explanation.js": [
+   "button",
+   "declarative",
+   "layers",
+   "materials",
+   "menus"
+  ],
+  "static/js/ui_popover.js": [
+   "motion"
+  ],
+  "static/js/ui_preferences_panel.js": [
+   "layers",
+   "selection"
+  ],
+  "static/js/user_ui_preferences.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/whiteboard/board.js": [
+   "button",
+   "domain-controls"
+  ],
+  "static/js/whiteboard/exam_board.js": [
+   "button",
+   "declarative",
+   "domain-controls"
+  ],
+  "static/js/whiteboard/panels/controls.js": [
+   "button",
+   "domain-controls",
+   "forms"
+  ],
+  "static/js/whiteboard/popover.js": [
+   "domain-controls"
+  ],
+  "static/js/whiteboard/text_editor.js": [
+   "domain-controls"
+  ],
+  "static/js/whiteboard/toolbar.js": [
+   "button",
+   "declarative",
+   "domain-controls"
+  ],
+  "templates/achievements.html": [
+   "chip",
+   "content",
+   "materials"
+  ],
+  "templates/assessment_plan_editor.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/assignment_detail_student.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/assignment_detail_teacher.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "menus"
+  ],
+  "templates/assignment_wrong_summary.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials",
+   "navigation"
+  ],
+  "templates/base.html": [
+   "button"
+  ],
+  "templates/base_navbar.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/blog.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/career_path.html": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "templates/classroom_main_v4.html": [
+   "button",
+   "composer",
+   "content",
+   "declarative",
+   "dialogs",
+   "forms",
+   "materials",
+   "navigation",
+   "selection",
+   "status"
+  ],
+  "templates/dashboard.html": [
+   "button",
+   "collapsible",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/dashboard_teacher.html": [
+   "button",
+   "collapsible",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/dev/lq.html": [
+   "dialogs",
+   "forms",
+   "materials"
+  ],
+  "templates/dev/lq_business.html": [
+   "business",
+   "forms",
+   "materials",
+   "upload"
+  ],
+  "templates/dev/lq_centered.html": [
+   "button",
+   "forms",
+   "materials"
+  ],
+  "templates/dev/lq_content.html": [
+   "button",
+   "composer",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/dev/lq_data.html": [
+   "button",
+   "materials",
+   "selection",
+   "tables"
+  ],
+  "templates/dev/lq_insights.html": [
+   "button",
+   "insights",
+   "materials"
+  ],
+  "templates/dev/lq_interactions.html": [
+   "button",
+   "collapsible",
+   "forms",
+   "materials",
+   "menus",
+   "navigation",
+   "tooltips"
+  ],
+  "templates/dev/lq_presentation.html": [
+   "button",
+   "chip",
+   "chip-row",
+   "indicators",
+   "materials",
+   "skeleton"
+  ],
+  "templates/dev/lq_shell.html": [
+   "button",
+   "content",
+   "forms",
+   "shells",
+   "tables"
+  ],
+  "templates/dev/lq_status.html": [
+   "forms",
+   "materials",
+   "status"
+  ],
+  "templates/dev/lq_workspace.html": [
+   "button",
+   "forms",
+   "materials",
+   "workspace"
+  ],
+  "templates/error.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/exam_editor.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/exam_take.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "menus"
+  ],
+  "templates/feedback_review.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/learning_path.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/lesson_plan_editor.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/lessondoc_editor.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "status"
+  ],
+  "templates/macros/app_topbar.html": [
+   "button"
+  ],
+  "templates/macros/app_utility_menus.html": [
+   "menus",
+   "nav-menu"
+  ],
+  "templates/macros/classroom_menus.html": [
+   "menus",
+   "nav-menu"
+  ],
+  "templates/macros/manage_insights.html": [
+   "content",
+   "materials"
+  ],
+  "templates/macros/manage_page.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/macros/ui_explanation.html": [
+   "button"
+  ],
+  "templates/macros/user_ui_preferences.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/academic_final_materials.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/academic_overview.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/manage/ai.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/archive_pipeline.html": [
+   "button",
+   "content"
+  ],
+  "templates/manage/assessment_plans.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms"
+  ],
+  "templates/manage/attendance_reports.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/manage/classes.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/classrooms.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/course_schedule.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/course_schedule_editor.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/courses.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/exams.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials",
+   "menus"
+  ],
+  "templates/manage/gongwen.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search",
+   "tables"
+  ],
+  "templates/manage/layout.html": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "templates/manage/lesson_plans.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms"
+  ],
+  "templates/manage/life_tips.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/lq_sidebar.html": [
+   "button",
+   "declarative",
+   "forms",
+   "materials",
+   "shells"
+  ],
+  "templates/manage/lq_topbar.html": [
+   "declarative",
+   "shells"
+  ],
+  "templates/manage/lq_utility.html": [
+   "button"
+  ],
+  "templates/manage/material_hub.html": [
+   "button",
+   "chip-row",
+   "content",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/materials.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "menus"
+  ],
+  "templates/manage/me_credentials.html": [
+   "content",
+   "materials"
+  ],
+  "templates/manage/offering_hub.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/offering_merge.html": [
+   "content",
+   "materials"
+  ],
+  "templates/manage/offerings.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/semesters.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/signature_workflows.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/manage/signatures.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/student_detail.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/academic_integrations.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/agent_keys.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/ai_usage.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/blog_crawler.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/blog_review.html": [
+   "navigation"
+  ],
+  "templates/manage/system/diagnostics.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/manage/system/feedback.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/manage/system/gongwen_integrations.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/monitor.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/organizations.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/password_resets.html": [
+   "button",
+   "chip",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "tables"
+  ],
+  "templates/manage/system/smart_classroom_integrations.html": [
+   "button",
+   "chip-row",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/super_admin.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/manage/system/users.html": [
+   "button",
+   "content",
+   "declarative",
+   "dialogs",
+   "forms",
+   "materials",
+   "status"
+  ],
+  "templates/manage/teacher_evaluations.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms"
+  ],
+  "templates/manage/teacher_schedule_query.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "status"
+  ],
+  "templates/manage/textbooks.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/manage/work_inbox.html": [
+   "button",
+   "chip",
+   "chip-row",
+   "content"
+  ],
+  "templates/material_reader_unavailable.html": [
+   "button"
+  ],
+  "templates/material_render_shell.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/material_viewer.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/academic_sync_dialog.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/ai_workspace_widget.html": [
+   "button",
+   "declarative",
+   "forms",
+   "shells",
+   "workspace"
+  ],
+  "templates/partials/app_topbar_utility_actions.html": [
+   "button"
+  ],
+  "templates/partials/assessment_classification_batch.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/partials/assessment_kind_control.html": [
+   "button",
+   "forms"
+  ],
+  "templates/partials/classroom_group_qr.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/classroom_members/alerts.html": [
+   "button"
+  ],
+  "templates/partials/classroom_members/exams.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/classroom_members/overview.html": [
+   "content",
+   "materials"
+  ],
+  "templates/partials/classroom_members/settings.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/classroom_members/workspace.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/partials/classroom_task_preview.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/partials/cultivation_card.html": [
+   "content",
+   "materials"
+  ],
+  "templates/partials/dashboard_agenda_widget.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/partials/dashboard_schedule_tools.html": [
+   "nav-menu"
+  ],
+  "templates/partials/exams/board.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/partials/exams/control_panel.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "menus",
+   "search"
+  ],
+  "templates/partials/exams/modals.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/exams/scripts.html": [
+   "button",
+   "forms"
+  ],
+  "templates/partials/feedback_button.html": [
+   "button"
+  ],
+  "templates/partials/feedback_modal.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials",
+   "navigation"
+  ],
+  "templates/partials/learning_certificate_reveal.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/partials/learning_material_selector.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/lq_app_bottomnav.html": [
+   "shells"
+  ],
+  "templates/partials/lq_navbar_topbar.html": [
+   "button",
+   "indicators",
+   "materials",
+   "nav-menu",
+   "shells"
+  ],
+  "templates/partials/lq_page_backdrop.html": [
+   "page-backdrop"
+  ],
+  "templates/partials/materials/library_card.html": [
+   "button",
+   "chip",
+   "content",
+   "forms",
+   "materials",
+   "search"
+  ],
+  "templates/partials/materials/modals_generate.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/materials/modals_library.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/materials/modals_repository.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/profile/appearance.html": [
+   "chip",
+   "forms",
+   "navigation"
+  ],
+  "templates/partials/profile/body.html": [
+   "materials"
+  ],
+  "templates/partials/profile/email.html": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "templates/partials/profile/hero.html": [
+   "button"
+  ],
+  "templates/partials/profile/hero_lq.html": [
+   "button",
+   "declarative",
+   "indicators"
+  ],
+  "templates/partials/profile/messages.html": [
+   "button",
+   "composer",
+   "content",
+   "declarative",
+   "forms",
+   "indicators",
+   "materials"
+  ],
+  "templates/partials/profile/overview.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/partials/profile/portfolio.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/profile/security.html": [
+   "button",
+   "forms"
+  ],
+  "templates/partials/profile/settings.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/profile_button.html": [
+   "button"
+  ],
+  "templates/partials/semester_calendar_panel.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/session_material_ai_modal.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/student_dashboard_schedule.html": [
+   "button",
+   "declarative",
+   "forms"
+  ],
+  "templates/partials/student_security_modal.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/submission_retained_grade.html": [
+   "declarative"
+  ],
+  "templates/partials/teacher_onboarding_modal.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/partials/teaching_stage_bar.html": [
+   "button",
+   "declarative"
+  ],
+  "templates/permission_denied.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/points_shop.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/report_card.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/resume/applications.html": [
+   "button"
+  ],
+  "templates/resume/builder.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/resume/home.html": [
+   "button",
+   "forms"
+  ],
+  "templates/resume/job_targets.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/resume/layout.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
+  "templates/resume/list.html": [
+   "button",
+   "forms"
+  ],
+  "templates/resume/personal.html": [
+   "button",
+   "forms"
+  ],
+  "templates/resume/section.html": [
+   "button"
+  ],
+  "templates/session_expired.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/status.html": [
+   "button",
+   "content",
+   "materials"
+  ],
+  "templates/student_auth_flow_v4.html": [
+   "button",
+   "dialogs",
+   "forms",
+   "materials"
+  ],
+  "templates/student_login_v4.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/submission_detail.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/teacher_evaluation_editor.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/teacher_login_v4.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ],
+  "templates/teacher_register_v4.html": [
+   "button",
+   "forms",
+   "materials"
+  ],
+  "templates/wrong_book.html": [
+   "button",
+   "content",
+   "forms",
+   "materials"
+  ]
+ },
+ "limitations": [
+  "源码扫描只证明「引用了模块的类/宏/工厂」，不证明运行时合同与业务验收；视觉与交互仍需浏览器证据。",
+  "后端拼接的 HTML 字符串、动态类名与第三方 iframe 内容可能漏扫；新增模块时在 notes 里登记 extraSelectors。"
+ ]
+}

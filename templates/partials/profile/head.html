@@ -45,6 +45,6 @@
 {% if profile_lq_enabled|default(false) %}
 <link rel="stylesheet" href="{{ asset_url('css/lq/pages/profile.css') }}">
 {% endif %}
-{% if messages_lq_enabled|default(false) and active_section in ['notifications', 'private'] %}
+{% if active_section in ['notifications', 'private'] %}
 <link rel="stylesheet" href="{{ asset_url('css/lq/pages/message-center.css') }}">
 {% endif %}
