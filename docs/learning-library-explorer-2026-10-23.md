@@ -53,3 +53,9 @@ CSS：`static/css/materials_library.css`（页面材质别名 `--lq-page-content
 - 代码：commit `40b94088`，已推 `origin/dev`。
 - 门禁：改了 `schema_materials_integrations.py`/`postgres_schema.py`，重做原生 PostgreSQL 迁移演练（`.codex-temp/run_library_cards_native_gate.py`，报告 `.codex-temp/library-cards-gate/native-report.json`，77 个源码文件，无阻塞）；从冻结 worktree 发布，DryRun 后正式一次通过，未停服。
 - 上线核验：8 个容器 healthy；app 容器内新模块可导入、`_git_command_env` 已在；生产库 `course_materials` 已有 `git_last_sync_at/git_last_sync_status/git_last_sync_summary/git_head_commit`；公网 `/api/materials/{id}/repository/progress|binding-plan`、`/api/materials/library?kind=` 未登录 401，`/materials/document-preview|inline` 未登录 303 到登录页；`/static/assets/manifest.json` 含 7 个新 JS/CSS；无近期错误日志，根盘 51%。
+
+## 8. 第二轮修正（2026-10-23 晚）
+
+- 卡片：同步完成只更新一枚状态 chip（`describeSyncResult`），进度条仅在进行中显示；完整报告在进入浏览器后由 Git 面板展示（`explorer.presentGitResult`）。整张卡片可点进浏览器（按钮/复选框除外），鼠标为手形；正文区设最小高度，课堂覆盖与 Git 块不再挤压重叠。
+- 浏览器：工具栏/面板头/内容头/状态栏改为磨砂透明（`--mx-frost` + 细模糊，关闭玻璃或高对比回到不透明面），滚动时不再叠字；去掉旧 `.modal-body` 80% 高度上限，浮窗填满到底部。
+- 图片：注册 webp/bmp/avif/ico/tif(f)，`/materials/raw/{id}` 按扩展名放行历史行（此前 webp 为 binary 导致破图），预览契约对历史行直接指向原图。

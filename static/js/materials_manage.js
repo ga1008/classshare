@@ -20,7 +20,7 @@ import {
 import { MATERIAL_KINDS, MATERIAL_KIND_GROUPS } from './materials_kinds.js';
 import { createMaterialsExplorer } from './materials_explorer.js';
 import { paintCardSyncProgress, renderMaterialCards } from './materials_library_cards.js';
-import { renderSyncReport, startRepositoryUpdate } from './materials_sync_report.js';
+import { startRepositoryUpdate } from './materials_sync_report.js';
 
 const VIEW_MODE_STORAGE_KEY = 'lanshare:materials:library:view';
 
@@ -2376,13 +2376,7 @@ function renderList() {
             syncStates: state.cardSync,
         })}`;
         for (const [materialId, sync] of state.cardSync.entries()) {
-            const host = refs.listBody.querySelector(`.mcard[data-id="${materialId}"] [data-git-progress]`);
-            if (!host) continue;
             if (sync.running) paintCardSyncProgress(refs.listBody, materialId, sync.progress);
-            else if (sync.result) {
-                host.hidden = false;
-                renderSyncReport(host, sync.result, { compact: true });
-            }
         }
         updateSelectionBar();
         return;
@@ -2546,6 +2540,9 @@ async function openMaterialDetail(materialId) {
     state.activeMaterialId = Number(materialId);
     renderList();
     await explorer.open(Number(materialId));
+    // A card-level update finished earlier: show its full report in the explorer's Git panel.
+    const sync = state.cardSync.get(Number(materialId));
+    if (sync?.result && !sync.running) explorer.presentGitResult(Number(materialId), sync.result);
 }
 
 async function selectWorkspaceNode(materialId) {
@@ -6486,7 +6483,6 @@ function bindSecondaryEvents() {
                 openCardMenu(cardItem, actionTarget);
                 return;
             }
-            if (event.target.closest('[data-git-progress], .mcard__coverage')) return;
             runCardAction(cardAction || 'explore', cardItem).catch((error) => {
                 showToast(error.message || '操作失败', 'error');
             });

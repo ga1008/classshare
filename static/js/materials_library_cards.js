@@ -11,7 +11,7 @@
  */
 import { escapeHtml, formatDate, formatSize } from './ui.js';
 import { getMaterialKind, kindIcon, providerLabel } from './materials_kinds.js';
-import { describeLastSync, renderSyncProgress } from './materials_sync_report.js';
+import { describeLastSync, describeSyncResult, renderSyncProgress } from './materials_sync_report.js';
 
 function highlight(text, keyword) {
     const source = String(text || '');
@@ -64,15 +64,16 @@ function gitBlock(item, ctx) {
     const sync = ctx.syncStates?.get(Number(item.id)) || null;
     const running = Boolean(sync?.running);
     const canManage = item.can_manage !== false;
-    const resultTone = sync?.result ? (sync.result.status === 'success' ? 'success' : 'danger') : last.tone;
-    const resultText = sync?.result ? (sync.result.message || '') : last.text;
+    const done = sync?.result ? describeSyncResult(sync.result) : null;
+    const resultTone = done ? done.tone : last.tone;
+    const resultText = done ? done.text : last.text;
     return `
         <div class="mcard__git" data-git-block>
             <div class="mcard__git-row">
                 <span class="mcard__git-meta" title="${escapeHtml(item.git_remote_url || '')}">${kindIcon('git', 13)} ${escapeHtml(providerLabel(item))} · ${escapeHtml(item.git_default_branch || item.git_head_branch || '未识别分支')}</span>
                 ${canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--prominent mcard__git-btn" data-action="git-update" ${running ? 'disabled aria-busy="true"' : ''}>${kindIcon('refresh', 13)} ${running ? '更新中…' : '一键更新'}</button>` : ''}
             </div>
-            <span class="lq-chip lq-chip--sm lq-chip--status mcard__git-last" data-lq-tone="${escapeHtml(resultTone)}" title="${escapeHtml(last.title)}">${escapeHtml(resultText)}</span>
+            <span class="lq-chip lq-chip--sm lq-chip--status mcard__git-last" data-lq-status data-lq-tone-level="${escapeHtml(resultTone)}" title="${escapeHtml(done ? '进入浏览可查看完整同步报告' : last.title)}">${escapeHtml(resultText)}</span>
             <div class="mcard__git-progress" data-git-progress hidden></div>
         </div>`;
 }
@@ -139,10 +140,11 @@ export function renderMaterialCards(items, ctx = {}) {
 export function paintCardSyncProgress(listBody, materialId, progress) {
     const card = listBody?.querySelector(`.mcard[data-id="${Number(materialId)}"]`);
     if (!card) return;
-    renderSyncProgress(card.querySelector('[data-git-progress]'), progress);
+    const running = Boolean(progress && progress.status === 'running');
+    // Only the live phase strip lives in the card; the finished report belongs to the explorer.
+    renderSyncProgress(card.querySelector('[data-git-progress]'), running ? progress : null);
     const button = card.querySelector('[data-action="git-update"]');
     if (button) {
-        const running = Boolean(progress && progress.status === 'running');
         button.disabled = running;
         button.setAttribute('aria-busy', String(running));
         button.innerHTML = `${kindIcon('refresh', 13)} ${running ? '更新中…' : '一键更新'}`;

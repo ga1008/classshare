@@ -313,3 +313,19 @@ class GitCommandEnvironmentTests(unittest.TestCase):
         self.assertEqual(env["PATH"], "/usr/bin")
         self.assertNotIn("GIT_INDEX_FILE", env)
         self.assertNotIn("GIT_OBJECT_DIRECTORY", env)
+
+
+class ImageFormatTests(unittest.TestCase):
+    def test_extra_image_formats_are_registered_and_detected_by_extension(self):
+        from classroom_app.services.materials_service import infer_material_profile, is_image_material
+        for name in ("a.webp", "b.bmp", "c.avif", "d.ico", "e.tiff"):
+            profile = infer_material_profile(name)
+            self.assertEqual(profile["preview_type"], "image", name)
+            self.assertTrue(profile["mime_type"].startswith("image/"), name)
+        # Rows imported before the format was registered still count as images.
+        legacy = {"preview_type": "binary", "file_ext": "webp", "name": "old.webp"}
+        self.assertTrue(is_image_material(legacy))
+        self.assertFalse(is_image_material({"preview_type": "binary", "file_ext": "bin", "name": "x.bin"}))
+        preview = build_material_preview({"id": 12, "node_type": "file", "name": "old.webp", "file_ext": "webp", "preview_type": "binary"})
+        self.assertEqual(preview["preview_mode"], "image")
+        self.assertEqual(preview["preview_url"], "/materials/raw/12")

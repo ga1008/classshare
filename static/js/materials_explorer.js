@@ -782,11 +782,19 @@ export function createMaterialsExplorer(options = {}) {
         closeModal(modalId);
     }
 
+    function presentGitResult(materialId, result) {
+        if (Number(state.selectedId) !== Number(materialId) || !state.detail?.is_git_repository) return;
+        state.git.result = result || null;
+        state.git.progress = null;
+        renderDetails();
+    }
+
     return {
         open,
         refresh,
         close,
         select,
+        presentGitResult,
         get activeId() { return state.selectedId; },
         get detail() { return state.detail; },
         isEditing: () => state.editing,

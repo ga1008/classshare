@@ -117,7 +117,26 @@ MATERIAL_TYPE_REGISTRY = {
         "type_label": "图片",
         "ai_capability": "image",
     },
+    "webp": {"mime_type": "image/webp", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
+    "bmp": {"mime_type": "image/bmp", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
+    "avif": {"mime_type": "image/avif", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
+    "ico": {"mime_type": "image/x-icon", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
+    "tif": {"mime_type": "image/tiff", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
+    "tiff": {"mime_type": "image/tiff", "preview_type": "image", "type_label": "图片", "ai_capability": "image"},
 }
+
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif", "ico", "tif", "tiff"}
+
+
+def is_image_material(row) -> bool:
+    """Image by stored preview type or by extension (rows imported before a format was registered)."""
+    if str(row["preview_type"] if "preview_type" in row.keys() else "") == "image":
+        return True
+    ext = str(row["file_ext"] if "file_ext" in row.keys() else "").lower().lstrip(".")
+    if not ext:
+        name = str(row["name"] if "name" in row.keys() else "")
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return ext in IMAGE_EXTENSIONS
 
 
 def normalize_material_path(raw_path: str, fallback_name: str = "untitled") -> str:

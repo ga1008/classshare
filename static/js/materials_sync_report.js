@@ -281,3 +281,24 @@ export function describeLastSync(item) {
         title: summary.message || '',
     };
 }
+
+/** One-line summary of a finished update for compact surfaces (cards). */
+export function describeSyncResult(result) {
+    if (!result) return null;
+    const summary = result.sync_summary || {};
+    const bindings = result.learning_bindings || {};
+    if (result.status !== 'success') {
+        return { text: result.status === 'auth_required' ? '需要登录后重试' : `同步失败：${String(result.message || '').slice(0, 40)}`, tone: result.status === 'auth_required' ? 'warning' : 'danger' };
+    }
+    const parts = [];
+    if (summary.inserted) parts.push(`+${summary.inserted}`);
+    if (summary.updated) parts.push(`~${summary.updated}`);
+    if (summary.deleted) parts.push(`-${summary.deleted}`);
+    const changes = parts.length ? parts.join(' ') : '无变化';
+    const lessons = Number(bindings.total_assignments || 0);
+    const warnings = (bindings.warnings || []).length + (bindings.unresolved || []).length;
+    return {
+        text: `刚刚同步 · ${changes}${lessons ? ` · ${lessons} 课次` : ''}${warnings ? ` · ${warnings} 项待核对` : ''}`,
+        tone: warnings ? 'warning' : (parts.length ? 'success' : 'neutral'),
+    };
+}

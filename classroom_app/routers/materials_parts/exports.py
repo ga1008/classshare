@@ -379,13 +379,16 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
     raw_preview_only = False
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
-    raw_preview_only = material["preview_type"] == "image"
+    from ...services.materials_service import is_image_material
     if material["node_type"] != "file":
         raise HTTPException(400, "文件夹不能直接预览")
-    if not raw_preview_only:
+    if not is_image_material(material):
         raise HTTPException(400, "仅图片材料支持原始内容访问")
     file_path = _load_material_storage_path(material)
-    return FileResponse(file_path, media_type=material["mime_type"] or "application/octet-stream")
+    media_type = str(material["mime_type"] or "")
+    if not media_type.startswith("image/"):
+        media_type = mimetypes.guess_type(material["name"] or "")[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"})
 
 
 async def _serve_rendered_material(

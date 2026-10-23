@@ -68,8 +68,9 @@ def build_material_preview(item: dict[str, Any], *, can_edit: bool = False) -> d
         if can_edit or item.get("editable"):
             payload["preview_content_url"] = f"/api/materials/{material_id}/content"
     elif mode == "image":
-        payload["preview_url"] = f"/materials/view/{material_id}"
         payload["preview_image_url"] = f"/materials/raw/{material_id}"
+        # The viewer page only knows registered image types; older rows fall back to the raw image.
+        payload["preview_url"] = f"/materials/view/{material_id}" if str(item.get("preview_type") or "") == "image" else payload["preview_image_url"]
     elif mode == "frame":
         if render_url:
             payload["preview_url"] = render_url
