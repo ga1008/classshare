@@ -111,6 +111,7 @@ from .routers import report_card
 from .routers import achievements
 from .routers import points_shop
 from .routers import global_search
+from .routers import material_knowledge_search
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
@@ -193,6 +194,12 @@ async def startup_event():
         # Created once here so concurrent first requests never race the DDL.
         ensure_agent_runtime_schema(agent_conn)
         agent_conn.commit()
+    from .services.material_search_schema import ensure_material_search_schema
+
+    with get_db_connection() as search_conn:
+        # Knowledge-index tables are runtime-owned (derived data, rebuilt by the scheduler).
+        ensure_material_search_schema(search_conn)
+        search_conn.commit()
 
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
@@ -249,6 +256,9 @@ async def startup_event():
             from .services.material_workflow_storage_service import ensure_material_workflow_cleanup_task
 
             ensure_material_workflow_cleanup_task(align_conn)
+            from .services.material_search_index_service import ensure_material_search_index_task
+
+            ensure_material_search_index_task(align_conn)
             from .services.wechat_mp_subscribe_service import ensure_deadline_scan_task
 
             mp_deadline_scan_task_id = ensure_deadline_scan_task(align_conn)
@@ -709,6 +719,7 @@ app.include_router(report_card.router)
 app.include_router(achievements.router)
 app.include_router(points_shop.router)
 app.include_router(global_search.router)
+app.include_router(material_knowledge_search.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)

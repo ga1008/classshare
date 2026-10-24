@@ -1309,6 +1309,10 @@
       "hits": 19
      },
      {
+      "path": "static/js/ai_chat_component.js",
+      "hits": 18
+     },
+     {
       "path": "static/js/profile.js",
       "hits": 18
      },
@@ -1367,10 +1371,6 @@
      {
       "path": "templates/resume/home.html",
       "hits": 16
-     },
-     {
-      "path": "static/js/ai_chat_component.js",
-      "hits": 15
      },
      {
       "path": "templates/macros/manage_page.html",
@@ -3034,7 +3034,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。"
    },
    "consumers": {
-    "count": 146,
+    "count": 147,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -3506,6 +3506,10 @@
      },
      {
       "path": "frontend/src/islands/submission-jump-nav.tsx",
+      "hits": 1
+     },
+     {
+      "path": "static/js/ai_chat_component.js",
       "hits": 1
      },
      {
@@ -6425,7 +6429,8 @@
    "skeleton"
   ],
   "static/js/ai_chat_component.js": [
-   "button"
+   "button",
+   "declarative"
   ],
   "static/js/ai_workspace_capture.js": [
    "button",

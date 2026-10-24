@@ -19,6 +19,7 @@ MIN_QUERY_LENGTH = 2
 KIND_LABELS = {
     "classroom": "课堂",
     "material": "材料",
+    "knowledge": "知识点定位",
     "assignment": "作业/考试",
     "blog": "博客",
 }
@@ -180,6 +181,34 @@ def _search_blog(conn: Any, pattern: str) -> list[dict[str, Any]]:
     ]
 
 
+def _search_knowledge_points(conn: Any, user: dict[str, Any], query: str) -> list[dict[str, Any]]:
+    """Full-text hits inside material bodies (page / lesson / section), permission-scoped.
+
+    Best-effort: an empty or missing index just yields no group.
+    """
+    try:
+        from .material_knowledge_search_service import search_material_knowledge
+
+        payload = search_material_knowledge(conn, user, query, limit=MAX_PER_KIND, per_material=1)
+    except Exception:  # noqa: BLE001 — the index is an enhancement on top of name search
+        return []
+    results: list[dict[str, Any]] = []
+    for hit in payload.get("hits") or []:
+        locator = (hit.get("locators") or [{}])[0]
+        if not locator.get("url"):
+            continue
+        label = str(locator.get("label") or "正文")
+        results.append(
+            {
+                "kind": "knowledge",
+                "title": f"{hit.get('title') or '课程材料'} · {label}",
+                "subtitle": str(locator.get("snippet") or "")[:120],
+                "link_url": str(locator["url"]),
+            }
+        )
+    return results[:MAX_PER_KIND]
+
+
 def search_everything(conn: Any, user: dict[str, Any], raw_query: str) -> dict[str, Any]:
     """跨域搜索入口；查询过短时返回空组，前端据此提示继续输入。"""
     query = _normalize_query(raw_query)
@@ -195,6 +224,7 @@ def search_everything(conn: Any, user: dict[str, Any], raw_query: str) -> dict[s
     for kind, results in (
         ("classroom", _search_classrooms(conn, role=role, user_pk=user_pk, pattern=pattern)),
         ("material", _search_materials(conn, offering_ids, pattern)),
+        ("knowledge", _search_knowledge_points(conn, user, query)),
         ("assignment", _search_assignments(conn, offering_ids, pattern, role=role)),
         ("blog", _search_blog(conn, pattern)),
     ):

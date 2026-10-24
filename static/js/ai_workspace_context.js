@@ -140,6 +140,77 @@ export function collectPageContext(extra = {}) {
     return context;
 }
 
+// --- visible page text -----------------------------------------------------
+// Every question carries the text the user can currently read on the page, so
+// the assistant can answer about "this page" from any window. Collection is a
+// pure read of rendered text; the server cleans, masks and caps it again
+// before it reaches a model.
+const PAGE_TEXT_MAX_CHARS = 16000;
+const PAGE_TEXT_EXCLUDE = [
+    '#ai-chat-modal', '#ai-chat-fab', '.ai-workspace-container', 'script', 'style', 'noscript', 'template',
+    'nav', 'header[role="banner"]', '.navbar', '.topbar', '.manage-nav', '.manage-sidebar', '.lq-toast-host',
+    '.toast-container', '[aria-hidden="true"]', '[hidden]', '[data-ai-page-text="skip"]', '.global-search-overlay',
+].join(',');
+const PAGE_TEXT_ROOTS = ['[data-ai-page-text="root"]', 'main', '[role="main"]', '.manage-main', '.manage-content', '.classroom-main', '#viewer-content'];
+const BLOCK_SELECTOR = 'p, div, li, tr, h1, h2, h3, h4, h5, h6, section, article, br, pre, blockquote, td, th, dt, dd';
+
+function cleanCollectedText(raw) {
+    const lines = String(raw || '').replace(/\r\n?/g, '\n').split('\n');
+    const kept = [];
+    let previous = null;
+    for (const line of lines) {
+        const text = line.replace(/[​-‏﻿]/g, '').replace(/\s+/g, ' ').trim();
+        if (!text || text === previous) continue;
+        previous = text;
+        kept.push(text.length > 600 ? `${text.slice(0, 600).trim()}…` : text);
+    }
+    const joined = kept.join('\n');
+    if (joined.length <= PAGE_TEXT_MAX_CHARS) return joined;
+    const tail = Math.floor(PAGE_TEXT_MAX_CHARS * 0.25);
+    const head = PAGE_TEXT_MAX_CHARS - tail;
+    return `${joined.slice(0, head).trim()}\n[……页面中间文字已省略……]\n${joined.slice(-tail).trim()}`;
+}
+
+function textOfElement(element) {
+    if (!element) return '';
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll(PAGE_TEXT_EXCLUDE).forEach((node) => node.remove());
+    // A detached clone has no layout, so innerText degrades to textContent; keep
+    // paragraph boundaries by appending line breaks to block elements first.
+    clone.querySelectorAll(BLOCK_SELECTOR).forEach((node) => node.appendChild(document.createTextNode('\n')));
+    return clone.textContent || '';
+}
+
+function sameOriginFrameText() {
+    const pieces = [];
+    $all('iframe').forEach((frame) => {
+        try {
+            const body = frame.contentDocument?.body;
+            if (!body || frame.closest('#ai-chat-modal')) return;
+            const text = body.innerText || textOfElement(body);
+            if (text && text.trim()) pieces.push(text);
+        } catch { /* cross-origin frame: nothing readable, nothing sent */ }
+    });
+    return pieces.join('\n');
+}
+
+export function collectPageText() {
+    try {
+        const root = PAGE_TEXT_ROOTS.map((selector) => $(selector)).find(Boolean);
+        let text = textOfElement(root || document.body);
+        if (root) {
+            const title = ($('h1')?.textContent || document.title || '').trim();
+            if (title && !text.includes(title)) text = `${title}\n${text}`;
+        }
+        const frameText = sameOriginFrameText();
+        if (frameText) text = `${text}\n${frameText}`;
+        return cleanCollectedText(text);
+    } catch (error) {
+        console.warn('AI page text collection skipped', error);
+        return '';
+    }
+}
+
 export function contextLabel(context = collectPageContext()) {
     const pieces = [
         context.materialContext?.materialName,

@@ -4657,6 +4657,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/material-search/reindex",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_material_search_reindex",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/material-search/status",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_search_status",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/monitor/ai-insight",
     "methods": [
       "POST"
@@ -5105,6 +5121,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/material-knowledge/search",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_material_knowledge_search",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/ai-expand",
     "methods": [
       "POST"
@@ -5433,6 +5457,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/materials/{material_id}/repository/binding-plan",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_repository_binding_plan",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/materials/{material_id}/repository/command",
     "methods": [
       "POST"
@@ -5446,6 +5478,14 @@
       "POST"
     ],
     "name": "save_material_repository_credentials",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/materials/{material_id}/repository/progress",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_material_repository_progress",
     "include_in_schema": true
   },
   {
@@ -8089,11 +8129,27 @@
     "include_in_schema": false
   },
   {
+    "path": "/materials/document-preview/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "material_document_preview_page",
+    "include_in_schema": true
+  },
+  {
     "path": "/materials/download/{material_id}",
     "methods": [
       "GET"
     ],
     "name": "download_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/inline/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "inline_material",
     "include_in_schema": true
   },
   {

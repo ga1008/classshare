@@ -701,3 +701,11 @@ def handle_mp_subscribe_dispatch(task: dict[str, Any]) -> str:
 
 
 register_task_handler(DISPATCH_TASK_KIND, handle_mp_subscribe_dispatch)
+
+
+from .material_search_index_service import (  # noqa: E402
+    TASK_KIND_MATERIAL_SEARCH_INDEX,
+    handle_material_search_index_task,
+)
+
+register_task_handler(TASK_KIND_MATERIAL_SEARCH_INDEX, handle_material_search_index_task)

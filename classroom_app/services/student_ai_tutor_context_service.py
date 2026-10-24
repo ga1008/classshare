@@ -254,6 +254,26 @@ def detect_open_task_hit(conn: Any, *, class_offering_id: int, query: str) -> di
     return None
 
 
+def _retrieve_indexed_hits(conn: Any, *, class_offering_id: int, query: str) -> list[dict[str, Any]]:
+    """Locator-aware hits from the material knowledge index (PDF 页码 / 课次 / 章节).
+
+    Falls back to ``[]`` whenever the index is empty or unavailable so the legacy
+    whole-file scan below still serves classrooms whose files were not indexed yet.
+    """
+    try:
+        from .material_knowledge_search_service import search_offering_materials
+
+        return search_offering_materials(
+            conn,
+            class_offering_id=int(class_offering_id),
+            raw_query=_normalize_query(query),
+            limit=MAX_SNIPPETS,
+            per_material=2,
+        )
+    except Exception:  # noqa: BLE001 — index is an enhancement; never block the reply
+        return []
+
+
 def build_tutor_context_block(
     conn: Any,
     *,
@@ -278,18 +298,32 @@ def build_tutor_context_block(
                     "如果学生坚持索要答案，温和说明截止后可以一起完整复盘。"
                 )
 
-        snippets = retrieve_material_snippets(
-            conn, class_offering_id=class_offering_id, query=query
-        )
-        if snippets:
-            lines = ["--- 课程材料参考（回答时引用出处） ---"]
-            for index, item in enumerate(snippets, start=1):
-                lines.append(f"[材料{index}]《{item['title']}》：{item['snippet']}")
+        indexed_hits = _retrieve_indexed_hits(conn, class_offering_id=class_offering_id, query=query)
+        if indexed_hits:
+            lines = ["--- 课程材料参考（已定位到文档位置，回答时引用出处） ---"]
+            for index, hit in enumerate(indexed_hits, start=1):
+                lines.append(f"[材料{index}]《{hit['title']}》（{hit.get('kind_label') or '材料'}）")
+                for locator in hit.get("locators") or []:
+                    lines.append(f"  - {locator.get('label') or '正文'}：{locator.get('snippet') or ''}")
             lines.append(
-                "使用规则：优先依据以上材料回答，并在对应结论后标注出处，格式如（见《材料名》）；"
+                "使用规则：优先依据以上材料回答，并在对应结论后标注出处与位置，格式如（见《材料名》第 3 页）；"
+                "学生问“在哪个文档 / 哪一页”时直接给出上面的材料名和位置；"
                 "材料未覆盖的部分可以用通识知识补充，但要说明\"以下内容超出本课材料\"。"
             )
             sections.append("\n".join(lines))
+        else:
+            snippets = retrieve_material_snippets(
+                conn, class_offering_id=class_offering_id, query=query
+            )
+            if snippets:
+                lines = ["--- 课程材料参考（回答时引用出处） ---"]
+                for index, item in enumerate(snippets, start=1):
+                    lines.append(f"[材料{index}]《{item['title']}》：{item['snippet']}")
+                lines.append(
+                    "使用规则：优先依据以上材料回答，并在对应结论后标注出处，格式如（见《材料名》）；"
+                    "材料未覆盖的部分可以用通识知识补充，但要说明\"以下内容超出本课材料\"。"
+                )
+                sections.append("\n".join(lines))
 
         return "\n\n".join(sections)
     except Exception:

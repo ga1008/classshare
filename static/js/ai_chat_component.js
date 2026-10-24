@@ -69,6 +69,8 @@ class AIChatComponent {
         this.classOfferingId = options.classOfferingId;
         this.contextOnly = Boolean(options.contextOnly || !options.classOfferingId);
         this.contextPromptExtra = String(options.contextPromptExtra || '').trim();
+        // Visible page text collector (any window): see ai_workspace_context.collectPageText.
+        this.getPageText = typeof options.getPageText === 'function' ? options.getPageText : null;
         this.getContextPromptExtra = typeof options.getContextPromptExtra === 'function'
             ? options.getContextPromptExtra
             : null;
@@ -735,6 +737,7 @@ class AIChatComponent {
             statusText: '\u6b63\u5728\u8fde\u63a5 AI \u52a9\u624b...',
             errorMessage: '',
             searchStatusActive: false,
+            materialHits: [],
             meta: null,
             agentHandoff: null
         };
@@ -763,6 +766,9 @@ class AIChatComponent {
                 if (!streamState.finalAnswer && !streamState.thinkingContent && event.message) {
                     streamState.statusText = event.message;
                     streamState.searchStatusActive = true;
+                }
+                if (event.tool === 'material_search' && event.stage === 'done' && Array.isArray(event.documents)) {
+                    streamState.materialHits = event.documents;
                 }
                 break;
             case 'agent_handoff_suggested':
@@ -853,10 +859,54 @@ class AIChatComponent {
         bubble.style.color = streamState.errorMessage ? 'var(--danger-color, #f44336)' : '';
 
         this.addCodeCopyButtons(bubble);
+        this.renderMaterialSources(messageDiv, streamState.materialHits);
         this.addMessageActions(messageDiv, streamState.finalAnswer, {
             agentHandoff: streamState.agentHandoff
         });
         this.scrollToBottom();
+    }
+
+    /** "材料定位" card: where the asked knowledge point lives, as openable links. */
+    renderMaterialSources(messageDiv, documents) {
+        messageDiv.querySelector('.ai-chat-sources')?.remove();
+        const hits = Array.isArray(documents) ? documents.filter((item) => item && item.title) : [];
+        if (!hits.length) return;
+        const card = document.createElement('div');
+        card.className = 'ai-chat-sources';
+        card.setAttribute('data-lq-component', 'surface');
+        card.setAttribute('data-lq-surface', 'embedded');
+        const title = document.createElement('div');
+        title.className = 'ai-chat-sources__title';
+        title.textContent = `材料定位 · ${hits.length} 份`;
+        card.appendChild(title);
+        const list = document.createElement('div');
+        list.className = 'ai-chat-sources__list';
+        hits.forEach((hit) => {
+            const locators = Array.isArray(hit.locators) && hit.locators.length ? hit.locators : [{ label: '打开材料', url: '' }];
+            locators.forEach((locator) => {
+                // Server-built site paths only; never follow a foreign scheme or host.
+                if (!locator || typeof locator.url !== 'string' || !locator.url.startsWith('/') || locator.url.startsWith('//')) return;
+                const link = document.createElement('a');
+                link.className = 'lq-btn lq-btn--sm lq-btn--glass lq-domain-choice ai-chat-source-link';
+                link.setAttribute('data-lq-component', 'choice');
+                link.setAttribute('data-lq-shape', 'surface');
+                link.href = locator.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                const strong = document.createElement('strong');
+                strong.textContent = `《${hit.title}》${locator.label ? ` · ${locator.label}` : ''}`;
+                link.appendChild(strong);
+                if (locator.snippet) {
+                    const small = document.createElement('small');
+                    small.textContent = locator.snippet;
+                    link.appendChild(small);
+                }
+                list.appendChild(link);
+            });
+        });
+        if (!list.childElementCount) return;
+        card.appendChild(list);
+        messageDiv.appendChild(card);
     }
 
     // (loadOrCreateSession, loadSession, startNewSession 保持不变)
@@ -1040,6 +1090,11 @@ class AIChatComponent {
             : this.contextPromptExtra;
         if (liveContextPromptExtra) {
             formData.append('context_prompt_extra', liveContextPromptExtra.slice(0, 12000));
+        }
+        if (this.getPageText) {
+            let pageText = '';
+            try { pageText = String(this.getPageText() || ''); } catch { pageText = ''; }
+            if (pageText.trim()) formData.append('page_text', pageText.slice(0, 20000));
         }
         this.pendingFiles.forEach(file => {
             formData.append('files', file);

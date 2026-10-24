@@ -774,8 +774,23 @@ async function renderMarkdown() {
 
     rewriteLinksAndImages();
     buildToc();
+    scrollToRequestedHeading();
     await renderMermaidBlocks();
     decorateCodeBlocks();
+}
+
+/** Heading ids are assigned after render, so honour a #slug deep link (knowledge search) manually. */
+function scrollToRequestedHeading() {
+    const rawHash = String(window.location.hash || '').replace(/^#/, '');
+    if (!rawHash || rawHash === 'mastery-check') return;
+    let anchor = rawHash;
+    try { anchor = decodeURIComponent(rawHash); } catch { /* keep raw */ }
+    const target = document.getElementById(anchor);
+    if (!target || !contentEl.contains(target)) return;
+    requestAnimationFrame(() => {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        tocEl.querySelectorAll('button').forEach((el) => el.classList.toggle('is-active', el.dataset.anchor === anchor));
+    });
 }
 
 function renderText() {

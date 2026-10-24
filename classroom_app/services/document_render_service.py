@@ -1150,6 +1150,15 @@ class DocumentRenderService:
     }}
   }});
   window.addEventListener('resize', () => applyZoomState());
+  // Deep link from knowledge search: ?page=N or #page=N opens the deck on that page.
+  (function applyRequestedPage() {{
+    const params = new URLSearchParams(window.location.search);
+    const hashMatch = /(?:^|[#&])page=(\\d+)/.exec(window.location.hash || '');
+    const requested = Number(params.get('page') || (hashMatch ? hashMatch[1] : 0));
+    if (Number.isFinite(requested) && requested >= 1 && requested <= pages.length) {{
+      deckIndex = requested - 1;
+    }}
+  }})();
   updateDeck();
   applyZoomState();
 }})();

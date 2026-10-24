@@ -4,7 +4,7 @@ import { createWorkspaceState } from './ai_workspace_state.js';
 import { createAssistantWindow } from './ai_workspace_window.js';
 import { capturePageImage } from './ai_workspace_capture.js';
 import { createConversationHistory } from './ai_workspace_history.js';
-import { collectPageContext, contextLabel, formatContextForPrompt } from './ai_workspace_context.js';
+import { collectPageContext, collectPageText, contextLabel, formatContextForPrompt } from './ai_workspace_context.js';
 import { createAgentWorkbench } from './agent_workbench.js';
 
 const CONFIG = window.AI_WORKSPACE_WIDGET_CONFIG || {};
@@ -100,6 +100,7 @@ function initChatComponent() {
             onRequestChange: (pendingRequest) => workspaceState.patch({ pendingRequest }),
             onDraftChange: persistDraft,
             getContextPromptExtra: () => formatContextForPrompt(collectPageContext()),
+            getPageText: () => collectPageText(),
         });
         chatComponent.init();
         window.aiChat = chatComponent;
@@ -228,6 +229,7 @@ async function initAIWorkspaceWidget() {
     initialized = true;
     window.buildAIWorkspacePageContext = collectPageContext;
     window.formatAIWorkspaceContextForPrompt = formatContextForPrompt;
+    window.collectAIWorkspacePageText = collectPageText;
     if (!initChatComponent()) {
         notify('AI 助手加载失败，请刷新页面重试。', 'error');
         return;

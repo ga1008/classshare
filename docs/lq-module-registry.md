@@ -17,7 +17,7 @@
 |---|---|---|---|---|
 | [Control geometry 控件几何](#control-geometry) | foundation | — | 仅 CSS | 0 |
 | [Control states 控件状态配方](#control-states) | foundation | — | 仅 CSS | 0 |
-| [Declarative 显式声明与领域壳](#declarative) | foundation | `lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar` … | JS | 146 |
+| [Declarative 显式声明与领域壳](#declarative) | foundation | `lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar` … | JS | 147 |
 | [Domain controls 领域控件就地接入](#domain-controls) | foundation | `lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination` | JS | 44 |
 | [Material boundaries 用户偏好终裁](#material-boundaries) | foundation | — | 仅 CSS | 0 |
 | [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 174 |
@@ -81,7 +81,7 @@
 - **规则**：声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface="embedded"`，否则声明的 `!important` 底色会铺回来，形成"有底无边距"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。
 - **根类**：`lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar`, `lq-native-dialog`
 - **JS 入口** `static/js/lq/domain-controls.js`：`adoptDomainContentSlot`, `adoptDomainControl`, `adoptDomainHandle`, `createDomainButton`, `createDomainPopoverSystem`, `domainButtonAttributes`
-- **消费者**：146 个文件
+- **消费者**：147 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -203,6 +203,7 @@
 - `templates/partials/learning_certificate_reveal.html` ×2
 - `templates/resume/layout.html` ×2
 - `frontend/src/islands/submission-jump-nav.tsx` ×1
+- `static/js/ai_chat_component.js` ×1
 - `static/js/ai_workspace_history.js` ×1
 - `static/js/assessment_appeal.js` ×1
 - `static/js/career_path_network.js` ×1
@@ -699,6 +700,7 @@
 - `templates/partials/session_material_ai_modal.html` ×20
 - `static/js/manage_semesters.js` ×19
 - `templates/partials/profile/settings.html` ×19
+- `static/js/ai_chat_component.js` ×18
 - `static/js/profile.js` ×18
 - `templates/manage/system/gongwen_integrations.html` ×18
 - `templates/manage/system/users.html` ×18
@@ -714,7 +716,6 @@
 - `templates/partials/teacher_onboarding_modal.html` ×16
 - `templates/resume/builder.html` ×16
 - `templates/resume/home.html` ×16
-- `static/js/ai_chat_component.js` ×15
 - `templates/macros/manage_page.html` ×15
 - `templates/partials/dashboard_agenda_widget.html` ×15
 - `templates/partials/profile/messages.html` ×15
