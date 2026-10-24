@@ -23,7 +23,7 @@
                 </div>
                 <div class="profile-cultivation-grid">
                     {% for course in cultivation.courses %}
-                    <a data-lq-component="surface" class="lq-surface profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}">
+                    <a data-lq-component="surface" class="lq-surface profile-cultivation-card" href="/classroom/{{ course.class_offering_id }}" data-theme="{{ course.current_level.theme }}" data-cultivation-panel-open data-class-offering-id="{{ course.class_offering_id }}" data-classroom-href="/classroom/{{ course.class_offering_id }}" data-course-name="{{ course.course_name }}" data-panel-title="{{ course.course_name }} · 修为" title="查看修为面板">
                         {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                         {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
                         {% set cultivation_card = {
@@ -59,6 +59,8 @@
                     </a>
                     {% endfor %}
                 </div>
+                {% set cultivation_panel = {'id': 'cultivation-panel', 'title': '修为'} %}
+                {% include 'partials/cultivation_panel.html' %}
             </section>
             {% endif %}
 

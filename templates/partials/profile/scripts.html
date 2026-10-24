@@ -1,6 +1,12 @@
 {% include "partials/markdown_assets.html" %}
 <script src="{{ asset_url('js/echarts.min.js') }}"></script>
 <script type="module" src="{{ asset_url('js/profile.js') }}"></script>
+{% if profile.role == 'student' %}
+<script type="module">
+import { initCultivationPanel } from "{{ asset_url('js/cultivation_panel.js') }}";
+initCultivationPanel({ userName: {{ (profile.name or '') | tojson }} });
+</script>
+{% endif %}
 {% if active_section == 'signatures' %}
 <script type="module" src="{{ asset_url('js/profile_signatures.js') }}"></script>
 {% endif %}

@@ -14,6 +14,8 @@ from classroom_app.services import learning_progress_service as service
 def _metrics(score: float, *, material: float = 0, task: float = 0, interaction: float = 0, consistency: float = 0) -> dict:
     return {
         "score": score,
+        "raw_score": score,
+        "growth_exponent": 1.0,
         "components": {
             "material": material,
             "task": task,

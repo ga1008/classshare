@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-10-24，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-10-25，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -20,22 +20,22 @@
 | [Declarative 显式声明与领域壳](#declarative) | foundation | `lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar` … | JS | 147 |
 | [Domain controls 领域控件就地接入](#domain-controls) | foundation | `lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination` | JS | 44 |
 | [Material boundaries 用户偏好终裁](#material-boundaries) | foundation | — | 仅 CSS | 0 |
-| [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 174 |
+| [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 176 |
 | [Motion 动效参数](#motion) | foundation | `lq-domain-popover` | 仅 CSS | 1 |
 | [Page backdrop 页面背景层](#page-backdrop) | foundation | `lq-page-backdrop` | 仅 CSS | 1 |
 | [Prose copy 正文排版](#prose-copy) | foundation | — | 仅 CSS | 0 |
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
-| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 267 |
-| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 26 |
+| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 269 |
+| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 27 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
-| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 5 |
+| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 6 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 4 |
-| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 164 |
-| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 21 |
+| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 165 |
+| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 23 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 4 |
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 170 |
-| [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 12 |
+| [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 13 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 3 |
 | [Layer 层栈](#layers) | component | — | JS | 24 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
@@ -86,7 +86,7 @@
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/assignment_detail_teacher.html` ×49
-- `templates/classroom_main_v4.html` ×37
+- `templates/classroom_main_v4.html` ×33
 - `templates/dashboard.html` ×22
 - `templates/dashboard_teacher.html` ×22
 - `static/js/materials_manage.js` ×20
@@ -311,11 +311,11 @@
 - **状态**：透明关闭 / 高对比 / Tier B·C / forced-colors 退回不透明主题配对；嵌套材质自动不再成为模糊宿主。
 - **规则**：玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。
 - **根类**：`lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface`
-- **消费者**：174 个文件
+- **消费者**：176 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/classroom_main_v4.html` ×45
+- `templates/classroom_main_v4.html` ×41
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/assignment_detail_student.html` ×15
@@ -337,6 +337,7 @@
 - `templates/manage/courses.html` ×7
 - `templates/manage/semesters.html` ×7
 - `templates/partials/materials/modals_repository.html` ×7
+- `static/js/cultivation_panel.js` ×6
 - `templates/dashboard_teacher.html` ×6
 - `templates/manage/classes.html` ×6
 - `templates/manage/gongwen.html` ×6
@@ -425,6 +426,7 @@
 - `templates/manage/system/super_admin.html` ×2
 - `templates/manage/teacher_schedule_query.html` ×2
 - `templates/partials/classroom_members/settings.html` ×2
+- `templates/partials/cultivation_panel.html` ×2
 - `templates/partials/exams/control_panel.html` ×2
 - `templates/partials/feedback_modal.html` ×2
 - `templates/partials/materials/library_card.html` ×2
@@ -575,11 +577,11 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqButton`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：267 个文件
+- **消费者**：269 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/classroom_main_v4.html` ×387
+- `templates/classroom_main_v4.html` ×371
 - `templates/assignment_detail_teacher.html` ×312
 - `static/js/blog.js` ×220
 - `static/js/collaboration.js` ×196
@@ -666,6 +668,7 @@
 - `static/js/ai_chat_component.js` ×27
 - `static/js/materials_library_cards.js` ×25
 - `static/js/app_files.js` ×24
+- `static/js/cultivation_panel.js` ×24
 - `static/js/ls_image_lightbox.js` ×24
 - `static/js/manage_organizations.js` ×24
 - `static/js/signature_workflows.js` ×24
@@ -785,6 +788,7 @@
 - `static/js/assessment_appeal.js` ×5
 - `static/js/manage_signatures.js` ×5
 - `templates/error.html` ×5
+- `templates/partials/cultivation_panel.html` ×5
 - `templates/partials/profile/security.html` ×5
 - `templates/student_auth_flow_v4.html` ×5
 - `templates/teacher_login_v4.html` ×5
@@ -862,7 +866,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqChipGroup`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：26 个文件
+- **消费者**：27 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -875,6 +879,7 @@
 - `templates/dev/lq_presentation.html` ×4
 - `templates/manage/system/password_resets.html` ×4
 - `static/js/academic_schedule_sync.js` ×3
+- `static/js/cultivation_panel.js` ×3
 - `templates/achievements.html` ×3
 - `templates/partials/materials/library_card.html` ×3
 - `frontend/src/islands/classroom-workspace.tsx` ×2
@@ -931,10 +936,11 @@
 - **Jinja 宏** `templates/macros/lq/collapsible.html`：`lq_collapsible`
 - **JS 入口** `static/js/lq/collapsible.js`：`collapsibleMarkup`, `collapsibleProps`, `createCollapsible`, `enhanceCollapsible`, `html`
 - **Python props** `classroom_app/lq_collapsible.py`
-- **消费者**：5 个文件
+- **消费者**：6 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
+- `static/js/cultivation_panel.js` ×10
 - `static/js/dashboard.js` ×2
 - `templates/dashboard.html` ×2
 - `templates/dashboard_teacher.html` ×2
@@ -979,11 +985,11 @@
 - **JS 入口** `static/js/lq/content.js`：`contentKinds`, `contentMarkup`, `contentProps`, `createContent`, `enhanceRow`, `html`
 - **Python props** `classroom_app/lq_content.py`
 - **React 适配器**：`LqCardFrame`, `LqEmpty`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：164 个文件
+- **消费者**：165 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/classroom_main_v4.html` ×44
+- `templates/classroom_main_v4.html` ×40
 - `static/js/blog_studio.js` ×34
 - `static/js/message_center.js` ×30
 - `templates/assignment_detail_teacher.html` ×23
@@ -1070,6 +1076,7 @@
 - `templates/partials/teacher_onboarding_modal.html` ×3
 - `static/js/classroom_page.js` ×2
 - `static/js/course_schedule_deck.js` ×2
+- `static/js/cultivation_panel.js` ×2
 - `static/js/dashboard.js` ×2
 - `static/js/dashboard_agenda_widget.js` ×2
 - `static/js/manage_users.js` ×2
@@ -1156,18 +1163,19 @@
 
 - **设计摘要**：模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。
 - **状态**：open / closing（可取消）/ busy 否决关闭 / nested child。
-- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。
+- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。
 - **根类**：`lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim`, `lq-sheet`
 - **Jinja 宏** `templates/macros/lq/dialogs.html`：`lq_dialog`
 - **JS 入口** `static/js/lq/dialogs.js`：`choiceProps`, `choose`, `confirm`, `createDialog`, `dialogMarkup`, `dialogProps`, `disposeDialog`, `openDialog`
 - **Python props** `classroom_app/lq_dialogs.py`
-- **消费者**：21 个文件
+- **消费者**：23 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/manage/system/users.html` ×30
 - `static/js/approval_workflow.js` ×9
 - `static/js/manage_users.js` ×8
+- `templates/partials/cultivation_panel.html` ×8
 - `templates/classroom_main_v4.html` ×6
 - `static/js/agent_workbench.js` ×4
 - `static/js/knowledge_tree/chrome.js` ×4
@@ -1183,6 +1191,7 @@
 - `static/js/session_knowledge_tree.js` ×2
 - `static/js/submission_grading.js` ×2
 - `static/js/blog.js` ×1
+- `static/js/cultivation_panel.js` ×1
 - `static/js/ls_image_lightbox.js` ×1
 - `templates/dev/lq.html` ×1
 - `templates/student_auth_flow_v4.html` ×1
@@ -1410,12 +1419,13 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqAvatar`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：12 个文件
+- **消费者**：13 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/dev/lq_presentation.html` ×10
 - `classroom_app/services/document_render_service.py` ×8
+- `static/js/cultivation_panel.js` ×6
 - `templates/partials/lq_navbar_topbar.html` ×4
 - `static/js/materials_sync_report.js` ×3
 - `frontend/src/components/action-entry.tsx` ×2
@@ -1843,6 +1853,7 @@
 |---|---|---|
 | `static/css/lq/pages/calendar.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/centered.css` | `templates/base_centered.html` | 否 |
+| `static/css/lq/pages/cultivation.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/dashboard.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/growth.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/life-tip.css` | （仅 index.css 或未直接链接） | 是 |

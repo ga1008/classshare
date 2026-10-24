@@ -1,0 +1,21 @@
+{#- 修为面板（学生）。一个 LQ modal 壳，内容由 static/js/cultivation_panel.js 根据
+    /api/classrooms/{id}/learning/progress 的 JSON 渲染；课堂页与个人中心共用同一份模板。
+    可选变量：cultivation_panel = {'id': ..., 'title': ...}。 -#}
+{% set panel = cultivation_panel or {} %}
+{% set panel_id = panel.id or 'cultivation-panel' %}
+<div id="{{ panel_id }}" class="lq-dialog-root lq-cultivation" data-lq-dialog="modal" data-lq-component="layer" data-cultivation-panel hidden aria-hidden="true">
+    <div class="lq-scrim" aria-hidden="true"></div>
+    <section class="lq-dialog__surface lq-modal lq-modal--xl lq-glass lq-glass--thick lq-cultivation__surface" role="dialog" tabindex="-1" aria-labelledby="{{ panel_id }}--lq-title" aria-describedby="{{ panel_id }}--lq-body" data-ui-overlay-surface>
+        <header class="lq-dialog__head lq-cultivation__head">
+            <div class="lq-cultivation__heading">
+                <p class="lq-cultivation__kicker" data-cultivation-panel-kicker>Cultivation Path</p>
+                <h2 id="{{ panel_id }}--lq-title" data-cultivation-panel-title>{{ panel.title or '修为' }}</h2>
+            </div>
+            <button data-lq-component="button" class="lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon btn-close" type="button" aria-label="关闭修为面板" data-cultivation-panel-close></button>
+        </header>
+        <div class="lq-dialog__body lq-cultivation__body" id="{{ panel_id }}--lq-body" data-cultivation-panel-body aria-busy="true">
+            <p class="lq-cultivation__loading" data-cultivation-panel-loading>正在读取修为…</p>
+        </div>
+        <footer class="lq-dialog__foot lq-cultivation__foot" data-cultivation-panel-foot></footer>
+    </section>
+</div>

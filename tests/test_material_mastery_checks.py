@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from classroom_app.db.schema_cultivation_progress import ensure_cultivation_progress_schema
 from classroom_app.services import learning_progress_service as service
+from classroom_app.services.cultivation_growth_service import apply_growth_curve
 from classroom_app.services.material_mastery_check_service import build_material_mastery_check_payload
 
 
@@ -116,6 +117,7 @@ class MaterialMasteryCheckTests(unittest.TestCase):
                 class_offering_id INTEGER,
                 exam_paper_id TEXT,
                 status TEXT DEFAULT 'published',
+                due_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE submissions (
@@ -124,6 +126,7 @@ class MaterialMasteryCheckTests(unittest.TestCase):
                 student_pk_id INTEGER,
                 score REAL,
                 status TEXT,
+                submitted_at TEXT,
                 is_absence_score INTEGER DEFAULT 0
             );
             CREATE TABLE chat_logs (
@@ -289,7 +292,7 @@ class MaterialMasteryCheckTests(unittest.TestCase):
         self.assertTrue(read_result["completed"])
         self.assertFalse(read_result["mastered"])
         self.assertTrue(read_result["mastery_check"]["available"])
-        self.assertEqual(31.5, read_result["progress"]["score"])
+        self.assertEqual(apply_growth_curve(29.25), read_result["progress"]["score"])
 
         with patch.object(service, "get_configured_db_engine", return_value="sqlite"):
             retry_result = service.submit_material_mastery_check(
@@ -301,7 +304,7 @@ class MaterialMasteryCheckTests(unittest.TestCase):
             )
         self.assertFalse(retry_result["passed"])
         self.assertFalse(retry_result["mastered"])
-        self.assertEqual(31.5, retry_result["progress"]["score"])
+        self.assertEqual(apply_growth_curve(29.25), retry_result["progress"]["score"])
 
         with patch.object(service, "get_configured_db_engine", return_value="sqlite"):
             pass_result = service.submit_material_mastery_check(
@@ -315,7 +318,7 @@ class MaterialMasteryCheckTests(unittest.TestCase):
         self.assertTrue(pass_result["passed"])
         self.assertTrue(pass_result["mastered"])
         self.assertEqual(2, pass_result["attempts"])
-        self.assertEqual(45.0, pass_result["progress"]["score"])
+        self.assertEqual(apply_growth_curve(45.0), pass_result["progress"]["score"])
         event_refs = [
             row["source_ref"]
             for row in self.conn.execute("SELECT source_ref FROM cultivation_score_events ORDER BY id").fetchall()

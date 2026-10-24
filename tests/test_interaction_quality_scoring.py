@@ -3,7 +3,15 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
+from classroom_app.services.cultivation_growth_service import signal_share
 from classroom_app.services.learning_progress_service import _load_interaction_metrics
+
+# AI questions + discussion + @mentions + private messages saturated; peer help and
+# live classroom activities are separate signals and stay at 0 in the full seed.
+# The fixture has no polls / live activities / groups, so the "live" share is unavailable
+# and redistributed over the remaining signals.
+AVAILABLE_SHARE = 1 - signal_share("interaction", "live")
+FULL_SEED_BASE = sum(signal_share("interaction", key) for key in ("ai_questions", "discussion", "mentions", "private")) / AVAILABLE_SHARE
 from classroom_app.services.psych_profile_service import normalize_psych_profile_payload
 
 
@@ -114,11 +122,11 @@ class InteractionQualityScoringTests(unittest.TestCase):
 
         metrics = _load_interaction_metrics(conn, 1, 7)
 
-        self.assertAlmostEqual(metrics["base_interaction_ratio"], 1.0)
+        self.assertAlmostEqual(metrics["base_interaction_ratio"], FULL_SEED_BASE)
         self.assertEqual(metrics["interaction_quality_source"], "default")
         self.assertAlmostEqual(metrics["interaction_quality"], 0.7)
         self.assertAlmostEqual(metrics["interaction_quality_factor"], 0.85)
-        self.assertAlmostEqual(metrics["interaction_ratio"], 0.85)
+        self.assertAlmostEqual(metrics["interaction_ratio"], FULL_SEED_BASE * 0.85)
 
     def test_profile_quality_floats_interaction_score_inside_same_weight_bucket(self) -> None:
         conn = _build_conn()
@@ -134,16 +142,16 @@ class InteractionQualityScoringTests(unittest.TestCase):
             """
         )
         high_quality = _load_interaction_metrics(conn, 1, 7)
-        self.assertAlmostEqual(high_quality["interaction_ratio"], 1.0)
-        self.assertAlmostEqual(high_quality["interaction_ratio"] * 15, 15.0)
+        self.assertAlmostEqual(high_quality["interaction_ratio"], FULL_SEED_BASE)
+        self.assertAlmostEqual(high_quality["interaction_ratio"] * 15, FULL_SEED_BASE * 15)
 
         conn.execute(
             "UPDATE classroom_behavior_profiles SET interaction_quality = 0.2, interaction_quality_label = 'low'",
         )
         low_quality = _load_interaction_metrics(conn, 1, 7)
         self.assertAlmostEqual(low_quality["interaction_quality_factor"], 0.6)
-        self.assertAlmostEqual(low_quality["interaction_ratio"], 0.6)
-        self.assertAlmostEqual(low_quality["interaction_ratio"] * 15, 9.0)
+        self.assertAlmostEqual(low_quality["interaction_ratio"], FULL_SEED_BASE * 0.6)
+        self.assertAlmostEqual(low_quality["interaction_ratio"] * 15, FULL_SEED_BASE * 0.6 * 15)
 
     def test_peer_help_counts_as_question_units_and_high_tier_doubles_units(self) -> None:
         conn = _build_conn()
@@ -163,7 +171,7 @@ class InteractionQualityScoringTests(unittest.TestCase):
         low_tier = _load_interaction_metrics(conn, 1, 7)
         self.assertEqual(low_tier["peer_help_count"], 1)
         self.assertEqual(low_tier["peer_help_units"], 1)
-        self.assertAlmostEqual(low_tier["base_interaction_ratio"], 0.34 / 8)
+        self.assertAlmostEqual(low_tier["base_interaction_ratio"], signal_share("interaction", "peer_help") / 4 / AVAILABLE_SHARE)
 
         conn.execute(
             "INSERT INTO learning_certificates (class_offering_id, student_id, tier) VALUES (1, 7, 6)"

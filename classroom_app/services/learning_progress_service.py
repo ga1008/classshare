@@ -48,6 +48,17 @@ from .cultivation_weight_service import (
     save_cultivation_weight_config,
     weight_rules_from_weights,
 )
+from .cultivation_growth_service import (
+    apply_growth_curve,
+    build_component_breakdown,
+    build_growth_summary,
+    build_stage_effort_table,
+    growth_curve_exponent,
+    longest_streak,
+    signal_share,
+)
+from ..db.savepoint import best_effort
+from .stage_exam_guidance_service import build_stage_exam_guidance_block, build_tier_profile
 from .resource_access_service import student_can_read_assignment
 
 
@@ -626,17 +637,59 @@ def _public_mastery_check_context(
     }
 
 
-def _material_unit_ratio(progress: Optional[dict[str, Any]]) -> float:
+def _material_unit_signals(progress: Optional[dict[str, Any]]) -> dict[str, float]:
+    """Reading / mastery / depth signals for one required material, each in [0, 1].
+
+    unit = reading * 0.50 + mastery * 0.35 + depth * 0.15 (shares mirror
+    cultivation_growth_service.SIGNAL_DEFINITIONS["material"]). A mastered
+    material is a full 1.0; a finished-but-unchecked one lands at 0.50-0.65; an
+    unfinished one can never exceed MATERIAL_READING_CREDIT_RATIO.
+    """
     if not progress:
-        return 0.0
-    if safe_int(progress.get("completed")):
-        if "mastered" not in progress:
-            return 1.0
-        return 1.0 if safe_int(progress.get("mastered")) else MATERIAL_READING_CREDIT_RATIO
-    scroll_ratio = clamp(safe_float(progress.get("max_scroll_ratio")))
+        return {"reading": 0.0, "mastery": 0.0, "depth": 0.0, "unit": 0.0}
+    completed = bool(safe_int(progress.get("completed")))
+    mastered = bool(safe_int(progress.get("mastered"))) if "mastered" in progress else completed
     active_ratio = clamp(safe_int(progress.get("active_seconds")) / MATERIAL_COMPLETE_ACTIVE_SECONDS)
-    total_ratio = clamp(safe_int(progress.get("accumulated_seconds")) / MATERIAL_COMPLETE_TOTAL_SECONDS)
-    return min(MATERIAL_READING_CREDIT_RATIO, clamp(scroll_ratio * 0.58 + active_ratio * 0.28 + total_ratio * 0.14))
+    if completed:
+        reading = 1.0
+    else:
+        scroll_ratio = clamp(safe_float(progress.get("max_scroll_ratio")))
+        total_ratio = clamp(safe_int(progress.get("accumulated_seconds")) / MATERIAL_COMPLETE_TOTAL_SECONDS)
+        reading = clamp(scroll_ratio * 0.58 + active_ratio * 0.28 + total_ratio * 0.14)
+    mastery = 1.0 if mastered else 0.0
+    depth = 1.0 if mastered else active_ratio
+    unit = clamp(
+        reading * signal_share("material", "reading")
+        + mastery * signal_share("material", "mastery")
+        + depth * signal_share("material", "depth")
+    )
+    if not completed:
+        unit = min(MATERIAL_READING_CREDIT_RATIO, unit)
+    return {"reading": reading, "mastery": mastery, "depth": depth, "unit": unit}
+
+
+def _material_unit_ratio(progress: Optional[dict[str, Any]]) -> float:
+    return _material_unit_signals(progress)["unit"]
+
+
+def _is_on_time(submitted_at: Any, due_at: Any) -> bool:
+    if not due_at:
+        return True
+    if not submitted_at:
+        return False
+
+    def _normalize(value):
+        return str(value).strip().replace("T", " ")[:19]
+
+    return _normalize(submitted_at) <= _normalize(due_at)
+
+
+def _assignment_kind(item: dict[str, Any]) -> str:
+    if item.get("exam_paper_id"):
+        return "exam"
+    if safe_int(item.get("is_group")):
+        return "group"
+    return "homework"
 
 
 def _load_assignment_metrics(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
@@ -646,9 +699,11 @@ def _load_assignment_metrics(conn, class_offering_id: int, student_id: int) -> d
                a.title,
                a.exam_paper_id,
                a.status,
+               a.due_at,
                s.id AS submission_id,
                s.status AS submission_status,
-               s.score AS submission_score
+               s.score AS submission_score,
+               s.submitted_at AS submitted_at
         FROM assignments a
         LEFT JOIN submissions s
                ON s.assignment_id = a.id
@@ -664,6 +719,9 @@ def _load_assignment_metrics(conn, class_offering_id: int, student_id: int) -> d
         (student_id, class_offering_id),
     ).fetchall()
     items = [dict(row) for row in rows]
+    group_assignment_ids = _load_group_assignment_ids(conn, class_offering_id)
+    for item in items:
+        item["is_group"] = 1 if str(item.get("id")) in group_assignment_ids else 0
     total = len(items)
     submitted_items = [item for item in items if item.get("submission_id")]
     graded_items = [item for item in submitted_items if item.get("submission_score") is not None]
@@ -671,26 +729,115 @@ def _load_assignment_metrics(conn, class_offering_id: int, student_id: int) -> d
     score_ratios = [clamp(safe_float(item.get("submission_score")) / 100) for item in graded_items]
     score_ratio = sum(score_ratios) / len(score_ratios) if score_ratios else (0.68 if submitted_count else 0.0)
     completion_ratio = submitted_count / total if total else 0.0
-    task_ratio = clamp(completion_ratio * 0.72 + score_ratio * 0.28)
+    on_time_count = sum(1 for item in submitted_items if _is_on_time(item.get("submitted_at"), item.get("due_at")))
+    punctuality_ratio = on_time_count / submitted_count if submitted_count else 0.0
+    available_kinds = {_assignment_kind(item) for item in items}
+    attempted_kinds = {_assignment_kind(item) for item in submitted_items}
+    breadth_ratio = len(attempted_kinds) / len(available_kinds) if available_kinds else 0.0
+    task_ratio = clamp(
+        completion_ratio * signal_share("task", "completion")
+        + score_ratio * signal_share("task", "quality")
+        + punctuality_ratio * signal_share("task", "punctuality")
+        + breadth_ratio * signal_share("task", "breadth")
+    )
     return {
         "assignment_count": total,
         "submitted_count": submitted_count,
         "graded_count": len(graded_items),
         "exam_count": sum(1 for item in items if item.get("exam_paper_id")),
+        "group_count": sum(1 for item in items if safe_int(item.get("is_group"))),
+        "on_time_count": on_time_count,
+        "late_count": submitted_count - on_time_count,
         "completion_ratio": completion_ratio,
         "score_ratio": score_ratio,
+        "punctuality_ratio": punctuality_ratio,
+        "breadth_ratio": breadth_ratio,
+        "kinds_available": sorted(available_kinds),
+        "kinds_attempted": sorted(attempted_kinds),
         "task_ratio": task_ratio,
         "items": [
             {
                 "id": safe_int(item.get("id")),
                 "title": item.get("title") or "课堂任务",
+                "kind": _assignment_kind(item),
                 "submitted": bool(item.get("submission_id")),
                 "graded": item.get("submission_score") is not None,
                 "score": item.get("submission_score"),
+                "on_time": bool(item.get("submission_id")) and _is_on_time(item.get("submitted_at"), item.get("due_at")),
             }
             for item in items[:12]
         ],
     }
+
+
+def _load_group_assignment_ids(conn, class_offering_id: int) -> set[str]:
+    """Assignment ids that have a study group bound (optional table: missing -> empty)."""
+    ids: set[str] = set()
+    with best_effort(conn, "cultivation_group_assignments"):
+        rows = conn.execute(
+            "SELECT DISTINCT assignment_id FROM study_groups WHERE class_offering_id = ? AND assignment_id IS NOT NULL",
+            (class_offering_id,),
+        ).fetchall()
+        ids = {str(row[0]) for row in rows if row[0] not in (None, "")}
+    return ids
+
+
+def _class_offers_live_activities(conn, class_offering_id: int) -> bool:
+    """Whether this offering has ever had polls, live activities or study groups.
+
+    When none exist the "live" interaction signal is unattainable, so its share is
+    redistributed over the other interaction signals instead of capping everyone.
+    """
+    queries = (
+        ("SELECT 1 FROM classroom_live_activities WHERE class_offering_id = ? LIMIT 1", "cultivation_live_avail"),
+        ("SELECT 1 FROM poll_assignments WHERE class_offering_id = ? LIMIT 1", "cultivation_poll_avail"),
+        ("SELECT 1 FROM study_groups WHERE class_offering_id = ? LIMIT 1", "cultivation_group_avail"),
+    )
+    for sql, name in queries:
+        with best_effort(conn, name):
+            if conn.execute(sql, (class_offering_id,)).fetchone():
+                return True
+    return False
+
+
+def _load_live_participation_count(conn, class_offering_id: int, student_id: int) -> dict[str, int]:
+    """Course-activity participation: live responses, poll ballots, group-chat messages.
+
+    Each source is optional (a fixture or a very old deployment may lack the
+    table), so every query is isolated and a missing table simply counts 0.
+    """
+    counts = {"live_responses": 0, "poll_ballots": 0, "group_messages": 0}
+    queries = {
+        "live_responses": (
+            """
+            SELECT COUNT(*) FROM classroom_live_responses r
+            JOIN classroom_live_activities a ON a.id = r.activity_id
+            WHERE a.class_offering_id = ? AND r.student_id = ?
+            """,
+            (class_offering_id, student_id),
+        ),
+        "poll_ballots": (
+            """
+            SELECT COUNT(DISTINCT b.poll_id) FROM poll_ballots b
+            JOIN poll_assignments pa ON pa.poll_id = b.poll_id
+            WHERE pa.class_offering_id = ? AND b.voter_id = ?
+            """,
+            (class_offering_id, student_id),
+        ),
+        "group_messages": (
+            """
+            SELECT COUNT(DISTINCT substr(gm.created_at, 1, 10)) FROM group_chat_messages gm
+            JOIN study_groups sg ON sg.id = gm.group_id
+            WHERE sg.class_offering_id = ? AND gm.sender_role = 'student' AND gm.sender_user_pk = ?
+            """,
+            (class_offering_id, student_id),
+        ),
+    }
+    for key, (sql, params) in queries.items():
+        with best_effort(conn, f"cultivation_{key}"):
+            row = conn.execute(sql, params).fetchone()
+            counts[key] = safe_int(row[0] if row else 0)
+    return counts
 
 
 def _load_interaction_quality_signal(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
@@ -786,8 +933,7 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
     behavior_row = conn.execute(
         """
         SELECT
-            SUM(CASE WHEN action_type = 'ai_question' THEN 1 ELSE 0 END) AS ai_question_count,
-            COUNT(DISTINCT substr(created_at, 1, 10)) AS active_days
+            SUM(CASE WHEN action_type = 'ai_question' THEN 1 ELSE 0 END) AS ai_question_count
         FROM classroom_behavior_events
         WHERE class_offering_id = ?
           AND user_pk = ?
@@ -795,6 +941,18 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
         """,
         (class_offering_id, student_id),
     ).fetchone()
+    active_date_rows = conn.execute(
+        """
+        SELECT DISTINCT substr(created_at, 1, 10) AS active_date
+        FROM classroom_behavior_events
+        WHERE class_offering_id = ?
+          AND user_pk = ?
+          AND user_role = 'student'
+        """,
+        (class_offering_id, student_id),
+    ).fetchall()
+    active_dates = [row["active_date"] for row in active_date_rows if row["active_date"]]
+    streak_days = longest_streak(active_dates)
     state_row = conn.execute(
         """
         SELECT total_activity_count,
@@ -826,7 +984,7 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
     message_count = safe_int(chat_row["message_count"] if chat_row else 0)
     mention_count = safe_int(chat_row["mention_count"] if chat_row else 0)
     ai_question_count = safe_int(behavior_row["ai_question_count"] if behavior_row else 0)
-    active_days = safe_int(behavior_row["active_days"] if behavior_row else 0)
+    active_days = len(active_dates)
     private_teacher_count = safe_int(private_row["private_teacher_count"] if private_row else 0)
     online_seconds = safe_int(state_row["online_accumulated_seconds"] if state_row else 0)
     focus_seconds = safe_int(state_row["focus_total_seconds"] if state_row else 0)
@@ -839,13 +997,26 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
         else PEER_HELP_UNIT_MULTIPLIER
     )
     peer_help_units = peer_help_count * peer_help_multiplier
-    question_help_units = min(ai_question_count + peer_help_units, 8)
+    live_counts = _load_live_participation_count(conn, class_offering_id, student_id)
+    live_participation_count = sum(live_counts.values())
 
+    live_available = live_participation_count > 0 or _class_offers_live_activities(conn, class_offering_id)
+
+    # Shares and caps mirror cultivation_growth_service.SIGNAL_DEFINITIONS["interaction"].
+    # A signal the class cannot offer (no polls / live activities / groups) is
+    # dropped and its share spread over the rest, so a full ratio stays reachable.
+    signal_values = [
+        ("ai_questions", min(ai_question_count, 8) / 8, True),
+        ("discussion", min(message_count, 12) / 12, True),
+        ("mentions", min(mention_count, 4) / 4, True),
+        ("private", min(private_teacher_count, 3) / 3, True),
+        ("peer_help", min(peer_help_units, 4) / 4, True),
+        ("live", min(live_participation_count, 6) / 6, live_available),
+    ]
+    available_share = sum(signal_share("interaction", key) for key, _, available in signal_values if available) or 1.0
     base_interaction_ratio = clamp(
-        question_help_units / 8 * 0.34
-        + min(message_count, 12) / 12 * 0.24
-        + min(mention_count, 4) / 4 * 0.22
-        + min(private_teacher_count, 3) / 3 * 0.20
+        sum(signal_share("interaction", key) * value for key, value, available in signal_values if available)
+        / available_share
     )
     quality_signal = _load_interaction_quality_signal(conn, class_offering_id, student_id)
     interaction_quality = clamp(safe_float(quality_signal.get("quality"), INTERACTION_QUALITY_DEFAULT))
@@ -856,10 +1027,11 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
     )
     interaction_ratio = clamp(base_interaction_ratio * interaction_quality_factor)
     consistency_ratio = clamp(
-        min(online_seconds, 7200) / 7200 * 0.42
-        + min(focus_seconds, 5400) / 5400 * 0.28
-        + min(active_days, 5) / 5 * 0.20
-        + min(activity_count, 80) / 80 * 0.10
+        min(active_days, 5) / 5 * signal_share("consistency", "active_days")
+        + min(streak_days, 4) / 4 * signal_share("consistency", "streak")
+        + min(focus_seconds, 5400) / 5400 * signal_share("consistency", "focus")
+        + min(online_seconds, 7200) / 7200 * signal_share("consistency", "online")
+        + min(activity_count, 80) / 80 * signal_share("consistency", "activity")
     )
     return {
         "chat_message_count": message_count,
@@ -869,6 +1041,12 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
         "peer_help_units": peer_help_units,
         "peer_help_multiplier": peer_help_multiplier,
         "private_teacher_count": private_teacher_count,
+        "live_participation_count": live_participation_count,
+        "live_available": live_available,
+        "live_response_count": live_counts["live_responses"],
+        "poll_ballot_count": live_counts["poll_ballots"],
+        "group_message_count": live_counts["group_messages"],
+        "streak_days": streak_days,
         "active_days": active_days,
         "online_seconds": online_seconds,
         "focus_seconds": focus_seconds,
@@ -992,9 +1170,16 @@ def _build_learning_metrics(
     progress_rows = _load_progress_rows(conn, class_offering_id, student_id)
     material_items: list[dict[str, Any]] = []
     material_ratios: list[float] = []
+    reading_ratios: list[float] = []
+    mastery_ratios: list[float] = []
+    depth_ratios: list[float] = []
     for material in materials:
         progress = progress_rows.get(int(material["id"]))
-        unit_ratio = _material_unit_ratio(progress)
+        signals = _material_unit_signals(progress)
+        unit_ratio = signals["unit"]
+        reading_ratios.append(signals["reading"])
+        mastery_ratios.append(signals["mastery"])
+        depth_ratios.append(signals["depth"])
         completed = bool(progress and safe_int(progress.get("completed")))
         mastered = bool(progress and safe_int(progress.get("mastered")))
         check_ready = _material_has_ready_mastery_check(material)
@@ -1021,10 +1206,19 @@ def _build_learning_metrics(
     task_points = assignment_metrics["task_ratio"] * safe_float(weights.get("task"), DEFAULT_CULTIVATION_WEIGHTS["task"])
     interaction_points = interaction_metrics["interaction_ratio"] * safe_float(weights.get("interaction"), DEFAULT_CULTIVATION_WEIGHTS["interaction"])
     consistency_points = interaction_metrics["consistency_ratio"] * safe_float(weights.get("consistency"), DEFAULT_CULTIVATION_WEIGHTS["consistency"])
-    total_score = clamp((material_points + task_points + interaction_points + consistency_points) / 100, 0, 1) * 100
+    raw_score = clamp((material_points + task_points + interaction_points + consistency_points) / 100, 0, 1) * 100
+    # Components stay linear (they sum to raw_score); the displayed 修为 follows
+    # the concave growth curve so early effort converts faster than late effort.
+    exponent = growth_curve_exponent()
+    total_score = apply_growth_curve(raw_score, exponent=exponent)
+
+    def _mean(values: list[float]) -> float:
+        return sum(values) / len(values) if values else 0.0
 
     return {
         "score": round(total_score, 1),
+        "raw_score": round(raw_score, 1),
+        "growth_exponent": round(exponent, 2),
         "weights": weights,
         "weight_version": str(weight_config.get("version") or CULTIVATION_WEIGHT_VERSION_DEFAULT),
         "weight_source": str(weight_config.get("source") or "default"),
@@ -1039,6 +1233,9 @@ def _build_learning_metrics(
             "completed_count": completed_material_count,
             "mastered_count": mastered_material_count,
             "ratio": round(material_ratio, 4),
+            "reading_ratio": round(_mean(reading_ratios), 4),
+            "mastery_ratio": round(_mean(mastery_ratios), 4),
+            "depth_ratio": round(_mean(depth_ratios), 4),
             "items": material_items[:12],
         },
         "assignments": assignment_metrics,
@@ -1357,9 +1554,14 @@ def _build_learning_state_from_metrics(
             "weight_version": str(metrics.get("weight_version") or CULTIVATION_WEIGHT_VERSION_DEFAULT),
             "weight_source": str(metrics.get("weight_source") or "default"),
             "pass_score": PASSING_STAGE_SCORE,
-            "fairness_note": "修为由材料研读、任务通关、课堂互动和稳定投入共同凝聚",
+            "fairness_note": "修为由材料研读、任务通关、课堂互动和稳定投入共同凝聚；基础积累按成长曲线换算，前期快、后期慢，每一境都须通过破境试炼。",
         },
     }
+    raw_score = safe_float(metrics.get("raw_score"), score)
+    exponent = safe_float(metrics.get("growth_exponent"), growth_curve_exponent()) or growth_curve_exponent()
+    state["breakdown"] = build_component_breakdown(metrics)
+    state["growth"] = build_growth_summary(raw_score, score, next_stage=next_stage, exponent=exponent)
+    state["stage_effort"] = build_stage_effort_table(LEARNING_LEVELS, exponent=exponent)
     state["score_opportunities"] = build_score_opportunities(
         metrics,
         next_stage,
@@ -1681,13 +1883,14 @@ def get_student_learning_state(
         metrics = {"score": 0, "components": {}, "material": {}, "assignments": {}, "interactions": {}}
     else:
         metrics = json_loads(snapshot.get("metrics_json"), {})
-        if not isinstance(metrics, dict) or not isinstance(metrics.get("components"), dict):
+        legacy_model = isinstance(metrics, dict) and metrics.get("growth_exponent") is None
+        if not isinstance(metrics, dict) or not isinstance(metrics.get("components"), dict) or legacy_model:
             if allow_recalculate:
                 return refresh_student_learning_state(
                     conn,
                     int(class_offering_id),
                     int(student_id),
-                    event_source_ref="snapshot:repair",
+                    event_source_ref="snapshot:model-upgrade" if legacy_model else "snapshot:repair",
                 )
             metrics = {"score": safe_float(snapshot.get("score")), "components": {}, "material": {}, "assignments": {}, "interactions": {}}
 
@@ -2571,7 +2774,8 @@ def _class_learning_score_rows(
                s.name,
                s.student_id_number,
                lps.score AS snapshot_score,
-               lps.dirty AS snapshot_dirty
+               lps.dirty AS snapshot_dirty,
+               lps.metrics_json AS snapshot_metrics_json
         FROM students s
         LEFT JOIN learning_progress_snapshots lps
                ON lps.class_offering_id = ?
@@ -2591,6 +2795,11 @@ def _class_learning_score_rows(
         elif item.get("snapshot_score") is None or safe_int(item.get("snapshot_dirty")):
             state = get_student_learning_state(conn, int(class_offering_id), item_student_id)
             score = safe_float(state.get("score"))
+        elif '"growth_exponent"' not in str(item.get("snapshot_metrics_json") or ""):
+            # Pre-growth-curve snapshot: its linear score is the raw score. Show it
+            # on the curve so ranks stay comparable and let the scheduler refresh it.
+            score = apply_growth_curve(safe_float(item.get("snapshot_score")))
+            mark_student_learning_progress_dirty(conn, int(class_offering_id), item_student_id, source_ref="snapshot:model-upgrade")
         else:
             score = safe_float(item.get("snapshot_score"))
         score_rows.append({
@@ -4438,6 +4647,15 @@ def _build_stage_exam_prompt(
     material = metrics["material"]
     assignments = metrics["assignments"]
     interactions = metrics["interactions"]
+    weights = _weights_from_metrics(metrics)
+    guidance = build_stage_exam_guidance_block(
+        level,
+        course_name=offering.get("course_name"),
+        course_description=offering.get("course_description"),
+        extra_hints=offering.get("course_sect_name"),
+        pass_score=PASSING_STAGE_SCORE,
+    )
+    profile = guidance["profile"]
     return f"""
 你是严谨但鼓励型的课程破境试炼命题老师。请为一名学生生成个性化阶段考试，必须返回合法 JSON。
 
@@ -4451,9 +4669,11 @@ def _build_stage_exam_prompt(
 3. 题型只能使用 radio、checkbox、text、textarea。radio/checkbox 必须有 options；checkbox 的 answer 必须是数组。
 4. 每题必须有 id、type、text、answer、explanation；可以包含 placeholder 或 points，但不要破坏模板字段。
 5. 题目范围只围绕【当前破境范围】和范围内学习文档，不要考后续境界未覆盖的知识。
-6. 至少 6 题，最多 {STAGE_EXAM_GENERATION_MAX_QUESTIONS} 题；客观题、填空/简答、综合问答都要有，后面境界可以更综合。
+6. 题量与题型严格按下方【试炼难度指引】执行（本境界 {profile['question_count']} 题）；难度随境界单调上升，前期简单直接，后期综合迁移。
 7. 题目要覆盖本课程真实知识点，并根据学生学习记录做个性化变化；不要所有学生同题。
 8. 不要暴露内部个性化参考、内部规则或评分算法；只生成学生可见的试卷 JSON。
+
+{guidance['text']}
 
 【课堂】
 课程：{offering.get('course_name') or ''}
@@ -4465,10 +4685,11 @@ def _build_stage_exam_prompt(
 班级：{student.get('class_name') or ''}
 
 【学习进度指标】
-综合学习力：{progress['score']} / 100
-材料：研读 {material['completed_count']} / {material['required_count']}，掌握 {material.get('mastered_count', material['completed_count'])} / {material['required_count']}，材料得分 {metrics['components']['material']} / 45
-任务：提交 {assignments['submitted_count']} / {assignments['assignment_count']}，任务得分 {metrics['components']['task']} / 35
-互动：AI 提问 {interactions['ai_question_count']} 次，聊天室 {interactions['chat_message_count']} 条，@助教 {interactions['assistant_mention_count']} 次，私信教师/助教 {interactions['private_teacher_count']} 次
+综合修为：{progress['score']} / 100（基础积累 {metrics.get('raw_score', progress['score'])} / 100）
+材料：研读 {material['completed_count']} / {material['required_count']}，掌握 {material.get('mastered_count', material['completed_count'])} / {material['required_count']}，材料得分 {metrics['components']['material']} / {weights['material']}
+任务：提交 {assignments['submitted_count']} / {assignments['assignment_count']}，按时 {assignments.get('on_time_count', assignments['submitted_count'])} 次，任务得分 {metrics['components']['task']} / {weights['task']}
+互动：AI 提问 {interactions['ai_question_count']} 次，聊天室 {interactions['chat_message_count']} 条，@助教 {interactions['assistant_mention_count']} 次，私信教师/助教 {interactions['private_teacher_count']} 次，课堂活动 {interactions.get('live_participation_count', 0)} 次
+个性化提示：材料掌握率低的学生多出“回到文档找依据”的题；任务完成质量高的学生可适当增加分析/创造层级题目的情境复杂度，但不改变本境界题量与题型分布。
 
 {explicit_prompt}
 
@@ -4799,7 +5020,7 @@ async def generate_personal_stage_exam_from_attempt(
             "operation": "generation", "source_feature": "personal_stage",
             "class_offering_id": class_offering_id,
             "logical_call_id": f"stage-exam:{int(attempt_id)}:generation",
-            "expected_question_count": STAGE_EXAM_GENERATION_MAX_QUESTIONS,
+            "expected_question_count": build_tier_profile(level)["question_count"],
         },
     }
     try:

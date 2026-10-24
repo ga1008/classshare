@@ -1,6 +1,7 @@
 # 修为体系改进目标文档
 
-> 版本：v1.0（2026-06-12）
+> 版本：v1.1（2026-10-25；v1.0 2026-06-12）
+> 2026-10-25 增量：修为增长模型 v2（细粒度信号 + 成长曲线）、破境试炼分档难度与课程类型指引、LQ 修为面板（课堂页/个人中心共用），真源 `docs/cultivation-growth-and-panel-2026-10-25.md`；下文「现状基线」第 1 条的线性公式已被 v2 取代。
 > 范围：修为（学习进度）体系全链路 —— 学生端每课堂修为进化 / 作业提交 / 互动 / 行为分析，教师端统计与预警，以及支撑这一切的 AI 调度与使用方式。
 > 核心代码：`classroom_app/services/learning_progress_service.py`（约 2800 行，修为计算 + 破境试炼）、`behavior_tracking_service.py`、`student_insight_service.py`、`personalized_learning_path_service.py`、`dashboard_service.py`；前端 `static/js/learning_progress.js`、`cultivation_identity.js`、`templates/learning_path.html`、`templates/classroom_main_v4.html` 修为区块。
 > 总体方向：**易用性、教学创新性、美观性**，同时优先补齐架构地基（快照化、事件化、AI 异步化），不给未来埋坑。

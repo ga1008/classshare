@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from classroom_app.db.schema_cultivation_progress import ensure_cultivation_progress_schema
 from classroom_app.services import learning_progress_service as service
+from classroom_app.services.cultivation_growth_service import apply_growth_curve
 from classroom_app.services.cultivation_weight_service import (
     CULTIVATION_WEIGHT_VERSION_DEFAULT,
     CultivationWeightValidationError,
@@ -105,7 +106,10 @@ class CultivationWeightTests(unittest.TestCase):
         self.assertEqual(metrics["components"]["task"], 17.5)
         self.assertEqual(metrics["components"]["interaction"], 15.0)
         self.assertEqual(metrics["components"]["consistency"], 5.0)
-        self.assertEqual(metrics["score"], 37.5)
+        # Components stay linear (raw 37.5); the displayed score follows the growth curve.
+        self.assertEqual(metrics["raw_score"], 37.5)
+        self.assertEqual(metrics["score"], apply_growth_curve(37.5))
+        self.assertGreater(metrics["score"], metrics["raw_score"])
 
     def test_invalid_weight_sum_is_rejected(self) -> None:
         with self.assertRaises(CultivationWeightValidationError):
@@ -123,8 +127,8 @@ class CultivationWeightTests(unittest.TestCase):
             )
 
         self.assertEqual(preview["student_count"], 2)
-        self.assertEqual(preview["old_average"], 37.5)
-        self.assertEqual(preview["new_average"], 42.5)
+        self.assertEqual(preview["old_average"], apply_growth_curve(37.5))
+        self.assertEqual(preview["new_average"], apply_growth_curve(42.5))
         self.assertEqual(preview["affected_count"], 2)
         self.assertEqual(
             0,
