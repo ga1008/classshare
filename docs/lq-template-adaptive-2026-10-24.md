@@ -60,3 +60,14 @@
 - `style=""` 内联属性与 JS 拼出的行内样式不在迁移工具范围内，需探针发现后单独处理。
 - `light-dark()` 需要 Chrome 123 / Safari 17.5 / Firefox 120 以上；更旧浏览器回退到改写前的亮色值（与以前行为一致）。
 - 场景色调取背景图中央横带的平均亮度，照片局部明暗差异大时仍可能出现个别低对比区域；光晕与提浓用于兜底，不保证每个像素。
+
+## 发布结果
+
+| 项目 | 结果 |
+|---|---|
+| 产品代码提交 | `fb93594f`，已推送 `origin/dev` |
+| 服务器发布号 | `20261024-112659-e9a2eecf7b4f`（冻结工作树发布，清单 3542 个文件） |
+| PostgreSQL 门禁 | 未改 `classroom_app/db/*` 与 `config.py`，复用 `.codex-temp/library-cards-gate/native-report.json`（77 文件）+ 同一 dump，validate ok |
+| 服务恢复 | app / ai / mailer / postgres healthy，主应用与 AI 健康检查 ok，近期无错误日志 |
+| 公网核验 | 线上 `tailwind-app.css` 与本地验收构建逐字节一致；新 `emoji_picker.js` 定位逻辑、`profile-signatures.css` 均在线 |
+
