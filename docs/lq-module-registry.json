@@ -1161,6 +1161,10 @@
       "hits": 28
      },
      {
+      "path": "static/js/ai_chat_component.js",
+      "hits": 27
+     },
+     {
       "path": "static/js/materials_library_cards.js",
       "hits": 25
      },
@@ -1307,10 +1311,6 @@
      {
       "path": "templates/partials/profile/settings.html",
       "hits": 19
-     },
-     {
-      "path": "static/js/ai_chat_component.js",
-      "hits": 18
      },
      {
       "path": "static/js/profile.js",

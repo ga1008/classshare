@@ -265,6 +265,11 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 `chat_platform_query_service`：教师在聊天里问"几个人没交作业"类问题时，正则粗筛 → 快速 AI 从白名单视图规划最多 2 轮 `platform_query` → 以当前教师身份执行 → 结果拼进提示词。任何环节失败降级为普通对话。学生角色不触发。**不要**把这条链路扩展成任意 SQL 或写操作；复杂需求引导到 Agent 任务。
 
+**2026-10-24 课堂全知扩展**（真源 `docs/teacher-classroom-ai-2026-10-24.md`）：
+- **课堂全景简报** `teacher_classroom_brief_service.build_teacher_classroom_brief`：教师在带 `classOfferingId` 的页面提问时自动注入（名册+修为、作业考试提交批改、投票、分组、课次与学习文档、互动量），只对 `ensure_classroom_access` 通过的本人课堂生成；不含学生联系方式。
+- **课堂视图**：`classroom_overview / student_profile / student_submissions / poll_results / group_scheme_detail / session_progress` 以页面课堂为默认作用域（`run_platform_view(..., context_class_offering_id=)` 只是提示，视图自行校验课堂归属）。
+- **动作提案（本人确认）** `chat_action_service`：聊天只能*提案*（`create_poll / close_poll / create_random_groups`），模型参数经服务端复核后存入 `ai_chat_action_proposals`（30 分钟过期、随机 token），教师在提案卡点击“确认执行”→ `POST /api/ai/chat-actions/{token}/execute` 以本人会话调用与 UI 相同的服务函数。新增动作 = 在 `ACTIONS` 注册 `plan`（校验+预览）与 `execute`（复用既有服务），禁止在聊天路径直接写库。
+
 ### 4.8 修改 Agent 的检查清单
 
 - [ ] 授权链路未变：仍是 委托凭据 → 实时会话 → 路由自身鉴权；新增身份来源必须绑定 nonce 并重新核对权限指纹
@@ -356,6 +361,7 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 | 联网检索 | `ai_web_research.py`；`ai_assistant.py` `/api/ai/web-search` | 模块 docstring | — |
 | 轻量聊天查询 | `chat_platform_query_service.py` | 模块 docstring | `tests/test_agent_g9_light_query_eval.py` |
 | 材料知识检索与页面文字注入（2026-10-24） | `material_text_extraction_service.py`（页/课次/章节级抽取）、`material_search_index_service.py`（调度器 `material_search_index` 维护索引）、`material_knowledge_search_service.py`（按角色圈定 + `ensure_user_material_access` 复核）、`page_context_text_service.py`（页面文字清洗/脱敏/限长）、`routers/ai.py` `_material_knowledge_retrieval_events`、`routers/material_knowledge_search.py` | `docs/material-knowledge-search-2026-10-24.md` | `tests/test_material_knowledge_search.py` |
+| 教师课堂全知与本人确认动作（2026-10-24） | `teacher_classroom_brief_service.py`（课堂全景简报）、`chat_platform_query_service.py`（课堂视图 + `context_class_offering_id`）、`chat_action_service.py` / `chat_action_schema.py` / `routers/chat_actions.py`（提案→确认→执行）、`routers/ai.py` `_classroom_context_blocks` / `_classroom_action_proposal_events` | `docs/teacher-classroom-ai-2026-10-24.md` | `tests/test_teacher_classroom_ai.py` |
 | Agent 任务与队列 | `routers/agent_tasks.py`、`services/agent_task_service.py`、`agent_queue_control_service.py`、`agent_task_worker.py` | `docs/agent-runtime-openai-agents-2026-09-25.md` | `tests/test_agent_task_service.py`、`test_agent_sdk_runtime.py`、`test_agent_task_worker.py` |
 | Agent 运行时（OpenAI Agents SDK） | `services/agent_sdk/`（`runner`、`tools`、`model`、`bridge`、`state`、`prompts`、`recorder`）、`services/agent_runtime_schema.py`、`services/agent_task_receipts.py` | `docs/agent-runtime-openai-agents-2026-09-25.md`；DSH 历史见 `docs/agent-dsh-*.md` | `tests/test_agent_sdk_runtime.py` |
 | 危险操作守卫 | `services/agent_danger_guard.py`、`agent_platform_request_service._admit_danger` | 同上 §5 | `tests/test_agent_sdk_runtime.py::DangerGuardTests`、`test_agent_platform_route_capability.py` |

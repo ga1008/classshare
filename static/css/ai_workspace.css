@@ -86,6 +86,21 @@
 }
 #ai-chat-modal .ai-chat-message.user .bubble { background: linear-gradient(hsl(var(--ls-primary) / .12), hsl(var(--ls-primary) / .12)), hsl(var(--ls-glass-fill-control)); }
 #ai-chat-modal .ai-chat-message.system { max-width: 100%; }
+/* 课堂动作提案卡：AI 只提案，教师点击“确认执行”后以本人身份执行。 */
+#ai-chat-modal .ai-chat-actions { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; }
+#ai-chat-modal .ai-chat-action-card {
+    padding: 12px 14px;
+    border: 1px solid hsl(var(--ls-primary) / .35);
+    border-radius: 16px;
+    background: linear-gradient(hsl(var(--ls-primary) / .07), hsl(var(--ls-primary) / .07)), hsl(var(--ls-glass-fill-inset));
+}
+#ai-chat-modal .ai-chat-action-card.is-done { border-color: hsl(var(--ls-glass-line)); background: hsl(var(--ls-glass-fill-inset)); }
+#ai-chat-modal .ai-chat-action-card__title { font-size: 13px; font-weight: 600; color: hsl(var(--ls-glass-ink)); margin-bottom: 6px; }
+#ai-chat-modal .ai-chat-action-card__lines { margin: 0 0 8px; padding-left: 18px; font-size: 12.5px; line-height: 1.5; color: hsl(var(--ls-glass-ink)); }
+#ai-chat-modal .ai-chat-action-card__status { font-size: 12px; line-height: 1.5; color: hsl(var(--ls-glass-muted)); white-space: pre-line; margin-bottom: 8px; }
+#ai-chat-modal .ai-chat-action-card__status.is-error { color: hsl(var(--ls-danger, 0 72% 51%)); }
+#ai-chat-modal .ai-chat-action-card__buttons { display: flex; gap: 8px; }
+#ai-chat-modal .ai-chat-action-card__link { margin-top: 6px; text-decoration: none; }
 /* 材料定位卡：AI 回答下方列出命中的文档 + 页码/课次/章节，可直接打开。 */
 #ai-chat-modal .ai-chat-sources {
     margin: 8px 0 4px;

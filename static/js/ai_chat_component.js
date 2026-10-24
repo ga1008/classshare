@@ -738,6 +738,7 @@ class AIChatComponent {
             errorMessage: '',
             searchStatusActive: false,
             materialHits: [],
+            actionProposals: [],
             meta: null,
             agentHandoff: null
         };
@@ -770,6 +771,9 @@ class AIChatComponent {
                 if (event.tool === 'material_search' && event.stage === 'done' && Array.isArray(event.documents)) {
                     streamState.materialHits = event.documents;
                 }
+                break;
+            case 'action_proposal':
+                streamState.actionProposals = Array.isArray(event.proposals) ? event.proposals : [];
                 break;
             case 'agent_handoff_suggested':
                 streamState.agentHandoff = {
@@ -860,10 +864,107 @@ class AIChatComponent {
 
         this.addCodeCopyButtons(bubble);
         this.renderMaterialSources(messageDiv, streamState.materialHits);
+        this.renderActionProposals(messageDiv, streamState.actionProposals);
         this.addMessageActions(messageDiv, streamState.finalAnswer, {
             agentHandoff: streamState.agentHandoff
         });
         this.scrollToBottom();
+    }
+
+    /** Teacher-confirmed classroom actions: the AI proposed, the teacher executes with one click. */
+    renderActionProposals(messageDiv, proposals) {
+        messageDiv.querySelector('.ai-chat-actions')?.remove();
+        const items = Array.isArray(proposals) ? proposals.filter((item) => item && item.token) : [];
+        if (!items.length) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'ai-chat-actions';
+        items.forEach((proposal) => wrap.appendChild(this.buildActionProposalCard(proposal)));
+        messageDiv.appendChild(wrap);
+    }
+
+    buildActionProposalCard(proposal) {
+        const card = document.createElement('div');
+        card.className = 'ai-chat-action-card';
+        card.setAttribute('data-lq-component', 'surface');
+        card.setAttribute('data-lq-surface', 'embedded');
+        const title = document.createElement('div');
+        title.className = 'ai-chat-action-card__title';
+        title.textContent = `待确认 · ${proposal.title || proposal.label || '课堂动作'}`;
+        card.appendChild(title);
+        const list = document.createElement('ul');
+        list.className = 'ai-chat-action-card__lines';
+        (Array.isArray(proposal.lines) ? proposal.lines : []).forEach((line) => {
+            const li = document.createElement('li');
+            li.textContent = String(line);
+            list.appendChild(li);
+        });
+        card.appendChild(list);
+        const status = document.createElement('div');
+        status.className = 'ai-chat-action-card__status';
+        status.textContent = '确认后将以你的教师身份立即执行。';
+        card.appendChild(status);
+        const buttons = document.createElement('div');
+        buttons.className = 'ai-chat-action-card__buttons';
+        const confirm = document.createElement('button');
+        confirm.type = 'button';
+        confirm.className = 'lq-btn lq-btn--sm lq-btn--prominent';
+        confirm.dataset.lqComponent = 'button';
+        confirm.textContent = '确认执行';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'lq-btn lq-btn--sm lq-btn--glass';
+        cancel.dataset.lqComponent = 'button';
+        cancel.textContent = '取消';
+        buttons.appendChild(confirm);
+        buttons.appendChild(cancel);
+        card.appendChild(buttons);
+
+        const finish = (text, { isError = false, link = null } = {}) => {
+            buttons.remove();
+            status.textContent = text;
+            status.classList.toggle('is-error', isError);
+            card.classList.toggle('is-done', !isError);
+            if (link && typeof link === 'string' && link.startsWith('/') && !link.startsWith('//')) {
+                const anchor = document.createElement('a');
+                anchor.className = 'lq-btn lq-btn--sm lq-btn--glass ai-chat-action-card__link';
+                anchor.dataset.lqComponent = 'button';
+                anchor.href = link;
+                anchor.textContent = '前往查看';
+                card.appendChild(anchor);
+            }
+        };
+        const call = async (verb) => {
+            confirm.disabled = true;
+            cancel.disabled = true;
+            status.textContent = verb === 'execute' ? '正在执行...' : '正在取消...';
+            try {
+                const response = await fetch(`/api/ai/chat-actions/${encodeURIComponent(proposal.token)}/${verb}`, {
+                    method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    if (window.handleAuthFailureResponse) await window.handleAuthFailureResponse(response, data);
+                    const detail = data.detail && typeof data.detail === 'object' ? data.detail.message : data.detail;
+                    throw new Error(detail || data.message || `请求失败：${response.status}`);
+                }
+                const result = data.result || {};
+                if (verb === 'execute') {
+                    const extra = Array.isArray(result.groups) && result.groups.length ? `\n${result.groups.join('\n')}` : '';
+                    finish(`${result.summary || '已执行。'}${extra}`, { link: result.link_url || null });
+                    window.dispatchEvent(new CustomEvent('lanshare:classroom-action-executed', { detail: result }));
+                } else {
+                    finish('已取消，没有执行任何操作。');
+                }
+            } catch (error) {
+                confirm.disabled = false;
+                cancel.disabled = false;
+                status.textContent = `${verb === 'execute' ? '执行失败' : '取消失败'}：${error.message || '请稍后重试'}`;
+                status.classList.add('is-error');
+            }
+        };
+        confirm.addEventListener('click', () => call('execute'));
+        cancel.addEventListener('click', () => call('cancel'));
+        return card;
     }
 
     /** "材料定位" card: where the asked knowledge point lives, as openable links. */

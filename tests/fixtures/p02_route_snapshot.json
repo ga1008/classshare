@@ -432,6 +432,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/ai/chat-actions/{token}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_cancel_chat_action",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/ai/chat-actions/{token}/execute",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_execute_chat_action",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/ai/chat/history/{session_uuid}",
     "methods": [
       "GET"

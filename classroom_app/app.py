@@ -112,6 +112,7 @@ from .routers import achievements
 from .routers import points_shop
 from .routers import global_search
 from .routers import material_knowledge_search
+from .routers import chat_actions
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
@@ -199,6 +200,9 @@ async def startup_event():
     with get_db_connection() as search_conn:
         # Knowledge-index tables are runtime-owned (derived data, rebuilt by the scheduler).
         ensure_material_search_schema(search_conn)
+        from .services.chat_action_schema import ensure_chat_action_schema
+
+        ensure_chat_action_schema(search_conn)
         search_conn.commit()
 
     # 确保静态目录存在
@@ -720,6 +724,7 @@ app.include_router(achievements.router)
 app.include_router(points_shop.router)
 app.include_router(global_search.router)
 app.include_router(material_knowledge_search.router)
+app.include_router(chat_actions.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)

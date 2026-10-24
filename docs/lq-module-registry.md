@@ -663,6 +663,7 @@
 - `templates/assessment_plan_editor.html` ×28
 - `templates/partials/learning_material_selector.html` ×28
 - `templates/teacher_evaluation_editor.html` ×28
+- `static/js/ai_chat_component.js` ×27
 - `static/js/materials_library_cards.js` ×25
 - `static/js/app_files.js` ×24
 - `static/js/ls_image_lightbox.js` ×24
@@ -700,7 +701,6 @@
 - `templates/partials/session_material_ai_modal.html` ×20
 - `static/js/manage_semesters.js` ×19
 - `templates/partials/profile/settings.html` ×19
-- `static/js/ai_chat_component.js` ×18
 - `static/js/profile.js` ×18
 - `templates/manage/system/gongwen_integrations.html` ×18
 - `templates/manage/system/users.html` ×18

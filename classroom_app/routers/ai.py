@@ -1719,6 +1719,7 @@ async def _platform_data_retrieval_events(
     teacher_id: int,
     message: str,
     chat_payload: Dict[str, Any],
+    context_class_offering_id: int | None = None,
 ) -> AsyncIterator[str]:
     """教师消息的平台数据实时查询前置步骤（G9，轻问题不动用 Agent 队列）。
 
@@ -1776,6 +1777,7 @@ async def _platform_data_retrieval_events(
                     teacher_id=int(teacher_id),
                     view=view,
                     params=call.get("params") or {},
+                    context_class_offering_id=context_class_offering_id,
                 )
                 row_count = len(result.get("rows") or [])
                 total_rows += row_count
@@ -1837,6 +1839,138 @@ async def _platform_data_retrieval_events(
             "failed",
             "平台数据查询暂时不可用，将按常规方式回答...",
         )
+
+
+_BRIEF_DETAIL_RE = re.compile(
+    r"学生|同学|名册|名单|人数|作业|考试|提交|批改|成绩|分数|投票|分组|小组|组长|课次|进度|知识树|文档|材料|"
+    r"修为|境界|互动|研讨|谁|哪些|多少|几个|分析|情况|表现|安排|发起|结束|创建"
+)
+
+
+def _brief_detail_wanted(message: str) -> bool:
+    """Full roster/assessment tables only when the question touches classroom data; chit-chat gets the header."""
+    text = str(message or "")
+    return bool(_BRIEF_DETAIL_RE.search(text)) or len(text) > 60
+
+
+def _teacher_brief_for_message(user: dict, class_offering_id: int, message: str) -> str:
+    from ..services.teacher_classroom_brief_service import build_teacher_classroom_brief
+
+    with get_db_connection() as conn:
+        return build_teacher_classroom_brief(conn, user, int(class_offering_id), detail=_brief_detail_wanted(message))
+
+
+def _classroom_context_blocks(user: dict, class_offering_id: int, message: str = "") -> str:
+    """Classroom awareness for the chat (sync worker).
+
+    Everyone who may open the classroom gets the course / textbook summary
+    (``build_classroom_ai_context``); the owning teacher additionally gets the
+    classroom brief (roster + cultivation, assessments, polls, groups, sessions,
+    documents, interactions — full tables only when the message asks about
+    classroom data). Any failure degrades to ``""``.
+    """
+    if class_offering_id <= 0:
+        return ""
+    from ..services.resource_access_service import ensure_classroom_access
+    from ..services.teacher_classroom_brief_service import build_teacher_classroom_brief
+
+    parts: list[str] = []
+    with get_db_connection() as conn:
+        try:
+            ensure_classroom_access(conn, int(class_offering_id), user)
+        except HTTPException:
+            return ""
+        try:
+            context = build_classroom_ai_context(conn, int(class_offering_id))
+            summary = str(context.get("classroom_summary") or "").strip()
+            textbook = str(context.get("textbook_summary") or "").strip()
+            if summary or textbook:
+                parts.append(
+                    "\n\n--- 当前课堂的课程与教材信息 ---\n" + "\n".join(part for part in (summary[:3000], textbook[:3000]) if part)
+                )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AI_CHAT] classroom summary skipped: {exc}")
+        if str(user.get("role") or "") == "teacher":
+            try:
+                config = fetch_ai_class_config(conn, int(class_offering_id))
+                custom_prompt = str((config or {}).get("system_prompt") or "").strip()
+                if custom_prompt:
+                    parts.append("\n\n--- 教师为本课堂配置的 AI 助教提示词 ---\n" + custom_prompt[:3000])
+            except Exception as exc:  # noqa: BLE001
+                print(f"[AI_CHAT] class ai config skipped: {exc}")
+            try:
+                brief = build_teacher_classroom_brief(conn, user, int(class_offering_id), detail=_brief_detail_wanted(message))
+                if brief:
+                    parts.append(brief)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[AI_CHAT] classroom brief skipped: {exc}")
+    return "".join(parts)
+
+
+def _encode_action_status(stage: str, message: str, **payload: Any) -> str:
+    return _encode_tool_status("classroom_action", "课堂动作提案", stage, message, **payload)
+
+
+async def _classroom_action_proposal_events(
+    user: dict,
+    message: str,
+    chat_payload: Dict[str, Any],
+    class_offering_id: int | None,
+) -> AsyncIterator[str]:
+    """Teacher asks the AI to *do* something in the classroom → proposal cards, never direct execution.
+
+    The proposal is validated against the real classroom and stored pending;
+    the teacher confirms it on the card (``/api/ai/chat-actions/{token}/execute``),
+    which runs the action with their own session. The model is instructed to
+    describe the proposal only. Failures degrade to a plain answer.
+    """
+    if str(user.get("role") or "") != "teacher":
+        return
+    try:
+        from ..services.chat_action_service import (
+            build_action_proposal_block,
+            create_proposals,
+            message_may_request_action,
+            plan_actions,
+        )
+
+        if not message_may_request_action(message):
+            return
+        if not class_offering_id or int(class_offering_id) <= 0:
+            chat_payload["system_prompt"] = (
+                str(chat_payload.get("system_prompt") or "")
+                + "\n\n--- 课堂动作提示 ---\n教师似乎想发起投票/分组等课堂操作，但当前页面不在某个课堂内，无法确定目标课堂。"
+                "请提醒教师先打开对应课堂主页（/classroom/<课堂ID>）后再向 AI 发出该要求，不要声称已执行。"
+            )
+            return
+        yield _encode_stream_event("search_status", stage="detecting", message="正在整理课堂动作提案...")
+        yield _encode_action_status("detecting", "正在整理课堂动作提案...")
+        calls = await plan_actions(message)
+        if not calls:
+            yield _encode_stream_event("search_status", stage="none", message="")
+            return
+
+        def _store() -> tuple[list[dict[str, Any]], list[str]]:
+            with get_db_connection() as conn:
+                proposals, problems = create_proposals(conn, user, int(class_offering_id), calls, source_message=message)
+                conn.commit()
+            return proposals, problems
+
+        proposals, problems = await asyncio.to_thread(_store)
+        block = build_action_proposal_block(proposals, problems)
+        if block:
+            chat_payload["system_prompt"] = str(chat_payload.get("system_prompt") or "") + block
+        if proposals:
+            ready_message = f"已生成 {len(proposals)} 个待确认的课堂动作提案。"
+            yield _encode_stream_event("search_status", stage="organizing", message=ready_message)
+            yield _encode_action_status("done", ready_message, proposals=proposals, problems=problems)
+            yield _encode_stream_event("action_proposal", proposals=proposals, problems=problems)
+        else:
+            yield _encode_stream_event("search_status", stage="empty", message="未能生成可执行的动作提案，将说明原因...")
+            yield _encode_action_status("empty", "未能生成可执行的动作提案。", problems=problems)
+    except Exception as exc:  # noqa: BLE001 — proposals must never break the chat
+        print(f"[CHAT-ACTION] proposal step failed for teacher {user.get('id')}: {exc}")
+        yield _encode_action_status("failed", "课堂动作提案暂时不可用，将按常规方式回答...")
 
 
 def _encode_material_search_status(stage: str, message: str, **payload: Any) -> str:
@@ -2585,6 +2719,15 @@ async def handle_ai_workspace_chat(
     cleaned_page_text = clean_page_text(page_text)
     if cleaned_page_text:
         system_prompt += build_page_text_block(cleaned_page_text)
+    # 课堂全知：页面处于某个课堂时注入课程/教材信息；教师另加课堂全景简报（名册/修为/作业/投票/分组/课次）。
+    context_offering_id = _extract_workspace_context_id(extra_context, "class_offering_id")
+    if context_offering_id > 0:
+        try:
+            classroom_blocks = await asyncio.to_thread(_classroom_context_blocks, user, context_offering_id, cleaned_message)
+            if classroom_blocks:
+                system_prompt += classroom_blocks
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AI_WORKSPACE_CHAT] 课堂全景注入失败（已降级）: {exc}")
 
     chat_payload = {
         "system_prompt": system_prompt,
@@ -2615,10 +2758,14 @@ async def handle_ai_workspace_chat(
         )
         async for search_event in _gongwen_retrieval_events(user_role, user_pk, cleaned_message, chat_payload):
             yield search_event
-        async for query_event in _platform_data_retrieval_events(user_role, user_pk, cleaned_message, chat_payload):
+        async for query_event in _platform_data_retrieval_events(
+            user_role, user_pk, cleaned_message, chat_payload, context_offering_id or None
+        ):
             yield query_event
         async for material_event in _material_knowledge_retrieval_events(user, cleaned_message, chat_payload, extra_context):
             yield material_event
+        async for action_event in _classroom_action_proposal_events(user, cleaned_message, chat_payload, context_offering_id or None):
+            yield action_event
         try:
             async with ai_client.stream(
                     "POST",
@@ -2883,6 +3030,13 @@ async def handle_ai_chat(
     cleaned_page_text = clean_page_text(page_text)
     if cleaned_page_text:
         final_system_prompt += build_page_text_block(cleaned_page_text)
+    if user_role == "teacher":
+        try:
+            classroom_brief = await asyncio.to_thread(_teacher_brief_for_message, user, int(class_offering_id), message)
+            if classroom_brief:
+                final_system_prompt += classroom_brief
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AI_CHAT] 课堂全景注入失败（已降级）: {exc}")
 
     # 7. 准备发送给 ai_assistant 的数据
     chat_payload = {
@@ -3016,10 +3170,14 @@ async def handle_ai_chat(
         )
         async for search_event in _gongwen_retrieval_events(user_role, user_pk, message, chat_payload):
             yield search_event
-        async for query_event in _platform_data_retrieval_events(user_role, user_pk, message, chat_payload):
+        async for query_event in _platform_data_retrieval_events(
+            user_role, user_pk, message, chat_payload, int(class_offering_id)
+        ):
             yield query_event
         async for material_event in _material_knowledge_retrieval_events(user, message, chat_payload, extra_context):
             yield material_event
+        async for action_event in _classroom_action_proposal_events(user, message, chat_payload, int(class_offering_id)):
+            yield action_event
 
         try:
             async with ai_client.stream(

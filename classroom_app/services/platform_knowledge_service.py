@@ -41,7 +41,8 @@ PLATFORM_FEATURES_TEXT = (
     "- 教师管理中心三域：教学（课堂与内容）、教务（学校事务数据）、教师（我自己的资料、安全、通知、签名与凭据）。\n"
     "- 教务对接：课表/考务/监考/名册自动同步、智慧课堂考勤、校园公文通（公文中心，表 gongwen_documents，支持关键词检索与姓名关注）。\n"
     "- AI 能力：课堂 AI 助教（每课堂可配置提示词）、全局 AI 助手（懂当前页面全部可见文字，并能按用户权限检索全部学习材料正文，"
-    "定位到“哪个文档的第几页 / 第几次课 / 哪一章节”并给出站内链接）、教师 Agent 任务中心（全平台单任务队列）。\n"
+    "定位到“哪个文档的第几页 / 第几次课 / 哪一章节”并给出站内链接；教师在课堂页提问时自动掌握课堂全景——名册与修为、作业考试提交批改、投票、分组、课次与学习文档，"
+    "可按需查询某个学生的画像与全部提交，并可在教师确认后以教师身份发起投票、结束投票、按名册随机分组）、教师 Agent 任务中心（全平台单任务队列）。\n"
     "- 管理：教师端入口按三域组织，超级管理员另有组织架构、用户、反馈、诊断和预算面板。"
 )
 
@@ -154,10 +155,10 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
     upcoming = _safe_rows(
         conn,
         """
-        SELECT title, event_type, start_time
+        SELECT title, source_type AS event_type, starts_at AS start_time
         FROM teacher_calendar_events
-        WHERE teacher_id = ? AND start_time >= ?
-        ORDER BY start_time ASC
+        WHERE teacher_id = ? AND starts_at >= ? AND status = 'active' AND deleted_at IS NULL
+        ORDER BY starts_at ASC
         LIMIT 6
         """,
         (teacher_id, datetime.now().strftime("%Y-%m-%d 00:00:00")),
