@@ -85,3 +85,4 @@
 
 探针新增 capsule 检查（真实文字行数 > 2，或嵌套的带底色元素离圆角端小于半个圆角）。复测（亮/暗、学生 9 个场景、教师 14 个场景）：capsule 0；教案库/投票/考核计划/评学表 glued 0（剩余 glued 全部是学期日历的无缝网格单元）。vitest 511/511、typecheck 通过；组件用例（composer、domain-controls、layout-surfaces、centered、nav-menu、chat-escape、message-center 两个）152 项中 144 通过，8 项为第一轮已确认在线上版本同样失败的 `lq-layout-surfaces.spec.ts:239`。
 
+第二轮发布：提交 `d3d6e02e`（已推送 `origin/dev`），服务器发布号 `20261024-122651-c122d2a4190b`；复用同一门禁报告对，健康检查 ok、近期无错误日志，线上 `tailwind-app.css` 与本地验收构建逐字节一致。
