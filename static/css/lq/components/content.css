@@ -210,3 +210,14 @@
     .lq-prose :where(pre, th, td, code, blockquote) { background: Canvas; color: CanvasText; border-color: CanvasText; }
     .lq-prose :where(a) { color: LinkText; }
 }
+/* Page stack (2026-10-24). A page head always opens a vertical run of page
+   blocks (filter bar, card grid, list). When the container that holds it has
+   no layout of its own, the blocks used to stack with no gap at all (lesson
+   plans, polls, archive pages). Zero specificity: any page that already sets
+   display/gap on its container keeps it; only plain block flow is upgraded. */
+:where(:has(> .lq-page-head)) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--lq-page-stack-gap, var(--ls-s-5));
+}

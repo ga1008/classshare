@@ -40977,8 +40977,16 @@ input.form-control[type="file"]:hover::-webkit-file-upload-button {
     display: none;
 }
 
+/* Each tab is a compound choice card (title + note | count + detail). 8.4rem
+   wrapped the notes into three lines; 11rem keeps every group to one line per
+   row (two lines total) and the row scrolls horizontally in the narrow panel. */
 .classroom-page .classroom-activity-panel .interaction-feature-tab {
-    min-width: 8.4rem;
+    min-width: 11rem;
+    flex: 0 0 auto;
+}
+
+.classroom-page .interaction-feature-tab :is(small, strong, em) {
+    white-space: nowrap;
 }
 
 .classroom-page .classroom-activity-panel .resource-panel .upload-dropzone-rich {

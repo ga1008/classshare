@@ -24,7 +24,11 @@
     vertical-align: middle;
 }
 .lq-chip--sm { min-height: var(--ls-s-6); padding-inline: var(--ls-s-2); }
-.lq-chip__label { min-width: 0; overflow-wrap: anywhere; }
+/* A chip is a one-line capsule (2026-10-24): wrapping turned status chips into
+   tall rounded blobs in narrow list trails. Long labels truncate with an
+   ellipsis; the full text stays in the DOM for assistive technology. */
+.lq-chip { white-space: nowrap; flex-shrink: 0; }
+.lq-chip__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lq-chip--filter { cursor: pointer; }
 /* Selected and status tints layer over the same control fill instead of
    replacing it, so a chip reads as tinted glass rather than flat paint. */

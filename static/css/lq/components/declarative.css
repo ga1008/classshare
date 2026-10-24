@@ -126,6 +126,14 @@
     --lq-ctrl-elev: 0 0 transparent;
 }
 :root [data-lq-selected="true"] > .lq-domain-choice.lq-btn--ghost { color: hsl(var(--ls-on-primary-soft)); }
+/* Compound buttons (see control-geometry.css) share the choice-card selected
+   pair: a solid primary slab hid every nested title, count and note. */
+:root:root .lq-btn:has(> :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)
+        ~ :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)):has(> * > * + *):is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], .is-active):not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
+    --lq-control-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
+    --lq-control-color: hsl(var(--ls-on-primary-soft));
+    --lq-control-border: hsl(var(--ls-primary));
+}
 [data-lq-component="surface"].lq-surface:not([data-lq-material="raised"], [data-lq-visual="category"]) {
     /* A selected parent must not tint an unselected nested surface. */
     --lq-surface-background: hsl(var(--lq-material-fill));

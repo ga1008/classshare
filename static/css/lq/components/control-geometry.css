@@ -8,9 +8,34 @@
     .app-topbar-action, .ls-tool-link, summary):not([data-lq-shape="surface"]) {
     border-radius: var(--ls-r-capsule) !important;
 }
+/* Capsule inset (2026-10-24). Imposing capsule corners on a legacy control
+   whose edge holds a nested mark (dot, count, badge, chip) pushed that mark
+   into the rounded end. Such capsules keep at least half the corner radius
+   clear on both sides. The shared Button lays out its own badge slot. */
+:root :is([role="tab"], summary, .cw-nav-link, .app-topbar-action, .ls-tool-link, .ls-filter, .btn):not(.lq-btn, [data-lq-shape="surface"]):has(> :is(.lq-badge, .lq-chip, [class*="__count"], [class*="-count"], [class*="__dot"], [class*="__badge"]):is(:first-child, :last-child)) {
+    padding-inline: max(var(--ls-s-3), 0.9em);
+}
 /* The moving selection thumb and its outer track follow the same geometry. */
 :root :is(.lq-segment > .lq-tabs__list, .lq-tabs--pill > .lq-tabs__list,
     .cw-task-filters, .classroom-activity-tabs, .discussion-room-tabs),
 :root .lq-segment > .lq-tabs__list[data-lq-thumb]::before {
     border-radius: var(--ls-r-capsule) !important;
+}
+/* Compound buttons (2026-10-24). A button whose content is two or more author
+   groups, at least one of them stacked (title over note, value over label),
+   is a choice card, not a capsule: a capsule squeezes a left/right layout
+   into its rounded ends and clips the corners. It takes card geometry with a
+   real inset, keeps the consumer's layout, and its selected state is the soft
+   primary pair (declarative.css) so nested text stays readable. Single-group
+   and two-line centred labels (topbar actions) remain capsules. Shared Button
+   parts (icon, label, badge, spinner) and aria-hidden glyphs are not groups. */
+:root:root .lq-btn:has(> :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)
+        ~ :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)):has(> * > * + *) {
+    border-radius: var(--ls-r-md) !important;
+    height: auto;
+    min-height: calc(var(--ls-s-10) + var(--ls-s-2));
+    padding: var(--ls-s-3) var(--ls-s-4);
+    white-space: normal;
+    text-align: start;
+    align-self: stretch;
 }

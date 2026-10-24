@@ -7,6 +7,7 @@
  *   glued    —— 相邻两个有底色的兄弟板块间距 < 4px
  *   contrast —— 文字与合成后背景对比度 < 3（大字）/ 4.5（正文）
  *   overlay  —— 浮层（fixed/absolute + z-index）底色不透明度 < .82 且无 backdrop-filter
+ *   capsule  —— 胶囊形控件高于两行文字（多行或嵌套内容被塞进胶囊）
  * 背景按祖先底色逐层合成到页面场景色调（html[data-lq-scene-tone]）上估算；照片背景
  * 只用色调近似，结论是"候选"，需截图复核。
  *
@@ -65,7 +66,7 @@ function probe() {
   // With a page backdrop image the photo sits between body and content: skip body's own colour.
   const composite = el => { const chain = []; for (let n = el; n && n !== document.documentElement && !(backdrop && n === document.body); n = n.parentElement) chain.push(n); let c = scene; for (const n of chain.reverse()) { const b = bgOf(n); if (b[3] > 0) c = over(b, c); } return c; };
   const label = el => { const id = el.id ? `#${el.id}` : ''; const cls = (el.className && typeof el.className === 'string') ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : ''; const own = `${el.tagName.toLowerCase()}${id}${cls}`; if (id || cls) return own; const parent = el.parentElement; const pc = parent && typeof parent.className === 'string' && parent.className.trim() ? '.' + parent.className.trim().split(/\s+/)[0] : ''; return `${parent ? parent.tagName.toLowerCase() + pc : ''} > ${own}`; };
-  const issues = { tight: [], glued: [], contrast: [], overlay: [] };
+  const issues = { tight: [], glued: [], contrast: [], overlay: [], capsule: [] };
   const all = [...document.body.querySelectorAll('*')].filter(el => !['SCRIPT', 'STYLE', 'svg', 'path', 'BR', 'OPTION'].includes(el.tagName));
   for (const el of all) {
     if (!visible(el)) continue;
@@ -87,6 +88,25 @@ function probe() {
         const gap = Math.max(q.top - r.bottom, q.left - r.right);
         if (gap > -2 && gap < 4) issues.glued.push({ el: label(el), next: label(next), gap: Math.round(gap) });
       }
+    }
+    // capsule: a capsule-shaped control taller than two text lines (multi-line or
+    // nested content squeezed into rounded ends), or left-aligned content whose
+    // inset is smaller than half the corner radius.
+    if (el.matches('button, a, summary, [role="tab"], .lq-btn, .lq-chip') && !el.matches('.lq-btn--icon') && r.width > r.height * 1.25 && parseFloat(s.borderTopLeftRadius) >= r.height * 0.45) {
+      // Real text lines (distinct line-box tops of the text inside), and any
+      // painted child whose distance to the rounded edge is under half the radius.
+      const centres = [];
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        if (!t.textContent.trim() || !visible(t.parentElement)) continue;
+        const range = document.createRange(); range.selectNodeContents(t);
+        for (const q of range.getClientRects()) if (q.width > 1 && q.height > 4) centres.push(q.top + q.height / 2);
+      }
+      centres.sort((a, b) => a - b);
+      const lines = centres.reduce((n, c, i) => n + (i === 0 || c - centres[i - 1] > 9 ? 1 : 0), 0);
+      const radius = Math.min(parseFloat(s.borderTopLeftRadius), r.height / 2);
+      const squeezed = [...el.querySelectorAll('*')].some(k => painted(k) && visible(k) && Math.min(k.getBoundingClientRect().left - r.left, r.right - k.getBoundingClientRect().right) < radius * 0.5);
+      if (lines > 2 || squeezed) issues.capsule.push({ el: label(el), height: Math.round(r.height), lines, squeezed });
     }
     // overlay: floating layer without enough opacity or frost
     const z = parseInt(s.zIndex, 10);
@@ -134,6 +154,9 @@ function probe() {
             await page.goto(`${opt.base}${step.route}`, { waitUntil: 'load', timeout: 45000 });
             await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => undefined);
             await page.waitForTimeout(600);
+            // First-run guides (teacher onboarding) cover the page; close them when present.
+            const guide = page.locator('[data-teacher-onboarding-dismiss]:visible').first();
+            if (await guide.count()) { await guide.click({ timeout: 3000 }).catch(() => undefined); await page.waitForTimeout(400); }
             for (const selector of step.click || []) { await page.locator(selector).first().click({ timeout: 8000 }); await page.waitForTimeout(500); }
             if (opt.shots) await page.screenshot({ path: path.join(opt.shots, `${appearance}-${route.replace(/[^a-z0-9]+/gi, '_').slice(0, 60)}.png`) });
             const result = await page.evaluate(probe);

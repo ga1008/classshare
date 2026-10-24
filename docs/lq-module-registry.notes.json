@@ -24,7 +24,7 @@
     "title": "Control geometry 控件几何",
     "layer": "foundation",
     "summary": "按钮/芯片的胶囊半径、三档尺寸高度、44px 触控最小命中区；多行内容的选择卡用 `data-lq-shape=\"surface\"` 退出胶囊。",
-    "rules": "大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。"
+    "rules": "大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。 2026-10-24：复合按钮（两组及以上内容、至少一组上下叠放）自动改为卡片圆角 + 充足内边距 + 柔和选中态，不再塞进胶囊；被套上胶囊圆角的旧控件若边缘带圆点/计数/徽标，至少留出 12px 内边距。"
   },
   "declarative": {
     "title": "Declarative 显式声明与领域壳",
@@ -86,7 +86,8 @@
       "react": [
         "LqChipGroup"
       ]
-    }
+    },
+    "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
   },
   "chip-row": {
     "title": "ChipRow 芯片行",
@@ -159,7 +160,7 @@
     "summary": "数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。",
     "params": "card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。",
     "states": "row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。",
-    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。",
+    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。",
     "entries": {
       "react": [
         "LqCardFrame",
@@ -195,7 +196,7 @@
   "navigation": {
     "title": "Navigation Tabs / Segment",
     "layer": "component",
-    "summary": "`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。"
+    "summary": "`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。 横向标签列表被相邻高元素拉伸时，标签保持自身高度并垂直居中，胶囊不会被撑成圆球（2026-10-24）。"
   },
   "collapsible": {
     "title": "Collapsible 折叠",
@@ -301,7 +302,7 @@
     "summary": "`bindOverflowLabels(owner)`：仅精细指针 hover / 键盘 focus-visible 时测量一次，确有溢出才做一次内部文字 transform。"
   },
   "_tools": {
-    "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。",
+    "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。 2026-10-24 增加 capsule 检查：胶囊里文字超过两行，或嵌套的带底色元素离圆角端小于半个圆角。",
     "adaptive-fills": "tools/ui/adaptive_light_fills.py —— 把遗留 CSS 与模板内联 <style> 里写死的浅色底（含 --ls-c-* 调色板常量）改成 light-dark(原值, 同色相深色玻璃)，并把只为亮色写的语义色文字改成自适应；亮色外观逐像素不变，旧浏览器回退原值；幂等；npm run fix:lq-light-fills。"
   }
 }

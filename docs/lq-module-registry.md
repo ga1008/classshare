@@ -61,7 +61,7 @@
 **Control geometry 控件几何** · 层：foundation · CSS：`static/css/lq/components/control-geometry.css`
 
 - **设计摘要**：按钮/芯片的胶囊半径、三档尺寸高度、44px 触控最小命中区；多行内容的选择卡用 `data-lq-shape="surface"` 退出胶囊。
-- **规则**：大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。
+- **规则**：大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。 2026-10-24：复合按钮（两组及以上内容、至少一组上下叠放）自动改为卡片圆角 + 充足内边距 + 柔和选中态，不再塞进胶囊；被套上胶囊圆角的旧控件若边缘带圆点/计数/徽标，至少留出 12px 内边距。
 - **消费者**：0 个文件
 
 ### control-states
@@ -855,6 +855,7 @@
 - **设计摘要**：筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。
 - **参数 / 变体**：`label, kind(label|filter), tone, size, pressed, icon, attrs`。
 - **状态**：pressed / hover / focus-visible / disabled。
+- **规则**：芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。
 - **根类**：`lq-chip`
 - **Jinja 宏** `templates/macros/lq/chip.html`：`lq_chip`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
@@ -971,7 +972,7 @@
 - **设计摘要**：数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。
 - **参数 / 变体**：card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。
 - **状态**：row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。
-- **规则**：内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。
+- **规则**：内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。
 - **根类**：`lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list`, `lq-page-head`, `lq-prose`, `lq-row`, `lq-scene-heading`, `lq-stat-strip`
 - **Jinja 宏** `templates/macros/lq/content.html`：`lq_card`, `lq_list`, `lq_row`, `lq_empty`, `lq_page_head`, `lq_filter_bar`, `lq_prose`, `lq_bubble`
 - **JS 入口** `static/js/lq/content.js`：`contentKinds`, `contentMarkup`, `contentProps`, `createContent`, `enhanceRow`, `html`
@@ -1552,7 +1553,7 @@
 
 **Navigation Tabs / Segment** · 层：component · CSS：`static/css/lq/components/navigation.css`
 
-- **设计摘要**：`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。
+- **设计摘要**：`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。 横向标签列表被相邻高元素拉伸时，标签保持自身高度并垂直居中，胶囊不会被撑成圆球（2026-10-24）。
 - **根类**：`lq-segment`, `lq-tabs`
 - **Jinja 宏** `templates/macros/lq/navigation.html`：`lq_tabs`, `lq_segment`
 - **JS 入口** `static/js/lq/navigation.js`：`createNavigation`, `createSegment`, `createTabs`, `html`, `navigationMarkup`, `navigationProps`, `segment`, `tabs`

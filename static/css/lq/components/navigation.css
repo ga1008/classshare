@@ -85,6 +85,11 @@
     pointer-events: none;
 }
 .lq-segment > .lq-tabs__list[data-lq-thumb] > .lq-tabs__tab[aria-selected="true"] { background: transparent; box-shadow: none; }
+/* A horizontal tab list is often stretched by a taller neighbour (a labelled
+   search field in the same toolbar row). Its tabs keep their own height
+   instead of growing with it, so a capsule never balloons into a circle
+   (2026-10-24). Compound card tabs (control-geometry.css) still stretch. */
+.lq-tabs__list:not(.lq-tabs--vertical > .lq-tabs__list) > .lq-tabs__tab { align-self: center; }
 .lq-tabs--vertical { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: var(--ls-s-4); }
 .lq-tabs--vertical > .lq-tabs__list { flex-direction: column; align-self: start; max-width: min(40vw, 16rem); border-bottom: 0; border-inline-end: 1px solid hsl(var(--ls-line)); }
 .lq-tabs--vertical > .lq-tabs__list > .lq-tabs__tab { justify-content: start; white-space: normal; overflow-wrap: anywhere; }
