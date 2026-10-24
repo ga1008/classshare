@@ -230,6 +230,8 @@ body.classroom-workspace-v2 [data-ui-dialog-overlay][data-state] { z-index: 1004
 .classroom-workspace-v2 .classroom-activity-tab__copy strong { color: inherit; font-size: 13px; font-weight: 500; }
 .classroom-workspace-v2 .classroom-activity-tab__icon { width: 16px; height: 16px; }
 .classroom-workspace-v2 .classroom-activity-tab em { position: static; width: auto; min-width: 0; padding: 0; border: 0; border-radius: 0; font-size: 11px; background: transparent; color: var(--cw-muted); }
+/* The selected tab paints its own fill; the count follows that fill's ink. */
+.classroom-workspace-v2 .classroom-activity-tab:is(.is-active, [aria-selected="true"]) em { color: inherit; opacity: .85; }
 .classroom-workspace-v2 .classroom-activity-panels,
 .classroom-workspace-v2 .classroom-activity-panel.is-active,
 .classroom-workspace-v2 .classroom-activity-panel { height: auto; max-height: none; min-height: 0; padding: 0; overflow: visible; }

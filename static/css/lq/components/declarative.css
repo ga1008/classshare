@@ -145,6 +145,46 @@
     border-color: hsl(var(--ls-primary));
     box-shadow: inset 0 0 0 1px hsl(var(--ls-primary));
 }
+/* Embedded Surface (2026-10-24): a declared Surface that only groups content
+ * inside a host Surface/material. The host already paints the glass and owns
+ * the inset, so the group paints nothing and never becomes a blur host.
+ * Without this parameter the explicit declaration above re-painted every
+ * author-flattened group (`background: transparent; padding: 0`) and left a
+ * filled box with its content touching the edge (classroom activity panels,
+ * embedded cultivation cards, discussion summaries).
+ * Usage: data-lq-component="surface" data-lq-surface="embedded". */
+:root [data-lq-component="surface"][data-lq-surface="embedded"] {
+    --lq-surface-background: transparent;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+:root [data-lq-component="surface"][data-lq-surface="embedded"]::before { display: none; }
+/* Icon-less legacy close buttons (Bootstrap painted the cross as a background
+ * image). Every `.btn-close` adopted as a glass Button gets the shared cross
+ * glyph and an icon-button geometry instead of an empty capsule. */
+:root .lq-btn.btn-close:empty {
+    width: calc(var(--ls-s-8) + var(--ls-s-1));
+    min-width: calc(var(--ls-s-8) + var(--ls-s-1));
+    height: calc(var(--ls-s-8) + var(--ls-s-1));
+    min-height: calc(var(--ls-s-8) + var(--ls-s-1));
+    padding: 0;
+    opacity: 1;
+    background-image: none;
+}
+:root .lq-btn.btn-close:empty::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+@media (forced-colors: active) {
+    :root .lq-btn.btn-close:empty::before { background: ButtonText; }
+}
 .lq-domain-raised[data-lq-material="raised"] {
     background-color: hsl(var(--lq-material-fill)) !important;
     background-image: var(--ls-glass-sheen) !important;

@@ -17,6 +17,74 @@
     --lq-page-raised: var(--ls-glass-fill-strong);
 }
 
+/* ── 场景自适应材质浓度（2026-10-24）──────────────────────────────────────
+   玻璃填充是"与外观配对"的：暗外观 = 深色 .50，亮外观 = 白色 .50。可背景照片的
+   明暗与账号外观无关：暗外观配一张亮照片时，深色 .50 叠在亮图上只剩中灰，白字
+   约 3.9:1、次要字约 2.3:1（截图里"灰面板白字看不清"）；亮外观配暗照片同理。
+   页面场景色调（html[data-lq-scene-tone]，背景 manifest 亮度 + page_backdrop.js）
+   与外观相反时，自动把各级填充调浓到 .62–.78，暗外观的次要墨色提亮一档，正文与次要字回到 ≥4.5:1。
+   与外观一致时不动。用户的关闭透明/低端档/高对比/减少透明度偏好仍优先（见下方）。 */
+:root[data-appearance="dark"][data-lq-scene-tone="light"]:not([data-lq-glass="off"], [data-lq-tier="C"], [data-lq-contrast="more"]) {
+    --ls-glass-fill: 224 30% 12% / .70;
+    --ls-glass-fill-strong: 224 30% 12% / .78;
+    --ls-glass-fill-clear: 224 30% 12% / .46;
+    --ls-glass-fill-content: 224 30% 12% / .74;
+    --ls-glass-fill-control: 224 30% 12% / .62;
+    /* 亮背景透出的光让中灰更亮：次要墨色同步提亮一档，保持与正文的层级。 */
+    --ls-ink-2: 215 22% 84%;
+    --ls-ink-3: 215 20% 82%;
+}
+:root:not([data-appearance="dark"])[data-lq-scene-tone="dark"]:not([data-lq-glass="off"], [data-lq-tier="C"], [data-lq-contrast="more"]) {
+    --ls-glass-fill: 0 0% 100% / .66;
+    --ls-glass-fill-strong: 0 0% 100% / .78;
+    --ls-glass-fill-clear: 0 0% 100% / .44;
+    --ls-glass-fill-content: 0 0% 100% / .72;
+    --ls-glass-fill-control: 0 0% 100% / .62;
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    :root:root:root:root:root[data-lq-scene-tone] {
+        --ls-glass-fill: var(--ls-surface-1);
+        --ls-glass-fill-strong: var(--ls-surface-1);
+        --ls-glass-fill-clear: var(--ls-surface-1);
+        --ls-glass-fill-content: var(--ls-surface-1);
+        --ls-glass-fill-control: var(--ls-surface-2);
+    }
+}
+
+/* ── 场景墨色（2026-10-24）：直接坐在背景照片/纯色上的文字 ─────────────────
+   面板里的文字读与填充配对的 --ls-ink；但分区标题、页面说明这类不在任何面板里的
+   文字，背后就是用户选的照片。它们若跟着账号外观（亮/暗）翻转，暗色外观配亮照片
+   时就是白字压白图。这里按页面场景色调（html[data-lq-scene-tone]，由背景 manifest
+   与 page_backdrop.js 发布）给出一组墨色，并加一圈与色调相反的极淡光晕兜底照片
+   局部的明暗起伏。使用：class="lq-on-scene" 或 data-lq-on-scene。
+   没有场景色调（无背景图）时退回主题墨色，行为与以前一致。 */
+:root {
+    --lq-scene-ink: var(--ls-ink);
+    --lq-scene-muted: var(--ls-ink-2);
+    --lq-scene-halo: 0 0% 0% / 0;
+}
+:root[data-lq-scene-tone="light"] {
+    --lq-scene-ink: var(--ls-glass-scene-light-ink);
+    --lq-scene-muted: var(--ls-glass-scene-light-muted);
+    --lq-scene-halo: 0 0% 100% / .6;
+}
+:root[data-lq-scene-tone="dark"] {
+    --lq-scene-ink: var(--ls-glass-scene-dark-ink);
+    --lq-scene-muted: var(--ls-glass-scene-dark-muted);
+    --lq-scene-halo: 224 30% 8% / .6;
+}
+:is(.lq-on-scene, [data-lq-on-scene]) {
+    color: hsl(var(--lq-scene-ink));
+    text-shadow: 0 0 .6em hsl(var(--lq-scene-halo)), 0 1px 2px hsl(var(--lq-scene-halo));
+}
+:is(.lq-on-scene, [data-lq-on-scene]) :where(h1, h2, h3, h4, strong) { color: hsl(var(--lq-scene-ink)); }
+:is(.lq-on-scene, [data-lq-on-scene]) :where(p, small, .form-text, .form-hint) { color: hsl(var(--lq-scene-muted)); }
+/* 面板与控件自带配对墨色，不继承场景墨色与光晕。 */
+:is(.lq-on-scene, [data-lq-on-scene]) :where(.lq-surface, .lq-glass, [data-lq-material], .lq-btn, .lq-chip, .lq-input, .lq-select) { text-shadow: none; }
+@media (forced-colors: active) {
+    :is(.lq-on-scene, [data-lq-on-scene]) { color: CanvasText; text-shadow: none; }
+}
+
 /* 关掉玻璃的子树与低端档：页面层跟着组件一起回到不透明表面。 */
 :root[data-lq-tier="C"],
 [data-lq-glass="off"] {

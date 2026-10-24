@@ -96,7 +96,9 @@
 }
 
 /* ---------- achievements.html [data-lq-scope="growth"] ---------- */
-[data-lq-scope="growth"] .achv-shell { display: grid; gap: var(--ls-s-5); }
+/* 作用域属性就挂在外壳自身上（模板写法），后代选择器匹配不到它，外壳一直是 block，
+   页头与下一块贴在一起（2026-10-24）；两种写法都要命中。 */
+:is([data-lq-scope="growth"] .achv-shell, .achv-shell[data-lq-scope="growth"]) { display: grid; gap: var(--ls-s-5); }
 [data-lq-scope="growth"] .achv-new-banner {
     padding: var(--ls-s-3) var(--ls-s-4); border-radius: var(--ls-r-md);
     border: 1px solid hsl(var(--ls-primary) / .35); background: hsl(var(--ls-primary-soft));
@@ -126,7 +128,9 @@
 }
 
 /* ---------- points_shop.html [data-lq-scope="growth"] ---------- */
-[data-lq-scope="growth"] .pts-shell { display: grid; gap: var(--ls-s-5); }
+/* 作用域属性就挂在外壳自身上（模板写法），后代选择器匹配不到它，外壳一直是 block，
+   页头与下一块贴在一起（2026-10-24）；两种写法都要命中。 */
+:is([data-lq-scope="growth"] .pts-shell, .pts-shell[data-lq-scope="growth"]) { display: grid; gap: var(--ls-s-5); }
 [data-lq-scope="growth"] .pts-balance {
     align-self: center; padding: var(--ls-s-3) var(--ls-s-5); border-radius: var(--ls-r-md);
     background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-primary)); font-weight: var(--ls-weight-title2); font-size: var(--ls-t-title3);
@@ -166,7 +170,9 @@
 [data-lq-scope="growth"] .pts-aside { display: grid; gap: var(--ls-s-5); }
 
 /* ---------- wrong_book.html [data-lq-scope="growth"] ---------- */
-[data-lq-scope="growth"] .wrongbook-shell { display: grid; gap: var(--ls-s-5); }
+/* 作用域属性就挂在外壳自身上（模板写法），后代选择器匹配不到它，外壳一直是 block，
+   页头与下一块贴在一起（2026-10-24）；两种写法都要命中。 */
+:is([data-lq-scope="growth"] .wrongbook-shell, .wrongbook-shell[data-lq-scope="growth"]) { display: grid; gap: var(--ls-s-5); }
 [data-lq-scope="growth"] .wrongbook-stats { display: flex; gap: var(--ls-s-3); flex-wrap: wrap; }
 [data-lq-scope="growth"] .wrongbook-stat { min-width: calc(var(--ls-s-12) * 2); padding: var(--ls-s-3) var(--ls-s-4); border-radius: var(--ls-r-md); border: 1px solid hsl(var(--ls-line)); background: hsl(var(--lq-page-content)); }
 [data-lq-scope="growth"] .wrongbook-stat span { display: block; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); }
@@ -290,7 +296,6 @@
     color: hsl(var(--ls-ink-2));
 }
 [data-lq-scope="growth"] :is(.path-card__meta, .path-card__description,
-                             .path-visible-count, .review-visible-count,
                              .review-card__meta, .cultivation-card__subtitle,
                              .cultivation-card__hint) {
     color: hsl(var(--ls-ink-2));
@@ -299,9 +304,14 @@
                              .cultivation-card__title) {
     color: hsl(var(--ls-ink));
 }
-/* 计数器里的数字是强调文本，取正文色而不是次级色。 */
+/* 计数行不在任何面板里，直接坐在背景照片上：读场景墨色（page-material.css），
+   数字取场景正文色。以前读随外观翻转的 --ls-ink，暗外观配亮照片时白字压白图。 */
+[data-lq-scope="growth"] :is(.path-visible-count, .review-visible-count) {
+    color: hsl(var(--lq-scene-muted));
+    text-shadow: 0 0 .6em hsl(var(--lq-scene-halo)), 0 1px 2px hsl(var(--lq-scene-halo));
+}
 [data-lq-scope="growth"] :is(.path-visible-count, .review-visible-count) strong {
-    color: hsl(var(--ls-ink));
+    color: hsl(var(--lq-scene-ink));
 }
 
 /* 输入控件统一到 control 级：遗留规则给它们留的是浅色底 + slate-900 文字，

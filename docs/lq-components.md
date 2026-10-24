@@ -1,6 +1,6 @@
 # LanShare Glass 组件实施记录
 
-模块总表与消费者追溯见 [LQ 模块使用记录本](lq-module-registry.md)（生成器 `tools/ui/lq_module_registry.py`）。2026-10-24 私信/通知页改为无条件 LQ、输入区复用 Composer 槽位、表情选择器升为共享 `emoji-picker` 组件 CSS，见 [私信模块化改造](lq-messages-modular-2026-10-24.md)。
+2026-10-24 模板自适应改造（浮动层磨砂、表情选择器智能定位、Surface 嵌入参数、场景自适应浓度、场景墨色、浅色底 light-dark 迁移与布局可读性探针）见 [模板自适应改造](lq-template-adaptive-2026-10-24.md)。模块总表与消费者追溯见 [LQ 模块使用记录本](lq-module-registry.md)（生成器 `tools/ui/lq_module_registry.py`）。2026-10-24 私信/通知页改为无条件 LQ、输入区复用 Composer 槽位、表情选择器升为共享 `emoji-picker` 组件 CSS，见 [私信模块化改造](lq-messages-modular-2026-10-24.md)。
 
 知识树新增的更新提醒关闭、保存/撤销和草稿状态复用 Button、Status、Dialog/Choose；原生输入撤销和 LQ 关闭否决保留。行为合同及正式资源验收见 [知识树编辑改进](knowledge-tree-editing-2026-10-21.md)。
 

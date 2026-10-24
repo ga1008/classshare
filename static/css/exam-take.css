@@ -530,7 +530,8 @@ body.exam-page {
 
 .q-nav-item.active .q-status-indicator.unanswered {
     border-color: var(--primary-color);
-    background: white;
+    background: white /* lq-light-fallback */;
+    background: light-dark(white, hsl(224 26% 13% / 0.78));
 }
 
 .q-nav-label {

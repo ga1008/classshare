@@ -27,6 +27,7 @@
                         {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                         {% set course_subtitle = course.class_name ~ (' · ' ~ course.teacher_name if course.teacher_name else '') %}
                         {% set cultivation_card = {
+                            'embedded': true,
                             'variant': 'compact',
                             'eyebrow': course.sect_name or '',
                             'title': course.course_name,

@@ -3,15 +3,15 @@
   "materials": {
     "title": "Materials 材质层（四层材质模型）",
     "layer": "foundation",
-    "summary": "control / content / chrome / raised / clear 五档材质的配方：填充、模糊、光泽边、与填充配对的 ink/muted/accent。`.lq-glass` 与 `.lq-surface` 是材质根；场景色调 `data-lq-tone` / `html[data-lq-scene-tone]` 同时切换填充与全部前景。",
-    "params": "`data-lq-material=\"content|raised|clear|control\"`、`.lq-glass--thick/--clear`、`.lq-surface--frost/--boundary`、`data-lq-tone=\"light|dark\"`、`data-lq-scene=\"auto\"`。",
+    "summary": "control / content / chrome / raised / clear 五档材质的配方：填充、模糊、光泽边、与填充配对的 ink/muted/accent。`.lq-glass` 与 `.lq-surface` 是材质根；场景色调 `data-lq-tone` / `html[data-lq-scene-tone]` 同时切换填充与全部前景。 场景自适应浓度（pages/page-material.css）：外观与页面场景色调相反时（暗外观+亮照片、亮外观+暗照片）自动把各级填充调浓到 .62–.78，暗外观次要墨色提亮一档。",
+    "params": "`data-lq-material=\"content|raised|clear|control\"`、`.lq-glass--thick/--clear`、`.lq-surface--frost/--boundary`、`data-lq-tone=\"light|dark\"`、`data-lq-scene=\"auto\"`。；场景墨色 `--lq-scene-ink/-muted/-halo` 与 `.lq-on-scene` / `data-lq-on-scene`（直接坐在背景照片上的文字）。",
     "states": "透明关闭 / 高对比 / Tier B·C / forced-colors 退回不透明主题配对；嵌套材质自动不再成为模糊宿主。",
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
   },
   "material-boundaries": {
     "title": "Material boundaries 用户偏好终裁",
     "layer": "foundation",
-    "summary": "用户的透明度 / 对比度 / 低端设备偏好对所有材质拥有最终裁决：关闭实时模糊、改为不透明配对；Toast/Tooltip 不采样。放在 index.css 最后以保证优先级。",
+    "summary": "用户的透明度 / 对比度 / 低端设备偏好对所有材质拥有最终裁决：关闭实时模糊、改为不透明配对；Toast/Tooltip 不采样。放在 index.css 最后以保证优先级。 2026-10-24：最外层 raised（以及嵌在弹窗里的 `data-lq-presence` 临时浮层）一律保留磨砂并压过嵌套守卫；减少透明度/强制颜色/打印仍关闭。",
     "rules": "领域 CSS 不得用更高特异性恢复模糊或半透明；改动此文件要跑六配色亮暗矩阵。"
   },
   "control-states": {
@@ -30,8 +30,8 @@
     "title": "Declarative 显式声明与领域壳",
     "layer": "foundation",
     "summary": "`data-lq-component` 显式声明把服务端/领域 DOM 的填充、前景、描边锁定到共享配方，防止晚加载的旧样式夺回外观；也提供 `lq-domain-toolbar`（组合边界）、`lq-domain-choice`（选择卡）、`lq-domain-raised`（浮层材质）、`data-lq-selected` Surface 选中态、`lq-disclosure-popover`（原生 details 浮层）。",
-    "params": "`data-lq-component=\"button|input|select|surface|toolbar|choice|popover|…\"`、`data-lq-padding=\"none|sm|md|lg\"`、`data-lq-selected=\"true\"`、`data-lq-align/placement`。",
-    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。"
+    "params": "`data-lq-component=\"button|input|select|surface|toolbar|choice|popover|…\"`、`data-lq-padding=\"none|sm|md|lg\"`、`data-lq-selected=\"true\"`、`data-lq-align/placement`。；`data-lq-surface=\"embedded\"`（2026-10-24：宿主里的分组，不铺底、不描边、不成为模糊宿主，内边距由宿主负责）。",
+    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。"
   },
   "domain-controls": {
     "title": "Domain controls 领域控件就地接入",
@@ -70,7 +70,11 @@
     "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。",
     "states": "default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。",
     "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。",
-    "entries": { "react": ["LqButton"] }
+    "entries": {
+      "react": [
+        "LqButton"
+      ]
+    }
   },
   "chip": {
     "title": "Chip 芯片",
@@ -78,7 +82,11 @@
     "summary": "筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。",
     "params": "`label, kind(label|filter), tone, size, pressed, icon, attrs`。",
     "states": "pressed / hover / focus-visible / disabled。",
-    "entries": { "react": ["LqChipGroup"] }
+    "entries": {
+      "react": [
+        "LqChipGroup"
+      ]
+    }
   },
   "chip-row": {
     "title": "ChipRow 芯片行",
@@ -90,7 +98,12 @@
     "layer": "component",
     "summary": "`lq-badge`（计数/点）、`lq-avatar`（首字或图片）、`lq-spinner`、`lq-progress`（条/环）；都是只读呈现。",
     "params": "badge: `value, tone, dot, label`；avatar: `name, src, size(24|32|40|56)`；progress: `label, value, max, variant`。",
-    "entries": { "react": ["LqAvatar"] }
+    "entries": {
+      "react": [
+        "LqAvatar"
+      ]
+    },
+    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。"
   },
   "skeleton": {
     "title": "Skeleton 骨架屏",
@@ -104,8 +117,23 @@
     "params": "`id, name, label, type, value, placeholder, required, readonly, min/max/step, autocomplete, help, error, clearable, count, autoGrow, attrs`。",
     "states": "focus-visible 环 / aria-invalid 错误 / disabled 虚线 / readonly；IME composition 期间不触发派生逻辑。",
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。",
-    "forceRoots": ["lq-input", "lq-textarea", "lq-checkbox", "lq-radio", "lq-switch", "lq-native-file", "lq-native-color"],
-    "entries": { "react": ["LqField", "LqNativeInput", "LqNativeTextarea", "LqNativeSelect"] }
+    "forceRoots": [
+      "lq-input",
+      "lq-textarea",
+      "lq-checkbox",
+      "lq-radio",
+      "lq-switch",
+      "lq-native-file",
+      "lq-native-color"
+    ],
+    "entries": {
+      "react": [
+        "LqField",
+        "LqNativeInput",
+        "LqNativeTextarea",
+        "LqNativeSelect"
+      ]
+    }
   },
   "search": {
     "title": "Search 搜索包装",
@@ -119,7 +147,11 @@
     "summary": "平台 select 的共享呈现：`data-lq-dropdown` 由 Dropdown 接管展示，原生 select 继续独占值、表单与校验；combobox/listbox 用于可搜索选择。",
     "params": "`data-lq-dropdown`、`data-lq-selection-owner`（已有 owner）、`data-lq-dropdown-manual`（React 显式生命周期）、`searchable`。",
     "rules": "同一 select 只能有一个呈现 owner；动态领域 owner 调 `enhanceDropdowns(root)`。",
-    "entries": { "js": ["static/js/lq/dropdown.js"] }
+    "entries": {
+      "js": [
+        "static/js/lq/dropdown.js"
+      ]
+    }
   },
   "content": {
     "title": "Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）",
@@ -127,8 +159,13 @@
     "summary": "数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。",
     "params": "card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。",
     "states": "row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。",
-    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。",
-    "entries": { "react": ["LqCardFrame", "LqEmpty"] }
+    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。",
+    "entries": {
+      "react": [
+        "LqCardFrame",
+        "LqEmpty"
+      ]
+    }
   },
   "composer": {
     "title": "Composer 输入区",
@@ -142,9 +179,18 @@
     "title": "EmojiPicker 表情选择器",
     "layer": "component",
     "summary": "贴在触发器上方的 raised 浮层（lq-glass + lq-domain-raised），常用 + 分类网格；表情格是 adoptDomainControl 的 choice 控件；出入场走 ui_overlay_motion。",
-    "rules": "位置相对 `position: relative` 的锚点；材质与前景来自 raised 配对，本模块只定几何。",
-    "extraSelectors": [".emoji-picker", ".emoji-picker-item", ".emoji-picker-grid", "createEmojiPicker"],
-    "entries": { "js": ["static/js/emoji_picker.js"] }
+    "rules": "挂载在调用方的锚点里（锚点经 `:has(> .emoji-picker)` 自动成为定位盒）；传入 `trigger` 后以触发按钮为基准测量最近裁剪祖先内的可用空间，自动上/下翻转、限高、横向夹在可视区内，因此锚点不必紧挨按钮（反馈弹窗）。材质与前景来自 raised 配对，本模块只定几何。",
+    "extraSelectors": [
+      ".emoji-picker",
+      ".emoji-picker-item",
+      ".emoji-picker-grid",
+      "createEmojiPicker"
+    ],
+    "entries": {
+      "js": [
+        "static/js/emoji_picker.js"
+      ]
+    }
   },
   "navigation": {
     "title": "Navigation Tabs / Segment",
@@ -197,13 +243,21 @@
     "layer": "component",
     "summary": "业务状态呈现：状态胶囊、保存状态行、Alert（含重试动作与诊断转义）、409 冲突面板；只消费控制器确认的快照。",
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。",
-    "entries": { "react": ["LqStatus"] }
+    "entries": {
+      "react": [
+        "LqStatus"
+      ]
+    }
   },
   "tables": {
     "title": "Table / Pager / BulkBar / ResultCount",
     "layer": "component",
     "summary": "数据表外壳（sticky 表头、行选中）、分页器、批量操作栏与结果计数。",
-    "entries": { "react": ["LqPager"] }
+    "entries": {
+      "react": [
+        "LqPager"
+      ]
+    }
   },
   "upload": {
     "title": "Upload / Dropzone / FileChip",
@@ -235,11 +289,19 @@
     "title": "Lightbox 灯箱",
     "layer": "component",
     "summary": "通用液态毛玻璃图片灯箱（`data-ls-lightbox` 声明式接入），私信/学习文档/AI/博客共用。",
-    "entries": { "js": ["static/js/ls_image_lightbox.js"] }
+    "entries": {
+      "js": [
+        "static/js/ls_image_lightbox.js"
+      ]
+    }
   },
   "overflow-label": {
     "title": "OverflowLabel 固定宽度长标签",
     "layer": "component",
     "summary": "`bindOverflowLabels(owner)`：仅精细指针 hover / 键盘 focus-visible 时测量一次，确有溢出才做一次内部文字 transform。"
+  },
+  "_tools": {
+    "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。",
+    "adaptive-fills": "tools/ui/adaptive_light_fills.py —— 把遗留 CSS 与模板内联 <style> 里写死的浅色底（含 --ls-c-* 调色板常量）改成 light-dark(原值, 同色相深色玻璃)，并把只为亮色写的语义色文字改成自适应；亮色外观逐像素不变，旧浏览器回退原值；幂等；npm run fix:lq-light-fills。"
   }
 }

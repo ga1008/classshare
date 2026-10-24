@@ -15,7 +15,9 @@
 {% else %}
 {% set next_hint = raw_next_hint %}
 {% endif %}
-<div data-lq-component="surface" class="lq-surface cultivation-card cultivation-card--{{ variant }}" data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
+{#- embedded: the card sits inside a host card/panel that already paints the glass and the inset;
+    the shared Surface then paints nothing (data-lq-surface="embedded"). #}
+<div data-lq-component="surface" class="lq-surface cultivation-card cultivation-card--{{ variant }}"{% if card.embedded %} data-lq-surface="embedded"{% endif %} data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
     <div class="cultivation-card__mark" aria-hidden="true">
         <span>{{ card.level_short or level.short_name or '未入道' }}</span>
     </div>

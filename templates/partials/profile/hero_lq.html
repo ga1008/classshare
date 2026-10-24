@@ -51,8 +51,7 @@
     {% endif %}
 </header>
 {% if profile.role == 'student' and not profile.email %}
-<aside class="lq-profile-reminder" data-profile-email-reminder>
-    <p>补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。</p>
-    {{ lq_btn('去补充', href=settings_href ~ '#profile-email', size='sm') }}
-</aside>
+{# 信息提示走共享 Alert：语义淡色叠在不透明底上，坐在任何背景照片上都可读。 #}
+{% from 'macros/lq/status.html' import lq_alert %}
+{{ lq_alert(body='补充邮箱后，重要作业、评分结果和被 @ 提醒可以同步送达。', tone='info', action={'label': '去补充', 'href': settings_href ~ '#profile-email', 'variant': 'soft'}, attrs={'data-profile-email-reminder': ''}) }}
 {% endif %}

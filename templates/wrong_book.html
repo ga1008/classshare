@@ -28,28 +28,33 @@
     @media (max-width: 900px) { .wrongbook-grid { grid-template-columns: 1fr; } }
     .wrongbook-panel {
         border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
-        background: #fff; padding: 18px 20px;
+        background: #fff /* lq-light-fallback */;
+        background: light-dark(#fff, hsl(224 26% 13% / 0.78)); padding: 18px 20px;
     }
     .wrongbook-panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
     .wrongbook-panel__subtitle { margin: 0 0 14px; color: #64748b; font-size: 0.82rem; }
     .wrongbook-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     .wrongbook-filters select, .wrongbook-filters input[type="search"] {
         padding: 8px 12px; border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 999px;
-        font-size: 0.85rem; background: #fff;
+        font-size: 0.85rem; background: #fff /* lq-light-fallback */;
+ background: light-dark(#fff, hsl(224 26% 13% / 0.78));
     }
     .wrongbook-filters input[type="search"] { flex: 1 1 180px; min-width: 160px; }
     .wrongbook-item {
         border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 14px;
-        padding: 14px 16px; margin-bottom: 12px; background: #fcfdfe;
+        padding: 14px 16px; margin-bottom: 12px; background: #fcfdfe /* lq-light-fallback */;
+ background: light-dark(#fcfdfe, hsl(224 26% 13% / 0.78));
     }
     .wrongbook-item__meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; font-size: 0.75rem; color: #64748b; }
     .wrongbook-badge {
         display: inline-block; padding: 2px 10px; border-radius: 999px;
         font-size: 0.72rem; font-weight: 800;
-        background: rgba(14, 116, 144, 0.1); color: #0e7490;
+        background: rgba(14, 116, 144, 0.1); color: #0e7490 /* lq-light-fallback */;
+ color: light-dark(#0e7490, hsl(193 75% 74%));
     }
     .wrongbook-badge--course { background: rgba(79, 70, 229, 0.1); color: #4f46e5; }
-    .wrongbook-badge--point { background: rgba(217, 119, 6, 0.12); color: #b45309; }
+    .wrongbook-badge--point { background: rgba(217, 119, 6, 0.12); color: #b45309 /* lq-light-fallback */;
+ color: light-dark(#b45309, hsl(26 75% 74%)); }
     .wrongbook-item__question { margin: 0 0 10px; font-weight: 700; color: #0f172a; line-height: 1.6; white-space: pre-wrap; }
     .wrongbook-answer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     @media (max-width: 640px) { .wrongbook-answer-row { grid-template-columns: 1fr; } }
@@ -59,8 +64,10 @@
     .wrongbook-answer--mine { background: rgba(225, 29, 72, 0.07); border: 1px solid rgba(225, 29, 72, 0.2); }
     .wrongbook-answer--correct { background: rgba(5, 150, 105, 0.07); border: 1px solid rgba(5, 150, 105, 0.2); }
     .wrongbook-answer span { display: block; font-size: 0.72rem; font-weight: 800; margin-bottom: 4px; }
-    .wrongbook-answer--mine span { color: #be123c; }
-    .wrongbook-answer--correct span { color: #047857; }
+    .wrongbook-answer--mine span { color: #be123c /* lq-light-fallback */;
+ color: light-dark(#be123c, hsl(345 75% 74%)); }
+    .wrongbook-answer--correct span { color: #047857 /* lq-light-fallback */;
+ color: light-dark(#047857, hsl(163 75% 74%)); }
     .wrongbook-item__foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
     .wrongbook-item__score { font-size: 0.8rem; color: #64748b; font-weight: 700; }
     .wrongbook-mastery-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px dashed rgba(148, 163, 184, 0.3); }
@@ -68,10 +75,14 @@
     .wrongbook-mastery-item strong { font-size: 0.86rem; color: #0f172a; }
     .wrongbook-mastery-item small { color: #64748b; }
     .wrongbook-tier { font-size: 0.72rem; font-weight: 800; padding: 2px 10px; border-radius: 999px; align-self: center; }
-    .wrongbook-tier--solid { background: rgba(5, 150, 105, 0.12); color: #047857; }
-    .wrongbook-tier--good { background: rgba(14, 116, 144, 0.12); color: #0e7490; }
-    .wrongbook-tier--weak { background: rgba(217, 119, 6, 0.14); color: #b45309; }
-    .wrongbook-tier--danger { background: rgba(225, 29, 72, 0.12); color: #be123c; }
+    .wrongbook-tier--solid { background: rgba(5, 150, 105, 0.12); color: #047857 /* lq-light-fallback */;
+ color: light-dark(#047857, hsl(163 75% 74%)); }
+    .wrongbook-tier--good { background: rgba(14, 116, 144, 0.12); color: #0e7490 /* lq-light-fallback */;
+ color: light-dark(#0e7490, hsl(193 75% 74%)); }
+    .wrongbook-tier--weak { background: rgba(217, 119, 6, 0.14); color: #b45309 /* lq-light-fallback */;
+ color: light-dark(#b45309, hsl(26 75% 74%)); }
+    .wrongbook-tier--danger { background: rgba(225, 29, 72, 0.12); color: #be123c /* lq-light-fallback */;
+ color: light-dark(#be123c, hsl(345 75% 74%)); }
     .wrongbook-empty { text-align: center; padding: 44px 20px; color: #64748b; }
     .wrongbook-empty strong { display: block; font-size: 1.05rem; color: #0f172a; margin-bottom: 6px; }
     #wrongbook-radar { width: 100%; height: 260px; }

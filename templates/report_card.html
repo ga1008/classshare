@@ -34,7 +34,8 @@
     .report-stat strong { font-size: 1.3rem; }
     .report-course {
         border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 16px;
-        background: #fff; padding: 18px 20px;
+        background: #fff /* lq-light-fallback */;
+        background: light-dark(#fff, hsl(224 26% 13% / 0.78)); padding: 18px 20px;
     }
     .report-course__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
     .report-course__head h2 { margin: 0; font-size: 1.05rem; }
@@ -53,16 +54,22 @@
     .report-record__title small { display: block; font-weight: 400; color: #94a3b8; font-size: 0.72rem; }
     .report-badge { padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; }
     .report-badge--kind { background: rgba(79, 70, 229, 0.1); color: #4f46e5; }
-    .report-badge--late { background: rgba(217, 119, 6, 0.14); color: #b45309; }
-    .report-badge--top { background: rgba(5, 150, 105, 0.14); color: #047857; }
-    .report-badge--high { background: rgba(14, 116, 144, 0.13); color: #0e7490; }
+    .report-badge--late { background: rgba(217, 119, 6, 0.14); color: #b45309 /* lq-light-fallback */;
+ color: light-dark(#b45309, hsl(26 75% 74%)); }
+    .report-badge--top { background: rgba(5, 150, 105, 0.14); color: #047857 /* lq-light-fallback */;
+ color: light-dark(#047857, hsl(163 75% 74%)); }
+    .report-badge--high { background: rgba(14, 116, 144, 0.13); color: #0e7490 /* lq-light-fallback */;
+ color: light-dark(#0e7490, hsl(193 75% 74%)); }
     .report-badge--mid { background: rgba(100, 116, 139, 0.14); color: #475569; }
-    .report-badge--low { background: rgba(225, 29, 72, 0.12); color: #be123c; }
+    .report-badge--low { background: rgba(225, 29, 72, 0.12); color: #be123c /* lq-light-fallback */;
+ color: light-dark(#be123c, hsl(345 75% 74%)); }
     .report-record__score { font-weight: 800; color: #0f172a; min-width: 64px; }
     .report-record__avg { color: #64748b; min-width: 92px; }
     .report-explain {
         border: 1px dashed rgba(148, 163, 184, 0.45); border-radius: 14px;
-        padding: 14px 18px; color: #475569; font-size: 0.82rem; line-height: 1.8; background: #f8fafc;
+        padding: 14px 18px; color: #475569 /* lq-light-fallback */;
+ color: light-dark(#475569, hsl(var(--ls-ink))); font-size: 0.82rem; line-height: 1.8; background: #f8fafc /* lq-light-fallback */;
+ background: light-dark(#f8fafc, hsl(210 38% 13% / 0.78));
     }
     .report-explain strong { color: #0f172a; }
     .report-empty { text-align: center; padding: 44px 20px; color: #64748b; }

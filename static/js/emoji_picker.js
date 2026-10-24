@@ -22,11 +22,19 @@ const MAX_FREQUENT_ITEMS = 8;
 /**
  * Create an emoji picker instance.
  *
- * @param {{ targetInput: HTMLTextAreaElement|HTMLInputElement }} options
+ * The picker is mounted by the caller inside an anchor element; the anchor is made
+ * the positioning box by emoji-picker.css (`:has(> .emoji-picker)`). On every open
+ * the picker measures the room around the anchor inside its nearest clipping
+ * ancestor (a scrolling dialog body, an overflow-clipped panel, or the viewport),
+ * opens on the side with more room, caps its height to that room and aligns to
+ * the trigger's side, so it never drifts or gets cut off.
+ *
+ * @param {{ targetInput: HTMLTextAreaElement|HTMLInputElement, trigger?: HTMLElement }} options
  * @returns {{ element: HTMLElement, open: Function, close: Function, toggle: Function, isOpen: Function }}
  */
 export function createEmojiPicker(options) {
     const targetInput = options?.targetInput;
+    const trigger = options?.trigger || null;
     if (!targetInput) {
         throw new Error('emoji_picker: targetInput is required');
     }
@@ -130,8 +138,56 @@ export function createEmojiPicker(options) {
         targetInput.setSelectionRange(nextPos, nextPos);
     }
 
+    const IDEAL_HEIGHT = 352;
+    const MIN_HEIGHT = 160;
+    const GAP = 8;
+
+    function clippingBox(node) {
+        const box = { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight };
+        for (let el = node.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+            const style = getComputedStyle(el);
+            if (/(auto|scroll|hidden|clip)/.test(`${style.overflowX} ${style.overflowY}`)) {
+                const rect = el.getBoundingClientRect();
+                box.top = Math.max(box.top, rect.top); box.bottom = Math.min(box.bottom, rect.bottom);
+                box.left = Math.max(box.left, rect.left); box.right = Math.min(box.right, rect.right);
+            }
+        }
+        return box;
+    }
+
+    function place() {
+        const anchor = container.parentElement;
+        if (!anchor) return;
+        // Coordinates are computed against the trigger (or the anchor when no
+        // trigger is given) and written as offsets inside the anchor, which
+        // emoji-picker.css makes the positioning box. A caller whose anchor is
+        // not next to its trigger (feedback dialog) still opens beside the button.
+        const anchorRect = anchor.getBoundingClientRect();
+        const reference = (trigger && trigger.isConnected ? trigger : anchor).getBoundingClientRect();
+        const box = clippingBox(anchor);
+        const above = reference.top - box.top - GAP;
+        const below = box.bottom - reference.bottom - GAP;
+        const placement = above >= Math.min(IDEAL_HEIGHT, 260) || above >= below ? 'top' : 'bottom';
+        const room = Math.floor(placement === 'top' ? above : below);
+        const width = Math.min(384, Math.max(220, Math.floor(box.right - box.left - 16)));
+        const left = Math.min(Math.max(reference.left, box.left + 8), box.right - 8 - width) - anchorRect.left;
+        container.dataset.placement = placement;
+        container.style.setProperty('--emoji-picker-max-height', `${Math.max(MIN_HEIGHT, Math.min(IDEAL_HEIGHT, room))}px`);
+        container.style.setProperty('--emoji-picker-max-width', `${width}px`);
+        container.style.insetInlineStart = `${Math.round(left)}px`;
+        container.style.insetInlineEnd = 'auto';
+        if (placement === 'top') {
+            container.style.top = 'auto';
+            container.style.bottom = `${Math.round(anchorRect.bottom - reference.top + GAP)}px`;
+        } else {
+            container.style.bottom = 'auto';
+            container.style.top = `${Math.round(reference.bottom - anchorRect.top + GAP)}px`;
+        }
+    }
+
     function open() {
         isOpen = true;
+        place();
         void setOverlayOpen(container, true);
         container.classList.add('is-open');
     }

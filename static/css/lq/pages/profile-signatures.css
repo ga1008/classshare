@@ -1,0 +1,75 @@
+/* ── 个人中心 · 电子签名（/profile?section=signatures）页面布局 ──────────────────
+   2026-10-24 由 templates/partials/profile/head.html 的内联 <style> 迁出：原样式是一套
+   私有调色板（白卡片 + 写死的 #172033/#475569 深色字），暗色外观下变成浅底浅字或
+   白板。这里只保留布局与几何，颜色一律取与面板填充配对的令牌：
+     面板/行  → hsl(var(--lq-page-control)) + --ls-line
+     正文/次要 → --ls-ink / --ls-ink-2 / --ls-ink-3
+     语义徽章 → --ls-tone-*-soft / --ls-tone-*-fg（Status 同一套配对）
+   唯一保留的白底是签名图片格：签名墨迹需要白纸（内容槽，不是界面）。
+   DOM owner：static/js/profile_signatures.js；范围字段 static/js/signature_scope_fields.js。 */
+.psig-shell { display: grid; gap: var(--ls-s-4); }
+.psig-shell [hidden] { display: none !important; }
+.psig-shell.is-busy { opacity: .6; pointer-events: none; }
+.psig-card { display: grid; gap: var(--ls-s-3); }
+.psig-scope-editor { grid-column: 1 / -1; display: grid; gap: var(--ls-s-2); min-width: 0; }
+.psig-item__actions { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); justify-content: flex-end; }
+.psig-upload-scope { margin: 0; }
+.psig-upload-scope > summary { cursor: pointer; color: hsl(var(--ls-on-primary-soft)); font-size: var(--ls-t-footnote); font-weight: var(--ls-weight-title3); padding: var(--ls-s-1) 0; }
+.psig-upload-scope > .signature-scope-control { margin-top: var(--ls-s-2); }
+.psig-hint { margin: 0; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); line-height: var(--ls-leading-body); }
+.psig-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--ls-s-2); }
+.psig-item,
+.psig-request {
+    display: grid;
+    gap: var(--ls-s-2);
+    padding: var(--ls-s-3);
+    border: 1px solid hsl(var(--ls-line));
+    border-radius: var(--ls-r-md);
+    background: hsl(var(--lq-page-control));
+    color: hsl(var(--ls-ink));
+}
+.psig-item { grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; }
+/* 签名图片格：白纸内容槽。 */
+.psig-item img { width: 88px; height: 44px; object-fit: contain; border-radius: var(--ls-r-sm); background: #fff; }
+.psig-item__meta { display: grid; gap: 3px; min-width: 0; }
+.psig-item__meta strong,
+.psig-request__head strong { color: hsl(var(--ls-ink)); font-size: var(--ls-t-sub); }
+.psig-item__meta small { color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-caption); }
+.psig-badge { display: inline-block; margin-right: var(--ls-s-1); padding: 2px 7px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-neutral-soft)); color: hsl(var(--ls-tone-neutral-fg)); font-size: 10px; font-weight: 700; }
+.psig-badge.is-self { background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
+.psig-badge.is-claim { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); }
+.psig-link { border: 0; background: none; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); font-weight: 700; cursor: pointer; }
+.psig-link.is-danger { color: hsl(var(--ls-tone-danger-fg)); }
+.psig-link.is-claim { color: hsl(var(--ls-on-primary-soft)); }
+.psig-list { display: grid; gap: var(--ls-s-2); }
+.psig-request > p { margin: 0; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-sub); line-height: var(--ls-leading-body); }
+.psig-request__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); }
+.psig-request__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); flex-wrap: wrap; }
+.psig-request__foot > span:first-child { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); }
+.psig-actions { display: flex; gap: var(--ls-s-2); }
+.psig-note { color: hsl(var(--ls-ink-3)) !important; font-size: var(--ls-t-footnote) !important; }
+.psig-chip { padding: 3px 8px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-neutral-soft)); color: hsl(var(--ls-tone-neutral-fg)); font-size: 11px; font-style: normal; }
+.psig-chip.is-approved { background: hsl(var(--ls-tone-success-soft)); color: hsl(var(--ls-tone-success-fg)); }
+.psig-chip.is-rejected,
+.psig-chip.is-cancelled { background: hsl(var(--ls-tone-danger-soft)); color: hsl(var(--ls-tone-danger-fg)); }
+.psig-chip.is-pending { background: hsl(var(--ls-tone-warning-soft)); color: hsl(var(--ls-tone-warning-fg)); }
+.psig-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-primary)); color: hsl(var(--ls-on-primary)); font-size: 11px; font-style: normal; vertical-align: 2px; }
+.psig-usage { display: grid; gap: var(--ls-s-2); margin: 0; padding: 0; list-style: none; }
+.psig-usage li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ls-s-3); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-md); background: hsl(var(--lq-page-control)); color: hsl(var(--ls-ink)); font-size: var(--ls-t-footnote); }
+.psig-usage time { color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-caption); white-space: nowrap; }
+.psig-empty { padding: var(--ls-s-4); border: 1px dashed hsl(var(--ls-line-strong)); border-radius: var(--ls-r-md); color: hsl(var(--ls-ink-2)); text-align: center; font-size: var(--ls-t-footnote); }
+.psig-history summary { color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-footnote); cursor: pointer; }
+.psig-history > .psig-list { margin-top: var(--ls-s-2); }
+@media (max-width: 640px) {
+    .psig-grid { grid-template-columns: 1fr; }
+    .psig-usage li { flex-direction: column; gap: 3px; }
+}
+
+/* 可见范围字段（signature_scope_fields.js 渲染）：分组框与字段走控件级配对。
+   signature_scope_fields.css 是多页共享的旧文件，这里只在个人中心收回颜色。 */
+.psig-shell .signature-scope-control {
+    border-color: hsl(var(--ls-line));
+    background: hsl(var(--lq-page-control));
+}
+.psig-shell .signature-scope-field { color: hsl(var(--ls-ink-2)); }
+.psig-shell .signature-scope-help { color: hsl(var(--ls-ink-3)); }

@@ -212,7 +212,8 @@
 /* 进入节点详情时，顶部欢迎条上滑隐藏；退出时滑回 */
 .career-root.is-detail .career-banner{transform:translate(-50%,-176%); opacity:0; pointer-events:none}
 .career-banner h2{margin:0 0 4px; font-size:18px; font-weight:800;
-  background:linear-gradient(100deg,#fff,var(--accent) 60%,var(--accent2));
+  background: linear-gradient(100deg,#fff,var(--accent) 60%,var(--accent2)) /* lq-light-fallback */;
+  background: linear-gradient(100deg,light-dark(#fff, hsl(224 26% 13% / 0.78)),var(--accent) 60%,var(--accent2));
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
 .career-banner p{margin:0; font-size:13.5px; color:var(--dim); line-height:1.6}
 .career-banner__region{margin-top:7px !important; font-size:12.5px !important; color:#fcd9a0 !important;
@@ -311,7 +312,8 @@
 .career-star-card__phase{
   display:inline-flex; max-width:100%; margin-top:7px; padding:3px 8px; border-radius:999px;
   font-size:10.5px; font-weight:800; line-height:1.1; color:#05101a;
-  background:linear-gradient(90deg,var(--card-accent),#fde68a);
+  background: linear-gradient(90deg,var(--card-accent),#fde68a) /* lq-light-fallback */;
+  background: linear-gradient(90deg,var(--card-accent),light-dark(#fde68a, hsl(48 38% 17% / 0.78)));
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .career-star-card__role{
@@ -422,7 +424,8 @@
   backdrop-filter:blur(6px)}
 .career-intro__inner{width:min(640px,92vw); max-height:90vh; overflow:auto; text-align:center; padding:24px}
 .career-typewriter{min-height:64px; font-size:clamp(20px,3.4vw,30px); font-weight:800; line-height:1.5;
-  background:linear-gradient(100deg,#fff,var(--accent) 55%,var(--accent2));
+  background: linear-gradient(100deg,#fff,var(--accent) 55%,var(--accent2)) /* lq-light-fallback */;
+  background: linear-gradient(100deg,light-dark(#fff, hsl(224 26% 13% / 0.78)),var(--accent) 55%,var(--accent2));
   -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
 .career-typewriter .caret{-webkit-text-fill-color:var(--accent); animation:career-blink 1s steps(1) infinite}
 @keyframes career-blink{50%{opacity:0}}
@@ -500,7 +503,8 @@
 .career-kw__chip.is-top{border-color:rgba(251,191,36,.5); background:linear-gradient(160deg,rgba(251,191,36,.16),rgba(110,231,255,.08))}
 .career-kw__rank{width:19px; height:19px; flex:none; display:grid; place-items:center; border-radius:50%;
   font-size:11px; font-weight:800; color:#06121a; background:linear-gradient(135deg,var(--accent),var(--accent2))}
-.career-kw__chip.is-top .career-kw__rank{background:linear-gradient(135deg,var(--gold),#fbbf24); color:#3a2400}
+.career-kw__chip.is-top .career-kw__rank{background: linear-gradient(135deg,var(--gold),#fbbf24) /* lq-light-fallback */;
+background: linear-gradient(135deg,var(--gold),light-dark(#fbbf24, hsl(43 38% 17% / 0.78))); color:#3a2400}
 .career-kw__go{font-size:11px; font-weight:700; color:var(--accent); opacity:.75}
 .career-kw__chip.is-top .career-kw__go{color:var(--gold)}
 
@@ -531,7 +535,8 @@
 .career-kwgroup__h{display:flex; align-items:center; gap:10px; margin-bottom:13px}
 .career-kwgroup__rank{width:24px; height:24px; flex:none; display:grid; place-items:center; border-radius:8px;
   font-size:13px; font-weight:800; color:#06121a; background:linear-gradient(135deg,var(--accent),var(--accent2))}
-.career-kwgroup:first-child .career-kwgroup__rank{background:linear-gradient(135deg,var(--gold),#fbbf24); color:#3a2400}
+.career-kwgroup:first-child .career-kwgroup__rank{background: linear-gradient(135deg,var(--gold),#fbbf24) /* lq-light-fallback */;
+background: linear-gradient(135deg,var(--gold),light-dark(#fbbf24, hsl(43 38% 17% / 0.78))); color:#3a2400}
 .career-kwgroup__h h4{margin:0; font-size:16px; font-weight:800; color:#fff; flex:1; min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .career-kwgroup__tag{flex:none; font-size:11px; font-weight:800; color:#3a2400; padding:3px 9px; border-radius:999px;

@@ -26,8 +26,9 @@
 .lq-profile-head__growth-counts { display: flex; flex-wrap: wrap; gap: var(--ls-s-4); margin: var(--ls-s-3) 0 0; font-size: var(--ls-t-sub); }
 .lq-profile-head__growth-counts > div { display: flex; gap: var(--ls-s-2); }
 .lq-profile-head__growth-counts dd { margin: 0; font-weight: var(--ls-weight-headline); }
-.lq-profile-reminder { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-3); padding: var(--ls-s-3) var(--ls-s-4); border-radius: var(--ls-r-md); background: hsl(var(--ls-primary-soft)); color: hsl(var(--ls-on-primary-soft)); }
-.lq-profile-reminder p { margin: 0; font-size: var(--ls-t-callout); }
+/* 邮箱提醒是共享 Alert（hero_lq.html）；这里只把正文与动作排成一行。 */
+.lq-profile [data-profile-email-reminder].lq-alert { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ls-s-2) var(--ls-s-3); }
+.lq-profile [data-profile-email-reminder] .lq-alert__actions { margin: 0; }
 .lq-profile .lq-profile-nav { display: grid; gap: var(--ls-s-1); padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-line)); border-radius: var(--ls-r-lg); background: hsl(var(--lq-page-content)); box-shadow: none; }
 .lq-profile-nav .profile-nav__link { display: flex; gap: var(--ls-s-2); align-items: center; min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); border: 1px solid transparent; border-radius: var(--ls-r-sm); background: transparent; color: hsl(var(--ls-ink-2)); box-shadow: none; transform: none; }
 .lq-profile-nav .profile-nav__link[aria-current="page"] { color: hsl(var(--ls-on-primary-soft)); background: hsl(var(--ls-primary-soft)); border-color: hsl(var(--ls-primary) / .35); }
@@ -45,6 +46,10 @@
 .lq-profile [data-lq-profile-content] :is(.profile-section-head p, .profile-band__head p, .form-hint, .form-text, .profile-summary-row > span, .profile-metric-card > span, .profile-email-empty, .profile-identity-empty, .profile-identity-loading) { color: hsl(var(--ls-ink-2)); }
 .lq-profile [data-lq-profile-content] .profile-section-head { padding: 0; border: 0; border-radius: 0; background: transparent; }
 .lq-profile [data-lq-profile-content] .profile-section-head h2 { margin: 0; font-size: var(--ls-t-title2); }
+/* 分区标题带是透明的，直接坐在背景照片上：读场景墨色（pages/page-material.css），
+   不读随外观翻转的 --ls-ink，否则暗色外观配亮照片时白字压白图（2026-10-24）。 */
+.lq-profile [data-lq-profile-content] .profile-section-head :is(h2, h3) { color: hsl(var(--lq-scene-ink)); text-shadow: 0 0 .6em hsl(var(--lq-scene-halo)), 0 1px 2px hsl(var(--lq-scene-halo)); }
+.lq-profile [data-lq-profile-content] .profile-section-head p { color: hsl(var(--lq-scene-muted)); text-shadow: 0 0 .6em hsl(var(--lq-scene-halo)); }
 .lq-profile [data-lq-profile-content] :is(.profile-settings-grid, .profile-security-grid, .profile-email-grid) { display: grid; grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); align-items: start; gap: var(--ls-s-5); }
 .lq-profile [data-lq-profile-content] .profile-security-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 16rem); }
 .lq-profile [data-lq-profile-content] :is(.profile-settings-rail, .profile-security-rail) { display: grid; align-content: start; gap: var(--ls-s-4); min-width: 0; }

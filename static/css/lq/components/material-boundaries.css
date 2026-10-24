@@ -89,3 +89,32 @@
         box-shadow: none !important;
     }
 }
+
+/* ── Floating layers keep their frost (2026-10-24) ─────────────────────────
+   raised is the floating tier by contract: dialogs, popovers, pickers, menus.
+   The nested-material guards (materials.css, page-material.css, page modules)
+   strip backdrop-filter from anything inside a panel, which also stripped
+   popovers that are mounted inside a panel (emoji picker in the composer,
+   appearance panel in the topbar): a .58 tint without blur let the text
+   underneath show through. The outermost raised layer always samples; a
+   raised layer nested in another raised layer does not, except a transient
+   presence-managed popover (data-lq-presence: pickers, menus) opened inside a
+   dialog, which must still frost the dialog content beneath it. User and
+   platform opt-outs (transparency off, tier C, more contrast, forced colors,
+   print, reduced transparency) are re-asserted below with higher specificity. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    @media screen {
+        :root:not([data-lq-glass="off"]):not([data-lq-tier="C"]):not([data-lq-contrast="more"]):not([data-lq-forced-colors="true"])
+        [data-lq-material="raised"]:is(:not([data-lq-material="raised"] *), [data-lq-presence]):not([data-lq-glass="off"] *, [data-lq-glass="off"]) {
+            background-color: hsl(var(--lq-material-fill, var(--ls-glass-fill-strong)));
+            -webkit-backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate)) !important;
+            backdrop-filter: blur(var(--ls-blur-thick)) saturate(var(--ls-glass-saturate)) !important;
+        }
+    }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active), print {
+    :root:root:root:root:root:root:root:root:root:root [data-lq-material="raised"] {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+}

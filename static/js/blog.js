@@ -3339,7 +3339,7 @@ class BlogCenter {
         if (!input) return;
         const anchor = $('[data-blog-comment-emoji-anchor]', this.shell);
         if (anchor) {
-            const picker = createEmojiPicker({ targetInput: input });
+            const picker = createEmojiPicker({ targetInput: input, trigger: $('[data-blog-comment-emoji-toggle]', this.shell) });
             anchor.innerHTML = '';
             anchor.appendChild(picker.element);
             this.commentDraft.emojiPicker = picker;

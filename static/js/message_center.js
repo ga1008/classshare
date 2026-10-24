@@ -775,7 +775,7 @@ if (app) {
             return;
         }
 
-        emojiPicker = createEmojiPicker({ targetInput: composeInputEl });
+        emojiPicker = createEmojiPicker({ targetInput: composeInputEl, trigger: emojiTriggerEl });
         // This picker writes .value directly, so input alone cannot observe it.
         emojiPicker.element.addEventListener('click', saveActiveDraft);
         if (emojiAnchor) {

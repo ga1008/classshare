@@ -20916,7 +20916,7 @@
         "sharedSources": [
           {
             "path": "templates/report_card.html",
-            "sha256": "683cf566a7cfd3e0703cfd14183725830bf5e16f7260cb0c14ac22e6dde60d03",
+            "sha256": "c441a9492230f8165e788087924657ff5a1eaee81f8d71ecd0e5be381b5a6f59",
             "scope": "仅 pilot PageHead/Surface/filter 及 ECharts 独立 controller 入口；保留旧分支、原成绩/发布/0 分/空记录投影。真实 SSR 比对 on/off 数据 JSON/过滤 URL/owner。 2026-10-08: reviewed shared Surface/Button adoption in both existing feature states; native links, filters, role branches and business owners retained.",
             "tests": [
               "tests/test_lq_report_card_pilot.py",

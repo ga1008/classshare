@@ -56,6 +56,7 @@
         {% if focus %}
         {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
         {% set cultivation_card = {
+            'embedded': true,
             'variant': 'full',
             'title': focus.course_name,
             'subtitle': focus.class_name,
@@ -88,6 +89,7 @@
             {% if focus %}
             {% set focus_status_label = '可破境 · ' ~ focus.eligible_stage.name if focus.eligible_stage else (('下一境界 · ' ~ focus.next_stage.name) if focus.next_stage else '全部境界已点亮') %}
             {% set cultivation_card = {
+                'embedded': true,
                 'variant': 'full',
                 'title': focus.course_name,
                 'subtitle': focus.class_name,
@@ -156,6 +158,7 @@
             <a data-lq-component="surface" href="{{ course.href }}" class="lq-surface path-course-card" data-course-id="{{ course.course_id }}">
                 {% set course_status_label = '可破境 · ' ~ course.eligible_stage.name if course.eligible_stage else (('下一境界 · ' ~ course.next_stage.name) if course.next_stage else '全部境界已点亮') %}
                 {% set cultivation_card = {
+                    'embedded': true,
                     'variant': 'compact',
                     'title': course.course_name,
                     'subtitle': course.class_name,

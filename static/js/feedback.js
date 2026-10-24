@@ -272,7 +272,7 @@ class FeedbackModal {
      * ============================================================ */
     _toggleEmojiPicker() {
         if (!this.emojiPicker) {
-            this.emojiPicker = createEmojiPicker({ targetInput: this.descTextarea });
+            this.emojiPicker = createEmojiPicker({ targetInput: this.descTextarea, trigger: this.emojiToggle });
             const wrapper = document.getElementById('feedback-emoji-picker-wrap');
             if (wrapper) wrapper.appendChild(this.emojiPicker.element);
         }

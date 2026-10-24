@@ -32,6 +32,7 @@
             {% if profile.role == 'student' and cultivation %}
             {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
             {% set cultivation_card = {
+                'embedded': true,
                 'variant': 'full',
                 'title': cultivation.highest_level.level_name,
                 'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',

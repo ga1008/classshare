@@ -46,7 +46,7 @@
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 12 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 9 |
 | [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 14 |
-| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 14 |
+| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 15 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 11 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 2 |
 | [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 1 |
@@ -77,8 +77,8 @@
 **Declarative 显式声明与领域壳** · 层：foundation · CSS：`static/css/lq/components/declarative.css`
 
 - **设计摘要**：`data-lq-component` 显式声明把服务端/领域 DOM 的填充、前景、描边锁定到共享配方，防止晚加载的旧样式夺回外观；也提供 `lq-domain-toolbar`（组合边界）、`lq-domain-choice`（选择卡）、`lq-domain-raised`（浮层材质）、`data-lq-selected` Surface 选中态、`lq-disclosure-popover`（原生 details 浮层）。
-- **参数 / 变体**：`data-lq-component="button|input|select|surface|toolbar|choice|popover|…"`、`data-lq-padding="none|sm|md|lg"`、`data-lq-selected="true"`、`data-lq-align/placement`。
-- **规则**：声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。
+- **参数 / 变体**：`data-lq-component="button|input|select|surface|toolbar|choice|popover|…"`、`data-lq-padding="none|sm|md|lg"`、`data-lq-selected="true"`、`data-lq-align/placement`。；`data-lq-surface="embedded"`（2026-10-24：宿主里的分组，不铺底、不描边、不成为模糊宿主，内边距由宿主负责）。
+- **规则**：声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface="embedded"`，否则声明的 `!important` 底色会铺回来，形成"有底无边距"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。
 - **根类**：`lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar`, `lq-native-dialog`
 - **JS 入口** `static/js/lq/domain-controls.js`：`adoptDomainContentSlot`, `adoptDomainControl`, `adoptDomainHandle`, `createDomainButton`, `createDomainPopoverSystem`, `domainButtonAttributes`
 - **消费者**：146 个文件
@@ -297,7 +297,7 @@
 
 **Material boundaries 用户偏好终裁** · 层：foundation · CSS：`static/css/lq/components/material-boundaries.css`
 
-- **设计摘要**：用户的透明度 / 对比度 / 低端设备偏好对所有材质拥有最终裁决：关闭实时模糊、改为不透明配对；Toast/Tooltip 不采样。放在 index.css 最后以保证优先级。
+- **设计摘要**：用户的透明度 / 对比度 / 低端设备偏好对所有材质拥有最终裁决：关闭实时模糊、改为不透明配对；Toast/Tooltip 不采样。放在 index.css 最后以保证优先级。 2026-10-24：最外层 raised（以及嵌在弹窗里的 `data-lq-presence` 临时浮层）一律保留磨砂并压过嵌套守卫；减少透明度/强制颜色/打印仍关闭。
 - **规则**：领域 CSS 不得用更高特异性恢复模糊或半透明；改动此文件要跑六配色亮暗矩阵。
 - **消费者**：0 个文件
 
@@ -305,8 +305,8 @@
 
 **Materials 材质层（四层材质模型）** · 层：foundation · CSS：`static/css/lq/materials.css`
 
-- **设计摘要**：control / content / chrome / raised / clear 五档材质的配方：填充、模糊、光泽边、与填充配对的 ink/muted/accent。`.lq-glass` 与 `.lq-surface` 是材质根；场景色调 `data-lq-tone` / `html[data-lq-scene-tone]` 同时切换填充与全部前景。
-- **参数 / 变体**：`data-lq-material="content|raised|clear|control"`、`.lq-glass--thick/--clear`、`.lq-surface--frost/--boundary`、`data-lq-tone="light|dark"`、`data-lq-scene="auto"`。
+- **设计摘要**：control / content / chrome / raised / clear 五档材质的配方：填充、模糊、光泽边、与填充配对的 ink/muted/accent。`.lq-glass` 与 `.lq-surface` 是材质根；场景色调 `data-lq-tone` / `html[data-lq-scene-tone]` 同时切换填充与全部前景。 场景自适应浓度（pages/page-material.css）：外观与页面场景色调相反时（暗外观+亮照片、亮外观+暗照片）自动把各级填充调浓到 .62–.78，暗外观次要墨色提亮一档。
+- **参数 / 变体**：`data-lq-material="content|raised|clear|control"`、`.lq-glass--thick/--clear`、`.lq-surface--frost/--boundary`、`data-lq-tone="light|dark"`、`data-lq-scene="auto"`。；场景墨色 `--lq-scene-ink/-muted/-halo` 与 `.lq-on-scene` / `data-lq-on-scene`（直接坐在背景照片上的文字）。
 - **状态**：透明关闭 / 高对比 / Tier B·C / forced-colors 退回不透明主题配对；嵌套材质自动不再成为模糊宿主。
 - **规则**：玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。
 - **根类**：`lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface`
@@ -784,7 +784,6 @@
 - `static/js/assessment_appeal.js` ×5
 - `static/js/manage_signatures.js` ×5
 - `templates/error.html` ×5
-- `templates/partials/profile/hero_lq.html` ×5
 - `templates/partials/profile/security.html` ×5
 - `templates/student_auth_flow_v4.html` ×5
 - `templates/teacher_login_v4.html` ×5
@@ -812,6 +811,7 @@
 - `templates/manage/teacher_schedule_query.html` ×4
 - `templates/material_reader_unavailable.html` ×4
 - `templates/partials/feedback_button.html` ×4
+- `templates/partials/profile/hero_lq.html` ×4
 - `templates/partials/profile_button.html` ×4
 - `templates/points_shop.html` ×4
 - `templates/resume/applications.html` ×4
@@ -971,7 +971,7 @@
 - **设计摘要**：数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。
 - **参数 / 变体**：card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。
 - **状态**：row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。
-- **规则**：内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。
+- **规则**：内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。
 - **根类**：`lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list`, `lq-page-head`, `lq-prose`, `lq-row`, `lq-scene-heading`, `lq-stat-strip`
 - **Jinja 宏** `templates/macros/lq/content.html`：`lq_card`, `lq_list`, `lq_row`, `lq_empty`, `lq_page_head`, `lq_filter_bar`, `lq_prose`, `lq_bubble`
 - **JS 入口** `static/js/lq/content.js`：`contentKinds`, `contentMarkup`, `contentProps`, `createContent`, `enhanceRow`, `html`
@@ -1192,7 +1192,7 @@
 **EmojiPicker 表情选择器** · 层：component · CSS：`static/css/lq/components/emoji-picker.css`
 
 - **设计摘要**：贴在触发器上方的 raised 浮层（lq-glass + lq-domain-raised），常用 + 分类网格；表情格是 adoptDomainControl 的 choice 控件；出入场走 ui_overlay_motion。
-- **规则**：位置相对 `position: relative` 的锚点；材质与前景来自 raised 配对，本模块只定几何。
+- **规则**：挂载在调用方的锚点里（锚点经 `:has(> .emoji-picker)` 自动成为定位盒）；传入 `trigger` 后以触发按钮为基准测量最近裁剪祖先内的可用空间，自动上/下翻转、限高、横向夹在可视区内，因此锚点不必紧挨按钮（反馈弹窗）。材质与前景来自 raised 配对，本模块只定几何。
 - **根类**：`.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker`
 - **JS 入口** `static/js/emoji_picker.js`：`createEmojiPicker`
 - **消费者**：4 个文件
@@ -1402,6 +1402,7 @@
 
 - **设计摘要**：`lq-badge`（计数/点）、`lq-avatar`（首字或图片）、`lq-spinner`、`lq-progress`（条/环）；都是只读呈现。
 - **参数 / 变体**：badge: `value, tone, dot, label`；avatar: `name, src, size(24|32|40|56)`；progress: `label, value, max, variant`。
+- **规则**：放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。
 - **根类**：`lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner`
 - **Jinja 宏** `templates/macros/lq/indicators.html`：`lq_badge`, `lq_avatar`, `lq_spinner`, `lq_progress`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
@@ -1689,7 +1690,7 @@
 - **JS 入口** `static/js/lq/status.js`：`STATUS_KINDS`, `alert`, `conflict`, `createStatus`, `html`, `saveStatus`, `save_status`, `status`, `statusMarkup`, `statusProps`
 - **Python props** `classroom_app/lq_status.py`
 - **React 适配器**：`LqStatus`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：14 个文件
+- **消费者**：15 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1707,6 +1708,7 @@
 - `static/js/chat.js` ×1
 - `static/js/lessondoc_editor/ui.js` ×1
 - `static/js/manage_users.js` ×1
+- `templates/partials/profile/hero_lq.html` ×1
 
 </details>
 
@@ -1847,6 +1849,7 @@
 | `static/css/lq/pages/message-center.css` | `templates/partials/profile/head.html`, `templates/partials/profile/messages.html` | 否 |
 | `static/css/lq/pages/navbar.css` | `templates/base_navbar.html` | 否 |
 | `static/css/lq/pages/page-material.css` | （仅 index.css 或未直接链接） | 是 |
+| `static/css/lq/pages/profile-signatures.css` | `templates/partials/profile/head.html` | 否 |
 | `static/css/lq/pages/profile.css` | `templates/partials/profile/head.html` | 否 |
 | `static/css/lq/pages/status.css` | `templates/base_centered.html` | 否 |
 

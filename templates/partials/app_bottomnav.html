@@ -16,7 +16,8 @@
             justify-content: space-around;
             align-items: stretch;
             padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-            background: rgba(255, 255, 255, 0.96);
+            background: rgba(255, 255, 255, 0.96) /* lq-light-fallback */;
+            background: light-dark(rgba(255, 255, 255, 0.96), hsl(224 26% 13% / 0.78));
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border-top: 1px solid rgba(148, 163, 184, 0.25);
@@ -39,7 +40,8 @@
         }
         .app-bottomnav__item svg { flex-shrink: 0; }
         .app-bottomnav__item.is-active {
-            color: #0f766e;
+            color: #0f766e /* lq-light-fallback */;
+            color: light-dark(#0f766e, hsl(175 75% 74%));
             background: rgba(15, 118, 110, 0.08);
         }
     }

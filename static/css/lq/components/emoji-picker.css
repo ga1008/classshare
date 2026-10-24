@@ -5,15 +5,20 @@
    前景只读 --lq-material-ink / --lq-material-muted。
    表情格是 adoptDomainControl(kind='choice', variant='ghost') 的共享选择控件，
    本文件只定几何（方形、无最小高度）。
-   消费者：私信输入区（message_center.js）、博客评论（blog.js）、反馈会话（feedback.js）。
+   消费者：私信输入区（message_center.js）、博客评论（blog.js）、反馈弹窗（feedback.js）。
+   定位：锚点自动成为定位盒（:has）；JS 以触发器为基准测量可用空间，写入 data-placement、
+   inset 偏移与 --emoji-picker-max-height/-max-width，因此锚点不必紧挨触发器。
+   材质：最外层 raised 由 material-boundaries.css 保证磨砂，即便挂在面板内部。
    出入场：ui_overlay_motion（data-lq-presence="panel"）；is-open 只切换可见性。 */
+/* 任何直接挂载选择器的锚点都成为定位盒；消费者不必各自写 position: relative。 */
+:has(> .emoji-picker) { position: relative; }
 .emoji-picker {
     position: absolute;
     inset-inline-end: 0;
     bottom: calc(100% + var(--ls-s-2));
     z-index: var(--ls-z-popover);
-    width: min(24rem, calc(100vw - var(--ls-s-8)));
-    max-height: min(22rem, 52vh);
+    width: min(24rem, var(--emoji-picker-max-width, calc(100vw - var(--ls-s-8))));
+    max-height: var(--emoji-picker-max-height, min(22rem, 52vh));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--ls-s-3);
@@ -22,6 +27,10 @@
     opacity: 0;
     pointer-events: none;
 }
+
+/* emoji_picker.js 在每次打开时量出触发器周围的可用空间（最近的裁剪祖先或视口），
+   选空间更大的一侧（data-placement=top|bottom）、限高，并把以触发器为基准的偏移
+   写成锚点内的 inset；上面的 bottom/inset-inline-end 只是脚本运行前的默认值。 */
 
 .emoji-picker.is-open {
     opacity: 1;
