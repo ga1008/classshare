@@ -1,0 +1,26 @@
+/* 散修主页（templates/wanderers/home.html，docs/wanderer-ai-free-agents-2026-10-25.md §10.3）。
+   页面适配层：只负责网格、间距与尺寸。卡片/列表/标签/头像/空态的材质与颜色全部来自
+   共享 LQ 组件；文字色只读场景墨色 --lq-material-ink/muted（docs/lq-scene-ink-2026-09-26.md），
+   不声明背景、边框色、滤镜或动效。 */
+
+.wh-page { display: grid; gap: var(--ls-s-4); max-width: 1080px; margin-inline: auto; }
+.wh-muted { margin: 0; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: var(--ls-t-sub); }
+
+.wh-identity { display: flex; align-items: center; gap: var(--ls-s-4); min-width: 0; }
+.wh-identity__avatar { position: relative; flex: none; }
+.wh-identity__emblem { position: absolute; inset-inline-end: -8px; inset-block-end: -8px; width: 28px; height: 28px; }
+.wh-identity__copy { display: grid; gap: var(--ls-s-1); min-width: 0; }
+.wh-identity__copy > p { margin: 0; overflow-wrap: anywhere; }
+.wh-chips { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); }
+.wh-page[data-dead="true"] .wh-identity__avatar { opacity: .6; }
+
+.wh-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--ls-s-3); }
+
+.wh-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); gap: var(--ls-s-4); align-items: start; }
+.wh-column { display: grid; gap: var(--ls-s-4); min-width: 0; }
+.wh-section { display: grid; gap: var(--ls-s-3); min-width: 0; }
+
+@media (max-width: 860px) {
+    .wh-main { grid-template-columns: minmax(0, 1fr); }
+    .wh-identity { align-items: flex-start; }
+}

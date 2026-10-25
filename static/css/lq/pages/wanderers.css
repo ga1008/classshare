@@ -63,7 +63,7 @@
 .wd-persona-form { display: grid; gap: var(--ls-s-3); }
 .wd-persona-form .form-group { margin: 0; }
 .wd-persona-form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--ls-s-3); }
-.wd-behaviors { margin: 0; padding: 0; border: 0; min-width: 0; }
+.wd-behaviors, .wd-genesis { margin: 0; padding: 0; border: 0; min-width: 0; }
 .wd-behaviors__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--ls-s-2); margin-top: var(--ls-s-2); }
 .wd-form-error { margin: 0; color: hsl(var(--ls-tone-danger-fg)); font-size: var(--ls-t-sub); }
 .wd-form-error[hidden] { display: none; }

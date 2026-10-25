@@ -33,6 +33,7 @@ from .wanderer_identity_service import (
 )
 from .wanderer_memory_service import append_turn, compact_thread, load_thread, needs_compaction, thread_history_text
 from .wanderer_prompt_service import build_system_prompt
+from .wanderer_text_style import strip_ai_formatting
 
 ACTION_PAUSE_SECONDS = (1.0, 4.0)
 TURN_USER_MESSAGE = "请依据系统提示里的人格、记忆与当前场景做出你的决定，只按输出合同输出一个 JSON 对象。"
@@ -151,7 +152,8 @@ async def run_turn(
 
 
 def clip_part(ctx: ActionContext, text: Any) -> str:
-    value = str(text or "").strip()
+    """Public text: AI formatting stripped (design §10.5), then clipped to the tier's reply length."""
+    value = strip_ai_formatting(text)
     limit = reply_char_limit(ctx.wanderer.get("tier"))
     return value if len(value) <= limit else value[:limit]
 

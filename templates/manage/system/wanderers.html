@@ -33,6 +33,7 @@
         </label>
         {{ lq_btn('立即跑一轮', variant='prominent', size='sm', id='wd-tick-btn') }}
         {{ lq_btn('立即天道审核', variant='glass', size='sm', id='wd-review-btn') }}
+        {{ lq_btn('立即造人', variant='glass', size='sm', id='wd-genesis-btn') }}
         {{ lq_btn('重置种子', variant='glass', size='sm', id='wd-reseed-btn') }}
         {{ lq_btn('刷新', variant='ghost', size='sm', id='wd-refresh-btn') }}
     </div>
@@ -46,6 +47,10 @@
         <div data-lq-component="surface" class="lq-surface wd-stat">
             <span>活跃 / 暂停 / 陨落</span>
             <strong data-wd-stat="counts">{{ overview.counts.active }} / {{ overview.counts.paused }} / {{ overview.counts.dead }}</strong>
+        </div>
+        <div data-lq-component="surface" class="lq-surface wd-stat">
+            <span>总数 · 天道所造</span>
+            <strong data-wd-stat="origin">{{ overview.counts.total }} · {{ overview.counts.dao_created }}</strong>
         </div>
         <div data-lq-component="surface" class="lq-surface wd-stat">
             <span>待升阶 · 今日警告</span>
@@ -88,6 +93,7 @@
                         {{ lq_chip(card.tier_name, tone='info', size='sm') }}
                         {% if card.promotion_requested %}{{ lq_chip('申请升阶', tone='primary', size='sm') }}{% endif %}
                         {% if card.warnings_count %}{{ lq_chip('警告 ' ~ card.warnings_count, tone='danger', size='sm') }}{% endif %}
+                        {% if card.origin == 'dao' %}{{ lq_chip(card.origin_label, tone='warning', size='sm') }}{% endif %}
                     </span>
                     <span class="wd-card__meta wd-muted">今日动作 {{ card.today_actions }} / {{ card.daily_action_budget }}</span>
                     <span class="wd-card__preview">{{ card.last_action_preview or '尚无动作' }}</span>
@@ -117,6 +123,29 @@
                         <span>允许旁听课堂</span>
                         <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="classroom_visits_enabled" {% if settings.classroom_visits_enabled %}checked{% endif %}>
                     </label>
+                    <fieldset class="wd-settings wd-genesis">
+                        <legend class="form-label">天道造人（平台冷清时自动新增散修）</legend>
+                        <label data-lq-component="surface" class="lq-surface wd-switch">
+                            <span>允许天道造人</span>
+                            <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="genesis_enabled" {% if settings.genesis_enabled %}checked{% endif %}>
+                        </label>
+                        <label class="form-group">
+                            <span class="form-label">近 24 小时真实动作少于（次）</span>
+                            <input data-lq-component="input" class="lq-input form-control" type="number" name="genesis_min_real_actions_24h" min="0" max="100000" step="1" required value="{{ settings.genesis_min_real_actions_24h }}">
+                        </label>
+                        <label class="form-group">
+                            <span class="form-label">散修总数上限（含暂停、陨落）</span>
+                            <input data-lq-component="input" class="lq-input form-control" type="number" name="genesis_max_total" min="0" max="500" step="1" required value="{{ settings.genesis_max_total }}">
+                        </label>
+                        <label class="form-group">
+                            <span class="form-label">每日最多造人</span>
+                            <input data-lq-component="input" class="lq-input form-control" type="number" name="genesis_max_per_day" min="0" max="20" step="1" required value="{{ settings.genesis_max_per_day }}">
+                        </label>
+                        <label class="form-group">
+                            <span class="form-label">每周最多造人</span>
+                            <input data-lq-component="input" class="lq-input form-control" type="number" name="genesis_max_per_week" min="0" max="100" step="1" required value="{{ settings.genesis_max_per_week }}">
+                        </label>
+                    </fieldset>
                     {{ lq_btn('保存设置', variant='prominent', size='sm', type='submit') }}
                 </form>
             </section>

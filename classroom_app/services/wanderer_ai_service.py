@@ -36,6 +36,16 @@ from .wanderer_settings_service import (
 )
 
 DAO_KIND_MENTION = "mention"
+DAO_KIND_GENESIS = "genesis"
+# 天道 runs at the deepest reasoning the AI policy allows (design §10.1). The
+# trusted fact the policy reads is ``business_context.operation``:
+# ``ai_model_policy._text_plan`` gives deep_text_reasoning effort "max" for
+# grading/adjudication/generation (and only "high" for "chat"), and the
+# execution plan's effort is what ai_assistant sends to the provider (the
+# task_label keyword list only applies when no plan exists). Verdicts are
+# adjudications; genesis (天道造人) generates persona seeds.
+DAO_OPERATION_ADJUDICATION = "adjudication"
+DAO_OPERATION_GENERATION = "generation"
 
 AI_CHAT_ENDPOINT = "/api/ai/chat"
 TURN_TIMEOUT_SECONDS = 60.0
@@ -93,6 +103,7 @@ def _reserve_dao_mention(conn_factory: ConnFactory) -> tuple[bool, int, int]:
 
 def _payload(
     *, system_prompt: str, user_message: str, task_type: str, task_label: str, logical_call_id: str,
+    operation: str = "chat",
 ) -> dict[str, Any]:
     return {
         "system_prompt": system_prompt,
@@ -100,7 +111,7 @@ def _payload(
         "new_message": user_message,
         "task_type": task_type,
         "response_format": "json",
-        "business_context": {"operation": "chat", "source_feature": "wanderer", "logical_call_id": logical_call_id},
+        "business_context": {"operation": operation, "source_feature": "wanderer", "logical_call_id": logical_call_id},
         "task_priority": "background",
         "task_label": task_label,
         "web_search_enabled": False,
@@ -176,7 +187,7 @@ async def dao_judge(
     ai_caller: Optional[AiCaller] = None,
     subject_student_id: Optional[int] = None,
 ) -> dict[str, Any]:
-    """One 天道 verdict call (deep text). Returns ``{"status", "result", "raw_text", "ai_calls"}``.
+    """One 天道 call (deep text, reasoning effort max). Returns ``{"status", "result", "raw_text", "ai_calls"}``.
 
     ``result`` is the parsed JSON object or None (status ``failed``); callers
     must validate its fields before acting on it.
@@ -199,6 +210,7 @@ async def dao_judge(
         task_type=AI_TASK_DEEP_TEXT,
         task_label=f"dao:{label_kind}",
         logical_call_id=logical_call_id,
+        operation=DAO_OPERATION_GENERATION if label_kind == DAO_KIND_GENESIS else DAO_OPERATION_ADJUDICATION,
     )
     caller = ai_caller or _gateway_caller
     base = {"ai_calls": 1, "daily_calls": used, "daily_cap": cap, "logical_call_id": logical_call_id}

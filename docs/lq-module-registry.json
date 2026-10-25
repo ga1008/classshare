@@ -51,6 +51,10 @@
       "hits": 13
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 13
+     },
+     {
       "path": "templates/submission_detail.html",
       "hits": 12
      },
@@ -64,10 +68,6 @@
      },
      {
       "path": "templates/manage/system/password_resets.html",
-      "hits": 11
-     },
-     {
-      "path": "templates/manage/system/wanderers.html",
       "hits": 11
      },
      {
@@ -876,7 +876,7 @@
      },
      {
       "path": "static/js/blog.js",
-      "hits": 220
+      "hits": 224
      },
      {
       "path": "static/js/collaboration.js",
@@ -1207,11 +1207,11 @@
       "hits": 27
      },
      {
-      "path": "static/js/materials_library_cards.js",
-      "hits": 25
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 26
      },
      {
-      "path": "templates/manage/system/wanderers.html",
+      "path": "static/js/materials_library_cards.js",
       "hits": 25
      },
      {
@@ -2071,7 +2071,7 @@
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
    },
    "consumers": {
-    "count": 29,
+    "count": 30,
     "files": [
      {
       "path": "static/js/materials_sync_report.js",
@@ -2094,6 +2094,10 @@
       "hits": 5
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 5
+     },
+     {
       "path": "static/js/materials_manage.js",
       "hits": 4
      },
@@ -2110,7 +2114,7 @@
       "hits": 4
      },
      {
-      "path": "templates/manage/system/wanderers.html",
+      "path": "templates/wanderers/home.html",
       "hits": 4
      },
      {
@@ -2369,7 +2373,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 167,
+    "count": 168,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2404,6 +2408,10 @@
       "hits": 15
      },
      {
+      "path": "templates/wanderers/home.html",
+      "hits": 14
+     },
+     {
       "path": "static/js/attendance_reports.js",
       "hits": 13
      },
@@ -2414,6 +2422,10 @@
      {
       "path": "templates/manage/system/password_resets.html",
       "hits": 13
+     },
+     {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 12
      },
      {
       "path": "templates/submission_detail.html",
@@ -2441,10 +2453,6 @@
      },
      {
       "path": "templates/manage/student_detail.html",
-      "hits": 10
-     },
-     {
-      "path": "templates/manage/system/wanderers.html",
       "hits": 10
      },
      {
@@ -3111,7 +3119,7 @@
     "rules": ""
    },
    "consumers": {
-    "count": 3,
+    "count": 4,
     "files": [
      {
       "path": "static/js/cultivation_emblems.js",
@@ -3123,6 +3131,10 @@
      },
      {
       "path": "templates/manage/system/wanderers.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/wanderers/home.html",
       "hits": 1
      }
     ]
@@ -4296,6 +4308,10 @@
       "hits": 46
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 40
+     },
+     {
       "path": "templates/manage/attendance_reports.html",
       "hits": 38
      },
@@ -4330,10 +4346,6 @@
      {
       "path": "templates/manage/classrooms.html",
       "hits": 31
-     },
-     {
-      "path": "templates/manage/system/wanderers.html",
-      "hits": 30
      },
      {
       "path": "templates/manage/gongwen.html",
@@ -4989,7 +5001,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
    },
    "consumers": {
-    "count": 13,
+    "count": 14,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5041,6 +5053,10 @@
      },
      {
       "path": "templates/partials/profile/messages.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/wanderers/home.html",
       "hits": 1
      }
     ]
@@ -6533,6 +6549,13 @@
    "css": "static/css/lq/pages/status.css",
    "linkedBy": [
     "templates/base_centered.html"
+   ],
+   "bundledInIndex": false
+  },
+  "wanderer-home": {
+   "css": "static/css/lq/pages/wanderer-home.css",
+   "linkedBy": [
+    "templates/wanderers/home.html"
    ],
    "bundledInIndex": false
   },
@@ -8413,6 +8436,12 @@
    "button",
    "forms",
    "materials"
+  ],
+  "templates/wanderers/home.html": [
+   "chip",
+   "content",
+   "cultivation-emblem",
+   "indicators"
   ],
   "templates/wrong_book.html": [
    "button",

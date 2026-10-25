@@ -30,7 +30,14 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
 from ..time_utils import local_iso, local_now
-from .wanderer_actions_blog import browse_blog, handle_pending_replies, has_pending_work
+from .wanderer_actions_blog import (
+    browse_blog,
+    handle_pending_replies,
+    has_pending_work,
+    post_eligible,
+    wants_to_post,
+    write_post,
+)
 from .wanderer_actions_classroom import visit_classroom
 from .wanderer_actions_common import ActionContext, as_int, behavior_on, outcome, record_action, today_action_count
 from .wanderer_actions_knowledge import promotion_eligible, reflect_on_reviews, request_promotion, study_material
@@ -78,8 +85,9 @@ SleepFn = Callable[[float], Awaitable[Any]]
 # Which action_kind a crashed action is logged under.
 _FAILURE_KIND = {
     "replies": "reply", "blog": "browse_post", "classroom": "classroom_visit",
-    "knowledge": "knowledge_read", "promotion": "request_promotion", "reflect": "reflect",
+    "knowledge": "knowledge_read", "promotion": "request_promotion", "reflect": "reflect", "post": "write_post",
 }
+POST_WEIGHT = 4.0
 
 
 def _connection(conn_factory: Optional[Callable[[], Any]]) -> Any:
@@ -233,6 +241,10 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
     with ctx.connect() as conn:
         if promotion_eligible(ctx, conn):
             options.append(("promotion", 3.0))
+        can_post = post_eligible(ctx, conn)
+    # The post_prob roll only happens when posting is possible at all (design §10.4).
+    if can_post and wants_to_post(ctx):
+        options.append(("post", POST_WEIGHT))
     if not options:
         return "idle"
     names, weights = zip(*options)
@@ -251,6 +263,7 @@ ACTIONS: dict[str, ActionFn] = {
     "classroom": visit_classroom,
     "knowledge": study_material,
     "promotion": request_promotion,
+    "post": write_post,
     "idle": _idle,
 }
 

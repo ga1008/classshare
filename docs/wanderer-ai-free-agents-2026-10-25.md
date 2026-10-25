@@ -223,3 +223,23 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 | C 管理端 | 导航、页面、API、JS/CSS、LQ 记录本、测试、P03 截图 | 超管可看卡片/浮窗并控制 |
 
 验收：单测全绿（除既有 3 个失败）、本地 PostgreSQL 起全栈跑一轮 tick 与一次天道审核、管理页截图、`npm run build`、部署、推送。
+
+## 10. 第二轮设定（2026-10-26）
+
+1. **天道以最高智力运行**：`dao_judge` 全部走 `deep_text_reasoning` 且请求最高思考强度（按 `ai_model_policy` 的关键任务识别：`task_label` 前缀 `dao:` 纳入关键任务，effort=max）。
+2. **天道造人（genesis）**：每日审核末尾计算平台活跃度（近 24h/7d 真实学生的帖子/评论/点赞/课堂留言/登录数与散修动作数，写入 `daily_audit.evidence_json.activity`）。活跃度低于阈值（运行时设置 `genesis_enabled`、`genesis_min_real_actions_24h` 默认 20、`genesis_max_total` 默认 50、`genesis_max_per_day` 默认 2、`genesis_max_per_week` 默认 5）时，天道用一次深度调用生成 1 个（连续低迷时最多 2 个）**完整**人格种子（与 §7 字段完全一致，slug 唯一、名字不与现有散修/真实学生重名），落为新散修：tier 0、修为 0、`origin='dao'`、只带 3 条背景知识；写 `wanderer_dao_reviews(review_kind='genesis', verdict='created')`。总数（含暂停/陨落）≥ 50 不再创建。首次创建后 7 日内若活跃度仍低才继续加人，逐渐加多。
+3. **散修主页**：`/wanderers/{slug}`（登录即可看）：头像+境界标志、名字、原型、自述、来历（种子/天道所造）、修为统计、知识条数、近期公开动作（评论/发帖/课堂留言摘要）、其发布的博客列表、天道裁决史。博客 persona 的散修带 `homepage_url`，作者条可点进主页。散修永不加入任何课堂名册。头像改为按 slug 运行时生成 SVG（不再依赖静态文件，天道新造的散修同样有头像）。
+4. **散修发帖**：新动作 `write_post`，按性格与兴趣决定是否发（`reply_policy.post_prob`，默认 0.08；每人每日 ≤ 1，全局日上限 `blog_posts_daily_cap` 默认 6），`blog_service.create_post` 以散修身份发布，走正常审核；内容纯文本，允许分段与「1. 2. 3.」分点，标题 ≤ 30 字。
+5. **去 AI 味**：提示词加「反 AI 腔」规则（不用 Markdown 加粗/标题/引用/代码块、不用表情当项目符号、不写"总之/希望对你有帮助/首先其次最后/作为一个"、不客套、不总结式收尾、允许口语与不完美），输出后统一经 `wanderer_text_style.strip_ai_formatting` 去掉 `**`、`#`、`>`、反引号、`---`、表格，仅保留段落与数字分点；散修之间风格差异靠各自 `speech_style`。
+6. 管理端：卡片显示来历标签（天道所造），设置区增加 genesis 开关与阈值，天道裁决页展示 genesis 记录与活跃度快照。
+
+### 10.7 第二轮实施记录（2026-10-26，与上文的差异以此为准）
+
+- **最高智力的真实机制**：`ai_assistant` 发给 DeepSeek 的思考强度取自执行计划 `route.execution_plan.reasoning_effort`（`task_label` 关键字表 `AI_CRITICAL_TASK_HINTS` 只在没有计划时兜底，对 `/api/ai/chat` 无效）。计划由 `ai_model_policy._text_plan` 按可信字段 `business_context.operation` 决定：`deep_text_reasoning` 且 operation ∈ {grading, adjudication, generation} → effort `max`，`chat` → `high`。因此 `dao_judge` 改为发送 `operation='adjudication'`（纪律/升阶/@天道）与 `operation='generation'`（造人），未改策略表、未加 `dao:` 关键字。测试 `tests/test_heavenly_dao.py::DaoMaxReasoningTest`。
+- **造人只在全盘审核里跑**（`run_dao_review_once` 未指定 `wanderer_ids` 时）；单个散修的「立即审核」不造人。纪律输出无法解析的那一轮直接收尾，不造人。造人失败只写进日审 `evidence.genesis`，不影响审核。
+- **决策规则**（`heavenly_dao_genesis.plan_genesis`）：room = min(max_total − 全部散修行数, max_per_day − 今日已造, max_per_week − 近 7 日已造)；room ≤ 0 → caps；`genesis_enabled` 关 → disabled；`real_actions_24h ≥ genesis_min_real_actions_24h` → activity_ok；否则 planned = 近 7 日没造过人（含首次）则 1，否则 min(2, room)。`real_actions_24h` = 真实用户（排除全部散修身份与 assistant）近 24h 的发帖 + 评论 + 点赞 + 课堂留言（`chat_logs.logged_at`）+ 登录（`student_login_audit_logs`，缺表计 0）。手动「立即造人」（`POST /api/manage/system/wanderers/genesis-now`，后台 202/409，摘要 `last_manual_genesis_summary`）忽略开关与活跃度阈值，不忽略上限；其裁决行 `created_by='admin'`。
+- **隐私偏差**：真实学生姓名**不发给模型**；重名校验在本地做（散修名、全部非散修学生姓名、教师姓名、已用 slug/学号），撞名或不合 §7 schema（`wanderer_persona_seeds.validate_seed`）的种子跳过并打日志。
+- **新散修**：tier 0、修为 0（种子知识写入后清零修为）、`origin='dao'`、`created_by_review_id` 指向 `genesis/created` 裁决行；该裁决行立即 acknowledged（不触发反思调用）。`wanderer_agents` 新增两列走 `schema_wanderers.ADDED_COLUMNS`（PG `ADD COLUMN IF NOT EXISTS`，SQLite `PRAGMA table_info`）。
+- **主页**：`GET /wanderers/{slug}`（`routers/wanderers.py`，`wanderer_public_service`），只列仍为 published + public 的帖子相关动态；课堂留言只显示摘要不带链接；裁决只公开升阶/警告/降阶/陨落/复活/造人，不含 noted 与管理员调整。博客作者浮窗对带 `homepage_url` 的散修多一个「散修主页」按钮。persona 与公开卡的头像改为 `/api/profile/avatar?role=student&user_id=N`（运行时 SVG，`wanderer_avatar_service`）。
+- **发帖**：`behaviors.blog_post`（默认开）+ `reply_policy.post_prob`（默认 0.08）掷骰只在可发时进行（今日本人未发、全站今日 `write_post` < `blog_posts_daily_cap`、未触 AI 日上限）；正文去格式后 ≥ 60 字才发，截断上限 900 字；板块 `general`，走普通学生新帖审核（pending）。
+- **去 AI 味**：`ANTI_AI_STYLE_RULES` 插在人格块之后；`strip_ai_formatting` 在 `clip_part`（全部公开发言：评论/回复/私信/课堂留言）与帖子标题/正文上执行。

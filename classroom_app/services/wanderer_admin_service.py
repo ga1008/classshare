@@ -36,10 +36,14 @@ from .wanderer_knowledge_service import forget_all, knowledge_summary
 from .wanderer_settings_service import (
     SETTING_DAILY_AI_CALL_CAP,
     SETTING_ENABLED,
+    GENESIS_INT_SETTINGS,
+    SETTING_GENESIS_ENABLED,
+    SETTING_LAST_MANUAL_GENESIS_SUMMARY,
     SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     SETTING_LAST_MANUAL_TICK_SUMMARY,
     daily_ai_calls,
     daily_cap,
+    genesis_settings,
     is_wanderer_runtime_enabled,
     wanderer_runtime_setting_get,
     wanderer_runtime_setting_set,
@@ -50,16 +54,17 @@ ACTION_LABELS = {
     "browse_post": "浏览帖子", "like_post": "点赞帖子", "like_comment": "点赞评论", "comment": "评论",
     "reply": "回复", "dm_reply": "回复私信", "classroom_visit": "旁听课堂", "classroom_message": "课堂留言",
     "knowledge_read": "研读固化", "knowledge_forget": "遗忘知识", "request_promotion": "申请升阶",
-    "reflect": "反思", "skip": "跳过",
+    "reflect": "反思", "skip": "跳过", "write_post": "发帖",
 }
 REVIEW_KIND_LABELS = {
     "promotion": "升阶", "discipline": "纪律", "daily_audit": "日审", "mention_reply": "@天道",
-    "admin_override": "管理员调整", "revive": "复活", "death": "陨落",
+    "admin_override": "管理员调整", "revive": "复活", "death": "陨落", "genesis": "天道造人",
 }
 VERDICT_LABELS = {
     "approved": "批准", "rejected": "驳回", "warning": "警告", "demoted": "降阶",
-    "noted": "记录", "died": "陨落", "revived": "复活",
+    "noted": "记录", "died": "陨落", "revived": "复活", "created": "造人",
 }
+ORIGIN_LABELS = {"seed": "种子", "dao": "天道所造"}
 
 SETTING_TICK_BATCH_SIZE = "tick_batch_size"
 SETTING_CLASSROOM_VISITS = "classroom_visits_enabled"
@@ -92,7 +97,7 @@ _JSON_PATCH_FIELDS = {
 _PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", *_JSON_PATCH_FIELDS})
 _SETTING_FIELDS = frozenset({
     SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
-    SETTING_DAO_REVIEW_HOUR,
+    SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, *GENESIS_INT_SETTINGS,
 })
 
 
@@ -152,6 +157,12 @@ def _count(conn: Any, sql: str, params: tuple) -> int:
 
 def avatar_url(student_id: Any) -> str:
     return f"/api/profile/avatar?role=student&user_id={_as_int(student_id)}"
+
+
+def homepage_url(slug: Any) -> str:
+    from .blog_persona_service import wanderer_homepage_url
+
+    return wanderer_homepage_url(slug)
 
 
 def tier_payload(tier: Any, score: Any = None) -> dict[str, Any]:
@@ -234,7 +245,17 @@ def _serialize_review(row: Any) -> dict[str, Any]:
         "created_by": str(item.get("created_by") or ""),
         "acknowledged_at": item.get("acknowledged_at"),
         "created_at": str(item.get("created_at") or ""),
+        **_review_extras(kind, item),
     }
+
+
+def _review_extras(kind: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Genesis rows expose the activity snapshot and the created persona's summary (admin only)."""
+    if kind != "genesis":
+        return {}
+    evidence = _loads(item.get("evidence_json"), dict)
+    return {"activity": evidence.get("activity") if isinstance(evidence.get("activity"), dict) else {},
+            "seed_summary": evidence.get("seed_summary") if isinstance(evidence.get("seed_summary"), dict) else {}}
 
 
 def _serialize_knowledge(row: Any) -> dict[str, Any]:
@@ -272,9 +293,19 @@ def _status_counts(conn: Any) -> tuple[dict[str, int], int]:
     return counts, promotion
 
 
+def _latest_activity(conn: Any) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT evidence_json FROM wanderer_dao_reviews WHERE review_kind = ? ORDER BY id DESC LIMIT 1",
+        ("daily_audit",),
+    ).fetchone()
+    activity = _loads(_row_dict(row).get("evidence_json"), dict).get("activity") if row is not None else None
+    return activity if isinstance(activity, dict) else {}
+
+
 def build_wanderer_overview(conn: Any) -> dict[str, Any]:
     ensure_wanderer_schema(conn)
     counts, promotion = _status_counts(conn)
+    dao_created = _count(conn, "SELECT COUNT(*) AS n FROM wanderer_agents WHERE origin = ?", ("dao",))
     warnings_today = _count(
         conn,
         "SELECT COUNT(*) AS n FROM wanderer_dao_reviews WHERE verdict = ? AND created_at >= ?",
@@ -286,13 +317,15 @@ def build_wanderer_overview(conn: Any) -> dict[str, Any]:
         "running": is_wanderer_runtime_enabled(conn),
         "ai_calls_today": daily_ai_calls(conn),
         "daily_ai_call_cap": daily_cap(conn),
-        "counts": {**counts, "total": sum(counts.values())},
+        "counts": {**counts, "total": sum(counts.values()), "dao_created": dao_created},
+        "latest_activity": _latest_activity(conn),
         "promotion_requested": promotion,
         "warnings_today": warnings_today,
         "last_tick_at": wanderer_runtime_setting_get(conn, SETTING_LAST_TICK_AT, "") or "",
         "last_dao_review_at": wanderer_runtime_setting_get(conn, SETTING_LAST_DAO_REVIEW_AT, "") or "",
         "last_manual_tick": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_TICK_SUMMARY), dict),
         "last_manual_review": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_REVIEW_SUMMARY), dict),
+        "last_manual_genesis": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_GENESIS_SUMMARY), dict),
     }
 
 
@@ -319,6 +352,7 @@ def _latest_actions(conn: Any) -> dict[int, dict[str, Any]]:
 def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict[str, Any]]) -> dict[str, Any]:
     status = str(wanderer.get("status") or STATUS_ACTIVE)
     action = last_action or {}
+    origin = str(wanderer.get("origin") or "seed")
     return {
         "id": int(wanderer["id"]),
         "student_id": int(wanderer["student_id"]),
@@ -337,6 +371,10 @@ def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict
         "last_action_preview": action.get("content_preview") or action.get("action_label") or "",
         "last_action_at": action.get("created_at", ""),
         "avatar_url": avatar_url(wanderer["student_id"]),
+        "origin": origin,
+        "origin_label": ORIGIN_LABELS.get(origin, origin),
+        "homepage_url": homepage_url(wanderer.get("slug")),
+        "created_at": str(wanderer.get("created_at") or ""),
     }
 
 
@@ -639,6 +677,7 @@ def get_settings(conn: Any) -> dict[str, Any]:
         "tick_batch_size": max(low, min(high, batch)),
         "classroom_visits_enabled": _flag(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS), True),
         "dao_review_hour": hour if _HOUR_RE.match(hour) else DEFAULT_DAO_REVIEW_HOUR,
+        **genesis_settings(conn),
     }
 
 
@@ -658,6 +697,17 @@ def _hour_setting(value: Any) -> str:
     return hour
 
 
+_GENESIS_LABELS = {
+    "genesis_min_real_actions_24h": "造人活跃度阈值", "genesis_max_total": "散修总数上限",
+    "genesis_max_per_day": "每日造人上限", "genesis_max_per_week": "每周造人上限",
+}
+
+
+def _genesis_int_validator(key: str):
+    _default, low, high = GENESIS_INT_SETTINGS[key]
+    return lambda value: str(_bounded_int(value, (low, high), _GENESIS_LABELS.get(key, key)))
+
+
 def _validate_settings(patch: Any) -> dict[str, str]:
     if not isinstance(patch, dict) or not patch:
         raise ValueError("没有可保存的设置")
@@ -670,6 +720,8 @@ def _validate_settings(patch: Any) -> dict[str, str]:
         SETTING_DAILY_AI_CALL_CAP: lambda v: str(_bounded_int(v, DAILY_AI_CALL_CAP_RANGE, "每日 AI 调用上限")),
         SETTING_TICK_BATCH_SIZE: lambda v: str(_bounded_int(v, TICK_BATCH_SIZE_RANGE, "每轮散修数")),
         SETTING_DAO_REVIEW_HOUR: _hour_setting,
+        SETTING_GENESIS_ENABLED: lambda v: _bool_setting(v, "天道造人开关"),
+        **{key: _genesis_int_validator(key) for key in GENESIS_INT_SETTINGS},
     }
     return {key: validators[key](value) for key, value in patch.items()}
 
@@ -725,4 +777,5 @@ def public_card(conn: Any, student_id: Any) -> Optional[dict[str, Any]]:
         "status_label": STATUS_LABELS.get(status, status),
         "description": str(wanderer.get("public_intro") or ""),
         "avatar_url": avatar_url(number),
+        "homepage_url": homepage_url(wanderer.get("slug")),
     }

@@ -41,7 +41,7 @@ KNOWLEDGE_DIGEST_LIMIT = 800
 PROMOTION_KNOWLEDGE_RATIO = 0.7
 PROMOTION_MIN_INTERACTIONS = 5
 PROMOTION_COOLDOWN_DAYS = 7
-INTERACTION_KINDS = ("comment", "reply", "dm_reply", "classroom_message")
+INTERACTION_KINDS = ("comment", "reply", "dm_reply", "classroom_message", "write_post")
 REFLECTION_KINDS = ("promotion", "discipline", "admin_override", "revive")
 REFLECTIONS_PER_TICK = 2
 

@@ -537,6 +537,7 @@ class BlogCenter {
                 identity: userMenuButton.dataset.userIdentity || '',
                 name: userMenuButton.dataset.userName || '',
                 role: userMenuButton.dataset.userRole || '',
+                homepage: userMenuButton.dataset.userHomepage || '',
             });
             return;
         }
@@ -1514,6 +1515,7 @@ class BlogCenter {
         const name = String(user?.name || '').trim() || '该用户';
         const role = String(user?.role || '').trim().toLowerCase();
         const isPen = user?.kind === 'pen';
+        const homepage = /^\/wanderers\/[A-Za-z0-9_-]+$/.test(String(user?.homepage || '')) ? String(user.homepage) : '';
         if ((!identity && !ref) || role === 'assistant') return;
 
         // A pen name carries no identity, so "is it me" is unknowable here; the
@@ -1527,6 +1529,7 @@ class BlogCenter {
         const actions = document.createElement('div');
         actions.className = 'blog-user-popover__actions';
         actions.innerHTML = `
+                ${homepage ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" href="${escapeHtml(homepage)}">散修主页</a>` : ''}
                 ${ref ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-page="${escapeHtml(ref)}">作者主页</button>` : ''}
                 ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="${followType}" data-blog-follow-key="${escapeHtml(followKey)}">${isFollowing ? '已关注' : followLabel}</button>`}
                 ${identity ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn blog-user-popover__btn--primary" data-blog-private-message="${escapeHtml(identity)}" ${isSelf ? 'disabled title="不能给自己发送私信"' : ''}>私信</button>` : ''}
@@ -3557,7 +3560,9 @@ class BlogCenter {
             `data-user-identity="${escapeHtml(author.identity || '')}"`,
             `data-user-role="${escapeHtml(author.role || '')}"`,
             `data-user-name="${escapeHtml(author.display_name || '')}"`,
-        ].join(' ');
+            // 散修 personas carry their public homepage (/wanderers/<slug>).
+            author.homepage_url ? `data-user-homepage="${escapeHtml(author.homepage_url)}"` : '',
+        ].filter(Boolean).join(' ');
     }
 
     /**

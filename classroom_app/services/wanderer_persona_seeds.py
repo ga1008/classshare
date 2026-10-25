@@ -10,6 +10,7 @@ weekday_weights keys follow ``datetime.weekday()``: "0" = Monday ... "6" = Sunda
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 ALL_WEEK = {str(day): 1.0 for day in range(7)}
@@ -483,6 +484,166 @@ def render_persona_prompt(seed: dict[str, Any]) -> str:
         f"始终以{name}的身份用第一人称说话，不自称 AI 助手，也不跳出角色解释自己。",
     ]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Seed validation (design §7 schema; used for 天道造人 output, §10.2)
+# ---------------------------------------------------------------------------
+
+SLUG_PATTERN = re.compile(r"^[a-z][a-z0-9]{2,23}$")
+_CHINESE_NAME = re.compile(r"^[一-鿿]{2,4}$")
+_NICKNAME = re.compile(r"^[A-Za-z][A-Za-z0-9]{1,11}$")
+DEFAULT_POST_PROB = 0.08
+GENDERS = ("男", "女")
+
+
+class SeedValidationError(ValueError):
+    """A persona seed does not match the §7 schema."""
+
+
+def _text(seed: dict[str, Any], key: str, low: int, high: int) -> str:
+    value = seed.get(key)
+    if not isinstance(value, str) or not low <= len(value.strip()) <= high:
+        raise SeedValidationError(f"{key} 须为 {low}–{high} 字的文本")
+    return value.strip()
+
+
+def _text_list(value: Any, key: str, low: int, high: int, *, item_max: int = 40) -> list[str]:
+    if not isinstance(value, list):
+        raise SeedValidationError(f"{key} 须为列表")
+    items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    if len(items) != len(value) or not low <= len(items) <= high or any(len(item) > item_max for item in items):
+        raise SeedValidationError(f"{key} 须为 {low}–{high} 条不超过 {item_max} 字的文本")
+    if len(set(items)) != len(items):
+        raise SeedValidationError(f"{key} 有重复项")
+    return items
+
+
+def _number(value: Any, key: str, low: float, high: float, *, integer: bool = False) -> Any:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise SeedValidationError(f"{key} 须为数字")
+    if integer and int(value) != value:
+        raise SeedValidationError(f"{key} 须为整数")
+    if not low <= value <= high:
+        raise SeedValidationError(f"{key} 须在 {low}–{high} 之间")
+    return int(value) if integer else float(value)
+
+
+def _speech_style(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise SeedValidationError("speech_style 须为对象")
+    style: dict[str, Any] = {"catchphrases": _text_list(value.get("catchphrases"), "speech_style.catchphrases", 1, 4)}
+    for key in ("punctuation", "emoji", "length"):
+        text = value.get(key)
+        if not isinstance(text, str) or not 1 <= len(text.strip()) <= 60:
+            raise SeedValidationError(f"speech_style.{key} 须为 1–60 字的文本")
+        style[key] = text.strip()
+    return style
+
+
+def _active_hours(value: Any) -> list[list[int]]:
+    if not isinstance(value, list) or not 1 <= len(value) <= 6:
+        raise SeedValidationError("active_hours 须为 1–6 个 [开始, 结束] 时段")
+    hours = []
+    for pair in value:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise SeedValidationError("active_hours 的每项须为 [开始, 结束]")
+        start = _number(pair[0], "active_hours", 0, 23, integer=True)
+        end = _number(pair[1], "active_hours", 1, 24, integer=True)
+        if start == end:
+            raise SeedValidationError("active_hours 时段不能为空")
+        hours.append([start, end])
+    return hours
+
+
+def _weekday_weights(value: Any) -> dict[str, float]:
+    if value is None or value == {}:
+        return dict(ALL_WEEK)
+    if not isinstance(value, dict) or not {str(key) for key in value} <= set(ALL_WEEK):
+        raise SeedValidationError("weekday_weights 的键须为 0–6")
+    weights = {str(key): _number(item, "weekday_weights", 0, 1) for key, item in value.items()}
+    return {**ALL_WEEK, **weights}
+
+
+def _seed_frequency(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise SeedValidationError("interaction_frequency 须为对象")
+    return {
+        "activity_level": _number(value.get("activity_level"), "activity_level", 1, 5, integer=True),
+        "active_hours": _active_hours(value.get("active_hours")),
+        "weekday_weights": _weekday_weights(value.get("weekday_weights")),
+    }
+
+
+def _reply_policy(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise SeedValidationError("reply_policy 须为对象")
+    policy: dict[str, Any] = {key: _number(value.get(key), f"reply_policy.{key}", 0, 1)
+                              for key in ("ignore_prob", "emoji_only_prob", "multi_part_prob")}
+    policy["post_prob"] = _number(value.get("post_prob", DEFAULT_POST_PROB), "reply_policy.post_prob", 0, 1)
+    policy["max_parts"] = _number(value.get("max_parts"), "reply_policy.max_parts", 1, 5, integer=True)
+    return policy
+
+
+def _initial_knowledge(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise SeedValidationError("initial_knowledge 须正好 3 条")
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise SeedValidationError("initial_knowledge 的每条须为对象")
+        items.append({
+            "title": _text(item, "title", 2, 30),
+            "digest": _text(item, "digest", 10, 300),
+            "tags": _text_list(item.get("tags") or [], "initial_knowledge.tags", 0, 5, item_max=12),
+        })
+    return items
+
+
+def _optional_text(value: Any, fallback: str, limit: int = 120) -> str:
+    return value.strip()[:limit] if isinstance(value, str) and value.strip() else fallback
+
+
+def validate_seed(seed: Any) -> dict[str, Any]:
+    """A normalized copy of ``seed`` matching the §7 schema, else ``SeedValidationError``.
+
+    Optional fields get defaults: ``interaction_habit`` / ``public_intro``
+    (short derived text), ``initial_tier`` 0, ``reply_policy.post_prob`` 0.08,
+    missing ``weekday_weights`` keys 1.0. Every seed in ``WANDERER_SEEDS``
+    passes (tests/test_wanderer_persona.py).
+    """
+    if not isinstance(seed, dict):
+        raise SeedValidationError("种子须为对象")
+    slug = str(seed.get("slug") or "").strip()
+    if not SLUG_PATTERN.match(slug):
+        raise SeedValidationError("slug 须为 3–24 位小写字母或数字，且以字母开头")
+    name = str(seed.get("display_name") or "").strip()
+    if not (_CHINESE_NAME.match(name) or _NICKNAME.match(name)):
+        raise SeedValidationError("display_name 须为 2–4 个汉字或 2–12 位英文昵称")
+    gender = str(seed.get("gender") or "").strip()
+    if gender not in GENDERS:
+        raise SeedValidationError("gender 须为 男 或 女")
+    temperament = _text_list(seed.get("temperament"), "temperament", 3, 5, item_max=20)
+    return {
+        "slug": slug,
+        "display_name": name,
+        "archetype": _text(seed, "archetype", 2, 20),
+        "gender": gender,
+        "hometown": _text(seed, "hometown", 2, 30),
+        "childhood": _text(seed, "childhood", 10, 300),
+        "schooling": _text(seed, "schooling", 10, 300),
+        "interests": _text_list(seed.get("interests"), "interests", 3, 6, item_max=12),
+        "speech_style": _speech_style(seed.get("speech_style")),
+        "temperament": temperament,
+        "interaction_frequency": _seed_frequency(seed.get("interaction_frequency")),
+        "interaction_habit": _optional_text(seed.get("interaction_habit"), "按自己的性格随缘上线"),
+        "reply_policy": _reply_policy(seed.get("reply_policy")),
+        "taboos": _text_list(seed.get("taboos"), "taboos", 1, 5),
+        "initial_tier": _number(seed.get("initial_tier", 0), "initial_tier", 0, 3, integer=True),
+        "daily_action_budget": _number(seed.get("daily_action_budget"), "daily_action_budget", 1, 30, integer=True),
+        "public_intro": _optional_text(seed.get("public_intro"), "、".join(temperament[:2])),
+        "initial_knowledge": _initial_knowledge(seed.get("initial_knowledge")),
+    }
 
 
 def build_seed_payloads() -> list[dict[str, Any]]:

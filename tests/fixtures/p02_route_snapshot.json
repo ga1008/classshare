@@ -5049,6 +5049,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/wanderers/genesis-now",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_genesis_now",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/wanderers/reseed",
     "methods": [
       "POST"
@@ -8646,6 +8654,14 @@
       "POST"
     ],
     "name": "handle_teacher_register",
+    "include_in_schema": true
+  },
+  {
+    "path": "/wanderers/{slug}",
+    "methods": [
+      "GET"
+    ],
+    "name": "wanderer_home_page",
     "include_in_schema": true
   },
   {

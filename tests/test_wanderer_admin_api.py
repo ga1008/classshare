@@ -348,6 +348,68 @@ class WandererAdminApiTest(WandererDbTestCase):
         # HTML 403 is turned into a redirect to the login page by app.py.
         denied = self.plain_client().get("/manage/system/wanderers", follow_redirects=False)
         self.assertIn(denied.status_code, {303, 401, 403})
+        self.assertIn("wd-genesis-btn", response.text)
+        self.assertIn('name="genesis_max_total"', response.text)
+
+    # -- round 2: genesis (design §10.2 / §10.6) ------------------------------
+
+    def test_genesis_settings_validation(self):
+        client = self.super_client()
+        settings = client.get(f"{API}/settings").json()["settings"]
+        self.assertEqual(
+            (settings["genesis_enabled"], settings["genesis_min_real_actions_24h"], settings["genesis_max_total"],
+             settings["genesis_max_per_day"], settings["genesis_max_per_week"]),
+            (True, 20, 50, 2, 5),
+        )
+        for bad in ({"genesis_enabled": 2}, {"genesis_max_total": -1}, {"genesis_max_total": 501},
+                    {"genesis_max_per_day": 1.5}, {"genesis_min_real_actions_24h": "many"}):
+            self.assertEqual(client.post(f"{API}/settings", json=bad).status_code, 400, bad)
+        saved = client.post(f"{API}/settings", json={
+            "genesis_enabled": 0, "genesis_min_real_actions_24h": 5, "genesis_max_total": 30,
+            "genesis_max_per_day": 1, "genesis_max_per_week": 3,
+        })
+        self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={
+            "genesis_enabled": 1, "genesis_min_real_actions_24h": 20, "genesis_max_total": 50,
+            "genesis_max_per_day": 2, "genesis_max_per_week": 5}))
+        self.assertEqual(saved.status_code, 200, saved.text)
+        settings = saved.json()["settings"]
+        self.assertEqual(
+            (settings["genesis_enabled"], settings["genesis_min_real_actions_24h"], settings["genesis_max_total"],
+             settings["genesis_max_per_day"], settings["genesis_max_per_week"]),
+            (False, 5, 30, 1, 3),
+        )
+        self.assertIn(self.plain_client().post(f"{API}/settings", json={"genesis_enabled": 1}).status_code, {401, 403})
+
+    def test_genesis_now_runs_in_background_for_super_admin(self):
+        calls: list = []
+        self.install_engine("heavenly_dao_genesis", "run_genesis", calls)
+        pending = self.capture_runs()
+        self.assertIn(self.plain_client().post(f"{API}/genesis-now").status_code, {401, 403})
+        client = self.super_client()
+        started = client.post(f"{API}/genesis-now")
+        self.assertEqual(started.status_code, 202, started.text)
+        self.assertEqual(calls, [])
+        self.assertEqual(client.post(f"{API}/genesis-now").status_code, 409)
+        self.drain(pending)
+        self.assertEqual(calls, [{"manual": True}])
+        overview = client.get(API).json()["overview"]
+        self.assertEqual(overview["last_manual_genesis"]["status"], "ok")
+        self.assertIn("dao_created", overview["counts"])
+        card = client.get(API).json()["wanderers"][0]
+        self.assertEqual((card["origin"], card["origin_label"]), ("seed", "种子"))
+        self.assertTrue(card["homepage_url"].startswith("/wanderers/"))
+
+    def test_genesis_reviews_expose_activity_snapshot(self):
+        wid = self.wanderer_ids[6]
+        with self.connect() as conn:
+            wanderer_identity_service.insert_dao_review(
+                conn, wanderer_id=wid, review_kind="genesis", verdict="created", from_tier=0, to_tier=0,
+                reason="平台冷清", evidence={"activity": {"real_actions_24h": 3}, "seed_summary": {"slug": "x"}})
+            conn.commit()
+        items = self.super_client().get(f"{API}/{wid}/reviews").json()["items"]
+        genesis = next(item for item in items if item["review_kind"] == "genesis")
+        self.assertEqual((genesis["review_kind_label"], genesis["verdict_label"]), ("天道造人", "造人"))
+        self.assertEqual(genesis["activity"], {"real_actions_24h": 3})
 
 
 if __name__ == "__main__":

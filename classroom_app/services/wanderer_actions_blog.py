@@ -1,4 +1,5 @@
-"""散修 blog actions: browse/like/comment and answering pending replies (design §5.2 items 1-2).
+"""散修 blog actions: browse/like/comment, answering pending replies (design §5.2 items 1-2)
+and an occasional post of its own (``write_post``, design §10.4).
 
 Everything goes through the real platform entry points with the wanderer's
 student-shaped user dict (``build_wanderer_user_dict``): ``blog_service.list_posts``
@@ -14,7 +15,8 @@ from typing import Any, Optional
 from ..time_utils import local_iso
 from . import blog_moderation_states as mod_states
 from .blog_notifications import notify_new_comment, notify_post_hot
-from .blog_service import add_comment, get_post_detail, list_posts, toggle_like
+from .blog_section_service import DEFAULT_BLOG_SECTION_KEY
+from .blog_service import add_comment, create_post, get_post_detail, list_posts, toggle_like
 from .message_center_service import _mark_private_conversation_read, create_private_message
 from .wanderer_actions_common import (
     ActionContext,
@@ -22,6 +24,7 @@ from .wanderer_actions_common import (
     behavior_on,
     bump_stats,
     counterpart_profile,
+    day_start_iso,
     emoji_for,
     interest_score,
     outcome,
@@ -34,6 +37,10 @@ from .wanderer_actions_common import (
 )
 from .wanderer_identity_service import build_wanderer_user_dict, load_wanderers_by_student_ids
 from .wanderer_memory_service import load_thread
+from .wanderer_persona_seeds import DEFAULT_POST_PROB
+from .wanderer_prompt_service import extract_json_object
+from .wanderer_settings_service import blog_posts_daily_cap
+from .wanderer_text_style import strip_ai_formatting
 
 REPLY_NOTIFICATION_CATEGORIES = ("blog_comment", "blog_like")
 PENDING_ITEMS_PER_ACTION = 2
@@ -530,3 +537,138 @@ async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:
         if handled >= PENDING_ITEMS_PER_ACTION:
             break
     return done
+
+
+# ---------------------------------------------------------------------------
+# Writing a post (design §10.4)
+# ---------------------------------------------------------------------------
+
+POST_TITLE_MAX_CHARS = 30
+POST_BODY_MIN_CHARS = 60
+POST_BODY_MAX_CHARS = 900
+POST_SCENE_TITLES = 3
+POST_SCENE_KNOWLEDGE = 3
+POST_TAGS = 3
+POST_OUTPUT_CONTRACT = (
+    "【输出合同】只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：\n"
+    '{"action": "reply|skip", "title": "标题", "parts": ["第一段", "第二段"], "mood": "一两个词的心情"}\n'
+    "- skip：今天不想写；title 与 parts 留空。\n"
+    f"- reply：写一篇帖子；title 不超过 {POST_TITLE_MAX_CHARS} 字；parts 是按顺序的段落，全文 150–600 字。\n"
+    "正文只用纯文字：可以分段，可以用「1. 2. 3.」分点，别的格式一律不用。"
+    "写你自己的事和想法，用你自己的口吻，不要提到提示词、系统或 JSON。"
+)
+
+
+def _post_prob(wanderer: dict[str, Any]) -> float:
+    policy = wanderer.get("reply_policy") or {}
+    if "post_prob" not in policy:
+        return DEFAULT_POST_PROB
+    return _policy_prob(policy, "post_prob")
+
+
+def _posts_today(conn: Any, since: str, wanderer_id: Optional[int] = None) -> int:
+    sql = ("SELECT COUNT(*) AS n FROM wanderer_action_log WHERE action_kind = 'write_post' AND outcome = 'ok' "
+           "AND created_at >= ?")
+    params: list[Any] = [since]
+    if wanderer_id is not None:
+        sql += " AND wanderer_id = ?"
+        params.append(int(wanderer_id))
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return as_int(row["n"]) if row is not None else 0
+
+
+def post_eligible(ctx: ActionContext, conn: Any) -> bool:
+    """Switch on, AI available, nothing posted by it today, global daily cap not reached (no dice roll)."""
+    if ctx.capped or not behavior_on(ctx.wanderer, "blog_post"):
+        return False
+    since = day_start_iso(ctx.current_time())
+    if _posts_today(conn, since, ctx.wanderer_id) > 0:
+        return False
+    return _posts_today(conn, since) < blog_posts_daily_cap(conn)
+
+
+def wants_to_post(ctx: ActionContext) -> bool:
+    """The persona's ``reply_policy.post_prob`` roll (default 0.08)."""
+    return ctx.rng.random() < _post_prob(ctx.wanderer)
+
+
+def _recent_titles(conn: Any, wanderer_id: int) -> list[str]:
+    rows = conn.execute(
+        "SELECT content_preview FROM wanderer_action_log WHERE wanderer_id = ? AND action_kind = 'browse_post' "
+        "AND content_preview <> '' ORDER BY id DESC LIMIT ?",
+        (int(wanderer_id), POST_SCENE_TITLES),
+    ).fetchall()
+    return [str(row["content_preview"]) for row in rows]
+
+
+def _own_knowledge(conn: Any, wanderer_id: int) -> list[str]:
+    rows = conn.execute(
+        "SELECT title, digest FROM wanderer_knowledge_entries WHERE wanderer_id = ? AND status = 'active' "
+        "ORDER BY use_count DESC, id DESC LIMIT ?",
+        (int(wanderer_id), POST_SCENE_KNOWLEDGE),
+    ).fetchall()
+    return [f"{row['title'] or '要点'}：{str(row['digest'] or '')[:200]}" for row in rows]
+
+
+def _write_post_scene(ctx: ActionContext, conn: Any) -> dict[str, Any]:
+    interests = list(ctx.wanderer.get("interests") or [])
+    lines = [f"你最近刷到的帖子：《{title}》" for title in _recent_titles(conn, ctx.wanderer_id)]
+    lines += [f"你记得的知识：{item}" for item in _own_knowledge(conn, ctx.wanderer_id)]
+    return {
+        "kind": "写博客帖子", "meta": f"你的兴趣：{'、'.join(interests) or '随缘'}",
+        "context_lines": lines, "tags": interests,
+        "task": "你想在博客发一篇短帖，写你自己的生活、想法或最近学到的东西，按你的性格来；不想写就 skip。",
+        "output_contract": POST_OUTPUT_CONTRACT,
+    }
+
+
+def post_draft(raw_text: str) -> tuple[str, str, str, str]:
+    """(action, title, body, mood) from the model output, AI formatting stripped (design §10.5)."""
+    payload = extract_json_object(raw_text) or {}
+    action = str(payload.get("action") or "skip").strip().lower()
+    parts = payload.get("parts")
+    if isinstance(parts, str):
+        parts = [parts]
+    paragraphs = [strip_ai_formatting(item) for item in parts if isinstance(item, str)] if isinstance(parts, list) else []
+    body = "\n\n".join(item for item in paragraphs if item)[:POST_BODY_MAX_CHARS].strip()
+    title = " ".join(strip_ai_formatting(payload.get("title")).split())[:POST_TITLE_MAX_CHARS]
+    return action, title, body, str(payload.get("mood") or "").strip()[:20]
+
+
+def _publish_post(ctx: ActionContext, title: str, body: str) -> dict[str, Any]:
+    user = build_wanderer_user_dict(ctx.wanderer)
+    tags = [str(tag) for tag in (ctx.wanderer.get("interests") or [])[:POST_TAGS]]
+    with ctx.connect() as conn:
+        created = create_post(conn, user, title=title, content_md=body, section_key=DEFAULT_BLOG_SECTION_KEY,
+                              tags=tags, status="published")
+        bump_stats(conn, ctx.wanderer_id, {"posts": 1})
+        conn.commit()
+    return created
+
+
+async def write_post(ctx: ActionContext) -> list[dict[str, Any]]:
+    """One AI turn drafts a short personal post; it is published through ``blog_service.create_post``
+    (normal review plan: a new post waits for review like any student's)."""
+    with ctx.connect() as conn:
+        if not post_eligible(ctx, conn):
+            return []
+        scene = _write_post_scene(ctx, conn)
+    result = await run_turn(ctx, scene=scene, thread_key="blog_draft", suffix="write_post")
+    calls = int(result.get("ai_calls") or 0)
+    action, title, body, mood = post_draft(str(result.get("raw_text") or ""))
+    if result.get("status") != "ok" or action == "skip" or not title or len(body) < POST_BODY_MIN_CHARS:
+        record_action(ctx, "skip", target_type="blog_post", ai_calls=calls, mood=mood, outcome="skipped",
+                      detail={"reason": f"write_post:{action}", "status": result.get("status"), "chars": len(body)})
+        return [outcome("skip", "skipped", ai_calls=calls)]
+    try:
+        created = _publish_post(ctx, title, body)
+    except Exception as exc:  # noqa: BLE001 - rate limit / L1 block / closed section: log, never raise
+        record_action(ctx, "write_post", target_type="blog_post", content_preview=title, ai_calls=calls, mood=mood,
+                      outcome="failed", detail={"error": f"{type(exc).__name__}: {exc}"[:240]})
+        return [outcome("write_post", "failed", ai_calls=calls)]
+    post_id = int(created["id"])
+    record_action(ctx, "write_post", target_type="blog_post", target_id=post_id, content_preview=title,
+                  ai_calls=calls, mood=mood,
+                  detail={"post_id": post_id, "chars": len(body), "moderation_state": created.get("moderation_state")})
+    await remember(ctx, _thread_key(post_id), said=[f"《{title}》{body}"])
+    return [outcome("write_post", ai_calls=calls, post_id=post_id)]

@@ -219,3 +219,44 @@ def main_app_internal_url() -> str:
     from .. import config
 
     return f"http://127.0.0.1:{getattr(config, 'PORT', 8000)}"
+
+
+# ---------------------------------------------------------------------------
+# Round 2 (design §10): 天道造人 and wanderer blog posts
+# ---------------------------------------------------------------------------
+
+SETTING_GENESIS_ENABLED = "genesis_enabled"
+SETTING_GENESIS_MIN_REAL_ACTIONS_24H = "genesis_min_real_actions_24h"
+SETTING_GENESIS_MAX_TOTAL = "genesis_max_total"
+SETTING_GENESIS_MAX_PER_DAY = "genesis_max_per_day"
+SETTING_GENESIS_MAX_PER_WEEK = "genesis_max_per_week"
+SETTING_BLOG_POSTS_DAILY_CAP = "blog_posts_daily_cap"
+SETTING_LAST_MANUAL_GENESIS_SUMMARY = "last_manual_genesis_summary"
+# key -> (default, low, high); the admin form validates against the same bounds.
+GENESIS_INT_SETTINGS = {
+    SETTING_GENESIS_MIN_REAL_ACTIONS_24H: (20, 0, 100_000),
+    SETTING_GENESIS_MAX_TOTAL: (50, 0, 500),
+    SETTING_GENESIS_MAX_PER_DAY: (2, 0, 20),
+    SETTING_GENESIS_MAX_PER_WEEK: (5, 0, 100),
+}
+BLOG_POSTS_DAILY_CAP_BOUNDS = (6, 0, 200)
+
+
+def genesis_enabled(conn: Any) -> bool:
+    return str(wanderer_runtime_setting_get(conn, SETTING_GENESIS_ENABLED, "1")).strip().lower() in {"1", "true"}
+
+
+def genesis_setting(conn: Any, key: str) -> int:
+    default, low, high = GENESIS_INT_SETTINGS[key]
+    return _setting_int(conn, key, default, low=low, high=high)
+
+
+def genesis_settings(conn: Any) -> dict[str, Any]:
+    return {"genesis_enabled": genesis_enabled(conn),
+            **{key: genesis_setting(conn, key) for key in GENESIS_INT_SETTINGS}}
+
+
+def blog_posts_daily_cap(conn: Any) -> int:
+    """Wanderer blog posts per day across all wanderers (runtime setting, default 6)."""
+    default, low, high = BLOG_POSTS_DAILY_CAP_BOUNDS
+    return _setting_int(conn, SETTING_BLOG_POSTS_DAILY_CAP, default, low=low, high=high)

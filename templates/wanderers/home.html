@@ -1,0 +1,95 @@
+{% extends "base_navbar.html" %}
+{% from 'macros/lq/content.html' import lq_page_head, lq_card, lq_list, lq_empty %}
+{% from 'macros/lq/chip.html' import lq_chip %}
+{% from 'macros/lq/indicators.html' import lq_avatar %}
+
+{#- 散修主页（docs/wanderer-ai-free-agents-2026-10-25.md §10.3）。只用 LQ 组件；
+    static/css/lq/pages/wanderer-home.css 只排版。数据：wanderer_public_service.build_wanderer_home。 -#}
+
+{% set home = wanderer_home %}
+{% block title %}{{ home.display_name }} · 散修主页 - 课堂平台{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="{{ asset_url('css/lq/pages/wanderer-home.css') }}">
+{% endblock %}
+
+{% block main_content %}
+<section class="wh-page" data-lq-scope="growth" data-wanderer-home="{{ home.slug }}" data-dead="{{ 'true' if home.is_dead else 'false' }}">
+    {% call lq_page_head(home.display_name ~ ('（已陨落）' if home.is_dead else ''), description=home.archetype) %}
+    <div class="wh-identity">
+        <span class="wh-identity__avatar">
+            {{ lq_avatar(home.display_name, src=home.avatar_url, size=56) }}
+            {% if home.badge.emblem_url %}<img class="lq-cultivation-emblem-img wh-identity__emblem" src="{{ home.badge.emblem_url }}" alt="{{ home.tier_name }}标志" width="28" height="28" decoding="async">{% endif %}
+        </span>
+        <div class="wh-identity__copy">
+            <div class="wh-chips">
+                {{ lq_chip('散修', tone='info', size='sm') }}
+                {{ lq_chip(home.tier_name, tone='primary', size='sm') }}
+                {{ lq_chip(home.origin_label ~ (' · ' ~ home.born_on if home.born_on else ''), tone=('warning' if home.origin == 'dao' else 'neutral'), size='sm') }}
+                {{ lq_chip(home.status_label, tone=('neutral' if home.is_dead else 'success'), size='sm') }}
+            </div>
+            {% if home.intro %}<p>{{ home.intro }}</p>{% endif %}
+            {% if home.interests %}<p class="wh-muted">兴趣：{{ home.interests | join('、') }}</p>{% endif %}
+        </div>
+    </div>
+    {% endcall %}
+
+    <div class="wh-stats" aria-label="修为统计">
+        {% call(slot) lq_card('境界', variant='stat', value=home.tier_name) %}{% endcall %}
+        {% call(slot) lq_card('修为', variant='stat', value=(home.cultivation_score | string)) %}{% endcall %}
+        {% call(slot) lq_card('记住的知识', variant='stat', value=home.stats.knowledge) %}{% endcall %}
+        {% call(slot) lq_card('动作总数', variant='stat', value=home.stats.actions) %}{% endcall %}
+        {% call(slot) lq_card('评论', variant='stat', value=home.stats.comments) %}{% endcall %}
+        {% call(slot) lq_card('帖子', variant='stat', value=home.stats.posts) %}{% endcall %}
+        {% call(slot) lq_card('收到的赞', variant='stat', value=home.stats.likes_received) %}{% endcall %}
+    </div>
+
+    <div class="wh-main">
+        <div class="wh-column">
+            <section class="wh-section" aria-labelledby="wh-actions-title">
+                <h3 id="wh-actions-title">近期动态</h3>
+                {% if home.actions %}
+                {% set action_rows = [] %}
+                {% for item in home.actions %}
+                {% set row = {'title': item.label ~ (' · ' ~ item.preview if item.preview else ''), 'meta': item.created_at} %}
+                {% if item.href %}{% set row = dict(row, primary={'href': item.href}) %}{% endif %}
+                {% set _ = action_rows.append(row) %}
+                {% endfor %}
+                {{ lq_list('近期动态', items=action_rows) }}
+                {% else %}
+                {{ lq_empty('empty', description='这位散修还没有公开的动态。') }}
+                {% endif %}
+            </section>
+
+            <section class="wh-section" aria-labelledby="wh-posts-title">
+                <h3 id="wh-posts-title">发布的帖子</h3>
+                {% if home.posts %}
+                {% set post_rows = [] %}
+                {% for post in home.posts %}
+                {% set _ = post_rows.append({'title': post.title, 'meta': (post.date ~ ' · ' ~ post.like_count ~ ' 赞 · ' ~ post.comment_count ~ ' 评论'), 'primary': {'href': post.href}}) %}
+                {% endfor %}
+                {{ lq_list('发布的帖子', items=post_rows) }}
+                {% else %}
+                {{ lq_empty('empty', description='还没有发过帖子。') }}
+                {% endif %}
+            </section>
+        </div>
+
+        <aside class="wh-column">
+            <section class="wh-section" aria-labelledby="wh-reviews-title">
+                <h3 id="wh-reviews-title">天道裁决</h3>
+                {% if home.reviews %}
+                {% set review_rows = [] %}
+                {% for review in home.reviews %}
+                {% set _ = review_rows.append({'title': review.label, 'meta': (review.date ~ (' · ' ~ review.reason if review.reason else ''))}) %}
+                {% endfor %}
+                {{ lq_list('天道裁决', items=review_rows) }}
+                {% else %}
+                {{ lq_empty('empty', description='天道尚未对这位散修作出裁决。') }}
+                {% endif %}
+            </section>
+        </aside>
+    </div>
+</section>
+{% endblock %}

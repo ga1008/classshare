@@ -6,9 +6,16 @@ from unittest.mock import patch
 
 from classroom_app import database
 from classroom_app.services import wanderer_behavior_service
+from classroom_app.services.ai_model_policy import resolve_execution_plan
+from classroom_app.services.heavenly_dao_genesis import measure_platform_activity, run_genesis
 from classroom_app.services.heavenly_dao_service import UNPARSABLE_REASON, run_dao_review_once
 from classroom_app.services.wanderer_knowledge_service import forget_all
-from classroom_app.services.wanderer_settings_service import SETTING_LAST_DAO_REVIEW_AT, wanderer_runtime_setting_get
+from classroom_app.services.wanderer_settings_service import (
+    SETTING_GENESIS_ENABLED,
+    SETTING_LAST_DAO_REVIEW_AT,
+    wanderer_runtime_setting_get,
+    wanderer_runtime_setting_set,
+)
 from tests.wanderer_behavior_support import ONLY_BLOG, StubCaller, WandererWorldTestCase, turn
 
 NO_DISCIPLINE = '{"warnings": [], "demotions": []}'
@@ -173,6 +180,9 @@ class HeavenlyDaoTest(WandererWorldTestCase):
 
     def test_disabled_review_is_a_noop_unless_forced(self):
         caller = StubCaller(NO_DISCIPLINE)
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_GENESIS_ENABLED, "0")  # genesis has its own tests
+            conn.commit()
         with patch.dict("os.environ", {"WANDERER_ENABLED": "false"}):
             self.assertEqual(self.review(caller, None, force=False)["status"], "disabled")
             self.assertEqual(caller.calls, [])
@@ -201,6 +211,167 @@ class HeavenlyDaoTest(WandererWorldTestCase):
         notes = self.dao_notes(atai)
         self.assertTrue(notes)
         self.assertTrue(all(note["read_at"] for note in notes))  # inbox row read with the reflection
+
+
+# ---------------------------------------------------------------------------
+# Round 2: 天道造人 (design §10.2) and max reasoning (§10.1)
+# ---------------------------------------------------------------------------
+
+def make_seed(slug, name, **overrides):
+    seed = {
+        "slug": slug, "display_name": name, "archetype": "雨天写诗的理科生", "gender": "女",
+        "hometown": "四川成都", "childhood": "小时候在外婆家的竹林边长大，下雨天就趴在窗边数雨滴。",
+        "schooling": "高中读理科，晚自习偷偷写短诗；现在自学线性代数，也写一点散文。",
+        "interests": ["诗歌", "数学", "雨天"], "public_intro": "下雨天写诗，晴天做题。",
+        "speech_style": {"catchphrases": ["下雨了诶"], "punctuation": "句号多", "emoji": "偶尔🌧", "length": "中等"},
+        "temperament": ["安静", "敏感", "认真"], "interaction_habit": "午后和深夜上线",
+        "interaction_frequency": {"activity_level": 2, "active_hours": [[13, 15], [22, 24]],
+                                  "weekday_weights": {"5": 0.5}},
+        "reply_policy": {"ignore_prob": 0.4, "emoji_only_prob": 0.1, "multi_part_prob": 0.1, "max_parts": 2,
+                         "post_prob": 0.1},
+        "taboos": ["不嘲笑别人的作品"],
+        "initial_knowledge": [
+            {"title": "押韵", "digest": "现代诗不必押韵，但节奏感很重要，读出声来最容易检查。", "tags": ["诗歌"]},
+            {"title": "矩阵乘法", "digest": "矩阵乘法一般不满足交换律，AB 不一定等于 BA。", "tags": ["数学"]},
+            {"title": "雨的形成", "digest": "水汽遇冷凝结成云滴，云滴长大到一定程度就落下成雨。", "tags": ["雨天"]},
+        ],
+        "daily_action_budget": 8,
+    }
+    seed.update(overrides)
+    return seed
+
+
+def genesis_reply(*seeds, rationale="平台冷清，添一位安静的诗人。"):
+    return json.dumps({"rationale": rationale, "seeds": list(seeds)}, ensure_ascii=False)
+
+
+class GenesisTest(WandererWorldTestCase):
+    def setUp(self):
+        super().setUp()
+        with self.connect() as conn:
+            student_ids = [row[0] for row in conn.execute("SELECT student_id FROM wanderer_agents WHERE origin = 'dao'")]
+            conn.execute("DELETE FROM wanderer_knowledge_entries WHERE wanderer_id IN "
+                         "(SELECT id FROM wanderer_agents WHERE origin = 'dao')")
+            conn.execute("DELETE FROM wanderer_agents WHERE origin = 'dao'")
+            for student_id in student_ids:
+                conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
+            conn.commit()
+
+    def set_setting(self, key, value):
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, key, str(value))
+            conn.commit()
+
+    def genesis(self, caller, *, manual=False, now=None):
+        return asyncio.run(run_genesis(database.get_db_connection, ai_caller=caller, manual=manual, now=now))
+
+    def dao_rows(self):
+        return self.rows("SELECT * FROM wanderer_agents WHERE origin = 'dao' ORDER BY id")
+
+    def genesis_reviews(self):
+        return self.rows("SELECT * FROM wanderer_dao_reviews WHERE review_kind = 'genesis' ORDER BY id")
+
+    def test_first_genesis_creates_exactly_one_from_the_daily_review(self):
+        caller = StubCaller(NO_DISCIPLINE, genesis_reply(make_seed("xuxiaoyu", "许小雨"), make_seed("extra", "多余人")))
+        summary = asyncio.run(run_dao_review_once(database.get_db_connection, ai_caller=caller, force=True))
+        self.assertEqual(summary["counts"]["created"], 1)
+        self.assertEqual(caller.labels, ["dao:discipline", "dao:genesis"])
+        rows = self.dao_rows()
+        self.assertEqual([row["slug"] for row in rows], ["xuxiaoyu"])
+        agent = rows[0]
+        self.assertEqual((agent["tier"], agent["cultivation_score"], agent["status"]), (0, 0, "active"))
+        review = self.genesis_reviews()[0]
+        self.assertEqual((review["verdict"], review["wanderer_id"]), ("created", agent["id"]))
+        self.assertEqual(agent["created_by_review_id"], review["id"])
+        self.assertIn("平台冷清", review["reason"])
+        evidence = json.loads(review["evidence_json"])
+        self.assertIn("real_actions_24h", evidence["activity"])
+        self.assertEqual(evidence["seed_summary"]["display_name"], "许小雨")
+        knowledge = self.rows("SELECT * FROM wanderer_knowledge_entries WHERE wanderer_id = ?", (agent["id"],))
+        self.assertEqual(len(knowledge), 3)
+        student = self.rows("SELECT * FROM students WHERE id = ?", (agent["student_id"],))[0]
+        self.assertEqual((student["enrollment_status"], student["name"]), ("wanderer", "许小雨"))
+        audit = json.loads(self.rows("SELECT evidence_json FROM wanderer_dao_reviews "
+                                     "WHERE review_kind = 'daily_audit'")[0]["evidence_json"])
+        self.assertIn("real_posts_24h", audit["activity"])
+        self.assertEqual(audit["counts"]["created"], 1)
+
+    def test_single_wanderer_review_never_creates(self):
+        atai = self.set_wanderer("atai", tier=1)
+        caller = StubCaller(NO_DISCIPLINE)
+        summary = asyncio.run(run_dao_review_once(database.get_db_connection, wanderer_ids=[atai["id"]],
+                                                  ai_caller=caller, force=True))
+        self.assertEqual((summary["counts"]["created"], caller.labels), (0, ["dao:discipline"]))
+
+    def test_second_genesis_within_a_week_creates_up_to_two_within_caps(self):
+        self.genesis(StubCaller(genesis_reply(make_seed("xuxiaoyu", "许小雨"))))
+        born_at = datetime.fromisoformat(self.genesis_reviews()[0]["created_at"])
+        tomorrow = born_at.replace(tzinfo=None) + timedelta(days=1)
+        summary = self.genesis(StubCaller(genesis_reply(make_seed("aaaone", "甲一号"), make_seed("bbbtwo", "乙二号"))),
+                               now=tomorrow)
+        self.assertEqual((summary["plan"]["planned"], summary["created"]), (2, 2))
+        self.assertEqual(len(self.dao_rows()), 3)
+        self.set_setting("genesis_max_per_week", 3)
+        caller = StubCaller(genesis_reply(make_seed("cccthree", "丙三号")))
+        summary = self.genesis(caller, now=tomorrow)
+        self.assertEqual((summary["plan"]["reason"], summary["created"], caller.calls), ("caps", 0, []))
+
+    def test_no_genesis_when_disabled_full_or_active(self):
+        caller = StubCaller(genesis_reply(make_seed("xuxiaoyu", "许小雨")))
+        self.set_setting("genesis_enabled", 0)
+        self.assertEqual(self.genesis(caller)["plan"]["reason"], "disabled")
+        self.set_setting("genesis_enabled", 1)
+        self.set_setting("genesis_max_total", 20)  # the 20 seeded wanderers already fill it
+        self.assertEqual(self.genesis(caller)["plan"]["reason"], "caps")
+        self.set_setting("genesis_max_total", 50)
+        self.set_setting("genesis_min_real_actions_24h", 1)
+        self.make_post()  # one real teacher post: activity is fine
+        self.assertEqual(self.genesis(caller)["plan"]["reason"], "activity_ok")
+        self.assertEqual(caller.calls, [])
+        self.assertEqual(self.dao_rows(), [])
+        # The manual trigger ignores the switch and the threshold, never the caps.
+        self.set_setting("genesis_enabled", 0)
+        self.assertEqual(self.genesis(caller, manual=True)["created"], 1)
+
+    def test_invalid_or_clashing_seeds_are_skipped(self):
+        two_items = make_seed("twoitems", "两条知识")
+        two_items["initial_knowledge"] = two_items["initial_knowledge"][:2]
+        seeds = (make_seed("Bad Slug", "坏名字"), make_seed("clashname", "林晚舟"),
+                 make_seed("realclash", "真实同学"), two_items)
+        summary = self.genesis(StubCaller(genesis_reply(*seeds)), manual=True)
+        self.assertEqual((summary["created"], len(summary["rejected"])), (0, 4))
+        self.assertEqual(self.dao_rows(), [])
+        self.assertEqual(self.genesis_reviews(), [])
+
+    def test_activity_excludes_wanderers(self):
+        with self.connect() as conn:
+            atai = self.wanderer(conn, "atai")
+        self.make_post(author={"id": atai["student_id"], "role": "student", "name": "阿泰", "class_id": atai["class_id"]})
+        with self.connect() as conn:
+            before = measure_platform_activity(conn)
+        self.make_post(author=self.student, title="真实同学的帖子")
+        with self.connect() as conn:
+            after = measure_platform_activity(conn)
+        self.assertEqual((before["real_posts_24h"], after["real_posts_24h"]), (0, 1))
+        self.assertGreaterEqual(before["wanderers_total"], 20)
+
+
+class DaoMaxReasoningTest(WandererWorldTestCase):
+    def test_every_dao_call_requests_deep_reasoning_at_max_effort(self):
+        atai = self.set_wanderer("atai", tier=1, promotion_requested=1)
+        caller = StubCaller(NO_DISCIPLINE, _approved(), genesis_reply(make_seed("xuxiaoyu", "许小雨")))
+        asyncio.run(run_dao_review_once(database.get_db_connection, wanderer_ids=[atai["id"]], ai_caller=caller,
+                                        force=True))
+        asyncio.run(run_genesis(database.get_db_connection, ai_caller=caller, manual=True))
+        expected = {"dao:discipline": "adjudication", "dao:promotion": "adjudication", "dao:genesis": "generation"}
+        self.assertEqual(caller.labels, list(expected))
+        for _endpoint, payload, kwargs in caller.calls:
+            self.assertEqual(payload["task_type"], "deep_text_reasoning")
+            context = payload["business_context"]
+            self.assertEqual(context["operation"], expected[payload["task_label"]])
+            plan = resolve_execution_plan(payload["task_type"], "thinking", context, environ={})
+            self.assertEqual((plan.reasoning_effort, plan.thinking_type), ("max", "enabled"))
+            self.assertEqual(kwargs["task_type"], "wanderer_dao")
 
 
 if __name__ == "__main__":

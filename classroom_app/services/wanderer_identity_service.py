@@ -34,13 +34,16 @@ MAX_TIER = 10
 
 DEFAULT_BEHAVIORS = {
     "blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
-    "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1,
+    "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1, "blog_post": 1,
 }
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
     "classroom_visit", "classroom_message", "knowledge_read", "knowledge_forget",
-    "request_promotion", "reflect", "skip",
+    "request_promotion", "reflect", "skip", "write_post",
 })
+ORIGIN_SEED = "seed"
+ORIGIN_DAO = "dao"
+WANDERER_ORIGINS = (ORIGIN_SEED, ORIGIN_DAO)
 
 CACHE_TTL_SECONDS = 60.0
 _CACHE_MAX_ENTRIES = 5000
@@ -214,8 +217,8 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
         INSERT INTO wanderer_agents (
             student_id, slug, display_name, archetype, persona_prompt, speech_style_json,
             interests_json, schedule_json, activity_level, daily_action_budget, reply_policy_json,
-            tier, cultivation_score, status, behaviors_json, stats_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+            tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slug) DO NOTHING
         """,
         (
@@ -224,7 +227,8 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             _dumps(schedule), int(frequency.get("activity_level") or 3),
             int(seed.get("daily_action_budget") or 10), _dumps(seed.get("reply_policy") or {}),
             clamp_tier(seed.get("initial_tier")), STATUS_ACTIVE,
-            _dumps({**DEFAULT_BEHAVIORS, **(seed.get("behaviors") or {})}), "{}", now, now,
+            _dumps({**DEFAULT_BEHAVIORS, **(seed.get("behaviors") or {})}), "{}",
+            seed.get("origin") if seed.get("origin") in WANDERER_ORIGINS else ORIGIN_SEED, now, now,
         ),
     )
     return True

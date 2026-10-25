@@ -310,6 +310,14 @@
       "params": "复用：Button(lq_btn / createComponent)、Choice 选择卡(data-lq-shape=surface)、Chip(状态/境界/警告)、Checkbox/Switch(createForm)、Input/Textarea、Collapsible、Tabs(navigation.tabs)、Insights(insight_meter 知识容量、insight_bars columns 七日动作 / rows 动作分布)、Content list/empty、cultivation-emblem 图像类。",
       "states": "卡片：active/paused/dead（dead 降低不透明度，详情只显示「复活」）；按钮 busy 时 native disabled + aria-busy；分页/详情请求带代次号，旧响应不覆盖新打开的散修；人格保存失败保留输入并在 role=alert 中显示；抹除两步确认。",
       "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted，错误文字用 --ls-tone-danger-fg；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。改动先跑 npm run inventory:lq-modules。"
+    },
+    "wanderer-home": {
+      "title": "散修主页 static/css/lq/pages/wanderer-home.css",
+      "layer": "composite",
+      "summary": "散修公开主页 (/wanderers/{slug}，templates/wanderers/home.html，数据 wanderer_public_service.build_wanderer_home)：PageHead 内放头像+境界标志与身份芯片，Card stat 统计条，Content list 展示近期动态/发布的帖子/天道裁决，空态用 Empty。纯服务端渲染，无页面 JS。",
+      "params": "复用：PageHead(aside 槽)、Avatar(56)、cultivation-emblem 图像类、Chip(散修/境界/来历/状态)、Card variant=stat、List/Row(primary href 深链 /blog?post=)、Empty。",
+      "states": "已陨落：标题加后缀、data-dead=true 时头像降低不透明度；来历芯片 种子散修/天道所造+日期；动态只列仍公开的帖子；860px 以下改单列。",
+      "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。"
     }
   },
   "_tools": {

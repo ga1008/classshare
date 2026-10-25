@@ -21,6 +21,13 @@ const STATUS_TONES = { active: 'success', paused: 'warning', dead: 'neutral' };
 const BEHAVIOR_LABELS = {
     blog_browse: '浏览博客', blog_like: '点赞', blog_comment: '评论帖子', reply: '回复他人', dm_reply: '回复私信',
     classroom_visit: '旁听课堂', classroom_message: '课堂留言', knowledge_read: '研读固化', promotion: '申请升阶',
+    blog_post: '发帖',
+};
+const GENESIS_NUMBER_FIELDS = ['genesis_min_real_actions_24h', 'genesis_max_total', 'genesis_max_per_day', 'genesis_max_per_week'];
+const GENESIS_SUMMARY_KEYS = { status: '状态', created: '新增' };
+const ACTIVITY_LABELS = {
+    real_actions_24h: '真实动作', real_posts_24h: '发帖', real_comments_24h: '评论', real_likes_24h: '点赞',
+    real_chat_messages_24h: '课堂留言', real_logins_24h: '登录', wanderer_actions_24h: '散修动作',
 };
 const REPLY_POLICY_FIELDS = ['ignore_prob', 'emoji_only_prob', 'multi_part_prob', 'max_parts'];
 // Manual runs are started in the background (202); the overview is re-read after this delay.
@@ -42,6 +49,7 @@ const els = {
     enabled: $('#wd-enabled'),
     tickBtn: $('#wd-tick-btn'),
     reviewBtn: $('#wd-review-btn'),
+    genesisBtn: $('#wd-genesis-btn'),
     reseedBtn: $('#wd-reseed-btn'),
     refreshBtn: $('#wd-refresh-btn'),
     envNote: $('#wd-env-note'),
@@ -123,6 +131,7 @@ function renderOverview(overview) {
     const stats = {
         ai: `${overview.ai_calls_today ?? 0} / ${overview.daily_ai_call_cap ?? 0}`,
         counts: `${counts.active ?? 0} / ${counts.paused ?? 0} / ${counts.dead ?? 0}`,
+        origin: `${counts.total ?? 0} · ${counts.dao_created ?? 0}`,
         promotion: `${overview.promotion_requested ?? 0} · ${overview.warnings_today ?? 0}`,
         tick: formatTime(overview.last_tick_at) || '暂无',
         dao: formatTime(overview.last_dao_review_at) || '暂无',
@@ -155,6 +164,7 @@ function renderManualSummary(overview) {
     const lines = [
         manualRunText(overview.last_manual_tick, '上次手动节拍', TICK_SUMMARY_KEYS),
         manualRunText(overview.last_manual_review, '上次手动天道审核', null),
+        manualRunText(overview.last_manual_genesis, '上次手动造人', GENESIS_SUMMARY_KEYS),
     ].filter(Boolean);
     node.textContent = lines.join('；');
     node.hidden = lines.length === 0;
@@ -177,6 +187,7 @@ function cardChips(card) {
     const chips = [chip(card.status_label, STATUS_TONES[card.status] || 'neutral'), chip(card.tier_name, 'info')];
     if (card.promotion_requested) chips.push(chip('申请升阶', 'primary'));
     if (card.warnings_count) chips.push(chip(`警告 ${card.warnings_count}`, 'danger'));
+    if (card.origin === 'dao') chips.push(chip(card.origin_label || '天道所造', 'warning'));
     return el('span', { class: 'wd-card__chips' }, chips);
 }
 
@@ -264,6 +275,8 @@ function settingsPayload(form) {
         tick_batch_size: Number(data.get('tick_batch_size')),
         dao_review_hour: String(data.get('dao_review_hour') || ''),
         classroom_visits_enabled: form.elements.classroom_visits_enabled.checked ? 1 : 0,
+        genesis_enabled: form.elements.genesis_enabled.checked ? 1 : 0,
+        ...Object.fromEntries(GENESIS_NUMBER_FIELDS.map(name => [name, Number(data.get(name))])),
     };
 }
 
@@ -307,6 +320,7 @@ function bindToolbar() {
     els.enabled?.addEventListener('change', onEnabledChange);
     els.tickBtn?.addEventListener('click', () => withBusy(els.tickBtn, () => runEngine('/tick-now', {}, '跑一轮')));
     els.reviewBtn?.addEventListener('click', () => withBusy(els.reviewBtn, () => runEngine('/review-now', {}, '天道审核')));
+    els.genesisBtn?.addEventListener('click', () => withBusy(els.genesisBtn, () => runEngine('/genesis-now', {}, '天道造人')));
     els.refreshBtn?.addEventListener('click', () => withBusy(els.refreshBtn, refreshQuietly));
     els.reseedBtn?.addEventListener('click', onReseed);
     els.settingsForm?.addEventListener('submit', onSettingsSubmit);
@@ -351,10 +365,21 @@ function actionRow(item) {
     return href ? { title, meta, primary: { href } } : { title, meta };
 }
 
+function activityText(activity) {
+    if (!activity || typeof activity !== 'object') return '';
+    const parts = Object.entries(ACTIVITY_LABELS)
+        .filter(([key]) => Number.isFinite(Number(activity[key])))
+        .map(([key, label]) => `${label} ${activity[key]}`);
+    return parts.length ? `近 24 小时：${parts.join('，')}` : '';
+}
+
 function reviewRow(item) {
     const changed = item.from_tier !== null && item.to_tier !== null && item.from_tier !== item.to_tier;
     const tierChange = changed ? ` · ${item.from_tier} → ${item.to_tier} 境` : '';
-    const meta = [item.reason, item.advice ? `建议：${item.advice}` : '', `${formatTime(item.created_at)} · ${item.created_by}`]
+    const genesis = item.review_kind === 'genesis'
+        ? [item.seed_summary?.archetype ? `原型：${item.seed_summary.archetype}` : '', activityText(item.activity)]
+        : [];
+    const meta = [item.reason, item.advice ? `建议：${item.advice}` : '', ...genesis, `${formatTime(item.created_at)} · ${item.created_by}`]
         .filter(Boolean).join(' ｜ ');
     return { title: `${item.review_kind_label} · ${item.verdict_label}${tierChange}`, meta };
 }

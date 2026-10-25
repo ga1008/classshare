@@ -1,15 +1,16 @@
 """散修管理 API（docs/wanderer-ai-free-agents-2026-10-25.md §6）。
 
 ``/api/manage/system/wanderers/*`` 仅限超管教师；``/api/wanderers/{student_id}/card``
-供任意已登录用户识别散修。路由由 ``ui_parts/manage_pages_admin.py`` 的 router
+供任意已登录用户识别散修；``/wanderers/{slug}`` 是散修公开主页（登录即可看）。路由由 ``ui_parts/manage_pages_admin.py`` 的 router
 汇总挂载（与「散修管理」页面同一入口），不单独改 app.py。
 
 行为引擎与天道（Phase B）按需惰性导入：未就绪时返回 503，而不是让整个
 路由模块导入失败。
 
-「立即运行 / 立即审核」不在 HTTP 请求内执行：校验后以后台任务启动并立即
+「立即运行 / 立即审核 / 立即造人」不在 HTTP 请求内执行：校验后以后台任务启动并立即
 返回 202；同类已有一轮在本进程运行时返回 409。结束后摘要写入运行时设置
-``last_manual_tick_summary`` / ``last_manual_review_summary``，由概览展示。
+``last_manual_tick_summary`` / ``last_manual_review_summary`` /
+``last_manual_genesis_summary``，由概览展示。
 """
 from __future__ import annotations
 
@@ -19,14 +20,16 @@ import json
 from typing import Any, Awaitable, Callable, Coroutine, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
+from ..core import templates
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services import wanderer_admin_service as admin
 from ..services.heavenly_dao_rules import HEAVENLY_DAO_RULES
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.wanderer_settings_service import (
+    SETTING_LAST_MANUAL_GENESIS_SUMMARY,
     SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     SETTING_LAST_MANUAL_TICK_SUMMARY,
     wanderer_runtime_setting_set,
@@ -39,9 +42,14 @@ MANAGE_PREFIX = "/api/manage/system/wanderers"
 ENGINE_NOT_READY = "行为引擎尚未就绪"
 RUN_KIND_TICK = "tick"
 RUN_KIND_REVIEW = "review"
-_SUMMARY_SETTING = {RUN_KIND_TICK: SETTING_LAST_MANUAL_TICK_SUMMARY, RUN_KIND_REVIEW: SETTING_LAST_MANUAL_REVIEW_SUMMARY}
+RUN_KIND_GENESIS = "genesis"
+_SUMMARY_SETTING = {
+    RUN_KIND_TICK: SETTING_LAST_MANUAL_TICK_SUMMARY,
+    RUN_KIND_REVIEW: SETTING_LAST_MANUAL_REVIEW_SUMMARY,
+    RUN_KIND_GENESIS: SETTING_LAST_MANUAL_GENESIS_SUMMARY,
+}
 # In-process "one manual run per kind" flags; the event loop is single-threaded.
-_RUNNING: dict[str, bool] = {RUN_KIND_TICK: False, RUN_KIND_REVIEW: False}
+_RUNNING: dict[str, bool] = {RUN_KIND_TICK: False, RUN_KIND_REVIEW: False, RUN_KIND_GENESIS: False}
 _BACKGROUND_TASKS: set[Any] = set()
 
 
@@ -204,6 +212,14 @@ async def api_wanderer_dao_review_all(user: dict = Depends(get_current_teacher))
     return _start_background(RUN_KIND_REVIEW, function, force=True)
 
 
+@router.post(f"{MANAGE_PREFIX}/genesis-now", response_class=JSONResponse)
+async def api_wanderer_genesis_now(user: dict = Depends(get_current_teacher)):
+    """天道造人, now: ignores the genesis switch and the activity threshold, never the caps."""
+    _check_target(user, None)
+    function = _engine_function("heavenly_dao_genesis", "run_genesis")
+    return _start_background(RUN_KIND_GENESIS, function, manual=True)
+
+
 # ---------------------------------------------------------------------------
 # single wanderer
 # ---------------------------------------------------------------------------
@@ -294,3 +310,23 @@ async def api_wanderer_public_card(student_id: int, user: dict = Depends(get_cur
     if card is None:
         raise HTTPException(status_code=404, detail="不是散修")
     return _ok(card=card)
+
+
+# ---------------------------------------------------------------------------
+# public homepage (design §10.3)
+# ---------------------------------------------------------------------------
+
+@router.get("/wanderers/{slug}", response_class=HTMLResponse)
+async def wanderer_home_page(request: Request, slug: str, user: dict = Depends(get_current_user)):
+    """A 散修's public homepage; any logged-in user. 404 for anything that is not a wanderer slug."""
+    from ..services.wanderer_public_service import build_wanderer_home
+
+    with get_db_connection() as conn:
+        home = build_wanderer_home(conn, user, slug)
+    if home is None:
+        raise HTTPException(status_code=404, detail="没有这位散修")
+    return templates.TemplateResponse(
+        request,
+        "wanderers/home.html",
+        {"request": request, "user_info": user, "wanderer_home": home},
+    )

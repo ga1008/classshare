@@ -61,6 +61,8 @@ def _table_statements(id_column: str) -> list[str]:
             knowledge_chars INTEGER NOT NULL DEFAULT 0,
             stats_json TEXT NOT NULL DEFAULT '{{}}',
             last_active_at TEXT,
+            origin TEXT NOT NULL DEFAULT 'seed',
+            created_by_review_id INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -153,6 +155,23 @@ _INDEX_STATEMENTS = (
 )
 
 
+# Columns added after the first release (round 2, design §10.2); tables created
+# before then gain them through ``_add_column_if_missing``.
+ADDED_COLUMNS = (
+    ("wanderer_agents", "origin", "TEXT NOT NULL DEFAULT 'seed'"),  # 'seed' | 'dao'
+    ("wanderer_agents", "created_by_review_id", "INTEGER"),
+)
+
+
+def _add_column_if_missing(conn: Any, engine: str, table: str, column: str, definition: str) -> None:
+    if engine == "postgres":
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
+        return
+    existing = {str(row[1]) for row in conn.execute(f'PRAGMA table_info("{table}")').fetchall()}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def wanderer_schema_statements(engine: str) -> list[str]:
     """Every DDL statement for ``engine`` ('sqlite' | 'postgres'), in execution order."""
     normalized = str(engine or "sqlite").strip().lower()
@@ -164,7 +183,9 @@ def ensure_wanderer_schema(conn: Any, *, engine: str | None = None) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
         return
-    resolved_engine = engine or get_configured_db_engine()
+    resolved_engine = str(engine or get_configured_db_engine()).strip().lower()
     for statement in wanderer_schema_statements(resolved_engine):
         conn.execute(statement)
+    for table, column, definition in ADDED_COLUMNS:
+        _add_column_if_missing(conn, resolved_engine, table, column, definition)
     _SCHEMA_READY = True

@@ -10,7 +10,10 @@
 4. every verdict becomes a ``wanderer_dao_reviews`` row plus a
    ``message_center_notifications`` row (category ``wanderer_dao``, never
    emailed) for the wanderer's own identity, which its tick reads and reflects on;
-5. death check; one ``daily_audit`` row (wanderer_id NULL) with the counts.
+5. death check; for a full-scope review (no ``wanderer_ids``) 天道造人
+   (``heavenly_dao_genesis``: platform activity -> maybe new wanderers);
+6. one ``daily_audit`` row (wanderer_id NULL) with the counts and the
+   activity snapshot (``evidence.activity``).
 
 If the discipline output is unusable the run records a ``daily_audit`` row with
 verdict ``noted`` and changes nothing else (promotions wait for the next run).
@@ -299,10 +302,11 @@ def _death_sweep(conn_factory: ConnFactory, wanderer_ids: Iterable[int]) -> int:
     return died
 
 
-def _audit(conn_factory: ConnFactory, *, reason: str, counts: dict[str, Any], scope: list[int]) -> int:
+def _audit(conn_factory: ConnFactory, *, reason: str, counts: dict[str, Any], scope: list[int],
+           extra: Optional[dict[str, Any]] = None) -> int:
     with _connection(conn_factory) as conn:
         review_id = insert_dao_review(conn, wanderer_id=None, review_kind="daily_audit", verdict="noted",
-                                      reason=reason, evidence={"counts": counts, "wanderer_ids": scope})
+                                      reason=reason, evidence={"counts": counts, "wanderer_ids": scope, **(extra or {})})
         wanderer_runtime_setting_set(conn, SETTING_LAST_DAO_REVIEW_AT, local_iso())
         conn.commit()
     return review_id
@@ -310,7 +314,8 @@ def _audit(conn_factory: ConnFactory, *, reason: str, counts: dict[str, Any], sc
 
 def _summary_reason(counts: dict[str, Any]) -> str:
     return (f"今日审核 {counts['reviewed']} 位散修：警告 {counts['warnings']}，降阶 {counts['demotions']}，"
-            f"升阶批准 {counts['approved']}，驳回 {counts['rejected']}，陨落 {counts['died']}。")
+            f"升阶批准 {counts['approved']}，驳回 {counts['rejected']}，陨落 {counts['died']}，"
+            f"造人 {counts.get('created', 0)}。")
 
 
 def _load_scope(conn_factory: ConnFactory, wanderer_ids: Optional[Iterable[Any]]) -> list[dict[str, Any]]:
@@ -356,7 +361,7 @@ async def run_dao_review_once(
     scope = _load_scope(conn_factory, wanderer_ids)
     ids = [int(item["wanderer"]["id"]) for item in scope]
     counts: dict[str, Any] = {"reviewed": len(scope), "warnings": 0, "demotions": 0, "approved": 0,
-                              "rejected": 0, "promotion_failed": 0, "died": 0}
+                              "rejected": 0, "promotion_failed": 0, "died": 0, "created": 0}
     if scope:
         verdicts, error = await _judge_discipline(conn_factory, scope, ai_caller)
         if verdicts is None:
@@ -367,5 +372,27 @@ async def run_dao_review_once(
         counts.update(apply_discipline(conn_factory, verdicts, evidence_by_id))
         await _review_promotions(conn_factory, scope, counts, ai_caller)
     counts["died"] = _death_sweep(conn_factory, ids)
-    audit_id = _audit(conn_factory, reason=_summary_reason(counts), counts=counts, scope=ids)
+    extra: dict[str, Any] = {}
+    if wanderer_ids is None:
+        genesis = await _genesis(conn_factory, ai_caller)
+        counts["created"] = int(genesis.get("created") or 0)
+        extra = {"activity": genesis.get("activity") or {}, "genesis": _genesis_brief(genesis)}
+    audit_id = _audit(conn_factory, reason=_summary_reason(counts), counts=counts, scope=ids, extra=extra)
     return {"status": "ok", "outcome": "reviewed", "counts": counts, "audit_review_id": audit_id}
+
+
+def _genesis_brief(genesis: dict[str, Any]) -> dict[str, Any]:
+    plan = genesis.get("plan") or {}
+    return {"status": genesis.get("status"), "reason": plan.get("reason"), "planned": plan.get("planned", 0),
+            "created_ids": genesis.get("created_ids") or [], "rejected": genesis.get("rejected") or []}
+
+
+async def _genesis(conn_factory: ConnFactory, ai_caller: Optional[AiCaller]) -> dict[str, Any]:
+    """天道造人 never breaks the daily review: a failure is reported in the audit row."""
+    from .heavenly_dao_genesis import run_genesis
+
+    try:
+        return await run_genesis(conn_factory, ai_caller=ai_caller)
+    except Exception as exc:  # noqa: BLE001 - optional step of the review
+        print(f"[DAO] genesis failed: {type(exc).__name__}: {exc}")
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200], "created": 0}
